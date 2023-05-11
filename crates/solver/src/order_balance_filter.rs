@@ -82,12 +82,7 @@ fn solvable_orders(
                 result.push(BalancedOrder::full(order));
                 continue;
             }
-            // TODO: This is overly pessimistic for partially filled orders where the needed
-            // balance is lower. For partially fillable orders that cannot be
-            // fully filled because of the balance we could also give them as
-            // much balance as possible instead of skipping. For that we first
-            // need a way to communicate this to the solver. We could repurpose
-            // availableBalance for this.
+
             let needed_balance = match max_transfer_out_amount(&order) {
                 // Should only ever happen if a partially fillable order has been filled completely
                 Ok(balance) if balance.is_zero() => continue,

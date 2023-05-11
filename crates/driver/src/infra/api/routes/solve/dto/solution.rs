@@ -1,11 +1,11 @@
 use {
-    crate::domain::competition::{self, solution},
+    crate::domain::competition::{self, solution::settlement},
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
 };
 
 impl Solution {
-    pub fn from_domain(id: solution::Id, score: competition::Score) -> Self {
+    pub fn from_domain(id: settlement::Id, score: competition::Score) -> Self {
         Self {
             id: id.into(),
             score: score.into(),

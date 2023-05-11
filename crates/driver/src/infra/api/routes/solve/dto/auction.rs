@@ -72,8 +72,17 @@ impl Auction {
                         } else {
                             competition::order::Partial::No
                         },
-                        interactions: order
+                        pre_interactions: order
                             .pre_interactions
+                            .into_iter()
+                            .map(|interaction| eth::Interaction {
+                                target: interaction.target.into(),
+                                value: interaction.value.into(),
+                                call_data: interaction.call_data,
+                            })
+                            .collect(),
+                        post_interactions: order
+                            .post_interactions
                             .into_iter()
                             .map(|interaction| eth::Interaction {
                                 target: interaction.target.into(),
@@ -178,6 +187,7 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     executed: eth::U256,
     pre_interactions: Vec<Interaction>,
+    post_interactions: Vec<Interaction>,
     #[serde(default)]
     sell_token_balance: SellTokenBalance,
     #[serde(default)]

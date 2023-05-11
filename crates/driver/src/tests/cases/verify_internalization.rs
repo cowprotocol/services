@@ -1,7 +1,10 @@
 //! Test that the asset flow verification behaves as expected. See
 //! [`competition::solution::settlement::Verified`].
 
-use crate::tests::{setup, setup::new::Order};
+use crate::tests::{
+    setup,
+    setup::new::{Order, Solution},
+};
 
 /// Test that internalized interactions pass verification if they use trusted
 /// tokens.
@@ -16,6 +19,7 @@ async fn valid_internalization() {
             600000000000u64.into(),
         )
         .order(Order {
+            name: "example order",
             amount: 500000000000000000u64.into(),
             sell_token: "A",
             buy_token: "B",
@@ -23,6 +27,7 @@ async fn valid_internalization() {
             ..Default::default()
         })
         .trust("A")
+        .solution(Solution::Valid, &["example order"])
         .done()
         .await;
 
@@ -44,18 +49,22 @@ async fn untrusted_internalization() {
             600000000000u64.into(),
         )
         .order(Order {
+            name: "example order",
             amount: 500000000000000000u64.into(),
             sell_token: "A",
             buy_token: "B",
             internalize: true,
             ..Default::default()
         })
+        .solution(Solution::Valid, &["example order"])
         .done()
         .await;
 
     let solve = test.solve().await;
 
-    solve.err().kind("UntrustedInternalization");
+    // TODO When we add metrics, assert that an untrusted internalization error is
+    // traced.
+    solve.err().kind("SolutionNotFound");
 }
 
 /// Check that verification fails if the solution contains internalized

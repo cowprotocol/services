@@ -3,6 +3,8 @@
 pub mod buy_eth;
 pub mod example_config;
 pub mod limit_order;
+pub mod merge_settlements;
+pub mod multiple_solutions;
 pub mod quote;
 pub mod settle;
 pub mod solve;

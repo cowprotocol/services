@@ -3,7 +3,7 @@
 mod auction;
 mod solution;
 
-pub use {auction::Auction, solution::Solution};
+pub use {auction::Auction, solution::Solutions};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]

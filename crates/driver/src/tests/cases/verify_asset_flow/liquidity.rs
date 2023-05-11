@@ -363,12 +363,17 @@ async fn test() {
                     "deadline": deadline - auction::Deadline::time_buffer(),
                 }),
                 res: json!({
-                    "prices": {
-                        hex_address(sell_token): buy_amount.to_string(),
-                        hex_address(buy_token): sell_amount.to_string(),
-                    },
-                    "trades": trades,
-                    "interactions": interactions
+                    "solutions": [
+                        {
+                            "id": 0,
+                            "prices": {
+                                hex_address(sell_token): buy_amount.to_string(),
+                                hex_address(buy_token): sell_amount.to_string(),
+                            },
+                            "trades": trades,
+                            "interactions": interactions
+                        }
+                    ]
                 }),
             }],
         })
@@ -403,6 +408,7 @@ async fn test() {
             "partiallyFillable": false,
             "executed": "0",
             "preInteractions": [],
+            "postInteractions": [],
             "class": "market",
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
@@ -427,6 +433,7 @@ async fn test() {
                     "partiallyFillable": liquidity_order.partially_fillable,
                     "executed": liquidity_order.executed.to_string(),
                     "preInteractions": [],
+                    "postInteractions": [],
                     "class": "liquidity",
                     "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                     "signingScheme": "eip712",
@@ -471,7 +478,9 @@ async fn test() {
             assert!(result.get("kind").is_some());
             assert!(result.get("description").is_some());
             let kind = result.get("kind").unwrap().as_str().unwrap();
-            assert_eq!(kind, "InvalidAssetFlow");
+            // TODO When we add metrics, assert that an invalid asset flow error is
+            // traced.
+            assert_eq!(kind, "SolutionNotFound");
         }
     }
 }

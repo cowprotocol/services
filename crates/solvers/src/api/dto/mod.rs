@@ -3,7 +3,7 @@ mod solution;
 
 use serde::Serialize;
 
-pub use self::{auction::Auction, solution::Solution};
+pub use self::{auction::Auction, solution::Solutions};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]

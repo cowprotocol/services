@@ -77,10 +77,15 @@ impl Order {
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let timeout = self.deadline.timeout(now)?;
-        let solution = solver
+        let solutions = solver
             .solve(&self.fake_auction(), &liquidity, timeout)
             .await?;
-        Quote::new(self, eth, solution)
+        Quote::new(
+            self,
+            eth,
+            // TODO #1468, for now just pick the first solution
+            solutions.into_iter().next().ok_or(Error::QuotingFailed)?,
+        )
     }
 
     fn fake_auction(&self) -> competition::Auction {
@@ -98,7 +103,9 @@ impl Order {
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                interactions: Default::default(),
+                // TODO add actual pre- and post-interactions (#1491)
+                pre_interactions: Default::default(),
+                post_interactions: Default::default(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,
                 buy_token_balance: competition::order::BuyTokenBalance::Erc20,
                 signature: competition::order::Signature {

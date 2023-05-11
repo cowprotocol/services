@@ -148,13 +148,13 @@ impl OnSettlementEventUpdater {
                 .with_context(|| {
                     format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
                 })?;
-            let orders = self.db.order_executions_for_tx(&hash).await?;
+            let orders = self.db.order_executions_for_tx(&hash, auction_id).await?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),
             )?;
 
-            tracing::trace!(
+            tracing::debug!(
                 ?auction_id,
                 ?auction_external_prices,
                 ?orders,

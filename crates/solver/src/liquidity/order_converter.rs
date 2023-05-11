@@ -50,7 +50,10 @@ impl OrderConverter {
             order.data.buy_token
         };
 
-        let remaining = shared::remaining_amounts::Remaining::from_order(&order)?;
+        let remaining = shared::remaining_amounts::Remaining::from_order_with_balance(
+            &order,
+            available_sell_token_balance,
+        )?;
 
         let sell_amount = match &order.metadata.class {
             OrderClass::Limit(limit) if !order.data.partially_fillable => {
@@ -69,44 +72,12 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let mut solver_fee = remaining.remaining(order.metadata.solver_fee)?;
-        let mut sell_amount = remaining.remaining(sell_amount)?;
-        let mut buy_amount = remaining.remaining(order.data.buy_amount)?;
-
-        // Partially fillable orders are included in the auction when there is at least
-        // 1 atom balance available.
-        if order.data.partially_fillable {
-            let need = sell_amount
-                .checked_add(remaining.remaining(order.data.fee_amount)?)
-                .context("partially fillable need calculation overflow")?;
-            let have = available_sell_token_balance;
-            anyhow::ensure!(
-                have != 0.into(),
-                "unexpected 0 balance for partially fillable order"
-            );
-            tracing::trace!(%need, %have, "partially fillable order conversion");
-            if have < need {
-                solver_fee = solver_fee
-                    .checked_mul(have)
-                    .context("partially fillable solver_fee calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable solver_fee calculation overflow")?;
-                sell_amount = sell_amount
-                    .checked_mul(have)
-                    .context("partially fillable sell_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable sell_amount calculation overflow")?;
-                buy_amount = buy_amount
-                    .checked_mul(have)
-                    .context("partially fillable buy_amount calculation overflow")?
-                    .checked_div(need)
-                    .context("partially fillable buy_amount calculation overflow")?;
-            }
-        }
-
+        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
+        let sell_amount = remaining.remaining(sell_amount)?;
+        let buy_amount = remaining.remaining(order.data.buy_amount)?;
         ensure!(
             !sell_amount.is_zero() && !buy_amount.is_zero(),
-            "partially fillable order scaled to 0 amounts",
+            "order with 0 amounts",
         );
 
         Ok(LimitOrder {

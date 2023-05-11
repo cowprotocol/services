@@ -69,15 +69,12 @@ mod tests {
         contracts::WETH9,
         ethcontract::PrivateKey,
         futures::FutureExt,
-        hex_literal::hex,
         primitive_types::H160,
         shared::dummy_contract,
     };
 
     #[tokio::test]
     async fn optimizes_solutions() {
-        const PRIVATE_KEY: [u8; 32] =
-            hex!("0000000000000000000000000000000000000000000000000000000000000001");
         let account = Account::Offline(PrivateKey::from_raw([0x1; 32]).unwrap(), None);
 
         let mut inner = MockSolver::new();

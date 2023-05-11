@@ -1,4 +1,7 @@
-use crate::tests::{setup, setup::new::Order};
+use crate::tests::{
+    setup,
+    setup::new::{Order, Solution},
+};
 
 /// Test that the /solve endpoint calculates the correct score.
 #[tokio::test]
@@ -12,11 +15,13 @@ async fn test() {
             600000000000u64.into(),
         )
         .order(Order {
+            name: "example order",
             amount: 500000000000000000u64.into(),
             sell_token: "A",
             buy_token: "B",
             ..Default::default()
         })
+        .solution(Solution::Valid, &["example order"])
         .done()
         .await;
 

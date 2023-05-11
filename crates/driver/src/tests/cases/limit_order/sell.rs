@@ -128,18 +128,23 @@ async fn test() {
                 "deadline": deadline - auction::Deadline::time_buffer(),
             }),
             res: json!({
-                "prices": {
-                    hex_address(sell_token): buy_amount.to_string(),
-                    hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
-                },
-                "trades": [
+                "solutions": [
                     {
-                        "kind": "fulfillment",
-                        "order": boundary.uid(),
-                        "executedAmount": (sell_amount - surplus_fee).to_string(),
+                        "id": 0,
+                        "prices": {
+                            hex_address(sell_token): buy_amount.to_string(),
+                            hex_address(buy_token): (sell_amount - surplus_fee).to_string(),
+                        },
+                        "trades": [
+                            {
+                                "kind": "fulfillment",
+                                "order": boundary.uid(),
+                                "executedAmount": (sell_amount - surplus_fee).to_string(),
+                            }
+                        ],
+                        "interactions": interactions
                     }
-                ],
-                "interactions": interactions
+                ]
             }),
         }],
     })
@@ -192,6 +197,7 @@ async fn test() {
                         "partiallyFillable": false,
                         "executed": "0",
                         "preInteractions": [],
+                        "postInteractions": [],
                         "class": "limit",
                         "surplusFee": surplus_fee.to_string(),
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",

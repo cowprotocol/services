@@ -84,10 +84,12 @@ impl ParaswapSolver {
 
 impl From<ParaswapResponseError> for SettlementError {
     fn from(err: ParaswapResponseError) -> Self {
-        let retryable = err.is_retryable();
-        SettlementError {
-            inner: anyhow!(err),
-            retryable,
+        match err {
+            err @ ParaswapResponseError::Request(_) | err @ ParaswapResponseError::Retryable(_) => {
+                Self::Retryable(anyhow!(err))
+            }
+            ParaswapResponseError::RateLimited => Self::RateLimited,
+            err => Self::Other(anyhow!(err)),
         }
     }
 }
@@ -119,7 +121,8 @@ impl SingleOrderSolving for ParaswapSolver {
             sell_token_price: price_response.dest_amount,
             buy_token_price: price_response.src_amount,
             interactions: Vec::new(),
-            gas_estimate: price_response.gas_cost.into(),
+            executed_amount: order.full_execution_amount(),
+            order: order.clone(),
         };
         if let Some(approval) = self
             .allowance_fetcher
@@ -130,9 +133,9 @@ impl SingleOrderSolving for ParaswapSolver {
             })
             .await?
         {
-            settlement.interactions.push(Box::new(approval));
+            settlement.interactions.push(Arc::new(approval));
         }
-        settlement.interactions.push(Box::new(transaction));
+        settlement.interactions.push(Arc::new(transaction));
         Ok(Some(settlement))
     }
 

@@ -109,41 +109,44 @@ async fn test() {
     assert_eq!(
         solution,
         json!({
-            "prices": {},
-            "trades": [],
-            "interactions": [
-                {
-                    "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
-                    "value": "0",
-                    "callData": "0x",
-                    "inputs": [],
-                    "outputs": [],
-                    "internalize": true,
-                    "allowances": [],
-                    "kind": "custom",
-                },
-                {
-                    "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
-                    "value": "0",
-                    "callData": "0x",
-                    "inputs": [],
-                    "outputs": [],
-                    "internalize": false,
-                    "allowances": [
-                        {
-                            "token": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            "spender": "0x1111111111111111111111111111111111111111",
-                            "amount": "1",
-                        },
-                        {
-                            "token": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                            "spender": "0x2222222222222222222222222222222222222222",
-                            "amount": "2",
-                        },
-                    ],
-                    "kind": "custom",
-                },
-            ]
+            "solutions": [{
+                "id": 0,
+                "prices": {},
+                "trades": [],
+                "interactions": [
+                    {
+                        "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
+                        "value": "0",
+                        "callData": "0x",
+                        "inputs": [],
+                        "outputs": [],
+                        "internalize": true,
+                        "allowances": [],
+                        "kind": "custom",
+                    },
+                    {
+                        "target": "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab",
+                        "value": "0",
+                        "callData": "0x",
+                        "inputs": [],
+                        "outputs": [],
+                        "internalize": false,
+                        "allowances": [
+                            {
+                                "token": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "spender": "0x1111111111111111111111111111111111111111",
+                                "amount": "1",
+                            },
+                            {
+                                "token": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                "spender": "0x2222222222222222222222222222222222222222",
+                                "amount": "2",
+                            },
+                        ],
+                        "kind": "custom",
+                    },
+                ]
+            }]
         }),
     );
 }

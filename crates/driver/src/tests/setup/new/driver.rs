@@ -92,6 +92,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "partiallyFillable": matches!(fulfillment.order.partial, order::Partial::Yes { .. }),
             "executed": fulfillment.order.executed.to_string(),
             "preInteractions": [],
+            "postInteractions": [],
             "class": match fulfillment.order.kind {
                 order::Kind::Market => "market",
                 order::Kind::Liquidity => "liquidity",

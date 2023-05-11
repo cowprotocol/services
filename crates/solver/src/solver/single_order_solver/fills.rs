@@ -25,6 +25,21 @@ pub struct Fills {
     smallest_fill: BigRational,
 }
 
+/// The reason `Fills::order` failed.
+#[derive(Debug)]
+pub enum Error {
+    MissingPrice,
+    /// The smallest fill can't be represented in the order's token.
+    SmallestFillU256Conversion,
+    /// The order doesn't have a UID (`LimitOrder`s can be created from non GPv2
+    /// orders).
+    NoOrderUid,
+    /// The resulting amount would be less than `Fills::smallest_fill`.
+    LessThanSmallestFill,
+    /// One of the order's amounts is 0.
+    ZeroAmount,
+}
+
 impl Fills {
     pub fn new(smallest_fill: U256) -> Self {
         Self {
@@ -35,9 +50,9 @@ impl Fills {
 
     /// Returns which dex query should be tried for the given order. Takes
     /// information of previous partial fill attempts into account.
-    pub fn order(&self, order: &LimitOrder, prices: &ExternalPrices) -> Option<LimitOrder> {
+    pub fn order(&self, order: &LimitOrder, prices: &ExternalPrices) -> Result<LimitOrder, Error> {
         if !order.partially_fillable {
-            return Some(order.clone());
+            return Ok(order.clone());
         }
 
         let (token, total_amount) = match order.kind {
@@ -45,12 +60,20 @@ impl Fills {
             OrderKind::Sell => (order.sell_token, order.sell_amount),
         };
 
-        let smallest_fill = prices.try_get_token_amount(&self.smallest_fill, token)?;
-        let smallest_fill = number_conversions::big_rational_to_u256(&smallest_fill).ok()?;
+        let smallest_fill = prices
+            .try_get_token_amount(&self.smallest_fill, token)
+            .ok_or(Error::MissingPrice)?;
+        let smallest_fill = number_conversions::big_rational_to_u256(&smallest_fill)
+            .map_err(|_| Error::SmallestFillU256Conversion)?;
 
         let now = Instant::now();
 
-        let amount = match self.amounts.lock().unwrap().entry(order.id.order_uid()?) {
+        let amount = match self
+            .amounts
+            .lock()
+            .unwrap()
+            .entry(order.id.order_uid().ok_or(Error::NoOrderUid)?)
+        {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(CacheEntry {
                     next_amount: total_amount,
@@ -81,8 +104,7 @@ impl Fills {
         };
 
         if amount < smallest_fill {
-            tracing::trace!(?amount, "order no longer worth filling");
-            return None;
+            return Err(Error::LessThanSmallestFill);
         }
 
         // Scale amounts according to the limit price and the chosen fill.
@@ -91,7 +113,8 @@ impl Fills {
                 let sell_amount = order
                     .sell_amount
                     .full_mul(amount)
-                    .checked_div(order.buy_amount.into())?
+                    .checked_div(order.buy_amount.into())
+                    .ok_or(Error::ZeroAmount)?
                     .try_into()
                     .unwrap();
                 (sell_amount, amount)
@@ -100,15 +123,15 @@ impl Fills {
                 let buy_amount = order
                     .buy_amount
                     .full_mul(amount)
-                    .checked_div(order.sell_amount.into())?
+                    .checked_div(order.sell_amount.into())
+                    .ok_or(Error::ZeroAmount)?
                     .try_into()
                     .unwrap();
                 (amount, buy_amount)
             }
         };
 
-        tracing::trace!(?sell_amount, ?buy_amount, "trying to partially fill order");
-        Some(LimitOrder {
+        Ok(LimitOrder {
             sell_amount,
             buy_amount,
             ..order.clone()

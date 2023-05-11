@@ -53,6 +53,8 @@ impl Diff {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order {
+    pub name: &'static str,
+
     /// The amount being bought or sold by this order.
     pub amount: eth::U256,
     pub sell_token: &'static str,
@@ -92,6 +94,7 @@ impl Default for Order {
             executed: Default::default(),
             user_fee: Default::default(),
             solver_fee: Default::default(),
+            name: Default::default(),
         }
     }
 }
@@ -102,10 +105,10 @@ pub fn setup() -> Setup {
         pools: Default::default(),
         orders: Default::default(),
         trusted: Default::default(),
-        bogus_calldata: Default::default(),
         internalize: Default::default(),
         now: infra::time::Now::Fake(chrono::Utc::now()),
         config_file: Default::default(),
+        solutions: Default::default(),
     }
 }
 
@@ -114,10 +117,28 @@ pub struct Setup {
     pools: Vec<Pool>,
     orders: Vec<Order>,
     trusted: HashSet<&'static str>,
-    bogus_calldata: bool,
     internalize: bool,
     now: infra::time::Now,
     config_file: Option<PathBuf>,
+    solutions: Vec<SolutionSetup>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Solution {
+    /// Set up the solver to return a valid solution.
+    Valid,
+    /// Set up the solver to return a valid solution, with additional
+    /// meaningless bytes appended to the calldata. This is useful for
+    /// lowering the solution score in a controlled way.
+    LowerScore { additional_calldata: usize },
+    /// Set up the solver to return a solution with bogus calldata.
+    InvalidCalldata,
+}
+
+#[derive(Debug)]
+struct SolutionSetup {
+    solution: Solution,
+    order_names: Vec<&'static str>,
 }
 
 impl Setup {
@@ -177,9 +198,12 @@ impl Setup {
         self
     }
 
-    /// The interactions will have nonsensical calldata.
-    pub fn bogus_calldata(mut self) -> Self {
-        self.bogus_calldata = true;
+    /// Add a solution to be returned by the mock solver.
+    pub fn solution(mut self, solution: Solution, orders: &[&'static str]) -> Self {
+        self.solutions.push(SolutionSetup {
+            solution,
+            order_names: orders.to_owned(),
+        });
         self
     }
 
@@ -226,11 +250,20 @@ impl Setup {
             trader_secret_key,
             solver_address,
             solver_secret_key,
-            bogus_calldata: self.bogus_calldata,
         })
         .await;
-        let fulfillments = blockchain.fulfill(&orders).await;
-        let solver = Solver::new(&blockchain, &fulfillments, &trusted, deadline, self.now).await;
+        let mut solutions = Vec::new();
+        for SolutionSetup {
+            solution,
+            order_names,
+        } in self.solutions
+        {
+            let orders = order_names
+                .iter()
+                .map(|name| orders.iter().find(|o| o.name == *name).unwrap());
+            solutions.push(blockchain.fulfill(orders, solution).await);
+        }
+        let solver = Solver::new(&blockchain, &solutions, &trusted, deadline, self.now).await;
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -249,7 +282,7 @@ impl Setup {
             driver,
             client: Default::default(),
             trader_address,
-            fulfillments,
+            fulfillments: solutions.into_iter().flatten().collect(),
             trusted,
             deadline,
             now,
@@ -524,13 +557,9 @@ impl<'a> SettleOk<'a> {
         let old_balance = self.old_balances.get(token).unwrap();
         match balance {
             Balance::Greater => assert!(new_balance > old_balance),
-            Balance::GreaterBy(diff) => {
-                assert_eq!(*new_balance, old_balance + diff)
-            }
+            Balance::GreaterBy(diff) => assert_eq!(*new_balance, old_balance + diff),
             Balance::Smaller => assert!(new_balance < old_balance),
-            Balance::SmallerBy(diff) => {
-                assert_eq!(*new_balance, old_balance - diff)
-            }
+            Balance::SmallerBy(diff) => assert_eq!(*new_balance, old_balance - diff),
             Balance::Same => assert_eq!(new_balance, old_balance),
         }
         self
