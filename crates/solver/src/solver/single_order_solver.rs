@@ -191,9 +191,12 @@ impl SingleOrderSolver {
 
     async fn solve_single_order(&self, order: LimitOrder, auction: &Auction) -> SolveResult {
         let name = self.inner.name();
-        let Some(fill) = self.fills.order(&order, &auction.external_prices) else {
-            tracing::warn!(?order.id, "failed to compute fill; skipping order");
-            return SolveResult::Failed;
+        let fill = match self.fills.order(&order, &auction.external_prices) {
+            Ok(fill) => fill,
+            Err(err) => {
+                tracing::warn!(?order.id, ?err, "failed to compute fill; skipping order");
+                return SolveResult::Failed;
+            }
         };
 
         let single = match self
