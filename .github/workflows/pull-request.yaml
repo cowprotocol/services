@@ -6,6 +6,20 @@ on:
   push:
     branches: [main]
 jobs:
+  compose-test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v1
+      - run: cargo test local_node -- --ignored --test-threads 1 --nocapture
+
   rust-misc:
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -108,6 +122,24 @@ jobs:
       # --nocapture because tracing output isn't captured by the test runner which makes it confusing
       # to debug failing e2e tests.
       - run: cargo test local_node -- --ignored --test-threads 1 --nocapture
+
+  driver-tests:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    env:
+      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+    run: cargo build --tests
+    run: cargo run dev-geth 
 
   openapi:
     timeout-minutes: 60
