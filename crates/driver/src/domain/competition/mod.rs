@@ -113,6 +113,11 @@ impl Competition {
 
         // Merge the settlements in random order.
         settlements.shuffle(&mut rand::thread_rng());
+
+        // The merging algorithm works as follows: the [`settlements`] vector keeps the
+        // "most merged" settlements until they can't be merged anymore, at
+        // which point they are pushed into the [`results`] vector.
+
         // The merged settlements in their final form.
         let mut results = Vec::new();
         while let Some(settlement) = settlements.pop() {
