@@ -411,16 +411,16 @@ Indexes:
 
  Value    | Meaning
 ----------|--------
- erc20    | TODO
- internal | TODO
- external | TODO
+ erc20    | sell\_tokens will be drawn from the users regular ERC20 token allowance ([docs](https://docs.cow.fi/smart-contracts/vault-relayer/fallback-erc20-allowances))
+ internal | sell\_tokens will be drawn from the balancer vault internal user balance ([docs](https://docs.cow.fi/smart-contracts/vault-relayer/balancer-internal-balances))
+ external | sell\_tokens will be drawn from the user's ERC20 token balance but relayed through the balancer vault ([docs](https://docs.cow.fi/smart-contracts/vault-relayer/balancer-external-balances))
 
 #### buytokendestination
 
  Value    | Meaning
 ----------|--------
- erc20    | TODO
- internal | TODO
+ erc20    | Bought tokens will be added to the ERC20 token balance of that user
+ internal | Bought tokens will be added to the balancer vault internal balance of the user ([docs](https://docs.cow.fi/smart-contracts/vault-relayer/balancer-internal-balances))
 
 #### orderclass
 
