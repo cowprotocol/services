@@ -374,14 +374,14 @@ Indexes:
 
  Value                           | Meaning
 ---------------------------------|--------
- quote\_not\_found               | the order was created without first requesting a quote from the backend
+ quote\_not\_found               | order was created with an expired quote
  invalid\_quote                  | the associated quote does not apply to the order
- pre\_validation\_error          | TODO
- disabled\_order\_order\_class   | order was created with 
- valid\_to\_too\_far\_in\_future | TODO
- invalid\_order\_data            | TODO
- insufficient\_fee               | TODO
- other                           | some other error occurred
+ pre\_validation\_error          | basic pre order creation check failed (e.g. no 0 amounts)
+ disabled\_order\_order\_class   | unused
+ valid\_to\_too\_far\_in\_future | unused
+ invalid\_order\_data            | unused
+ insufficient\_fee               | proposed fee is less than quoted fee
+ other                           | some unexpected error happened
 
 #### orderkind
 
@@ -394,18 +394,20 @@ Indexes:
 
  Value   | Meaning
 ---------|--------
- presign | For these signatures, the user broadcasts a transaction onchain. This transaction contains a signature of the order hash. Because this onchain transaction is also signed, it proves that the user indeed signed the order.
- ethsign | Same idea as `presign` but standardized and with security improvements ([EIP-191](https://eips.ethereum.org/EIPS/eip-191))
- eip1271 | Owner of the order is a smart contract that implements [EIP-1271](https://eips.ethereum.org/EIPS/eip-1271). To verify that the order is allowed to execute we call the owner's `isValidSignature(order_hash, signature)` function and let it decide. Used to implement [smart orders](https://docs.cow.fi/tutorials/how-to-place-erc-1271-smart-contract-orders/smart-orders).
+ presign | User broadcasts a transaction onchain containing a signature of the order hash. Because this onchain transaction is also signed, it proves that the user indeed signed the order.
+ ethsign | Standardized way to sign arbitraty bytes ([EIP-191](https://eips.ethereum.org/EIPS/eip-191))
  eip712  | Standardized way to hash and sign structured data. ([eip712](https://eips.ethereum.org/EIPS/eip-712))
+ eip1271 | Owner of the order is a smart contract that implements [EIP-1271](https://eips.ethereum.org/EIPS/eip-1271). To verify that the order is allowed to execute we call the owner's `isValidSignature(order_hash, signature)` function and let it decide. Used to implement [smart orders](https://docs.cow.fi/tutorials/how-to-place-erc-1271-smart-contract-orders/smart-orders).
 
 #### quotekind
 
+We support different expiration times for orders with different signing schemes. This is because offline signed messages can immediately be validated but presign or eip-1271 signatures need to interact with the blockchain which may take time. This could be achieved by simply setting the appropriate `expiration_timestamp` in the quote. But we also want to prevent users from creating for example quick `eip712` orders with long living quotes intended for `eip1271` orders which might be way off by then so quotes also get tagged with this `quotekind`.
+
  Value               | Meaning
 ---------------------|--------
- standard            | TODO
- eip1271onchainorder | TODO
- presignonchainorder | TODO
+ standard            | Quote for `eip712` or `ethsign` orders.
+ eip1271onchainorder | Quote that accounts for gas used to verify signature with on-chain `isValidSignature()` call (see [signingscheme::eip1271](#signingscheme))
+ presignonchainorder | Quote for `presign` orders.
 
 #### selltokensource
 
