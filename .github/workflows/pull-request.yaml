@@ -6,6 +6,38 @@ on:
   push:
     branches: [main]
 jobs:
+  # TODO Rename this later
+  cargo-build:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          components: rustfmt
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      - run: cargo build
+  use-build-1:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    needs: cargo-build
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      # Should happen without building
+      - run: cargo test
+  use-build-2:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    needs: cargo-build
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      # Should happen without building
+      - run: cargo test
+
   rust-misc:
     timeout-minutes: 60
     runs-on: ubuntu-latest
