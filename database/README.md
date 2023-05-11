@@ -394,10 +394,10 @@ Indexes:
 
  Value   | Meaning
 ---------|--------
- presign | TODO
- ethsign | TODO
- eip1271 | TODO
- eip712  | TODO
+ presign | For these signatures, the user broadcasts a transaction onchain. This transaction contains a signature of the order hash. Because this onchain transaction is also signed, it proves that the user indeed signed the order.
+ ethsign | Same idea as `presign` but standardized and with security improvements ([EIP-191](https://eips.ethereum.org/EIPS/eip-191))
+ eip1271 | Owner of the order is a smart contract that implements [EIP-1271](https://eips.ethereum.org/EIPS/eip-1271). To verify that the order is allowed to execute we call the owner's `isValidSignature(order_hash, signature)` function and let it decide. Used to implement [smart orders](https://docs.cow.fi/tutorials/how-to-place-erc-1271-smart-contract-orders/smart-orders).
+ eip712  | Standardized way to hash and sign structured data. ([eip712](https://eips.ethereum.org/EIPS/eip-712))
 
 #### quotekind
 
