@@ -156,42 +156,48 @@ impl Competition {
         let settlements = results;
 
         // Score the settlements.
-        let scores = settlements.into_iter().map(|settlement| {
-            tracing::trace!(
-                solutions = ?settlement.solutions(),
-                settlement_id = ?settlement.id,
-                "scoring settlement"
-            );
-            (settlement.score(&self.eth, auction), settlement)
-        });
+        let scores = settlements
+            .into_iter()
+            .map(|settlement| {
+                tracing::trace!(
+                    solutions = ?settlement.solutions(),
+                    settlement_id = ?settlement.id,
+                    "scoring settlement"
+                );
+                (settlement.score(&self.eth, auction), settlement)
+            })
+            .collect_vec();
 
         // Filter out settlements which failed scoring.
-        let scores = scores.into_iter().filter_map(|(result, settlement)| {
-            result
-                .tap_err(|err| {
-                    tracing::info!(
-                        ?err,
-                        solutions = ?settlement.solutions(),
-                        "discarding settlement: failed scoring"
-                    );
-                })
-                .ok()
-                .map(|score| (score, settlement))
-        });
+        let scores = scores
+            .into_iter()
+            .filter_map(|(result, settlement)| {
+                result
+                    .tap_err(|err| {
+                        tracing::info!(
+                            ?err,
+                            solutions = ?settlement.solutions(),
+                            "discarding settlement: failed scoring"
+                        );
+                    })
+                    .ok()
+                    .map(|score| (score, settlement))
+            })
+            .collect_vec();
 
         // Trace the scores.
-        let scores = scores.map(|(score, settlement)| {
+        for (score, settlement) in scores.iter() {
             tracing::info!(
                 solutions = ?settlement.solutions(),
                 settlement_id = ?settlement.id,
                 score = f64::from(score.clone()),
                 "settlement scored"
             );
-            (score, settlement)
-        });
+        }
 
         // Pick the best-scoring settlement.
         let (score, settlement) = scores
+            .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
