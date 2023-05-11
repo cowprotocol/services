@@ -4,7 +4,7 @@ use {
             competition::{
                 self,
                 order,
-                solution::{self, settlement},
+                solution::{settlement, settlement::Internalization},
             },
             eth,
             liquidity,
@@ -51,9 +51,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
-    contract: contracts::GPv2Settlement,
-    solver: eth::Address,
-    internalization: settlement::Internalization,
+    pub solver: eth::Address,
 }
 
 impl Settlement {
@@ -61,8 +59,7 @@ impl Settlement {
         eth: &Ethereum,
         solution: &competition::Solution,
         auction: &competition::Auction,
-        internalization: settlement::Internalization,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let native_token = eth.contracts().weth();
         let order_converter = OrderConverter {
             native_token: native_token.clone(),
@@ -89,7 +86,7 @@ impl Settlement {
                     // executed amounts which seems weird to me... why is a
                     // solver specifying trades with 0 executed amounts?
                     if eth::U256::from(trade.executed()).is_zero() {
-                        return Err(Error::Boundary(anyhow!("unexpected empty execution")));
+                        return Err(anyhow!("unexpected empty execution"));
                     }
 
                     (
@@ -109,14 +106,10 @@ impl Settlement {
                 ),
             };
 
-            let boundary_limit_order = order_converter
-                .normalize_limit_order(solver::order_balance_filter::BalancedOrder::full(
-                    boundary_order,
-                ))
-                .map_err(Error::Boundary)?;
-            settlement
-                .with_liquidity(&boundary_limit_order, execution)
-                .map_err(Error::Boundary)?;
+            let boundary_limit_order = order_converter.normalize_limit_order(
+                solver::order_balance_filter::BalancedOrder::full(boundary_order),
+            )?;
+            settlement.with_liquidity(&boundary_limit_order, execution)?;
         }
 
         let approvals = solution.approvals(eth).await?;
@@ -145,8 +138,7 @@ impl Settlement {
                         .map(|price| (token.address.into(), price.into()))
                 })
                 .collect(),
-        )
-        .map_err(Error::Boundary)?;
+        )?;
         let slippage_context = slippage_calculator.context(&external_prices);
 
         for interaction in &solution.interactions {
@@ -154,8 +146,7 @@ impl Settlement {
                 &slippage_context,
                 settlement_contract.address().into(),
                 interaction,
-            )
-            .map_err(Error::Boundary)?;
+            )?;
             settlement.encoder.append_to_execution_plan_internalizable(
                 Arc::new(boundary_interaction),
                 interaction.internalize(),
@@ -164,35 +155,40 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
-            contract: settlement_contract.to_owned(),
             solver: solution.solver.address(),
-            internalization,
         })
     }
 
-    pub fn tx(self) -> eth::Tx {
-        let encoded_settlement = self.inner.encode(match self.internalization {
+    pub fn tx(
+        &self,
+        id: settlement::Id,
+        contract: &contracts::GPv2Settlement,
+        internalization: Internalization,
+    ) -> eth::Tx {
+        let encoded_settlement = self.inner.clone().encode(match internalization {
             settlement::Internalization::Enable => {
                 InternalizationStrategy::SkipInternalizableInteraction
             }
             settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
         });
         let builder = settle_method_builder(
-            &self.contract,
+            contract,
             encoded_settlement,
             ethcontract::Account::Local(self.solver.into(), None),
         );
         let tx = builder.into_inner();
+        let mut input = tx.data.unwrap().0;
+        input.extend(id.0.to_be_bytes());
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap_or_default().into(),
-            input: tx.data.unwrap().0,
+            input,
             access_list: Default::default(),
         }
     }
 
-    pub async fn score(
+    pub fn score(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
@@ -218,6 +214,13 @@ impl Settlement {
             &gas.into(),
         );
         Ok(inputs.objective_value().into())
+    }
+
+    pub fn merge(self, other: Self) -> Result<Self> {
+        self.inner.merge(other.inner).map(|inner| Self {
+            inner,
+            solver: self.solver,
+        })
     }
 }
 
@@ -429,12 +432,4 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("boundary error: {0:?}")]
-    Boundary(anyhow::Error),
-    #[error("solution error: {0:?}")]
-    Solution(#[from] solution::Error),
 }

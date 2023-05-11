@@ -1,7 +1,7 @@
 use {
     self::solution::settlement,
     crate::{
-        domain::liquidity,
+        domain::{competition::solution::Settlement, liquidity},
         infra::{
             self,
             blockchain::Ethereum,
@@ -13,6 +13,8 @@ use {
         },
     },
     futures::future::join_all,
+    itertools::Itertools,
+    rand::seq::SliceRandom,
     std::sync::Mutex,
     tap::TapFallible,
 };
@@ -40,7 +42,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub now: time::Now,
     pub mempools: Vec<Mempool>,
-    pub settlement: Mutex<Option<settlement::Verified>>,
+    pub settlement: Mutex<Option<Settlement>>,
 }
 
 impl Competition {
@@ -84,56 +86,124 @@ impl Competition {
             }
         });
 
-        // Verify the solutions, encoding them into settlements.
+        // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            tracing::trace!(id = ?solution.id, "verifying");
+            tracing::trace!(id = ?solution.id, "encoding settlement");
             (
                 solution.id,
-                solution.verify(&self.eth, &self.simulator, auction).await,
+                solution.encode(auction, &self.eth, &self.simulator).await,
             )
         }))
         .await;
 
-        // Filter out solutions that failed verification.
-        let settlements = settlements.into_iter().filter_map(|(id, result)| {
-            result
-                .tap_err(|err| {
-                    tracing::info!(?err, ?id, "discarding solution: failed verification")
-                })
-                .ok()
-        });
+        // Filter out solutions that failed to encode.
+        let mut settlements = settlements
+            .into_iter()
+            .filter_map(|(id, result)| {
+                result
+                    .tap_err(|err| {
+                        tracing::info!(?err, ?id, "discarding solution: settlement encoding failed")
+                    })
+                    .ok()
+            })
+            .collect_vec();
 
-        // Score the solutions.
-        let scores = join_all(settlements.map(|settlement| async move {
-            tracing::trace!(id = ?settlement.solution.id, "scoring");
-            (settlement.score(&self.eth, auction).await, settlement)
-        }))
-        .await;
+        // TODO(#1483): parallelize this
+        // TODO(#1480): more optimal approach for settlement merging
 
-        // Filter out solutions which failed scoring.
+        // Merge the settlements in random order.
+        settlements.shuffle(&mut rand::thread_rng());
+
+        // The merging algorithm works as follows: the [`settlements`] vector keeps the
+        // "most merged" settlements until they can't be merged anymore, at
+        // which point they are pushed into the [`results`] vector.
+
+        // The merged settlements in their final form.
+        let mut results = Vec::new();
+        while let Some(settlement) = settlements.pop() {
+            // Has [`settlement`] been merged into another settlement?
+            let mut merged = false;
+            // Try to merge [`settlement`] into some other settlement.
+            for other in settlements.iter_mut() {
+                match other.merge(&settlement, &self.eth, &self.simulator).await {
+                    Ok(m) => {
+                        tracing::debug!(
+                            settlement_1 = ?settlement.solutions(),
+                            settlement_2 = ?other.solutions(),
+                            "merged solutions"
+                        );
+                        *other = m;
+                        merged = true;
+                        break;
+                    }
+                    Err(err) => {
+                        tracing::debug!(
+                            ?err,
+                            settlement_1 = ?settlement.solutions(),
+                            settlement_2 = ?other.solutions(),
+                            "solutions can't be merged"
+                        );
+                    }
+                }
+            }
+            // If [`settlement`] can't be merged into any other settlement, this is its
+            // final, most optimal form. Push it to the results.
+            if !merged {
+                results.push(settlement);
+            }
+        }
+
+        let settlements = results;
+
+        // Score the settlements.
+        let scores = settlements
+            .into_iter()
+            .map(|settlement| {
+                tracing::trace!(
+                    solutions = ?settlement.solutions(),
+                    settlement_id = ?settlement.id,
+                    "scoring settlement"
+                );
+                (settlement.score(&self.eth, auction), settlement)
+            })
+            .collect_vec();
+
+        // Filter out settlements which failed scoring.
         let scores = scores
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
                     .tap_err(|err| {
-                        tracing::info!(?err, id = ?settlement.solution.id, "discarding solution: failed scoring")
+                        tracing::info!(
+                            ?err,
+                            solutions = ?settlement.solutions(),
+                            "discarding settlement: failed scoring"
+                        );
                     })
                     .ok()
                     .map(|score| (score, settlement))
-            });
+            })
+            .collect_vec();
 
         // Trace the scores.
-        let scores = scores.map(|(score, settlement)| {
-            tracing::info!(id = ?settlement.solution.id, score = f64::from(score.clone()), "solution scored");
-            (score, settlement)
-        });
+        for (score, settlement) in scores.iter() {
+            tracing::info!(
+                solutions = ?settlement.solutions(),
+                settlement_id = ?settlement.id,
+                score = f64::from(score.clone()),
+                "settlement scored"
+            );
+        }
 
         // Pick the best-scoring settlement.
         let (score, settlement) = scores
+            .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let id = settlement.id();
+        tracing::info!(?settlement, "winning settlement");
+
+        let id = settlement.id;
         *self.settlement.lock().unwrap() = Some(settlement);
         Ok((id, score))
     }
@@ -146,11 +216,11 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::InvalidSolutionId)?;
-        if id != settlement.id() {
+        if id != settlement.id {
             return Err(Error::InvalidSolutionId);
         }
         tracing::trace!(?id, "settling");
-        mempool::send(&self.mempools, &self.solver, settlement)
+        mempool::execute(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)
     }
