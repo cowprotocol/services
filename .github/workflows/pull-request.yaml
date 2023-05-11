@@ -38,6 +38,7 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: cargo test
 
+  # Tests requiring a local postgres instance.
   postgres-tests:
     timeout-minutes: 60
     runs-on: ubuntu-latest
@@ -48,8 +49,8 @@ jobs:
 
       FLYWAY_VERSION: 7.3.1
       FLYWAY_PATH: /home/runner/flyway
-      # Flyway is connecting via TCP/IP (authentication via password), whereas psql connects via Unix-domain sockets (authentication via username)
-      # We set the db password of $USER to this value which is also used by the flyway command
+      # Flyway is connecting via TCP/IP (authentication via password), whereas psql connects via Unix-domain sockets (authentication via username).
+      # We set the db password of $USER to this value which is also used by the flyway command.
       FLYWAY_PASSWORD: password
     steps:
       - uses: actions/checkout@v2
@@ -83,40 +84,21 @@ jobs:
           ${{ env.FLYWAY_PATH }}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
       - run: cargo test postgres -- --ignored --test-threads 1
 
-  # TODO Also separate postgres and local node tests
-  rust-tests:
+  # TODO I think this will also need a postgres instance because of the e2e tests
+  # Tests requiring a local Ethereum node.
+  node-tests:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
-      FLYWAY_VERSION: 7.3.1
-      FLYWAY_PATH: /home/runner/flyway
-      # Flyway is connecting via TCP/IP (authentication via password), whereas psql connects via Unix-domain sockets (authentication via username)
-      # We set the db password of $USER to this value which is also used by the flyway command
-      FLYWAY_PASSWORD: password
-      # Extra underscore because conflicts with hardhat internally used variables.
+      # Extra underscore because it conflicts with hardhat internally used variables.
       HARDHAT_VERSION_: 2.6.8
       HARDHAT_PATH_: /home/runner/hardhat
     steps:
       - uses: actions/checkout@v2
       - uses: Swatinem/rust-cache@v1
-      - name: Cache flyway
-        id: cache-flyway
-        uses: actions/cache@v2
-        with:
-          path: ${{ env.FLYWAY_PATH }}
-          key: ${{ runner.os }}-flyway-${{ env.FLYWAY_VERSION }}
-      - name: Install Flyway
-        if: steps.cache-flyway.outputs.cache-hit != 'true'
-        run: |
-          mkdir --parents ${{ env.FLYWAY_PATH }}
-          cd ${{ env.FLYWAY_PATH }}
-          curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}.tar.gz -o out.tar.gz
-          tar --strip-components=1 -xzf out.tar.gz
-          rm out.tar.gz
-          ls -al
       - name: Cache Hardhat
         id: cache-hardhat
         uses: actions/cache@v2
@@ -135,19 +117,10 @@ jobs:
         run: |
           cp ${{ github.workspace }}/docker/hardhat/hardhat.config.js hardhat.config.js
           node_modules/.bin/hardhat node --hostname 127.0.0.1 &
-      - name: Setup Database
-        run: |
-          sudo systemctl start postgresql.service
-          sudo -u postgres createuser $USER
-          sudo -u postgres createdb $USER
-          psql -c "ALTER USER $USER PASSWORD '$FLYWAY_PASSWORD';"
-          ${{ env.FLYWAY_PATH }}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
-      # tests requiring a Postgres instance.
-      - run: cargo test postgres -- --ignored --test-threads 1
-      # tests requiring a local ethereum node
-      # nocapture because tracing output isn't captured by the test runner which makes it confusing
+      # --nocapture because tracing output isn't captured by the test runner which makes it confusing
       # to debug failing e2e tests.
       - run: cargo test local_node -- --ignored --test-threads 1 --nocapture
+
   openapi:
     timeout-minutes: 60
     runs-on: ubuntu-latest
