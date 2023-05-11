@@ -38,14 +38,18 @@ jobs:
       - uses: Swatinem/rust-cache@v1
       - run: cargo test
 
-  # Tests requiring a local postgres instance.
-  postgres-tests:
+  # Tests requiring a local Ethereum node and Postgres instance.
+  component-tests:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+
+      # Extra underscore because it conflicts with hardhat internally used variables.
+      HARDHAT_VERSION_: 2.6.8
+      HARDHAT_PATH_: /home/runner/hardhat
 
       FLYWAY_VERSION: 7.3.1
       FLYWAY_PATH: /home/runner/flyway
@@ -82,23 +86,6 @@ jobs:
           sudo -u postgres createdb $USER
           psql -c "ALTER USER $USER PASSWORD '$FLYWAY_PASSWORD';"
           ${{ env.FLYWAY_PATH }}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
-      - run: cargo test postgres -- --ignored --test-threads 1
-
-  # TODO I think this will also need a postgres instance because of the e2e tests
-  # Tests requiring a local Ethereum node.
-  node-tests:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-      # Extra underscore because it conflicts with hardhat internally used variables.
-      HARDHAT_VERSION_: 2.6.8
-      HARDHAT_PATH_: /home/runner/hardhat
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
       - name: Cache Hardhat
         id: cache-hardhat
         uses: actions/cache@v2
@@ -117,6 +104,7 @@ jobs:
         run: |
           cp ${{ github.workspace }}/docker/hardhat/hardhat.config.js hardhat.config.js
           node_modules/.bin/hardhat node --hostname 127.0.0.1 &
+      - run: cargo test postgres -- --ignored --test-threads 1
       # --nocapture because tracing output isn't captured by the test runner which makes it confusing
       # to debug failing e2e tests.
       - run: cargo test local_node -- --ignored --test-threads 1 --nocapture
