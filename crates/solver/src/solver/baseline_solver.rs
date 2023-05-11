@@ -166,14 +166,12 @@ impl BaselineSolver {
                                 });
                             }
                         }
-                        Liquidity::BalancerStable(_order) => {
-                            // TODO - https://github.com/cowprotocol/services/issues/80
-                            tracing::debug!("Excluded stable pool from baseline solving.")
-                        }
-                        Liquidity::LimitOrder(_) => {}
-                        Liquidity::Concentrated(_) => {} /* not being implemented right now since
-                                                          * baseline solver
-                                                          * is not winning anyway */
+                        // TODO(#80): support stable pool for baseline solving
+                        Liquidity::BalancerStable(_order) => (),
+                        Liquidity::LimitOrder(_) => (),
+                        // Not being implemented right now since baseline solver is not winning
+                        // anyway.
+                        Liquidity::Concentrated(_) => (),
                     }
                     amm_map
                 });
