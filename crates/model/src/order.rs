@@ -36,6 +36,7 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Interactions {
     pub pre: Vec<InteractionData>,
+    #[serde(default)]
     pub post: Vec<InteractionData>,
 }
 
