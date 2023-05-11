@@ -6,6 +6,12 @@ on:
   push:
     branches: [main]
 jobs:
+  sanity-check:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello world
+
   compose-test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
