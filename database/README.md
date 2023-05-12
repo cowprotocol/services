@@ -12,8 +12,8 @@ This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9b
 
    Column     |  Type  | Nullable | Details
 --------------|--------|----------|--------
- auction\_id  | bigint | not null |
- participant  | bytea  | not null | <details>the solver that submitted a **valid** solution for the auction</details>
+ auction\_id  | bigint | not null | id of the auction
+ participant  | bytea  | not null | solver that submitted a **valid** solution for the auction
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_id`, `participant`)
@@ -24,9 +24,9 @@ Stores the native price of a token in a given auction. Used for computations rel
 
  Column     | Type    | Nullable | Details
 ------------|---------|----------|--------
-auction\_id | bigint  | not null | <details>in which auction this price was provided</details>
-token       | bytea   | not null | <details>address of the token the price refers to</details>
-price       | numeric | not null | <details>the atoms of ETH that can be bought with 1 atom of the token</details>
+auction\_id | bigint  | not null | in which auction this price was provided
+token       | bytea   | not null | address of the token the price refers to
+price       | numeric | not null | the atoms of ETH that can be bought with 1 atom of the token
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_uid`, `token`)  
@@ -37,9 +37,9 @@ Because the the transaction hash of a given settlement depends on the gas parame
 
  Coulmn      | Type   | Nullable | Details
 -------------|--------|----------|--------
- auction\_id | bigint | not null | <details>the id of the auction</details>
- tx\_from    | bytea  | not null | <details>address of the solver account that won the auction</details>
- tx\_nonce   | bigint | not null | <details>nonce that will be used by the solver to settle the auction</details>
+ auction\_id | bigint | not null | id of the auction
+ tx\_from    | bytea  | not null | address of the solver account that won the auction
+ tx\_nonce   | bigint | not null | nonce that will be used by the solver to settle the auction
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_id`)  
@@ -50,8 +50,8 @@ Contains only the current auction to decouple auction creation in the `autopilot
 
  Column | Type   | Nullable | Details
 --------|--------|----------|--------
- id     | bigint | not null | <details>other tables refer to this as auction\_id</details>
- json   | jsonb  | not null | <details>the serialized version of the auction. Technically the format is unspecified. The only requirement is that whatever format the `autopilot` stores can be parsed by the `orderbook`.</details>
+ id     | bigint | not null | other tables refer to this as auction\_id
+ json   | jsonb  | not null | serialized version of the auction. Technically the format is unspecified. The only requirement is that whatever format the `autopilot` stores can be parsed by the `orderbook`.
 
 Indexes:  
 - PRIMARY KEY: btree(`id`)  
@@ -62,8 +62,8 @@ EthFlow orders get created with the very generic [`ICoWSwapOnchainOrders`](https
 
  Column    | Type   | Nullable | Details
 -----------|--------|----------|--------
- uid       | bytea  | not null | <details>other tables refer to this as order\_uid</details>
- valid\_to | bigint | not null | <details>unix timestamp in seconds when the order expires (the native timestamp format in the EVM)</details>
+ uid       | bytea  | not null | other tables refer to this as order\_uid
+ valid\_to | bigint | not null | unix timestamp in seconds when the order expires (the native timestamp format in the EVM)
 
 Indexes:  
 - PRIMARY KEY: btree(`uid`)  
@@ -74,9 +74,9 @@ For orders buying some token with native ETH users temporarily transfer ownershi
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
- order\_uid    | bytea  | not null | <details>the order that got refunded</details>
- block\_number | bigint | not null | <details>in which block the order got refunded</details>
- tx\_hash      | bytea  | not null | <details>the hash of the transaction that refunded the order</details>
+ order\_uid    | bytea  | not null | order that got refunded
+ block\_number | bigint | not null | in which block the order got refunded
+ tx\_hash      | bytea  | not null | hash of the transaction that refunded the order
 
 Indexes:  
 - PRIMARY KEY: btree(`order_uid`)  
@@ -91,12 +91,12 @@ The settlement contract allows associating user provided interactions to be exec
 
  Column     | Type                   | Nullable | Details
 ------------|------------------------|----------|--------
- order\_uid | bytea                  | not null | <details>the order that this interaction belongs to</details>
- index      | integer                | not null | <details>index indicating in which interactions should be executed in case the same order has multiple interactions (ascending order)</details>
- target     | bytea                  | not null | <details>address of the smart contract this interaction should call</details>
- value      | numeric                | not null | <details>amount of ETH this interaction should send to the smart contract</details>
- data       | bytea                  | not null | <details>call data that contains the function selector and the bytes passed to it</details>
- execution  | [enum](#executiontime) | not null | <details>in which phase the interaction should be executed</details>
+ order\_uid | bytea                  | not null | order that this interaction belongs to
+ index      | integer                | not null | index indicating in which interactions should be executed in case the same order has multiple interactions (ascending order)
+ target     | bytea                  | not null | address of the smart contract this interaction should call
+ value      | numeric                | not null | amount of ETH this interaction should send to the smart contract
+ data       | bytea                  | not null | call data that contains the function selector and the bytes passed to it
+ execution  | [enum](#executiontime) | not null | in which phase the interaction should be executed
 
 Indexes:  
 - PRIMARY KEY: btree(`order_uid`)  
@@ -108,9 +108,9 @@ Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blo
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
- block\_number | bigint | not null | <details>the block in which the event was emitted</details>
- log\_index    | bigint | not null | <details>the index in which the log was emitted</details>
- order\_uid    | byteai | not null | <details>the order that got invalidated</details>
+ block\_number | bigint | not null | block in which the event was emitted
+ log\_index    | bigint | not null | index in which the log was emitted
+ order\_uid    | byteai | not null | order that got invalidated
 
 Indexes:  
 - PRIMARY KEY: btree(`block_number, log_index`)  
@@ -122,9 +122,9 @@ Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontr
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
- block\_number | bigint | not null | <details>the block in which the event was emitted</details>
- log\_index    | bigint | not null | <details>the index in which the log was emitted</details>
- uid           | byteai | not null | <details>the order that got invalidated</details>
+ block\_number | bigint | not null | block in which the event was emitted
+ log\_index    | bigint | not null | index in which the log was emitted
+ uid           | byteai | not null | order that got invalidated
 
 Indexes:  
 - PRIMARY KEY: btree(`uid`)  
@@ -136,12 +136,12 @@ Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract
 
  Column           | Type                                | Nullable | Details
 ------------------|-------------------------------------|----------|--------
- uid              | bytea                               | not null | <details>the order that got created also known as order\_uid</details>
- sender           | bytea                               | not null | <details>the user that created the order with the smart contract</details>
- is\_reorged      | boolean                             | not null | <details>if the backend detects that an block creating an order got reorged it gets invalidated with this flag</details>
- block\_number    | bigint                              | not null | <details>the block in which the order was created</details>
- log\_index       | bigint                              | not null | <details>the index in which the `OrderPlacement` event was emitted </details>
- placement\_error | [enum](#onchainorderplacementerror) | nullable | <details>describes what error happened when placing the order</details>
+ uid              | bytea                               | not null | order that got created also known as order\_uid
+ sender           | bytea                               | not null | user that created the order with the smart contract
+ is\_reorged      | boolean                             | not null | if the backend detects that an block creating an order got reorged it gets invalidated with this flag
+ block\_number    | bigint                              | not null | block in which the order was created
+ log\_index       | bigint                              | not null | index in which the `OrderPlacement` event was emitted 
+ placement\_error | [enum](#onchainorderplacementerror) | nullable | what error happened when placing the order
 
 Indexes:  
 - PRIMARY KEY: btree(`uid`)  
@@ -154,11 +154,11 @@ Contains metainformation for trades, required for reward computations that canno
 
  Column       | Type    | Nullable | Details
 --------------|---------|----------|--------
- order\_uid   | bytea   | not null | <details>which order this trade execution is related to</details>
- auction\_id  | bigint  | not null | <details>in which auction this trade was initiated</details>
- reward       | double  | not null | <details>revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)</details>
- surplus\_fee | numeric | nullable | <details>dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.</details>
- solver\_fee  | numeric | nullable | <details>value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).</details>
+ order\_uid   | bytea   | not null | which order this trade execution is related to
+ auction\_id  | bigint  | not null | in which auction this trade was initiated
+ reward       | double  | not null | revert adjusted solver rewards, deprecated in favor of [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f)
+ surplus\_fee | numeric | nullable | dynamic fee computed by the protocol that should get taken from the surplus of a trade, this value only applies and is set for fill-or-kill limit orders.
+ solver\_fee  | numeric | nullable | value that is used for objective value computations. This either contains a fee equal to the execution cost of this trade computed by a solver (only applies to partially fillable limit orders) or the solver\_fee computed by the backend adjusted for this trades fill amount (solver\_fees computed by the backend may include subsidies).
 
 Indexes:  
 - PRIMARY KEY: btree(`order_uid`, `auction_id`)  
@@ -176,12 +176,12 @@ Quotes that an order was created with. This quotes get stored persistently and c
 
  Colmun             | Type    | Nullable | Details
 --------------------|---------|----------|--------
- order\_uid         | bytea   | not null | <details>order that this quote belongs to</details>
- gas\_amount        | double  | not null | <details>estimated gas used by the quote used to create this order with</details>
- gas\_price         | double  | not null | <details>gas price at the time of order creation</details>
- sell\_token\_price | double  | not null | <details>ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.</details>
- sell\_amount       | numeric | not null | <details>sell\_amount of the quote used to create the order with</details>
- buy\_amount        | numeric | not null | <details>buy\_amount of the quote used to create the order with</details>
+ order\_uid         | bytea   | not null | order that this quote belongs to
+ gas\_amount        | double  | not null | estimated gas used by the quote used to create this order with
+ gas\_price         | double  | not null | gas price at the time of order creation
+ sell\_token\_price | double  | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
+ sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
+ buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
 
 Indexes:  
 - PRIMARY KEY: btree(`order_uid`)  
@@ -192,29 +192,29 @@ Contains all relevant signed data of an order and metadata that is important for
 
 Column                    | Type                         | Nullable | Details
 --------------------------|------------------------------|----------|--------
- uid                      | bytea                        | not null | <details>56 bytes identifier composed of a 32 bytes `hash` over the order data signed by the user, 20 bytes containing the `owner` and 4 bytes containing `valid_to`.</details>
- owner                    | bytea                        | not null | <details>address who created this order and where the sell\_token will be taken from, note that for ethflow orders this is the [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) smart contract and not the user that actually initiated the trade</details>
- creation\_timestamp      | timestamptz                  | not null | <details>when the order was created</details>
- sell\_token              | bytea                        | not null | <details>address of the token that will be sold</details>
- buy\_token               | bytea                        | not null | <details>address of the token that will be bought</details>
- sell\_amount             | numeric                      | not null | <details>amount in sell\_token that should be sold at most</details>
- buy\_amount              | numeric                      | not null | <details>amount of buy\_token that should be bought at least</details>
- valid\_to                | timestamptz                  | not null | <details>point in time when the order can no longer be settled</details>
- fee\_amount              | numeric                      | not null | <details>amount in sell\_token the owner agreed upfront as a fee to be taken for the trade</details>
- kind                     | [enum](#orderkind)           | not null | <details>trade semantics of the order</details>
- partially\_fillable      | bool                         | not null | <details>determines if the order can be executed in multiple smaller trades or if everything has to be executed at once (fill-or-kill)</details>
- signature                | bytea                        | not null | <details>signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme</details>
- cancellation\_timestamp  | timestamptz                  | nullable | <details>when the order was cancelled. If the the timestamp is null it means the order has not been cancelled yet</details>
- receiver                 | bytea                        | nullable | <details>address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens</details>
- app\_data                | bytea                        | not null | <details>arbitrary data associated with this order but per [design](https://docs.cow.fi/cow-sdk/order-meta-data-appdata) this is an IPFS hash which may contain additional meta data for this order signed by the user</details>
- signing\_scheme          | [enum](#signingscheme)       | not null | <details>what kind of signature was used to proof that the `owner` actually created the order</details>
- settlement\_contract     | bytea                        | not null | <details>address of the contract that should be used to settle this order</details>
- sell\_token\_balance     | [enum](#selltokensource)     | not null | <details>defines how sell\_tokens need to be transferred into the settlement contract</details>
- buy\_token\_balance      | [enum](#buytokendestination) | not null | <details>defined how buy\_tokens need to be transferred back to the user</details>
- full\_fee\_amount        | numeric                      | not null | <details>estimated execution cost in sell\_token of this order</details>
- class                    | [enum](#orderclass)          | not null | <details>determines which special trade semantics will apply to the execution of this order</details>
- surplus\_fee             | numeric                      | nullable | <details>dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet and this order will not be part of our auctions</details>
- surplus\_fee\_timestamp  | timestamptz                  | nullable | <details>the last time the backend attempted to update the surplus\_fee for this order, order with too old surplus\_fees will not be put in auctions because it is likely very inaccurate</details>
+ uid                      | bytea                        | not null | 56 bytes identifier composed of a 32 bytes `hash` over the order data signed by the user, 20 bytes containing the `owner` and 4 bytes containing `valid_to`.
+ owner                    | bytea                        | not null | address who created this order and where the sell\_token will be taken from, note that for ethflow orders this is the [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) smart contract and not the user that actually initiated the trade
+ creation\_timestamp      | timestamptz                  | not null | when the order was created
+ sell\_token              | bytea                        | not null | address of the token that will be sold
+ buy\_token               | bytea                        | not null | address of the token that will be bought
+ sell\_amount             | numeric                      | not null | amount in sell\_token that should be sold at most
+ buy\_amount              | numeric                      | not null | amount of buy\_token that should be bought at least
+ valid\_to                | timestamptz                  | not null | point in time when the order can no longer be settled
+ fee\_amount              | numeric                      | not null | amount in sell\_token the owner agreed upfront as a fee to be taken for the trade
+ kind                     | [enum](#orderkind)           | not null | trade semantics of the order
+ partially\_fillable      | bool                         | not null | determines if the order can be executed in multiple smaller trades or if everything has to be executed at once (fill-or-kill)
+ signature                | bytea                        | not null | signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme
+ cancellation\_timestamp  | timestamptz                  | nullable | when the order was cancelled. If the the timestamp is null it means the order has not been cancelled yet
+ receiver                 | bytea                        | nullable | address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens
+ app\_data                | bytea                        | not null | arbitrary data associated with this order but per [design](https://docs.cow.fi/cow-sdk/order-meta-data-appdata) this is an IPFS hash which may contain additional meta data for this order signed by the user
+ signing\_scheme          | [enum](#signingscheme)       | not null | what kind of signature was used to proof that the `owner` actually created the order
+ settlement\_contract     | bytea                        | not null | address of the contract that should be used to settle this order
+ sell\_token\_balance     | [enum](#selltokensource)     | not null | defines how sell\_tokens need to be transferred into the settlement contract
+ buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
+ full\_fee\_amount        | numeric                      | not null | estimated execution cost in sell\_token of this order
+ class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
+ surplus\_fee             | numeric                      | nullable | dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet and this order will not be part of our auctions
+ surplus\_fee\_timestamp  | timestamptz                  | nullable | last time the backend attempted to update the surplus\_fee for this order, order with too old surplus\_fees will not be put in auctions because it is likely very inaccurate
 
 
 Indexes:  
@@ -227,11 +227,11 @@ Stores data of [`PreSignature`](https://github.com/cowprotocol/contracts/blob/5e
 
  Column        | Type    | Nullable | Details
 ---------------|---------|----------|--------
- block\_number | bigint  | not null | <details>the block in which the event was emitted</details>
- log\_index    | bigint  | not null | <details>the index in which the event was emitted</details>
- owner         | bytea   | not null | <details>the owner of the order</details>
- order\_uid    | bytea   | not null | <details>the order for which the signature was given or revoked</details>
- signed        | boolean | not null | <details>specifies if an a signature was given or revoked</details>
+ block\_number | bigint  | not null | block in which the event was emitted
+ log\_index    | bigint  | not null | index in which the event was emitted
+ owner         | bytea   | not null | owner of the order
+ order\_uid    | bytea   | not null | order for which the signature was given or revoked
+ signed        | boolean | not null | specifies if an a signature was given or revoked
 
 Indexes:  
 - PRIMARY KEY: btreebtree(`block_number`, `log_index`)  
@@ -244,17 +244,17 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
 
  Column                | Type               | Nullable | Details
 -----------------------|--------------------|----------|--------
- sell\_token           | bytea              | not null | <details>address of the token that should be sold</details>
- sell\_amount          | numeric            | not null | <details>amount that should be sold at most</details>
- buy\_token            | bytea              | not null | <details>address of token that should be bought</details>
- buy\_amount           | numeric            | not null | <details>amount that should be bought at least</details>
- expiration\_timestamp | timestamptz        | not null | <details>when the quote should no longer considered valid. Invalid quotes will get deleted shortly</details>
- order\_kind           | [enum](#orderkind) | not null | <details>trade semantics for the quoted order</details>
- gas\_amount           | double             | not null | <details>estimation of gas used to execute the order according to the quote</details>
- gas\_price            | double             | not null | <details>gas price at the time of quoting</details>
- sell\_token\_price    | double             | not null | <details>price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.</details>
- id                    | bigint             | not null | <details>unique identifier of this quote</details>
- quote\_kind           | [enum](#quotekind) | not null | <details>quotekind for which this quote is considered valid</details>
+ sell\_token           | bytea              | not null | address of the token that should be sold
+ sell\_amount          | numeric            | not null | amount that should be sold at most
+ buy\_token            | bytea              | not null | address of token that should be bought
+ buy\_amount           | numeric            | not null | amount that should be bought at least
+ expiration\_timestamp | timestamptz        | not null | when the quote should no longer considered valid. Invalid quotes will get deleted shortly
+ order\_kind           | [enum](#orderkind) | not null | trade semantics for the quoted order
+ gas\_amount           | double             | not null | estimation of gas used to execute the order according to the quote
+ gas\_price            | double             | not null | gas price at the time of quoting
+ sell\_token\_price    | double             | not null | price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.
+ id                    | bigint             | not null | unique identifier of this quote
+ quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
 
 Indexes:  
 - PRIMARY KEY: btree(`id`)  
@@ -267,12 +267,12 @@ During the solver competition solvers promise a solution of a certain quality. I
 
  Column                | Type    | Nullable | Details
 -----------------------|---------|----------|--------
- block\_number         | bigint  | not null | <details>the block in which the settlement happened</details>
- log\_index            | bigint  | not null | <details>index of the [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) event</details>
- gas\_used             | numeric | not null | <details>amount of gas the settlement consumed</details>
- effective\_gas\_price | numeric | not null | <details>effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)</details>
- surplus               | numeric | not null | <details>amount of tokens users received more than their limit price converted to ETH</details>
- fee                   | numeric | not null | <details>total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)</details>
+ block\_number         | bigint  | not null | block in which the settlement happened
+ log\_index            | bigint  | not null | index of the [`Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L67-L68) event
+ gas\_used             | numeric | not null | amount of gas the settlement consumed
+ effective\_gas\_price | numeric | not null | effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)
+ surplus               | numeric | not null | amount of tokens users received more than their limit price converted to ETH
+ fee                   | numeric | not null | total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)
 
 Indexes:  
 - PRIMARY KEY: btree(`block_number`, `log_index`)  
@@ -283,11 +283,11 @@ Stores the best and second best solution quality (score) of every auction promis
 
  Column           | Type     | Nullable | Details
 ------------------|----------|----------|--------
- auction\_id      | bigint   | not null | <details>id of the auction the scores belong to</details>
- winner           | bytea    | not null | <details>public address of the winning solver</details>
- winning\_score   | numeric  | not null | <details>highest submitted score (submitted by `winner`). This is the quality the auction observed on-chain should achieve to not result in slashing of the solver.</details>
- reference\_score | numeric  | not null | <details>score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.</details>
- block\_deadline  | bigint   | not null | <details>block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly</details>
+ auction\_id      | bigint   | not null | id of the auction the scores belong to
+ winner           | bytea    | not null | public address of the winning solver
+ winning\_score   | numeric  | not null | highest submitted score (submitted by `winner`). This is the quality the auction observed on-chain should achieve to not result in slashing of the solver.
+ reference\_score | numeric  | not null | score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.
+ block\_deadline  | bigint   | not null | block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly
 
 Indexes:  
 - PRIMARY KEY: btree(`auction_id`)  
@@ -298,12 +298,12 @@ Stores data and metadata of [`Settlement`](https://github.com/cowprotocol/contra
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
- block\_number | bigint | not null | <details>block in which the settlement happened</details>
- log\_index    | bigint | not null | <details>index in which the event was emitted</details>
- solver        | bytea  | not null | <details>public address of the executing solver</details>
- tx\_hash      | bytea  | not null | <details>transaction hash in which the settlement got executed</details>
- tx\_from      | bytea  | not null | <details>address that submitted the transaction (same as `solver`)</details>
- tx\_nonce     | bigint | not null | <details>nonce that was used to submit the transaction</details>
+ block\_number | bigint | not null | block in which the settlement happened
+ log\_index    | bigint | not null | index in which the event was emitted
+ solver        | bytea  | not null | public address of the executing solver
+ tx\_hash      | bytea  | not null | transaction hash in which the settlement got executed
+ tx\_from      | bytea  | not null | address that submitted the transaction (same as `solver`)
+ tx\_nonce     | bigint | not null | nonce that was used to submit the transaction
 
 Indexes:  
 - PRIMARY KEY: btree(`block_number`,`log_index`)  
@@ -316,8 +316,8 @@ Stores an overview of the solver competition. It contains orders in the auction 
 
  Column | Type   | Nullable | Details
 --------|--------|----------|--------
- id     | bigint | not null | <details>the id of the auction that the solver competition belongs to</details>
- json   | jsonb  | nullable | <details>overview of the solver competition with unspecified format</details>
+ id     | bigint | not null | id of the auction that the solver competition belongs to
+ json   | jsonb  | nullable | overview of the solver competition with unspecified format
 
 Indexes:  
 - PRIMARY KEY: btree(`id`)  
@@ -328,12 +328,12 @@ This table contains data of [`Trade`](https://github.com/cowprotocol/contracts/b
 
  Column        | Type    | Nullable | Details
 ---------------|---------|----------|--------
- block\_number | bigint  | not null | <details>block in which the event happened</details>
- log\_index    | bigint  | not null | <details>index in which the event was emitted</details>
- order\_uid    | bytea   | not null | <details>trade filled this order partially or completely</details>
- sell\_amount  | numeric | not null | <details>amount of sell\_token that got taken from the order owner</details>
- buy\_amount   | numeric | not null | <details>amount of buy\_token received by the order owner</details>
- fee\_amount   | numeric | not null | <details>fee amount in sell\_token that got taken in this trade. Note that this amount refers to all or a portion of the static fee\_amount the user signed during the order creation.</details>
+ block\_number | bigint  | not null | block in which the event happened
+ log\_index    | bigint  | not null | index in which the event was emitted
+ order\_uid    | bytea   | not null | trade filled this order partially or completely
+ sell\_amount  | numeric | not null | amount of sell\_token that got taken from the order owner
+ buy\_amount   | numeric | not null | amount of buy\_token received by the order owner
+ fee\_amount   | numeric | not null | fee amount in sell\_token that got taken in this trade. Note that this amount refers to all or a portion of the static fee\_amount the user signed during the order creation.
 
 Indexes:  
 - PRIMARY KEY: btree(`block_number`, `log_index`)  
@@ -358,7 +358,7 @@ Indexes:
  disabled\_order\_class          | unused
  valid\_to\_too\_far\_in\_future | unused
  invalid\_order\_data            | unused
- insufficient\_fee               | proposed fee is less than quoted fee
+ insufficient\_fee               | the proposed fee is less than quoted fee
  other                           | some unexpected error happened
 
 #### orderkind
