@@ -4,7 +4,7 @@ Code that directly interfaces with the database through SQL queries lives in the
 
 With a live database information for all tables can be retrieved with the `\d` command and information for a specific table with `\d MyTable`.
 
-Some tables only store data emitted via smart contract events. Because we only have a single settlement contract shared across staging and production environments events related to staging **and** production orders and settlements will be present in **both** the staging **and** production databases.  
+Some tables only store data emitted via smart contract events. Because we only have a single deployment of the [`GPv2Settlement`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol) settlement contract shared across staging and production environments events related to staging **and** production orders and settlements will be present in **both** the staging **and** production databases.  
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.  
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.  
 
