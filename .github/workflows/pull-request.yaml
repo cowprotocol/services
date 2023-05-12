@@ -109,3 +109,13 @@ jobs:
           file: docker-compose.yaml
           up-opts: -d dev-geth
       - run: cargo test -p driver -- --ignored
+
+  openapi:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - run: npm install @apidevtools/swagger-cli
+      - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
