@@ -35,7 +35,7 @@ Indexes:
 
 ### auction\_transaction
 
-Because the the transaction hash of a given settlement depends on the gas parameters it ultimately gets submitted with onchain we can't know the hash before it got submitted. That's why we store the transaction sender (`tx_from`) and next nonce of the winning solver. With that information we can later associate the auction with the transaction that brought it onchain by cross-referencing the `tx_from` and `tx_nonce`.  
+Because the transaction hash of a given settlement depends on the gas parameters it ultimately gets submitted with onchain we can't know the hash before it got submitted. That's why we store the transaction sender (`tx_from`) and next nonce of the winning solver. With that information we can later associate the auction with the transaction that brought it onchain by cross-referencing the `tx_from` and `tx_nonce`.  
 
  Coulmn      | Type   | Nullable | Details
 -------------|--------|----------|--------
@@ -106,7 +106,7 @@ Indexes:
 
 ### invalidations
 
-Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L70-L71) events emited by [`invalidateOrder()`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L244-L255) of the settlement contract.
+Stores data of [`OrderInvalidated`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L70-L71) events emitted by [`invalidateOrder()`](https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L244-L255) of the settlement contract.
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
@@ -120,7 +120,7 @@ Indexes:
 
 ### onchain\_order\_invalidations
 
-Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L46-L49) events emited by the `ICoWSwapOnchainOrders` interface.
+Stores data of [`OrderInvalidation`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L46-L49) events emitted by the `ICoWSwapOnchainOrders` interface.
 
  Column        | Type   | Nullable | Details
 ---------------|--------|----------|--------
@@ -134,13 +134,13 @@ Indexes:
 
 ### onchain\_placed\_orders
 
-Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L23-L44) events emited by the `ICoWSwapOnchainOrders` interface plus some metadata.
+Stores data of [`OrderPlacement`](https://github.com/cowprotocol/ethflowcontract/blob/main/src/interfaces/ICoWSwapOnchainOrders.sol#L23-L44) events emitted by the `ICoWSwapOnchainOrders` interface plus some metadata.
 
  Column           | Type                                | Nullable | Details
 ------------------|-------------------------------------|----------|--------
  uid              | bytea                               | not null | order that got created also known as order\_uid
  sender           | bytea                               | not null | user that created the order with the smart contract
- is\_reorged      | boolean                             | not null | if the backend detects that an block creating an order got reorged it gets invalidated with this flag
+ is\_reorged      | boolean                             | not null | if the backend detects that a block creating an order got reorged it gets invalidated with this flag
  block\_number    | bigint                              | not null | block in which the order was created
  log\_index       | bigint                              | not null | index in which the `OrderPlacement` event was emitted 
  placement\_error | [enum](#onchainorderplacementerror) | nullable | what error happened when placing the order
@@ -174,7 +174,7 @@ Indexes:
 
 ### order\_quotes
 
-Quotes that an order was created with. This quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
+Quotes that an order was created with. These quotes get stored persistently and can be used to evaluate how accurate the quoted fee predicted the execution cost that actually happened on-chain.
 
  Colmun             | Type    | Nullable | Details
 --------------------|---------|----------|--------
@@ -206,7 +206,7 @@ Column                    | Type                         | Nullable | Details
  kind                     | [enum](#orderkind)           | not null | trade semantics of the order
  partially\_fillable      | bool                         | not null | determines if the order can be executed in multiple smaller trades or if everything has to be executed at once (fill-or-kill)
  signature                | bytea                        | not null | signature provided by the owner stored as raw bytes. What these bytes mean is determined by signing\_scheme
- cancellation\_timestamp  | timestamptz                  | nullable | when the order was cancelled. If the the timestamp is null it means the order has not been cancelled yet
+ cancellation\_timestamp  | timestamptz                  | nullable | when the order was cancelled. If the timestamp is null it means the order has not been cancelled yet
  receiver                 | bytea                        | nullable | address that should receive the buy\_tokens. If this is null the owner will receive the buy tokens
  app\_data                | bytea                        | not null | arbitrary data associated with this order but per [design](https://docs.cow.fi/cow-sdk/order-meta-data-appdata) this is an IPFS hash which may contain additional meta data for this order signed by the user
  signing\_scheme          | [enum](#signingscheme)       | not null | what kind of signature was used to proof that the `owner` actually created the order
@@ -242,7 +242,7 @@ Indexes:
 
 ### quotes (and quotes\_id\_seq counter)
 
-Stores quotes in order to determine whether it makes sense to allow a user to creat an order with a given `fee_amount`. Quotes are short lived and get deleted when they expire. `id`s are unique and increase monotonically.
+Stores quotes in order to determine whether it makes sense to allow a user to create an order with a given `fee_amount`. Quotes are short lived and get deleted when they expire. `id`s are unique and increase monotonically.
 
  Column                | Type               | Nullable | Details
 -----------------------|--------------------|----------|--------
@@ -250,7 +250,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  sell\_amount          | numeric            | not null | amount that should be sold at most
  buy\_token            | bytea              | not null | address of token that should be bought
  buy\_amount           | numeric            | not null | amount that should be bought at least
- expiration\_timestamp | timestamptz        | not null | when the quote should no longer considered valid. Invalid quotes will get deleted shortly
+ expiration\_timestamp | timestamptz        | not null | when the quote should no longer be considered valid. Invalid quotes will get deleted shortly
  order\_kind           | [enum](#orderkind) | not null | trade semantics for the quoted order
  gas\_amount           | double             | not null | estimation of gas used to execute the order according to the quote
  gas\_price            | double             | not null | gas price at the time of quoting
@@ -409,6 +409,6 @@ We support different expiration times for orders with different signing schemes.
  Value     | Meaning
 -----------|--------
  market    | Short lived order that may receive surplus. Users agree to a static fee upfront by signing it.
- liquiidty | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
+ liquidity | These orders must be traded at their limit price and may not receive any surplus. Violating this is a slashable offence.
  limit     | Long lived order that may receive surplus. Users sign a static fee of 0 upfront and either the backend or the solvers compute a dynamic fee that gets taken from the surplus (while still respecting the user's limit price!).
 
