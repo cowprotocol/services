@@ -1,7 +1,12 @@
 use {
     super::SolverInfo,
     crate::{
-        liquidity::{LimitOrder, LimitOrderExecution, LimitOrderId},
+        liquidity::{
+            order_converter::OrderConverter,
+            LimitOrder,
+            LimitOrderExecution,
+            LimitOrderId,
+        },
         metrics::SolverMetrics,
         settlement::Settlement,
         settlement_rater::{Rating, SettlementRating},
@@ -15,7 +20,7 @@ use {
     model::order::OrderKind,
     num::{CheckedDiv, ToPrimitive},
     number_conversions::u256_to_big_rational,
-    primitive_types::U256,
+    primitive_types::{H160, U256},
     rand::prelude::SliceRandom,
     shared::{
         arguments::display_option,
@@ -117,7 +122,8 @@ pub trait SingleOrderSolving: Send + Sync + 'static {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
     ) -> Result<Option<SingleOrderSettlement>, SettlementError>;
 
     /// Solver's account that should be used to submit settlements.
@@ -164,9 +170,12 @@ pub struct SingleOrderSolver {
     rate_limiter: Arc<RateLimiter>,
     fills: fills::Fills,
     settlement_rater: Arc<dyn SettlementRating>,
+    ethflow_contract: Option<H160>,
+    order_converter: OrderConverter,
 }
 
 impl SingleOrderSolver {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         inner: Box<dyn SingleOrderSolving>,
         metrics: Arc<dyn SolverMetrics>,
@@ -175,6 +184,8 @@ impl SingleOrderSolver {
         arguments: Arguments,
         smallest_fill: U256,
         settlement_rater: Arc<dyn SettlementRating>,
+        ethflow_contract: Option<H160>,
+        order_converter: OrderConverter,
     ) -> Self {
         let rate_limiter = arguments.rate_limiter(inner.name());
         Self {
@@ -186,12 +197,19 @@ impl SingleOrderSolver {
             rate_limiter,
             fills: fills::Fills::new(smallest_fill),
             settlement_rater,
+            ethflow_contract,
+            order_converter,
         }
     }
 
-    async fn solve_single_order(&self, order: LimitOrder, auction: &Auction) -> SolveResult {
+    async fn solve_single_order(
+        &self,
+        order: LimitOrder,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
+    ) -> SolveResult {
         let name = self.inner.name();
-        let fill = match self.fills.order(&order, &auction.external_prices) {
+        let fill = match self.fills.order(&order, external_prices) {
             Ok(fill) => fill,
             Err(err) => {
                 tracing::warn!(?order.id, ?err, "failed to compute fill; skipping order");
@@ -202,7 +220,8 @@ impl SingleOrderSolver {
         let single = match self
             .rate_limiter
             .execute(
-                self.inner.try_settle_order(fill.clone(), auction),
+                self.inner
+                    .try_settle_order(fill.clone(), external_prices, gas_price),
                 |result| matches!(result, Err(SettlementError::RateLimited)),
             )
             .await
@@ -252,10 +271,11 @@ impl SingleOrderSolver {
     async fn finalize_settlement(
         &self,
         intermediate: SingleOrderSettlement,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        gas_price: f64,
         id: usize,
     ) -> Result<Option<Settlement>> {
-        let settlement = intermediate.into_settlement(&auction.external_prices, &0.into());
+        let settlement = intermediate.into_settlement(external_prices, &0.into());
         let settlement = match settlement {
             Ok(Some(settlement)) => settlement,
             Err(err) => return Err(err),
@@ -270,11 +290,11 @@ impl SingleOrderSolver {
                     account: self.account().clone(),
                 },
                 settlement,
-                &auction.external_prices,
+                external_prices,
                 GasPrice1559 {
-                    base_fee_per_gas: auction.gas_price,
+                    base_fee_per_gas: gas_price,
                     // factor in 1 block of maximal gas increase
-                    max_fee_per_gas: auction.gas_price * 1.125,
+                    max_fee_per_gas: gas_price * 1.125,
                     max_priority_fee_per_gas: 0.,
                 },
                 id,
@@ -288,10 +308,10 @@ impl SingleOrderSolver {
 
         let gas_cost = simulation
             .gas_estimate
-            .checked_mul(U256::from_f64_lossy(auction.gas_price))
+            .checked_mul(U256::from_f64_lossy(gas_price))
             .ok_or_else(|| anyhow::anyhow!("overflow during gas cost computation"))?;
 
-        intermediate.into_settlement(&auction.external_prices, &gas_cost)
+        intermediate.into_settlement(external_prices, &gas_cost)
     }
 }
 
@@ -309,12 +329,25 @@ enum SolveResult {
 
 #[async_trait::async_trait]
 impl Solver for SingleOrderSolver {
-    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
-        let mut orders = get_prioritized_orders(
-            &auction.orders,
-            &auction.external_prices,
-            &self.order_prioritization_config,
+    async fn solve(
+        &self,
+        Auction {
+            orders,
+            balances,
+            external_prices,
+            gas_price,
+            deadline,
+            ..
+        }: Auction,
+    ) -> Result<Vec<Settlement>> {
+        let orders = super::balance_and_convert_orders(
+            self.ethflow_contract,
+            &self.order_converter,
+            &balances,
+            orders,
         );
+        let mut orders =
+            get_prioritized_orders(&orders, &external_prices, &self.order_prioritization_config);
         tracing::trace!(solver = self.name(), ?orders, "prioritized orders");
 
         let mut settlements = Vec::new();
@@ -324,7 +357,7 @@ impl Solver for SingleOrderSolver {
             while let Some(order) = orders.pop_front() {
                 let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
                 match self
-                    .solve_single_order(order, &auction)
+                    .solve_single_order(order, &external_prices, gas_price)
                     .instrument(span)
                     .await
                 {
@@ -349,7 +382,7 @@ impl Solver for SingleOrderSolver {
             let mut index = 0;
             while let Some(intermediate) = rx.recv().await {
                 match self
-                    .finalize_settlement(intermediate, &auction, index)
+                    .finalize_settlement(intermediate, &external_prices, gas_price, index)
                     .await
                 {
                     Ok(Some(settlement)) => {
@@ -366,13 +399,8 @@ impl Solver for SingleOrderSolver {
 
         // Subtract a small amount of time to ensure that the driver doesn't reach the
         // deadline first.
-        let timeout = tokio::time::sleep_until(
-            auction
-                .deadline
-                .checked_sub(Duration::from_secs(1))
-                .unwrap()
-                .into(),
-        );
+        let timeout =
+            tokio::time::sleep_until(deadline.checked_sub(Duration::from_secs(1)).unwrap().into());
 
         // open new scope for solve->finalize pipeline to make borrow checker happy
         {
@@ -403,7 +431,7 @@ impl Solver for SingleOrderSolver {
 
         merge::merge_settlements(
             self.max_merged_settlements,
-            &auction.external_prices,
+            &external_prices,
             &mut settlements,
         );
 
@@ -649,14 +677,9 @@ mod tests {
     use {
         super::*,
         crate::{
-            liquidity::{
-                order_converter::OrderConverter,
-                tests::CapturingSettlementHandler,
-                LimitOrderId,
-                LiquidityOrderId,
-            },
+            liquidity::{order_converter::OrderConverter, LimitOrderId, LiquidityOrderId},
             metrics::NoopMetrics,
-            order_balance_filter::BalancedOrder,
+            order_balance_filter::{max_balance, BalancedOrder},
             settlement::TradeExecution,
             settlement_rater::MockSettlementRating,
         },
@@ -689,13 +712,14 @@ mod tests {
             rate_limiter: RateLimiter::test(),
             fills: fills::Fills::new(1.into()),
             settlement_rater: Arc::new(settlement_rating),
+            ethflow_contract: None,
+            order_converter: OrderConverter::test(Default::default()),
         }
     }
 
     #[tokio::test]
     async fn merges() {
         let native = H160::from_low_u64_be(0);
-        let converter = OrderConverter::test(native);
         let buy_order = Order {
             data: OrderData {
                 sell_token: H160::from_low_u64_be(1),
@@ -726,19 +750,13 @@ mod tests {
             },
             ..Default::default()
         };
-        let orders = [&buy_order, &sell_order]
-            .iter()
-            .map(|order| {
-                converter
-                    .normalize_limit_order(BalancedOrder::full(Order::clone(order)))
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
+        let orders: Vec<Order> = vec![buy_order.clone(), sell_order.clone()];
+        let balances = max_balance(&orders);
 
         let mut inner = MockSingleOrderSolving::new();
         inner
             .expect_try_settle_order()
-            .returning(|order, _| match order.kind {
+            .returning(|order, _, _| match order.kind {
                 OrderKind::Buy => Ok(Some(SingleOrderSettlement {
                     sell_token_price: 1.into(),
                     buy_token_price: 2.into(),
@@ -785,6 +803,7 @@ mod tests {
             .solve(Auction {
                 external_prices,
                 orders,
+                balances,
                 ..Default::default()
             })
             .await
@@ -818,7 +837,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(2)
-            .returning(move |_, _| {
+            .returning(move |_, _, _| {
                 dbg!();
                 let result = match call_count {
                     0 => Err(SettlementError::Retryable(anyhow!(""))),
@@ -830,14 +849,19 @@ mod tests {
             });
 
         let solver = test_solver(inner);
-        let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = LimitOrder {
-            settlement_handling: handler.clone(),
+        let orders = vec![Order {
+            data: OrderData {
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
             ..Default::default()
-        };
+        }];
+        let balances = max_balance(&orders);
         solver
             .solve(Auction {
-                orders: vec![order],
+                orders,
+                balances,
                 ..Default::default()
             })
             .await
@@ -852,18 +876,23 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(1)
-            .returning(|_, _| Err(SettlementError::Other(anyhow!(""))))
+            .returning(|_, _, _| Err(SettlementError::Other(anyhow!(""))))
             .in_sequence(&mut seq);
 
         let solver = test_solver(inner);
-        let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = || LimitOrder {
-            settlement_handling: handler.clone(),
+        let orders = vec![Order {
+            data: OrderData {
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
             ..Default::default()
-        };
+        }];
+        let balances = max_balance(&orders);
         solver
             .solve(Auction {
-                orders: vec![order()],
+                orders,
+                balances,
                 ..Default::default()
             })
             .await
@@ -878,18 +907,26 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(1)
-            .returning(|_, _| Err(SettlementError::RateLimited))
+            .returning(|_, _, _| Err(SettlementError::RateLimited))
             .in_sequence(&mut seq);
 
         let solver = test_solver(inner);
-        let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = || LimitOrder {
-            settlement_handling: handler.clone(),
-            ..Default::default()
-        };
+        let orders = vec![
+            Order {
+                data: OrderData {
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            3
+        ];
+        let balances = max_balance(&orders);
         solver
             .solve(Auction {
-                orders: vec![order(), order(), order()],
+                orders,
+                balances,
                 ..Default::default()
             })
             .await

@@ -11,7 +11,6 @@ use {
         },
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::Metrics,
-        order_balance_filter::OrderBalanceFilter,
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
         settlement_post_processing::PostProcessingPipeline,
@@ -275,9 +274,9 @@ pub async fn run(args: Arguments) {
         .unwrap(),
     );
 
-    let order_converter = Arc::new(OrderConverter {
+    let order_converter = OrderConverter {
         native_token: native_token.clone(),
-    });
+    };
 
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: args.market_makable_token_list,
@@ -331,7 +330,7 @@ pub async fn run(args: Arguments) {
         web3.clone(),
         solvers,
         base_tokens.clone(),
-        native_token.address(),
+        native_token.clone(),
         args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         args.balancer_sor_url,
@@ -366,6 +365,7 @@ pub async fn run(args: Arguments) {
         &args.score_params,
         settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
+        args.ethflow_contract,
     )
     .expect("failure creating solvers");
 
@@ -521,15 +521,12 @@ pub async fn run(args: Arguments) {
         .or_else(|| shared::network::block_interval(&network_id, chain_id))
         .expect("unknown network block interval");
 
-    let order_balance_filter = OrderBalanceFilter {
-        balance_fetcher: Arc::new(Web3BalanceFetcher::new(
-            web3.clone(),
-            vault_contract.clone(),
-            vault_relayer,
-            settlement_contract.address(),
-        )),
-        ethflow_contract: args.ethflow_contract,
-    };
+    let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+        web3.clone(),
+        vault_contract.clone(),
+        vault_relayer,
+        settlement_contract.address(),
+    ));
 
     let mut driver = Driver::new(
         settlement_contract,
@@ -549,7 +546,6 @@ pub async fn run(args: Arguments) {
         current_block_stream.clone(),
         solution_submitter,
         api,
-        order_converter,
         args.simulation_gas_limit,
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
@@ -561,8 +557,8 @@ pub async fn run(args: Arguments) {
         args.solution_comparison_decimal_cutoff,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
-        order_balance_filter,
         settlement_rater,
+        balance_fetcher,
     );
 
     let maintainer = ServiceMaintenance::new(maintainers);

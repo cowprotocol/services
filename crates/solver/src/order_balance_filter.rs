@@ -3,10 +3,10 @@ use {
     model::order::Order,
     primitive_types::{H160, U256},
     shared::account_balances::{BalanceFetching, Query},
-    std::{collections::HashMap, sync::Arc},
+    std::collections::HashMap,
 };
 
-/// An order processed by `OrderBalanceFilter`.
+/// An order processed by `balance_orders`.
 ///
 /// To ensure that all orders passed to solvers are settleable we need to
 /// make a choice for which orders to include when the user only has enough
@@ -33,32 +33,33 @@ impl BalancedOrder {
     }
 }
 
-pub struct OrderBalanceFilter {
-    pub balance_fetcher: Arc<dyn BalanceFetching>,
-    pub ethflow_contract: Option<H160>,
+/// Fetch the balances for `balance_orders`.
+pub async fn fetch_balances(
+    fetcher: &dyn BalanceFetching,
+    orders: &[Order],
+) -> HashMap<Query, U256> {
+    let queries: Vec<Query> = orders.iter().map(Query::from_order).collect();
+    let balances = fetcher.get_balances(&queries).await;
+    queries
+        .into_iter()
+        .zip(balances)
+        .filter_map(|(query, balance)| balance.ok().map(|balance| (query, balance)))
+        .collect()
 }
 
-impl OrderBalanceFilter {
-    /// Filter orders based on the available balance.
-    pub async fn filter(&self, orders: Vec<Order>) -> Vec<BalancedOrder> {
-        let queries: Vec<Query> = orders.iter().map(Query::from_order).collect();
-        let balances = self.balance_fetcher.get_balances(&queries).await;
-        let balances: Balances = queries
-            .into_iter()
-            .zip(balances)
-            .filter_map(|(query, balance)| balance.ok().map(|balance| (query, balance)))
-            .collect();
-        solvable_orders(orders, &balances, self.ethflow_contract)
-    }
+#[cfg(test)]
+pub fn max_balance(orders: &[Order]) -> HashMap<Query, U256> {
+    orders
+        .iter()
+        .map(Query::from_order)
+        .map(|q| (q, U256::MAX))
+        .collect()
 }
 
-type Balances = HashMap<Query, U256>;
-
-// Returns order and for partially fillable orders, how much balance is
-// available.
-fn solvable_orders(
+/// See the `BalancedOrder` documentation.
+pub fn balance_orders(
     mut orders: Vec<Order>,
-    balances: &Balances,
+    balances: &HashMap<Query, U256>,
     ethflow_contract: Option<H160>,
 ) -> Vec<BalancedOrder> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
@@ -191,7 +192,7 @@ mod tests {
         ];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
+        let orders_ = balance_orders(orders.clone(), &balances, None);
         assert_eq!(orders_.len(), 2);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_[0].order.data, orders[0].data);
@@ -200,7 +201,7 @@ mod tests {
         assert_eq!(orders_[1].available_sell_token_balance, 3.into());
 
         orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
-        let orders_ = solvable_orders(orders.clone(), &balances, None);
+        let orders_ = balance_orders(orders.clone(), &balances, None);
         assert_eq!(orders_.len(), 2);
         assert_eq!(orders_[0].order.data, orders[1].data);
         // Remaining balance is different because previous order has changed.
@@ -226,7 +227,7 @@ mod tests {
         }];
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = solvable_orders(orders.clone(), &balances, Some(ethflow_address));
+        let orders_ = balance_orders(orders.clone(), &balances, Some(ethflow_address));
         assert_eq!(orders_.len(), 1);
         assert_eq!(orders_[0].order, orders[0]);
     }
@@ -274,7 +275,7 @@ mod tests {
 
         let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = solvable_orders(orders, &balances, None);
+        let mut filtered_orders = balance_orders(orders, &balances, None);
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.order.metadata.creation_date);
         assert_eq!(expected_result.len(), filtered_orders.len());

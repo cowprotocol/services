@@ -1,12 +1,9 @@
 use {
-    super::{
-        single_order_solver::{
-            execution_respects_order,
-            SettlementError,
-            SingleOrderSettlement,
-            SingleOrderSolving,
-        },
-        Auction,
+    super::single_order_solver::{
+        execution_respects_order,
+        SettlementError,
+        SingleOrderSettlement,
+        SingleOrderSolving,
     },
     crate::{
         interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
@@ -20,6 +17,7 @@ use {
     reqwest::Client,
     shared::{
         ethrpc::Web3,
+        external_prices::ExternalPrices,
         paraswap_api::{
             DefaultParaswapApi,
             ParaswapApi,
@@ -99,7 +97,8 @@ impl SingleOrderSolving for ParaswapSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
+        _gas_price: f64,
     ) -> Result<Option<SingleOrderSettlement>, SettlementError> {
         let token_info = self
             .token_info
@@ -115,7 +114,7 @@ impl SingleOrderSolving for ParaswapSolver {
             return Ok(None);
         }
         let transaction_query =
-            self.transaction_query_from(auction, &order, &price_response, &token_info)?;
+            self.transaction_query_from(external_prices, &order, &price_response, &token_info)?;
         let transaction = self.client.transaction(transaction_query).await?;
         let mut settlement = SingleOrderSettlement {
             sell_token_price: price_response.dest_amount,
@@ -174,12 +173,12 @@ impl ParaswapSolver {
 
     fn transaction_query_from(
         &self,
-        auction: &Auction,
+        external_prices: &ExternalPrices,
         order: &LimitOrder,
         price_response: &PriceResponse,
         token_info: &HashMap<H160, TokenInfo>,
     ) -> Result<TransactionBuilderQuery> {
-        let slippage = self.slippage_calculator.auction_context(auction);
+        let slippage = self.slippage_calculator.context(external_prices);
         let trade_amount = match order.kind {
             OrderKind::Sell => TradeAmount::Exact {
                 src_amount: price_response.src_amount,
@@ -257,7 +256,9 @@ mod tests {
         };
 
         let order = LimitOrder::default();
-        let result = solver.try_settle_order(order, &Auction::default()).await;
+        let result = solver
+            .try_settle_order(order, &Default::default(), 1.)
+            .await;
 
         // This implicitly checks that we don't call the API is its mock doesn't have
         // any expectations and would panic
@@ -328,7 +329,7 @@ mod tests {
         };
 
         let result = solver
-            .try_settle_order(order_passing_limit, &Auction::default())
+            .try_settle_order(order_passing_limit, &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -336,7 +337,7 @@ mod tests {
         assert_eq!(result.buy_token_price, 100.into());
 
         let result = solver
-            .try_settle_order(order_violating_limit, &Auction::default())
+            .try_settle_order(order_violating_limit, &Default::default(), 1.)
             .await
             .unwrap();
         assert!(result.is_none());
@@ -423,7 +424,7 @@ mod tests {
 
         // On first run we have two main interactions (approve + swap)
         let result = solver
-            .try_settle_order(order.clone(), &Auction::default())
+            .try_settle_order(order.clone(), &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -431,7 +432,7 @@ mod tests {
 
         // On second run we have only have one main interactions (swap)
         let result = solver
-            .try_settle_order(order, &Auction::default())
+            .try_settle_order(order, &Default::default(), 1.)
             .await
             .unwrap()
             .unwrap();
@@ -522,7 +523,7 @@ mod tests {
         };
 
         let result = solver
-            .try_settle_order(sell_order, &Auction::default())
+            .try_settle_order(sell_order, &Default::default(), 1.)
             .await
             .unwrap();
         // Actual assertion is inside the client's `expect_transaction` mock
@@ -537,7 +538,7 @@ mod tests {
             ..Default::default()
         };
         let result = solver
-            .try_settle_order(buy_order, &Auction::default())
+            .try_settle_order(buy_order, &Default::default(), 1.)
             .await
             .unwrap();
         // Actual assertion is inside the client's `expect_transaction` mock
@@ -579,7 +580,8 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
-                &Auction::default(),
+                &Default::default(),
+                1.,
             )
             .await
             .unwrap()

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        liquidity::{LimitOrder, Liquidity},
-        settlement::Revertable,
-    },
+    crate::{liquidity::Liquidity, settlement::Revertable},
     anyhow::Result,
     ethcontract::U256,
     model::order::{Order, OrderClass},
@@ -98,7 +95,7 @@ impl SolverSimulationOutcome {
 }
 
 pub trait SolverMetrics: Send + Sync {
-    fn orders_fetched(&self, orders: &[LimitOrder]);
+    fn orders_fetched(&self, orders: &[Order]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, response: &str, start: Instant);
     fn order_settled(&self, order: &Order, solver: &str);
@@ -217,10 +214,10 @@ impl Metrics {
 }
 
 impl SolverMetrics for Metrics {
-    fn orders_fetched(&self, orders: &[LimitOrder]) {
+    fn orders_fetched(&self, orders: &[Order]) {
         let user_orders = orders
             .iter()
-            .filter(|order| !order.is_liquidity_order())
+            .filter(|order| !order.metadata.is_liquidity_order)
             .count();
         let liquidity_orders = orders.len() - user_orders;
 
@@ -394,7 +391,7 @@ impl LivenessChecking for Metrics {
 pub struct NoopMetrics {}
 
 impl SolverMetrics for NoopMetrics {
-    fn orders_fetched(&self, _liquidity: &[LimitOrder]) {}
+    fn orders_fetched(&self, _liquidity: &[Order]) {}
 
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
 
