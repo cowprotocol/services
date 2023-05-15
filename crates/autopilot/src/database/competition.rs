@@ -16,7 +16,9 @@ use {
 #[derive(Clone, Debug)]
 pub enum ExecutedFee {
     Solver(U256),
-    Surplus(U256),
+    /// Optionable because, for partially fillable limit orders, surplus fee is
+    /// unkwnown until the transaction is mined.
+    Surplus(Option<U256>),
 }
 
 #[derive(Clone, Debug)]
@@ -68,7 +70,7 @@ impl super::Postgres {
         for order_execution in &competition.order_executions {
             let (solver_fee, surplus_fee) = match order_execution.executed_fee {
                 ExecutedFee::Solver(solver_fee) => (solver_fee, None),
-                ExecutedFee::Surplus(surplus_fee) => (Default::default(), Some(surplus_fee)),
+                ExecutedFee::Surplus(surplus_fee) => (Default::default(), surplus_fee),
             };
             let surplus_fee = surplus_fee.as_ref().map(u256_to_big_decimal);
             database::order_execution::save(

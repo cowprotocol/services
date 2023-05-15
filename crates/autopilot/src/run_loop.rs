@@ -105,35 +105,33 @@ impl RunLoop {
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
             let mut order_executions = vec![];
-            for order in &solution.orders {
+            for order_id in &solution.orders {
                 let auction_order = auction
                     .orders
                     .iter()
-                    .find(|auction_order| auction_order.metadata.uid == order.uid);
+                    .find(|auction_order| &auction_order.metadata.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
                         let executed_fee = match auction_order.metadata.class {
                             OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
                                 match auction_order.data.partially_fillable {
-                                    // calculated by the solver, therefore we have to trust the
-                                    // driver here
-                                    true => {
-                                        ExecutedFee::Surplus(order.surplus_fee.unwrap_or_default())
-                                    }
+                                    // we don't know the surplus fee in advance. will be populated
+                                    // after the transaction containing the order is mined
+                                    true => ExecutedFee::Surplus(None),
                                     // calculated by the protocol, therefore we can trust the
                                     // auction
-                                    false => ExecutedFee::Surplus(surplus_fee.unwrap_or_default()),
+                                    false => ExecutedFee::Surplus(surplus_fee),
                                 }
                             }
                             _ => ExecutedFee::Solver(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
-                            order_id: order.uid,
+                            order_id: *order_id,
                             executed_fee,
                         });
                     }
                     None => {
-                        tracing::error!(?order.uid, "order not found in auction");
+                        tracing::debug!(?order_id, "order not found in auction");
                     }
                 }
             }

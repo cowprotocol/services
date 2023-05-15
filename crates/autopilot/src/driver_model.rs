@@ -138,7 +138,7 @@ pub mod solve {
         pub id: String,
         pub score: U256,
         pub reward: Reward,
-        pub orders: Vec<Order>,
+        pub orders: Vec<OrderUid>,
     }
 }
 
