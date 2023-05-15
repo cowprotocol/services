@@ -95,16 +95,17 @@ impl OneInchTradeFinder {
             self.inner.swap(query, allowed_protocols),
         )?;
 
-        Ok(Trade {
-            out_amount: quote.out_amount,
-            gas_estimate: quote.gas_estimate,
-            approval: Some((query.sell_token, spender)),
-            interaction: Interaction {
+        Ok(Trade::swap(
+            query.sell_token,
+            quote.out_amount,
+            quote.gas_estimate,
+            Some(spender),
+            Interaction {
                 target: swap.tx.to,
                 value: swap.tx.value,
                 data: swap.tx.data,
             },
-        })
+        ))
     }
 }
 
@@ -232,6 +233,7 @@ mod tests {
             Token,
             Transaction,
         },
+        hex_literal::hex,
         reqwest::Client,
         std::time::Duration,
     };
@@ -371,12 +373,34 @@ mod tests {
         assert_eq!(trade.out_amount, 808_069_760_400_778_577u128.into());
         assert!(trade.gas_estimate > 189_386);
         assert_eq!(
-            trade.interaction,
-            Interaction {
-                target: addr!("1111111254fb6c44bac0bed2854e76f90643097d"),
-                value: Default::default(),
-                data: vec![0xe4, 0x49, 0x02, 0x2e],
-            }
+            trade.interactions,
+            vec![
+                Interaction {
+                    target: testlib::tokens::WETH,
+                    value: 0.into(),
+                    data: hex!(
+                        "095ea7b3
+                         00000000000000000000000011111112542d85b3ef69ae05771c2dccff4faa26
+                         0000000000000000000000000000000000000000000000000000000000000000"
+                    )
+                    .to_vec(),
+                },
+                Interaction {
+                    target: testlib::tokens::WETH,
+                    value: 0.into(),
+                    data: hex!(
+                        "095ea7b3
+                         00000000000000000000000011111112542d85b3ef69ae05771c2dccff4faa26
+                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    )
+                    .to_vec(),
+                },
+                Interaction {
+                    target: addr!("1111111254fb6c44bac0bed2854e76f90643097d"),
+                    value: Default::default(),
+                    data: vec![0xe4, 0x49, 0x02, 0x2e],
+                },
+            ]
         );
     }
 

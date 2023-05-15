@@ -65,19 +65,20 @@ impl Inner {
             })
             .await?;
 
-        Ok(Trade {
-            out_amount: match query.kind {
+        Ok(Trade::swap(
+            query.sell_token,
+            match query.kind {
                 OrderKind::Buy => swap.price.sell_amount,
                 OrderKind::Sell => swap.price.buy_amount,
             },
-            gas_estimate: gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
-            approval: Some((query.sell_token, swap.price.allowance_target)),
-            interaction: Interaction {
+            gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
+            Some(swap.price.allowance_target),
+            Interaction {
                 target: swap.to,
                 value: swap.value,
                 data: swap.data,
             },
-        })
+        ))
     }
 }
 
@@ -115,6 +116,7 @@ mod tests {
     use {
         super::*,
         crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+        hex_literal::hex,
         reqwest::Client,
         std::time::Duration,
     };
@@ -171,16 +173,34 @@ mod tests {
         assert_eq!(trade.out_amount, 1110165823572443613u64.into());
         assert!(trade.gas_estimate > 111000);
         assert_eq!(
-            trade.approval,
-            Some((weth, addr!("def1c0ded9bec7f1a1670819833240f027b25eff"))),
-        );
-        assert_eq!(
-            trade.interaction,
-            Interaction {
-                target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                value: 42.into(),
-                data: vec![1, 2, 3, 4],
-            }
+            trade.interactions,
+            vec![
+                Interaction {
+                    target: weth,
+                    value: 0.into(),
+                    data: hex!(
+                        "095ea7b3
+                         000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
+                         0000000000000000000000000000000000000000000000000000000000000000"
+                    )
+                    .to_vec(),
+                },
+                Interaction {
+                    target: weth,
+                    value: 0.into(),
+                    data: hex!(
+                        "095ea7b3
+                         000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff
+                         ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    )
+                    .to_vec(),
+                },
+                Interaction {
+                    target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    value: 42.into(),
+                    data: vec![1, 2, 3, 4],
+                }
+            ]
         );
     }
 
@@ -230,7 +250,8 @@ mod tests {
 
         assert_eq!(trade.out_amount, 8986186353137488u64.into());
         assert!(trade.gas_estimate > 111000);
-        assert_eq!(trade.interaction.data, [5, 6, 7, 8]);
+        assert_eq!(trade.interactions.len(), 3);
+        assert_eq!(trade.interactions[2].data, [5, 6, 7, 8]);
     }
 
     #[tokio::test]
@@ -275,6 +296,8 @@ mod tests {
         let gno = trade.out_amount.to_f64_lossy() / 1e18;
         println!("1.0 ETH buys {gno} GNO");
         println!("gas:  {}", trade.gas_estimate);
-        println!("data: 0x{}", hex::encode(&trade.interaction.data));
+        for interaction in trade.interactions {
+            println!("data: 0x{}", hex::encode(interaction.data));
+        }
     }
 }
