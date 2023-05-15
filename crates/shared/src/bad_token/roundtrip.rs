@@ -4,7 +4,7 @@
 use {
     crate::{
         ethrpc::extensions::{StateOverride, StateOverrides},
-        trade_finding::{convert_interactions, Interaction},
+        trade_finding::{EncodedInteraction, Interaction},
     },
     anyhow::Result,
     contracts::support::Trader,
@@ -75,6 +75,21 @@ impl Roundtrip {
             state_overrides,
         )
     }
+}
+
+fn convert_interactions(interactions: &[Vec<Interaction>; 3]) -> [Vec<EncodedInteraction>; 3] {
+    let conv = |interactions: &[Interaction]| {
+        interactions
+            .iter()
+            .map(Interaction::encode)
+            .collect::<Vec<_>>()
+    };
+
+    [
+        conv(&interactions[0]),
+        conv(&interactions[1]),
+        conv(&interactions[2]),
+    ]
 }
 
 #[cfg(test)]
