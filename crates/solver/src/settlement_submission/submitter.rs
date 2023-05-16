@@ -345,15 +345,13 @@ impl<'a> Submitter<'a> {
         }
 
         tracing::debug!("did not find any mined transaction");
-        let fallback_result = fallback_result
-            .transpose()
-            .unwrap_or(Err(SubmissionError::Timeout));
-
-        if let Err(err) = &fallback_result {
-            track_strategy_outcome(&format!("{name}"), err.as_outcome().label());
-        }
-
         fallback_result
+            .transpose()
+            .unwrap_or(Err(SubmissionError::Timeout))
+            .map_err(|err| {
+                track_strategy_outcome(&format!("{name}"), err.as_outcome().label());
+                err
+            })
     }
 
     async fn nonce(&self) -> Result<U256> {
