@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction, dex, eth},
+    crate::domain::{auction::Auction, dex, eth},
     ethereum_types::H160,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
@@ -101,32 +101,16 @@ impl OneInch {
         })
     }
 
-    async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
-        let request = self
-            .client
-            .get(self.endpoint.join("swap").unwrap())
-            .query(query)
-            .build()?;
-        tracing::trace!(request = %request.url(), "quoting");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let body = response.text().await?;
-        tracing::trace!(status = %status.as_u16(), %body, "quoted");
-
-        let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
-        Ok(swap)
-    }
-
     pub async fn swap(
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        gas_price: auction::GasPrice,
+        auction: &Auction,
     ) -> Result<dex::Swap, Error> {
         let query = self
             .defaults
             .clone()
-            .with_domain(order, slippage, gas_price)
+            .with_domain(order, slippage, auction.gas_price)
             .ok_or(Error::OrderNotSupported)?;
         let swap = {
             // Set up a tracing span to make debugging of API requests easier.
@@ -158,6 +142,22 @@ impl OneInch {
             },
             gas: eth::Gas(swap.tx.gas),
         })
+    }
+
+    async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
+        let request = self
+            .client
+            .get(self.endpoint.join("swap").unwrap())
+            .query(query)
+            .build()?;
+        tracing::trace!(request = %request.url(), "quoting");
+        let response = self.client.execute(request).await?;
+        let status = response.status();
+        let body = response.text().await?;
+        tracing::trace!(status = %status.as_u16(), %body, "quoted");
+
+        let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
+        Ok(swap)
     }
 }
 

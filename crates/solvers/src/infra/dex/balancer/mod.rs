@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction, dex, eth, order},
+    crate::domain::{auction::Auction, dex, eth, order},
     contracts::ethcontract::I256,
     ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
@@ -44,32 +44,13 @@ impl Sor {
         }
     }
 
-    async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
-        let request = serde_json::to_string(&query)?;
-        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
-        let response = self
-            .client
-            .post(self.endpoint.clone())
-            .header("content-type", "application/json")
-            .body(request)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        tracing::trace!(%response, "quoted");
-        let quote = serde_json::from_str(&response)?;
-
-        Ok(quote)
-    }
-
     pub async fn swap(
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        gas_price: auction::GasPrice,
+        auction: &Auction,
     ) -> Result<dex::Swap, Error> {
-        let query = dto::Query::from_domain(order, gas_price);
+        let query = dto::Query::from_domain(order, auction.gas_price);
         let quote = {
             // Set up a tracing span to make debugging of API requests easier.
             // Historically, debugging API requests to external DEXs was a bit
@@ -161,6 +142,25 @@ impl Sor {
             },
             gas: eth::Gas(gas),
         })
+    }
+
+    async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
+        let request = serde_json::to_string(&query)?;
+        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
+        let response = self
+            .client
+            .post(self.endpoint.clone())
+            .header("content-type", "application/json")
+            .body(request)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        tracing::trace!(%response, "quoted");
+        let quote = serde_json::from_str(&response)?;
+
+        Ok(quote)
     }
 }
 

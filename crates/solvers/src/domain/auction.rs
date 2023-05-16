@@ -15,6 +15,21 @@ pub struct Auction {
     pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
+impl Auction {
+    /// Reference price for the specified token.
+    pub fn reference_price(&self, token: &eth::TokenAddress) -> Option<Price> {
+        self.tokens.get(token)?.reference_price
+    }
+
+    /// Decimals for the specified token.
+    pub fn decimals(&self, token: &eth::TokenAddress) -> u8 {
+        self.tokens
+            .get(token)
+            .and_then(|token| token.decimals)
+            .unwrap_or(18)
+    }
+}
+
 /// The ID of an auction.
 #[derive(Clone, Debug)]
 pub struct Id(pub String);
@@ -46,5 +61,5 @@ impl Price {
 
 /// The estimated effective gas price that will likely be used for executing the
 /// settlement transaction.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct GasPrice(pub eth::Ether);

@@ -45,7 +45,7 @@ impl Baseline {
             .orders
             .iter()
             .filter_map(|order| {
-                let sell_token = auction.tokens.get(&order.sell.token)?.reference_price?;
+                let sell_token = auction.reference_price(&order.sell.token)?;
                 self.requests_for_order(order::NonLiquidity::new(order)?)
                     .find_map(|request| {
                         tracing::trace!(?request, "finding route");

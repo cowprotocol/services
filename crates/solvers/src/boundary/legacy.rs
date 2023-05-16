@@ -242,11 +242,7 @@ fn to_boundary_auction(
                 let token = |address: eth::TokenAddress| {
                     // Uniswap V3 math doesn't care about decimals, so default
                     // to 18 if it isn't available.
-                    let decimals = auction
-                        .tokens
-                        .get(&address)
-                        .and_then(|token| token.decimals)
-                        .unwrap_or(18);
+                    let decimals = auction.decimals(&address);
 
                     Token {
                         id: address.0,
