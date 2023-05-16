@@ -343,7 +343,7 @@ impl Solver for SingleOrderSolver {
         let orders = super::balance_and_convert_orders(
             self.ethflow_contract,
             &self.order_converter,
-            &balances,
+            balances,
             orders,
         );
         let mut orders =

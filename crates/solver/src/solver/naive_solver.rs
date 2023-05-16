@@ -60,7 +60,7 @@ impl Solver for NaiveSolver {
         let mut orders = super::balance_and_convert_orders(
             self.ethflow_contract,
             &self.order_converter,
-            &balances,
+            balances,
             orders,
         );
         // Filter out partially fillable limit orders until we add support for computing

@@ -54,7 +54,7 @@ impl InstanceCreator {
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         external_prices: &ExternalPrices,
-        balances: &HashMap<shared::account_balances::Query, U256>,
+        balances: HashMap<shared::account_balances::Query, U256>,
     ) -> Instances {
         let converter = OrderConverter {
             native_token: self.native_token.clone(),
@@ -492,7 +492,7 @@ mod tests {
             environment_metadata: Default::default(),
         };
 
-        let balances = &max_balance(&orders);
+        let balances = max_balance(&orders);
         let instances = solver
             .prepare_instances(0, 0, orders, amms, 0., &Default::default(), balances)
             .await;
@@ -552,7 +552,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let balances = &max_balance(&orders);
+        let balances = max_balance(&orders);
 
         let instances = solver
             .prepare_instances(

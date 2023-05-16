@@ -51,7 +51,7 @@ impl SharedInstanceCreator {
                             auction.liquidity,
                             auction.gas_price,
                             &auction.external_prices,
-                            &auction.balances,
+                            auction.balances,
                         )
                         .await,
                 );

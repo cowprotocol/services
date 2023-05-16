@@ -150,6 +150,8 @@ pub struct Auction {
     /// current auction.
     pub external_prices: ExternalPrices,
 
+    /// Balances for `orders`. Not guaranteed to have an entry for all orders
+    /// because balance fetching can fail.
     pub balances: HashMap<account_balances::Query, U256>,
 }
 
@@ -600,10 +602,10 @@ pub fn dummy_arc_solver() -> Arc<dyn Solver> {
 fn balance_and_convert_orders(
     ethflow_contract: Option<H160>,
     converter: &OrderConverter,
-    balances: &HashMap<account_balances::Query, U256>,
+    mut balances: HashMap<account_balances::Query, U256>,
     orders: Vec<Order>,
 ) -> Vec<LimitOrder> {
-    crate::order_balance_filter::balance_orders(orders, balances, ethflow_contract)
+    crate::order_balance_filter::balance_orders(orders, &mut balances, ethflow_contract)
         .into_iter()
         .filter_map(|order| match converter.normalize_limit_order(order) {
             Ok(order) => Some(order),
