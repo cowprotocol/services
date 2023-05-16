@@ -140,7 +140,7 @@ struct Storage {
     #[metric(labels("solver_type"))]
     settlement_non_positive_scores: IntCounterVec,
     /// Settlement submission counts
-    #[metric(labels("result", "solver_type", "strategy"))]
+    #[metric(labels("result", "solver_type"))]
     settlement_submissions: IntCounterVec,
     /// Settlement revertable status counts
     #[metric(labels("result", "solver_type"))]

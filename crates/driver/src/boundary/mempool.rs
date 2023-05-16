@@ -153,8 +153,7 @@ impl Mempool {
                     additional_call_data: settlement.id.to_be_bytes().into_iter().collect(),
                 },
             )
-            .await
-            .map_err(|err| err.into_anyhow())?;
+            .await?;
         Ok(())
     }
 }

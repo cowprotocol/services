@@ -368,6 +368,7 @@ impl SolutionSubmitter {
     }
 }
 
+/// An error during settlement submission.
 #[derive(Debug)]
 pub enum SubmissionError {
     /// The transaction reverted in the simulation stage.
@@ -384,6 +385,14 @@ pub enum SubmissionError {
     Other(anyhow::Error),
 }
 
+impl std::fmt::Display for SubmissionError {	
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {	
+        write!(f, "{self:?}")	
+    }
+}
+
+impl std::error::Error for SubmissionError {}
+
 impl SubmissionError {
     /// Returns the outcome for use with metrics.
     pub fn as_outcome(&self) -> SettlementSubmissionOutcome {
@@ -394,17 +403,6 @@ impl SubmissionError {
             Self::Canceled(_) => SettlementSubmissionOutcome::Cancel,
             Self::Disabled(_) => SettlementSubmissionOutcome::Disabled,
             Self::Other(_) => SettlementSubmissionOutcome::Failed,
-        }
-    }
-
-    pub fn hash(&self) -> Option<H256> {
-        match self {
-            Self::SimulationRevert(_) => None,
-            Self::Timeout => None,
-            Self::Revert(hash) => Some(*hash),
-            Self::Canceled(hash) => Some(*hash),
-            Self::Disabled(_) => None,
-            Self::Other(_) => None,
         }
     }
 
