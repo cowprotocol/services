@@ -1,5 +1,5 @@
 use {
-    crate::{bytes_hex, quote::QuoteSigningScheme, DomainSeparator},
+    crate::{bytes_hex, quote::QuoteSigningScheme},
     anyhow::{ensure, Context as _, Result},
     primitive_types::{H160, H256},
     serde::{de, Deserialize, Serialize},
@@ -92,52 +92,21 @@ impl Signature {
         }
     }
 
-    /// Recovers the owner of the specified signature.
+    /// Recovers the owner of the specified signature for a given message.
     ///
     /// This method returns an error if there is an issue recovering an ECDSA
     /// signature, or `None` for on-chain schemes that don't support owner
     /// recovery.
-    pub fn recover(
-        &self,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-    ) -> Result<Option<H160>> {
+    pub fn recover(&self, message: &[u8; 32]) -> Result<Option<H160>> {
         match self {
             Self::Eip712(signature) => signature
-                .recover(EcdsaSigningScheme::Eip712, domain_separator, struct_hash)
+                .recover(EcdsaSigningScheme::Eip712, message)
                 .map(Some),
             Self::EthSign(signature) => signature
-                .recover(EcdsaSigningScheme::EthSign, domain_separator, struct_hash)
+                .recover(EcdsaSigningScheme::EthSign, message)
                 .map(Some),
             _ => Ok(None),
         }
-    }
-
-    /// Verifies the owner for the specified creation signature.
-    pub fn verify_owner(
-        &self,
-        expected_owner: Option<H160>,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-    ) -> Result<H160, VerificationError> {
-        let recovered_owner = self
-            .recover(domain_separator, struct_hash)
-            .map_err(VerificationError::UnableToRecoverSigner)?;
-
-        let verified_owner = match (expected_owner, recovered_owner) {
-            (Some(expected_owner), Some(recovered_owner)) if expected_owner == recovered_owner => {
-                recovered_owner
-            }
-            (Some(owner), None) | (None, Some(owner)) => owner,
-            (Some(_), Some(recovered_owner)) => {
-                return Err(VerificationError::UnexpectedSigner(recovered_owner));
-            }
-            (None, None) => {
-                return Err(VerificationError::MissingFrom);
-            }
-        };
-
-        Ok(verified_owner)
     }
 
     pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
@@ -223,11 +192,7 @@ impl TryFrom<JsonSignature> for Signature {
 }
 
 #[derive(Debug)]
-pub enum VerificationError {
-    UnableToRecoverSigner(anyhow::Error),
-    UnexpectedSigner(H160),
-    MissingFrom,
-}
+pub struct InvalidSignature;
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -266,33 +231,18 @@ pub struct EcdsaSignature {
     pub v: u8,
 }
 
-pub fn hashed_eip712_message(
-    domain_separator: &DomainSeparator,
-    struct_hash: &[u8; 32],
-) -> [u8; 32] {
-    let mut message = [0u8; 66];
-    message[0..2].copy_from_slice(&[0x19, 0x01]);
-    message[2..34].copy_from_slice(&domain_separator.0);
-    message[34..66].copy_from_slice(struct_hash);
-    signing::keccak256(&message)
-}
-
-fn hashed_ethsign_message(domain_separator: &DomainSeparator, struct_hash: &[u8; 32]) -> [u8; 32] {
-    let mut message = [0u8; 60];
-    message[..28].copy_from_slice(b"\x19Ethereum Signed Message:\n32");
-    message[28..].copy_from_slice(&hashed_eip712_message(domain_separator, struct_hash));
-    signing::keccak256(&message)
-}
-
-/// Orders are always hashed into 32 bytes according to EIP-712.
-fn hashed_signing_message(
-    signing_scheme: EcdsaSigningScheme,
-    domain_separator: &DomainSeparator,
-    struct_hash: &[u8; 32],
-) -> [u8; 32] {
+/// Returns the message used for signing and recovery for the specified hash.
+///
+/// The signing message depends on the signature scheme that was used.
+fn signing_message(signing_scheme: EcdsaSigningScheme, hash: &[u8; 32]) -> [u8; 32] {
     match signing_scheme {
-        EcdsaSigningScheme::Eip712 => hashed_eip712_message(domain_separator, struct_hash),
-        EcdsaSigningScheme::EthSign => hashed_ethsign_message(domain_separator, struct_hash),
+        EcdsaSigningScheme::Eip712 => *hash,
+        EcdsaSigningScheme::EthSign => {
+            let mut buffer = [0u8; 60];
+            buffer[..28].copy_from_slice(b"\x19Ethereum Signed Message:\n32");
+            buffer[28..].copy_from_slice(hash);
+            signing::keccak256(&buffer)
+        }
     }
 }
 
@@ -321,13 +271,8 @@ impl EcdsaSignature {
         }
     }
 
-    pub fn recover(
-        &self,
-        signing_scheme: EcdsaSigningScheme,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-    ) -> Result<H160> {
-        let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
+    pub fn recover(&self, signing_scheme: EcdsaSigningScheme, hash: &[u8; 32]) -> Result<H160> {
+        let message = signing_message(signing_scheme, hash);
         let recovery = Recovery::new(message, self.v as u64, self.r, self.s);
         let (signature, recovery_id) = recovery
             .as_signature()
@@ -335,13 +280,8 @@ impl EcdsaSignature {
         Ok(signing::recover(&message, &signature, recovery_id)?)
     }
 
-    pub fn sign(
-        signing_scheme: EcdsaSigningScheme,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-        key: SecretKeyRef,
-    ) -> Self {
-        let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
+    pub fn sign(signing_scheme: EcdsaSigningScheme, hash: &[u8; 32], key: SecretKeyRef) -> Self {
+        let message = signing_message(signing_scheme, hash);
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = key.sign(&message, None).unwrap();
         Self {
@@ -425,12 +365,7 @@ mod tests {
     #[test]
     fn onchain_signatures_cannot_recover_owners() {
         for signature in [Signature::PreSign, Signature::Eip1271(Default::default())] {
-            assert_eq!(
-                signature
-                    .recover(&Default::default(), &Default::default())
-                    .unwrap(),
-                None
-            );
+            assert_eq!(signature.recover(&Default::default()).unwrap(), None);
         }
     }
 

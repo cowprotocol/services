@@ -121,13 +121,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::WrongOwner(owner) => with_status(
-                error(
-                    "WrongOwner",
-                    format!("Address recovered from signature {owner} does not match from address"),
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             ValidationError::InsufficientBalance => with_status(
                 error(
                     "InsufficientBalance",
@@ -142,8 +135,11 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::InvalidSignature => with_status(
-                error("InvalidSignature", "invalid signature"),
+            ValidationError::UnauthorisedSignature(hash) => with_status(
+                error(
+                    "UnauthorisedSignature",
+                    format!("Signature for order hash {hash:?} "),
+                ),
                 StatusCode::BAD_REQUEST,
             ),
             ValidationError::InsufficientFee => with_status(

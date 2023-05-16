@@ -6,6 +6,7 @@
 pub mod app_id;
 pub mod auction;
 pub mod bytes_hex;
+pub mod eip712;
 pub mod interaction;
 pub mod order;
 pub mod quote;

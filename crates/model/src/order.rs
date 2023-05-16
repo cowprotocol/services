@@ -4,9 +4,10 @@
 use {
     crate::{
         app_id::AppId,
+        eip712,
         interaction::InteractionData,
         quote::QuoteId,
-        signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
+        signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
         u256_decimal::{self, DecimalU256},
         DomainSeparator,
         TokenPair,
@@ -74,7 +75,7 @@ impl Order {
         settlement_contract: H160,
         full_fee_amount: U256,
         class: OrderClass,
-    ) -> Result<Self, VerificationError> {
+    ) -> Result<Self, SignatureError> {
         let owner = order.verify_owner(domain)?;
         Ok(Self {
             metadata: OrderMetadata {
@@ -206,9 +207,8 @@ impl OrderBuilder {
     ) -> Self {
         self.0.metadata.owner = key.address();
         self.0.metadata.uid = self.0.data.uid(domain, &key.address());
-        self.0.signature =
-            EcdsaSignature::sign(signing_scheme, domain, &self.0.data.hash_struct(), key)
-                .to_signature(signing_scheme);
+        self.0.signature = EcdsaSignature::sign(signing_scheme, &self.0.data.hash(domain), key)
+            .to_signature(signing_scheme);
         self
     }
 
@@ -331,19 +331,19 @@ impl OrderData {
         signing::keccak256(&hash_data)
     }
 
+    /// Returns the canonical hash for an order for the given domain.
+    ///
+    /// This is the EIP-712 signing hash of an order.
+    pub fn hash(&self, domain: &DomainSeparator) -> [u8; 32] {
+        eip712::hash(domain, &self.hash_struct())
+    }
+
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
     }
 
     pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {
-        OrderUid::from_parts(
-            H256(super::signature::hashed_eip712_message(
-                domain,
-                &self.hash_struct(),
-            )),
-            *owner,
-            self.valid_to,
-        )
+        OrderUid::from_parts(H256(self.hash(domain)), *owner, self.valid_to)
     }
 }
 
@@ -366,9 +366,29 @@ impl OrderCreation {
     /// Returns the recovered address on success, or an error if there is an
     /// issue performing the EC-recover or the recovered address does not match
     /// the expected one.
-    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
-        self.signature
-            .verify_owner(self.from, domain, &self.data.hash_struct())
+    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, SignatureError> {
+        let hash = H256(self.data.hash(domain));
+
+        let expected_owner = self.from;
+        let recovered_owner = self
+            .signature
+            .recover(&hash.0)
+            .map_err(|_| SignatureError::Invalid)?;
+
+        let verified_owner = match (expected_owner, recovered_owner) {
+            (Some(expected_owner), Some(recovered_owner)) if expected_owner == recovered_owner => {
+                recovered_owner
+            }
+            (Some(owner), None) | (None, Some(owner)) => owner,
+            (Some(_), Some(_)) => {
+                return Err(SignatureError::Unauthorised { hash });
+            }
+            (None, None) => {
+                return Err(SignatureError::MissingFrom);
+            }
+        };
+
+        Ok(verified_owner)
     }
 }
 
@@ -398,6 +418,29 @@ impl From<Order> for OrderCreation {
     }
 }
 
+/// An error verifying an order signature.
+pub enum SignatureError {
+    /// ECDSA signatures do not accept arbitrary `r`, `s` and `v` values, so an
+    /// error of this kind indicates that the signature itself is invalid and
+    /// cannot be used to recover a public address.
+    Invalid,
+
+    /// A `from` address is missing for an order whose signature scheme requires
+    /// one.
+    MissingFrom,
+
+    /// An error indicating that the order's signature doesn't match the order.
+    /// This can happen for ECDSA signatures in case where the signature
+    /// recovers to a different public address than the order's owner, or for
+    /// on-chain orders where the signature verification failed (for example,
+    /// for EIP-1271 orders where the `isValidSignature` call reverts or does
+    /// not return the expected "magic value").
+    Unauthorised {
+        /// The computed hash of the order whose signature was being verified.
+        hash: H256,
+    },
+}
+
 /// Cancellation of multiple orders.
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -424,6 +467,14 @@ impl OrderCancellations {
         hash_data[32..64].copy_from_slice(&array_hash);
         signing::keccak256(&hash_data)
     }
+
+    pub fn hash(&self, domain: &DomainSeparator) -> [u8; 32] {
+        let mut buffer = [0u8; 66];
+        buffer[0..2].copy_from_slice(&[0x19, 0x01]);
+        buffer[2..34].copy_from_slice(&domain.0);
+        buffer[34..66].copy_from_slice(&self.hash_struct());
+        signing::keccak256(&buffer)
+    }
 }
 
 /// Signed order cancellations.
@@ -438,11 +489,8 @@ pub struct SignedOrderCancellations {
 
 impl SignedOrderCancellations {
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature.recover(
-            self.signing_scheme,
-            domain_separator,
-            &self.data.hash_struct(),
-        )
+        self.signature
+            .recover(self.signing_scheme, &self.data.hash(domain_separator))
     }
 }
 
@@ -482,8 +530,7 @@ impl OrderCancellation {
         };
         result.signature = EcdsaSignature::sign(
             result.signing_scheme,
-            domain_separator,
-            &result.hash_struct(),
+            &eip712::hash(domain_separator, &result.hash_struct()),
             key,
         );
         result
@@ -496,9 +543,11 @@ impl OrderCancellation {
         signing::keccak256(&hash_data)
     }
 
-    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature
-            .recover(self.signing_scheme, domain_separator, &self.hash_struct())
+    pub fn validate(&self, domain: &DomainSeparator) -> Result<H160> {
+        self.signature.recover(
+            self.signing_scheme,
+            &eip712::hash(domain, &self.hash_struct()),
+        )
     }
 }
 
@@ -1114,7 +1163,7 @@ mod tests {
             let signature = Signature::from_bytes(*signing_scheme, signature).unwrap();
 
             let owner = signature
-                .recover(&domain_separator, &order.hash_struct())
+                .recover(&order.hash(&domain_separator))
                 .unwrap()
                 .unwrap();
             assert_eq!(owner, expected_owner);
@@ -1242,7 +1291,7 @@ mod tests {
 
         let owner = order
             .signature
-            .recover(&DomainSeparator::default(), &order.data.hash_struct())
+            .recover(&order.data.hash(&DomainSeparator::default()))
             .unwrap()
             .unwrap();
 

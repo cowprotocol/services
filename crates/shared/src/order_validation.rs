@@ -18,7 +18,7 @@ use {
     async_trait::async_trait,
     contracts::WETH9,
     database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind},
-    ethcontract::{H160, U256},
+    ethcontract::{H160, H256, U256},
     model::{
         order::{
             BuyTokenDestination,
@@ -28,10 +28,11 @@ use {
             OrderData,
             OrderKind,
             SellTokenSource,
+            SignatureError,
             BUY_ETH_ADDRESS,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-        signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
+        signature::{Signature, SigningScheme},
         time,
         DomainSeparator,
     },
@@ -116,7 +117,7 @@ pub enum ValidationError {
     /// The specified on-chain signature requires the from address of the
     /// order signer.
     MissingFrom,
-    WrongOwner(H160),
+    UnauthorisedSignature(H256),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -133,12 +134,12 @@ pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrde
     }
 }
 
-impl From<VerificationError> for ValidationError {
-    fn from(err: VerificationError) -> Self {
+impl From<SignatureError> for ValidationError {
+    fn from(err: SignatureError) -> Self {
         match err {
-            VerificationError::UnableToRecoverSigner(_) => Self::InvalidSignature,
-            VerificationError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
-            VerificationError::MissingFrom => Self::MissingFrom,
+            SignatureError::Unauthorised { hash } => Self::UnauthorisedSignature(hash),
+            SignatureError::Invalid => Self::InvalidSignature,
+            SignatureError::MissingFrom => Self::MissingFrom,
         }
     }
 }
@@ -181,10 +182,10 @@ impl From<CalculateQuoteError> for ValidationError {
     }
 }
 
-impl From<SignatureValidationError> for ValidationError {
-    fn from(err: SignatureValidationError) -> Self {
+impl ValidationError {
+    fn from_eip1271(hash: H256, err: SignatureValidationError) -> Self {
         match err {
-            SignatureValidationError::Invalid => Self::InvalidSignature,
+            SignatureValidationError::Invalid => Self::UnauthorisedSignature(hash),
             SignatureValidationError::Other(err) => Self::Other(err),
         }
     }
@@ -440,13 +441,15 @@ impl OrderValidating for OrderValidator {
                 // We don't care! Because we are skipping validation anyway
                 0u64
             } else {
+                let hash = H256(order.data.hash(domain_separator));
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
-                        hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                        hash: hash.0,
                         signature: signature.to_owned(),
                     })
-                    .await?
+                    .await
+                    .map_err(|err| ValidationError::from_eip1271(hash, err))?
             }
         } else {
             // in any other case, just apply 0
@@ -1183,7 +1186,7 @@ mod tests {
             signature: Signature::Eip1271(vec![1, 2, 3]),
             ..creation
         };
-        let order_hash = hashed_eip712_message(&domain_separator, &creation.data.hash_struct());
+        let order_hash = creation.data.hash(&domain_separator);
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
@@ -1539,7 +1542,10 @@ mod tests {
         let result = validator
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
-        assert!(matches!(result, Err(ValidationError::WrongOwner(_))));
+        assert!(matches!(
+            result,
+            Err(ValidationError::UnauthorisedSignature(_))
+        ));
     }
 
     #[tokio::test]
