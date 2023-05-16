@@ -4,7 +4,7 @@ mod trampoline;
 
 use {
     self::trampoline::Trampoline,
-    super::SubmissionError,
+    super::SubmissionErrorClass,
     crate::settlement::Settlement,
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
@@ -45,14 +45,14 @@ impl GelatoSubmitter {
         &self,
         account: Account,
         settlement: Settlement,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<TransactionReceipt, SubmissionErrorClass> {
         let call = self.trampoline.prepare_call(&account, &settlement).await?;
         let task_id = self.client.sponsored_call(&call).await?;
         let transaction_hash = self.wait_for_task(task_id).await?;
         self.wait_for_transaction(transaction_hash).await
     }
 
-    async fn wait_for_task(&self, task_id: TaskId) -> Result<H256, SubmissionError> {
+    async fn wait_for_task(&self, task_id: TaskId) -> Result<H256, SubmissionErrorClass> {
         loop {
             let task = self.client.task_status(&task_id).await?;
             match task.task_state {
@@ -79,7 +79,7 @@ impl GelatoSubmitter {
     async fn wait_for_transaction(
         &self,
         hash: H256,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<TransactionReceipt, SubmissionErrorClass> {
         loop {
             let receipt = self.web3.eth().transaction_receipt(hash).await?;
             match receipt {

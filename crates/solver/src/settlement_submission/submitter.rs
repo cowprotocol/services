@@ -21,7 +21,7 @@ pub mod flashbots_api;
 pub mod public_mempool_api;
 
 use {
-    super::{SubTxPoolRef, SubmissionError},
+    super::{SubTxPoolRef, SubmissionErrorClass},
     crate::{
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
@@ -223,7 +223,7 @@ impl<'a> Submitter<'a> {
         &self,
         settlement: Settlement,
         params: SubmitterParams,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<TransactionReceipt, SubmissionErrorClass> {
         let name = self.submit_api.name();
 
         tracing::debug!(address=?self.account.address(), ?self.nonce, "starting solution submission");
@@ -347,7 +347,7 @@ impl<'a> Submitter<'a> {
         tracing::debug!("did not find any mined transaction");
         fallback_result
             .transpose()
-            .unwrap_or(Err(SubmissionError::Timeout))
+            .unwrap_or(Err(SubmissionErrorClass::Timeout))
     }
 
     async fn nonce(&self) -> Result<U256> {
@@ -388,7 +388,7 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         params: SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
-    ) -> SubmissionError {
+    ) -> SubmissionErrorClass {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         let mut access_list: Option<AccessList> = None;
@@ -404,7 +404,7 @@ impl<'a> Submitter<'a> {
             let estimator = match submission_status {
                 SubmissionLoopStatus::Disabled(reason) => {
                     tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
-                    return SubmissionError::from(anyhow!("strategy temporarily disabled"));
+                    return SubmissionErrorClass::from(anyhow!("strategy temporarily disabled"));
                 }
                 SubmissionLoopStatus::Enabled => self.gas_price_estimator.clone(),
             };
@@ -463,7 +463,7 @@ impl<'a> Submitter<'a> {
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
-                return SubmissionError::from(err);
+                return SubmissionErrorClass::from(err);
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
@@ -616,14 +616,14 @@ impl<'a> Submitter<'a> {
     }
 }
 
-fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionError> {
+fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionErrorClass> {
     if let Some(status) = receipt.status {
         if status == U64::zero() {
             // failing transaction
-            return Err(SubmissionError::Revert(receipt.transaction_hash));
+            return Err(SubmissionErrorClass::Revert(receipt.transaction_hash));
         } else if status == U64::one() && receipt.from == receipt.to.unwrap_or_default() {
             // noop transaction
-            return Err(SubmissionError::Canceled(receipt.transaction_hash));
+            return Err(SubmissionErrorClass::Canceled(receipt.transaction_hash));
         }
     }
     // successful transaction

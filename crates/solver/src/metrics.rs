@@ -1,5 +1,9 @@
 use {
-    crate::{liquidity::Liquidity, settlement::Revertable},
+    crate::{
+        liquidity::Liquidity,
+        settlement::Revertable,
+        settlement_submission::TransactionStrategy,
+    },
     anyhow::Result,
     ethcontract::U256,
     model::order::{Order, OrderClass},
@@ -104,7 +108,12 @@ pub trait SolverMetrics: Send + Sync {
     fn solver_run(&self, outcome: SolverRunOutcome, solver: &str);
     fn single_order_solver_succeeded(&self, solver: &str);
     fn single_order_solver_failed(&self, solver: &str);
-    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str);
+    fn settlement_submitted(
+        &self,
+        outcome: SettlementSubmissionOutcome,
+        solver: &str,
+        strategy: &str,
+    );
     fn settlement_access_list_saved_gas(&self, gas_saved: f64, sign: &str);
     fn settlement_revertable_status(&self, status: Revertable, solver: &str);
     fn orders_matched_but_not_settled(&self, count: usize);
@@ -140,7 +149,7 @@ struct Storage {
     #[metric(labels("solver_type"))]
     settlement_non_positive_scores: IntCounterVec,
     /// Settlement submission counts
-    #[metric(labels("result", "solver_type"))]
+    #[metric(labels("result", "solver_type", "strategy"))]
     settlement_submissions: IntCounterVec,
     /// Settlement revertable status counts
     #[metric(labels("result", "solver_type"))]
@@ -198,10 +207,12 @@ impl Metrics {
                     .reset();
             }
             for outcome in SettlementSubmissionOutcome::iter() {
-                self.metrics
-                    .settlement_submissions
-                    .with_label_values(&[outcome.label(), solver])
-                    .reset();
+                for strategy in TransactionStrategy::all_labels() {
+                    self.metrics
+                        .settlement_submissions
+                        .with_label_values(&[outcome.label(), solver, strategy])
+                        .reset();
+                }
             }
             for outcome in SolverRunOutcome::iter() {
                 self.metrics
@@ -313,10 +324,15 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str) {
+    fn settlement_submitted(
+        &self,
+        outcome: SettlementSubmissionOutcome,
+        solver: &str,
+        strategy: &str,
+    ) {
         self.metrics
             .settlement_submissions
-            .with_label_values(&[outcome.label(), solver])
+            .with_label_values(&[outcome.label(), solver, strategy])
             .inc()
     }
 
@@ -405,7 +421,7 @@ impl SolverMetrics for NoopMetrics {
 
     fn single_order_solver_failed(&self, _: &str) {}
 
-    fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &str) {}
+    fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &str, _: &str) {}
 
     fn settlement_revertable_status(&self, _: Revertable, _: &str) {}
 
@@ -439,7 +455,7 @@ mod tests {
         metrics.order_settled(&Default::default(), "test");
         metrics.settlement_simulation("test", SolverSimulationOutcome::Success);
         metrics.settlement_simulation("test", SolverSimulationOutcome::Failure);
-        metrics.settlement_submitted(SettlementSubmissionOutcome::Success, "test");
+        metrics.settlement_submitted(SettlementSubmissionOutcome::Success, "test", "mempool");
         metrics.orders_matched_but_not_settled(20);
         metrics.initialize_solver_metrics(&["", "a"]);
     }
