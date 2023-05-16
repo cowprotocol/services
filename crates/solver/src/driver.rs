@@ -15,7 +15,7 @@ use {
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
         settlement_simulation,
-        settlement_submission::{SolutionSubmitter, SubmissionError, SubmissionErrorClass},
+        settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
@@ -501,9 +501,7 @@ impl Driver {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
                     Some(receipt.transaction_hash)
                 }
-                Err(err) if matches!(err.inner, SubmissionErrorClass::Revert(_)) => {
-                    Some(err.inner.hash().unwrap())
-                }
+                Err(SubmissionError::Revert(hash)) => Some(hash),
                 _ => None,
             };
             if let Some(hash) = hash {

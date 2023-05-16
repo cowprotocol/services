@@ -21,7 +21,7 @@ pub mod flashbots_api;
 pub mod public_mempool_api;
 
 use {
-    super::{SubTxPoolRef, SubmissionErrorClass},
+    super::{SubTxPoolRef, SubmissionError},
     crate::{
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
@@ -223,7 +223,7 @@ impl<'a> Submitter<'a> {
         &self,
         settlement: Settlement,
         params: SubmitterParams,
-    ) -> Result<TransactionReceipt, SubmissionErrorClass> {
+    ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
 
         tracing::debug!(address=?self.account.address(), ?self.nonce, "starting solution submission");
@@ -345,9 +345,15 @@ impl<'a> Submitter<'a> {
         }
 
         tracing::debug!("did not find any mined transaction");
-        fallback_result
+        let fallback_result = fallback_result
             .transpose()
-            .unwrap_or(Err(SubmissionErrorClass::Timeout))
+            .unwrap_or(Err(SubmissionError::Timeout));
+
+        if let Err(err) = &fallback_result {
+            track_strategy_outcome(&format!("{name}"), err.as_outcome().label());
+        }
+
+        fallback_result
     }
 
     async fn nonce(&self) -> Result<U256> {
@@ -388,7 +394,7 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         params: SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
-    ) -> SubmissionErrorClass {
+    ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         let mut access_list: Option<AccessList> = None;
@@ -404,7 +410,7 @@ impl<'a> Submitter<'a> {
             let estimator = match submission_status {
                 SubmissionLoopStatus::Disabled(reason) => {
                     tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
-                    return SubmissionErrorClass::from(anyhow!("strategy temporarily disabled"));
+                    return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
                 SubmissionLoopStatus::Enabled => self.gas_price_estimator.clone(),
             };
@@ -463,7 +469,7 @@ impl<'a> Submitter<'a> {
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
-                return SubmissionErrorClass::from(err);
+                return SubmissionError::from(err);
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
@@ -616,14 +622,14 @@ impl<'a> Submitter<'a> {
     }
 }
 
-fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionErrorClass> {
+fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionError> {
     if let Some(status) = receipt.status {
         if status == U64::zero() {
             // failing transaction
-            return Err(SubmissionErrorClass::Revert(receipt.transaction_hash));
+            return Err(SubmissionError::Revert(receipt.transaction_hash));
         } else if status == U64::one() && receipt.from == receipt.to.unwrap_or_default() {
             // noop transaction
-            return Err(SubmissionErrorClass::Canceled(receipt.transaction_hash));
+            return Err(SubmissionError::Canceled(receipt.transaction_hash));
         }
     }
     // successful transaction
@@ -667,6 +673,9 @@ struct Metrics {
     /// submission strategies.
     #[metric(labels("submitter"))]
     mined_transactions: prometheus::IntCounterVec,
+    /// Settlement submission outcomes for each strategy
+    #[metric(labels("strategy", "result"))]
+    strategy_outcomes: prometheus::IntCounterVec,
 }
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
@@ -686,6 +695,13 @@ fn track_mined_transactions(submitter: &str) {
         .inc();
 }
 
+fn track_strategy_outcome(strategy: &str, outcome: &str) {
+    Metrics::instance(global_metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .strategy_outcomes
+        .with_label_values(&[strategy, outcome])
+        .inc();
+}
 #[cfg(test)]
 mod tests {
     use {

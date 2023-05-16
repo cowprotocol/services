@@ -107,7 +107,6 @@ impl DriverLogger {
                 self.metrics.settlement_submitted(
                     crate::metrics::SettlementSubmissionOutcome::Success,
                     solver_name,
-                    receipt.strategy,
                 );
                 if let Err(err) = self
                     .metric_access_list_gas_saved(receipt.tx.transaction_hash)
@@ -130,7 +129,7 @@ impl DriverLogger {
                 // of race conditions as hard errors.
                 tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
-                    .settlement_submitted(err.as_outcome(), solver_name, err.strategy);
+                    .settlement_submitted(err.as_outcome(), solver_name);
                 if let Some(transaction_hash) = err.revert_transaction_hash() {
                     if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
                         tracing::debug!(?err, "access list metric not saved");

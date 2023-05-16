@@ -180,10 +180,6 @@ impl TransactionStrategy {
             TransactionStrategy::DryRun => "DryRun",
         }
     }
-
-    pub fn all_labels() -> Vec<&'static str> {
-        vec!["Eden", "Flashbots", "Mempool", "Gelato", "DryRun"]
-    }
 }
 
 impl SolutionSubmitter {
@@ -210,39 +206,27 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return match dry_run::log_settlement(account, &self.contract, settlement).await
-                    {
-                        Ok(tx) => Ok(SubmissionReceipt {
+                    return dry_run::log_settlement(account, &self.contract, settlement)
+                        .await
+                        .map(|tx| SubmissionReceipt {
                             tx,
                             strategy: strategy.label(),
-                        }),
-                        Err(err) => Err(SubmissionError {
-                            inner: err.into(),
-                            strategy: strategy.label(),
-                        }),
-                    };
+                        })
+                        .map_err(Into::into);
                 }
                 TransactionStrategy::Gelato(gelato) => {
-                    return match tokio::time::timeout(
+                    return tokio::time::timeout(
                         self.max_confirm_time,
                         gelato.relay_settlement(account, settlement),
                     )
                     .await
-                    {
-                        Ok(tx) => tx
-                            .map(|tx| SubmissionReceipt {
-                                tx,
-                                strategy: strategy.label(),
-                            })
-                            .map_err(|_| SubmissionError {
-                                inner: SubmissionErrorClass::Timeout,
-                                strategy: strategy.label(),
-                            }),
-                        Err(_) => Err(SubmissionError {
-                            inner: SubmissionErrorClass::Timeout,
+                    .map(|tx| {
+                        tx.map(|tx| SubmissionReceipt {
+                            tx,
                             strategy: strategy.label(),
-                        }),
-                    };
+                        })
+                    })
+                    .map_err(|_| SubmissionError::Timeout)?;
                 }
                 _ => {}
             }
@@ -275,15 +259,7 @@ impl SolutionSubmitter {
             }
         };
 
-        let network_id = self
-            .web3
-            .net()
-            .version()
-            .await
-            .map_err(|err| SubmissionError {
-                inner: err.into(),
-                strategy: "all",
-            })?;
+        let network_id = self.web3.net().version().await?;
         let mut futures = strategies
             .iter()
             .enumerate()
@@ -334,12 +310,9 @@ impl SolutionSubmitter {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
                 if !matches!(account, Account::Offline(..)) {
-                    return Err(SubmissionError {
-                        inner: SubmissionErrorClass::from(anyhow!(
-                            "Submission to private network requires offline account for signing"
-                        )),
-                        strategy: strategy.label(),
-                    });
+                    return Err(SubmissionError::from(anyhow!(
+                        "Submission to private network requires offline account for signing"
+                    )));
                 }
             }
             TransactionStrategy::PublicMempool(_) => {}
@@ -384,26 +357,19 @@ impl SolutionSubmitter {
             strategy_args.sub_tx_pool.clone(),
             self.web3.clone(),
             self.code_fetcher.as_ref(),
-        )
-        .map_err(|err| SubmissionError {
-            inner: SubmissionErrorClass::from(err),
-            strategy: strategy.label(),
-        })?;
-        match submitter.submit(settlement, params).await {
-            Ok(tx) => Ok(SubmissionReceipt {
+        )?;
+        submitter
+            .submit(settlement, params)
+            .await
+            .map(|tx| SubmissionReceipt {
                 tx,
                 strategy: strategy.label(),
-            }),
-            Err(inner) => Err(SubmissionError {
-                inner,
-                strategy: strategy.label(),
-            }),
-        }
+            })
     }
 }
 
 #[derive(Debug)]
-pub enum SubmissionErrorClass {
+pub enum SubmissionError {
     /// The transaction reverted in the simulation stage.
     SimulationRevert(Option<String>),
     /// Transaction successfully mined but reverted
@@ -418,7 +384,7 @@ pub enum SubmissionErrorClass {
     Other(anyhow::Error),
 }
 
-impl SubmissionErrorClass {
+impl SubmissionError {
     /// Returns the outcome for use with metrics.
     pub fn as_outcome(&self) -> SettlementSubmissionOutcome {
         match self {
@@ -492,71 +458,30 @@ impl SubmissionErrorClass {
     }
 }
 
-impl From<web3::Error> for SubmissionErrorClass {
+impl From<web3::Error> for SubmissionError {
     fn from(err: web3::Error) -> Self {
         Self::Other(err.into())
     }
 }
 
-impl From<anyhow::Error> for SubmissionErrorClass {
+impl From<anyhow::Error> for SubmissionError {
     fn from(err: anyhow::Error) -> Self {
         Self::Other(err)
     }
 }
 
-impl From<MethodError> for SubmissionErrorClass {
+impl From<MethodError> for SubmissionError {
     fn from(err: MethodError) -> Self {
         match err.inner {
-            ExecutionError::ConfirmTimeout(_) => SubmissionErrorClass::Timeout,
+            ExecutionError::ConfirmTimeout(_) => SubmissionError::Timeout,
             ExecutionError::Failure(_) | ExecutionError::InvalidOpcode => {
-                SubmissionErrorClass::SimulationRevert(None)
+                SubmissionError::SimulationRevert(None)
             }
-            ExecutionError::Revert(message) => SubmissionErrorClass::SimulationRevert(message),
-            _ => SubmissionErrorClass::Other(
+            ExecutionError::Revert(message) => SubmissionError::SimulationRevert(message),
+            _ => SubmissionError::Other(
                 anyhow::Error::from(err).context("settlement transaction failed"),
             ),
         }
-    }
-}
-
-/// An error during settlement submission.
-#[derive(Debug)]
-pub struct SubmissionError {
-    pub inner: SubmissionErrorClass,
-    // Needed for metric purposes
-    pub strategy: &'static str,
-}
-
-impl std::fmt::Display for SubmissionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl std::error::Error for SubmissionError {}
-
-impl SubmissionError {
-    /// Returns the outcome for use with metrics.
-    pub fn as_outcome(&self) -> SettlementSubmissionOutcome {
-        self.inner.as_outcome()
-    }
-
-    /// Returns the transaction hash of a reverted on-chain settlement.
-    pub fn revert_transaction_hash(&self) -> Option<H256> {
-        self.inner.revert_transaction_hash()
-    }
-
-    /// Convert this submission error into an `anyhow::Error`.
-    ///
-    /// This is implemented as a method instead of `From`/`Into` to avoid any
-    /// multiple trait implementation issues because of the `anyhow` blanket
-    /// `impl<T: Display> From<T> for anyhow::Error`.
-    pub fn into_anyhow(self) -> anyhow::Error {
-        self.inner.into_anyhow()
-    }
-
-    pub fn is_transaction_mined(&self) -> bool {
-        self.inner.is_transaction_mined()
     }
 }
 
@@ -564,7 +489,7 @@ impl SubmissionError {
 mod tests {
     use {super::*, ethcontract::H256, submitter::MockTransactionSubmitting};
 
-    impl PartialEq for SubmissionErrorClass {
+    impl PartialEq for SubmissionError {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
                 (Self::SimulationRevert(left), Self::SimulationRevert(right)) => left == right,
@@ -589,29 +514,29 @@ mod tests {
         for (from, to) in [
             (
                 ExecutionError::Failure(Default::default()),
-                SubmissionErrorClass::SimulationRevert(None),
+                SubmissionError::SimulationRevert(None),
             ),
             (
                 ExecutionError::InvalidOpcode,
-                SubmissionErrorClass::SimulationRevert(None),
+                SubmissionError::SimulationRevert(None),
             ),
             (
                 ExecutionError::Revert(Some("foo".to_owned())),
-                SubmissionErrorClass::SimulationRevert(Some("foo".to_owned())),
+                SubmissionError::SimulationRevert(Some("foo".to_owned())),
             ),
             (
                 ExecutionError::ConfirmTimeout(Box::new(
                     ethcontract::transaction::TransactionResult::Hash(H256::default()),
                 )),
-                SubmissionErrorClass::Timeout,
+                SubmissionError::Timeout,
             ),
             (
                 ExecutionError::NoLocalAccounts,
-                SubmissionErrorClass::Other(anyhow!("_")),
+                SubmissionError::Other(anyhow!("_")),
             ),
         ] {
             assert_eq!(
-                SubmissionErrorClass::from(MethodError::from_parts("foo()".to_owned(), from)),
+                SubmissionError::from(MethodError::from_parts("foo()".to_owned(), from)),
                 to,
             )
         }
