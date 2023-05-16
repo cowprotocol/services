@@ -104,6 +104,9 @@ impl RunLoop {
             let block_deadline = self.current_block.borrow().number
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
+            // save order executions for all orders in the solution, except for partial
+            // limit orders. order executions for partial limit orders will be
+            // saved after settling the order onchain.
             let mut order_executions = vec![];
             for order_id in &solution.orders {
                 let auction_order = auction
