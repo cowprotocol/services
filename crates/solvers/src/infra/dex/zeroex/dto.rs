@@ -76,6 +76,8 @@ pub struct Query {
 pub struct Slippage(BigDecimal);
 
 impl Query {
+    // TODO This style makes it really easy to forget something. It'd be better if I
+    // got rid of this and just had a from_domain(config, order, ...)
     pub fn with_domain(
         self,
         order: &dex::Order,

@@ -130,7 +130,7 @@ impl Fills {
         }))
     }
 
-    /// Adjusts the next fill amount that should be tried. Always halfes the
+    /// Adjusts the next fill amount that should be tried. Always halves the
     /// last tried amount.
     // TODO: make use of `price_impact` provided by some APIs to get a more optimal
     // next try.

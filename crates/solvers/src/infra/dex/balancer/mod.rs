@@ -44,25 +44,6 @@ impl Sor {
         }
     }
 
-    async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
-        let request = serde_json::to_string(&query)?;
-        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
-        let response = self
-            .client
-            .post(self.endpoint.clone())
-            .header("content-type", "application/json")
-            .body(request)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        tracing::trace!(%response, "quoted");
-        let quote = serde_json::from_str(&response)?;
-
-        Ok(quote)
-    }
-
     pub async fn swap(
         &self,
         order: &dex::Order,
@@ -161,6 +142,25 @@ impl Sor {
             },
             gas: eth::Gas(gas),
         })
+    }
+
+    async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
+        let request = serde_json::to_string(&query)?;
+        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
+        let response = self
+            .client
+            .post(self.endpoint.clone())
+            .header("content-type", "application/json")
+            .body(request)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        tracing::trace!(%response, "quoted");
+        let quote = serde_json::from_str(&response)?;
+
+        Ok(quote)
     }
 }
 

@@ -83,7 +83,7 @@ pub enum Class {
 /// - Liquidity orders can't be settled directly against on-chain liquidity.
 ///   They are meant to only be used in CoWs to facilitate the trading of other
 ///   non-liquidity orders.
-/// - Liquidity orders do no provide any solver rewards
+/// - Liquidity orders do not provide any solver rewards.
 ///
 /// As their name suggests, they are meant as a mechanism for providing
 /// liquidity on CoW Protocol to other non-liquidity orders: they provide a
@@ -94,10 +94,15 @@ pub enum Class {
 /// the other hand, liquidity orders are CoW Protocol orders, meaning that they
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
+// TODO I'd still prefer stronger types. Something like
+// pub enum Order { Liquidity(Liquidity), Market(Market), Limit(Limit) }
+// pub enum UserOrder { Market(Market), Limit(Limit) }
 #[derive(Debug)]
 pub struct NonLiquidity<'a>(&'a Order);
 
 impl<'a> NonLiquidity<'a> {
+    // TODO Should this be called UserOrder? The term "user order" is used
+    // here
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {
