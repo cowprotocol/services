@@ -425,33 +425,33 @@ impl SubmissionError {
     /// `impl<T: Display> From<T> for anyhow::Error`.
     pub fn into_anyhow(self) -> anyhow::Error {
         match self {
-            SubmissionError::Revert(hash) => anyhow!("transaction reverted, hash: {:?}", hash),
-            SubmissionError::Timeout => anyhow!("transaction did not get mined in time"),
-            SubmissionError::SimulationRevert(Some(message)) => {
+            Self::Revert(hash) => anyhow!("transaction reverted, hash: {:?}", hash),
+            Self::Timeout => anyhow!("transaction did not get mined in time"),
+            Self::SimulationRevert(Some(message)) => {
                 anyhow!("transaction simulation reverted with message {}", message)
             }
-            SubmissionError::Canceled(hash) => {
+            Self::Canceled(hash) => {
                 anyhow!(
                     "transaction cancelled after revert or timeout, hash: {:?}",
                     hash
                 )
             }
-            SubmissionError::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
-            SubmissionError::Disabled(reason) => {
+            Self::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
+            Self::Disabled(reason) => {
                 anyhow!("transaction disabled, reason: {:?}", reason)
             }
-            SubmissionError::Other(err) => err,
+            Self::Other(err) => err,
         }
     }
 
     pub fn is_transaction_mined(&self) -> bool {
         match self {
-            SubmissionError::SimulationRevert(_) => false,
-            SubmissionError::Revert(_) => true,
-            SubmissionError::Timeout => false,
-            SubmissionError::Canceled(_) => true,
-            SubmissionError::Other(_) => false,
-            SubmissionError::Disabled(_) => false,
+            Self::SimulationRevert(_) => false,
+            Self::Revert(_) => true,
+            Self::Timeout => false,
+            Self::Canceled(_) => true,
+            Self::Other(_) => false,
+            Self::Disabled(_) => false,
         }
     }
 }

@@ -64,7 +64,7 @@ pub enum SettlementSubmissionOutcome {
 }
 
 impl SettlementSubmissionOutcome {
-    fn label(&self) -> &'static str {
+    pub fn label(&self) -> &'static str {
         match self {
             SettlementSubmissionOutcome::Success => "success",
             SettlementSubmissionOutcome::Revert => "revert",
