@@ -237,7 +237,7 @@ impl DecodedSettlement {
                     // same order with different `solver_fees`. To end up with the correct total
                     // fees we can only use every `OrderExecution` exactly once.
                     let order = orders.swap_remove(i);
-                    acc + match fee(external_prices, &order) {
+                    acc + match self.fee(external_prices, &order, trade) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -253,6 +253,66 @@ impl DecodedSettlement {
                 }
             }
         })
+    }
+
+    fn fee(
+        &self,
+        external_prices: &ExternalPrices,
+        order: &OrderExecution,
+        trade: &DecodedTrade,
+    ) -> Option<U256> {
+        let solver_fee = match &order.executed_solver_fee {
+            Some(solver_fee) => u256_to_big_rational(solver_fee),
+            None => {
+                // this should be a partial limit order
+                if !trade.flags.partially_fillable() {
+                    tracing::warn!("missing solver fee for non partial fee order");
+                    return None;
+                }
+
+                // get uniform prices
+                let sell_index = self
+                    .tokens
+                    .iter()
+                    .position(|token| token == &order.sell_token)?;
+                let buy_index = self
+                    .tokens
+                    .iter()
+                    .position(|token| token == &order.buy_token)?;
+                let uniform_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+                let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+
+                // get executed(adjusted) prices
+                let sell_index = trade.sell_token_index.as_u64() as usize;
+                let buy_index = trade.buy_token_index.as_u64() as usize;
+                let adjusted_sell_price = self.clearing_prices.get(sell_index)?;
+                let adjusted_buy_price = self.clearing_prices.get(buy_index)?;
+
+                let fee = match order.kind {
+                    OrderKind::Buy => {
+                        let executed_sell_amount = trade
+                            .executed_amount
+                            .checked_mul(uniform_buy_price)?
+                            .checked_div(uniform_sell_price)?;
+                        adjusted_buy_price.checked_sub(executed_sell_amount)?
+                    }
+                    OrderKind::Sell => {
+                        let sell_amount = adjusted_sell_price
+                            .checked_mul(uniform_buy_price)?
+                            .checked_div(uniform_sell_price)?;
+                        sell_amount.checked_sub(trade.executed_amount)?
+                    }
+                };
+
+                u256_to_big_rational(&fee)
+            }
+        };
+
+        // Converts the order's `solver_fee` which is denominated in `sell_token` to the native token.
+        tracing::trace!(?solver_fee, "fee before conversion to native token");
+        let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
+        tracing::trace!(?fee, "fee after conversion to native token");
+        big_rational_to_u256(&fee).ok()
     }
 }
 
@@ -300,16 +360,6 @@ fn surplus(
     };
 
     big_rational_to_u256(&normalized_surplus).ok()
-}
-
-/// Converts the order's `solver_fee` which is denominated in `sell_token` to
-/// the native token.
-fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
-    let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
-    tracing::trace!(?solver_fee, "fee before conversion to native token");
-    let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
-    tracing::trace!(?fee, "fee after conversion to native token");
-    big_rational_to_u256(&fee).ok()
 }
 
 fn trade_surplus(
