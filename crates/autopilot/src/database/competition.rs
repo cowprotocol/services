@@ -17,7 +17,7 @@ use {
 pub enum ExecutedFee {
     Solver(U256),
     /// Optionable because, for partially fillable limit orders, surplus fee is
-    /// unkwnown until the transaction is mined.
+    /// unknown until the transaction is mined.
     Surplus(Option<U256>),
 }
 

@@ -288,6 +288,7 @@ impl DecodedSettlement {
                 let adjusted_sell_price = self.clearing_prices.get(sell_index)?;
                 let adjusted_buy_price = self.clearing_prices.get(buy_index)?;
 
+                // the logic is opposite to the code in function `custom_price_for_limit_order`
                 let fee = match order.kind {
                     OrderKind::Buy => {
                         let executed_sell_amount = trade
@@ -308,7 +309,8 @@ impl DecodedSettlement {
             }
         };
 
-        // Converts the order's `solver_fee` which is denominated in `sell_token` to the native token.
+        // converts the order's `solver_fee` which is denominated in `sell_token` to the
+        // native token.
         tracing::trace!(?solver_fee, "fee before conversion to native token");
         let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
         tracing::trace!(?fee, "fee after conversion to native token");
