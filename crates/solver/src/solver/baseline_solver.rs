@@ -55,7 +55,7 @@ impl Solver for BaselineSolver {
         let orders = super::balance_and_convert_orders(
             self.ethflow_contract,
             &self.order_converter,
-            &balances,
+            balances,
             orders,
         );
         Ok(self.solve_(orders, liquidity, slippage, gas_price))
