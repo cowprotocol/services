@@ -17,7 +17,6 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     primitive_types::U256,
-    num::ToPrimitive,
     std::collections::HashMap,
 };
 
