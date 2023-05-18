@@ -201,11 +201,20 @@ pub struct BalancerContracts {
 
 impl BalancerContracts {
     pub async fn new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
-        let vault = BalancerV2Vault::deployed(web3).await?;
+        let vault = BalancerV2Vault::deployed(web3)
+            .await
+            .context("Cannot retrieve balancer vault")?;
 
         macro_rules! instance {
             ($factory:ident) => {{
-                $factory::deployed(web3).await?.raw_instance().clone()
+                $factory::deployed(web3)
+                    .await
+                    .context(format!(
+                        "Cannot retrieve Balancer factory {}",
+                        stringify!($factory)
+                    ))?
+                    .raw_instance()
+                    .clone()
             }};
         }
 
