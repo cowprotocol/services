@@ -151,7 +151,7 @@ impl TradeVerifier {
             .settle(
                 vec![query.sell_token, query.buy_token],
                 vec![buy_amount, sell_amount],
-                trade.encode(),
+                [vec![], trade.encode(), vec![]],
                 sell_amount,
             )
             .tx;
@@ -435,12 +435,11 @@ mod tests {
         let trade = Trade {
             out_amount: 2_000_000_u128.into(),
             gas_estimate: 133_700,
-            approval: None,
-            interaction: Interaction {
+            interactions: vec![Interaction {
                 target: H160([0x7; 20]),
                 value: 0_u64.into(),
                 data: vec![1, 2, 3, 4],
-            },
+            }],
         };
         let sell_token_code = bytes!("05060708");
 
@@ -575,6 +574,7 @@ mod tests {
         };
         let trade = Trade {
             out_amount: 1_000_000_u128.into(),
+            interactions: vec![Default::default()],
             ..Default::default()
         };
 
@@ -724,7 +724,7 @@ mod tests {
         let trade = Trade {
             out_amount: 2_000_000_u128.into(),
             gas_estimate: 133_700,
-            ..Default::default()
+            interactions: vec![Default::default()],
         };
 
         let mut finder = MockTradeFinding::new();
@@ -810,7 +810,7 @@ mod tests {
         // Cannot decode output
         assert_output!(is_err: "");
 
-        // Mising trader balances
+        // Missing trader balances
         //
         // (
         //     0,
@@ -829,7 +829,7 @@ mod tests {
              0000000000000000000000000000000000000000000000000000000000000000"
         );
 
-        // Mising settlement balances
+        // Missing settlement balances
         //
         // (
         //     0,
@@ -948,6 +948,26 @@ mod tests {
              0000000000000000000000000000000000000000000000000000000000000002
              0000000000000000000000000000000000000000000000000000000000000000
              0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        // Proposing a trade relying on internal buffers does not work.
+        //
+        // (
+        //     0,
+        //     [-100, 200],
+        //     [100, -200],
+        // )
+        assert_output!(
+            is_err:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9d
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000064
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff38"
         );
     }
 

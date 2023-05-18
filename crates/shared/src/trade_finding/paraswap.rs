@@ -135,16 +135,17 @@ impl Inner {
 
         let tx = self.paraswap.transaction(tx_query).await?;
 
-        Ok(Trade {
-            out_amount: quote.data.out_amount,
-            gas_estimate: quote.data.gas_estimate,
-            approval: Some((query.sell_token, quote.price.token_transfer_proxy)),
-            interaction: Interaction {
+        Ok(Trade::swap(
+            query.sell_token,
+            quote.data.out_amount,
+            quote.data.gas_estimate,
+            Some(quote.price.token_transfer_proxy),
+            Interaction {
                 target: tx.to,
                 value: tx.value,
                 data: tx.data,
             },
-        })
+        ))
     }
 }
 

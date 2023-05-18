@@ -348,6 +348,10 @@ impl<'a> Submitter<'a> {
         fallback_result
             .transpose()
             .unwrap_or(Err(SubmissionError::Timeout))
+            .map_err(|err| {
+                track_strategy_outcome(&format!("{name}"), err.as_outcome().label());
+                err
+            })
     }
 
     async fn nonce(&self) -> Result<U256> {
@@ -667,6 +671,9 @@ struct Metrics {
     /// submission strategies.
     #[metric(labels("submitter"))]
     mined_transactions: prometheus::IntCounterVec,
+    /// Settlement submission outcomes for each strategy
+    #[metric(labels("strategy", "result"))]
+    strategy_outcomes: prometheus::IntCounterVec,
 }
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
@@ -686,6 +693,13 @@ fn track_mined_transactions(submitter: &str) {
         .inc();
 }
 
+fn track_strategy_outcome(strategy: &str, outcome: &str) {
+    Metrics::instance(global_metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .strategy_outcomes
+        .with_label_values(&[strategy, outcome])
+        .inc();
+}
 #[cfg(test)]
 mod tests {
     use {

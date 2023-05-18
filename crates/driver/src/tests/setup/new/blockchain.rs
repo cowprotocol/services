@@ -452,7 +452,11 @@ impl Blockchain {
 
     /// Set up the blockchain context and return the interactions needed to
     /// fulfill the orders.
-    pub async fn fulfill(&self, orders: &[Order], solution: super::Solution) -> Vec<Fulfillment> {
+    pub async fn fulfill(
+        &self,
+        orders: impl Iterator<Item = &Order>,
+        solution: super::Solution,
+    ) -> Vec<Fulfillment> {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
@@ -559,9 +563,11 @@ impl Blockchain {
                         calldata: match solution {
                             super::Solution::Valid => transfer_interaction,
                             super::Solution::InvalidCalldata => vec![1, 2, 3, 4, 5],
-                            super::Solution::AdditionalCalldata { bytes } => transfer_interaction
+                            super::Solution::LowerScore {
+                                additional_calldata,
+                            } => transfer_interaction
                                 .into_iter()
-                                .chain(std::iter::repeat(0xab).take(bytes))
+                                .chain(std::iter::repeat(0xab).take(additional_calldata))
                                 .collect(),
                         },
                         inputs: Default::default(),

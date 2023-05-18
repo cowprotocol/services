@@ -101,6 +101,7 @@ pub mod solve {
         #[serde_as(as = "DecimalU256")]
         pub executed: U256,
         pub pre_interactions: Vec<()>,
+        pub post_interactions: Vec<()>,
         pub sell_token_balance: SellTokenSource,
         pub buy_token_balance: BuyTokenDestination,
         pub class: Class,

@@ -154,7 +154,7 @@ impl OnSettlementEventUpdater {
                 auction_external_prices.clone(),
             )?;
 
-            tracing::trace!(
+            tracing::debug!(
                 ?auction_id,
                 ?auction_external_prices,
                 ?orders,

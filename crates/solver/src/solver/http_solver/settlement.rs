@@ -39,7 +39,7 @@ pub async fn convert_settlement(
     settled: SettledBatchAuctionModel,
     context: &SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
-    order_converter: Arc<OrderConverter>,
+    order_converter: &OrderConverter,
     slippage: SlippageContext<'_>,
     domain: &DomainSeparator,
     enforce_correct_fees: bool,
@@ -217,7 +217,7 @@ impl<'a> IntermediateSettlement<'a> {
         settled: SettledBatchAuctionModel,
         context: &SettlementContext,
         allowance_manager: Arc<dyn AllowanceManaging>,
-        order_converter: Arc<OrderConverter>,
+        order_converter: &OrderConverter,
         slippage: SlippageContext<'a>,
         domain: &DomainSeparator,
         enforce_correct_fees: bool,
@@ -322,7 +322,7 @@ fn match_prepared_and_settled_orders(
 }
 
 fn convert_foreign_liquidity_orders(
-    order_converter: Arc<OrderConverter>,
+    order_converter: &OrderConverter,
     foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
     domain: &DomainSeparator,
 ) -> Result<Vec<ExecutedLimitOrder>> {
@@ -707,7 +707,7 @@ mod tests {
             settled,
             &prepared,
             Arc::new(MockAllowanceManaging::new()),
-            Arc::new(OrderConverter::test(weth)),
+            &OrderConverter::test(weth),
             SlippageContext::default(),
             &Default::default(),
             true,

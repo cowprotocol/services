@@ -43,9 +43,7 @@ services:
   # The driver expects to be tested against a geth node in dev mode
   # because it's the only dev environment which supports eth_createAccessList.
   dev-geth:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.dev-geth
+    image: ghcr.io/cowprotocol/dev-geth:latest
     restart: on-failure
     ports:
       - 8547:8547

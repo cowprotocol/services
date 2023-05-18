@@ -16,15 +16,19 @@ async fn valid() {
             600000000000u64.into(),
         )
         .order(Order {
+            name: "example order",
             amount: 500000000000000000u64.into(),
             sell_token: "A",
             buy_token: "B",
             ..Default::default()
         })
-        .solution(Solution::Valid)
-        // Additional calldata increases the TX size, so the fees are higher resulting in a lower
-        // score.
-        .solution(Solution::AdditionalCalldata { bytes: 5 })
+        .solution(Solution::Valid, &["example order"])
+        .solution(
+            Solution::LowerScore {
+                additional_calldata: 5,
+            },
+            &["example order"],
+        )
         .done()
         .await;
 
@@ -46,16 +50,20 @@ async fn invalid() {
             600000000000u64.into(),
         )
         .order(Order {
+            name: "example order",
             amount: 500000000000000000u64.into(),
             sell_token: "A",
             buy_token: "B",
             ..Default::default()
         })
-        .solution(Solution::Valid)
-        // Additional calldata increases the TX size, so the fees are higher resulting in a lower
-        // score.
-        .solution(Solution::AdditionalCalldata { bytes: 5 })
-        .solution(Solution::InvalidCalldata)
+        .solution(Solution::Valid, &["example order"])
+        .solution(
+            Solution::LowerScore {
+                additional_calldata: 5,
+            },
+            &["example order"],
+        )
+        .solution(Solution::InvalidCalldata, &["example order"])
         .done()
         .await;
 

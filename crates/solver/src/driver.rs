@@ -8,10 +8,9 @@ use {
         auction_preprocessing,
         driver_logger::DriverLogger,
         in_flight_orders::InFlightOrders,
-        liquidity::order_converter::OrderConverter,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
         metrics::SolverMetrics,
-        order_balance_filter::OrderBalanceFilter,
+        order_balance_filter,
         orderbook::OrderBookApi,
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
@@ -40,6 +39,7 @@ use {
     num::{rational::Ratio, BigInt, ToPrimitive},
     primitive_types::{H160, U256},
     shared::{
+        account_balances::BalanceFetching,
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         external_prices::ExternalPrices,
@@ -70,7 +70,6 @@ pub struct Driver {
     solution_submitter: SolutionSubmitter,
     run_id: u64,
     api: OrderBookApi,
-    order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
@@ -78,7 +77,7 @@ pub struct Driver {
     last_attempted_settlement: Option<AuctionId>,
     process_partially_fillable_liquidity_orders: bool,
     process_partially_fillable_limit_orders: bool,
-    order_balance_filter: OrderBalanceFilter,
+    balance_fetcher: Arc<dyn BalanceFetching>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -100,7 +99,6 @@ impl Driver {
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         api: OrderBookApi,
-        order_converter: Arc<OrderConverter>,
         simulation_gas_limit: u128,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
@@ -108,8 +106,8 @@ impl Driver {
         solution_comparison_decimal_cutoff: u16,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
-        order_balance_filter: OrderBalanceFilter,
         settlement_rater: Arc<dyn SettlementRating>,
+        balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         let gas_price_estimator =
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
@@ -146,7 +144,6 @@ impl Driver {
             solution_submitter,
             run_id: 0,
             api,
-            order_converter,
             in_flight_orders: InFlightOrders::default(),
             settlement_ranker,
             logger,
@@ -154,7 +151,7 @@ impl Driver {
             last_attempted_settlement: None,
             process_partially_fillable_liquidity_orders,
             process_partially_fillable_limit_orders,
-            order_balance_filter,
+            balance_fetcher,
         }
     }
 
@@ -276,45 +273,17 @@ impl Driver {
             }
         });
 
-        let previous_orders: Vec<OrderUid> = auction
-            .orders
-            .iter()
-            .map(|order| order.metadata.uid)
-            .collect();
         let balance_start = Instant::now();
-        let orders = self.order_balance_filter.filter(auction.orders).await;
+        let balances =
+            order_balance_filter::fetch_balances(self.balance_fetcher.as_ref(), &auction.orders)
+                .await;
         tracing::debug!(
-            "filtering orders based on balance took {}s",
+            "fetching order balances took {}s",
             balance_start.elapsed().as_secs_f32()
         );
-        let new_orders: HashSet<OrderUid> = orders
-            .iter()
-            .map(|order| order.order.metadata.uid)
-            .collect();
-        for uid in previous_orders {
-            if !new_orders.contains(&uid) {
-                tracing::debug!(%uid, "order filtered because of missing balance");
-            }
-        }
 
-        let orders = orders
-            .into_iter()
-            .filter_map(|order| {
-                let uid = order.order.metadata.uid;
-                match self.order_converter.normalize_limit_order(order) {
-                    Ok(order) => Some(order),
-                    Err(err) => {
-                        // This should never happen unless we are getting malformed
-                        // orders from the API - so raise an alert if this happens.
-                        tracing::error!(?err, order = %uid, "error normalizing limit order");
-                        None
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        tracing::info!(count =% orders.len(), ?orders, "got orders");
-        self.metrics.orders_fetched(&orders);
+        tracing::info!(count =% auction.orders.len(), "got orders");
+        self.metrics.orders_fetched(&auction.orders);
 
         let auction_prices = auction.prices.clone();
         let external_prices =
@@ -322,7 +291,7 @@ impl Driver {
                 .context("malformed auction prices")?;
         tracing::debug!(?external_prices, "estimated prices");
 
-        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
+        if !auction_preprocessing::has_at_least_one_user_order(&auction.orders) {
             return Ok(false);
         }
 
@@ -333,10 +302,11 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
-        let pairs: HashSet<_> = orders
+        let pairs: HashSet<_> = auction
+            .orders
             .iter()
-            .filter(|o| !o.is_liquidity_order())
-            .flat_map(|o| TokenPair::new(o.buy_token, o.sell_token))
+            .filter(|o| !o.metadata.is_liquidity_order)
+            .flat_map(|o| TokenPair::new(o.data.buy_token, o.data.sell_token))
             .collect();
         let liquidity = self
             .liquidity_collector
@@ -347,12 +317,13 @@ impl Driver {
         let auction = Auction {
             id: auction_id,
             run: run_id,
-            orders: orders.clone(),
+            orders: auction.orders,
             liquidity,
             liquidity_fetch_block: current_block_during_liquidity_fetch,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
+            balances,
         };
 
         tracing::debug!(deadline =? auction.deadline, "solving auction");

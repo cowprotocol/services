@@ -197,6 +197,7 @@ async fn test() {
                         "partiallyFillable": false,
                         "executed": "0",
                         "preInteractions": [],
+                        "postInteractions": [],
                         "class": "limit",
                         "surplusFee": surplus_fee.to_string(),
                         "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
