@@ -289,7 +289,7 @@ impl DecodedSettlement {
                 let adjusted_buy_price = self.clearing_prices.get(buy_index)?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                let fee = match order.kind {
+                let fee = match trade.flags.order_kind() {
                     OrderKind::Buy => {
                         let executed_sell_amount = trade
                             .executed_amount
