@@ -71,7 +71,7 @@ impl ParaSwap {
         let request = self
             .client
             .get(self.config.endpoint.join("prices").unwrap())
-            .query(&dto::PriceQuery::new(&self.config, order, auction))
+            .query(&dto::PriceQuery::new(&self.config, order, auction)?)
             .build()?;
         tracing::trace!("Querying ParaSwap price API: {request:?}");
         let response = self.client.execute(request).await?;
@@ -121,6 +121,8 @@ impl ParaSwap {
 pub enum Error {
     #[error("no swap could be found")]
     NotFound,
+    #[error("decimals are missing for the swapped tokens")]
+    MissingDecimals,
     #[error("api error {0}")]
     Api(String),
     #[error(transparent)]

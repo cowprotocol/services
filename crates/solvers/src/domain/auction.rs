@@ -22,11 +22,8 @@ impl Auction {
     }
 
     /// Decimals for the specified token.
-    pub fn decimals(&self, token: &eth::TokenAddress) -> u8 {
-        self.tokens
-            .get(token)
-            .and_then(|token| token.decimals)
-            .unwrap_or(18)
+    pub fn decimals(&self, token: &eth::TokenAddress) -> Option<u8> {
+        self.tokens.get(token).and_then(|token| token.decimals)
     }
 }
 

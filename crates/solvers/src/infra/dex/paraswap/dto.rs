@@ -49,12 +49,20 @@ pub struct PriceQuery {
 }
 
 impl PriceQuery {
-    pub fn new(config: &super::Config, order: &dex::Order, auction: &Auction) -> Self {
-        Self {
+    pub fn new(
+        config: &super::Config,
+        order: &dex::Order,
+        auction: &Auction,
+    ) -> Result<Self, super::Error> {
+        Ok(Self {
             src_token: order.sell.0,
             dest_token: order.buy.0,
-            src_decimals: auction.decimals(&order.sell),
-            dest_decimals: auction.decimals(&order.buy),
+            src_decimals: auction
+                .decimals(&order.sell)
+                .ok_or(super::Error::MissingDecimals)?,
+            dest_decimals: auction
+                .decimals(&order.buy)
+                .ok_or(super::Error::MissingDecimals)?,
             side: match order.side {
                 order::Side::Buy => Side::Buy,
                 order::Side::Sell => Side::Sell,
@@ -62,7 +70,7 @@ impl PriceQuery {
             amount: order.amount.get(),
             exclude_dexs: config.exclude_dexs.clone(),
             network: "1".to_owned(),
-        }
+        })
     }
 }
 
@@ -108,7 +116,7 @@ impl TransactionBody {
         order: &dex::Order,
         auction: &Auction,
         slippage: &dex::Slippage,
-    ) -> Result<Self, serde_json::Error> {
+    ) -> Result<Self, super::Error> {
         let (src_amount, dest_amount) = match order.side {
             order::Side::Sell => (price.src_amount()?, slippage.sub(price.dest_amount()?)),
             order::Side::Buy => (slippage.add(price.src_amount()?), price.dest_amount()?),
@@ -116,8 +124,12 @@ impl TransactionBody {
         Ok(Self {
             src_token: order.sell.0,
             dest_token: order.buy.0,
-            src_decimals: auction.decimals(&order.sell),
-            dest_decimals: auction.decimals(&order.buy),
+            src_decimals: auction
+                .decimals(&order.sell)
+                .ok_or(super::Error::MissingDecimals)?,
+            dest_decimals: auction
+                .decimals(&order.buy)
+                .ok_or(super::Error::MissingDecimals)?,
             src_amount,
             dest_amount,
             price_route: price.price_route.clone(),
