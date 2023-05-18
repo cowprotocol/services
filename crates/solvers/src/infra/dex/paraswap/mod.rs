@@ -25,7 +25,7 @@ pub struct Config {
     pub address: Address,
 
     /// Our partner name.
-    pub partner: String,
+    pub partner: Option<String>,
 }
 
 impl ParaSwap {

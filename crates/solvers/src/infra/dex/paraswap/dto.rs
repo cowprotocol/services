@@ -107,6 +107,9 @@ pub struct TransactionBody {
 
     /// The address of the signer.
     pub user_address: H160,
+
+    /// The partner name.
+    pub partner: Option<String>,
 }
 
 impl TransactionBody {
@@ -134,6 +137,7 @@ impl TransactionBody {
             dest_amount,
             price_route: price.price_route.clone(),
             user_address: config.address,
+            partner: config.partner.clone(),
         })
     }
 }
