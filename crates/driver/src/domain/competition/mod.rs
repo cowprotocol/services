@@ -14,6 +14,7 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
+    model::order::OrderUid,
     rand::seq::SliceRandom,
     std::sync::Mutex,
     tap::TapFallible,
@@ -50,7 +51,15 @@ impl Competition {
     pub async fn solve(
         &self,
         auction: &Auction,
-    ) -> Result<(settlement::Id, solution::Score, solution::Reward), Error> {
+    ) -> Result<
+        (
+            settlement::Id,
+            solution::Score,
+            solution::Reward,
+            Vec<OrderUid>,
+        ),
+        Error,
+    > {
         tracing::trace!("fetching liquidity");
         let liquidity = self
             .liquidity
@@ -209,7 +218,8 @@ impl Competition {
             performance_address: self.solver.address(),
             participation_address: self.solver.address(),
         };
-        Ok((id, score, reward))
+        let orders = vec![]; // TODO: implement
+        Ok((id, score, reward, orders))
     }
 
     /// Execute a settlement generated as part of this competition.

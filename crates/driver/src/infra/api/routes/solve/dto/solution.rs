@@ -1,5 +1,6 @@
 use {
     crate::domain::competition::{self, solution::settlement},
+    model::order::OrderUid,
     primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -10,6 +11,7 @@ impl Solution {
         id: settlement::Id,
         score: competition::Score,
         rewards: competition::Reward,
+        orders: Vec<OrderUid>,
     ) -> Self {
         Self {
             id: id.into(),
@@ -18,6 +20,7 @@ impl Solution {
                 performance_address: rewards.performance_address.into(),
                 participation_address: rewards.participation_address.into(),
             },
+            orders,
         }
     }
 }
@@ -36,4 +39,5 @@ pub struct Solution {
     id: u64,
     score: U256,
     reward: Reward,
+    orders: Vec<OrderUid>,
 }
