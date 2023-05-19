@@ -2,10 +2,7 @@ use {
     super::SolverInfo,
     crate::{
         liquidity::{
-            order_converter::OrderConverter,
-            LimitOrder,
-            LimitOrderExecution,
-            LimitOrderId,
+            order_converter::OrderConverter, LimitOrder, LimitOrderExecution, LimitOrderId,
         },
         metrics::SolverMetrics,
         settlement::Settlement,
@@ -353,6 +350,7 @@ impl Solver for SingleOrderSolver {
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         let solver_span = tracing::info_span!("", solver = self.name());
+        let _e = solver_span.enter();
         let orders = super::balance_and_convert_orders(
             self.ethflow_contract,
             &self.order_converter,
@@ -710,8 +708,7 @@ mod tests {
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::{
-            http_solver::model::InternalizationStrategy,
-            price_estimation::gas::SETTLEMENT_OVERHEAD,
+            http_solver::model::InternalizationStrategy, price_estimation::gas::SETTLEMENT_OVERHEAD,
         },
         std::{collections::HashMap, sync::Arc},
     };
