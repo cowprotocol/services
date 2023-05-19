@@ -72,9 +72,9 @@ pub enum Class {
     Liquidity,
 }
 
-/// An order that is guaranteed to not be a liquidity order.
+/// A user order, guaranteed to not be a liquidity order.
 ///
-/// Note that the concept of a "non-liquidity" order is important enough to
+/// Note that the concept of a user order is important enough to
 /// merit its own type. The reason for this is that these orders and liquidity
 /// orders differ in fundamental ways and we do not want to confuse them and
 /// accidentally use a liquidity order where it shouldn't be used. Some of the
@@ -83,7 +83,7 @@ pub enum Class {
 /// - Liquidity orders can't be settled directly against on-chain liquidity.
 ///   They are meant to only be used in CoWs to facilitate the trading of other
 ///   non-liquidity orders.
-/// - Liquidity orders do no provide any solver rewards
+/// - Liquidity orders do not provide any solver rewards.
 ///
 /// As their name suggests, they are meant as a mechanism for providing
 /// liquidity on CoW Protocol to other non-liquidity orders: they provide a
@@ -95,9 +95,9 @@ pub enum Class {
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
 #[derive(Debug)]
-pub struct NonLiquidity<'a>(&'a Order);
+pub struct UserOrder<'a>(&'a Order);
 
-impl<'a> NonLiquidity<'a> {
+impl<'a> UserOrder<'a> {
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {

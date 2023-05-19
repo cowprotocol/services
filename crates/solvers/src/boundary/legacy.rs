@@ -110,6 +110,7 @@ fn to_boundary_auction(
     let mut model = BatchAuctionModel {
         tokens: auction
             .tokens
+            .0
             .iter()
             .map(|(address, info)| {
                 let is_weth = address.0 == weth.0;
@@ -242,11 +243,7 @@ fn to_boundary_auction(
                 let token = |address: eth::TokenAddress| {
                     // Uniswap V3 math doesn't care about decimals, so default
                     // to 18 if it isn't available.
-                    let decimals = auction
-                        .tokens
-                        .get(&address)
-                        .and_then(|token| token.decimals)
-                        .unwrap_or(18);
+                    let decimals = auction.tokens.decimals(&address).unwrap_or(18);
 
                     Token {
                         id: address.0,

@@ -17,25 +17,26 @@ impl Auction {
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
             id: self.id.clone().map(auction::Id),
-            tokens: self
-                .tokens
-                .iter()
-                .map(|(address, token)| {
-                    (
-                        eth::TokenAddress(*address),
-                        auction::Token {
-                            decimals: token.decimals,
-                            symbol: token.symbol.clone(),
-                            reference_price: token
-                                .reference_price
-                                .map(eth::Ether)
-                                .map(auction::Price),
-                            available_balance: token.available_balance,
-                            trusted: token.trusted,
-                        },
-                    )
-                })
-                .collect(),
+            tokens: auction::Tokens(
+                self.tokens
+                    .iter()
+                    .map(|(address, token)| {
+                        (
+                            eth::TokenAddress(*address),
+                            auction::Token {
+                                decimals: token.decimals,
+                                symbol: token.symbol.clone(),
+                                reference_price: token
+                                    .reference_price
+                                    .map(eth::Ether)
+                                    .map(auction::Price),
+                                available_balance: token.available_balance,
+                                trusted: token.trusted,
+                            },
+                        )
+                    })
+                    .collect(),
+            ),
             orders: self
                 .orders
                 .iter()

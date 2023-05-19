@@ -2,6 +2,7 @@ use crate::domain::{auction, dex};
 
 pub mod balancer;
 pub mod oneinch;
+pub mod paraswap;
 pub mod zeroex;
 
 /// A supported external DEX/DEX aggregator API.
@@ -9,6 +10,7 @@ pub enum Dex {
     Balancer(balancer::Sor),
     OneInch(oneinch::OneInch),
     ZeroEx(zeroex::ZeroEx),
+    ParaSwap(paraswap::ParaSwap),
 }
 
 impl Dex {
@@ -20,18 +22,20 @@ impl Dex {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
+        tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let swap = match self {
             Dex::Balancer(balancer) => balancer.swap(order, slippage, gas_price).await?,
             Dex::OneInch(oneinch) => oneinch.swap(order, slippage, gas_price).await?,
             Dex::ZeroEx(zeroex) => zeroex.swap(order, slippage, gas_price).await?,
+            Dex::ParaSwap(paraswap) => paraswap.swap(order, slippage, tokens).await?,
         };
         Ok(swap)
     }
 }
 
-/// A categorised error that occurred building a swap with an external DEX/DEX
+/// A categorized error that occurred building a swap with an external DEX/DEX
 /// aggregator.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -40,7 +44,7 @@ pub enum Error {
     #[error("no valid swap interaction could be found")]
     NotFound,
     #[error(transparent)]
-    Other(Box<dyn std::error::Error + Send + Sync + 'static>),
+    Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl From<balancer::Error> for Error {
@@ -66,6 +70,15 @@ impl From<zeroex::Error> for Error {
     fn from(err: zeroex::Error) -> Self {
         match err {
             zeroex::Error::NotFound => Self::NotFound,
+            _ => Self::Other(Box::new(err)),
+        }
+    }
+}
+
+impl From<paraswap::Error> for Error {
+    fn from(err: paraswap::Error) -> Self {
+        match err {
+            paraswap::Error::NotFound => Self::NotFound,
             _ => Self::Other(Box::new(err)),
         }
     }

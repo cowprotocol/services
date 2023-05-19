@@ -8,7 +8,13 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, order, solution},
+        domain::{
+            auction,
+            eth,
+            liquidity,
+            order::{self, UserOrder},
+            solution,
+        },
     },
     ethereum_types::U256,
     std::collections::HashSet,
@@ -45,8 +51,8 @@ impl Baseline {
             .orders
             .iter()
             .filter_map(|order| {
-                let sell_token = auction.tokens.get(&order.sell.token)?.reference_price?;
-                self.requests_for_order(order::NonLiquidity::new(order)?)
+                let sell_token = auction.tokens.reference_price(&order.sell.token)?;
+                self.requests_for_order(UserOrder::new(order)?)
                     .find_map(|request| {
                         tracing::trace!(?request, "finding route");
 
@@ -79,7 +85,7 @@ impl Baseline {
             .collect()
     }
 
-    fn requests_for_order(&self, order: order::NonLiquidity) -> impl Iterator<Item = Request> {
+    fn requests_for_order(&self, order: UserOrder) -> impl Iterator<Item = Request> {
         let order::Order {
             sell, buy, side, ..
         } = order.get().clone();

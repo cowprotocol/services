@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{dex, eth, order},
+        domain::{auction, dex, eth, order},
         util::conv,
     },
     bigdecimal::BigDecimal,
@@ -37,11 +37,7 @@ impl Fills {
 
     /// Returns which dex query should be tried for the given order. Takes
     /// information of previous partial fill attempts into account.
-    pub fn dex_order(
-        &self,
-        order: &order::Order,
-        prices: &dex::slippage::Prices,
-    ) -> Option<dex::Order> {
+    pub fn dex_order(&self, order: &order::Order, tokens: &auction::Tokens) -> Option<dex::Order> {
         if !order.partially_fillable {
             return Some(dex::Order::new(order));
         }
@@ -51,8 +47,9 @@ impl Fills {
             order::Side::Sell => (order.sell.token, order.sell.amount),
         };
 
-        let smallest_fill =
-            self.smallest_fill.clone() * prices.0.get(&ETH)? / prices.0.get(&token)?;
+        let smallest_fill = self.smallest_fill.clone()
+            * conv::ether_to_decimal(&tokens.reference_price(&ETH)?.0)
+            / conv::ether_to_decimal(&tokens.reference_price(&token)?.0);
         let smallest_fill = conv::bigdecimal_to_u256(&smallest_fill)?;
 
         let now = Instant::now();
@@ -130,7 +127,7 @@ impl Fills {
         }))
     }
 
-    /// Adjusts the next fill amount that should be tried. Always halfes the
+    /// Adjusts the next fill amount that should be tried. Always halves the
     /// last tried amount.
     // TODO: make use of `price_impact` provided by some APIs to get a more optimal
     // next try.
