@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, OrderUid},
+    crate::{auction::AuctionId, OrderUid, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
 };
@@ -29,7 +29,7 @@ VALUES ($1, $2, $3, $4, $5)
 // update already existing order_execution record with surplus_fee for partial
 // limit orders
 pub async fn update_surplus_fee(
-    ex: &mut PgConnection,
+    ex: &mut PgTransaction<'_>,
     order: &OrderUid,
     auction: AuctionId,
     surplus_fee: Option<&BigDecimal>,
