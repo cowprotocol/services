@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        domain::{auction::Auction, dex, order},
+        domain::{auction, dex, order},
         util::serialize,
     },
     ethereum_types::{H160, U256},
@@ -52,15 +52,15 @@ impl PriceQuery {
     pub fn new(
         config: &super::Config,
         order: &dex::Order,
-        auction: &Auction,
+        tokens: &auction::Tokens,
     ) -> Result<Self, super::Error> {
         Ok(Self {
             src_token: order.sell.0,
             dest_token: order.buy.0,
-            src_decimals: auction
+            src_decimals: tokens
                 .decimals(&order.sell)
                 .ok_or(super::Error::MissingDecimals)?,
-            dest_decimals: auction
+            dest_decimals: tokens
                 .decimals(&order.buy)
                 .ok_or(super::Error::MissingDecimals)?,
             side: match order.side {
@@ -117,7 +117,7 @@ impl TransactionBody {
         price: &Price,
         config: &super::Config,
         order: &dex::Order,
-        auction: &Auction,
+        tokens: &auction::Tokens,
         slippage: &dex::Slippage,
     ) -> Result<Self, super::Error> {
         let (src_amount, dest_amount) = match order.side {
@@ -127,10 +127,10 @@ impl TransactionBody {
         Ok(Self {
             src_token: order.sell.0,
             dest_token: order.buy.0,
-            src_decimals: auction
+            src_decimals: tokens
                 .decimals(&order.sell)
                 .ok_or(super::Error::MissingDecimals)?,
-            dest_decimals: auction
+            dest_decimals: tokens
                 .decimals(&order.buy)
                 .ok_or(super::Error::MissingDecimals)?,
             src_amount,

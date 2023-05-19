@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction::Auction, dex, eth},
+    crate::domain::{auction, dex, eth},
     ethereum_types::H160,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
@@ -105,12 +105,12 @@ impl OneInch {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        auction: &Auction,
+        gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let query = self
             .defaults
             .clone()
-            .with_domain(order, slippage, auction.gas_price)
+            .with_domain(order, slippage, gas_price)
             .ok_or(Error::OrderNotSupported)?;
         let swap = {
             // Set up a tracing span to make debugging of API requests easier.

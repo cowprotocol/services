@@ -1,8 +1,6 @@
 //! A simple solver that matches orders directly with swaps from the external
 //! DEX and DEX aggregator APIs.
 
-use crate::domain::auction::Auction;
-
 mod fills;
 
 use {
@@ -44,7 +42,11 @@ impl Dex {
         let mut solutions = Vec::new();
         for order in auction.orders.iter().cloned() {
             let span = tracing::info_span!("solve", order = %order.uid);
-            if let Some(solution) = self.solve_order(order, &auction).instrument(span).await {
+            if let Some(solution) = self
+                .solve_order(order, &auction.tokens, auction.gas_price)
+                .instrument(span)
+                .await
+            {
                 solutions.push(solution);
             }
         }
@@ -57,12 +59,13 @@ impl Dex {
     async fn solve_order(
         &self,
         order: order::Order,
-        auction: &Auction,
+        tokens: &auction::Tokens,
+        gas_price: auction::GasPrice,
     ) -> Option<solution::Solution> {
         let swap = {
-            let order = self.fills.dex_order(&order, auction)?;
-            let slippage = self.slippage.relative(&order.amount(), auction);
-            self.dex.swap(&order, &slippage, auction).await
+            let order = self.fills.dex_order(&order, tokens)?;
+            let slippage = self.slippage.relative(&order.amount(), tokens);
+            self.dex.swap(&order, &slippage, tokens, gas_price).await
         };
 
         let swap = match swap {
@@ -87,12 +90,12 @@ impl Dex {
             }
         };
 
-        let Some(sell) = auction.reference_price(&order.sell.token) else {
+        let Some(sell) = tokens.reference_price(&order.sell.token) else {
             tracing::warn!(token = ?order.sell.token.0, "missing sell token price");
             return None;
         };
         let uid = order.uid;
-        let Some(solution) = swap.into_solution(order, auction.gas_price, sell) else {
+        let Some(solution) = swap.into_solution(order, gas_price, sell) else {
             tracing::debug!("no solution for swap");
             return None;
         };

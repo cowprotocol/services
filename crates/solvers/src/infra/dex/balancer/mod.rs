@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction::Auction, dex, eth, order},
+    crate::domain::{auction, dex, eth, order},
     contracts::ethcontract::I256,
     ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
@@ -48,9 +48,9 @@ impl Sor {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        auction: &Auction,
+        gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
-        let query = dto::Query::from_domain(order, auction.gas_price);
+        let query = dto::Query::from_domain(order, gas_price);
         let quote = {
             // Set up a tracing span to make debugging of API requests easier.
             // Historically, debugging API requests to external DEXs was a bit

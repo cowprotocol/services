@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        domain::{auction::Auction, eth},
+        domain::{auction, eth},
         util::conv,
     },
     bigdecimal::BigDecimal,
@@ -30,9 +30,9 @@ impl Limits {
 
     /// Computes the actual slippage tolerance to use for an asset using the
     /// specified reference prices.
-    pub fn relative(&self, asset: &eth::Asset, auction: &Auction) -> Slippage {
+    pub fn relative(&self, asset: &eth::Asset, tokens: &auction::Tokens) -> Slippage {
         if let (Some(absolute), Some(price)) =
-            (&self.absolute, auction.reference_price(&asset.token))
+            (&self.absolute, tokens.reference_price(&asset.token))
         {
             let absolute = conv::ether_to_decimal(absolute);
             let amount = conv::ether_to_decimal(&eth::Ether(asset.amount))
@@ -107,20 +107,8 @@ impl Slippage {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::domain::auction::{self, Auction},
-    };
+    use {super::*, crate::domain::auction};
 
-    // TODO Notice that I'm forced to change the tests only because I refactored
-    // some code. None of the behavior changed, yet the tests are now useless
-    // because they've been changed.
-    // TODO Furthermore, notice how the domain changed to work with Auction as a
-    // consequence of gaining a deeper understanding of the domain (dex solving
-    // happens in the context of an auction, this is also clear since the dex
-    // solvers need multiple fields from the auction), and now the test breaks
-    // down. This is the opposite of what should happen. Nothing should ever
-    // hinder domain distillation.
     #[test]
     fn slippage_tolerance() {
         let token = |t: &str| eth::TokenAddress(t.parse().unwrap());
@@ -133,9 +121,8 @@ mod tests {
             trusted: Default::default(),
         };
 
-        let auction = Auction {
-            id: Default::default(),
-            tokens: [
+        let tokens = auction::Tokens(
+            [
                 // WETH
                 (
                     token("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
@@ -154,11 +141,7 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-            orders: Default::default(),
-            liquidity: Default::default(),
-            gas_price: Default::default(),
-            deadline: Default::default(),
-        };
+        );
         let slippage = Limits {
             relative: "0.01".parse().unwrap(), // 1%
             absolute: Some(ether("0.02")),
@@ -232,7 +215,7 @@ mod tests {
             let min = U256::from(min);
             let max = U256::from(max);
 
-            let computed = slippage.relative(&asset, &auction);
+            let computed = slippage.relative(&asset, &tokens);
 
             assert_eq!(computed.round(9), relative);
             assert_eq!(computed.sub(asset.amount), min);

@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction::Auction, dex, eth, order},
+    crate::domain::{auction, dex, eth, order},
     ethereum_types::H160,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
@@ -80,12 +80,12 @@ impl ZeroEx {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        auction: &Auction,
+        gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let query = self
             .defaults
             .clone()
-            .with_domain(order, slippage, auction.gas_price);
+            .with_domain(order, slippage, gas_price);
         let quote = {
             // Set up a tracing span to make debugging of API requests easier.
             // Historically, debugging API requests to external DEXs was a bit

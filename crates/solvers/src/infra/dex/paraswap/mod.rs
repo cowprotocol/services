@@ -1,5 +1,5 @@
 use {
-    crate::domain::{auction::Auction, dex, eth},
+    crate::domain::{auction, dex, eth},
     ethereum_types::Address,
 };
 
@@ -40,10 +40,10 @@ impl ParaSwap {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        auction: &Auction,
+        tokens: &auction::Tokens,
     ) -> Result<dex::Swap, Error> {
-        let price = self.price(order, auction).await?;
-        let transaction = self.transaction(&price, order, auction, slippage).await?;
+        let price = self.price(order, tokens).await?;
+        let transaction = self.transaction(&price, order, tokens, slippage).await?;
         Ok(dex::Swap {
             call: dex::Call {
                 to: eth::ContractAddress(transaction.to),
@@ -67,11 +67,15 @@ impl ParaSwap {
     }
 
     /// Make a request to the `/prices` endpoint.
-    async fn price(&self, order: &dex::Order, auction: &Auction) -> Result<dto::Price, Error> {
+    async fn price(
+        &self,
+        order: &dex::Order,
+        tokens: &auction::Tokens,
+    ) -> Result<dto::Price, Error> {
         let request = self
             .client
             .get(self.config.endpoint.join("prices").unwrap())
-            .query(&dto::PriceQuery::new(&self.config, order, auction)?)
+            .query(&dto::PriceQuery::new(&self.config, order, tokens)?)
             .build()?;
         tracing::trace!("Querying ParaSwap price API: {request:?}");
         let response = self.client.execute(request).await?;
@@ -87,7 +91,7 @@ impl ParaSwap {
         &self,
         price: &dto::Price,
         order: &dex::Order,
-        auction: &Auction,
+        tokens: &auction::Tokens,
         slippage: &dex::Slippage,
     ) -> Result<dto::Transaction, Error> {
         let request = self
@@ -102,7 +106,7 @@ impl ParaSwap {
                 price,
                 &self.config,
                 order,
-                auction,
+                tokens,
                 slippage,
             )?)
             .build()?;

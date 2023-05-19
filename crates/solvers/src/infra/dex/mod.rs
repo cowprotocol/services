@@ -1,4 +1,4 @@
-use crate::domain::{auction::Auction, dex};
+use crate::domain::{auction, dex};
 
 pub mod balancer;
 pub mod oneinch;
@@ -22,13 +22,14 @@ impl Dex {
         &self,
         order: &dex::Order,
         slippage: &dex::Slippage,
-        auction: &Auction,
+        tokens: &auction::Tokens,
+        gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let swap = match self {
-            Dex::Balancer(balancer) => balancer.swap(order, slippage, auction).await?,
-            Dex::OneInch(oneinch) => oneinch.swap(order, slippage, auction).await?,
-            Dex::ZeroEx(zeroex) => zeroex.swap(order, slippage, auction).await?,
-            Dex::ParaSwap(paraswap) => paraswap.swap(order, slippage, auction).await?,
+            Dex::Balancer(balancer) => balancer.swap(order, slippage, gas_price).await?,
+            Dex::OneInch(oneinch) => oneinch.swap(order, slippage, gas_price).await?,
+            Dex::ZeroEx(zeroex) => zeroex.swap(order, slippage, gas_price).await?,
+            Dex::ParaSwap(paraswap) => paraswap.swap(order, slippage, tokens).await?,
         };
         Ok(swap)
     }
