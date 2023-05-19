@@ -64,5 +64,5 @@ impl Price {
 
 /// The estimated effective gas price that will likely be used for executing the
 /// settlement transaction.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct GasPrice(pub eth::Ether);
