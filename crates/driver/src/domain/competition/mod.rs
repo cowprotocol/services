@@ -27,7 +27,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
-    solution::{Reward, Score, Solution, SolverTimeout},
+    solution::{Score, Solution, SolverTimeout, SubmissionAddress},
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -55,7 +55,7 @@ impl Competition {
         (
             settlement::Id,
             solution::Score,
-            solution::Reward,
+            solution::SubmissionAddress,
             Vec<OrderUid>,
         ),
         Error,
@@ -214,12 +214,9 @@ impl Competition {
         let id = settlement.id;
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        let reward = solution::Reward {
-            performance_address: self.solver.address(),
-            participation_address: self.solver.address(),
-        };
+        let address = solution::SubmissionAddress(self.solver.address());
         let orders = vec![]; // TODO: implement
-        Ok((id, score, reward, orders))
+        Ok((id, score, address, orders))
     }
 
     /// Execute a settlement generated as part of this competition.

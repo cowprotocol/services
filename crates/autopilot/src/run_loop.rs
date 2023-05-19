@@ -89,7 +89,7 @@ impl RunLoop {
             }
 
             let auction_id = id;
-            let winner = solution.reward.performance_address;
+            let winner = solution.submission_address;
             let winning_score = solution.score;
             let reference_score = solutions
                 .last()
@@ -97,9 +97,9 @@ impl RunLoop {
                 .unwrap_or_default();
             let mut participants = solutions
                 .iter()
-                .map(|(_, response)| response.reward.participation_address)
+                .map(|(_, response)| response.submission_address)
                 .collect::<HashSet<_>>();
-            participants.insert(solution.reward.participation_address); // add winner as participant
+            participants.insert(solution.submission_address); // add winner as participant
             let prices = auction.prices.clone();
             let block_deadline = self.current_block.borrow().number
                 + self.submission_deadline

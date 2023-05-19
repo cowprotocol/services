@@ -10,26 +10,16 @@ impl Solution {
     pub fn from_domain(
         id: settlement::Id,
         score: competition::Score,
-        rewards: competition::Reward,
+        address: competition::SubmissionAddress,
         orders: Vec<OrderUid>,
     ) -> Self {
         Self {
             id: id.into(),
             score: score.into(),
-            reward: Reward {
-                performance_address: rewards.performance_address.into(),
-                participation_address: rewards.participation_address.into(),
-            },
+            submission_address: address.0.into(),
             orders,
         }
     }
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-pub struct Reward {
-    performance_address: H160,
-    participation_address: H160,
 }
 
 #[serde_as]
@@ -38,6 +28,6 @@ pub struct Solution {
     #[serde_as(as = "DisplayFromStr")]
     id: u64,
     score: U256,
-    reward: Reward,
+    submission_address: H160,
     orders: Vec<OrderUid>,
 }
