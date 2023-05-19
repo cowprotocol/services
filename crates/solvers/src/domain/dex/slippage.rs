@@ -8,7 +8,7 @@ use {
     bigdecimal::BigDecimal,
     ethereum_types::U256,
     num::{BigUint, Integer, One, Zero},
-    std::{cmp, collections::HashMap},
+    std::cmp,
 };
 
 /// DEX swap slippage limits. The actual slippage used for a swap is bounded by
@@ -30,10 +30,13 @@ impl Limits {
 
     /// Computes the actual slippage tolerance to use for an asset using the
     /// specified reference prices.
-    pub fn relative(&self, asset: &eth::Asset, prices: &Prices) -> Slippage {
-        if let (Some(absolute), Some(price)) = (&self.absolute, prices.0.get(&asset.token)) {
+    pub fn relative(&self, asset: &eth::Asset, tokens: &auction::Tokens) -> Slippage {
+        if let (Some(absolute), Some(price)) =
+            (&self.absolute, tokens.reference_price(&asset.token))
+        {
             let absolute = conv::ether_to_decimal(absolute);
-            let amount = conv::ether_to_decimal(&eth::Ether(asset.amount)) * price;
+            let amount = conv::ether_to_decimal(&eth::Ether(asset.amount))
+                * conv::ether_to_decimal(&price.0);
 
             let max_relative = absolute / amount;
             let tolerance = cmp::min(max_relative, self.relative.clone());
@@ -95,72 +98,50 @@ impl Slippage {
         // internally casting its `BigInt` digits to a `i128` and unwrapping.
         // This means that there is a maximum of 38-digits of precision
         // (specifically, `i128::MAX.to_string().len() - 1`) allowed when
-        // rounding. So, in order to be pragmatic (and seing that 38 digits of
+        // rounding. So, in order to be pragmatic (and seeing that 38 digits of
         // precision is more than enough for slippage), first truncate the
-        // value to the maximum preicision and then round.
+        // value to the maximum precision and then round.
         Self(self.0.with_prec(38).round(arg as _))
-    }
-}
-
-/// Token reference prices for a specified auction.
-pub struct Prices(pub HashMap<eth::TokenAddress, BigDecimal>);
-
-impl Prices {
-    pub fn new(prices: impl IntoIterator<Item = (eth::TokenAddress, auction::Price)>) -> Self {
-        Self(
-            prices
-                .into_iter()
-                .map(|(token, price)| (token, conv::ether_to_decimal(&price.0)))
-                .collect(),
-        )
-    }
-
-    /// Computes the set of reference prices for the specified auction.
-    pub fn for_auction(auction: &auction::Auction) -> Self {
-        Self::new(
-            auction
-                .tokens
-                .iter()
-                .filter_map(|(address, token)| Some((*address, token.reference_price?))),
-        )
-    }
-
-    /// Returns the reference price, in Ether for the specified token.
-    pub fn reference_price(&self, token: eth::TokenAddress) -> Option<auction::Price> {
-        self.0
-            .get(&token)
-            .and_then(conv::decimal_to_ether)
-            .map(auction::Price)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, crate::domain::auction};
 
     #[test]
     fn slippage_tolerance() {
         let token = |t: &str| eth::TokenAddress(t.parse().unwrap());
         let ether = |e: &str| conv::decimal_to_ether(&e.parse().unwrap()).unwrap();
-        let price = |e: &str| auction::Price(ether(e));
+        let price = |e: &str| auction::Token {
+            decimals: Default::default(),
+            symbol: Default::default(),
+            reference_price: Some(auction::Price(ether(e))),
+            available_balance: Default::default(),
+            trusted: Default::default(),
+        };
 
-        let prices = Prices::new([
-            // WETH
-            (
-                token("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
-                price("1.0"),
-            ),
-            // USDC
-            (
-                token("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
-                price("589783000.0"),
-            ),
-            // COW
-            (
-                token("0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"),
-                price("0.000057"),
-            ),
-        ]);
+        let tokens = auction::Tokens(
+            [
+                // WETH
+                (
+                    token("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+                    price("1.0"),
+                ),
+                // USDC
+                (
+                    token("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
+                    price("589783000.0"),
+                ),
+                // COW
+                (
+                    token("0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB"),
+                    price("0.000057"),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
         let slippage = Limits {
             relative: "0.01".parse().unwrap(), // 1%
             absolute: Some(ether("0.02")),
@@ -234,7 +215,7 @@ mod tests {
             let min = U256::from(min);
             let max = U256::from(max);
 
-            let computed = slippage.relative(&asset, &prices);
+            let computed = slippage.relative(&asset, &tokens);
 
             assert_eq!(computed.round(9), relative);
             assert_eq!(computed.sub(asset.amount), min);
