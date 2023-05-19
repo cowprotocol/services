@@ -199,6 +199,115 @@ impl SingleOrderSolver {
         }
     }
 
+    async fn solve_instrumented(
+        &self,
+        Auction {
+            orders,
+            balances,
+            external_prices,
+            gas_price,
+            deadline,
+            ..
+        }: Auction,
+    ) -> Result<Vec<Settlement>> {
+        let orders = super::balance_and_convert_orders(
+            self.ethflow_contract,
+            &self.order_converter,
+            balances,
+            orders,
+        );
+        let mut orders =
+            get_prioritized_orders(&orders, &external_prices, &self.order_prioritization_config);
+        tracing::trace!(?orders, "prioritized orders");
+
+        let mut settlements = Vec::new();
+        let (tx, mut rx) = mpsc::unbounded_channel::<SingleOrderSettlement>();
+
+        let solve = async {
+            while let Some(order) = orders.pop_front() {
+                let span = tracing::info_span!("solve", id =? order.id);
+                match self
+                    .solve_single_order(order, &external_prices, gas_price)
+                    .instrument(span)
+                    .await
+                {
+                    SolveResult::Failed => continue,
+                    SolveResult::Retryable(order) => orders.push_back(order),
+                    SolveResult::Solved(settlement) => {
+                        let _ = tx.send(settlement);
+                    }
+                    SolveResult::RateLimited => {
+                        tracing::warn!(
+                            solver = %self.name(),
+                            "rate limited; backing off until next auction"
+                        );
+                        break;
+                    }
+                }
+            }
+            drop(tx);
+        };
+
+        let finalize = async {
+            let mut index = 0;
+            while let Some(intermediate) = rx.recv().await {
+                match self
+                    .finalize_settlement(intermediate, &external_prices, gas_price, index)
+                    .await
+                {
+                    Ok(Some(settlement)) => {
+                        settlements.push(settlement);
+                    }
+                    Ok(None) => (),
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to finalize intermediate settlement");
+                    }
+                }
+                index += 1;
+            }
+        };
+
+        // Subtract a small amount of time to ensure that the driver doesn't reach the
+        // deadline first.
+        let timeout =
+            tokio::time::sleep_until(deadline.checked_sub(Duration::from_secs(1)).unwrap().into());
+
+        // open new scope for solve->finalize pipeline to make borrow checker happy
+        {
+            let solve = solve.fuse();
+            futures::pin_mut!(solve);
+            futures::pin_mut!(finalize);
+            futures::pin_mut!(timeout);
+            loop {
+                tokio::select! {
+                    // if `solve` stops early there are still settlements to be finalized
+                    _ = &mut solve => (),
+                    // all possible settlements have been finalized
+                    _ = &mut finalize => break,
+                    // we reached the timeout and should return the results ASAP
+                    _ = &mut timeout => break,
+                }
+            }
+        }
+
+        self.fills.collect_garbage();
+
+        // Shuffle so that in the case a buggy solver keeps returning some amount
+        // of invalid settlements first we have a chance to make progress.
+        settlements.shuffle(&mut rand::thread_rng());
+        // Keep at most this many settlements to not overwhelm the node with too many
+        // simulations.
+        settlements.truncate(self.max_settlements_per_solver);
+
+        merge::merge_settlements(
+            self.max_merged_settlements,
+            &external_prices,
+            &mut settlements,
+        );
+
+        Ok(settlements)
+    }
+
     async fn solve_single_order(
         &self,
         order: LimitOrder,
@@ -338,115 +447,9 @@ enum SolveResult {
 
 #[async_trait::async_trait]
 impl Solver for SingleOrderSolver {
-    async fn solve(
-        &self,
-        Auction {
-            orders,
-            balances,
-            external_prices,
-            gas_price,
-            deadline,
-            ..
-        }: Auction,
-    ) -> Result<Vec<Settlement>> {
-        let solver_span = tracing::info_span!("", solver = self.name());
-        let _e = solver_span.enter();
-        let orders = super::balance_and_convert_orders(
-            self.ethflow_contract,
-            &self.order_converter,
-            balances,
-            orders,
-        );
-        let mut orders =
-            get_prioritized_orders(&orders, &external_prices, &self.order_prioritization_config);
-        tracing::trace!(?orders, "prioritized orders");
-
-        let mut settlements = Vec::new();
-        let (tx, mut rx) = mpsc::unbounded_channel::<SingleOrderSettlement>();
-
-        let solve = async {
-            while let Some(order) = orders.pop_front() {
-                let span = tracing::info_span!(parent: &solver_span, "solve", id =? order.id);
-                match self
-                    .solve_single_order(order, &external_prices, gas_price)
-                    .instrument(span)
-                    .await
-                {
-                    SolveResult::Failed => continue,
-                    SolveResult::Retryable(order) => orders.push_back(order),
-                    SolveResult::Solved(settlement) => {
-                        let _ = tx.send(settlement);
-                    }
-                    SolveResult::RateLimited => {
-                        tracing::warn!(
-                            solver = %self.name(),
-                            "rate limited; backing off until next auction"
-                        );
-                        break;
-                    }
-                }
-            }
-            drop(tx);
-        };
-
-        let finalize = async {
-            let mut index = 0;
-            while let Some(intermediate) = rx.recv().await {
-                match self
-                    .finalize_settlement(intermediate, &external_prices, gas_price, index)
-                    .await
-                {
-                    Ok(Some(settlement)) => {
-                        settlements.push(settlement);
-                    }
-                    Ok(None) => (),
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to finalize intermediate settlement");
-                    }
-                }
-                index += 1;
-            }
-        };
-
-        // Subtract a small amount of time to ensure that the driver doesn't reach the
-        // deadline first.
-        let timeout =
-            tokio::time::sleep_until(deadline.checked_sub(Duration::from_secs(1)).unwrap().into());
-
-        // open new scope for solve->finalize pipeline to make borrow checker happy
-        {
-            let solve = solve.fuse();
-            futures::pin_mut!(solve);
-            futures::pin_mut!(finalize);
-            futures::pin_mut!(timeout);
-            loop {
-                tokio::select! {
-                    // if `solve` stops early there are still settlements to be finalized
-                    _ = &mut solve => (),
-                    // all possible settlements have been finalized
-                    _ = &mut finalize => break,
-                    // we reached the timeout and should return the results ASAP
-                    _ = &mut timeout => break,
-                }
-            }
-        }
-
-        self.fills.collect_garbage();
-
-        // Shuffle so that in the case a buggy solver keeps returning some amount
-        // of invalid settlements first we have a chance to make progress.
-        settlements.shuffle(&mut rand::thread_rng());
-        // Keep at most this many settlements to not overwhelm the node with too many
-        // simulations.
-        settlements.truncate(self.max_settlements_per_solver);
-
-        merge::merge_settlements(
-            self.max_merged_settlements,
-            &external_prices,
-            &mut settlements,
-        );
-
-        Ok(settlements)
+    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
+        let span = tracing::info_span!("", solver = self.name());
+        self.solve_instrumented(auction).instrument(span).await
     }
 
     fn account(&self) -> &Account {
