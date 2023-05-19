@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{competition, competition::order, eth, liquidity},
         infra,
         util::serialize,
     },
@@ -11,7 +11,7 @@ use {
 };
 
 impl Auction {
-    pub fn from_domain(
+    pub fn new(
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
         timeout: competition::SolverTimeout,
@@ -138,7 +138,7 @@ pub struct Auction {
 #[serde(rename_all = "camelCase")]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
-    uid: [u8; 56],
+    uid: [u8; order::UID_LEN],
     sell_token: eth::H160,
     buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]

@@ -60,8 +60,20 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
-    /// The private key of this solver.
+    /// The private key of this solver, used for settlement submission.
     pub private_key: eth::PrivateKey,
+}
+
+/// Addresses to which rewards will be sent.
+#[derive(Debug, Clone, Copy)]
+pub struct Rewards {
+    /// Address to which performance rewards will be sent. Performance rewards
+    /// are given out whenever the solver submits a winning solution.
+    pub performance: eth::Address,
+    /// Address to which participation rewards will be sent. Participation
+    /// rewards are given out whenever the solver submits a solution, regardless
+    /// of whether or not it wins.
+    pub participation: eth::Address,
 }
 
 impl Solver {
@@ -113,7 +125,7 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::from_domain(
+        let body = serde_json::to_string(&dto::Auction::new(
             auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();

@@ -26,17 +26,44 @@ impl Solver {
         blockchain: &Blockchain,
         solutions: &[Vec<Fulfillment>],
         trusted: &HashSet<&'static str>,
+        quotes: &[super::blockchain::Quote],
         deadline: chrono::DateTime<chrono::Utc>,
         now: infra::time::Now,
     ) -> Self {
         let mut solutions_json = Vec::new();
         let mut orders_json = Vec::new();
+        for quote in quotes {
+            let mut order_json = json!({
+                "uid": quote.order_uid(blockchain, now),
+                "sellToken": hex_address(blockchain.get_token(quote.order.sell_token)),
+                "buyToken": hex_address(blockchain.get_token(quote.order.buy_token)),
+                "sellAmount": quote.sell_amount().to_string(),
+                "buyAmount": quote.buy_amount().to_string(),
+                "feeAmount": quote.order.user_fee.to_string(),
+                "kind": match quote.order.side {
+                    order::Side::Sell => "sell",
+                    order::Side::Buy => "buy",
+                },
+                "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+                "class": match quote.order.kind {
+                    order::Kind::Market => "market",
+                    order::Kind::Liquidity => "liquidity",
+                    order::Kind::Limit { .. } => "limit",
+                },
+            });
+            if let order::Kind::Limit { surplus_fee } = quote.order.kind {
+                order_json
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("surplusFee".to_owned(), surplus_fee.0.to_string().into());
+            }
+            orders_json.push(order_json);
+        }
         for (i, fulfillments) in solutions.iter().enumerate() {
             let mut interactions_json = Vec::new();
             let mut prices_json = HashMap::new();
             let mut trades_json = Vec::new();
             for fulfillment in fulfillments {
-                let order = &fulfillment.order;
                 interactions_json.extend(fulfillment.interactions.iter().map(|interaction| {
                     json!({
                         "kind": "custom",
@@ -59,52 +86,27 @@ impl Solver {
                         }).collect_vec(),
                     })
                 }));
-                let mut order_json = json!({
-                    "uid": fulfillment.order_uid(blockchain, now),
-                    "sellToken": hex_address(blockchain.get_token(order.sell_token)),
-                    "buyToken": hex_address(blockchain.get_token(order.buy_token)),
-                    "sellAmount": fulfillment.sell_amount.to_string(),
-                    "buyAmount": fulfillment.buy_amount.to_string(),
-                    "feeAmount": fulfillment.order.user_fee.to_string(),
-                    "kind": match fulfillment.order.side {
-                        order::Side::Sell => "sell",
-                        order::Side::Buy => "buy",
-                    },
-                    "partiallyFillable": matches!(fulfillment.order.partial, order::Partial::Yes { .. }),
-                    "class": match fulfillment.order.kind {
-                        order::Kind::Market => "market",
-                        order::Kind::Liquidity => "liquidity",
-                        order::Kind::Limit { .. } => "limit",
-                    },
-                });
-                if let order::Kind::Limit { surplus_fee } = fulfillment.order.kind {
-                    order_json
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("surplusFee".to_owned(), surplus_fee.0.to_string().into());
-                }
-                orders_json.push(order_json);
                 prices_json.insert(
-                    blockchain.get_token(order.sell_token),
-                    fulfillment.buy_amount.to_string(),
+                    blockchain.get_token(fulfillment.quote.order.sell_token),
+                    fulfillment.executed_buy.to_string(),
                 );
                 prices_json.insert(
-                    blockchain.get_token(order.buy_token),
-                    fulfillment.sell_amount.to_string(),
+                    blockchain.get_token(fulfillment.quote.order.buy_token),
+                    fulfillment.executed_sell.to_string(),
                 );
                 trades_json.push(json!({
                     "kind": "fulfillment",
-                    "order": fulfillment.order_uid(blockchain, now),
-                    "executedAmount": match order.side {
-                        order::Side::Sell => if order.executed.is_zero() {
-                            fulfillment.sell_amount.to_string()
+                    "order": fulfillment.quote.order_uid(blockchain, now),
+                    "executedAmount": match fulfillment.quote.order.side {
+                        order::Side::Sell => if fulfillment.quote.executed().is_zero() {
+                            fulfillment.executed_sell.to_string()
                         } else {
-                            order.executed.to_string()
+                            fulfillment.quote.executed().to_string()
                         },
-                        order::Side::Buy => if order.executed.is_zero() {
-                            fulfillment.buy_amount.to_string()
+                        order::Side::Buy => if fulfillment.quote.executed().is_zero() {
+                            fulfillment.executed_buy.to_string()
                         } else {
-                            order.executed.to_string()
+                            fulfillment.quote.executed().to_string()
                         },
                     },
                 }))
@@ -119,27 +121,27 @@ impl Solver {
         let tokens_json = solutions
             .iter()
             .flatten()
-            .map(|f| &f.order)
-            .flat_map(|order| {
+            .map(|f| &f.quote)
+            .flat_map(|quote| {
                 [
                     (
-                        hex_address(blockchain.get_token(order.sell_token)),
+                        hex_address(blockchain.get_token(quote.order.sell_token)),
                         json!({
                             "decimals": null,
                             "symbol": null,
                             "referencePrice": "1000000000000000000",
                             "availableBalance": "0",
-                            "trusted": trusted.contains(order.sell_token),
+                            "trusted": trusted.contains(quote.order.sell_token),
                         }),
                     ),
                     (
-                        hex_address(blockchain.get_token(order.buy_token)),
+                        hex_address(blockchain.get_token(quote.order.buy_token)),
                         json!({
                             "decimals": null,
                             "symbol": null,
                             "referencePrice": "1000000000000000000",
                             "availableBalance": "0",
-                            "trusted": trusted.contains(order.buy_token),
+                            "trusted": trusted.contains(quote.order.buy_token),
                         }),
                     ),
                 ]

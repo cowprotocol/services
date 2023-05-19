@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, competition::order, eth},
         infra::Ethereum,
         util::serialize,
     },
@@ -167,7 +167,7 @@ struct Token {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Order {
     #[serde_as(as = "serialize::Hex")]
-    uid: [u8; 56],
+    uid: [u8; order::UID_LEN],
     sell_token: eth::H160,
     buy_token: eth::H160,
     #[serde_as(as = "serialize::U256")]
@@ -196,7 +196,7 @@ struct Order {
     #[serde_as(as = "Option<serialize::U256>")]
     surplus_fee: Option<eth::U256>,
     #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; 32],
+    app_data: [u8; order::APP_DATA_LEN],
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,

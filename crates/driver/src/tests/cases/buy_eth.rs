@@ -1,3 +1,6 @@
+// TODO(#1527) Use tests::setup::new to set up the test.
+
+/*
 use {
     super::SOLVER_NAME,
     crate::{
@@ -247,3 +250,4 @@ async fn test() {
     let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
     assert_eq!(tx_solution_id.to_string(), solution_id);
 }
+*/

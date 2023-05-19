@@ -64,47 +64,49 @@ impl Driver {
 pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut tokens_json = Vec::new();
     let mut orders_json = Vec::new();
-    for fulfillment in test.fulfillments.iter() {
-        tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token(fulfillment.order.sell_token)),
-            "price": "1000000000000000000",
-            "trusted": test.trusted.contains(fulfillment.order.sell_token),
-        }));
-        tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token(fulfillment.order.buy_token)),
-            "price": "1000000000000000000",
-            "trusted": test.trusted.contains(fulfillment.order.buy_token),
-        }));
+    for quote in test.quotes.iter() {
         orders_json.push(json!({
-            "uid": fulfillment.order_uid(&test.blockchain, test.now),
-            "sellToken": hex_address(test.blockchain.get_token(fulfillment.order.sell_token)),
-            "buyToken": hex_address(test.blockchain.get_token(fulfillment.order.buy_token)),
-            "sellAmount": fulfillment.sell_amount.to_string(),
-            "buyAmount": fulfillment.buy_amount.to_string(),
+            "uid": quote.order_uid(&test.blockchain, test.now),
+            "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
+            "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
+            "sellAmount": quote.sell_amount().to_string(),
+            "buyAmount": quote.buy_amount().to_string(),
             "solverFee": "0",
-            "userFee": fulfillment.order.user_fee.to_string(),
-            "validTo": u32::try_from(test.now.now().timestamp()).unwrap() + fulfillment.order.valid_for.0,
-            "kind": match fulfillment.order.side {
+            "userFee": quote.order.user_fee.to_string(),
+            "validTo": u32::try_from(test.now.now().timestamp()).unwrap() + quote.order.valid_for.0,
+            "kind": match quote.order.side {
                 order::Side::Sell => "sell",
                 order::Side::Buy => "buy",
             },
             "owner": hex_address(test.trader_address),
-            "partiallyFillable": matches!(fulfillment.order.partial, order::Partial::Yes { .. }),
-            "executed": fulfillment.order.executed.to_string(),
+            "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+            "executed": quote.executed().to_string(),
             "preInteractions": [],
             "postInteractions": [],
-            "class": match fulfillment.order.kind {
+            "class": match quote.order.kind {
                 order::Kind::Market => "market",
                 order::Kind::Liquidity => "liquidity",
                 order::Kind::Limit { .. } => "limit",
             },
-            "surplusFee": match fulfillment.order.kind {
+            "surplusFee": match quote.order.kind {
                 order::Kind::Limit { surplus_fee } => Some(surplus_fee.0.to_string()),
                 _ => None,
             },
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
-            "signature": format!("0x{}", hex::encode(fulfillment.order_signature(&test.blockchain, test.now)))
+            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain, test.now)))
+        }));
+    }
+    for fulfillment in test.fulfillments.iter() {
+        tokens_json.push(json!({
+            "address": hex_address(test.blockchain.get_token(fulfillment.quote.order.sell_token)),
+            "price": "1000000000000000000",
+            "trusted": test.trusted.contains(fulfillment.quote.order.sell_token),
+        }));
+        tokens_json.push(json!({
+            "address": hex_address(test.blockchain.get_token(fulfillment.quote.order.buy_token)),
+            "price": "1000000000000000000",
+            "trusted": test.trusted.contains(fulfillment.quote.order.buy_token),
         }));
     }
     // TODO Just noticed: the driver auction ID is a string, the solver auction ID

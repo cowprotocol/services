@@ -11,7 +11,8 @@ use {
         },
         infra::Ethereum,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{anyhow, ensure, Context, Result},
+    bigdecimal::Signed,
     model::{
         app_id::AppId,
         interaction::InteractionData,
@@ -213,6 +214,7 @@ impl Settlement {
             gas_price,
             &gas.into(),
         );
+        ensure!(!inputs.objective_value().is_negative(), "negative score",);
         let objective_value = big_rational_to_u256(&inputs.objective_value())?;
         Ok(objective_value.into())
     }

@@ -1,23 +1,23 @@
 use {
-    crate::domain::competition::{self, solution::settlement},
-    model::order::OrderUid,
-    primitive_types::{H160, U256},
+    crate::{
+        domain::{
+            competition::{self, order},
+            eth,
+        },
+        infra::Solver,
+        util::serialize,
+    },
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
 };
 
 impl Solution {
-    pub fn from_domain(
-        id: settlement::Id,
-        score: competition::Score,
-        address: competition::SubmissionAddress,
-        orders: Vec<OrderUid>,
-    ) -> Self {
+    pub fn new(reveal: competition::Reveal, solver: &Solver) -> Self {
         Self {
-            id: id.into(),
-            score: score.into(),
-            submission_address: address.0.into(),
-            orders,
+            id: reveal.id.into(),
+            score: reveal.score.into(),
+            submission_address: solver.address().into(),
+            orders: reveal.orders.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -27,7 +27,9 @@ impl Solution {
 pub struct Solution {
     #[serde_as(as = "DisplayFromStr")]
     id: u64,
-    score: U256,
-    submission_address: H160,
-    orders: Vec<OrderUid>,
+    #[serde_as(as = "serialize::U256")]
+    score: eth::U256,
+    submission_address: eth::H160,
+    #[serde_as(as = "Vec<serialize::Hex>")]
+    orders: Vec<[u8; order::UID_LEN]>,
 }

@@ -3,7 +3,7 @@
 
 use crate::tests::{
     setup,
-    setup::new::{Order, Solution},
+    setup::new::{ab_order, ab_solution},
 };
 
 /// Test that internalized interactions pass verification if they use trusted
@@ -12,22 +12,10 @@ use crate::tests::{
 #[ignore]
 async fn valid_internalization() {
     let test = setup()
-        .pool(
-            "A",
-            1000000000000000000000u128.into(),
-            "B",
-            600000000000u64.into(),
-        )
-        .order(Order {
-            name: "example order",
-            amount: 500000000000000000u64.into(),
-            sell_token: "A",
-            buy_token: "B",
-            internalize: true,
-            ..Default::default()
-        })
+        .ab_pool()
+        .order(ab_order().internalize())
         .trust("A")
-        .solution(Solution::Valid, &["example order"])
+        .solution(ab_solution())
         .done()
         .await;
 
@@ -42,21 +30,10 @@ async fn valid_internalization() {
 #[ignore]
 async fn untrusted_internalization() {
     let test = setup()
-        .pool(
-            "A",
-            1000000000000000000000u128.into(),
-            "B",
-            600000000000u64.into(),
-        )
-        .order(Order {
-            name: "example order",
-            amount: 500000000000000000u64.into(),
-            sell_token: "A",
-            buy_token: "B",
-            internalize: true,
-            ..Default::default()
-        })
-        .solution(Solution::Valid, &["example order"])
+        .ab_pool()
+        .order(ab_order().internalize())
+        .solution(ab_solution())
+        // Note: does not mark "A" as trusted, despite the order being internalized.
         .done()
         .await;
 

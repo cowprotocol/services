@@ -22,14 +22,17 @@ pub async fn load(path: &Path) -> infra::Config {
         solvers: config
             .solvers
             .into_iter()
-            .map(|config| solver::Config {
-                endpoint: config.endpoint,
-                name: config.name.into(),
-                slippage: solver::Slippage {
-                    relative: config.relative_slippage,
-                    absolute: config.absolute_slippage.map(Into::into),
-                },
-                private_key: eth::PrivateKey::from_raw(config.private_key.0).unwrap(),
+            .map(|config| {
+                let private_key = eth::PrivateKey::from_raw(config.private_key.0).unwrap();
+                solver::Config {
+                    endpoint: config.endpoint,
+                    name: config.name.into(),
+                    slippage: solver::Slippage {
+                        relative: config.relative_slippage,
+                        absolute: config.absolute_slippage.map(Into::into),
+                    },
+                    private_key,
+                }
             })
             .collect(),
         liquidity: liquidity::Config {
