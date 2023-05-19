@@ -136,16 +136,16 @@ impl Order {
 
     /// The asset being sold, or a very large value if this is a buy, to
     /// facilitate surplus.
-    ///
-    /// Note that we intentionally do not use [`eth::U256::max_value()`] as an
-    /// order with this would cause overflows with the smart contract, so buy
-    /// orders requiring excessively large sell amounts would not work anyway.
     fn sell(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
                 amount: self.amount.into(),
                 token: self.tokens.sell,
             },
+            // Note that we intentionally do not use [`eth::U256::max_value()`]
+            // as an order with this would cause overflows with the Smart
+            // Contract, so buy orders requiring excessively large sell amounts
+            // would not work anyway.
             order::Side::Buy => eth::Asset {
                 amount: eth::U256::one() << 192,
                 token: self.tokens.sell,
@@ -223,6 +223,7 @@ pub enum Error {
     QuotingFailed,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] DeadlineExceeded),
+    /// Encountered an unexpected error reading blockchain data.
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("solver error: {0:?}")]

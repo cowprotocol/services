@@ -19,7 +19,6 @@ enum Kind {
     InvalidAuctionId,
     MissingSurplusFee,
     QuoteSameTokens,
-    BlockchainFailed,
 }
 
 #[derive(Debug, Serialize)]
@@ -42,7 +41,6 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
-            Kind::BlockchainFailed => "Failed to read data from the blockchain",
         };
         (
             hyper::StatusCode::BAD_REQUEST,
@@ -59,8 +57,8 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
         let error = match value {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
-            quote::Error::Blockchain(_) => Kind::BlockchainFailed,
             quote::Error::Solver(_) => Kind::SolverFailed,
+            quote::Error::Blockchain(_) => Kind::Unknown,
             quote::Error::Boundary(_) => Kind::Unknown,
         };
         error.into()

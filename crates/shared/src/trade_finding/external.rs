@@ -87,9 +87,10 @@ impl ExternalTradeFinder {
             .map_err(TradeError::from)
     }
 
-    /// Returns the default time limit used for quoting with external drivers.
+    /// Returns the default time limit used for quoting with external co-located
+    /// solvers.
     fn time_limit() -> chrono::Duration {
-        chrono::Duration::seconds(3)
+        chrono::Duration::seconds(5)
     }
 }
 
