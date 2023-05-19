@@ -57,9 +57,8 @@ impl ParaSwap {
                 token: order.buy,
                 amount: price.dest_amount()?,
             },
-            // TODO Is this allowance correct?
             allowance: dex::Allowance {
-                spender: eth::ContractAddress(transaction.to),
+                spender: eth::ContractAddress(price.token_transfer_proxy()?),
                 amount: dex::Amount::new(price.src_amount()?),
             },
             gas: eth::Gas(price.gas_cost()?),

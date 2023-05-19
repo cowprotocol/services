@@ -171,6 +171,11 @@ impl Price {
     pub fn gas_cost(&self) -> Result<U256, serde_json::Error> {
         serde_json::from_value::<PriceRoute>(self.price_route.clone()).map(|r| r.gas_cost)
     }
+
+    pub fn token_transfer_proxy(&self) -> Result<H160, serde_json::Error> {
+        serde_json::from_value::<PriceRoute>(self.price_route.clone())
+            .map(|r| r.token_transfer_proxy)
+    }
 }
 
 #[serde_as]
@@ -183,6 +188,7 @@ struct PriceRoute {
     dest_amount: U256,
     #[serde_as(as = "serialize::U256")]
     gas_cost: U256,
+    token_transfer_proxy: H160,
 }
 
 #[serde_as]
