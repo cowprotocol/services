@@ -1,6 +1,4 @@
-use tracing::info_span;
-
-use crate::settlement_rater::SettlementRating;
+use {crate::settlement_rater::SettlementRating, tracing::info_span};
 
 pub mod gas;
 pub mod solver_settlements;
@@ -29,7 +27,12 @@ use {
         auction::{AuctionId, AuctionWithId},
         order::OrderUid,
         solver_competition::{
-            self, CompetitionAuction, Execution, Objective, SolverCompetitionDB, SolverSettlement,
+            self,
+            CompetitionAuction,
+            Execution,
+            Objective,
+            SolverCompetitionDB,
+            SolverSettlement,
         },
         TokenPair,
     },

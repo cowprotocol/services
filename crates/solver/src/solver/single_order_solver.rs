@@ -1,10 +1,11 @@
-use super::SimulationWithError;
-
 use {
-    super::SolverInfo,
+    super::{SimulationWithError, SolverInfo},
     crate::{
         liquidity::{
-            order_converter::OrderConverter, LimitOrder, LimitOrderExecution, LimitOrderId,
+            order_converter::OrderConverter,
+            LimitOrder,
+            LimitOrderExecution,
+            LimitOrderId,
         },
         metrics::SolverMetrics,
         settlement::Settlement,
@@ -706,7 +707,8 @@ mod tests {
         num::{BigRational, FromPrimitive},
         primitive_types::H160,
         shared::{
-            http_solver::model::InternalizationStrategy, price_estimation::gas::SETTLEMENT_OVERHEAD,
+            http_solver::model::InternalizationStrategy,
+            price_estimation::gas::SETTLEMENT_OVERHEAD,
         },
         std::{collections::HashMap, sync::Arc},
     };
