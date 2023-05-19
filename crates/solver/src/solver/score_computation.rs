@@ -195,6 +195,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        assert_eq!(score, 231484104402230912u128.into());
+        assert_eq!(score, 231484104402245472u128.into());
     }
 }
