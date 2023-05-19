@@ -38,7 +38,7 @@ impl Single {
     pub fn into_solution(
         self,
         gas_price: auction::GasPrice,
-        sell_token: auction::Price,
+        sell_token: Option<auction::Price>,
     ) -> Option<Solution> {
         let Self {
             order,
@@ -59,7 +59,7 @@ impl Single {
             // is fine for now, since there is no way to create limit orders
             // with non-zero fees.
             Fee::Surplus(
-                sell_token.ether_value(eth::Ether(
+                sell_token?.ether_value(eth::Ether(
                     swap.0
                         .checked_add(Self::SETTLEMENT_OVERHEAD.into())?
                         .checked_mul(gas_price.0 .0)?,

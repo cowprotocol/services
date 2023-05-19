@@ -90,11 +90,8 @@ impl Dex {
             }
         };
 
-        let Some(sell) = tokens.reference_price(&order.sell.token) else {
-            tracing::warn!(token = ?order.sell.token.0, "missing sell token price");
-            return None;
-        };
         let uid = order.uid;
+        let sell = tokens.reference_price(&order.sell.token);
         let Some(solution) = swap.into_solution(order, gas_price, sell) else {
             tracing::debug!("no solution for swap");
             return None;

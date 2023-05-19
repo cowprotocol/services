@@ -74,7 +74,7 @@ pub struct OrderQuotingArguments {
     /// not regular user orders.
     ///
     /// These orders have special semantics such as not being considered in the
-    /// settlements objective funtion, not receiving any surplus, and being
+    /// settlements objective function, not receiving any surplus, and being
     /// allowed to place partially fillable orders.
     #[clap(long, env, use_value_delimiter = true)]
     pub liquidity_order_owners: Vec<H160>,

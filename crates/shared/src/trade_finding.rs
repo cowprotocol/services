@@ -11,7 +11,6 @@ use {
     anyhow::Result,
     contracts::ERC20,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
-    serde::Deserialize,
     thiserror::Error,
 };
 
@@ -27,14 +26,14 @@ pub trait TradeFinding: Send + Sync + 'static {
 }
 
 /// A quote.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
 }
 
 /// A trade.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
@@ -78,7 +77,7 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,

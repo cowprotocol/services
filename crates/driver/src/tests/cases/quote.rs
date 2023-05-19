@@ -138,7 +138,6 @@ async fn test() {
                 "buyToken": hex_address(buy_token),
                 "amount": sell_amount.to_string(),
                 "kind": "sell",
-                "effectiveGasPrice": gas_price.to_string(),
                 "deadline": deadline,
             }),
         )

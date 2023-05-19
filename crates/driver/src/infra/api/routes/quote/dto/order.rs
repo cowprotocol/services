@@ -17,7 +17,6 @@ impl Order {
                 Kind::Sell => competition::order::Side::Sell,
                 Kind::Buy => competition::order::Side::Buy,
             },
-            gas_price: self.effective_gas_price.into(),
             deadline: self.deadline.into(),
         })
     }
@@ -32,8 +31,6 @@ pub struct Order {
     #[serde_as(as = "serialize::U256")]
     amount: eth::U256,
     kind: Kind,
-    #[serde_as(as = "serialize::U256")]
-    effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
