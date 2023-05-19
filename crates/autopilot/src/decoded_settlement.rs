@@ -285,23 +285,33 @@ impl DecodedSettlement {
                 // get executed(adjusted) prices
                 let sell_index = trade.sell_token_index.as_u64() as usize;
                 let buy_index = trade.buy_token_index.as_u64() as usize;
-                let adjusted_sell_price = self.clearing_prices.get(sell_index)?;
-                let adjusted_buy_price = self.clearing_prices.get(buy_index)?;
+                let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+                let adjusted_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
                 let fee = match trade.flags.order_kind() {
                     OrderKind::Buy => {
-                        let executed_sell_amount = trade
+                        let required_sell_amount = trade
+                            .executed_amount
+                            .checked_mul(adjusted_buy_price)?
+                            .checked_div(adjusted_sell_price)?;
+                        let required_sell_amount_with_ucp = trade
                             .executed_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
-                        adjusted_buy_price.checked_sub(executed_sell_amount)?
+                        required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
                     }
                     OrderKind::Sell => {
-                        let sell_amount = adjusted_sell_price
+                        let received_buy_amount = trade
+                            .executed_amount
+                            .checked_mul(adjusted_sell_price)?
+                            .checked_div(adjusted_buy_price)?;
+                        let sell_amount_needed_with_ucp = received_buy_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
-                        trade.executed_amount.checked_sub(sell_amount)?
+                        trade
+                            .executed_amount
+                            .checked_sub(sell_amount_needed_with_ucp)?
                     }
                 };
 
