@@ -6,7 +6,10 @@ use {
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
-    model::{order::OrderKind, signature::Signature},
+    model::{
+        order::{OrderKind, OrderUid},
+        signature::Signature,
+    },
     num::BigRational,
     number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
     shared::{
@@ -155,6 +158,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 /// [`OrderExecution`]s with them.
 #[derive(Debug, Clone)]
 pub struct OrderExecution {
+    pub order_uid: OrderUid,
     pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
@@ -170,6 +174,7 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
 
     fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
+            order_uid: OrderUid(order.order_uid.0),
             executed_solver_fee: order
                 .executed_solver_fee
                 .as_ref()
@@ -253,6 +258,43 @@ impl DecodedSettlement {
                 }
             }
         })
+    }
+
+    /// Returns the list of partial limit orders with their fees
+    pub fn order_executions(
+        &self,
+        external_prices: &ExternalPrices,
+        mut orders: Vec<OrderExecution>,
+    ) -> Vec<(OrderUid, U256)> {
+        self.trades
+            .iter()
+            .filter_map(|trade| {
+                if !trade.flags.partially_fillable() {
+                    return None;
+                }
+
+                match orders
+                    .iter()
+                    .position(|order| trade.matches_execution(order))
+                {
+                    Some(i) => {
+                        // It's possible to have multiple fills with the same `executed_amount` for
+                        // the same order with different `solver_fees`. To
+                        // end up with the correct total fees we can only
+                        // use every `OrderExecution` exactly once.
+                        let order = orders.swap_remove(i);
+                        match self.fee(external_prices, &order, trade) {
+                            Some(fee) => Some((order.order_uid, fee)),
+                            None => {
+                                tracing::warn!("possible incomplete fee calculation");
+                                None
+                            }
+                        }
+                    }
+                    None => None,
+                }
+            })
+            .collect()
     }
 
     fn fee(
@@ -655,6 +697,7 @@ mod tests {
 
         let orders = vec![
             OrderExecution {
+                order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
                 executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
@@ -665,6 +708,7 @@ mod tests {
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             OrderExecution {
+                order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
                 executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
@@ -732,6 +776,7 @@ mod tests {
 
         let orders = vec![
             OrderExecution {
+                order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
                 executed_solver_fee: None,
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(), // irrelevant
@@ -848,6 +893,7 @@ mod tests {
 
         let orders = vec![
             OrderExecution {
+                order_uid: Default::default(),
                 executed_solver_fee: Some(463182886014406361088u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 89238894792574185u128.into(),

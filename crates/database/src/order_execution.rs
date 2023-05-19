@@ -26,6 +26,28 @@ VALUES ($1, $2, $3, $4, $5)
     Ok(())
 }
 
+// update already existing order_execution record with surplus_fee for partial
+// limit orders
+pub async fn update_surplus_fee(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+    auction: AuctionId,
+    surplus_fee: Option<&BigDecimal>,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE order_execution
+SET surplus_fee = $1
+WHERE order_uid = $2 AND auction_id = $3
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(surplus_fee)
+        .bind(order)
+        .bind(auction)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, sqlx::Connection};

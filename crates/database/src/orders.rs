@@ -549,6 +549,7 @@ WHERE
 
 #[derive(Debug, Default, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
+    pub order_uid: OrderUid,
     /// The `solver_fee` that got executed for this specific fill.
     pub executed_solver_fee: Option<BigDecimal>,
     pub sell_token: Address,
@@ -574,6 +575,7 @@ pub fn order_executions_in_tx<'a>(
         r#"
 {SETTLEMENT_LOG_INDICES}
 SELECT
+    oe.order_uid AS order_uid,
     oe.solver_fee AS executed_solver_fee,
     o.sell_token,
     o.buy_token,
@@ -2288,6 +2290,7 @@ mod tests {
         assert_eq!(
             executions,
             vec![OrderExecution {
+                order_uid,
                 executed_solver_fee: Some(bigdecimal(463182886014406361088)),
                 sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),

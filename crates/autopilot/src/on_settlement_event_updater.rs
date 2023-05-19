@@ -166,7 +166,8 @@ impl OnSettlementEventUpdater {
             match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
                     let surplus = settlement.total_surplus(&external_prices);
-                    let fee = settlement.total_fees(&external_prices, orders);
+                    let fee = settlement.total_fees(&external_prices, orders.clone());
+                    let order_executions = settlement.order_executions(&external_prices, orders);
 
                     update.auction_data = Some(AuctionData {
                         auction_id,
@@ -174,6 +175,7 @@ impl OnSettlementEventUpdater {
                         fee,
                         gas_used,
                         effective_gas_price,
+                        order_executions,
                     });
                 }
                 Err(err) if matches!(err, DecodingError::InvalidSelector) => {
