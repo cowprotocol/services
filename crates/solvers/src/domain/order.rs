@@ -72,9 +72,9 @@ pub enum Class {
     Liquidity,
 }
 
-/// An order that is guaranteed to not be a liquidity order.
+/// A user order, guaranteed to not be a liquidity order.
 ///
-/// Note that the concept of a "non-liquidity" order is important enough to
+/// Note that the concept of a user order is important enough to
 /// merit its own type. The reason for this is that these orders and liquidity
 /// orders differ in fundamental ways and we do not want to confuse them and
 /// accidentally use a liquidity order where it shouldn't be used. Some of the
@@ -94,15 +94,10 @@ pub enum Class {
 /// the other hand, liquidity orders are CoW Protocol orders, meaning that they
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
-// TODO I'd still prefer stronger types. Something like
-// pub enum Order { Liquidity(Liquidity), Market(Market), Limit(Limit) }
-// pub enum UserOrder { Market(Market), Limit(Limit) }
 #[derive(Debug)]
-pub struct NonLiquidity<'a>(&'a Order);
+pub struct UserOrder<'a>(&'a Order);
 
-impl<'a> NonLiquidity<'a> {
-    // TODO Should this be called UserOrder? The term "user order" is used
-    // here
+impl<'a> UserOrder<'a> {
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {
