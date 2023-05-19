@@ -127,15 +127,7 @@ impl OneInchSolver {
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = match self.client.get_swap(query).await {
-            Ok(swap) => swap,
-            Err(error) if error.is_insuffucient_liquidity() => {
-                // This means the order cannot get matched which shouldn't be treated as an
-                // error.
-                return Ok(None);
-            }
-            Err(error) => return Err(error.into()),
-        };
+        let swap = self.client.get_swap(query).await?;
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
             tracing::debug!("execution does not respect order");
             return Ok(None);
@@ -198,6 +190,7 @@ impl Display for OneInchSolver {
 impl From<OneInchError> for SettlementError {
     fn from(err: OneInchError) -> Self {
         match err {
+            err if err.is_insuffucient_liquidity() => Self::Benign(err.into()),
             OneInchError::Api(err) if err.status_code == 429 => Self::RateLimited,
             OneInchError::Api(err) if err.status_code == 500 => {
                 Self::Retryable(OneInchError::Api(err).into())

@@ -236,6 +236,13 @@ impl SingleOrderSolver {
                 tracing::warn!("rate limited");
                 return SolveResult::RateLimited;
             }
+            Err(SettlementError::Benign(err)) => {
+                // The order was processed but cannot get matched, it shouldn't
+                // be treated as a failure.
+                self.metrics.single_order_solver_succeeded(name);
+                tracing::info!(?err, "benign error");
+                return SolveResult::Failed;
+            }
             Err(SettlementError::Retryable(err)) => {
                 self.metrics.single_order_solver_failed(name);
                 tracing::warn!(?err, "retryable error");
@@ -581,6 +588,12 @@ pub enum SettlementError {
 
     #[error("intermittent error: {0}")]
     Retryable(anyhow::Error),
+
+    /// Benign errors are failures of the solver in finding a solution which
+    /// are expected in some circumstances and do not denote a failure in the
+    /// inner working of the single order solver.
+    #[error("benign error: {0}")]
+    Benign(anyhow::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
