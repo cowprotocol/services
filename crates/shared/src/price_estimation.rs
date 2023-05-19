@@ -3,6 +3,7 @@ use crate::bad_token::TokenQuality;
 pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
+pub mod external;
 pub mod factory;
 pub mod gas;
 pub mod http;
