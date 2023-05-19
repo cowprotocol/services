@@ -23,8 +23,10 @@ struct Config {
     endpoint: Option<reqwest::Url>,
 
     /// The 1Inch liquidity sources to consider when swapping.
-    #[serde(flatten)]
-    liquidity: Liquidity,
+    include_liquidity: Option<Vec<String>>,
+
+    /// The 1Inch liquidity sources to exclude when swapping.
+    exclude_liquidity: Option<Vec<String>>,
 
     /// The referrer address to use. Referrers are entitled to a portion of
     /// the positive slippage that 1Inch collects.
@@ -37,14 +39,6 @@ struct Config {
     main_route_parts: Option<u32>,
     connector_tokens: Option<u32>,
     complexity_level: Option<u32>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields, untagged)]
-enum Liquidity {
-    Any,
-    Only { include_liquidity: Vec<String> },
-    Exclude { exclude_liquidity: Vec<String> },
 }
 
 /// Load the 1inch solver configuration from a TOML file.
@@ -61,13 +55,12 @@ pub async fn load(path: &Path) -> super::Config {
         oneinch: oneinch::Config {
             settlement,
             endpoint: config.endpoint,
-            liquidity: match config.liquidity {
-                Liquidity::Any => oneinch::Liquidity::Any,
-                Liquidity::Only { include_liquidity } => {
-                    oneinch::Liquidity::Only(include_liquidity)
-                }
-                Liquidity::Exclude { exclude_liquidity } => {
-                    oneinch::Liquidity::Exclude(exclude_liquidity)
+            liquidity: match (config.include_liquidity, config.exclude_liquidity) {
+                (Some(include_liquidity), None) => oneinch::Liquidity::Only(include_liquidity),
+                (None, Some(exclude_liquidity)) => oneinch::Liquidity::Exclude(exclude_liquidity),
+                (None, None) => oneinch::Liquidity::Any,
+                (Some(_), Some(_)) => {
+                    panic!("cannot specify both include-liquidity and exclude-liquidity")
                 }
             },
             referrer: config.referrer,
