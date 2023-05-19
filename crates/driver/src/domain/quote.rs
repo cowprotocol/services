@@ -8,7 +8,7 @@ use {
         },
         infra::{
             self,
-            blockchain::Ethereum,
+            blockchain::{self, Ethereum},
             solver::{self, Solver},
             time,
         },
@@ -59,7 +59,6 @@ pub struct Order {
     pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
-    pub gas_price: eth::EffectiveGasPrice,
     pub deadline: Deadline,
 }
 
@@ -76,9 +75,10 @@ impl Order {
         now: time::Now,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
+        let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout(now)?;
         let solutions = solver
-            .solve(&self.fake_auction(), &liquidity, timeout)
+            .solve(&self.fake_auction(gas_price), &liquidity, timeout)
             .await?;
         Quote::new(
             self,
@@ -88,7 +88,7 @@ impl Order {
         )
     }
 
-    fn fake_auction(&self) -> competition::Auction {
+    fn fake_auction(&self, gas_price: eth::GasPrice) -> competition::Auction {
         competition::Auction {
             id: None,
             tokens: Default::default(),
@@ -114,7 +114,7 @@ impl Order {
                     signer: Default::default(),
                 },
             }],
-            gas_price: self.gas_price.into(),
+            gas_price: gas_price.effective().into(),
             deadline: Default::default(),
         }
     }
@@ -134,8 +134,12 @@ impl Order {
         }
     }
 
-    /// The asset being sold, or [`eth::U256::max_value`] if this is a buy, to
+    /// The asset being sold, or a very large value if this is a buy, to
     /// facilitate surplus.
+    ///
+    /// Note that we intentionally do not use [`eth::U256::max_value()`] as an
+    /// order with this would cause overflows with the smart contract, so buy
+    /// orders requiring excessively large sell amounts would not work anyway.
     fn sell(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
@@ -143,7 +147,7 @@ impl Order {
                 token: self.tokens.sell,
             },
             order::Side::Buy => eth::Asset {
-                amount: eth::U256::max_value(),
+                amount: eth::U256::one() << 192,
                 token: self.tokens.sell,
             },
         }
@@ -219,6 +223,8 @@ pub enum Error {
     QuotingFailed,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] DeadlineExceeded),
+    #[error("blockchain error: {0:?}")]
+    Blockchain(#[from] blockchain::Error),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("boundary error: {0:?}")]

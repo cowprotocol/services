@@ -51,7 +51,7 @@ impl Baseline {
             .orders
             .iter()
             .filter_map(|order| {
-                let sell_token = auction.tokens.reference_price(&order.sell.token)?;
+                let sell_token = auction.tokens.reference_price(&order.sell.token);
                 self.requests_for_order(UserOrder::new(order)?)
                     .find_map(|request| {
                         tracing::trace!(?request, "finding route");
@@ -124,11 +124,13 @@ pub struct Request {
 }
 
 /// A trading route.
+#[derive(Debug)]
 pub struct Route<'a> {
     segments: Vec<Segment<'a>>,
 }
 
 /// A segment in a trading route.
+#[derive(Debug)]
 pub struct Segment<'a> {
     pub liquidity: &'a liquidity::Liquidity,
     // TODO: There is no type-level guarantee here that both `input.token` and

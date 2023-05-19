@@ -215,7 +215,7 @@ components:
         amount:
           $ref: "#/components/schemas/TokenAmount"
     QuoteResponse:
-      anyOf:
+      oneOf:
         - description: |
             Successful Quote
 
@@ -226,21 +226,13 @@ components:
             `sell`.
           type: object
           properties:
-            sellAmount:
+            amount:
               $ref: "#/components/schemas/TokenAmount"
-            buyAmount:
-              $ref: "#/components/schemas/TokenAmount"
-            gas:
-              type: integer
-        - description: |
-            Unfillable Quote
-
-            This is not an error. The server handled the request correctly but could not create a
-            quote. For example, this Solver might not be aware of any liquidity between the tokens.
-          type: object
-          properties:
-            unfillableReason:
-              type: string
+            interactions:
+              type: array
+              items:
+                $ref: "#/components/schemas/Interaction"
+        - $ref: "#/components/schemas/Error"
     SolveRequest:
       description: Request to the solve endpoint.
       type: object
@@ -359,6 +351,16 @@ components:
             Signature confirming that the Solver promised to execute this auction.
 
             TODO: Decide what is signed and how it is signed.
+          type: string
+    Error:
+      description: Response on API errors.
+      type: object
+      properties:
+        kind:
+          description: The kind of error.
+          type: string
+        description:
+          description: Text describing the error.
           type: string
   responses:
     BadRequest:
