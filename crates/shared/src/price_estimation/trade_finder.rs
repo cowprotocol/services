@@ -205,6 +205,7 @@ impl TradeVerifier {
             Err(err) => bail!(err),
         };
         let output = SettleOutput::decode(&return_data)?;
+        tracing::debug!(?output, "trade simulated");
 
         let trader_amounts = output
             .trader_amounts()

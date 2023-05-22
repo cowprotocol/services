@@ -2,22 +2,13 @@
 
 use {
     crate::{
-        price_estimation::{
-            rate_limited,
-            Estimate,
-            PriceEstimateResult,
-            PriceEstimating,
-            PriceEstimationError,
-            Query,
-        },
-        rate_limiter::RateLimiter,
+        price_estimation::{PriceEstimationError, Query},
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::Context,
-    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
+    futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
-    std::sync::Arc,
     url::Url,
 };
 
@@ -30,21 +21,16 @@ pub struct ExternalTradeFinder {
     /// response of the in-flight request.
     sharing: RequestSharing<Query, BoxFuture<'static, Result<Trade, PriceEstimationError>>>,
 
-    /// Utility to temporarily drop requests when the driver responds too slowly
-    /// to not slow down the whole price estimation logic.
-    rate_limiter: Arc<RateLimiter>,
-
     /// Client to issue http requests with.
     client: Client,
 }
 
 impl ExternalTradeFinder {
     #[allow(dead_code)]
-    pub fn new(driver: Url, client: Client, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(driver: Url, client: Client) -> Self {
         Self {
             quote_endpoint: driver.join("quote").unwrap(),
             sharing: Default::default(),
-            rate_limiter,
             client,
         }
     }
@@ -80,7 +66,6 @@ impl ExternalTradeFinder {
                 .map_err(PriceEstimationError::from)
         };
 
-        let future = rate_limited(self.rate_limiter.clone(), future);
         self.sharing
             .shared(*query, future.boxed())
             .await
@@ -137,28 +122,6 @@ impl TradeFinding for ExternalTradeFinder {
         self.shared_query(query).await
     }
 }
-
-#[async_trait::async_trait]
-impl PriceEstimating for ExternalTradeFinder {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-        futures::stream::iter(queries)
-            .then(|query| self.shared_query(query))
-            .map(|result| match result {
-                Ok(trade) => Ok(Estimate {
-                    out_amount: trade.out_amount,
-                    gas: trade.gas_estimate,
-                }),
-                Err(err) => Err(PriceEstimationError::from(err)),
-            })
-            .enumerate()
-            .boxed()
-    }
-}
-
-// TODO: Use the trade finder estimator implementation
 
 mod dto {
     use {
