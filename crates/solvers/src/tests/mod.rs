@@ -16,6 +16,7 @@ mod dex;
 mod legacy;
 mod mock;
 mod naive;
+mod oneinch;
 mod zeroex;
 
 /// A solver engine handle for E2E testing.

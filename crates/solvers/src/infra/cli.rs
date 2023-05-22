@@ -21,14 +21,13 @@ pub struct Args {
     pub command: Command,
 }
 
-/// The solver engine to run.
+/// The solver engine to run. The config field is a path to the solver
+/// configuration file. This file should be in TOML format.
 #[derive(Subcommand, Debug)]
 #[clap(rename_all = "lowercase")]
 pub enum Command {
     /// Baseline solver.
     Baseline {
-        /// Path to the solver configuration file. This file should be in TOML
-        /// format.
         #[clap(long, env)]
         config: PathBuf,
     },
@@ -36,22 +35,21 @@ pub enum Command {
     Naive,
     /// Wrapper for solvers implementing the legacy HTTP interface.
     Legacy {
-        /// Path to the solver configuration file. This file should be in TOML
-        /// format.
         #[clap(long, env)]
         config: PathBuf,
     },
     /// Balancer SOR solver.
     Balancer {
-        /// Path to the solver configuration file. This file should be in TOML
-        /// format.
         #[clap(long, env)]
         config: PathBuf,
     },
     /// 0x solver.
     ZeroEx {
-        /// Path to the solver configuration file. This file should be in TOML
-        /// format.
+        #[clap(long, env)]
+        config: PathBuf,
+    },
+    /// 1inch solver.
+    OneInch {
         #[clap(long, env)]
         config: PathBuf,
     },
