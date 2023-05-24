@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        app_id::AppId,
+        app_id::AppDataHash,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
@@ -153,7 +153,7 @@ impl OrderBuilder {
     }
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
-        self.0.data.app_data = AppId(app_data);
+        self.0.data.app_data = AppDataHash(app_data);
         self
     }
 
@@ -264,7 +264,7 @@ pub struct OrderData {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    pub app_data: AppId,
+    pub app_data: AppDataHash,
     /// Fees that will be taken in terms of `sell_token`.
     /// This is 0 for liquidity orders unless its owner bribes the protocol
     /// as they should only ever be used to improve the price of a regular order
@@ -974,7 +974,7 @@ mod tests {
                 sell_amount: 1.into(),
                 buy_amount: 0.into(),
                 valid_to: u32::MAX,
-                app_data: AppId(hex!(
+                app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
                 fee_amount: U256::MAX,
@@ -1033,7 +1033,7 @@ mod tests {
                     sell_amount: 123.into(),
                     buy_amount: 456.into(),
                     valid_to: 1337,
-                    app_data: AppId([0x44; 32]),
+                    app_data: AppDataHash([0x44; 32]),
                     fee_amount: 789.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
@@ -1102,7 +1102,7 @@ mod tests {
                 sell_amount: 0x0246ddf97976680000_u128.into(),
                 buy_amount: 0xb98bc829a6f90000_u128.into(),
                 valid_to: 0xffffffff,
-                app_data: AppId(hex!(
+                app_data: AppDataHash(hex!(
                     "0000000000000000000000000000000000000000000000000000000000000000"
                 )),
                 fee_amount: 0x0de0b6b3a7640000_u128.into(),
@@ -1136,7 +1136,7 @@ mod tests {
             sell_amount: 0x0246ddf97976680000_u128.into(),
             buy_amount: 0xb98bc829a6f90000_u128.into(),
             valid_to: 0xffffffff,
-            app_data: AppId(hex!(
+            app_data: AppDataHash(hex!(
                 "0000000000000000000000000000000000000000000000000000000000000000"
             )),
             fee_amount: 0x0de0b6b3a7640000_u128.into(),

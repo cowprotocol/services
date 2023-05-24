@@ -468,7 +468,7 @@ mod tests {
         ethcontract::H256,
         maplit::btreemap,
         model::{
-            app_id::AppId,
+            app_id::AppDataHash,
             order::{OrderKind, SellTokenSource},
         },
         serde_json::json,
@@ -1054,7 +1054,7 @@ mod tests {
                         sell_amount: 101.into(),
                         buy_amount: 102.into(),
                         valid_to: 3,
-                        app_data: AppId([3; 32]),
+                        app_data: AppDataHash([3; 32]),
                         fee_amount: 13.into(),
                         kind: OrderKind::Sell,
                         partially_fillable: true,

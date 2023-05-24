@@ -13,7 +13,7 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     model::{
-        app_id::AppId,
+        app_id::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,
@@ -234,7 +234,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             fee_amount: order.fee.user.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
-            app_data: AppId(order.app_data.into()),
+            app_data: AppDataHash(order.app_data.into()),
             kind: match order.side {
                 competition::order::Side::Buy => OrderKind::Buy,
                 competition::order::Side::Sell => OrderKind::Sell,
@@ -311,7 +311,7 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         sell_amount: order.sell.amount,
         buy_amount: order.buy.amount,
         valid_to: order.valid_to.into(),
-        app_data: AppId(order.app_data.into()),
+        app_data: AppDataHash(order.app_data.into()),
         fee_amount: order.fee.into(),
         kind: match order.side {
             competition::order::Side::Buy => OrderKind::Buy,
