@@ -93,6 +93,7 @@ impl ParaSwap {
         tokens: &auction::Tokens,
         slippage: &dex::Slippage,
     ) -> Result<dto::Transaction, Error> {
+        let body = dto::TransactionBody::new(price, &self.config, order, tokens, slippage)?;
         let request = self
             .client
             .post(
@@ -101,15 +102,10 @@ impl ParaSwap {
                     .join("transactions/1?ignoreChecks=true")
                     .unwrap(),
             )
-            .json(&dto::TransactionBody::new(
-                price,
-                &self.config,
-                order,
-                tokens,
-                slippage,
-            )?)
+            .json(&body)
             .build()?;
-        tracing::trace!("Querying ParaSwap transaction API: {request:?}");
+        let body = serde_json::to_string(&body)?;
+        tracing::trace!(?request, %body, "Querying ParaSwap transaction API");
         let response = self.client.execute(request).await?;
         let status = response.status();
         let text = response.text().await?;
