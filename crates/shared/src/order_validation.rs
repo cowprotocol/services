@@ -476,7 +476,6 @@ impl OrderValidating for OrderValidator {
             fee_amount: order.data.fee_amount,
             kind: order.data.kind,
             from: owner,
-            app_data: order.data.app_data,
         };
         let quote = if class == OrderClass::Market {
             let quote = get_quote_and_check_fee(
@@ -739,7 +738,6 @@ pub async fn get_quote_and_check_fee(
                     },
                 },
                 from: quote_search_parameters.from,
-                app_data: quote_search_parameters.app_data,
                 signing_scheme,
             };
 
@@ -823,7 +821,6 @@ mod tests {
         maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
-            app_id::AppId,
             order::OrderBuilder,
             quote::default_verification_gas_limit,
             signature::EcdsaSigningScheme,
@@ -1895,7 +1892,6 @@ mod tests {
             fee_amount: 6.into(),
             kind: OrderKind::Buy,
             from: H160([0xf0; 20]),
-            app_data: AppId([5; 32]),
         };
         let quote_data = Quote {
             fee_amount: 6.into(),
@@ -1949,7 +1945,6 @@ mod tests {
             buy_token: H160([2; 20]),
             kind: OrderKind::Sell,
             from,
-            app_data: AppId([5; 32]),
             ..Default::default()
         };
         let quote_data = Quote {
@@ -1968,7 +1963,6 @@ mod tests {
                     },
                 },
                 from,
-                app_data: quote_search_parameters.app_data,
                 signing_scheme: QuoteSigningScheme::Eip712,
             }))
             .returning({

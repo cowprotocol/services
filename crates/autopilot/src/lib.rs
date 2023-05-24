@@ -462,7 +462,6 @@ pub async fn main(args: arguments::Arguments) {
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
         liquidity_order_owners: liquidity_order_owners.clone(),
-        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {

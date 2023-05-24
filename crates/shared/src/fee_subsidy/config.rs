@@ -2,8 +2,7 @@ use {
     super::{FeeSubsidizing, Subsidy, SubsidyParameters},
     anyhow::Result,
     ethcontract::H160,
-    model::app_id::AppId,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashSet,
 };
 
 /// The global configured fee subsidy to use for orders.
@@ -33,12 +32,6 @@ pub struct FeeSubsidyConfiguration {
 
     /// Liquidity order providers that get completely discounted fees.
     pub liquidity_order_owners: HashSet<H160>,
-
-    /// Additional factors per order app ID for computing the subsidized minimum
-    /// fee.
-    ///
-    /// Fee factors are applied **after** flat fee discounts.
-    pub partner_additional_fee_factors: HashMap<AppId, f64>,
 }
 
 impl Default for FeeSubsidyConfiguration {
@@ -48,7 +41,6 @@ impl Default for FeeSubsidyConfiguration {
             fee_factor: 1.,
             min_discounted_fee: 0.,
             liquidity_order_owners: Default::default(),
-            partner_additional_fee_factors: Default::default(),
         }
     }
 }
@@ -61,16 +53,11 @@ impl FeeSubsidizing for FeeSubsidyConfiguration {
         } else {
             1.
         };
-        let partner_factor = self
-            .partner_additional_fee_factors
-            .get(&parameters.app_data)
-            .copied()
-            .unwrap_or(1.);
 
         Ok(Subsidy {
             discount: self.fee_discount,
             min_discounted: self.min_discounted_fee,
-            factor: self.fee_factor * liquidity_factor * partner_factor,
+            factor: self.fee_factor * liquidity_factor,
         })
     }
 }

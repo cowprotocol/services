@@ -18,7 +18,6 @@ use {
     futures::TryFutureExt as _,
     gas_estimation::GasPriceEstimating,
     model::{
-        app_id::AppId,
         order::{OrderClass, OrderKind},
         quote::{
             OrderQuote,
@@ -136,7 +135,6 @@ pub struct QuoteParameters {
     pub buy_token: H160,
     pub side: OrderQuoteSide,
     pub from: H160,
-    pub app_data: AppId,
     pub signing_scheme: QuoteSigningScheme,
 }
 
@@ -369,7 +367,6 @@ pub struct QuoteSearchParameters {
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub from: H160,
-    pub app_data: AppId,
 }
 
 impl QuoteSearchParameters {
@@ -541,7 +538,6 @@ impl OrderQuoting for OrderQuoter {
             self.fee_subsidy
                 .subsidy(SubsidyParameters {
                     from: parameters.from,
-                    app_data: parameters.app_data,
                 })
                 .map_err(From::from),
         )?;
@@ -594,7 +590,6 @@ impl OrderQuoting for OrderQuoter {
 
         let subsidy = SubsidyParameters {
             from: parameters.from,
-            app_data: parameters.app_data,
         };
 
         let now = self.now.now();
@@ -670,7 +665,6 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
             buy_token: request.buy_token,
             side: request.side,
             from: request.from,
-            app_data: request.app_data,
             signing_scheme: request.signing_scheme,
         }
     }
@@ -742,7 +736,6 @@ mod tests {
                 sell_amount: SellAmount::BeforeFee { value: 100.into() },
             },
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -859,7 +852,6 @@ mod tests {
                 sell_amount: SellAmount::AfterFee { value: 100.into() },
             },
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -979,7 +971,6 @@ mod tests {
                 buy_amount_after_fee: 42.into(),
             },
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -1099,7 +1090,6 @@ mod tests {
                 sell_amount: SellAmount::BeforeFee { value: 100.into() },
             },
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -1164,7 +1154,6 @@ mod tests {
                 },
             },
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -1234,7 +1223,6 @@ mod tests {
             fee_amount: 15.into(),
             kind: OrderKind::Sell,
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1317,7 +1305,6 @@ mod tests {
             fee_amount: 30.into(),
             kind: OrderKind::Sell,
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1389,7 +1376,6 @@ mod tests {
             fee_amount: 30.into(),
             kind: OrderKind::Buy,
             from: H160([3; 20]),
-            app_data: AppId([4; 32]),
         };
 
         let mut storage = MockQuoteStoring::new();

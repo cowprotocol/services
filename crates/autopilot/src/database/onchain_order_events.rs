@@ -550,7 +550,6 @@ async fn get_quote(
         kind: order_data.kind,
         // Original quote was made from user account, and not necessarily from owner.
         from: order_placement.sender,
-        app_data: order_data.app_data,
     };
     get_quote_and_check_fee(
         quoter,
