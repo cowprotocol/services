@@ -403,7 +403,6 @@ pub async fn run(args: Arguments) {
             .iter()
             .copied()
             .collect(),
-        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
