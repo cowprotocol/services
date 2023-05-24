@@ -61,7 +61,6 @@ impl ParaSwap {
                 spender: eth::ContractAddress(price.token_transfer_proxy()?),
                 amount: dex::Amount::new(price.src_amount()?),
             },
-            gas: eth::Gas(price.gas_cost()?),
         })
     }
 

@@ -15,6 +15,9 @@ pub struct Dex {
     /// The DEX API client.
     dex: infra::dex::Dex,
 
+    /// The simulator to use for checking gas usage for trading single orders.
+    simulator: infra::simulator::Simulator,
+
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
 
@@ -27,6 +30,7 @@ impl Dex {
     pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
         Self {
             dex,
+            simulator: infra::simulator::Simulator::new(&config.node_url, config.authenticator),
             slippage: config.slippage,
             fills: Fills::new(config.smallest_partial_fill),
         }
@@ -92,7 +96,7 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let Some(solution) = swap.into_solution(order, gas_price, sell) else {
+        let Some(solution) = swap.into_solution(order, gas_price, sell, &self.simulator).await else {
             tracing::debug!("no solution for swap");
             return None;
         };

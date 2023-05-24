@@ -261,7 +261,12 @@ fn main() {
     });
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
-    generate_contract("GPv2AllowListAuthentication");
+    generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
+        builder
+            .add_network_str(MAINNET, "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE")
+            .add_network_str(GOERLI, "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE")
+            .add_network_str(GNOSIS, "0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE")
+    });
     generate_contract_with_config("GPv2Settlement", |builder| {
         builder
             .contract_mod_override("gpv2_settlement")

@@ -154,9 +154,6 @@ pub struct Tx {
     /// Expected amount of destination token.
     #[serde_as(as = "serialize::Hex")]
     pub data: Vec<u8>,
-
-    /// The estimated gas limit required for executing the transaction.
-    pub gas: u64,
 }
 
 #[derive(Deserialize)]

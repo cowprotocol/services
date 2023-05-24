@@ -5,15 +5,16 @@
 use {
     crate::{
         domain::{auction, eth, order, solution},
+        infra,
         util,
     },
     ethereum_types::U256,
     std::fmt::{self, Debug, Formatter},
 };
 
-pub mod slippage;
-
 pub use self::slippage::Slippage;
+
+pub mod slippage;
 
 /// An order for quoting with an external DEX or DEX aggregator. This is a
 /// simplified representation of a CoW Protocol order.
@@ -81,11 +82,6 @@ pub struct Swap {
     pub output: eth::Asset,
     /// The minimum allowance that is required for executing the swap.
     pub allowance: Allowance,
-    /// The gas guesstimate in gas units for the swap.
-    ///
-    /// This estimate is **not** expected to be accurate, and is purely
-    /// indicative.
-    pub gas: eth::Gas,
 }
 
 impl Swap {
@@ -101,12 +97,21 @@ impl Swap {
 
     /// Constructs a single order `solution::Solution` for this swap. Returns
     /// `None` if the swap is not valid for the specified order.
-    pub fn into_solution(
+    pub async fn into_solution(
         self,
         order: order::Order,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
+        simulator: &infra::simulator::Simulator,
     ) -> Option<solution::Solution> {
+        let gas = match simulator.gas(order.owner(), &self).await {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::warn!(?err, "gas simulation failed");
+                return None;
+            }
+        };
+
         let allowance = self.allowance();
         let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {
             target: self.call.to.0,
@@ -123,7 +128,7 @@ impl Swap {
             input: self.input,
             output: self.output,
             interactions,
-            gas: self.gas,
+            gas,
         }
         .into_solution(gas_price, sell_token)
     }

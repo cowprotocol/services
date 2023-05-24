@@ -3,9 +3,11 @@
 use {
     crate::{
         domain::{dex::slippage, eth},
+        infra::contracts,
         util::conv,
     },
     bigdecimal::BigDecimal,
+    ethereum_types::H160,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
     std::path::Path,
@@ -16,6 +18,13 @@ use {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
+    /// The node URL to use for simulations.
+    node_url: reqwest::Url,
+
+    /// Optional CoW Protocol Authenticator contract address. If not specified,
+    /// the default Authenticator contract address will be used.
+    authenticator: Option<H160>,
+
     /// The relative slippage allowed by the solver.
     #[serde(default = "default_relative_slippage")]
     #[serde_as(as = "serde_with::DisplayFromStr")]
@@ -60,7 +69,16 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .try_into()
         .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
 
+    // Take advantage of the fact that deterministic deployment means that all
+    // CoW Protocol contracts have the same address.
+    let contracts = contracts::Contracts::for_chain(eth::ChainId::Mainnet);
+
     let config = super::Config {
+        node_url: config.node_url,
+        authenticator: config
+            .authenticator
+            .map(eth::ContractAddress)
+            .unwrap_or(contracts.authenticator),
         slippage: slippage::Limits::new(
             config.relative_slippage,
             config.absolute_slippage.map(|value| {

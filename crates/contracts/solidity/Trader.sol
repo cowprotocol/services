@@ -7,6 +7,16 @@ import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
 
+struct Asset {
+    address token;
+    uint256 amount;
+}
+
+struct Allowance {
+    address spender;
+    uint256 amount;
+}
+
 /// @title A contract for impersonating a trader.
 contract Trader {
     using Caller for *;
@@ -85,6 +95,75 @@ contract Trader {
             traderBalances[i] += IERC20(tokens[i]).balanceOf(address(this)).toInt();
             settlementBalances[i] += IERC20(tokens[i]).balanceOf(address(SETTLEMENT)).toInt();
         }
+    }
+
+    /// @dev Simulates the execution of a single DEX swap over the CoW Protocol
+    /// settlement contract. This is used for accurately simulating gas costs
+    /// for orders with solver-computed fees.
+    ///
+    /// @param sell - the asset being sold in the swap.
+    /// @param buy - the asset being bought in the swap.
+    /// @param allowance - the required ERC-20 allowance for the swap; the
+    /// approval will be me made on behalf of the settlement contract.
+    /// @param call - the call for executing the swap.
+    ///
+    /// @return gasUsed - the cumulative gas used for executing the simulated
+    /// settlement.
+    function swap(
+        Asset calldata sell,
+        Asset calldata buy,
+        Allowance calldata allowance,
+        Interaction calldata call
+    ) external returns (
+        uint256 gasUsed
+    ) {
+        IERC20(sell.token).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
+        IERC20(sell.token).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = sell.token;
+        tokens[1] = buy.token;
+
+        uint256[] memory clearingPrices = new uint256[](2);
+        clearingPrices[0] = buy.amount;
+        clearingPrices[1] = sell.amount;
+
+        Trade[] memory trades = new Trade[](1);
+        trades[0] = Trade({
+            sellTokenIndex: 0,
+            buyTokenIndex: 1,
+            receiver: address(0),
+            sellAmount: sell.amount,
+            buyAmount: buy.amount,
+            validTo: type(uint32).max,
+            appData: bytes32(0),
+            feeAmount: 0,
+            flags: 0x40, // EIP-1271
+            executedAmount: 0,
+            signature: abi.encodePacked(address(this))
+        });
+
+        Interaction[][3] memory interactions;
+        if (
+            IERC20(sell.token).allowance(address(SETTLEMENT), allowance.spender)
+                < allowance.amount
+        ) {
+            interactions[0] = new Interaction[](1);
+            interactions[0][0].target = sell.token;
+            interactions[0][0].callData = abi.encodeCall(
+                IERC20(sell.token).approve,
+                (allowance.spender, allowance.amount)
+            );
+        }
+        interactions[1] = new Interaction[](1);
+        interactions[1][0] = call;
+
+        gasUsed = address(SETTLEMENT).doMeteredCallNoReturn(
+            abi.encodeCall(
+                SETTLEMENT.settle,
+                (tokens, clearingPrices, trades, interactions)
+            )
+        );
     }
 
     /// @dev Roundtrip a token in two CoW protocol settlements. First, buy some
