@@ -1,0 +1,8 @@
+[package]
+name = "app-data-hash"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hex-literal = { workspace = true }
+tiny-keccak = { version = "2.0", features = ["keccak"] }
