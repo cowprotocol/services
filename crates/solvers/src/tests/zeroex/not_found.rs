@@ -6,7 +6,6 @@ use {
     serde_json::json,
 };
 
-/// Tests that orders get marked as "mandatory" in `/quote` requests.
 #[tokio::test]
 async fn test() {
     let api = mock::http::setup(vec![mock::http::Expectation::Get {

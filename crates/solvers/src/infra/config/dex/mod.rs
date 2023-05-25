@@ -1,6 +1,7 @@
 pub mod balancer;
 mod file;
 pub mod oneinch;
+pub mod paraswap;
 pub mod zeroex;
 
 use crate::domain::{dex::slippage, eth};

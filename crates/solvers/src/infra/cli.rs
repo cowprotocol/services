@@ -53,4 +53,9 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
+    // ParaSwap solver.
+    ParaSwap {
+        #[clap(long, env)]
+        config: PathBuf,
+    },
 }
