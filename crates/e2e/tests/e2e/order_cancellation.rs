@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        app_id::AppId,
+        app_id::AppDataHash,
         order::{
             CancellationPayload,
             OrderBuilder,
@@ -59,7 +59,7 @@ async fn order_cancellation(web3: Web3) {
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: to_wei(1) },
             },
-            app_data: AppId([salt; 32]),
+            app_data: AppDataHash([salt; 32]),
             ..Default::default()
         };
         async move {

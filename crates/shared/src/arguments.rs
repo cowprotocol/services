@@ -16,12 +16,10 @@ use {
         },
         tenderly_api,
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::{ensure, Context, Result},
     bigdecimal::BigDecimal,
     ethcontract::{H160, H256, U256},
-    model::app_id::AppId,
     std::{
-        collections::HashMap,
         fmt::{self, Display, Formatter},
         num::{NonZeroU64, ParseFloatError},
         str::FromStr,
@@ -120,25 +118,6 @@ pub struct OrderQuotingArguments {
     /// what we estimate we pay for gas.
     #[clap(long, env, default_value = "1", value_parser = parse_unbounded_factor)]
     pub fee_factor: f64,
-
-    /// Used to specify additional fee subsidy factor based on app_ids contained
-    /// in orders. Should take the form of a json string as shown in the
-    /// following example:
-    ///
-    /// '0x0000000000000000000000000000000000000000000000000000000000000000:0.5,
-    /// $PROJECT_APP_ID:0.7'
-    ///
-    /// Furthermore, a value of
-    /// - 1 means no subsidy and is the default for all app_data not contained
-    ///   in this list.
-    /// - 0.5 means that this project pays only 50% of the estimated fees.
-    #[clap(
-        long,
-        env,
-        default_value = "",
-        value_parser = parse_partner_fee_factor,
-    )]
-    pub partner_additional_fee_factors: HashMap<AppId, f64>,
 
     /// Used to configure how much of the regular fee a user should pay based on
     /// their COW + VCOW balance in base units on the current network.
@@ -377,11 +356,6 @@ impl Display for OrderQuotingArguments {
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(
-            f,
-            "partner_additional_fee_factors: {:?}",
-            self.partner_additional_fee_factors
-        )?;
         writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
         writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
         display_list(
@@ -557,77 +531,9 @@ impl FromStr for RateLimitingStrategy {
     }
 }
 
-/// Parses a comma separated list of colon separated values representing fee
-/// factors for AppIds.
-fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
-    let mut res = HashMap::default();
-    if s.is_empty() {
-        return Ok(res);
-    }
-    for pair_str in s.split(',') {
-        let mut split = pair_str.trim().split(':');
-        let key = split
-            .next()
-            .context("missing AppId")?
-            .trim()
-            .parse()
-            .context("failed to parse address")?;
-        let value = split
-            .next()
-            .context("missing value")?
-            .trim()
-            .parse::<f64>()
-            .context("failed to parse fee factor")?;
-        if split.next().is_some() {
-            return Err(anyhow!("Invalid pair lengths"));
-        }
-        res.insert(key, value);
-    }
-    Ok(res)
-}
-
 #[cfg(test)]
 mod test {
-    use {super::*, maplit::hashmap};
-    #[test]
-    fn parse_partner_fee_factor_ok() {
-        let x = "0x0000000000000000000000000000000000000000000000000000000000000000";
-        let y = "0x0101010101010101010101010101010101010101010101010101010101010101";
-        // without spaces
-        assert_eq!(
-            parse_partner_fee_factor(&format!("{x}:0.5,{y}:0.7")).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
-        );
-        // with spaces
-        assert_eq!(
-            parse_partner_fee_factor(&format!("{x}: 0.5, {y}: 0.7")).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
-        );
-        // whole numbers
-        assert_eq!(
-            parse_partner_fee_factor(&format!("{x}: 1, {y}: 2")).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
-        );
-    }
-
-    #[test]
-    fn parse_partner_fee_factor_err() {
-        assert!(parse_partner_fee_factor("0x1:0.5,0x2:0.7").is_err());
-        assert!(parse_partner_fee_factor("0x12:0.5,0x22:0.7").is_err());
-        assert!(parse_partner_fee_factor(
-            "0x0000000000000000000000000000000000000000000000000000000000000000:0.5:3"
-        )
-        .is_err());
-        assert!(parse_partner_fee_factor(
-            "0x0000000000000000000000000000000000000000000000000000000000000000:word"
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn parse_partner_fee_factor_ok_on_empty() {
-        assert!(parse_partner_fee_factor("").unwrap().is_empty());
-    }
+    use super::*;
 
     #[test]
     fn parse_driver() {

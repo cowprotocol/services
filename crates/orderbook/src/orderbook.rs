@@ -372,7 +372,7 @@ mod tests {
         ethcontract::H160,
         mockall::predicate::eq,
         model::{
-            app_id::AppId,
+            app_id::AppDataHash,
             order::{OrderData, OrderMetadata},
             signature::Signature,
         },
@@ -463,7 +463,7 @@ mod tests {
                         from: Some(H160([2; 20])),
                         signature: Signature::Eip712(Default::default()),
                         data: OrderData {
-                            app_data: AppId(cancellation.hash_struct()),
+                            app_data: AppDataHash(cancellation.hash_struct()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -482,7 +482,7 @@ mod tests {
                         from: Some(old_order.metadata.owner),
                         signature: Signature::PreSign,
                         data: OrderData {
-                            app_data: AppId(cancellation.hash_struct()),
+                            app_data: AppDataHash(cancellation.hash_struct()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -501,7 +501,7 @@ mod tests {
                         from: Some(old_order.metadata.owner),
                         signature: Signature::Eip712(Default::default()),
                         data: OrderData {
-                            app_data: AppId(cancellation.hash_struct()),
+                            app_data: AppDataHash(cancellation.hash_struct()),
                             ..Default::default()
                         },
                         ..Default::default()

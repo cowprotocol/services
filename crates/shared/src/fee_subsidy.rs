@@ -32,7 +32,6 @@ use {
     anyhow::Result,
     ethcontract::{H160, U256},
     futures::future,
-    model::app_id::AppId,
     std::sync::Arc,
 };
 
@@ -40,9 +39,6 @@ use {
 pub struct SubsidyParameters {
     /// The trader address.
     pub from: H160,
-
-    /// The app data.
-    pub app_data: AppId,
 }
 
 #[derive(Clone, Debug, PartialEq)]

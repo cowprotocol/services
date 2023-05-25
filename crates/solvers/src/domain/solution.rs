@@ -8,7 +8,7 @@ use {
 };
 
 /// A solution to an auction.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
@@ -117,7 +117,7 @@ impl Single {
 
 /// A set of uniform clearing prices. They are represented as a mapping of token
 /// addresses to price in an arbitrarily denominated price.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ClearingPrices(pub HashMap<eth::TokenAddress, U256>);
 
 impl ClearingPrices {
@@ -128,12 +128,14 @@ impl ClearingPrices {
 }
 
 /// A trade which executes an order as part of this solution.
+#[derive(Debug)]
 pub enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
 }
 
 /// A traded order within a solution.
+#[derive(Debug)]
 pub struct Fulfillment {
     order: order::Order,
     executed: U256,
@@ -230,6 +232,7 @@ impl Fee {
 
 /// A trade of an order that was created specifically for this solution
 /// providing just-in-time liquidity for other regular orders.
+#[derive(Debug)]
 pub struct JitTrade {
     pub order: order::JitOrder,
     pub executed: U256,
@@ -237,6 +240,7 @@ pub struct JitTrade {
 
 /// An interaction that is required to execute a solution by acquiring liquidity
 /// or running some custom logic.
+#[derive(Debug)]
 pub enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -244,6 +248,7 @@ pub enum Interaction {
 
 /// An interaction using input liquidity. This interaction will be encoded by
 /// the driver.
+#[derive(Debug)]
 pub struct LiquidityInteraction {
     pub liquidity: liquidity::Liquidity,
     // TODO: Currently there is not type-level guarantee that `input` and
@@ -255,6 +260,7 @@ pub struct LiquidityInteraction {
 
 /// An arbitrary interaction returned by the solver, which needs to be executed
 /// to fulfill the trade.
+#[derive(Debug)]
 pub struct CustomInteraction {
     pub target: Address,
     pub value: eth::Ether,
@@ -274,6 +280,7 @@ pub struct CustomInteraction {
 }
 
 /// Approval required to make some `[CustomInteraction]` possible.
+#[derive(Debug)]
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
