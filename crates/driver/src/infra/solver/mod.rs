@@ -64,18 +64,6 @@ pub struct Config {
     pub private_key: eth::PrivateKey,
 }
 
-/// Addresses to which rewards will be sent.
-#[derive(Debug, Clone, Copy)]
-pub struct Rewards {
-    /// Address to which performance rewards will be sent. Performance rewards
-    /// are given out whenever the solver submits a winning solution.
-    pub performance: eth::Address,
-    /// Address to which participation rewards will be sent. Participation
-    /// rewards are given out whenever the solver submits a solution, regardless
-    /// of whether or not it wins.
-    pub participation: eth::Address,
-}
-
 impl Solver {
     pub fn new(config: Config, eth: Ethereum, now: infra::time::Now) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
