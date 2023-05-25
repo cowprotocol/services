@@ -199,13 +199,16 @@ impl Solutions {
                         .try_collect()?,
                     weth,
                     solver: solver.clone(),
+                    risk: solution.risk.into(),
                 })
             })
             .collect()
     }
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solutions {
     solutions: Vec<Solution>,
 }
@@ -219,6 +222,9 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    #[serde_as(as = "serialize::U256")]
+    #[serde(default)]
+    risk: eth::U256,
 }
 
 #[derive(Debug, Deserialize)]

@@ -38,6 +38,7 @@ pub struct Solution {
     pub weth: eth::WethAddress,
     /// The solver which generated this solution.
     pub solver: Solver,
+    pub risk: Risk,
 }
 
 impl Solution {
@@ -231,14 +232,39 @@ impl SolverTimeout {
 pub struct Score(pub eth::U256);
 
 impl From<Score> for eth::U256 {
-    fn from(score: Score) -> Self {
-        score.0
+    fn from(value: Score) -> Self {
+        value.0
     }
 }
 
 impl From<eth::U256> for Score {
-    fn from(inner: eth::U256) -> Self {
-        Self(inner)
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+/// Solver-estimated risk that the settlement might revert. This value is
+/// subtracted from the final score of the solution.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Risk(pub eth::U256);
+
+impl From<Risk> for eth::U256 {
+    fn from(value: Risk) -> Self {
+        value.0
+    }
+}
+
+impl From<eth::U256> for Risk {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+impl Risk {
+    // TODO(#1533) Improve the risk merging formula.
+    /// Combine two risk values.
+    pub fn merge(self, other: Risk) -> Self {
+        Self(self.0 + other.0)
     }
 }
 

@@ -7,6 +7,7 @@ pub mod merge_settlements;
 pub mod multiple_solutions;
 pub mod negative_scores;
 pub mod quote;
+pub mod risk;
 pub mod settle;
 pub mod solve;
 pub mod solver_balance;

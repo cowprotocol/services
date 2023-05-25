@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order, Solution},
+    super::{Asset, Order},
     crate::{
         domain::{competition::order, eth},
         infra,
@@ -71,6 +71,12 @@ impl Pool {
         output_reserve * input.amount * eth::U256::from(997)
             / (input_reserve * eth::U256::from(1000) + input.amount * eth::U256::from(997))
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Solution {
+    pub fulfillments: Vec<Fulfillment>,
+    pub risk: eth::U256,
 }
 
 #[derive(Debug, Clone)]
@@ -522,8 +528,8 @@ impl Blockchain {
     pub async fn fulfill(
         &self,
         orders: impl Iterator<Item = &Order>,
-        solution: &Solution,
-    ) -> Vec<Fulfillment> {
+        solution: &super::Solution,
+    ) -> Solution {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
@@ -640,7 +646,10 @@ impl Blockchain {
                 executed_buy: quote.buy,
             });
         }
-        fulfillments
+        Solution {
+            fulfillments,
+            risk: solution.risk,
+        }
     }
 
     pub fn get_token(&self, token: &str) -> eth::H160 {

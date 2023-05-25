@@ -1,5 +1,5 @@
 use {
-    super::blockchain::{Blockchain, Fulfillment},
+    super::{blockchain, blockchain::Blockchain},
     crate::{
         domain::competition::{auction, order},
         infra::{self, blockchain::contracts::Addresses, Ethereum},
@@ -24,7 +24,7 @@ impl Solver {
     /// Set up an HTTP server exposing a solver API and acting as a solver mock.
     pub async fn new(
         blockchain: &Blockchain,
-        solutions: &[Vec<Fulfillment>],
+        solutions: &[blockchain::Solution],
         trusted: &HashSet<&'static str>,
         quotes: &[super::blockchain::Quote],
         deadline: chrono::DateTime<chrono::Utc>,
@@ -59,11 +59,11 @@ impl Solver {
             }
             orders_json.push(order_json);
         }
-        for (i, fulfillments) in solutions.iter().enumerate() {
+        for (i, solution) in solutions.iter().enumerate() {
             let mut interactions_json = Vec::new();
             let mut prices_json = HashMap::new();
             let mut trades_json = Vec::new();
-            for fulfillment in fulfillments {
+            for fulfillment in solution.fulfillments.iter() {
                 interactions_json.extend(fulfillment.interactions.iter().map(|interaction| {
                     json!({
                         "kind": "custom",
@@ -115,14 +115,15 @@ impl Solver {
                 "id": i,
                 "prices": prices_json,
                 "trades": trades_json,
-                "interactions": interactions_json
+                "interactions": interactions_json,
+                "risk": solution.risk.to_string(),
             }));
         }
         let tokens_json = solutions
             .iter()
-            .flatten()
-            .map(|f| &f.quote)
-            .flat_map(|quote| {
+            .flat_map(|s| s.fulfillments.iter())
+            .flat_map(|f| {
+                let quote = &f.quote;
                 [
                     (
                         hex_address(blockchain.get_token(quote.order.sell_token)),

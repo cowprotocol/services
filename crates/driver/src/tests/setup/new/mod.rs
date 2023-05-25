@@ -171,6 +171,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
+    pub risk: eth::U256,
 }
 
 impl Solution {
@@ -194,6 +195,11 @@ impl Solution {
             ..self
         }
     }
+
+    /// Set the solution risk.
+    pub fn risk(self, risk: eth::U256) -> Self {
+        Self { risk, ..self }
+    }
 }
 
 /// A solution solving the [`ab_order`].
@@ -203,6 +209,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
+        risk: Default::default(),
     }
 }
 
@@ -224,6 +231,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
+        risk: Default::default(),
     }
 }
 
@@ -407,7 +415,7 @@ impl Setup {
             driver,
             client: Default::default(),
             trader_address,
-            fulfillments: solutions.into_iter().flatten().collect(),
+            fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
             trusted,
             deadline,
             now,
