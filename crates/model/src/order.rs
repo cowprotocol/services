@@ -6,7 +6,7 @@ use {
         app_id::AppDataHash,
         interaction::InteractionData,
         quote::QuoteId,
-        signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
+        signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
         u256_decimal::{self, DecimalU256},
         DomainSeparator,
         TokenPair,
@@ -367,8 +367,24 @@ impl OrderCreation {
     /// issue performing the EC-recover or the recovered address does not match
     /// the expected one.
     pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
-        self.signature
-            .verify_owner(self.from, domain, &self.data.hash_struct())
+        let recovered = self
+            .signature
+            .recover(domain, &self.data.hash_struct())
+            .map_err(VerificationError::UnableToRecoverSigner)?;
+
+        let verified_owner = match (self.from, recovered) {
+            (Some(from), Some(recovered)) if from == recovered.signer => from,
+            (Some(from), None) => from,
+            (None, Some(recovered)) => recovered.signer,
+            (Some(_), Some(recovered)) => {
+                return Err(VerificationError::UnexpectedSigner(recovered));
+            }
+            (None, None) => {
+                return Err(VerificationError::MissingFrom);
+            }
+        };
+
+        Ok(verified_owner)
     }
 }
 
@@ -396,6 +412,13 @@ impl From<Order> for OrderCreation {
             quote_id: None,
         }
     }
+}
+
+#[derive(Debug)]
+pub enum VerificationError {
+    UnableToRecoverSigner(anyhow::Error),
+    UnexpectedSigner(signature::Recovered),
+    MissingFrom,
 }
 
 /// Cancellation of multiple orders.
@@ -438,11 +461,14 @@ pub struct SignedOrderCancellations {
 
 impl SignedOrderCancellations {
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature.recover(
-            self.signing_scheme,
-            domain_separator,
-            &self.data.hash_struct(),
-        )
+        Ok(self
+            .signature
+            .recover(
+                self.signing_scheme,
+                domain_separator,
+                &self.data.hash_struct(),
+            )?
+            .signer)
     }
 }
 
@@ -497,8 +523,10 @@ impl OrderCancellation {
     }
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature
-            .recover(self.signing_scheme, domain_separator, &self.hash_struct())
+        Ok(self
+            .signature
+            .recover(self.signing_scheme, domain_separator, &self.hash_struct())?
+            .signer)
     }
 }
 
@@ -1113,11 +1141,11 @@ mod tests {
             };
             let signature = Signature::from_bytes(*signing_scheme, signature).unwrap();
 
-            let owner = signature
+            let recovered = signature
                 .recover(&domain_separator, &order.hash_struct())
                 .unwrap()
                 .unwrap();
-            assert_eq!(owner, expected_owner);
+            assert_eq!(recovered.signer, expected_owner);
         }
     }
 
@@ -1240,13 +1268,13 @@ mod tests {
             )
             .build();
 
-        let owner = order
+        let recovered = order
             .signature
             .recover(&DomainSeparator::default(), &order.data.hash_struct())
             .unwrap()
             .unwrap();
 
-        assert_eq!(owner, h160_from_public_key(public_key));
+        assert_eq!(recovered.signer, h160_from_public_key(public_key));
     }
 
     #[test]
