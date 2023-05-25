@@ -219,7 +219,7 @@ impl Settlement {
             gas_price,
             &gas.into(),
         );
-        ensure!(!inputs.objective_value().is_negative(), "negative score",);
+        ensure!(!inputs.objective_value().is_negative(), "negative score");
         let objective_value = big_rational_to_u256(&inputs.objective_value())?;
         Ok((objective_value - self.risk.0).into())
     }
