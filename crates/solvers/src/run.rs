@@ -56,6 +56,13 @@ pub async fn run(
                 config.base,
             ))
         }
+        cli::Command::ParaSwap { config } => {
+            let config = config::dex::paraswap::file::load(&config).await;
+            Solver::Dex(solver::Dex::new(
+                dex::Dex::ParaSwap(dex::paraswap::ParaSwap::new(config.paraswap)),
+                config.base,
+            ))
+        }
     };
 
     crate::api::Api {

@@ -4,6 +4,7 @@ use {
     model::{
         order::{OrderCreation, OrderUid},
         quote::QuoteId,
+        signature,
     },
     shared::{
         api::{error, extract_payload, ApiReply, IntoWarpReply},
@@ -121,10 +122,20 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            ValidationError::WrongOwner(owner) => with_status(
+            ValidationError::WrongOwner(signature::Recovered { message, signer }) => with_status(
                 error(
                     "WrongOwner",
-                    format!("Address recovered from signature {owner} does not match from address"),
+                    format!(
+                        "recovered signer {signer} from signing hash {message:?} does not match \
+                         from address"
+                    ),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            ValidationError::InvalidEip1271Signature(hash) => with_status(
+                error(
+                    "InvalidEip1271Signature",
+                    format!("signature for computed order hash {hash:?} is not valid"),
                 ),
                 StatusCode::BAD_REQUEST,
             ),

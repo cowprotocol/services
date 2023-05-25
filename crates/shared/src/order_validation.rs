@@ -18,7 +18,7 @@ use {
     async_trait::async_trait,
     contracts::WETH9,
     database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind},
-    ethcontract::{H160, U256},
+    ethcontract::{H160, H256, U256},
     model::{
         order::{
             BuyTokenDestination,
@@ -28,10 +28,11 @@ use {
             OrderData,
             OrderKind,
             SellTokenSource,
+            VerificationError,
             BUY_ETH_ADDRESS,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
-        signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
+        signature::{self, hashed_eip712_message, Signature, SigningScheme},
         time,
         DomainSeparator,
     },
@@ -116,7 +117,10 @@ pub enum ValidationError {
     /// The specified on-chain signature requires the from address of the
     /// order signer.
     MissingFrom,
-    WrongOwner(H160),
+    WrongOwner(signature::Recovered),
+    /// An invalid EIP-1271 signature, where the on-chain validation check
+    /// reverted or did not return the expected value.
+    InvalidEip1271Signature(H256),
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
@@ -137,7 +141,7 @@ impl From<VerificationError> for ValidationError {
     fn from(err: VerificationError) -> Self {
         match err {
             VerificationError::UnableToRecoverSigner(_) => Self::InvalidSignature,
-            VerificationError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
+            VerificationError::UnexpectedSigner(recovered) => Self::WrongOwner(recovered),
             VerificationError::MissingFrom => Self::MissingFrom,
         }
     }
@@ -177,15 +181,6 @@ impl From<CalculateQuoteError> for ValidationError {
             err @ CalculateQuoteError::SellAmountDoesNotCoverFee { .. } => {
                 ValidationError::Other(anyhow!(err).context("unexpected quote calculation error"))
             }
-        }
-    }
-}
-
-impl From<SignatureValidationError> for ValidationError {
-    fn from(err: SignatureValidationError) -> Self {
-        match err {
-            SignatureValidationError::Invalid => Self::InvalidSignature,
-            SignatureValidationError::Other(err) => Self::Other(err),
         }
     }
 }
@@ -440,13 +435,20 @@ impl OrderValidating for OrderValidator {
                 // We don't care! Because we are skipping validation anyway
                 0u64
             } else {
+                let hash = hashed_eip712_message(domain_separator, &order.data.hash_struct());
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
-                        hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                        hash,
                         signature: signature.to_owned(),
                     })
-                    .await?
+                    .await
+                    .map_err(|err| match err {
+                        SignatureValidationError::Invalid => {
+                            ValidationError::InvalidEip1271Signature(H256(hash))
+                        }
+                        SignatureValidationError::Other(err) => ValidationError::Other(err),
+                    })?
             }
         } else {
             // in any other case, just apply 0
@@ -1792,13 +1794,15 @@ mod tests {
             signature: Signature::Eip1271(vec![1, 2, 3]),
             ..Default::default()
         };
+        let domain = DomainSeparator::default();
 
         assert!(matches!(
             validator
-                .validate_and_construct_order(creation, &Default::default(), Default::default())
+                .validate_and_construct_order(creation.clone(), &domain, Default::default())
                 .await
                 .unwrap_err(),
-            ValidationError::InvalidSignature,
+            ValidationError::InvalidEip1271Signature(hash)
+                if hash.0 == signature::hashed_eip712_message(&domain, &creation.data.hash_struct()),
         ));
     }
 

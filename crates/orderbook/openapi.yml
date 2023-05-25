@@ -850,6 +850,7 @@ components:
               TransferSimulationFailed,
               UnsupportedToken,
               WrongOwner,
+              InvalidEip1271Signature,
               MissingFrom,
               SameBuyAndSellToken,
               ZeroAmount,

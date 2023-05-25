@@ -125,6 +125,7 @@ pub struct Interaction {
 /// An order that can be used to provide just-in-time liquidity in form of a CoW
 /// Protocol order. This is how solvers integrate private market makers into
 /// their solutions.
+#[derive(Debug)]
 pub struct JitOrder {
     pub owner: Address,
     pub signature: Signature,
@@ -145,7 +146,7 @@ pub struct JitOrder {
 /// Signature over the order data.
 /// All variants rely on the EIP-712 hash of the order data, referred to as the
 /// order hash.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Signature {
     /// The order struct is signed according to EIP-712.
     ///
@@ -201,4 +202,13 @@ impl EcdsaSignature {
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
+#[derive(Clone, Copy, Default)]
 pub struct AppData(pub [u8; 32]);
+
+impl Debug for AppData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AppData")
+            .field(&util::fmt::Hex(&self.0))
+            .finish()
+    }
+}

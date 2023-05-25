@@ -44,7 +44,7 @@ pub enum Liquidity {
     Exclude(Vec<String>),
 }
 
-const DEFAULT_URL: &str = "https://api.1inch.exchange/v5.0/1/";
+pub const DEFAULT_URL: &str = "https://api.1inch.exchange/v5.0/1/";
 
 impl OneInch {
     pub async fn new(config: Config) -> Result<Self, Error> {
