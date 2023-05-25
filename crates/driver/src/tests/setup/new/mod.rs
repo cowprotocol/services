@@ -12,7 +12,20 @@ use {
     crate::{
         domain::{competition::order, eth},
         infra,
-        tests::setup::new::blockchain::Blockchain,
+        tests::{
+            cases::{
+                AB_ORDER_AMOUNT,
+                CD_ORDER_AMOUNT,
+                DEFAULT_POOL_AMOUNT_A,
+                DEFAULT_POOL_AMOUNT_B,
+                DEFAULT_POOL_AMOUNT_C,
+                DEFAULT_POOL_AMOUNT_D,
+                DEFAULT_SCORE_MAX,
+                DEFAULT_SCORE_MIN,
+                DEFAULT_SURPLUS_FACTOR,
+            },
+            setup::new::blockchain::Blockchain,
+        },
         util,
     },
     ethcontract::BlockId,
@@ -36,21 +49,6 @@ pub struct Asset {
     amount: eth::U256,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Diff {
-    Add(eth::U256),
-    Sub(eth::U256),
-}
-
-impl Diff {
-    fn apply(&self, amount: eth::U256) -> eth::U256 {
-        match self {
-            Self::Add(diff) => amount + diff,
-            Self::Sub(diff) => amount - diff,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order {
     pub name: &'static str,
@@ -59,11 +57,6 @@ pub struct Order {
     pub amount: eth::U256,
     pub sell_token: &'static str,
     pub buy_token: &'static str,
-
-    /// The difference between the order amount and the amount passed to the
-    /// solver.
-    pub solver_sell_diff: Diff,
-    pub solver_buy_diff: Diff,
 
     pub internalize: bool,
     pub side: order::Side,
@@ -76,6 +69,44 @@ pub struct Order {
     // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
     pub solver_fee: eth::U256,
+
+    /// Set a value to be used to divide the order buy or sell amount before
+    /// the order gets placed and thereby generate surplus. Whether the sell or
+    /// buy amount is divided depends on the order side. This is necessary to
+    /// keep the solution scores positive.
+    pub surplus_factor: eth::U256,
+}
+
+impl Order {
+    /// Rename the order.
+    pub fn rename(self, name: &'static str) -> Self {
+        Self { name, ..self }
+    }
+
+    /// Reduce the amount of this order by the given amount.
+    pub fn reduce_amount(self, diff: eth::U256) -> Self {
+        Self {
+            amount: self.amount - diff,
+            ..self
+        }
+    }
+
+    /// Ensure that this order generates no surplus, and therefore most likely
+    /// has a negative score.
+    pub fn no_surplus(self) -> Self {
+        Self {
+            surplus_factor: 1.into(),
+            ..self
+        }
+    }
+
+    /// Mark this order as internalizable.
+    pub fn internalize(self) -> Self {
+        Self {
+            internalize: true,
+            ..self
+        }
+    }
 }
 
 impl Default for Order {
@@ -84,8 +115,6 @@ impl Default for Order {
             amount: Default::default(),
             sell_token: Default::default(),
             buy_token: Default::default(),
-            solver_sell_diff: Diff::Add(Default::default()),
-            solver_buy_diff: Diff::Add(Default::default()),
             internalize: Default::default(),
             side: order::Side::Sell,
             partial: order::Partial::No,
@@ -95,6 +124,7 @@ impl Default for Order {
             user_fee: Default::default(),
             solver_fee: Default::default(),
             name: Default::default(),
+            surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
         }
     }
 }
@@ -120,25 +150,100 @@ pub struct Setup {
     internalize: bool,
     now: infra::time::Now,
     config_file: Option<PathBuf>,
-    solutions: Vec<SolutionSetup>,
+    solutions: Vec<Solution>,
 }
 
+/// The validity of a solution.
 #[derive(Debug, Clone, Copy)]
-pub enum Solution {
-    /// Set up the solver to return a valid solution.
-    Valid,
-    /// Set up the solver to return a valid solution, with additional
-    /// meaningless bytes appended to the calldata. This is useful for
-    /// lowering the solution score in a controlled way.
-    LowerScore { additional_calldata: usize },
+pub enum Calldata {
+    /// Set up the solver to return a solution with valid calldata.
+    Valid {
+        /// Include additional meaningless bytes appended to the calldata. This
+        /// is useful for lowering the solution score in a controlled
+        /// way.
+        additional_bytes: usize,
+    },
     /// Set up the solver to return a solution with bogus calldata.
-    InvalidCalldata,
+    Invalid,
 }
 
-#[derive(Debug)]
-struct SolutionSetup {
-    solution: Solution,
-    order_names: Vec<&'static str>,
+#[derive(Debug, Clone)]
+pub struct Solution {
+    pub calldata: Calldata,
+    pub orders: Vec<&'static str>,
+    pub risk: eth::U256,
+}
+
+impl Solution {
+    /// Divide the surplus factor by the specified amount.
+    pub fn reduce_score(self) -> Self {
+        Self {
+            calldata: match self.calldata {
+                Calldata::Valid { .. } => Calldata::Valid {
+                    additional_bytes: 10,
+                },
+                Calldata::Invalid => Calldata::Invalid,
+            },
+            ..self
+        }
+    }
+
+    /// Make the solution return invalid calldata.
+    pub fn invalid(self) -> Self {
+        Self {
+            calldata: Calldata::Invalid,
+            ..self
+        }
+    }
+
+    /// Set the solution risk.
+    pub fn risk(self, risk: eth::U256) -> Self {
+        Self { risk, ..self }
+    }
+}
+
+/// A solution solving the [`ab_order`].
+pub fn ab_solution() -> Solution {
+    Solution {
+        calldata: Calldata::Valid {
+            additional_bytes: 0,
+        },
+        orders: vec!["A-B order"],
+        risk: Default::default(),
+    }
+}
+
+/// An example order which sells token "A" for token "B".
+pub fn ab_order() -> Order {
+    Order {
+        name: "A-B order",
+        amount: AB_ORDER_AMOUNT.into(),
+        sell_token: "A",
+        buy_token: "B",
+        ..Default::default()
+    }
+}
+
+/// A solution solving the [`cd_order`].
+pub fn cd_solution() -> Solution {
+    Solution {
+        calldata: Calldata::Valid {
+            additional_bytes: 0,
+        },
+        orders: vec!["C-D order"],
+        risk: Default::default(),
+    }
+}
+
+/// An example order which sells token "C" for token "D".
+pub fn cd_order() -> Order {
+    Order {
+        name: "C-D order",
+        amount: CD_ORDER_AMOUNT.into(),
+        sell_token: "C",
+        buy_token: "D",
+        ..Default::default()
+    }
 }
 
 impl Setup {
@@ -162,6 +267,26 @@ impl Setup {
             },
         });
         self
+    }
+
+    /// Create a pool of tokens "A" and "B".
+    pub fn ab_pool(self) -> Self {
+        self.pool(
+            "A",
+            DEFAULT_POOL_AMOUNT_A.into(),
+            "B",
+            DEFAULT_POOL_AMOUNT_B.into(),
+        )
+    }
+
+    /// Create a pool of tokens "C" and "D".
+    pub fn cd_pool(self) -> Self {
+        self.pool(
+            "C",
+            DEFAULT_POOL_AMOUNT_C.into(),
+            "D",
+            DEFAULT_POOL_AMOUNT_D.into(),
+        )
     }
 
     /// Add a new order to be solved as part of the test. This order will be
@@ -199,11 +324,8 @@ impl Setup {
     }
 
     /// Add a solution to be returned by the mock solver.
-    pub fn solution(mut self, solution: Solution, orders: &[&'static str]) -> Self {
-        self.solutions.push(SolutionSetup {
-            solution,
-            order_names: orders.to_owned(),
-        });
+    pub fn solution(mut self, solution: Solution) -> Self {
+        self.solutions.push(solution);
         self
     }
 
@@ -253,17 +375,27 @@ impl Setup {
         })
         .await;
         let mut solutions = Vec::new();
-        for SolutionSetup {
-            solution,
-            order_names,
-        } in self.solutions
-        {
-            let orders = order_names
+        for solution in self.solutions {
+            let orders = solution
+                .orders
                 .iter()
-                .map(|name| orders.iter().find(|o| o.name == *name).unwrap());
-            solutions.push(blockchain.fulfill(orders, solution).await);
+                .map(|solution_order| orders.iter().find(|o| o.name == *solution_order).unwrap());
+            solutions.push(blockchain.fulfill(orders, &solution).await);
         }
-        let solver = Solver::new(&blockchain, &solutions, &trusted, deadline, self.now).await;
+        let mut quotes = Vec::new();
+        for order in orders {
+            let quote = blockchain.quote(&order).await;
+            quotes.push(quote);
+        }
+        let solver = Solver::new(
+            &blockchain,
+            &solutions,
+            &trusted,
+            &quotes,
+            deadline,
+            self.now,
+        )
+        .await;
         let driver = Driver::new(
             &driver::Config {
                 config_file,
@@ -277,15 +409,17 @@ impl Setup {
             &blockchain,
         )
         .await;
+
         Test {
             blockchain,
             driver,
             client: Default::default(),
             trader_address,
-            fulfillments: solutions.into_iter().flatten().collect(),
+            fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
             trusted,
             deadline,
             now,
+            quotes,
         }
     }
 
@@ -295,6 +429,7 @@ impl Setup {
 }
 
 pub struct Test {
+    quotes: Vec<blockchain::Quote>,
     blockchain: Blockchain,
     driver: Driver,
     client: reqwest::Client,
@@ -322,7 +457,13 @@ impl Test {
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /solve");
-        Solve { status, body }
+        Solve {
+            status,
+            body,
+            fulfillments: &self.fulfillments,
+            blockchain: &self.blockchain,
+            now: self.now,
+        }
     }
 
     /// Call the /quote endpoint.
@@ -389,16 +530,24 @@ impl Test {
 }
 
 /// A /solve response.
-pub struct Solve {
+pub struct Solve<'a> {
     status: StatusCode,
     body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
+    now: infra::time::Now,
 }
 
-impl Solve {
+impl<'a> Solve<'a> {
     /// Expect the /solve endpoint to have returned a 200 OK response.
-    pub fn ok(self) -> SolveOk {
+    pub fn ok(self) -> SolveOk<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
-        SolveOk { body: self.body }
+        SolveOk {
+            body: self.body,
+            fulfillments: self.fulfillments,
+            blockchain: self.blockchain,
+            now: self.now,
+        }
     }
 
     /// Expect the /solve endpoint to return a 400 BAD REQUEST response.
@@ -408,26 +557,75 @@ impl Solve {
     }
 }
 
-pub struct SolveOk {
+pub struct SolveOk<'a> {
     body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
+    now: infra::time::Now,
 }
 
-impl SolveOk {
-    /// Check the score in the response against the expected value.
-    pub fn score(self, expected_score: f64) {
+impl SolveOk<'_> {
+    /// Ensure that the score in the response is within a certain range. The
+    /// reason why this is a range is because small timing differences in
+    /// the test can lead to the settlement using slightly different amounts
+    /// of gas, which in turn leads to different scores.
+    pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert_eq!(result.as_object().unwrap().len(), 4);
         assert!(result.get("score").is_some());
-        let score = result.get("score").unwrap().as_f64().unwrap();
-        approx::assert_relative_eq!(score, expected_score, max_relative = 0.01);
+        let score = result.get("score").unwrap().as_str().unwrap();
+        let score = eth::U256::from_dec_str(score).unwrap();
+        assert!(score >= min, "score less than min {score} < {min}");
+        assert!(score <= max, "score more than max {score} > {max}");
+        self
+    }
+
+    /// Ensure that the score is within the default expected range.
+    pub fn default_score(self) -> Self {
+        self.score(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+    }
+
+    /// Check that the solution contains the expected orders.
+    pub fn orders(self, order_names: &[&str]) -> Self {
+        let expected_order_uids: HashSet<_> = order_names
+            .iter()
+            .map(|name| {
+                self.fulfillments
+                    .iter()
+                    .find(|f| f.quote.order.name == *name)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "unexpected orders {order_names:?}: fulfillment not found in {:?}",
+                            self.fulfillments,
+                        )
+                    })
+                    .quote
+                    .order_uid(self.blockchain, self.now)
+                    .to_string()
+            })
+            .collect();
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 4);
+        assert!(result.get("orders").is_some());
+        let order_uids: HashSet<_> = result
+            .get("orders")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|order| order.as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(order_uids, expected_order_uids);
+        self
     }
 
     /// Get the solution ID from the response.
     pub fn solution_id(self) -> String {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert_eq!(result.as_object().unwrap().len(), 4);
         assert!(result.get("id").is_some());
         result.get("id").unwrap().as_str().unwrap().to_owned()
     }
@@ -479,13 +677,13 @@ impl QuoteOk {
     }
 
     /// Check the score in the response against the expected value.
-    pub fn score(self, expected_score: f64) {
+    pub fn score(self, expected_score: &str) {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(result.get("score").is_some());
-        let score = result.get("score").unwrap().as_f64().unwrap();
-        approx::assert_relative_eq!(score, expected_score, max_relative = 0.01);
+        let score = result.get("score").unwrap().as_str().unwrap();
+        assert_eq!(score, expected_score);
     }
 }
 
@@ -563,5 +761,23 @@ impl<'a> SettleOk<'a> {
             Balance::Same => assert_eq!(new_balance, old_balance),
         }
         self
+    }
+
+    /// Ensure that the onchain balances changed in accordance with the
+    /// [`ab_order`].
+    pub async fn ab_order_executed(self) -> SettleOk<'a> {
+        self.balance("A", Balance::SmallerBy(AB_ORDER_AMOUNT.into()))
+            .await
+            .balance("B", Balance::Greater)
+            .await
+    }
+
+    /// Ensure that the onchain balances changed in accordance with the
+    /// [`cd_order`].
+    pub async fn cd_order_executed(self) -> SettleOk<'a> {
+        self.balance("C", Balance::SmallerBy(CD_ORDER_AMOUNT.into()))
+            .await
+            .balance("D", Balance::Greater)
+            .await
     }
 }

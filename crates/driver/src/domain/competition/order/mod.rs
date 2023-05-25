@@ -173,18 +173,21 @@ pub enum Partial {
     No,
 }
 
+/// The length of an order UID in bytes.
+pub const UID_LEN: usize = 56;
+
 /// UID of an order.
-#[derive(Debug, Clone, Copy)]
-pub struct Uid(pub [u8; 56]);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Uid(pub [u8; UID_LEN]);
 
 impl Default for Uid {
     fn default() -> Self {
-        Self([0; 56])
+        Self([0; UID_LEN])
     }
 }
 
-impl PartialEq<[u8; 56]> for Uid {
-    fn eq(&self, other: &[u8; 56]) -> bool {
+impl PartialEq<[u8; UID_LEN]> for Uid {
+    fn eq(&self, other: &[u8; UID_LEN]) -> bool {
         self.0 == *other
     }
 }
@@ -200,31 +203,34 @@ pub enum Side {
     Sell,
 }
 
-impl From<[u8; 56]> for Uid {
-    fn from(inner: [u8; 56]) -> Self {
+impl From<[u8; UID_LEN]> for Uid {
+    fn from(inner: [u8; UID_LEN]) -> Self {
         Self(inner)
     }
 }
 
-impl From<Uid> for [u8; 56] {
+impl From<Uid> for [u8; UID_LEN] {
     fn from(uid: Uid) -> Self {
         uid.0
     }
 }
 
+/// The length of the app data hash in bytes.
+pub const APP_DATA_LEN: usize = 32;
+
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct AppData(pub [u8; 32]);
+pub struct AppData(pub [u8; APP_DATA_LEN]);
 
-impl From<[u8; 32]> for AppData {
-    fn from(inner: [u8; 32]) -> Self {
+impl From<[u8; APP_DATA_LEN]> for AppData {
+    fn from(inner: [u8; APP_DATA_LEN]) -> Self {
         Self(inner)
     }
 }
 
-impl From<AppData> for [u8; 32] {
+impl From<AppData> for [u8; APP_DATA_LEN] {
     fn from(app_data: AppData) -> Self {
         app_data.0
     }

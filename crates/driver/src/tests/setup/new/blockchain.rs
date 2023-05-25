@@ -43,7 +43,7 @@ pub struct Blockchain {
     pub pairs: Vec<Pair>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Interaction {
     pub address: ethcontract::H160,
     pub calldata: Vec<u8>,
@@ -73,15 +73,46 @@ impl Pool {
     }
 }
 
-#[derive(Debug)]
-pub struct Fulfillment {
-    pub order: Order,
-    pub interactions: Vec<Interaction>,
-    pub sell_amount: eth::U256,
-    pub buy_amount: eth::U256,
+#[derive(Debug, Clone)]
+pub struct Solution {
+    pub fulfillments: Vec<Fulfillment>,
+    pub risk: eth::U256,
 }
 
-impl Fulfillment {
+#[derive(Debug, Clone)]
+pub struct Fulfillment {
+    pub quote: Quote,
+    pub interactions: Vec<Interaction>,
+    pub executed_buy: eth::U256,
+    pub executed_sell: eth::U256,
+}
+
+/// An order for which buy and sell amounts have been calculated.
+#[derive(Debug, Clone)]
+pub struct Quote {
+    pub order: Order,
+    pub buy: eth::U256,
+    pub sell: eth::U256,
+}
+
+impl Quote {
+    /// The buy amount with the surplus factor.
+    pub fn buy_amount(&self) -> eth::U256 {
+        match self.order.side {
+            order::Side::Buy => self.buy,
+            order::Side::Sell => self.buy / self.order.surplus_factor,
+        }
+    }
+
+    /// The sell amount with the surplus factor.
+    pub fn sell_amount(&self) -> eth::U256 {
+        match self.order.side {
+            order::Side::Buy => self.sell / self.order.surplus_factor,
+            order::Side::Sell => self.sell,
+        }
+    }
+
+    /// The UID of the order.
     pub fn order_uid(
         &self,
         blockchain: &Blockchain,
@@ -90,16 +121,24 @@ impl Fulfillment {
         self.boundary(blockchain, now).uid()
     }
 
+    /// The signature of the order.
     pub fn order_signature(&self, blockchain: &Blockchain, now: infra::time::Now) -> Vec<u8> {
         self.boundary(blockchain, now).signature()
+    }
+
+    pub fn executed(&self) -> eth::U256 {
+        match self.order.side {
+            order::Side::Buy => self.buy,
+            order::Side::Sell => self.sell,
+        }
     }
 
     fn boundary(&self, blockchain: &Blockchain, now: infra::time::Now) -> tests::boundary::Order {
         tests::boundary::Order {
             sell_token: blockchain.get_token(self.order.sell_token),
             buy_token: blockchain.get_token(self.order.buy_token),
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
+            sell_amount: self.sell_amount(),
+            buy_amount: self.buy_amount(),
             valid_to: u32::try_from(now.now().timestamp()).unwrap() + self.order.valid_for.0,
             user_fee: self.order.user_fee,
             side: self.order.side,
@@ -450,13 +489,47 @@ impl Blockchain {
         }
     }
 
+    /// Quote an order using a UniswapV2 pool. This determines the buy and sell
+    /// amount of the order.
+    pub async fn quote(&self, order: &Order) -> Quote {
+        let pair = self
+            .pairs
+            .iter()
+            .find(|pair| {
+                (pair.token_a, pair.token_b) == (order.sell_token, order.buy_token)
+                    || (pair.token_b, pair.token_a) == (order.sell_token, order.buy_token)
+            })
+            .expect("could not find uniswap pair for order");
+        let (executed_sell, executed_buy) = match order.side {
+            order::Side::Buy => (
+                pair.pool.out(Asset {
+                    token: order.buy_token,
+                    amount: order.amount,
+                }),
+                order.amount,
+            ),
+            order::Side::Sell => (
+                order.amount,
+                pair.pool.out(Asset {
+                    token: order.sell_token,
+                    amount: order.amount,
+                }),
+            ),
+        };
+        Quote {
+            order: order.clone(),
+            buy: executed_buy,
+            sell: executed_sell,
+        }
+    }
+
     /// Set up the blockchain context and return the interactions needed to
     /// fulfill the orders.
     pub async fn fulfill(
         &self,
         orders: impl Iterator<Item = &Order>,
-        solution: super::Solution,
-    ) -> Vec<Fulfillment> {
+        solution: &super::Solution,
+    ) -> Solution {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
@@ -470,28 +543,7 @@ impl Blockchain {
                         || (pair.token_b, pair.token_a) == (order.sell_token, order.buy_token)
                 })
                 .expect("could not find uniswap pair for order");
-            let (sell_amount, buy_amount) = match order.side {
-                order::Side::Buy => (
-                    pair.pool.out(Asset {
-                        token: order.buy_token,
-                        amount: match order.solver_sell_diff {
-                            super::Diff::Add(diff) => order.amount + diff,
-                            super::Diff::Sub(diff) => order.amount - diff,
-                        },
-                    }),
-                    order.amount,
-                ),
-                order::Side::Sell => (
-                    order.amount,
-                    pair.pool.out(Asset {
-                        token: order.sell_token,
-                        amount: match order.solver_buy_diff {
-                            super::Diff::Add(diff) => order.amount + diff,
-                            super::Diff::Sub(diff) => order.amount - diff,
-                        },
-                    }),
-                ),
-            };
+            let quote = self.quote(order).await;
 
             // Fund the trader account with tokens needed for the solution.
             let trader_account = ethcontract::Account::Offline(
@@ -508,7 +560,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            eth::U256::from(2) * sell_amount + order.user_fee,
+                            eth::U256::from(2) * quote.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
                         .send(),
@@ -533,15 +585,15 @@ impl Blockchain {
 
             // Create the interactions fulfilling the order.
             let transfer_interaction = sell_token
-                .transfer(pair.contract.address(), sell_amount)
+                .transfer(pair.contract.address(), quote.sell)
                 .tx
                 .data
                 .unwrap()
                 .0;
             let (amount_0_out, amount_1_out) = if pair.token_a == order.sell_token {
-                (0.into(), buy_amount)
+                (0.into(), quote.buy)
             } else {
-                (buy_amount, 0.into())
+                (quote.sell, 0.into())
             };
             let swap_interaction = pair
                 .contract
@@ -556,19 +608,16 @@ impl Blockchain {
                 .unwrap()
                 .0;
             fulfillments.push(Fulfillment {
-                order: order.clone(),
+                quote: quote.clone(),
                 interactions: vec![
                     Interaction {
                         address: sell_token.address(),
-                        calldata: match solution {
-                            super::Solution::Valid => transfer_interaction,
-                            super::Solution::InvalidCalldata => vec![1, 2, 3, 4, 5],
-                            super::Solution::LowerScore {
-                                additional_calldata,
-                            } => transfer_interaction
+                        calldata: match solution.calldata {
+                            super::Calldata::Valid { additional_bytes } => transfer_interaction
                                 .into_iter()
-                                .chain(std::iter::repeat(0xab).take(additional_calldata))
+                                .chain(std::iter::repeat(0xab).take(additional_bytes))
                                 .collect(),
+                            super::Calldata::Invalid => vec![1, 2, 3, 4, 5],
                         },
                         inputs: Default::default(),
                         outputs: Default::default(),
@@ -576,27 +625,31 @@ impl Blockchain {
                     },
                     Interaction {
                         address: pair.contract.address(),
-                        calldata: if matches!(solution, super::Solution::InvalidCalldata) {
-                            vec![10, 11, 12, 13, 14, 15, 63, 78]
-                        } else {
-                            swap_interaction
+                        calldata: match solution.calldata {
+                            super::Calldata::Valid { .. } => swap_interaction,
+                            super::Calldata::Invalid => {
+                                vec![10, 11, 12, 13, 14, 15, 63, 78]
+                            }
                         },
                         inputs: vec![eth::Asset {
                             token: sell_token.address().into(),
-                            amount: sell_amount,
+                            amount: quote.sell,
                         }],
                         outputs: vec![eth::Asset {
                             token: buy_token.address().into(),
-                            amount: buy_amount,
+                            amount: quote.buy,
                         }],
                         internalize: order.internalize,
                     },
                 ],
-                sell_amount,
-                buy_amount,
+                executed_sell: quote.sell,
+                executed_buy: quote.buy,
             });
         }
-        fulfillments
+        Solution {
+            fulfillments,
+            risk: solution.risk,
+        }
     }
 
     pub fn get_token(&self, token: &str) -> eth::H160 {

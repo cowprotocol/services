@@ -60,7 +60,7 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
-    /// The private key of this solver.
+    /// The private key of this solver, used for settlement submission.
     pub private_key: eth::PrivateKey,
 }
 
@@ -113,7 +113,7 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::from_domain(
+        let body = serde_json::to_string(&dto::Auction::new(
             auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();

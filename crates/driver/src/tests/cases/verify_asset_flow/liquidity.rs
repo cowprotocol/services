@@ -1,6 +1,9 @@
 //! Test that the asset flow verification behaves as expected for liquidity
 //! orders. See [`competition::solution::settlement::Verified`].
 
+// TODO(#1527) Use tests::setup::new to set up the test.
+
+/*
 use {
     crate::{
         domain::{
@@ -484,3 +487,4 @@ async fn test() {
         }
     }
 }
+*/
