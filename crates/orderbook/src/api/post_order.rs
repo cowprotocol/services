@@ -135,7 +135,7 @@ impl IntoWarpReply for ValidationErrorWrapper {
             ValidationError::InvalidEip1271Signature(hash) => with_status(
                 error(
                     "InvalidEip1271Signature",
-                    format!("signature for hash {hash:?} is not valid"),
+                    format!("signature for computed order hash {hash:?} is not valid"),
                 ),
                 StatusCode::BAD_REQUEST,
             ),
