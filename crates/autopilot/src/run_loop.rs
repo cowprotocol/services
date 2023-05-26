@@ -26,7 +26,11 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         token_list::AutoUpdatingTokenList,
     },
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+        time::Duration,
+    },
     tracing::Instrument,
     web3::types::Transaction,
 };
@@ -100,7 +104,8 @@ impl RunLoop {
                 .map(|(_, response)| response.submission_address)
                 .collect::<HashSet<_>>();
             participants.insert(solution.submission_address); // add winner as participant
-            let prices = auction.prices.clone();
+
+            let mut prices = BTreeMap::new();
             let block_deadline = self.current_block.borrow().number
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
@@ -132,6 +137,12 @@ impl RunLoop {
                             order_id: *order_id,
                             executed_fee,
                         });
+                        if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
+                            prices.insert(auction_order.data.sell_token, *price);
+                        }
+                        if let Some(price) = auction.prices.get(&auction_order.data.buy_token) {
+                            prices.insert(auction_order.data.buy_token, *price);
+                        }
                     }
                     None => {
                         tracing::debug!(?order_id, "order not found in auction");

@@ -38,17 +38,6 @@ pub async fn fetch(
     Ok(prices)
 }
 
-/// Deletes all auction prices with an auction id less than or equal to the
-/// given auction id.
-pub async fn delete(ex: &mut PgTransaction<'_>, auction_id: AuctionId) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "DELETE FROM auction_prices WHERE auction_id <= $1";
-    sqlx::query(QUERY)
-        .bind(auction_id)
-        .execute(&mut *ex)
-        .await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
@@ -97,14 +86,5 @@ mod tests {
         // non-existent auction
         let output = fetch(&mut db, 4).await.unwrap();
         assert!(output.is_empty());
-
-        // delete auction_2 and all before it
-        delete(&mut db, 2).await.unwrap();
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert!(output.is_empty());
-        let output = fetch(&mut db, 2).await.unwrap();
-        assert!(output.is_empty());
-        let output = fetch(&mut db, 3).await.unwrap();
-        assert_eq!(output, auction_3);
     }
 }

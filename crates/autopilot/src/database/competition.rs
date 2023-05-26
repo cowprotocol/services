@@ -16,7 +16,7 @@ use {
 #[derive(Clone, Debug)]
 pub enum ExecutedFee {
     Solver(U256),
-    /// Optionable because, for partially fillable limit orders, surplus fee is
+    /// Optional because, for partially fillable limit orders, surplus fee is
     /// unknown until the transaction is mined.
     Surplus(Option<U256>),
 }
@@ -27,7 +27,7 @@ pub struct OrderExecution {
     pub executed_fee: ExecutedFee,
 }
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Competition {
     pub auction_id: AuctionId,
     pub winner: H160,
@@ -42,20 +42,6 @@ pub struct Competition {
     /// chain before this block height.
     pub block_deadline: u64,
     pub order_executions: Vec<OrderExecution>,
-}
-
-// Skipped `prices` as too long.
-impl std::fmt::Debug for Competition {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Competition")
-            .field("auction_id", &self.auction_id)
-            .field("winner", &self.winner)
-            .field("winning_score", &self.winning_score)
-            .field("reference_score", &self.reference_score)
-            .field("participants", &self.participants)
-            .field("block_deadline", &self.block_deadline)
-            .finish()
-    }
 }
 
 impl super::Postgres {

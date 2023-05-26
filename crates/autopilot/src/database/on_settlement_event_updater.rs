@@ -80,18 +80,6 @@ impl super::Postgres {
                 .await
                 .context("insert_missing_order_executions")?;
             }
-
-            // delete auction prices for auction_id and all auctions before it
-
-            // TODO dont delete all auctions, instead:
-            // 1. for current auction, delete all entries containing prices for tokens not
-            // included in the auction
-            // 2. for all auctions before current, if not already filtered, delete all
-            // entries (might need to add a column to auction_prices to indicate
-            // if it was filtered or not)
-            database::auction_prices::delete(&mut ex, auction_data.auction_id)
-                .await
-                .context("delete_before_auction_id")?;
         }
 
         ex.commit().await?;
