@@ -13,7 +13,7 @@ use {
 };
 
 #[serde_as]
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// The relative slippage allowed by the solver.

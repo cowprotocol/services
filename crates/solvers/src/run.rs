@@ -49,6 +49,20 @@ pub async fn run(
                 config.base,
             ))
         }
+        cli::Command::OneInch { config } => {
+            let config = config::dex::oneinch::file::load(&config).await;
+            Solver::Dex(solver::Dex::new(
+                dex::Dex::OneInch(dex::oneinch::OneInch::new(config.oneinch).await.unwrap()),
+                config.base,
+            ))
+        }
+        cli::Command::ParaSwap { config } => {
+            let config = config::dex::paraswap::file::load(&config).await;
+            Solver::Dex(solver::Dex::new(
+                dex::Dex::ParaSwap(dex::paraswap::ParaSwap::new(config.paraswap)),
+                config.base,
+            ))
+        }
     };
 
     crate::api::Api {

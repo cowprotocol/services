@@ -1,9 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition::{self},
-            quote,
-        },
+        domain::{competition, quote},
         infra::api,
     },
     serde::Serialize,
@@ -61,6 +58,7 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
             quote::Error::QuotingFailed => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
+            quote::Error::Blockchain(_) => Kind::Unknown,
             quote::Error::Boundary(_) => Kind::Unknown,
         };
         error.into()

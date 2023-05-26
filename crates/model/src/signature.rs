@@ -101,7 +101,7 @@ impl Signature {
         &self,
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
-    ) -> Result<Option<H160>> {
+    ) -> Result<Option<Recovered>> {
         match self {
             Self::Eip712(signature) => signature
                 .recover(EcdsaSigningScheme::Eip712, domain_separator, struct_hash)
@@ -111,33 +111,6 @@ impl Signature {
                 .map(Some),
             _ => Ok(None),
         }
-    }
-
-    /// Verifies the owner for the specified creation signature.
-    pub fn verify_owner(
-        &self,
-        expected_owner: Option<H160>,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-    ) -> Result<H160, VerificationError> {
-        let recovered_owner = self
-            .recover(domain_separator, struct_hash)
-            .map_err(VerificationError::UnableToRecoverSigner)?;
-
-        let verified_owner = match (expected_owner, recovered_owner) {
-            (Some(expected_owner), Some(recovered_owner)) if expected_owner == recovered_owner => {
-                recovered_owner
-            }
-            (Some(owner), None) | (None, Some(owner)) => owner,
-            (Some(_), Some(recovered_owner)) => {
-                return Err(VerificationError::UnexpectedSigner(recovered_owner));
-            }
-            (None, None) => {
-                return Err(VerificationError::MissingFrom);
-            }
-        };
-
-        Ok(verified_owner)
     }
 
     pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
@@ -195,6 +168,17 @@ impl Signature {
     }
 }
 
+/// Signature recovery result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Recovered {
+    /// The signing message that was used for recovery. The actual value of this
+    /// message depends on the singing scheme used.
+    pub message: H256,
+
+    /// The recovered signer address.
+    pub signer: H160,
+}
+
 /// An internal type used for deriving `serde` implementations for the
 /// `Signature` type.
 #[derive(Deserialize, Serialize)]
@@ -220,13 +204,6 @@ impl TryFrom<JsonSignature> for Signature {
     fn try_from(json: JsonSignature) -> Result<Self, Self::Error> {
         Self::from_bytes(json.signing_scheme, &json.signature)
     }
-}
-
-#[derive(Debug)]
-pub enum VerificationError {
-    UnableToRecoverSigner(anyhow::Error),
-    UnexpectedSigner(H160),
-    MissingFrom,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -326,13 +303,18 @@ impl EcdsaSignature {
         signing_scheme: EcdsaSigningScheme,
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
-    ) -> Result<H160> {
+    ) -> Result<Recovered> {
         let message = hashed_signing_message(signing_scheme, domain_separator, struct_hash);
         let recovery = Recovery::new(message, self.v as u64, self.r, self.s);
         let (signature, recovery_id) = recovery
             .as_signature()
             .context("unexpectedly invalid signature")?;
-        Ok(signing::recover(&message, &signature, recovery_id)?)
+        let signer = signing::recover(&message, &signature, recovery_id)?;
+
+        Ok(Recovered {
+            message: H256(message),
+            signer,
+        })
     }
 
     pub fn sign(

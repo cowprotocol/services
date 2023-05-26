@@ -44,7 +44,7 @@ pub enum Liquidity {
     Exclude(Vec<String>),
 }
 
-const DEFAULT_URL: &str = "https://api.1inch.exchange/v5.0/1/";
+pub const DEFAULT_URL: &str = "https://api.1inch.exchange/v5.0/1/";
 
 impl OneInch {
     pub async fn new(config: Config) -> Result<Self, Error> {
@@ -57,12 +57,15 @@ impl OneInch {
             Liquidity::Any => None,
             Liquidity::Only(protocols) => Some(protocols),
             Liquidity::Exclude(excluded) => {
-                let liquidity = client
+                let request = client
                     .get(endpoint.join("liquidity-sources").unwrap())
-                    .send()
-                    .await?
-                    .json::<dto::Liquidity>()
-                    .await?;
+                    .build()?;
+                tracing::trace!(request = %request.url(), "fetching 1inch liquidity sources");
+                let response = client.execute(request).await?;
+                let status = response.status();
+                let body = response.text().await?;
+                tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch liquidity sources");
+                let liquidity: dto::Liquidity = serde_json::from_str(&body)?;
                 let protocols = liquidity
                     .protocols
                     .into_iter()
@@ -83,15 +86,15 @@ impl OneInch {
             ..Default::default()
         };
 
-        let spender = eth::ContractAddress(
-            client
-                .get(endpoint.join("approve/spender").unwrap())
-                .send()
-                .await?
-                .json::<dto::Spender>()
-                .await?
-                .address,
-        );
+        let request = client
+            .get(endpoint.join("approve/spender").unwrap())
+            .build()?;
+        tracing::trace!(request = %request.url(), "fetching 1inch spender address");
+        let response = client.execute(request).await?;
+        let status = response.status();
+        let body = response.text().await?;
+        tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch spender address");
+        let spender = eth::ContractAddress(serde_json::from_str::<dto::Spender>(&body)?.address);
 
         Ok(Self {
             client,
@@ -99,22 +102,6 @@ impl OneInch {
             defaults,
             spender,
         })
-    }
-
-    async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
-        let request = self
-            .client
-            .get(self.endpoint.join("swap").unwrap())
-            .query(query)
-            .build()?;
-        tracing::trace!(request = %request.url(), "quoting");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let body = response.text().await?;
-        tracing::trace!(status = %status.as_u16(), %body, "quoted");
-
-        let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
-        Ok(swap)
     }
 
     pub async fn swap(
@@ -156,8 +143,24 @@ impl OneInch {
                 spender: self.spender,
                 amount: dex::Amount::new(swap.from_token_amount),
             },
-            gas: eth::Gas(swap.tx.gas),
+            gas: eth::Gas(swap.tx.gas.into()),
         })
+    }
+
+    async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
+        let request = self
+            .client
+            .get(self.endpoint.join("swap").unwrap())
+            .query(query)
+            .build()?;
+        tracing::trace!(request = %request.url(), "quoting");
+        let response = self.client.execute(request).await?;
+        let status = response.status();
+        let body = response.text().await?;
+        tracing::trace!(status = %status.as_u16(), %body, "quoted");
+
+        let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
+        Ok(swap)
     }
 }
 

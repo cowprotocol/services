@@ -1,5 +1,5 @@
 use {
-    super::SolverInfo,
+    super::{SimulationWithError, SolverInfo},
     crate::{
         liquidity::{
             order_converter::OrderConverter,
@@ -236,6 +236,13 @@ impl SingleOrderSolver {
                 tracing::warn!("rate limited");
                 return SolveResult::RateLimited;
             }
+            Err(SettlementError::Benign(err)) => {
+                // The order was processed but cannot get matched, it shouldn't
+                // be treated as a failure.
+                self.metrics.single_order_solver_succeeded(name);
+                tracing::info!(?err, "benign error");
+                return SolveResult::Failed;
+            }
             Err(SettlementError::Retryable(err)) => {
                 self.metrics.single_order_solver_failed(name);
                 tracing::warn!(?err, "retryable error");
@@ -303,7 +310,10 @@ impl SingleOrderSolver {
 
         let simulation = match result {
             Rating::Ok(simulation) => simulation,
-            Rating::Err(err) => return Err(err.error).context("failed to rate the settlement"),
+            Rating::Err(SimulationWithError { error, simulation }) => {
+                tracing::debug!(?error, ?simulation.transaction, "failed to simulate settlement");
+                return Err(error).context("failed to simulate the settlement");
+            }
         };
 
         let gas_cost = simulation
@@ -348,14 +358,14 @@ impl Solver for SingleOrderSolver {
         );
         let mut orders =
             get_prioritized_orders(&orders, &external_prices, &self.order_prioritization_config);
-        tracing::trace!(solver = self.name(), ?orders, "prioritized orders");
+        tracing::trace!(?orders, "prioritized orders");
 
         let mut settlements = Vec::new();
         let (tx, mut rx) = mpsc::unbounded_channel::<SingleOrderSettlement>();
 
         let solve = async {
             while let Some(order) = orders.pop_front() {
-                let span = tracing::info_span!("solve", id =? order.id, solver = self.name());
+                let span = tracing::info_span!("order", id =? order.id);
                 match self
                     .solve_single_order(order, &external_prices, gas_price)
                     .instrument(span)
@@ -581,6 +591,12 @@ pub enum SettlementError {
 
     #[error("intermittent error: {0}")]
     Retryable(anyhow::Error),
+
+    /// Benign errors are failures of the solver in finding a solution which
+    /// are expected in some circumstances and do not denote a failure in the
+    /// inner working of the single order solver.
+    #[error("benign error: {0}")]
+    Benign(anyhow::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),

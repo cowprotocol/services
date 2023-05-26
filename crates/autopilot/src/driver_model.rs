@@ -48,7 +48,7 @@ pub mod solve {
     use {
         chrono::{DateTime, Utc},
         model::{
-            app_id::AppId,
+            app_id::AppDataHash,
             order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,
             u256_decimal::DecimalU256,
@@ -107,7 +107,7 @@ pub mod solve {
         pub class: Class,
         #[serde_as(as = "Option<DecimalU256>")]
         pub surplus_fee: Option<U256>,
-        pub app_data: AppId,
+        pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
     }

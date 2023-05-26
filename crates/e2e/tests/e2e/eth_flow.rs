@@ -7,7 +7,7 @@ use {
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     hex_literal::hex,
     model::{
-        app_id::AppId,
+        app_id::AppDataHash,
         order::{
             BuyTokenDestination,
             EthflowData,
@@ -587,7 +587,7 @@ impl EthFlowTradeIntent {
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
             validity: Validity::For(3600),
-            app_data: AppId([0x42; 32]),
+            app_data: AppDataHash([0x42; 32]),
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
                 verification_gas_limit: 0,

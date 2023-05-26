@@ -72,9 +72,9 @@ pub enum Class {
     Liquidity,
 }
 
-/// An order that is guaranteed to not be a liquidity order.
+/// A user order, guaranteed to not be a liquidity order.
 ///
-/// Note that the concept of a "non-liquidity" order is important enough to
+/// Note that the concept of a user order is important enough to
 /// merit its own type. The reason for this is that these orders and liquidity
 /// orders differ in fundamental ways and we do not want to confuse them and
 /// accidentally use a liquidity order where it shouldn't be used. Some of the
@@ -83,7 +83,7 @@ pub enum Class {
 /// - Liquidity orders can't be settled directly against on-chain liquidity.
 ///   They are meant to only be used in CoWs to facilitate the trading of other
 ///   non-liquidity orders.
-/// - Liquidity orders do no provide any solver rewards
+/// - Liquidity orders do not provide any solver rewards.
 ///
 /// As their name suggests, they are meant as a mechanism for providing
 /// liquidity on CoW Protocol to other non-liquidity orders: they provide a
@@ -95,9 +95,9 @@ pub enum Class {
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
 #[derive(Debug)]
-pub struct NonLiquidity<'a>(&'a Order);
+pub struct UserOrder<'a>(&'a Order);
 
-impl<'a> NonLiquidity<'a> {
+impl<'a> UserOrder<'a> {
     /// Wraps an order as a user order, returns `None` if the specified order is
     /// not a user order.
     pub fn new(order: &'a Order) -> Option<Self> {
@@ -125,6 +125,7 @@ pub struct Interaction {
 /// An order that can be used to provide just-in-time liquidity in form of a CoW
 /// Protocol order. This is how solvers integrate private market makers into
 /// their solutions.
+#[derive(Debug)]
 pub struct JitOrder {
     pub owner: Address,
     pub signature: Signature,
@@ -145,7 +146,7 @@ pub struct JitOrder {
 /// Signature over the order data.
 /// All variants rely on the EIP-712 hash of the order data, referred to as the
 /// order hash.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Signature {
     /// The order struct is signed according to EIP-712.
     ///
@@ -201,4 +202,13 @@ impl EcdsaSignature {
 /// This is a hash allowing arbitrary user data to be associated with an order.
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
+#[derive(Clone, Copy, Default)]
 pub struct AppData(pub [u8; 32]);
+
+impl Debug for AppData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AppData")
+            .field(&util::fmt::Hex(&self.0))
+            .finish()
+    }
+}

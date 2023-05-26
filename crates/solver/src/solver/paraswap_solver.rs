@@ -87,6 +87,7 @@ impl From<ParaswapResponseError> for SettlementError {
                 Self::Retryable(anyhow!(err))
             }
             ParaswapResponseError::RateLimited => Self::RateLimited,
+            ParaswapResponseError::InsufficientLiquidity(_) => Self::Benign(anyhow!(err)),
             err => Self::Other(anyhow!(err)),
         }
     }

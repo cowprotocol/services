@@ -156,8 +156,7 @@ pub struct Tx {
     pub data: Vec<u8>,
 
     /// The estimated gas limit required for executing the transaction.
-    #[serde_as(as = "serialize::U256")]
-    pub gas: U256,
+    pub gas: u64,
 }
 
 #[derive(Deserialize)]

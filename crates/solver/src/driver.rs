@@ -1,4 +1,4 @@
-use crate::settlement_rater::SettlementRating;
+use {crate::settlement_rater::SettlementRating, tracing::info_span};
 
 pub mod gas;
 pub mod solver_settlements;
@@ -177,8 +177,10 @@ impl Driver {
             let metrics = &self.metrics;
             async move {
                 let start_time = Instant::now();
+                let span = info_span!("solver", solver = solver.name());
                 let result =
                     match tokio::time::timeout_at(auction.deadline.into(), solver.solve(auction))
+                        .instrument(span)
                         .await
                     {
                         Ok(inner) => {

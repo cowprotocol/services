@@ -3,10 +3,10 @@
 
 use {
     crate::{
-        app_id::AppId,
+        app_id::AppDataHash,
         interaction::InteractionData,
         quote::QuoteId,
-        signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
+        signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
         u256_decimal::{self, DecimalU256},
         DomainSeparator,
         TokenPair,
@@ -153,7 +153,7 @@ impl OrderBuilder {
     }
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
-        self.0.data.app_data = AppId(app_data);
+        self.0.data.app_data = AppDataHash(app_data);
         self
     }
 
@@ -264,7 +264,7 @@ pub struct OrderData {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    pub app_data: AppId,
+    pub app_data: AppDataHash,
     /// Fees that will be taken in terms of `sell_token`.
     /// This is 0 for liquidity orders unless its owner bribes the protocol
     /// as they should only ever be used to improve the price of a regular order
@@ -367,8 +367,24 @@ impl OrderCreation {
     /// issue performing the EC-recover or the recovered address does not match
     /// the expected one.
     pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
-        self.signature
-            .verify_owner(self.from, domain, &self.data.hash_struct())
+        let recovered = self
+            .signature
+            .recover(domain, &self.data.hash_struct())
+            .map_err(VerificationError::UnableToRecoverSigner)?;
+
+        let verified_owner = match (self.from, recovered) {
+            (Some(from), Some(recovered)) if from == recovered.signer => from,
+            (Some(from), None) => from,
+            (None, Some(recovered)) => recovered.signer,
+            (Some(_), Some(recovered)) => {
+                return Err(VerificationError::UnexpectedSigner(recovered));
+            }
+            (None, None) => {
+                return Err(VerificationError::MissingFrom);
+            }
+        };
+
+        Ok(verified_owner)
     }
 }
 
@@ -396,6 +412,13 @@ impl From<Order> for OrderCreation {
             quote_id: None,
         }
     }
+}
+
+#[derive(Debug)]
+pub enum VerificationError {
+    UnableToRecoverSigner(anyhow::Error),
+    UnexpectedSigner(signature::Recovered),
+    MissingFrom,
 }
 
 /// Cancellation of multiple orders.
@@ -438,11 +461,14 @@ pub struct SignedOrderCancellations {
 
 impl SignedOrderCancellations {
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature.recover(
-            self.signing_scheme,
-            domain_separator,
-            &self.data.hash_struct(),
-        )
+        Ok(self
+            .signature
+            .recover(
+                self.signing_scheme,
+                domain_separator,
+                &self.data.hash_struct(),
+            )?
+            .signer)
     }
 }
 
@@ -497,8 +523,10 @@ impl OrderCancellation {
     }
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
-        self.signature
-            .recover(self.signing_scheme, domain_separator, &self.hash_struct())
+        Ok(self
+            .signature
+            .recover(self.signing_scheme, domain_separator, &self.hash_struct())?
+            .signer)
     }
 }
 
@@ -974,7 +1002,7 @@ mod tests {
                 sell_amount: 1.into(),
                 buy_amount: 0.into(),
                 valid_to: u32::MAX,
-                app_data: AppId(hex!(
+                app_data: AppDataHash(hex!(
                     "6000000000000000000000000000000000000000000000000000000000000007"
                 )),
                 fee_amount: U256::MAX,
@@ -1033,7 +1061,7 @@ mod tests {
                     sell_amount: 123.into(),
                     buy_amount: 456.into(),
                     valid_to: 1337,
-                    app_data: AppId([0x44; 32]),
+                    app_data: AppDataHash([0x44; 32]),
                     fee_amount: 789.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: false,
@@ -1102,7 +1130,7 @@ mod tests {
                 sell_amount: 0x0246ddf97976680000_u128.into(),
                 buy_amount: 0xb98bc829a6f90000_u128.into(),
                 valid_to: 0xffffffff,
-                app_data: AppId(hex!(
+                app_data: AppDataHash(hex!(
                     "0000000000000000000000000000000000000000000000000000000000000000"
                 )),
                 fee_amount: 0x0de0b6b3a7640000_u128.into(),
@@ -1113,11 +1141,11 @@ mod tests {
             };
             let signature = Signature::from_bytes(*signing_scheme, signature).unwrap();
 
-            let owner = signature
+            let recovered = signature
                 .recover(&domain_separator, &order.hash_struct())
                 .unwrap()
                 .unwrap();
-            assert_eq!(owner, expected_owner);
+            assert_eq!(recovered.signer, expected_owner);
         }
     }
 
@@ -1136,7 +1164,7 @@ mod tests {
             sell_amount: 0x0246ddf97976680000_u128.into(),
             buy_amount: 0xb98bc829a6f90000_u128.into(),
             valid_to: 0xffffffff,
-            app_data: AppId(hex!(
+            app_data: AppDataHash(hex!(
                 "0000000000000000000000000000000000000000000000000000000000000000"
             )),
             fee_amount: 0x0de0b6b3a7640000_u128.into(),
@@ -1240,13 +1268,13 @@ mod tests {
             )
             .build();
 
-        let owner = order
+        let recovered = order
             .signature
             .recover(&DomainSeparator::default(), &order.data.hash_struct())
             .unwrap()
             .unwrap();
 
-        assert_eq!(owner, h160_from_public_key(public_key));
+        assert_eq!(recovered.signer, h160_from_public_key(public_key));
     }
 
     #[test]

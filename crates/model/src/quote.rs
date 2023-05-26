@@ -1,6 +1,6 @@
 use {
     crate::{
-        app_id::AppId,
+        app_id::AppDataHash,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
@@ -125,7 +125,7 @@ pub struct OrderQuoteRequest {
     #[serde(flatten)]
     pub validity: Validity,
     #[serde(default)]
-    pub app_data: AppId,
+    pub app_data: AppDataHash,
     #[serde(default)]
     pub partially_fillable: bool,
     #[serde(default)]
@@ -251,7 +251,7 @@ pub struct OrderQuote {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    pub app_data: AppId,
+    pub app_data: AppDataHash,
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
