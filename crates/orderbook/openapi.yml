@@ -385,7 +385,7 @@ components:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
-    AppData:
+    AppDataHash:
       description: 32 bytes encoded as hex with `0x` prefix.
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
@@ -498,13 +498,7 @@ components:
           description: Unix timestamp until the order is valid. uint32.
           type: integer
         appData:
-          description: |
-            Arbitrary application specific data that can be added to an order. This can
-            also be used to ensure uniqueness between two orders with otherwise the
-            exact same parameters.
-          type: string
-          allOf:
-            - $ref: "#/components/schemas/AppData"
+          $ref: "#/components/schemas/AppDataHash"
         feeAmount:
           description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
           allOf:
@@ -524,10 +518,6 @@ components:
           allOf:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
-        signingScheme:
-          allOf:
-            - $ref: "#/components/schemas/SigningScheme"
-          default: "eip712"
       required:
         - sellToken
         - buyToken
@@ -540,32 +530,113 @@ components:
         - partiallyFillable
     OrderCreation:
       description: Data a user provides when creating a new order.
-      allOf:
-        - $ref: "#/components/schemas/OrderParameters"
-        - type: object
-          properties:
-            signingScheme:
-              $ref: "#/components/schemas/SigningScheme"
-            signature:
-              $ref: "#/components/schemas/Signature"
-            from:
+      type: object
+      properties:
+        sellToken:
+          description: see `OrderParameters::sellToken`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        buyToken:
+          description: see `OrderParameters::buyToken`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        receiver:
+          description: see `OrderParameters::receiver`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
+        sellAmount:
+          description: see `OrderParameters::sellAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: see `OrderParameters::buyAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: see `OrderParameters::validTo`
+          type: integer
+        feeAmount:
+          description: see `OrderParameters::feeAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        kind:
+          description: see `OrderParameters::kind`
+          allOf:
+            - $ref: "#/components/schemas/OrderKind"
+        partiallyFillable:
+          description: see `OrderParameters::partiallyFillable`
+          type: boolean
+        sellTokenBalance:
+          description: see `OrderParameters::sellTokenBalance`
+          allOf:
+            - $ref: "#/components/schemas/SellTokenSource"
+          default: "erc20"
+        buyTokenBalance:
+          description: see `OrderParameters::buyTokenBalance`
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenDestination"
+          default: "erc20"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
+        signature:
+          $ref: "#/components/schemas/Signature"
+        from:
+          description: |
+            If set, the backend enforces that this address matches what is decoded as the signer of
+            the signature. This helps catch errors with invalid signature encodings as the backend
+            might otherwise silently work with an unexpected address that for example does not have
+            any balance.
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
+        quoteId:
+          description: |
+            Orders can optionally include a quote ID. This way the order can be linked to a quote
+            and enable providing more metadata when analyzing order slippage.
+          type: integer
+          nullable: true
+        appData:
+          description: |
+            This field comes in two forms for backward compatibility. The first form (app data hash) will eventually stop being accepted.
+          anyOf:
+            - $ref: "#/components/schemas/AppDataHash"
+            - title: Full App Data
               description: |
-                If set, the backend enforces that this address matches what is decoded as the signer of
-                the signature. This helps catch errors with invalid signature encodings as the backend
-                might otherwise silently work with an unexpected address that for example does not have
-                any balance.
-              allOf:
-                - $ref: "#/components/schemas/Address"
-              nullable: true
-            quoteId:
-              description: |
-                Orders can optionally include a quote ID. This way the order can be linked to a quote
-                and enable providing more metadata when analyzing order slippage.
-              type: integer
-              nullable: true
-          required:
-            - signingScheme
-            - signature
+                Short:
+
+                If you do not care about app data, set this field to `\"{}\"` and make sure that the order you signed for this request had its app data field set to `0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d`.
+
+                Long:
+
+                A string encoding a json object like `"{\"hello\":\"world\"}"`.
+
+                This field determines the smart contract order's app data field, which is assumed to be set to the keccak-256 hash of the utf-8 encoded bytes of this string. You must ensure that the signature that is part of this request indeed signed a smart contract order with the app data field set appropriately. If this isn't the case, signature verification will fail. For easier debugging you can additionally set the `appDataHash` field.
+
+                This field must be the encoding of a valid json object. The json object can contain arbitrary application specific data (json key values). The optional key `backend` is special. It has to conform to the schema documented in `BackendAppData`.
+
+                The total byte size of this field's utf-8 encoded bytes is limited to 1000.
+              type: string
+        appDataHash:
+          description: |
+           May be set for debugging purposes. If set, this field is compared to what the backend internally calculates as the app data hash based on the contents of `appData`. If the hash does not match, an error is returned. If this field is set, then `appData` must be a string encoding of a json object.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
+          nullable: true
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - validTo
+        - appData
+        - feeAmount
+        - kind
+        - partiallyFillable
+        - signingScheme
+        - signature
+    BackendAppData:
+      type: object
     OrderMetaData:
       description: |
         Extra order data that is returned to users when querying orders
@@ -859,6 +930,8 @@ components:
               UnsupportedOrderType,
               UnsupportedSignature,
               TooManyLimitOrders,
+              InvalidAppData,
+              AppDataHashMismatch,
             ]
         description:
           type: string
@@ -1018,12 +1091,7 @@ components:
                 - $ref: "#/components/schemas/Address"
               nullable: true
             appData:
-              description: |
-                Arbitrary application specific data that can be added to an order. This can
-                also be used to ensure uniqueness between two orders with otherwise the
-                exact same parameters.
-              allOf:
-                - $ref: "#/components/schemas/AppData"
+              $ref: "#/components/schemas/AppDataHash"
             partiallyFillable:
               description: Is this a fill-or-kill order or a partially fillable order?
               type: boolean
