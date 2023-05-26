@@ -154,8 +154,8 @@ impl Order {
         }
     }
 
-    /// For some orders the protocol doesn't precompute a fee. Instead solvers
-    /// are supposed to compute a reasonable fee themselves.
+    /// Should the order fee be determined by the solver? This is true for
+    /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
         self.is_partial() && matches!(self.kind, Kind::Limit { .. })
     }

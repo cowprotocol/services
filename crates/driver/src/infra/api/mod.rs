@@ -41,7 +41,10 @@ impl Api {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         );
 
-        // Multiplex each solver as part of the API.
+        // Multiplex each solver as part of the API. Multiple solvers are multiplexed
+        // on the same driver so only one liquidity collector collects the liquidity
+        // for all of them. This is important because liquidity collection is
+        // computationally expensive for the Ethereum node.
         for solver in self.solvers {
             let name = solver.name().clone();
             let router = axum::Router::new();

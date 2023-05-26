@@ -49,6 +49,7 @@ pub struct Settlement {
     /// The gas parameters used by the settlement.
     pub gas: Gas,
 
+    /// See the [`Settlement::solutions`] method.
     solutions: HashMap<solution::Id, Solution>,
 }
 

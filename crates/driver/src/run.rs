@@ -80,7 +80,7 @@ pub async fn run(
 }
 
 fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
-    let simulator = match &config.tenderly {
+    let mut simulator = match &config.tenderly {
         Some(tenderly) => Simulator::tenderly(
             simulator::tenderly::Config {
                 url: tenderly.url.to_owned(),
@@ -96,9 +96,11 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
     };
     if config.disable_access_list_simulation {
         simulator.disable_access_lists()
-    } else {
-        simulator
     }
+    if let Some(gas) = config.disable_gas_simulation {
+        simulator.disable_gas(gas)
+    }
+    simulator
 }
 
 async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {

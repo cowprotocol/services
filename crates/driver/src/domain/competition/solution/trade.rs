@@ -56,7 +56,8 @@ impl Fulfillment {
             }
         };
 
-        // Only accept solver supplied fees
+        // Only accept solver-computed fees if the order requires them, otherwise the
+        // protocol pre-determines the fee and the solver must respect it.
         let valid_fee = match &fee {
             Fee::Static => !order.solver_determines_fee(),
             Fee::Dynamic(_) => order.solver_determines_fee(),
@@ -172,7 +173,9 @@ impl Trade {
     }
 
     /// Calculate the final sold and bought amounts that are transferred to and
-    /// from the settlement contract when the settlement is executed.
+    /// from the settlement contract when the settlement is executed. This is
+    /// calculated via the order sell and buy amounts and the trade clearing
+    /// prices.
     pub(super) fn execution(
         &self,
         solution: &competition::Solution,

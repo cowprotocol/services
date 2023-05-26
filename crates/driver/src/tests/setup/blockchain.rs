@@ -83,8 +83,6 @@ pub struct Solution {
 pub struct Fulfillment {
     pub quote: Quote,
     pub interactions: Vec<Interaction>,
-    pub executed_buy: eth::U256,
-    pub executed_sell: eth::U256,
 }
 
 /// An order for which buy and sell amounts have been calculated.
@@ -107,7 +105,7 @@ impl Quote {
     /// The sell amount with the surplus factor.
     pub fn sell_amount(&self) -> eth::U256 {
         match self.order.side {
-            order::Side::Buy => self.sell / self.order.surplus_factor,
+            order::Side::Buy => self.sell * self.order.surplus_factor,
             order::Side::Sell => self.sell,
         }
     }
@@ -124,13 +122,6 @@ impl Quote {
     /// The signature of the order.
     pub fn order_signature(&self, blockchain: &Blockchain, now: infra::time::Now) -> Vec<u8> {
         self.boundary(blockchain, now).signature()
-    }
-
-    pub fn executed(&self) -> eth::U256 {
-        match self.order.side {
-            order::Side::Buy => self.buy,
-            order::Side::Sell => self.sell,
-        }
     }
 
     fn boundary(&self, blockchain: &Blockchain, now: infra::time::Now) -> tests::boundary::Order {
@@ -156,6 +147,7 @@ pub struct Config {
     pub trader_secret_key: SecretKey,
     pub solver_address: eth::H160,
     pub solver_secret_key: SecretKey,
+    pub fund_solver: bool,
 }
 
 impl Blockchain {
@@ -195,18 +187,20 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        wait_for(
-            &web3,
-            web3.eth()
-                .send_transaction(web3::types::TransactionRequest {
-                    from: primary_address(&web3).await,
-                    to: Some(config.solver_address),
-                    value: Some(balance / 5),
-                    ..Default::default()
-                }),
-        )
-        .await
-        .unwrap();
+        if config.fund_solver {
+            wait_for(
+                &web3,
+                web3.eth()
+                    .send_transaction(web3::types::TransactionRequest {
+                        from: primary_address(&web3).await,
+                        to: Some(config.solver_address),
+                        value: Some(balance / 5),
+                        ..Default::default()
+                    }),
+            )
+            .await
+            .unwrap();
+        }
 
         // Deploy WETH and wrap some funds in the primary account of the geth node.
         let weth = wait_for(
@@ -292,7 +286,7 @@ impl Blockchain {
         // Create the tokens needed by the pools.
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
-            if !tokens.contains_key(pool.reserve_a.token) {
+            if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
@@ -303,7 +297,7 @@ impl Blockchain {
                 .unwrap();
                 tokens.insert(pool.reserve_a.token, token);
             }
-            if !tokens.contains_key(pool.reserve_b.token) {
+            if pool.reserve_b.token != "WETH" && !tokens.contains_key(pool.reserve_b.token) {
                 let token = wait_for(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
@@ -500,22 +494,11 @@ impl Blockchain {
                     || (pair.token_b, pair.token_a) == (order.sell_token, order.buy_token)
             })
             .expect("could not find uniswap pair for order");
-        let (executed_sell, executed_buy) = match order.side {
-            order::Side::Buy => (
-                pair.pool.out(Asset {
-                    token: order.buy_token,
-                    amount: order.amount,
-                }),
-                order.amount,
-            ),
-            order::Side::Sell => (
-                order.amount,
-                pair.pool.out(Asset {
-                    token: order.sell_token,
-                    amount: order.amount,
-                }),
-            ),
-        };
+        let executed_sell = order.amount;
+        let executed_buy = pair.pool.out(Asset {
+            amount: order.amount,
+            token: order.sell_token,
+        });
         Quote {
             order: order.clone(),
             buy: executed_buy,
@@ -593,7 +576,8 @@ impl Blockchain {
             let (amount_0_out, amount_1_out) = if pair.token_a == order.sell_token {
                 (0.into(), quote.buy)
             } else {
-                (quote.sell, 0.into())
+                // Surplus fees stay in the contract.
+                (quote.sell - quote.order.surplus_fee(), 0.into())
             };
             let swap_interaction = pair
                 .contract
@@ -633,17 +617,19 @@ impl Blockchain {
                         },
                         inputs: vec![eth::Asset {
                             token: sell_token.address().into(),
-                            amount: quote.sell,
+                            // Surplus fees stay in the contract.
+                            amount: quote.sell - quote.order.surplus_fee()
+                                + quote.order.execution_diff.increase_sell
+                                - quote.order.execution_diff.decrease_sell,
                         }],
                         outputs: vec![eth::Asset {
                             token: buy_token.address().into(),
-                            amount: quote.buy,
+                            amount: quote.buy + quote.order.execution_diff.increase_buy
+                                - quote.order.execution_diff.decrease_buy,
                         }],
                         internalize: order.internalize,
                     },
                 ],
-                executed_sell: quote.sell,
-                executed_buy: quote.buy,
             });
         }
         Solution {
@@ -653,10 +639,10 @@ impl Blockchain {
     }
 
     pub fn get_token(&self, token: &str) -> eth::H160 {
-        if token == "WETH" {
-            self.weth.address()
-        } else {
-            self.tokens.get(token).unwrap().address()
+        match token {
+            "WETH" => self.weth.address(),
+            "ETH" => eth::ETH_TOKEN.into(),
+            _ => self.tokens.get(token).unwrap().address(),
         }
     }
 }

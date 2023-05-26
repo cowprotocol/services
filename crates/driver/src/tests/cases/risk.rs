@@ -1,7 +1,7 @@
 use crate::tests::{
     self,
     cases::{DEFAULT_SCORE_MAX, DEFAULT_SCORE_MIN},
-    setup::new::{ab_order, ab_solution},
+    setup::{ab_order, ab_pool, ab_solution},
 };
 
 pub const RISK: u128 = 100000000000000000u128;
@@ -11,7 +11,7 @@ pub const RISK: u128 = 100000000000000000u128;
 #[ignore]
 async fn test() {
     let test = tests::setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution().risk(RISK.into()))
         .done()

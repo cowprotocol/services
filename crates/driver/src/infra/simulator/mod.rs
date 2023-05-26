@@ -10,6 +10,9 @@ pub mod tenderly;
 pub struct Simulator {
     inner: Inner,
     disable_access_lists: bool,
+    /// If this is [`Some`], every gas estimate will return this fixed
+    /// gas value.
+    disable_gas: Option<eth::Gas>,
 }
 
 impl Simulator {
@@ -18,6 +21,7 @@ impl Simulator {
         Self {
             inner: Inner::Tenderly(tenderly::Tenderly::new(config, network_id)),
             disable_access_lists: false,
+            disable_gas: None,
         }
     }
 
@@ -26,16 +30,20 @@ impl Simulator {
         Self {
             inner: Inner::Ethereum(eth),
             disable_access_lists: false,
+            disable_gas: None,
         }
     }
 
     /// Disable access list simulation. Some environments, such as less popular
     /// blockchains, don't support access list simulation.
-    pub fn disable_access_lists(self) -> Self {
-        Self {
-            disable_access_lists: true,
-            ..self
-        }
+    pub fn disable_access_lists(&mut self) {
+        self.disable_access_lists = true;
+    }
+
+    /// Disable gas simulation. Useful for testing, but shouldn't be used in
+    /// production since it will cause the driver to return invalid scores.
+    pub fn disable_gas(&mut self, fixed_gas: eth::Gas) {
+        self.disable_gas = Some(fixed_gas);
     }
 
     /// Simulate the access list needed by a transaction. If the transaction
@@ -59,6 +67,9 @@ impl Simulator {
 
     /// Simulate the gas needed by a transaction.
     pub async fn gas(&self, tx: eth::Tx) -> Result<eth::Gas, Error> {
+        if let Some(gas) = self.disable_gas {
+            return Ok(gas);
+        }
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly

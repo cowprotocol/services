@@ -55,7 +55,7 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
 impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: quote::Error) -> Self {
         let error = match value {
-            quote::Error::QuotingFailed => Kind::QuotingFailed,
+            quote::Error::QuotingFailed(_) => Kind::QuotingFailed,
             quote::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             quote::Error::Solver(_) => Kind::SolverFailed,
             quote::Error::Blockchain(_) => Kind::Unknown,
