@@ -126,7 +126,7 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error(
                     "WrongOwner",
                     format!(
-                        "recovered signer {signer} from signing hash {message:?} does not match \
+                        "recovered signer {signer:?} from signing hash {message:?} does not match \
                          from address"
                     ),
                 ),
