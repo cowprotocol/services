@@ -260,8 +260,9 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the list of partial limit orders with their fees
-    pub fn order_executions(
+    /// Returns the list of partial limit order executions with their fees,
+    /// which are supposed to be updated whenever a new settlement is executed.
+    pub fn partial_order_executions(
         &self,
         external_prices: &ExternalPrices,
         mut orders: Vec<OrderExecution>,
