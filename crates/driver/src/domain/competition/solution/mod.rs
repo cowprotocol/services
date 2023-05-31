@@ -261,7 +261,9 @@ impl From<eth::U256> for Risk {
 }
 
 impl Risk {
-    // TODO(#1533) Improve the risk merging formula.
+    // TODO(#1533) Improve the risk merging formula. For now it's OK to simply add
+    // the risks, since it causes the solvers to under-bid which is less
+    // dangerous than over-bidding.
     /// Combine two risk values.
     pub fn merge(self, other: Risk) -> Self {
         Self(self.0 + other.0)

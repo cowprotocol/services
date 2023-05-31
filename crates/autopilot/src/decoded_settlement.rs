@@ -274,25 +274,20 @@ impl DecodedSettlement {
                     return None;
                 }
 
-                match orders
+                let i = orders
                     .iter()
-                    .position(|order| trade.matches_execution(order))
-                {
-                    Some(i) => {
-                        // It's possible to have multiple fills with the same `executed_amount` for
-                        // the same order with different `solver_fees`. To
-                        // end up with the correct total fees we can only
-                        // use every `OrderExecution` exactly once.
-                        let order = orders.swap_remove(i);
-                        match self.fee(external_prices, &order, trade) {
-                            Some(fee) => Some((order.order_uid, fee)),
-                            None => {
-                                tracing::warn!("possible incomplete fee calculation");
-                                None
-                            }
-                        }
+                    .position(|order| trade.matches_execution(order))?;
+                // It's possible to have multiple fills with the same `executed_amount` for
+                // the same order with different `solver_fees`. To
+                // end up with the correct total fees we can only
+                // use every `OrderExecution` exactly once.
+                let order = orders.swap_remove(i);
+                match self.fee(external_prices, &order, trade) {
+                    Some(fee) => Some((order.order_uid, fee)),
+                    None => {
+                        tracing::warn!("possible incomplete fee calculation");
+                        None
                     }
-                    None => None,
                 }
             })
             .collect()

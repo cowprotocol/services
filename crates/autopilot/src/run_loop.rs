@@ -109,9 +109,9 @@ impl RunLoop {
             let block_deadline = self.current_block.borrow().number
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
-            // save order executions for all orders in the solution, except for partial
-            // limit orders. order executions for partial limit orders will be
-            // saved after settling the order onchain.
+            // Save order executions for all orders in the solution. Surplus fees for
+            // partial limit orders will be saved after settling the order
+            // onchain.
             let mut order_executions = vec![];
             for order_id in &solution.orders {
                 let auction_order = auction
@@ -139,9 +139,19 @@ impl RunLoop {
                         });
                         if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
                             prices.insert(auction_order.data.sell_token, *price);
+                        } else {
+                            tracing::error!(
+                                sell_token = ?auction_order.data.sell_token,
+                                "sell token price is missing in auction"
+                            );
                         }
                         if let Some(price) = auction.prices.get(&auction_order.data.buy_token) {
                             prices.insert(auction_order.data.buy_token, *price);
+                        } else {
+                            tracing::error!(
+                                buy_token = ?auction_order.data.buy_token,
+                                "buy token price is missing in auction"
+                            );
                         }
                     }
                     None => {
