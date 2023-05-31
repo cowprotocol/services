@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, OrderUid},
+    crate::{auction::AuctionId, OrderUid, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
 };
@@ -21,6 +21,28 @@ VALUES ($1, $2, $3, $4, $5)
         .bind(0.) // reward is deprecated but saved for historical analysis
         .bind(surplus_fee)
         .bind(solver_fee)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+// update already existing order_execution record with surplus_fee for partial
+// limit orders
+pub async fn update_surplus_fee(
+    ex: &mut PgTransaction<'_>,
+    order: &OrderUid,
+    auction: AuctionId,
+    surplus_fee: Option<&BigDecimal>,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE order_execution
+SET surplus_fee = $1
+WHERE order_uid = $2 AND auction_id = $3
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(surplus_fee)
+        .bind(order)
+        .bind(auction)
         .execute(ex)
         .await?;
     Ok(())

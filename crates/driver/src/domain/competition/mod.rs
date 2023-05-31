@@ -15,7 +15,7 @@ use {
     futures::future::join_all,
     itertools::Itertools,
     rand::seq::SliceRandom,
-    std::sync::Mutex,
+    std::{collections::HashSet, sync::Mutex},
     tap::TapFallible,
 };
 
@@ -45,13 +45,20 @@ pub struct Competition {
     pub settlement: Mutex<Option<Settlement>>,
 }
 
+/// Solution information revealed to the protocol by the solver. Note that the
+/// calldata is never revealed, as it would allow the solution to be stolen by
+/// other solvers.
+#[derive(Debug)]
+pub struct Reveal {
+    pub id: settlement::Id,
+    pub score: Score,
+    /// The orders solved by this solution.
+    pub orders: HashSet<order::Uid>,
+}
+
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(
-        &self,
-        auction: &Auction,
-    ) -> Result<(settlement::Id, solution::Score), Error> {
-        // Fetch the liquidity needed by the auction.
+    pub async fn solve(&self, auction: &Auction) -> Result<Reveal, Error> {
         tracing::trace!("fetching liquidity");
         let liquidity = self
             .liquidity
@@ -190,7 +197,7 @@ impl Competition {
             tracing::info!(
                 solutions = ?settlement.solutions(),
                 settlement_id = ?settlement.id,
-                score = f64::from(score.clone()),
+                score = score.0.to_f64_lossy(),
                 "settlement scored"
             );
         }
@@ -204,8 +211,10 @@ impl Competition {
         tracing::info!(?settlement, "winning settlement");
 
         let id = settlement.id;
+        let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
-        Ok((id, score))
+
+        Ok(Reveal { id, score, orders })
     }
 
     /// Execute a settlement generated as part of this competition.

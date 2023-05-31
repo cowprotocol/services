@@ -16,7 +16,6 @@ use {
     },
     futures::future::try_join_all,
     itertools::Itertools,
-    num::ToPrimitive,
     std::collections::HashMap,
 };
 
@@ -39,6 +38,7 @@ pub struct Solution {
     pub weth: eth::WethAddress,
     /// The solver which generated this solution.
     pub solver: Solver,
+    pub risk: Risk,
 }
 
 impl Solution {
@@ -228,24 +228,45 @@ impl SolverTimeout {
 }
 
 /// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub struct Score(pub num::BigRational);
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Score(pub eth::U256);
 
-impl From<Score> for f64 {
-    fn from(score: Score) -> Self {
-        score.0.to_f64().expect("value can be represented as f64")
+impl From<Score> for eth::U256 {
+    fn from(value: Score) -> Self {
+        value.0
     }
 }
 
-impl From<num::BigRational> for Score {
-    fn from(inner: num::BigRational) -> Self {
-        Self(inner)
+impl From<eth::U256> for Score {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
     }
 }
 
-impl Score {
-    pub fn zero() -> Self {
-        Self::default()
+/// Solver-estimated risk that the settlement might revert. This value is
+/// subtracted from the final score of the solution.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Risk(pub eth::U256);
+
+impl From<Risk> for eth::U256 {
+    fn from(value: Risk) -> Self {
+        value.0
+    }
+}
+
+impl From<eth::U256> for Risk {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+impl Risk {
+    // TODO(#1533) Improve the risk merging formula. For now it's OK to simply add
+    // the risks, since it causes the solvers to under-bid which is less
+    // dangerous than over-bidding.
+    /// Combine two risk values.
+    pub fn merge(self, other: Risk) -> Self {
+        Self(self.0 + other.0)
     }
 }
 

@@ -40,29 +40,27 @@ impl Auction {
             orders: self
                 .orders
                 .iter()
-                .map(|order| -> order::Order {
-                    order::Order {
-                        uid: order::Uid(order.uid),
-                        sell: eth::Asset {
-                            token: eth::TokenAddress(order.sell_token),
-                            amount: order.sell_amount,
-                        },
-                        buy: eth::Asset {
-                            token: eth::TokenAddress(order.buy_token),
-                            amount: order.buy_amount,
-                        },
-                        side: match order.kind {
-                            Kind::Buy => order::Side::Buy,
-                            Kind::Sell => order::Side::Sell,
-                        },
-                        class: match order.class {
-                            Class::Market => order::Class::Market,
-                            Class::Limit => order::Class::Limit,
-                            Class::Liquidity => order::Class::Liquidity,
-                        },
-                        fee: order::Fee(order.fee_amount),
-                        partially_fillable: order.partially_fillable,
-                    }
+                .map(|order| order::Order {
+                    uid: order::Uid(order.uid),
+                    sell: eth::Asset {
+                        token: eth::TokenAddress(order.sell_token),
+                        amount: order.sell_amount,
+                    },
+                    buy: eth::Asset {
+                        token: eth::TokenAddress(order.buy_token),
+                        amount: order.buy_amount,
+                    },
+                    side: match order.kind {
+                        Kind::Buy => order::Side::Buy,
+                        Kind::Sell => order::Side::Sell,
+                    },
+                    class: match order.class {
+                        Class::Market => order::Class::Market,
+                        Class::Limit => order::Class::Limit,
+                        Class::Liquidity => order::Class::Liquidity,
+                    },
+                    fee: order::Fee(order.fee_amount),
+                    partially_fillable: order.partially_fillable,
                 })
                 .collect(),
             liquidity: self

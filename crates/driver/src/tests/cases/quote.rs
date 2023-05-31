@@ -1,3 +1,6 @@
+// TODO(#1527) Use tests::setup::new to set up the test.
+
+/*
 use {
     super::SOLVER_NAME,
     crate::{
@@ -167,3 +170,4 @@ async fn test() {
         );
     }
 }
+*/

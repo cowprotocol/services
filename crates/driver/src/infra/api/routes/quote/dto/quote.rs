@@ -8,7 +8,7 @@ use {
 };
 
 impl Quote {
-    pub fn from_domain(quote: &quote::Quote) -> Self {
+    pub fn new(quote: &quote::Quote) -> Self {
         Self {
             amount: quote.amount,
             interactions: quote

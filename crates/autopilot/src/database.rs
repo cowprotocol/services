@@ -1,6 +1,7 @@
 mod auction;
 pub mod auction_prices;
 pub mod auction_transaction;
+pub mod competition;
 pub mod ethflow_events;
 mod events;
 pub mod on_settlement_event_updater;

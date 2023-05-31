@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{competition, eth, liquidity},
+        domain::{competition, competition::order, eth, liquidity},
         infra::Solver,
         util::serialize,
     },
@@ -199,13 +199,16 @@ impl Solutions {
                         .try_collect()?,
                     weth,
                     solver: solver.clone(),
+                    risk: solution.risk.into(),
                 })
             })
             .collect()
     }
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solutions {
     solutions: Vec<Solution>,
 }
@@ -219,6 +222,9 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    #[serde_as(as = "serialize::U256")]
+    #[serde(default)]
+    risk: eth::U256,
 }
 
 #[derive(Debug, Deserialize)]
@@ -233,7 +239,7 @@ enum Trade {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Fulfillment {
     #[serde_as(as = "serialize::Hex")]
-    order: [u8; 56],
+    order: [u8; order::UID_LEN],
     #[serde_as(as = "serialize::U256")]
     executed_amount: eth::U256,
     #[serde_as(as = "Option<serialize::U256>")]
@@ -262,7 +268,7 @@ struct JitOrder {
     buy_amount: eth::U256,
     valid_to: u32,
     #[serde_as(as = "serialize::Hex")]
-    app_data: [u8; 32],
+    app_data: [u8; order::APP_DATA_LEN],
     #[serde_as(as = "serialize::U256")]
     fee_amount: eth::U256,
     kind: Kind,

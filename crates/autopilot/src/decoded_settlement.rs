@@ -6,7 +6,10 @@ use {
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
-    model::{order::OrderKind, signature::Signature},
+    model::{
+        order::{OrderKind, OrderUid},
+        signature::Signature,
+    },
     num::BigRational,
     number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
     shared::{
@@ -155,6 +158,7 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 /// [`OrderExecution`]s with them.
 #[derive(Debug, Clone)]
 pub struct OrderExecution {
+    pub order_uid: OrderUid,
     pub executed_solver_fee: Option<U256>,
     pub kind: OrderKind,
     pub sell_token: H160,
@@ -170,6 +174,7 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
 
     fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
+            order_uid: OrderUid(order.order_uid.0),
             executed_solver_fee: order
                 .executed_solver_fee
                 .as_ref()
@@ -237,7 +242,7 @@ impl DecodedSettlement {
                     // same order with different `solver_fees`. To end up with the correct total
                     // fees we can only use every `OrderExecution` exactly once.
                     let order = orders.swap_remove(i);
-                    acc + match fee(external_prices, &order) {
+                    acc + match self.fee(external_prices, &order, trade) {
                         Some(fee) => fee,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
@@ -253,6 +258,111 @@ impl DecodedSettlement {
                 }
             }
         })
+    }
+
+    /// Returns the list of partial limit order executions with their fees,
+    /// which are supposed to be updated whenever a new settlement is executed.
+    pub fn partial_order_executions(
+        &self,
+        external_prices: &ExternalPrices,
+        mut orders: Vec<OrderExecution>,
+    ) -> Vec<(OrderUid, U256)> {
+        self.trades
+            .iter()
+            .filter_map(|trade| {
+                if !trade.flags.partially_fillable() {
+                    return None;
+                }
+
+                let i = orders
+                    .iter()
+                    .position(|order| trade.matches_execution(order))?;
+                // It's possible to have multiple fills with the same `executed_amount` for
+                // the same order with different `solver_fees`. To
+                // end up with the correct total fees we can only
+                // use every `OrderExecution` exactly once.
+                let order = orders.swap_remove(i);
+                match self.fee(external_prices, &order, trade) {
+                    Some(fee) => Some((order.order_uid, fee)),
+                    None => {
+                        tracing::warn!("possible incomplete fee calculation");
+                        None
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn fee(
+        &self,
+        external_prices: &ExternalPrices,
+        order: &OrderExecution,
+        trade: &DecodedTrade,
+    ) -> Option<U256> {
+        let solver_fee = match &order.executed_solver_fee {
+            Some(solver_fee) => u256_to_big_rational(solver_fee),
+            None => {
+                // this should be a partial limit order
+                if !trade.flags.partially_fillable() {
+                    tracing::warn!("missing solver fee for non partial fee order");
+                    return None;
+                }
+
+                // get uniform prices
+                let sell_index = self
+                    .tokens
+                    .iter()
+                    .position(|token| token == &order.sell_token)?;
+                let buy_index = self
+                    .tokens
+                    .iter()
+                    .position(|token| token == &order.buy_token)?;
+                let uniform_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+                let uniform_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+
+                // get executed(adjusted) prices
+                let sell_index = trade.sell_token_index.as_u64() as usize;
+                let buy_index = trade.buy_token_index.as_u64() as usize;
+                let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
+                let adjusted_buy_price = self.clearing_prices.get(buy_index).cloned()?;
+
+                // the logic is opposite to the code in function `custom_price_for_limit_order`
+                let fee = match trade.flags.order_kind() {
+                    OrderKind::Buy => {
+                        let required_sell_amount = trade
+                            .executed_amount
+                            .checked_mul(adjusted_buy_price)?
+                            .checked_div(adjusted_sell_price)?;
+                        let required_sell_amount_with_ucp = trade
+                            .executed_amount
+                            .checked_mul(uniform_buy_price)?
+                            .checked_div(uniform_sell_price)?;
+                        required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
+                    }
+                    OrderKind::Sell => {
+                        let received_buy_amount = trade
+                            .executed_amount
+                            .checked_mul(adjusted_sell_price)?
+                            .checked_div(adjusted_buy_price)?;
+                        let sell_amount_needed_with_ucp = received_buy_amount
+                            .checked_mul(uniform_buy_price)?
+                            .checked_div(uniform_sell_price)?;
+                        trade
+                            .executed_amount
+                            .checked_sub(sell_amount_needed_with_ucp)?
+                    }
+                };
+
+                u256_to_big_rational(&fee)
+            }
+        };
+
+        // converts the order's `solver_fee` which is denominated in `sell_token` to the
+        // native token.
+        tracing::trace!(?solver_fee, "fee before conversion to native token");
+        let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
+        tracing::trace!(?fee, "fee after conversion to native token");
+        big_rational_to_u256(&fee).ok()
     }
 }
 
@@ -300,16 +410,6 @@ fn surplus(
     };
 
     big_rational_to_u256(&normalized_surplus).ok()
-}
-
-/// Converts the order's `solver_fee` which is denominated in `sell_token` to
-/// the native token.
-fn fee(external_prices: &ExternalPrices, order: &OrderExecution) -> Option<U256> {
-    let solver_fee = u256_to_big_rational(&order.executed_solver_fee?);
-    tracing::trace!(?solver_fee, "fee before conversion to native token");
-    let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
-    tracing::trace!(?fee, "fee after conversion to native token");
-    big_rational_to_u256(&fee).ok()
 }
 
 fn trade_surplus(
@@ -593,6 +693,7 @@ mod tests {
 
         let orders = vec![
             OrderExecution {
+                order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
                 executed_solver_fee: Some(48263037u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
@@ -603,6 +704,7 @@ mod tests {
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
             },
             OrderExecution {
+                order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
                 executed_solver_fee: Some(127253135942751092736u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
@@ -618,6 +720,74 @@ mod tests {
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn total_fees_test_partial_limit_order() {
+        // transaction hash:
+        // 0x00e0e45ccc01b1bc99350444742cf5b4701d0c3eb85bc8c8f60a07e1e8cc4a36
+
+        // From solver competition table:
+
+        // external prices (auction values):
+        // 0xba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70: 8302940
+        // 0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2: 1000000000000000000
+
+        // fees: 3768095572151423
+
+        let transport = shared::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
+        let call_data = hex_literal::hex!(
+            "13d79a0b0000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000003e
+            00000000000000000000000000000000000000000000000000000000000000004000000000000000000000000ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce700000000
+            00000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000083732b0000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000
+            0000000000000000000000000000000000ff962d1e3a803f90000000000000000000000000000000000000001b133ca2607cfe842f8f4c8ef0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000
+            0000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000030000000000000000000000006c7f534c81dfedf90c9e42effb410a44e4f8ef100000000000000000000000000000000000000002863c1f5cdae42f95400000000000000000000000000000000000000
+            0000000000000000017979cfe362a00000000000000000000000000000000000000000000000000000000000064690e05c1164815465bff632c198b8455e9a421c07e8ce426c8cd1b59eef7b305b8ca900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+            00000000000000000000000020000000000000000000000000000000000000001b133ca2607cfe842f8f4c8ef00000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000041f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd7
+            1514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000
+            000000080000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002
+            00000000000000000000000007a250d5630b4cf539739df2c5dacb4c659f2488d0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000001048803dbe
+            e0000000000000000000000000000000000000000000000000ff962d452d79e2a0000000000000000000000000000000000000001b02aeadbd4ac223168f3b31200000000000000000000000000000000000000000000000000000000000000a00000000000000000000000009008d19f58aabd9ed0d60971565aa8510560ab41fffffff
+            fffffffffffffffffffffffffffffffffffffffffffffffffffffffff0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000
+            000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        );
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
+
+        //calculate fees
+        let auction_external_prices = BTreeMap::from([
+            (
+                H160::from_str("0xba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70").unwrap(),
+                U256::from(8302940),
+            ),
+            (
+                H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                U256::from(1000000000000000000u128),
+            ),
+        ]);
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
+
+        let orders = vec![
+            OrderExecution {
+                order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
+                executed_solver_fee: None,
+                kind: OrderKind::Sell,
+                buy_amount: 11446254517730382294118u128.into(), // irrelevant
+                sell_amount: 14955083027u128.into(),            // irrelevant
+                sell_token: H160::from_str("0xba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70").unwrap(),
+                buy_token: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                executed_amount: 134069619089011499167823218927u128.into(),
+                signature: hex::decode("f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd71514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c").unwrap(),
+            },
+        ];
+        let fees = settlement
+            .total_fees(&external_prices, orders)
+            .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
+                             // competition
+        assert_eq!(fees, 3768095572151424.);
     }
 
     #[tokio::test]
@@ -719,6 +889,7 @@ mod tests {
 
         let orders = vec![
             OrderExecution {
+                order_uid: Default::default(),
                 executed_solver_fee: Some(463182886014406361088u128.into()),
                 kind: OrderKind::Sell,
                 buy_amount: 89238894792574185u128.into(),

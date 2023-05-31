@@ -1,6 +1,9 @@
 use {
     crate::{
-        database::Postgres,
+        database::{
+            competition::{Competition, ExecutedFee, OrderExecution},
+            Postgres,
+        },
         driver_api::Driver,
         driver_model::{
             execute,
@@ -23,7 +26,11 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         token_list::AutoUpdatingTokenList,
     },
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{
+        collections::{BTreeMap, HashSet},
+        sync::Arc,
+        time::Duration,
+    },
     tracing::Instrument,
     web3::types::Transaction,
 };
@@ -38,6 +45,8 @@ pub struct RunLoop {
     pub web3: Web3,
     pub network_block_interval: Duration,
     pub market_makable_token_list: AutoUpdatingTokenList,
+    pub submission_deadline: u64,
+    pub additional_deadline_for_rewards: u64,
 }
 
 impl RunLoop {
@@ -74,14 +83,98 @@ impl RunLoop {
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by(|left, right| left.1.score.total_cmp(&right.1.score));
+        solutions.sort_unstable_by_key(|solution| solution.1.score);
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
             // The winner has score 0 so all solutions are empty.
-            if solution.score == 0. {
+            if solution.score == 0.into() {
                 return;
             }
+
+            let auction_id = id;
+            let winner = solution.submission_address;
+            let winning_score = solution.score;
+            let reference_score = solutions
+                .last()
+                .map(|(_, response)| response.score)
+                .unwrap_or_default();
+            let mut participants = solutions
+                .iter()
+                .map(|(_, response)| response.submission_address)
+                .collect::<HashSet<_>>();
+            participants.insert(solution.submission_address); // add winner as participant
+
+            let mut prices = BTreeMap::new();
+            let block_deadline = self.current_block.borrow().number
+                + self.submission_deadline
+                + self.additional_deadline_for_rewards;
+            // Save order executions for all orders in the solution. Surplus fees for
+            // partial limit orders will be saved after settling the order
+            // onchain.
+            let mut order_executions = vec![];
+            for order_id in &solution.orders {
+                let auction_order = auction
+                    .orders
+                    .iter()
+                    .find(|auction_order| &auction_order.metadata.uid == order_id);
+                match auction_order {
+                    Some(auction_order) => {
+                        let executed_fee = match auction_order.metadata.class {
+                            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
+                                match auction_order.data.partially_fillable {
+                                    // we don't know the surplus fee in advance. will be populated
+                                    // after the transaction containing the order is mined
+                                    true => ExecutedFee::Surplus(None),
+                                    // calculated by the protocol, therefore we can trust the
+                                    // auction
+                                    false => ExecutedFee::Surplus(surplus_fee),
+                                }
+                            }
+                            _ => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                        };
+                        order_executions.push(OrderExecution {
+                            order_id: *order_id,
+                            executed_fee,
+                        });
+                        if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
+                            prices.insert(auction_order.data.sell_token, *price);
+                        } else {
+                            tracing::error!(
+                                sell_token = ?auction_order.data.sell_token,
+                                "sell token price is missing in auction"
+                            );
+                        }
+                        if let Some(price) = auction.prices.get(&auction_order.data.buy_token) {
+                            prices.insert(auction_order.data.buy_token, *price);
+                        } else {
+                            tracing::error!(
+                                buy_token = ?auction_order.data.buy_token,
+                                "buy token price is missing in auction"
+                            );
+                        }
+                    }
+                    None => {
+                        tracing::debug!(?order_id, "order not found in auction");
+                    }
+                }
+            }
+            let competition = Competition {
+                auction_id,
+                winner,
+                winning_score,
+                reference_score,
+                participants,
+                prices,
+                block_deadline,
+                order_executions,
+            };
+            tracing::info!(?competition, "saving competition");
+            if let Err(err) = self.save_competition(&competition).await {
+                tracing::error!(?err, "failed to save competition");
+                return;
+            }
+
             tracing::info!("executing with solver {}", index);
             match self
                 .execute(auction, id, &self.drivers[index], &solution)
@@ -93,12 +186,6 @@ impl RunLoop {
                 }
             }
         }
-
-        // TODO:
-        // - Think about what per auction information needs to be permanently
-        //   stored. We might want
-        // to store the competition information and the full promised solution
-        // of the winner.
     }
 
     /// Returns the successful /solve responses and the index of the solver.
@@ -192,9 +279,7 @@ impl RunLoop {
         results
             .into_iter()
             .filter_map(|(index, result)| match result {
-                Ok(result) if result.score.is_finite() && result.score >= 0. => {
-                    Some((index, result))
-                }
+                Ok(result) if result.score >= 0.into() => Some((index, result)),
                 Ok(result) => {
                     tracing::warn!("bad score {:?}", result.score);
                     None
@@ -295,5 +380,13 @@ impl RunLoop {
             tokio::time::sleep(self.network_block_interval.div_f32(2.)).await;
         }
         Ok(None)
+    }
+
+    /// Saves the competition data to the database
+    async fn save_competition(&self, competition: &Competition) -> Result<()> {
+        self.database
+            .save_competition(competition)
+            .await
+            .context("save competition data")
     }
 }

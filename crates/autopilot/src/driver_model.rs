@@ -79,7 +79,7 @@ pub mod solve {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Serialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
         pub uid: OrderUid,
@@ -112,7 +112,7 @@ pub mod solve {
         pub signature: Signature,
     }
 
-    #[derive(Clone, Debug, Serialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "lowercase")]
     pub enum Class {
         Market,
@@ -124,7 +124,10 @@ pub mod solve {
     #[serde(deny_unknown_fields)]
     pub struct Response {
         pub id: String,
-        pub score: f64,
+        pub score: U256,
+        // address used by driver to submit the solution onchain
+        pub submission_address: H160,
+        pub orders: Vec<OrderUid>,
     }
 }
 

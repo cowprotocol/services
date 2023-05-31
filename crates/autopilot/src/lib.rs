@@ -632,6 +632,8 @@ pub async fn main(args: arguments::Arguments) {
             web3,
             network_block_interval: network_time_between_blocks,
             market_makable_token_list,
+            submission_deadline: args.submission_deadline as u64,
+            additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

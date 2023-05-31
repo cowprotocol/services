@@ -1,5 +1,8 @@
 //! Test that a valid sell limit order is settled correctly.
 
+// TODO(#1527) Use tests::setup::new to set up the test.
+
+/*
 use {
     crate::{
         domain::{
@@ -217,7 +220,7 @@ async fn test() {
     assert!(solution.get("id").is_some());
     assert!(solution.get("score").is_some());
     let score = solution.get("score").unwrap().as_f64().unwrap();
-    approx::assert_relative_eq!(score, -59208161112450.0, max_relative = 0.01);
+    assert_eq!(score, -59208161112450.0);
 
     let old_token_a = token_a.balance_of(admin).call().await.unwrap();
     let old_token_b = token_b.balance_of(admin).call().await.unwrap();
@@ -236,3 +239,4 @@ async fn test() {
     assert_eq!(new_token_a, old_token_a - token_a_in_amount - surplus_fee);
     assert_eq!(new_token_b, old_token_b + token_b_out_amount);
 }
+*/

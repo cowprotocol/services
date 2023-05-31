@@ -2,15 +2,19 @@ use {
     anyhow::Context,
     database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::{H160, U256},
+    model::order::OrderUid,
     number_conversions::u256_to_big_decimal,
 };
 
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
+    pub auction_id: i64,
     pub gas_used: U256,
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
+    // pairs <order id, fee> for partial limit orders
+    pub order_executions: Vec<(OrderUid, U256)>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -45,7 +49,6 @@ impl super::Postgres {
         .await
         .context("insert_settlement_tx_info")?;
 
-        // update settlement_observations if exist
         if let Some(auction_data) = settlement_update.auction_data {
             database::settlement_observations::insert(
                 &mut ex,
@@ -60,6 +63,23 @@ impl super::Postgres {
             )
             .await
             .context("insert_settlement_observations")?;
+
+            // update order executions for partial limit orders
+            // partial limit orders are a special kind of orders for which the surplus_fee
+            // is calculated AFTER the settlement is settled on chain.
+            for order_execution in auction_data.order_executions {
+                database::order_execution::update_surplus_fee(
+                    &mut ex,
+                    &ByteArray(order_execution.0 .0), // order uid
+                    auction_data.auction_id,
+                    Some(order_execution.1) // order fee
+                        .as_ref()
+                        .map(u256_to_big_decimal)
+                        .as_ref(),
+                )
+                .await
+                .context("insert_missing_order_executions")?;
+            }
         }
 
         ex.commit().await?;
