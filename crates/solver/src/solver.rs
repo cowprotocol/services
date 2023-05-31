@@ -609,10 +609,8 @@ fn balance_and_convert_orders(
         .into_iter()
         .filter_map(|order| match converter.normalize_limit_order(order) {
             Ok(order) => Some(order),
-            // This should never happen unless we are getting malformed
-            // orders from the API - so raise an alert if this happens.
             Err(err) => {
-                tracing::error!(?err, "error normalizing limit order");
+                tracing::debug!(?err, "error normalizing limit order");
                 None
             }
         })
