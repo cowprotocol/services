@@ -97,6 +97,11 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         ethflow_data,
         onchain_user,
         onchain_order_data,
+        full_app_data: order
+            .full_app_data
+            .map(String::from_utf8)
+            .transpose()
+            .context("full app data isn't utf-8")?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

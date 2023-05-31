@@ -215,6 +215,11 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_full_app_data(mut self, full_app_data: String) -> Self {
+        self.0.metadata.full_app_data = Some(full_app_data);
+        self
+    }
+
     pub fn build(self) -> Order {
         self.0
     }
@@ -700,6 +705,9 @@ pub struct OrderMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub onchain_user: Option<H160>,
     pub is_liquidity_order: bool,
+    /// Full app data that `OrderData::app_data` is a hash of. Can be None if
+    /// the backend doesn't know about the full app data.
+    pub full_app_data: Option<String>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
@@ -1013,7 +1021,8 @@ mod tests {
             "interactions": {
                     "pre": [],
                     "post": [],
-            }
+            },
+            "fullAppData": "123",
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -1036,6 +1045,7 @@ mod tests {
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
                 solver_fee: U256::MAX,
+                full_app_data: Some("123".to_string()),
                 ..Default::default()
             },
             data: OrderData {

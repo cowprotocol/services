@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dev-dependencies]
 anyhow = { workspace = true }
+app-data-hash = { path = "../app-data-hash" }
 autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
 clap = { workspace = true }

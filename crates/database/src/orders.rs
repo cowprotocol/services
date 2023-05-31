@@ -125,6 +125,7 @@ pub struct Order {
     pub class: OrderClass,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
+    pub full_app_data: Option<Vec<u8>>,
 }
 
 pub async fn insert_or_overwrite_interactions(
@@ -202,9 +203,10 @@ INSERT INTO orders (
     cancellation_timestamp,
     class,
     surplus_fee,
-    surplus_fee_timestamp
+    surplus_fee_timestamp,
+    full_app_data
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -248,6 +250,7 @@ async fn insert_order_execute_sqlx(
         .bind(order.class)
         .bind(&order.surplus_fee)
         .bind(order.surplus_fee_timestamp)
+        .bind(&order.full_app_data)
         .execute(ex)
         .await?;
     Ok(())
@@ -423,6 +426,7 @@ pub struct FullOrder {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
     pub executed_solver_fee: Option<BigDecimal>,
+    pub full_app_data: Option<Vec<u8>>,
 }
 
 impl FullOrder {
@@ -462,7 +466,7 @@ const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class, o.surplus_fee, o.surplus_fee_timestamp,
+o.class, o.surplus_fee, o.surplus_fee_timestamp, o.full_app_data,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -892,10 +896,45 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let order = Order::default();
+        let order = Order {
+            full_app_data: Some(vec![0, 1]),
+            ..Default::default()
+        };
         insert_order(&mut db, &order).await.unwrap();
         let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
         assert_eq!(order, order_);
+
+        let full_order = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(order.uid, full_order.uid);
+        assert_eq!(order.owner, full_order.owner);
+        assert_eq!(order.creation_timestamp, full_order.creation_timestamp);
+        assert_eq!(order.sell_token, full_order.sell_token);
+        assert_eq!(order.buy_token, full_order.buy_token);
+        assert_eq!(order.sell_amount, full_order.sell_amount);
+        assert_eq!(order.buy_amount, full_order.buy_amount);
+        assert_eq!(order.valid_to, full_order.valid_to);
+        assert_eq!(order.app_data, full_order.app_data);
+        assert_eq!(order.fee_amount, full_order.fee_amount);
+        assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
+        assert_eq!(order.kind, full_order.kind);
+        assert_eq!(order.class, full_order.class);
+        assert_eq!(order.partially_fillable, full_order.partially_fillable);
+        assert_eq!(order.signature, full_order.signature);
+        assert_eq!(order.receiver, full_order.receiver);
+        assert_eq!(order.signing_scheme, full_order.signing_scheme);
+        assert_eq!(order.settlement_contract, full_order.settlement_contract);
+        assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
+        assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+        assert_eq!(order.surplus_fee, full_order.surplus_fee);
+        assert_eq!(
+            order.surplus_fee_timestamp,
+            full_order.surplus_fee_timestamp
+        );
+        assert_eq!(order.full_app_data, full_order.full_app_data);
     }
 
     #[tokio::test]

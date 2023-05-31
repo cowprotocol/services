@@ -8,6 +8,7 @@ mod setup;
 mod local_node;
 
 // Each of the following modules contains tests.
+mod app_data;
 mod colocation_partial_fill;
 mod colocation_univ2;
 mod eth_flow;
