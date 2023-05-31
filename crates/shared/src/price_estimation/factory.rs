@@ -59,8 +59,8 @@ pub struct PriceEstimatorFactory<'a> {
 
 #[derive(Clone)]
 struct EstimatorEntry {
-    optimal: Arc<dyn PriceEstimating>,
-    fast: Arc<dyn PriceEstimating>,
+    verified: Option<Arc<dyn PriceEstimating>>,
+    unverified: Arc<dyn PriceEstimating>,
     native: Arc<dyn PriceEstimating>,
 }
 
@@ -180,11 +180,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             .as_ref()
             .and_then(|trade_verifier| estimator.verified(trade_verifier));
 
-        let fast = instrument(estimator, name);
-        let optimal = match verified {
-            Some(verified) => instrument(verified, format!("{name}_verified")),
-            None => fast.clone(),
-        };
+        let unverified = instrument(estimator, name);
+        let verified =
+            verified.map(|verified| instrument(verified, format!("{name}_verified")) as _);
 
         // Eagerly create the native price estimator, even if we don't use it.
         // It just simplifies price estimator creation code and only costs a few
@@ -196,8 +194,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         let native = instrument(T::init(self, name, params)?, name);
 
         Ok(EstimatorEntry {
-            optimal,
-            fast,
+            verified,
+            unverified,
             native,
         })
     }
@@ -274,28 +272,37 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn get_estimators(
         &mut self,
         kinds: &[PriceEstimatorType],
-        select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
+        select: impl Fn(&EstimatorEntry) -> Option<&Arc<dyn PriceEstimating>>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
         kinds
             .iter()
             .copied()
-            .map(|kind| Ok((kind.name(), select(self.get_estimator(kind)?).clone())))
+            .filter_map(|kind| {
+                let estimator = match self.get_estimator(kind) {
+                    Ok(estimator) => estimator,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                Some(Ok((kind.name(), select(estimator)?.clone())))
+            })
             .collect()
     }
 
     fn get_external_estimators(
         &mut self,
         drivers: &[Driver],
-        select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
+        select: impl Fn(&EstimatorEntry) -> Option<&Arc<dyn PriceEstimating>>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
         drivers
             .iter()
             .cloned()
-            .map(|driver| {
-                Ok((
-                    driver.name.clone(),
-                    select(self.get_external_estimator(&driver)?).clone(),
-                ))
+            .filter_map(|driver| {
+                let estimator = match self.get_external_estimator(&driver) {
+                    Ok(estimator) => estimator,
+                    Err(err) => return Some(Err(err)),
+                };
+
+                Some(Ok((driver.name.clone(), select(estimator)?.clone())))
             })
             .collect()
     }
@@ -313,8 +320,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         kinds: &[PriceEstimatorType],
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.optimal)?);
+        let mut estimators = self.get_estimators(kinds, |entry| Some(&entry.unverified))?;
+        estimators
+            .append(&mut self.get_external_estimators(drivers, |entry| Some(&entry.unverified))?);
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         Ok(Arc::new(self.sanitized(
             match self.args.enable_quote_predictions {
@@ -332,14 +340,38 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.fast)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.fast)?);
+        let mut estimators = self.get_estimators(kinds, |entry| Some(&entry.unverified))?;
+        estimators
+            .append(&mut self.get_external_estimators(drivers, |entry| Some(&entry.unverified))?);
         Ok(Arc::new(self.sanitized(
             RacingCompetitionPriceEstimator::new(
                 estimators,
                 fast_price_estimation_results_required,
             ),
         )))
+    }
+
+    pub fn verified_price_estimator(
+        &mut self,
+        kinds: &[PriceEstimatorType],
+        drivers: &[Driver],
+    ) -> Result<Option<Arc<dyn PriceEstimating>>> {
+        if self.trade_verifier.is_none() {
+            return Ok(None);
+        }
+
+        let mut estimators = self.get_estimators(kinds, |entry| entry.verified.as_ref())?;
+        estimators
+            .append(&mut self.get_external_estimators(drivers, |entry| entry.verified.as_ref())?);
+        let competition_estimator = CompetitionPriceEstimator::new(estimators);
+        Ok(Some(Arc::new(self.sanitized(
+            match self.args.enable_quote_predictions {
+                true => {
+                    competition_estimator.with_predictions(self.args.quote_prediction_confidence)
+                }
+                false => competition_estimator,
+            },
+        ))))
     }
 
     pub fn native_price_estimator(
@@ -351,8 +383,8 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
             "price cache prefetch time needs to be less than price cache max age"
         );
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
+        let mut estimators = self.get_estimators(kinds, |entry| Some(&entry.native))?;
+        estimators.append(&mut self.get_external_estimators(drivers, |entry| Some(&entry.native))?);
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
@@ -385,6 +417,9 @@ trait PriceEstimatorCreating: Sized {
     fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self>;
 
     fn verified(&self, _: &TradeVerifier) -> Option<Self> {
+        // TODO: either move entirely to external price estimators (colocation) or
+        // implement a verified version for all currently used estimators to make the
+        // return type non optional.
         None
     }
 }
