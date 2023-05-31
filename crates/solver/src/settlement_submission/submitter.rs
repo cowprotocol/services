@@ -68,6 +68,7 @@ pub struct SubmitterParams {
     /// Additional bytes to append to the call data. This is required by the
     /// `driver`.
     pub additional_call_data: Vec<u8>,
+    pub use_soft_cancellations: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -225,6 +226,7 @@ impl<'a> Submitter<'a> {
         params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
+        let use_soft_cancellations = params.use_soft_cancellations;
 
         tracing::debug!(address=?self.account.address(), ?self.nonce, "starting solution submission");
 
@@ -269,8 +271,21 @@ impl<'a> Submitter<'a> {
             },
             _ = deadline_future => {
                 tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
-
-                if let Some((_, gas_price)) = transactions.last() {
+                if use_soft_cancellations {
+                    // If the submission node supports soft cancellations it does not propagate
+                    // failing tx and stops propagating old tx when another tx with the same
+                    // `sender` and `nonce` gets submitted.
+                    // That means we don't have to submit a cancellation tx at all.
+                    // In case the same solver also wins the next auction we have to clear the
+                    // `transactions` vector. Otherwise the submission logic will remember the gas
+                    // price we last submitted a tx with and will only submit another tx when the
+                    // gas price increase by at least [`GAS_PRICE_BUMP`] as this is the default tx
+                    // replacement condition in the public mempool. But because a soft cancellation
+                    // node has special replacement logic it's safe to pretend no other tx exists
+                    // in its mempool.
+                    transactions.clear();
+                    tracing::debug!("skip cancellation tx due to soft cancellations");
+                } else if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
                         .cancel_transaction(&gas_price, self.nonce)
@@ -805,6 +820,7 @@ mod tests {
             retry_interval: Duration::from_secs(5),
             network_id: "1".to_string(),
             additional_call_data: Default::default(),
+            use_soft_cancellations: false,
         };
         let result = submitter.submit(settlement, params).await;
         tracing::debug!("finished with result {:?}", result);

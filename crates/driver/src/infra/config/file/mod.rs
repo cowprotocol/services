@@ -89,6 +89,15 @@ enum Mempool {
         /// Flashbots above regular gas price estimation.
         #[serde(default = "default_max_additional_flashbots_tip")]
         max_additional_tip: f64,
+        /// Configures whether the submission logic is allowed to assume the
+        /// submission nodes implement soft cancellations. With soft
+        /// cancellations you don't have to submit a no-op transaction to
+        /// replace another transaction in the mempool. Instead you can just
+        /// issue another transaction with the same sender and nonce and
+        /// the submission node will no longer propagate the previous
+        /// transactions
+        #[serde(default = "default_soft_cancellations_flag")]
+        use_soft_cancellations: bool,
     },
 }
 
@@ -114,6 +123,10 @@ fn default_max_confirm_time_secs() -> u64 {
 
 fn default_max_additional_flashbots_tip() -> f64 {
     3.0
+}
+
+fn default_soft_cancellations_flag() -> bool {
+    false
 }
 
 #[serde_as]

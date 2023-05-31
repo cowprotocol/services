@@ -203,6 +203,15 @@ pub struct Arguments {
     )]
     pub flashbots_api_url: Vec<Url>,
 
+    /// Configures whether the submission logic is allowed to assume the
+    /// submission nodes implement soft cancellations. With soft
+    /// cancellations you don't have to submit a no-op transaction to
+    /// replace another transaction in the mempool. Instead you can just issue
+    /// another transaction with the same sender and nonce and the
+    /// submission node will no longer propagate the previous transactions
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub use_soft_cancellations: bool,
+
     /// Maximum additional tip in gwei that we are willing to give to eden above
     /// regular gas price estimation
     #[clap(
