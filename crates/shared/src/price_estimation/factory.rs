@@ -165,7 +165,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 .price_estimation_rate_limiter
                 .clone()
                 .unwrap_or_default(),
-            format!("{name:?}_estimator"),
+            format!("{name}_estimator"),
         ))
     }
 
@@ -182,7 +182,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let fast = instrument(estimator, name);
         let optimal = match verified {
-            Some(verified) => instrument(verified, format!("{name:?}_verified")),
+            Some(verified) => instrument(verified, format!("{name}_verified")),
             None => fast.clone(),
         };
 
