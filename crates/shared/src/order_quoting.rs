@@ -40,6 +40,7 @@ pub struct QuoteHandler {
     order_validator: Arc<dyn OrderValidating>,
     optimal_quoter: Arc<dyn OrderQuoting>,
     fast_quoter: Arc<dyn OrderQuoting>,
+    verified_quoter: Option<Arc<dyn OrderQuoting>>,
 }
 
 impl QuoteHandler {
@@ -48,11 +49,17 @@ impl QuoteHandler {
             order_validator,
             optimal_quoter: quoter.clone(),
             fast_quoter: quoter,
+            verified_quoter: None,
         }
     }
 
     pub fn with_fast_quoter(mut self, fast_quoter: Arc<dyn OrderQuoting>) -> Self {
         self.fast_quoter = fast_quoter;
+        self
+    }
+
+    pub fn with_verified_quoter(mut self, verified_quoter: Option<Arc<dyn OrderQuoting>>) -> Self {
+        self.verified_quoter = verified_quoter;
         self
     }
 }
@@ -83,6 +90,18 @@ impl QuoteHandler {
                 // expire immediately.
                 quote.data.expiration = Utc.timestamp_millis_opt(0).unwrap();
                 quote
+            }
+            PriceQuality::Verified => {
+                let quoter = self.verified_quoter.as_ref().ok_or_else(|| {
+                    CalculateQuoteError::Other(anyhow::anyhow!(
+                        "verified quotes are currently disabled"
+                    ))
+                })?;
+                let quote = quoter.calculate_quote(request.into()).await?;
+                quoter
+                    .store_quote(quote)
+                    .await
+                    .map_err(CalculateQuoteError::Other)?
             }
         };
 

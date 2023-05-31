@@ -364,6 +364,12 @@ pub async fn run(args: Arguments) {
             &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();
+    let verified_price_estimator = price_estimator_factory
+        .verified_price_estimator(
+            &args.order_quoting.price_estimators,
+            &args.order_quoting.price_estimation_drivers,
+        )
+        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             &args.native_price_estimators,
@@ -439,6 +445,7 @@ pub async fn run(args: Arguments) {
     };
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
+    let verified_quoter = verified_price_estimator.map(|e| create_quoter(e) as _);
 
     let order_validator = Arc::new(
         OrderValidator::new(
@@ -480,8 +487,11 @@ pub async fn run(args: Arguments) {
     }
 
     check_database_connection(orderbook.as_ref()).await;
-    let quotes =
-        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
+    let quotes = Arc::new(
+        QuoteHandler::new(order_validator, optimal_quoter)
+            .with_fast_quoter(fast_quoter)
+            .with_verified_quoter(verified_quoter),
+    );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         database.clone(),
