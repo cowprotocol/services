@@ -278,9 +278,7 @@ impl<'a> Submitter<'a> {
                         .await
                     {
                         Ok(handle) => {
-                            if !use_soft_cancellations {
-                                transactions.push((handle, gas_price));
-                            } else {
+                            if use_soft_cancellations {
                                 // If the submission node supports soft cancellations it will
                                 // simply discard all transactions with the same `sender` and
                                 // `nonce` from the internal mempool when it sees the
@@ -297,6 +295,8 @@ impl<'a> Submitter<'a> {
                                 // simply "forget" the submitted tx by clearing `transactions`.
                                 tracing::debug!("clear list of pending tx hashes due to soft cancellation");
                                 transactions.clear();
+                            } else {
+                                transactions.push((handle, gas_price));
                             }
                         }
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
