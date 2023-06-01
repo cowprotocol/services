@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        order::{OrderBuilder, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -86,21 +86,21 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    let order = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(9))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(5))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(9),
+        fee_amount: to_wei(1),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
     services.create_order(&order).await.unwrap();
 
     // Drive solution

@@ -5,9 +5,10 @@ use {
         app_id::AppDataHash,
         order::{
             CancellationPayload,
-            OrderBuilder,
             OrderCancellation,
             OrderCancellations,
+            OrderCreation,
+            OrderCreationAppData,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -65,22 +66,24 @@ async fn order_cancellation(web3: Web3) {
         async move {
             let quote = services.submit_quote(&request).await.unwrap().quote;
 
-            let order = OrderBuilder::default()
-                .with_kind(quote.kind)
-                .with_sell_token(quote.sell_token)
-                .with_sell_amount(quote.sell_amount)
-                .with_fee_amount(quote.fee_amount)
-                .with_buy_token(quote.buy_token)
-                .with_buy_amount((quote.buy_amount * 99) / 100)
-                .with_valid_to(quote.valid_to)
-                .with_app_data(quote.app_data.0)
-                .sign_with(
-                    EcdsaSigningScheme::Eip712,
-                    &onchain.contracts().domain_separator,
-                    SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-                )
-                .build()
-                .into_order_creation();
+            let order = OrderCreation {
+                kind: quote.kind,
+                sell_token: quote.sell_token,
+                sell_amount: quote.sell_amount,
+                fee_amount: quote.fee_amount,
+                buy_token: quote.buy_token,
+                buy_amount: (quote.buy_amount * 99) / 100,
+                valid_to: quote.valid_to,
+                app_data: OrderCreationAppData::Hash {
+                    hash: quote.app_data,
+                },
+                ..Default::default()
+            }
+            .sign(
+                EcdsaSigningScheme::Eip712,
+                &onchain.contracts().domain_separator,
+                SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+            );
             services.create_order(&order).await.unwrap()
         }
     };

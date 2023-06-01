@@ -421,7 +421,7 @@ mod tests {
                             uid: new_order_uid,
                             ..Default::default()
                         },
-                        data: creation.data,
+                        data: creation.data(),
                         signature: creation.signature,
                         ..Default::default()
                     },
@@ -462,10 +462,7 @@ mod tests {
                     OrderCreation {
                         from: Some(H160([2; 20])),
                         signature: Signature::Eip712(Default::default()),
-                        data: OrderData {
-                            app_data: AppDataHash(cancellation.hash_struct()),
-                            ..Default::default()
-                        },
+                        app_data: AppDataHash(cancellation.hash_struct()).into(),
                         ..Default::default()
                     },
                 )
@@ -481,10 +478,7 @@ mod tests {
                     OrderCreation {
                         from: Some(old_order.metadata.owner),
                         signature: Signature::PreSign,
-                        data: OrderData {
-                            app_data: AppDataHash(cancellation.hash_struct()),
-                            ..Default::default()
-                        },
+                        app_data: AppDataHash(cancellation.hash_struct()).into(),
                         ..Default::default()
                     },
                 )
@@ -500,10 +494,7 @@ mod tests {
                     OrderCreation {
                         from: Some(old_order.metadata.owner),
                         signature: Signature::Eip712(Default::default()),
-                        data: OrderData {
-                            app_data: AppDataHash(cancellation.hash_struct()),
-                            ..Default::default()
-                        },
+                        app_data: AppDataHash(cancellation.hash_struct()).into(),
                         ..Default::default()
                     },
                 )

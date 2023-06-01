@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        order::{OrderBuilder, OrderClass, OrderKind},
+        order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -95,20 +95,20 @@ async fn single_limit_order_test(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    let order = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(10))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(5))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(
@@ -198,39 +198,39 @@ async fn two_limit_orders_test(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    let order_a = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(10))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(5))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_a = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     let order_id = services.create_order(&order_a).await.unwrap();
 
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
-    let order_b = OrderBuilder::default()
-        .with_sell_token(token_b.address())
-        .with_sell_amount(to_wei(5))
-        .with_buy_token(token_a.address())
-        .with_buy_amount(to_wei(2))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::EthSign,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_b = OrderCreation {
+        sell_token: token_b.address(),
+        sell_amount: to_wei(5),
+        buy_token: token_a.address(),
+        buy_amount: to_wei(2),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::EthSign,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
     let order_id = services.create_order(&order_b).await.unwrap();
 
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -326,40 +326,40 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    let order_a = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(10))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(5))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_a = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(10),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(5),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     let order_id = services.create_order(&order_a).await.unwrap();
 
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert!(limit_order.metadata.class.is_limit());
 
-    let order_b = OrderBuilder::default()
-        .with_sell_token(token_b.address())
-        .with_sell_amount(to_wei(5))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(token_a.address())
-        .with_buy_amount(to_wei(2))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::EthSign,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_b = OrderCreation {
+        sell_token: token_b.address(),
+        sell_amount: to_wei(5),
+        fee_amount: to_wei(1),
+        buy_token: token_a.address(),
+        buy_amount: to_wei(2),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::EthSign,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
     let order_id = services.create_order(&order_b).await.unwrap();
 
     let limit_order = services.get_order(&order_id).await.unwrap();
@@ -410,38 +410,38 @@ async fn too_many_limit_orders_test(web3: Web3) {
         .start_api(vec!["--max-limit-orders-per-user=1".into()])
         .await;
 
-    let order = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(1))
-        .with_buy_token(onchain.contracts().weth.address())
-        .with_buy_amount(to_wei(1))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
     services.create_order(&order).await.unwrap();
 
     // Attempt to place another order, but the orderbook is configured to allow only
     // one limit order per user.
-    let order = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(1))
-        .with_buy_token(onchain.contracts().weth.address())
-        .with_buy_amount(to_wei(2))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(2),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
     let (status, body) = services.create_order(&order).await.unwrap_err();
     assert_eq!(status, 400);
     assert!(body.contains("TooManyLimitOrders"));

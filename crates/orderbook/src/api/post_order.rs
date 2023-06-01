@@ -2,7 +2,7 @@ use {
     crate::orderbook::{AddOrderError, Orderbook},
     anyhow::Result,
     model::{
-        order::{OrderCreation, OrderUid},
+        order::{OrderCreation, OrderCreationAppData, OrderUid},
         quote::QuoteId,
         signature,
     },
@@ -229,6 +229,12 @@ pub fn post_order(
     create_order_request().and_then(move |order: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
+            if !matches!(order.app_data, OrderCreationAppData::Hash { .. }) {
+                return Ok(with_status(
+                    error("BadAppData", "New app data scheme isn't enabled."),
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
             let result = orderbook.add_order(order.clone()).await;
             match &result {
                 Ok((order_uid, quote_id)) => {

@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        order::{OrderBuilder, OrderKind, SellTokenSource},
+        order::{OrderCreation, OrderKind, SellTokenSource},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -46,22 +46,22 @@ async fn vault_balances(web3: Web3) {
     services.start_api(vec![]).await;
 
     // Place Orders
-    let order = OrderBuilder::default()
-        .with_kind(OrderKind::Sell)
-        .with_sell_token(token.address())
-        .with_sell_amount(to_wei(9))
-        .with_sell_token_balance(SellTokenSource::External)
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(onchain.contracts().weth.address())
-        .with_buy_amount(to_wei(8))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        kind: OrderKind::Sell,
+        sell_token: token.address(),
+        sell_amount: to_wei(9),
+        sell_token_balance: SellTokenSource::External,
+        fee_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(8),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
     services.create_order(&order).await.unwrap();
     let balance_before = onchain
         .contracts()

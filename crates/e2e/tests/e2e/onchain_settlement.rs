@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::U256,
     model::{
-        order::{OrderBuilder, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -81,38 +81,38 @@ async fn onchain_settlement(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    let order_a = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(100))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(80))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_a = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(100),
+        fee_amount: to_wei(1),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(80),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     services.create_order(&order_a).await.unwrap();
 
-    let order_b = OrderBuilder::default()
-        .with_sell_token(token_b.address())
-        .with_sell_amount(to_wei(50))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(token_a.address())
-        .with_buy_amount(to_wei(40))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::EthSign,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_b = OrderCreation {
+        sell_token: token_b.address(),
+        sell_amount: to_wei(50),
+        fee_amount: to_wei(1),
+        buy_token: token_a.address(),
+        buy_amount: to_wei(40),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::EthSign,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
     services.create_order(&order_b).await.unwrap();
 
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
@@ -128,9 +128,9 @@ async fn onchain_settlement(web3: Web3) {
 
     // Check matching
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
-    assert!(balance >= order_a.data.buy_amount);
+    assert!(balance >= order_a.buy_amount);
     let balance = token_a.balance_of(trader_b.address()).call().await.unwrap();
-    assert!(balance >= order_b.data.buy_amount);
+    assert!(balance >= order_b.buy_amount);
 
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };

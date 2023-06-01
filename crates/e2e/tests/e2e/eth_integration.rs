@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::prelude::{Address, U256},
     model::{
-        order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
+        order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -69,37 +69,37 @@ async fn eth_integration(web3: Web3) {
 
     // Place Orders
     assert_ne!(onchain.contracts().weth.address(), BUY_ETH_ADDRESS);
-    let order_buy_eth_a = OrderBuilder::default()
-        .with_kind(OrderKind::Buy)
-        .with_sell_token(token.address())
-        .with_sell_amount(to_wei(50))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(BUY_ETH_ADDRESS)
-        .with_buy_amount(to_wei(49))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_buy_eth_a = OrderCreation {
+        kind: OrderKind::Buy,
+        sell_token: token.address(),
+        sell_amount: to_wei(50),
+        fee_amount: to_wei(1),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: to_wei(49),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     services.create_order(&order_buy_eth_a).await.unwrap();
-    let order_buy_eth_b = OrderBuilder::default()
-        .with_kind(OrderKind::Sell)
-        .with_sell_token(token.address())
-        .with_sell_amount(to_wei(50))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(BUY_ETH_ADDRESS)
-        .with_buy_amount(to_wei(49))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_buy_eth_b = OrderCreation {
+        kind: OrderKind::Sell,
+        sell_token: token.address(),
+        sell_amount: to_wei(50),
+        fee_amount: to_wei(1),
+        buy_token: BUY_ETH_ADDRESS,
+        buy_amount: to_wei(49),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
+    );
     services.create_order(&order_buy_eth_b).await.unwrap();
 
     tracing::info!("Waiting for trade.");
