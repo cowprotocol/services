@@ -271,27 +271,34 @@ impl<'a> Submitter<'a> {
             },
             _ = deadline_future => {
                 tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
-                if use_soft_cancellations {
-                    // If the submission node supports soft cancellations it does not propagate
-                    // failing tx and stops propagating old tx when another tx with the same
-                    // `sender` and `nonce` gets submitted.
-                    // That means we don't have to submit a cancellation tx at all.
-                    // In case the same solver also wins the next auction we have to clear the
-                    // `transactions` vector. Otherwise the submission logic will remember the gas
-                    // price we last submitted a tx with and will only submit another tx when the
-                    // gas price increase by at least [`GAS_PRICE_BUMP`] as this is the default tx
-                    // replacement condition in the public mempool. But because a soft cancellation
-                    // node has special replacement logic it's safe to pretend no other tx exists
-                    // in its mempool.
-                    transactions.clear();
-                    tracing::debug!("skip cancellation tx due to soft cancellations");
-                } else if let Some((_, gas_price)) = transactions.last() {
+                if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
                         .cancel_transaction(&gas_price, self.nonce)
                         .await
                     {
-                        Ok(handle) => transactions.push((handle, gas_price)),
+                        Ok(handle) => {
+                            if !use_soft_cancellations {
+                                transactions.push((handle, gas_price));
+                            } else {
+                                // If the submission node supports soft cancellations it will
+                                // simply discard all transactions with the same `sender` and
+                                // `nonce` from the internal mempool when it sees the
+                                // cancellation tx. That means the tx does not have to get mined to
+                                // have an effect.
+                                // Usually a node will only accept a replacement tx when the
+                                // associated gas fee is at least 12.5% higher than on the pending
+                                // tx.
+                                // The remaining submission logic assumes the regular replacement
+                                // conditions so it would wait for the gas price to increase before
+                                // submitting another tx from the same `sender` if there is still a
+                                // tx pending. This would block the whole driver.
+                                // Because this is unnecessary with soft cancellations we can
+                                // simply "forget" the submitted tx by clearing `transactions`.
+                                tracing::debug!("clear list of pending tx hashes due to soft cancellation");
+                                transactions.clear();
+                            }
+                        }
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
