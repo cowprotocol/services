@@ -68,34 +68,6 @@ pub enum OrderStatus {
 }
 
 impl Order {
-    pub fn from_order_creation(
-        order: &OrderCreation,
-        domain: &DomainSeparator,
-        settlement_contract: H160,
-        full_fee_amount: U256,
-        class: OrderClass,
-    ) -> Result<Self, VerificationError> {
-        let owner = order.verify_owner(domain)?;
-        Ok(Self {
-            metadata: OrderMetadata {
-                owner,
-                creation_date: chrono::offset::Utc::now(),
-                uid: order.data.uid(domain, &owner),
-                settlement_contract,
-                full_fee_amount,
-                class,
-                ..Default::default()
-            },
-            signature: order.signature.clone(),
-            data: order.data,
-            interactions: Interactions::default(),
-        })
-    }
-
-    pub fn into_order_creation(self) -> OrderCreation {
-        self.into()
-    }
-
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
@@ -347,19 +319,67 @@ impl OrderData {
     }
 }
 
-// An order as provided to the orderbook by the frontend.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// An order as provided to the POST order endpoint.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
-    #[serde(flatten)]
-    pub data: OrderData,
+    // These fields are the same as in `OrderData`.
+    pub sell_token: H160,
+    pub buy_token: H160,
+    #[serde(default)]
+    pub receiver: Option<H160>,
+    #[serde(with = "u256_decimal")]
+    pub sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    pub buy_amount: U256,
+    pub valid_to: u32,
+    #[serde(with = "u256_decimal")]
+    pub fee_amount: U256,
+    pub kind: OrderKind,
+    pub partially_fillable: bool,
+    #[serde(default)]
+    pub sell_token_balance: SellTokenSource,
+    #[serde(default)]
+    pub buy_token_balance: BuyTokenDestination,
+
     pub from: Option<H160>,
     #[serde(flatten)]
     pub signature: Signature,
     pub quote_id: Option<QuoteId>,
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
 }
 
 impl OrderCreation {
+    pub fn data(&self) -> OrderData {
+        OrderData {
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            receiver: self.receiver,
+            sell_amount: self.sell_amount,
+            buy_amount: self.buy_amount,
+            valid_to: self.valid_to,
+            app_data: self.app_data.hash(),
+            fee_amount: self.fee_amount,
+            kind: self.kind,
+            partially_fillable: self.partially_fillable,
+            sell_token_balance: self.sell_token_balance,
+            buy_token_balance: self.buy_token_balance,
+        }
+    }
+
+    pub fn sign(
+        mut self,
+        signing_scheme: EcdsaSigningScheme,
+        domain: &DomainSeparator,
+        key: SecretKeyRef,
+    ) -> Self {
+        self.signature =
+            EcdsaSignature::sign(signing_scheme, domain, &self.data().hash_struct(), key)
+                .to_signature(signing_scheme);
+        self
+    }
+
     /// Recovers the owner address for the specified domain, and then verifies
     /// it matches the expected address.
     ///
@@ -369,7 +389,7 @@ impl OrderCreation {
     pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
         let recovered = self
             .signature
-            .recover(domain, &self.data.hash_struct())
+            .recover(domain, &self.data().hash_struct())
             .map_err(VerificationError::UnableToRecoverSigner)?;
 
         let verified_owner = match (self.from, recovered) {
@@ -388,28 +408,51 @@ impl OrderCreation {
     }
 }
 
-impl Default for OrderCreation {
-    // Custom implementation to make sure the default order creation is valid.
+// Note that the order of the variants is important for deserialization.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum OrderCreationAppData {
+    /// Hash is inferred from full app data and validated against expectation.
+    Both {
+        #[serde(rename = "appData")]
+        full: String,
+        #[serde(rename = "appDataHash")]
+        expected: AppDataHash,
+    },
+    /// Backward compatible app data hash.
+    Hash {
+        #[serde(rename = "appData")]
+        hash: AppDataHash,
+    },
+    /// Hash is inferred from full app data.
+    Full {
+        #[serde(rename = "appData")]
+        full: String,
+    },
+}
+
+impl Default for OrderCreationAppData {
     fn default() -> Self {
-        Self {
-            data: OrderData {
-                valid_to: u32::MAX,
-                ..Default::default()
-            },
-            from: None,
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            quote_id: None,
+        Self::Hash {
+            hash: Default::default(),
         }
     }
 }
 
-impl From<Order> for OrderCreation {
-    fn from(order: Order) -> Self {
-        OrderCreation {
-            data: order.data,
-            from: Some(order.metadata.owner),
-            signature: order.signature,
-            quote_id: None,
+impl From<AppDataHash> for OrderCreationAppData {
+    fn from(hash: AppDataHash) -> Self {
+        Self::Hash { hash }
+    }
+}
+
+impl OrderCreationAppData {
+    /// Returns the app data hash. Does not validate expectation.
+    pub fn hash(&self) -> AppDataHash {
+        match self {
+            Self::Hash { hash } => *hash,
+            Self::Full { full } | Self::Both { full, .. } => {
+                AppDataHash(app_data_hash::hash_full_app_data(full.as_bytes()))
+            }
         }
     }
 }
@@ -1054,20 +1097,20 @@ mod tests {
             (Signature::PreSign, "presign", Some(owner), "0x"),
         ] {
             let order = OrderCreation {
-                data: OrderData {
-                    sell_token: H160([0x11; 20]),
-                    buy_token: H160([0x22; 20]),
-                    receiver: Some(H160([0x33; 20])),
-                    sell_amount: 123.into(),
-                    buy_amount: 456.into(),
-                    valid_to: 1337,
-                    app_data: AppDataHash([0x44; 32]),
-                    fee_amount: 789.into(),
-                    kind: OrderKind::Sell,
-                    partially_fillable: false,
-                    sell_token_balance: SellTokenSource::Erc20,
-                    buy_token_balance: BuyTokenDestination::Erc20,
+                sell_token: H160([0x11; 20]),
+                buy_token: H160([0x22; 20]),
+                receiver: Some(H160([0x33; 20])),
+                sell_amount: 123.into(),
+                buy_amount: 456.into(),
+                valid_to: 1337,
+                app_data: OrderCreationAppData::Hash {
+                    hash: AppDataHash([0x44; 32]),
                 },
+                fee_amount: 789.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                sell_token_balance: SellTokenSource::Erc20,
+                buy_token_balance: BuyTokenDestination::Erc20,
                 from,
                 signature,
                 quote_id: Some(42),
@@ -1094,6 +1137,50 @@ mod tests {
             assert_eq!(json!(order), order_json);
             assert_eq!(order, serde_json::from_value(order_json).unwrap());
         }
+    }
+
+    #[test]
+    fn order_creation_app_data() {
+        #[derive(Debug, Deserialize, Serialize, Eq, PartialEq)]
+        struct S {
+            #[serde(flatten)]
+            app_data: OrderCreationAppData,
+        }
+        let hash = AppDataHash([1u8; 32]);
+        let hash_hex = "0x0101010101010101010101010101010101010101010101010101010101010101";
+
+        let s = S {
+            app_data: OrderCreationAppData::Hash { hash },
+        };
+        let json = json!({
+            "appData": hash_hex,
+        });
+        assert_eq!(json!(s), json);
+        assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
+
+        let s = S {
+            app_data: OrderCreationAppData::Full {
+                full: "a".to_string(),
+            },
+        };
+        let json = json!({
+                "appData": "a",
+        });
+        assert_eq!(json!(s), json);
+        assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
+
+        let s = S {
+            app_data: OrderCreationAppData::Both {
+                full: "a".to_string(),
+                expected: hash,
+            },
+        };
+        let json = json!({
+                "appData": "a",
+                "appDataHash": hash_hex,
+        });
+        assert_eq!(json!(s), json);
+        assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
     }
 
     // from the test `should recover signing address for all supported ECDSA-based

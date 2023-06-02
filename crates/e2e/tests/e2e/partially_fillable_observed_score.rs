@@ -3,7 +3,7 @@ use {
     ethcontract::{prelude::U256, H160},
     futures::StreamExt,
     model::{
-        order::{OrderBuilder, OrderClass, OrderKind},
+        order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -81,21 +81,21 @@ async fn test(web3: Web3) {
         ])
         .await;
 
-    let order_a = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(100))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(50))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .with_partially_fillable(true)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order_a = OrderCreation {
+        sell_token: token_a.address(),
+        sell_amount: to_wei(100),
+        buy_token: token_b.address(),
+        buy_amount: to_wei(50),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: true,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
     let uid = services.create_order(&order_a).await.unwrap();
 
     tracing::info!("Waiting for order to show up in auction.");

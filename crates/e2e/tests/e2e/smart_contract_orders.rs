@@ -3,8 +3,9 @@ use {
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        order::{OrderBuilder, OrderKind, OrderStatus, OrderUid},
-        signature::hashed_eip712_message,
+        app_id::AppDataHash,
+        order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
+        signature::{hashed_eip712_message, Signature},
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -65,45 +66,48 @@ async fn smart_contract_orders(web3: Web3) {
     services.start_api(vec![]).await;
 
     // Place Orders
-    let order_template = || {
-        OrderBuilder::default()
-            .with_kind(OrderKind::Sell)
-            .with_sell_token(token.address())
-            .with_sell_amount(to_wei(4))
-            .with_fee_amount(to_wei(1))
-            .with_buy_token(onchain.contracts().weth.address())
-            .with_buy_amount(to_wei(3))
-            .with_valid_to(model::time::now_in_epoch_seconds() + 300)
+    let order_template = OrderCreation {
+        kind: OrderKind::Sell,
+        sell_token: token.address(),
+        sell_amount: to_wei(4),
+        fee_amount: to_wei(1),
+        buy_token: onchain.contracts().weth.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        ..Default::default()
     };
-    let mut orders = [
-        order_template()
-            .with_eip1271(
-                safe.address(),
+    let orders = [
+        OrderCreation {
+            from: Some(safe.address()),
+            signature: Signature::Eip1271(
                 gnosis_safe_eip1271_signature(
                     SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
                     &safe,
                     H256(hashed_eip712_message(
                         &onchain.contracts().domain_separator,
-                        &order_template().build().data.hash_struct(),
+                        &order_template.data().hash_struct(),
                     )),
                 )
                 .await,
-            )
-            .build(),
-        order_template()
-            .with_app_data([1; 32])
-            .with_presign(safe.address())
-            .build(),
+            ),
+            ..order_template.clone()
+        },
+        OrderCreation {
+            app_data: OrderCreationAppData::Hash {
+                hash: AppDataHash([1; 32]),
+            },
+            from: Some(safe.address()),
+            signature: Signature::PreSign,
+            ..order_template.clone()
+        },
     ];
 
-    for order in &mut orders {
-        let uid = services
-            .create_order(&order.clone().into_order_creation())
-            .await
-            .unwrap();
-        order.metadata.uid = uid;
+    let mut uids = Vec::new();
+    for order in &orders {
+        let uid = services.create_order(order).await.unwrap();
+        uids.push(uid);
     }
-    let orders = orders; // prevent further changes to `orders`.
+    let uids = uids;
 
     let order_status = |order_uid: OrderUid| {
         let services = &services;
@@ -118,14 +122,11 @@ async fn smart_contract_orders(web3: Web3) {
     };
 
     // Check that the EIP-1271 order was received.
-    assert_eq!(
-        order_status(orders[0].metadata.uid).await,
-        OrderStatus::Open
-    );
+    assert_eq!(order_status(uids[0]).await, OrderStatus::Open);
 
     // Execute pre-sign transaction.
     assert_eq!(
-        order_status(orders[1].metadata.uid).await,
+        order_status(uids[1]).await,
         OrderStatus::PresignaturePending
     );
     tx_safe!(
@@ -134,7 +135,7 @@ async fn smart_contract_orders(web3: Web3) {
         onchain
             .contracts()
             .gp_settlement
-            .set_pre_signature(Bytes(orders[1].metadata.uid.0.to_vec()), true)
+            .set_pre_signature(Bytes(uids[1].0.to_vec()), true)
     );
 
     // Check that the presignature event was received.
@@ -143,10 +144,7 @@ async fn smart_contract_orders(web3: Web3) {
     })
     .await
     .unwrap();
-    assert_eq!(
-        order_status(orders[1].metadata.uid).await,
-        OrderStatus::Open
-    );
+    assert_eq!(order_status(uids[1]).await, OrderStatus::Open);
 
     // Drive solution
     tracing::info!("Waiting for trade.");

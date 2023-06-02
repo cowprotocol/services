@@ -2,7 +2,7 @@ use {
     crate::setup::*,
     ethcontract::U256,
     model::{
-        order::{OrderBuilder, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -58,21 +58,21 @@ async fn test(web3: Web3) {
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
-    let order = OrderBuilder::default()
-        .with_sell_token(onchain.contracts().weth.address())
-        .with_sell_amount(to_wei(4))
-        .with_buy_token(token.address())
-        .with_buy_amount(to_wei(3))
-        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_partially_fillable(true)
-        .with_kind(OrderKind::Sell)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        )
-        .build()
-        .into_order_creation();
+    let order = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(4),
+        buy_token: token.address(),
+        buy_amount: to_wei(3),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        partially_fillable: true,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
     services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");

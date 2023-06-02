@@ -27,6 +27,7 @@ use {
             OrderCreation,
             OrderData,
             OrderKind,
+            OrderMetadata,
             SellTokenSource,
             VerificationError,
             BUY_ETH_ADDRESS,
@@ -425,6 +426,8 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
+        let data = order.data();
+        let uid = data.uid(domain_separator, &owner);
 
         let additional_gas = if let Signature::Eip1271(signature) = &order.signature {
             if self
@@ -435,7 +438,7 @@ impl OrderValidating for OrderValidator {
                 // We don't care! Because we are skipping validation anyway
                 0u64
             } else {
-                let hash = hashed_eip712_message(domain_separator, &order.data.hash_struct());
+                let hash = hashed_eip712_message(domain_separator, &data.hash_struct());
                 self.signature_validator
                     .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
@@ -455,13 +458,13 @@ impl OrderValidating for OrderValidator {
             0u64
         };
 
-        if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
+        if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
 
         let pre_order = PreOrderData::from_order_creation(
             owner,
-            &order.data,
+            &data,
             signing_scheme,
             self.liquidity_order_owners.contains(&owner),
         );
@@ -471,12 +474,12 @@ impl OrderValidating for OrderValidator {
             .map_err(ValidationError::Partial)?;
 
         let quote_parameters = QuoteSearchParameters {
-            sell_token: order.data.sell_token,
-            buy_token: order.data.buy_token,
-            sell_amount: order.data.sell_amount,
-            buy_amount: order.data.buy_amount,
-            fee_amount: order.data.fee_amount,
-            kind: order.data.kind,
+            sell_token: data.sell_token,
+            buy_token: data.buy_token,
+            sell_amount: data.sell_amount,
+            buy_amount: data.buy_amount,
+            fee_amount: data.fee_amount,
+            kind: data.kind,
             from: owner,
         };
         let quote = if class == OrderClass::Market {
@@ -484,7 +487,7 @@ impl OrderValidating for OrderValidator {
                 &*self.quoter,
                 &quote_parameters,
                 order.quote_id,
-                order.data.fee_amount,
+                data.fee_amount,
                 convert_signing_scheme_into_quote_signing_scheme(
                     order.signature.scheme(),
                     true,
@@ -508,21 +511,15 @@ impl OrderValidating for OrderValidator {
             .map(|quote| quote.full_fee_amount)
             // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
             // subsidies). This only makes a difference for liquidity orders.
-            .unwrap_or(order.data.fee_amount);
+            .unwrap_or(data.fee_amount);
 
-        let min_balance =
-            minimum_balance(&order.data).ok_or(ValidationError::SellAmountOverflow)?;
+        let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
 
         // Fast path to check if transfer is possible with a single node query.
         // If not, run extra queries for additional information.
         match self
             .balance_fetcher
-            .can_transfer(
-                order.data.sell_token,
-                owner,
-                min_balance,
-                order.data.sell_token_balance,
-            )
+            .can_transfer(data.sell_token, owner, min_balance, data.sell_token_balance)
             .await
         {
             Ok(_) => (),
@@ -567,9 +564,7 @@ impl OrderValidating for OrderValidator {
                     quote,
                 ) =>
             {
-                let order_uid = order.data.uid(domain_separator, &owner);
-                tracing::debug!(%order_uid, ?owner, ?class, "order being flagged as outside market price");
-
+                tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                 OrderClass::Liquidity
             }
             _ => class,
@@ -577,13 +572,20 @@ impl OrderValidating for OrderValidator {
 
         self.check_max_limit_orders(owner, &class).await?;
 
-        let order = Order::from_order_creation(
-            &order,
-            domain_separator,
-            settlement_contract,
-            full_fee_amount,
-            class,
-        )?;
+        let order = Order {
+            metadata: OrderMetadata {
+                owner,
+                creation_date: chrono::offset::Utc::now(),
+                uid,
+                settlement_contract,
+                full_fee_amount,
+                class,
+                ..Default::default()
+            },
+            signature: order.signature.clone(),
+            data,
+            interactions: Default::default(),
+        };
 
         Ok((order, quote))
     }
@@ -824,9 +826,8 @@ mod tests {
         maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
-            order::OrderBuilder,
             quote::default_verification_gas_limit,
-            signature::EcdsaSigningScheme,
+            signature::{EcdsaSignature, EcdsaSigningScheme},
         },
         secp256k1::ONE_KEY,
     };
@@ -1161,15 +1162,13 @@ mod tests {
         );
 
         let creation = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         validator
@@ -1183,7 +1182,7 @@ mod tests {
             signature: Signature::Eip1271(vec![1, 2, 3]),
             ..creation
         };
-        let order_hash = hashed_eip712_message(&domain_separator, &creation.data.hash_struct());
+        let order_hash = hashed_eip712_message(&domain_separator, &creation.data().hash_struct());
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
@@ -1230,10 +1229,7 @@ mod tests {
             .is_ok());
 
         let creation_ = OrderCreation {
-            data: OrderData {
-                fee_amount: U256::zero(),
-                ..creation.data
-            },
+            fee_amount: U256::zero(),
             ..creation.clone()
         };
         let validator = validator.with_fill_or_kill_limit_orders(true);
@@ -1245,11 +1241,8 @@ mod tests {
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
-            data: OrderData {
-                fee_amount: U256::zero(),
-                partially_fillable: true,
-                ..creation.data
-            },
+            fee_amount: U256::zero(),
+            partially_fillable: true,
             ..creation
         };
         let validator = validator.with_partially_fillable_limit_orders(true);
@@ -1306,14 +1299,12 @@ mod tests {
         .with_fill_or_kill_limit_orders(true);
 
         let creation = OrderCreation {
-            data: OrderData {
-                valid_to: model::time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: model::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let res = validator
@@ -1356,15 +1347,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(0),
-                sell_amount: U256::from(0),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(0),
+            sell_amount: U256::from(0),
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1407,15 +1396,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::zero(),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::zero(),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1470,16 +1457,14 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: expected_buy_amount + 1, // buy more than expected
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: expected_buy_amount + 1, // buy more than expected
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
+            kind: OrderKind::Sell,
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let (order, quote) = validator
@@ -1524,16 +1509,14 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
             from: Some(Default::default()),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1573,15 +1556,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1624,15 +1605,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1679,15 +1658,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::MAX,
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::MAX,
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1728,15 +1705,13 @@ mod tests {
             Arc::new(MockCodeFetching::new()),
         );
         let order = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator
@@ -1782,15 +1757,12 @@ mod tests {
         );
 
         let creation = OrderCreation {
-            data: OrderData {
-                valid_to: time::now_in_epoch_seconds() + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                buy_amount: U256::from(1),
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+            valid_to: time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             ..Default::default()
@@ -1803,7 +1775,7 @@ mod tests {
                 .await
                 .unwrap_err(),
             ValidationError::InvalidEip1271Signature(hash)
-                if hash.0 == signature::hashed_eip712_message(&domain, &creation.data.hash_struct()),
+                if hash.0 == signature::hashed_eip712_message(&domain, &creation.data().hash_struct()),
         ));
     }
 
@@ -1842,26 +1814,24 @@ mod tests {
                 Arc::new(MockCodeFetching::new()),
             );
 
-            let order = OrderBuilder::default()
-                .with_valid_to(u32::MAX)
-                .with_sell_token(H160::from_low_u64_be(1))
-                .with_sell_amount(1.into())
-                .with_buy_token(H160::from_low_u64_be(2))
-                .with_buy_amount(1.into())
-                .with_fee_amount(1.into());
+            let order = OrderCreation {
+                valid_to: u32::MAX,
+                sell_token: H160::from_low_u64_be(1),
+                sell_amount: 1.into(),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: 1.into(),
+                fee_amount: 1.into(),
+                ..Default::default()
+            };
 
             for signing_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
                 let err = validator
                     .validate_and_construct_order(
-                        order
-                            .clone()
-                            .sign_with(
-                                signing_scheme,
-                                &Default::default(),
-                                SecretKeyRef::new(&ONE_KEY),
-                            )
-                            .build()
-                            .into(),
+                        order.clone().sign(
+                            signing_scheme,
+                            &Default::default(),
+                            SecretKeyRef::new(&ONE_KEY),
+                        ),
                         &Default::default(),
                         Default::default(),
                     )
@@ -1871,12 +1841,13 @@ mod tests {
                 assert!(is_expected_error(err));
             }
 
+            let order = OrderCreation {
+                signature: Signature::PreSign,
+                from: Some(Default::default()),
+                ..order
+            };
             validator
-                .validate_and_construct_order(
-                    order.with_presign(Default::default()).build().into(),
-                    &Default::default(),
-                    Default::default(),
-                )
+                .validate_and_construct_order(order, &Default::default(), Default::default())
                 .now_or_never()
                 .unwrap()
                 .unwrap();
