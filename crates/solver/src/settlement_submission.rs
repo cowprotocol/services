@@ -151,6 +151,7 @@ pub struct StrategyArgs {
     pub max_additional_tip: f64,
     pub additional_tip_percentage_of_max_fee: f64,
     pub sub_tx_pool: SubTxPoolRef,
+    pub use_soft_cancellations: bool,
 }
 
 pub enum TransactionStrategy {
@@ -340,6 +341,7 @@ impl SolutionSubmitter {
             retry_interval: self.retry_interval,
             network_id,
             additional_call_data: Default::default(),
+            use_soft_cancellations: strategy_args.use_soft_cancellations,
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
@@ -503,6 +505,7 @@ mod tests {
                 max_additional_tip: Default::default(),
                 additional_tip_percentage_of_max_fee: Default::default(),
                 sub_tx_pool: Default::default(),
+                use_soft_cancellations: false,
             }
         }
     }

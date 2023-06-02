@@ -45,6 +45,7 @@ pub enum Kind {
     Flashbots {
         url: reqwest::Url,
         max_additional_tip: f64,
+        use_soft_cancellations: bool,
     },
 }
 
@@ -128,8 +129,16 @@ impl Mempool {
                 } => max_additional_tip,
             },
         };
+        let use_soft_cancellations = match self.config.kind {
+            Kind::Public(_) => false,
+            Kind::Flashbots {
+                use_soft_cancellations,
+                ..
+            } => use_soft_cancellations,
+        };
         let estimator = AccessListEstimator(settlement.access_list.clone());
         let account = ethcontract::Account::Offline(solver.private_key(), None);
+        // TODO: reimplement tx submission logic (#1543)
         let submitter = Submitter::new(
             self.eth.contracts().settlement(),
             &account,
@@ -151,6 +160,7 @@ impl Mempool {
                     retry_interval: self.config.retry_interval,
                     network_id: self.eth.network_id().to_string(),
                     additional_call_data: settlement.id.to_be_bytes().into_iter().collect(),
+                    use_soft_cancellations,
                 },
             )
             .await?;
