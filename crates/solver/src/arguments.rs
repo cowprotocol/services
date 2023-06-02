@@ -434,6 +434,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
+        writeln!(f, "use_soft_cancellations: {}", self.use_soft_cancellations)?;
         writeln!(
             f,
             "max_additional_eden_tip: {}",
