@@ -1,4 +1,4 @@
-///! Helper functions for unit tests.
+//! Helper functions for unit tests.
 use ethcontract::Account;
 
 /// Create a dummy account.
