@@ -820,6 +820,7 @@ mod tests {
         anyhow::anyhow,
         chrono::Utc,
         ethcontract::web3::signing::SecretKeyRef,
+        futures::FutureExt,
         maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
@@ -1806,83 +1807,89 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn allows_insufficient_allowance_and_balance_for_presign_orders() {
-        macro_rules! assert_allows_failed_transfer {
-            ($err:ident) => {
-                let mut order_quoter = MockOrderQuoting::new();
-                let mut bad_token_detector = MockBadTokenDetecting::new();
-                let mut balance_fetcher = MockBalanceFetching::new();
-                order_quoter
-                    .expect_find_quote()
-                    .returning(|_, _, _| Ok(Default::default()));
-                bad_token_detector
-                    .expect_detect()
-                    .returning(|_| Ok(TokenQuality::Good));
-                balance_fetcher
-                    .expect_can_transfer()
-                    .returning(|_, _, _, _| Err(TransferSimulationError::$err));
-                let mut limit_order_counter = MockLimitOrderCounting::new();
-                limit_order_counter.expect_count().returning(|_| Ok(0u64));
-                let validator = OrderValidator::new(
-                    dummy_contract!(WETH9, [0xef; 20]),
-                    hashset!(),
-                    hashset!(),
-                    OrderValidPeriodConfiguration::any(),
-                    SignatureConfiguration::all(),
-                    Arc::new(bad_token_detector),
-                    Arc::new(order_quoter),
-                    Arc::new(balance_fetcher),
-                    Arc::new(MockSignatureValidating::new()),
-                    Arc::new(limit_order_counter),
-                    0,
-                    Arc::new(MockCodeFetching::new()),
-                );
+    #[test]
+    fn allows_insufficient_allowance_and_balance_for_presign_orders() {
+        fn assert_allows_failed_transfer(
+            create_error: impl Fn() -> TransferSimulationError + Send + 'static,
+            is_expected_error: impl Fn(ValidationError) -> bool,
+        ) {
+            let mut order_quoter = MockOrderQuoting::new();
+            let mut bad_token_detector = MockBadTokenDetecting::new();
+            let mut balance_fetcher = MockBalanceFetching::new();
+            order_quoter
+                .expect_find_quote()
+                .returning(|_, _, _| Ok(Default::default()));
+            bad_token_detector
+                .expect_detect()
+                .returning(|_| Ok(TokenQuality::Good));
+            balance_fetcher
+                .expect_can_transfer()
+                .returning(move |_, _, _, _| Err(create_error()));
+            let mut limit_order_counter = MockLimitOrderCounting::new();
+            limit_order_counter.expect_count().returning(|_| Ok(0u64));
+            let validator = OrderValidator::new(
+                dummy_contract!(WETH9, [0xef; 20]),
+                hashset!(),
+                hashset!(),
+                OrderValidPeriodConfiguration::any(),
+                SignatureConfiguration::all(),
+                Arc::new(bad_token_detector),
+                Arc::new(order_quoter),
+                Arc::new(balance_fetcher),
+                Arc::new(MockSignatureValidating::new()),
+                Arc::new(limit_order_counter),
+                0,
+                Arc::new(MockCodeFetching::new()),
+            );
 
-                let order = OrderBuilder::default()
-                    .with_valid_to(u32::MAX)
-                    .with_sell_token(H160::from_low_u64_be(1))
-                    .with_sell_amount(1.into())
-                    .with_buy_token(H160::from_low_u64_be(2))
-                    .with_buy_amount(1.into())
-                    .with_fee_amount(1.into());
+            let order = OrderBuilder::default()
+                .with_valid_to(u32::MAX)
+                .with_sell_token(H160::from_low_u64_be(1))
+                .with_sell_amount(1.into())
+                .with_buy_token(H160::from_low_u64_be(2))
+                .with_buy_amount(1.into())
+                .with_fee_amount(1.into());
 
-                for signing_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
-                    assert!(matches!(
-                        validator
-                            .validate_and_construct_order(
-                                order
-                                    .clone()
-                                    .sign_with(
-                                        signing_scheme,
-                                        &Default::default(),
-                                        SecretKeyRef::new(&ONE_KEY)
-                                    )
-                                    .build()
-                                    .into(),
+            for signing_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
+                let err = validator
+                    .validate_and_construct_order(
+                        order
+                            .clone()
+                            .sign_with(
+                                signing_scheme,
                                 &Default::default(),
-                                Default::default()
+                                SecretKeyRef::new(&ONE_KEY),
                             )
-                            .await,
-                        Err(ValidationError::$err)
-                    ));
-                }
+                            .build()
+                            .into(),
+                        &Default::default(),
+                        Default::default(),
+                    )
+                    .now_or_never()
+                    .unwrap()
+                    .unwrap_err();
+                assert!(is_expected_error(err));
+            }
 
-                assert!(matches!(
-                    validator
-                        .validate_and_construct_order(
-                            order.with_presign(Default::default()).build().into(),
-                            &Default::default(),
-                            Default::default()
-                        )
-                        .await,
-                    Ok(_)
-                ));
-            };
+            validator
+                .validate_and_construct_order(
+                    order.with_presign(Default::default()).build().into(),
+                    &Default::default(),
+                    Default::default(),
+                )
+                .now_or_never()
+                .unwrap()
+                .unwrap();
         }
 
-        assert_allows_failed_transfer!(InsufficientAllowance);
-        assert_allows_failed_transfer!(InsufficientBalance);
+        assert_allows_failed_transfer(
+            || TransferSimulationError::InsufficientAllowance,
+            |e| matches!(e, ValidationError::InsufficientAllowance),
+        );
+        assert_allows_failed_transfer(
+            || TransferSimulationError::InsufficientBalance,
+            |e| matches!(e, ValidationError::InsufficientBalance),
+        );
     }
 
     #[tokio::test]
