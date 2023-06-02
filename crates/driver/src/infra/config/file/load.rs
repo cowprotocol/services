@@ -88,9 +88,11 @@ pub async fn load(path: &Path) -> infra::Config {
                     file::Mempool::Flashbots {
                         url,
                         max_additional_tip,
+                        use_soft_cancellations,
                     } => mempool::Kind::Flashbots {
                         url: url.to_owned(),
                         max_additional_tip: *max_additional_tip,
+                        use_soft_cancellations: *use_soft_cancellations,
                     },
                 },
             })

@@ -68,6 +68,7 @@ pub struct SubmitterParams {
     /// Additional bytes to append to the call data. This is required by the
     /// `driver`.
     pub additional_call_data: Vec<u8>,
+    pub use_soft_cancellations: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -225,6 +226,7 @@ impl<'a> Submitter<'a> {
         params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
+        let use_soft_cancellations = params.use_soft_cancellations;
 
         tracing::debug!(address=?self.account.address(), ?self.nonce, "starting solution submission");
 
@@ -269,14 +271,34 @@ impl<'a> Submitter<'a> {
             },
             _ = deadline_future => {
                 tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
-
                 if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
                         .cancel_transaction(&gas_price, self.nonce)
                         .await
                     {
-                        Ok(handle) => transactions.push((handle, gas_price)),
+                        Ok(handle) => {
+                            if use_soft_cancellations {
+                                // If the submission node supports soft cancellations it will
+                                // simply discard all transactions with the same `sender` and
+                                // `nonce` from the internal mempool when it sees the
+                                // cancellation tx. That means the tx does not have to get mined to
+                                // have an effect.
+                                // Usually a node will only accept a replacement tx when the
+                                // associated gas fee is at least 12.5% higher than on the pending
+                                // tx.
+                                // The remaining submission logic assumes the regular replacement
+                                // conditions so it would wait for the gas price to increase before
+                                // submitting another tx from the same `sender` if there is still a
+                                // tx pending. This would block the whole driver.
+                                // Because this is unnecessary with soft cancellations we can
+                                // simply "forget" the submitted tx by clearing `transactions`.
+                                tracing::debug!("clear list of pending tx hashes due to soft cancellation");
+                                transactions.clear();
+                            } else {
+                                transactions.push((handle, gas_price));
+                            }
+                        }
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
@@ -805,6 +827,7 @@ mod tests {
             retry_interval: Duration::from_secs(5),
             network_id: "1".to_string(),
             additional_call_data: Default::default(),
+            use_soft_cancellations: false,
         };
         let result = submitter.submit(settlement, params).await;
         tracing::debug!("finished with result {:?}", result);

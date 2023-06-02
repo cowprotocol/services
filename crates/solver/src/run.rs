@@ -452,6 +452,7 @@ pub async fn run(args: Arguments) {
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Eden),
+                    use_soft_cancellations: false,
                 }))
             }
             TransactionStrategyArg::Flashbots => {
@@ -463,6 +464,7 @@ pub async fn run(args: Arguments) {
                         max_additional_tip: args.max_additional_flashbot_tip,
                         additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
                         sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
+                        use_soft_cancellations: args.use_soft_cancellations,
                     }))
                 }
             }
@@ -480,6 +482,7 @@ pub async fn run(args: Arguments) {
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
+                    use_soft_cancellations: false,
                 }))
             }
             TransactionStrategyArg::Gelato => {
