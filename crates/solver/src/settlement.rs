@@ -1,16 +1,14 @@
 mod settlement_encoder;
 
 use {
-    crate::{
-        encoding::{self, EncodedSettlement, EncodedTrade},
-        liquidity::Settleable,
-    },
+    crate::liquidity::Settleable,
     anyhow::{ensure, Result},
     model::order::{Order, OrderKind},
     num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero},
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext as _,
+        encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
         http_solver::model::{InternalizationStrategy, SubmissionPreference},
     },
     std::{
@@ -225,7 +223,7 @@ impl Trade {
     /// Encodes the settlement's order_trade as a tuple, as expected by the
     /// smart contract.
     pub fn encode(&self, sell_token_index: usize, buy_token_index: usize) -> EncodedTrade {
-        encoding::encode_trade(
+        encode_trade(
             &self.order.data,
             &self.order.signature,
             self.order.metadata.owner,

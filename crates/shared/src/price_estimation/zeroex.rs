@@ -10,7 +10,6 @@ use {
         trade_finding::zeroex::ZeroExTradeFinder,
         zeroex_api::ZeroExApi,
     },
-    ethcontract::H160,
     std::sync::Arc,
 };
 
@@ -21,11 +20,9 @@ impl ZeroExPriceEstimator {
         api: Arc<dyn ZeroExApi>,
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
-        settlement: H160,
         buy_only: bool,
     ) -> Self {
         Self(TradeEstimator::new(
-            settlement,
             Arc::new(ZeroExTradeFinder::new(api, excluded_sources, buy_only)),
             rate_limiter,
         ))
@@ -66,7 +63,6 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
-            testlib::protocol::SETTLEMENT,
             buy_only,
         )
     }

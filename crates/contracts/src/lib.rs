@@ -69,6 +69,7 @@ pub mod support {
         Multicall;
         PhonyERC20;
         Trader;
+        Solver;
     }
 }
 

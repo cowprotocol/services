@@ -1,5 +1,4 @@
 use {
-    crate::encoding::EncodedSettlement,
     anyhow::{anyhow, Context, Error, Result},
     contracts::GPv2Settlement,
     ethcontract::{
@@ -16,6 +15,7 @@ use {
     primitive_types::{H160, H256, U256},
     shared::{
         conversions::into_gas_price,
+        encoded_settlement::EncodedSettlement,
         ethrpc::Web3,
         tenderly_api::{SimulationRequest, TenderlyApi},
     },

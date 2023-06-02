@@ -1,6 +1,6 @@
 use {
     super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution},
-    crate::{encoding::EncodedSettlement, interactions::UnwrapWethInteraction},
+    crate::interactions::UnwrapWethInteraction,
     anyhow::{bail, ensure, Context as _, Result},
     itertools::Either,
     model::{
@@ -12,6 +12,7 @@ use {
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext,
+        encoded_settlement::EncodedSettlement,
         http_solver::model::InternalizationStrategy,
         interaction::Interaction,
     },

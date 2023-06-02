@@ -134,7 +134,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                 Ok(TradeVerifier::new(
                     simulator,
                     code_fetcher,
-                    network.authenticator,
+                    network.settlement,
+                    network.native_token,
                 ))
             })
             .transpose()?;
@@ -419,7 +420,6 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
             factory.rate_limiter(name),
-            factory.network.settlement,
         ))
     }
 
@@ -435,7 +435,6 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
             factory.components.zeroex.clone(),
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(name),
-            factory.network.settlement,
             factory.args.zeroex_only_estimate_buy_queries,
         ))
     }
@@ -457,7 +456,6 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
                 .context("1Inch API not supported for network")?,
             factory.shared_args.disabled_one_inch_protocols.clone(),
             factory.rate_limiter(name),
-            factory.network.settlement,
             factory.shared_args.one_inch_referrer_address,
         ))
     }
@@ -540,7 +538,6 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             params.driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
-            factory.network.settlement,
         ))
     }
 
