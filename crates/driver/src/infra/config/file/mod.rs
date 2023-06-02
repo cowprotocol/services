@@ -91,11 +91,9 @@ enum Mempool {
         max_additional_tip: f64,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
-        /// cancellations you don't have to submit a no-op transaction to
-        /// replace another transaction in the mempool. Instead you can just
-        /// issue another transaction with the same sender and nonce and
-        /// the submission node will no longer propagate the previous
-        /// transactions
+        /// cancellations a cancellation transaction doesn't have to get mined
+        /// to have an effect. On arrival in the node all pending transactions
+        /// with the same sender and nonce will get discarded immediately.
         #[serde(default = "default_soft_cancellations_flag")]
         use_soft_cancellations: bool,
     },
