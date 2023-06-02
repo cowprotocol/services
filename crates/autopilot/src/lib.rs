@@ -37,7 +37,7 @@ use {
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
-        account_balances::Web3BalanceFetcher,
+        account_balances::{CachingBalanceFetcher, Web3BalanceFetcher},
         bad_token::{
             cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
@@ -46,7 +46,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        caching_balance_fetcher::CachingBalanceFetcher,
         current_block::block_number_to_block_number_hash,
         fee_subsidy::{
             config::FeeSubsidyConfiguration,
