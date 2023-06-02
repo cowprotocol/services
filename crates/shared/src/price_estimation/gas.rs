@@ -1,4 +1,4 @@
-///! constants to estimate gas use in GPv2
+//! constants to estimate gas use in GPv2
 
 /// gas for initialization
 pub const INITIALIZATION_COST: u64 =
