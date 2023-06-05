@@ -54,6 +54,7 @@ use {
     },
     web3::types::U64,
 };
+
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
     web3: Web3,
@@ -220,6 +221,14 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("insert_orders failed")?;
         transaction.commit().await.context("commit")?;
+
+        for order in &invalided_order_uids {
+            tracing::debug!(?order, "invalidated order");
+        }
+        for order in &orders {
+            tracing::debug!(order =? order.uid, "upserted order");
+        }
+
         Ok(())
     }
 
