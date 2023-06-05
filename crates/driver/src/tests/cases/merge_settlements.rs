@@ -1,6 +1,6 @@
 use crate::tests::{
     setup,
-    setup::new::{ab_order, ab_solution, cd_order, cd_solution, Solution},
+    setup::{ab_order, ab_pool, ab_solution, cd_order, cd_pool, cd_solution, Solution},
 };
 
 /// Test that settlements can be merged.
@@ -8,8 +8,8 @@ use crate::tests::{
 #[ignore]
 async fn possible() {
     let test = setup()
-        .ab_pool()
-        .cd_pool()
+        .pool(ab_pool())
+        .pool(cd_pool())
         .order(ab_order())
         .order(cd_order())
         .solution(ab_solution())
@@ -41,7 +41,7 @@ async fn possible() {
 #[ignore]
 async fn impossible() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order())
         .order(ab_order().rename("second order").reduce_amount(1000000000000000u128.into()))
         // These two solutions result in different clearing prices (due to different surplus),

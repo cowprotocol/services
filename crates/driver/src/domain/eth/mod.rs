@@ -76,15 +76,6 @@ impl AccessList {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct StorageKey(pub H256);
-
-impl From<H256> for StorageKey {
-    fn from(value: H256) -> Self {
-        Self(value)
-    }
-}
-
 impl AccessList {
     /// Merge two access lists together.
     pub fn merge(mut self, other: Self) -> Self {
@@ -125,6 +116,15 @@ impl From<AccessList> for web3::types::AccessList {
                 storage_keys: storage_keys.into_iter().sorted().map(|key| key.0).collect(),
             })
             .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct StorageKey(pub H256);
+
+impl From<H256> for StorageKey {
+    fn from(value: H256) -> Self {
+        Self(value)
     }
 }
 
