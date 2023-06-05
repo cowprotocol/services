@@ -1,18 +1,16 @@
 //! Test cases.
 
+pub mod asset_flow;
 pub mod buy_eth;
 pub mod example_config;
-pub mod limit_order;
+pub mod internalization;
 pub mod merge_settlements;
 pub mod multiple_solutions;
 pub mod negative_scores;
 pub mod quote;
 pub mod risk;
 pub mod settle;
-pub mod solve;
 pub mod solver_balance;
-pub mod verify_asset_flow;
-pub mod verify_internalization;
 
 #[allow(dead_code)]
 /// Example solver name.
@@ -33,6 +31,12 @@ pub const AB_ORDER_AMOUNT: u128 = 50000000000000000000u128;
 /// The order amount for orders selling token "C" for "D".
 pub const CD_ORDER_AMOUNT: u128 = 40000000000000000000u128;
 
-/// With the default amounts defined above, this is the expected score range.
-pub const DEFAULT_SCORE_MIN: u128 = 2989450000000000000u128;
-pub const DEFAULT_SCORE_MAX: u128 = 2989470000000000000u128;
+pub const ETH_ORDER_AMOUNT: u128 = 40000000000000000000u128;
+
+/// With the default amounts defined above, this is the expected score range for
+/// both buy and sell orders.
+pub const DEFAULT_SCORE_MIN: u128 = 2000000000000000000u128;
+pub const DEFAULT_SCORE_MAX: u128 = 500000000000000000000000000000u128;
+
+/// The default surplus fee for limit orders.
+pub const DEFAULT_SURPLUS_FEE: u128 = 100u128;

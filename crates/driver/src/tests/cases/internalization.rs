@@ -1,9 +1,9 @@
-//! Test that the asset flow verification behaves as expected. See
-//! [`competition::solution::settlement::Verified`].
+//! Test that the asset flow verification behaves correctly. See
+//! [`crate::domain::competition::solution::Settlement`].
 
 use crate::tests::{
     setup,
-    setup::new::{ab_order, ab_solution},
+    setup::{ab_order, ab_pool, ab_solution},
 };
 
 /// Test that internalized interactions pass verification if they use trusted
@@ -12,8 +12,9 @@ use crate::tests::{
 #[ignore]
 async fn valid_internalization() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order().internalize())
+        // Marks "A" as trusted and hence OK to use for internalization.
         .trust("A")
         .solution(ab_solution())
         .done()
@@ -30,7 +31,7 @@ async fn valid_internalization() {
 #[ignore]
 async fn untrusted_internalization() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order().internalize())
         .solution(ab_solution())
         // Note: does not mark "A" as trusted, despite the order being internalized.

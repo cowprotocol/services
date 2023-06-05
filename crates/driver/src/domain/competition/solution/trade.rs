@@ -56,7 +56,8 @@ impl Fulfillment {
             }
         };
 
-        // Only accept solver supplied fees
+        // Only accept solver-computed fees if the order requires them, otherwise the
+        // protocol pre-determines the fee and the solver must respect it.
         let valid_fee = match &fee {
             Fee::Static => !order.solver_determines_fee(),
             Fee::Dynamic(_) => order.solver_determines_fee(),
@@ -172,7 +173,9 @@ impl Trade {
     }
 
     /// Calculate the final sold and bought amounts that are transferred to and
-    /// from the settlement contract when the settlement is executed.
+    /// from the settlement contract when the settlement is executed. This is
+    /// calculated via the order sell and buy amounts and the trade clearing
+    /// prices.
     pub(super) fn execution(
         &self,
         solution: &competition::Solution,
@@ -216,11 +219,11 @@ impl Trade {
                 // [`competition::Solution::prices`] field for an explanation of how these work.
                 let sell_price = solution
                     .price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
                     .price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -312,11 +315,11 @@ impl Trade {
 
                 let sell_price = solution
                     .price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
                     .price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -392,8 +395,8 @@ pub struct InvalidExecutedAmount;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
-    #[error("overflow error")]
+    #[error("overflow error while calculating executed amounts")]
     Overflow,
-    #[error("a required clearing price was missing")]
-    ClearingPriceMissing,
+    #[error("missing clearing price for {0:?}")]
+    ClearingPriceMissing(eth::TokenAddress),
 }

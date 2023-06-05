@@ -1,6 +1,6 @@
 use crate::tests::{
     setup,
-    setup::new::{ab_order, ab_solution},
+    setup::{ab_order, ab_pool, ab_solution},
 };
 
 /// Test that the best-scoring solution is picked when the /solve endpoint
@@ -9,7 +9,7 @@ use crate::tests::{
 #[ignore]
 async fn valid() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
         .solution(ab_solution().reduce_score())
@@ -27,9 +27,8 @@ async fn valid() {
 #[ignore]
 async fn invalid() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order())
-        .solution(ab_solution())
         .solution(ab_solution().reduce_score())
         .solution(ab_solution().invalid())
         .done()

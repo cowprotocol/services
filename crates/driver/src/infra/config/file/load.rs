@@ -107,5 +107,6 @@ pub async fn load(path: &Path) -> infra::Config {
         }),
         contracts: config.contracts,
         disable_access_list_simulation: config.disable_access_list_simulation,
+        disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
     }
 }

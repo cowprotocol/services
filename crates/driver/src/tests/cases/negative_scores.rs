@@ -2,14 +2,14 @@
 
 use crate::tests::{
     setup,
-    setup::new::{ab_order, ab_solution, Solution},
+    setup::{ab_order, ab_pool, ab_solution, Solution},
 };
 
 #[tokio::test]
 #[ignore]
 async fn no_valid_solutions() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order().no_surplus())
         // The solution has no surplus, and hence a negative score.
         .solution(ab_solution())
@@ -25,7 +25,7 @@ async fn no_valid_solutions() {
 #[ignore]
 async fn one_valid_solution() {
     let test = setup()
-        .ab_pool()
+        .pool(ab_pool())
         .order(ab_order())
         .order(ab_order().rename("no surplus").no_surplus())
         .solution(ab_solution())
