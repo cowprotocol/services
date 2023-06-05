@@ -400,6 +400,9 @@ fn main() {
     generate_contract("Trader");
     generate_contract("Solver");
 
+    // Support contract used for balance simulation.
+    generate_contract("Balances");
+
     // Support contract used for global block stream.
     generate_contract("FetchBlock");
 
