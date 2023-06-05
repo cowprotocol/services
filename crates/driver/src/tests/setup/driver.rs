@@ -103,12 +103,12 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     }
     for fulfillment in test.fulfillments.iter() {
         tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token(fulfillment.quote.order.sell_token)),
+            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quote.order.sell_token)),
             "price": "1000000000000000000",
             "trusted": test.trusted.contains(fulfillment.quote.order.sell_token),
         }));
         tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token(fulfillment.quote.order.buy_token)),
+            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quote.order.buy_token)),
             "price": "1000000000000000000",
             "trusted": test.trusted.contains(fulfillment.quote.order.buy_token),
         }));

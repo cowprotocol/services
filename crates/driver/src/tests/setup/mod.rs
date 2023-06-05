@@ -25,6 +25,7 @@ use {
     },
     ethcontract::BlockId,
     hyper::StatusCode,
+    itertools::Itertools,
     secp256k1::SecretKey,
     std::{
         collections::{HashMap, HashSet},
@@ -80,8 +81,7 @@ impl ExecutionDiff {
 pub struct Order {
     pub name: &'static str,
 
-    /// The amount of the sell token being sold by this order.
-    pub amount: eth::U256,
+    pub sell_amount: eth::U256,
     pub sell_token: &'static str,
     pub buy_token: &'static str,
 
@@ -116,7 +116,7 @@ impl Order {
     /// Reduce the amount of this order by the given amount.
     pub fn reduce_amount(self, diff: eth::U256) -> Self {
         Self {
-            amount: self.amount - diff,
+            sell_amount: self.sell_amount - diff,
             ..self
         }
     }
@@ -188,7 +188,7 @@ impl Order {
 impl Default for Order {
     fn default() -> Self {
         Self {
-            amount: Default::default(),
+            sell_amount: Default::default(),
             sell_token: Default::default(),
             buy_token: Default::default(),
             internalize: Default::default(),
@@ -269,7 +269,7 @@ pub struct Solution {
 }
 
 impl Solution {
-    /// Divide the surplus factor by the specified amount.
+    /// Reduce the solution score by adding additional meaningless calldata.
     pub fn reduce_score(self) -> Self {
         Self {
             calldata: match self.calldata {
@@ -322,7 +322,7 @@ pub fn ab_pool() -> Pool {
 pub fn ab_order() -> Order {
     Order {
         name: "A-B order",
-        amount: AB_ORDER_AMOUNT.into(),
+        sell_amount: AB_ORDER_AMOUNT.into(),
         sell_token: "A",
         buy_token: "B",
         ..Default::default()
@@ -354,7 +354,7 @@ pub fn cd_pool() -> Pool {
 pub fn cd_order() -> Order {
     Order {
         name: "C-D order",
-        amount: CD_ORDER_AMOUNT.into(),
+        sell_amount: CD_ORDER_AMOUNT.into(),
         sell_token: "C",
         buy_token: "D",
         ..Default::default()
@@ -386,9 +386,9 @@ pub fn weth_pool() -> Pool {
 pub fn eth_order() -> Order {
     Order {
         name: "ETH order",
-        amount: ETH_ORDER_AMOUNT.into(),
+        sell_amount: ETH_ORDER_AMOUNT.into(),
         sell_token: "A",
-        buy_token: "WETH",
+        buy_token: "ETH",
         ..Default::default()
     }
 }
@@ -461,7 +461,9 @@ impl Setup {
         self
     }
 
-    /// Disable simulating solutions during solving.
+    /// Disable simulating solutions during solving. Used to make testing easier
+    /// when checking the asset flow and similar rules that don't depend on
+    /// the blockchain.
     pub fn disable_simulation(mut self) -> Self {
         self.enable_simulation = false;
         self
@@ -486,7 +488,7 @@ impl Setup {
             ..
         } = self;
 
-        // Hardcoded trader account.
+        // Hardcoded trader account. Don't use this account for anything else!!!
         let trader_address =
             eth::H160::from_str("d2525C68A663295BBE347B65C87c8e17De936a0a").unwrap();
         let trader_secret_key = SecretKey::from_slice(
@@ -495,7 +497,7 @@ impl Setup {
         )
         .unwrap();
 
-        // Hardcoded solver account.
+        // Hardcoded solver account. Don't use this account for anything else!!!
         let solver_address =
             eth::H160::from_str("72b92Ee5F847FBB0D243047c263Acd40c34A63B9").unwrap();
         let solver_secret_key = SecretKey::from_slice(
@@ -766,7 +768,7 @@ impl SolveOk<'_> {
 
     /// Check that the solution contains the expected orders.
     pub fn orders(self, order_names: &[&str]) -> Self {
-        let expected_order_uids: HashSet<_> = order_names
+        let expected_order_uids = order_names
             .iter()
             .map(|name| {
                 self.fulfillments
@@ -782,19 +784,21 @@ impl SolveOk<'_> {
                     .order_uid(self.blockchain, self.now)
                     .to_string()
             })
-            .collect();
+            .sorted()
+            .collect_vec();
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 4);
         assert!(result.get("orders").is_some());
-        let order_uids: HashSet<_> = result
+        let order_uids = result
             .get("orders")
             .unwrap()
             .as_array()
             .unwrap()
             .iter()
             .map(|order| order.as_str().unwrap().to_owned())
-            .collect();
+            .sorted()
+            .collect_vec();
         assert_eq!(order_uids, expected_order_uids);
         self
     }
@@ -867,7 +871,7 @@ impl QuoteOk<'_> {
         self
     }
 
-    /// Check that the quote returns the expected amount of tokens. This is
+    /// Check that the quote returns the expected interactions. This is
     /// based on the state of the blockchain and the test setup.
     pub fn interactions(self) -> Self {
         assert_eq!(self.fulfillments.len(), 1);
@@ -982,7 +986,7 @@ impl<'a> SettleOk<'a> {
     pub async fn eth_order_executed(self) -> SettleOk<'a> {
         self.balance("A", Balance::SmallerBy(ETH_ORDER_AMOUNT.into()))
             .await
-            .balance("WETH", Balance::Greater)
+            .balance("ETH", Balance::Greater)
             .await
     }
 }

@@ -219,11 +219,11 @@ impl Trade {
                 // [`competition::Solution::prices`] field for an explanation of how these work.
                 let sell_price = solution
                     .price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
                     .price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -315,11 +315,11 @@ impl Trade {
 
                 let sell_price = solution
                     .price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
                     .price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing)?
+                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
                     order::Side::Buy => Execution {
@@ -395,8 +395,8 @@ pub struct InvalidExecutedAmount;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
-    #[error("overflow error")]
+    #[error("overflow error while calculating executed amounts")]
     Overflow,
-    #[error("a required clearing price was missing")]
-    ClearingPriceMissing,
+    #[error("missing clearing price for {0:?}")]
+    ClearingPriceMissing(eth::TokenAddress),
 }

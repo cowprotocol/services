@@ -283,7 +283,7 @@ impl Blockchain {
         let domain_separator =
             boundary::DomainSeparator(settlement.domain_separator().call().await.unwrap().0);
 
-        // Create the tokens needed by the pools.
+        // Create (deploy) the tokens needed by the pools.
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
@@ -483,20 +483,39 @@ impl Blockchain {
         }
     }
 
+    pub fn find_pair(&self, order: &Order) -> &Pair {
+        self.pairs
+            .iter()
+            .find(|pair| {
+                (pair.token_a, pair.token_b)
+                    == (
+                        order.sell_token,
+                        if order.buy_token == "ETH" {
+                            "WETH"
+                        } else {
+                            order.buy_token
+                        },
+                    )
+                    || (pair.token_b, pair.token_a)
+                        == (
+                            order.sell_token,
+                            if order.buy_token == "ETH" {
+                                "WETH"
+                            } else {
+                                order.buy_token
+                            },
+                        )
+            })
+            .expect("could not find uniswap pair for order")
+    }
+
     /// Quote an order using a UniswapV2 pool. This determines the buy and sell
     /// amount of the order.
     pub async fn quote(&self, order: &Order) -> Quote {
-        let pair = self
-            .pairs
-            .iter()
-            .find(|pair| {
-                (pair.token_a, pair.token_b) == (order.sell_token, order.buy_token)
-                    || (pair.token_b, pair.token_a) == (order.sell_token, order.buy_token)
-            })
-            .expect("could not find uniswap pair for order");
-        let executed_sell = order.amount;
+        let pair = self.find_pair(order);
+        let executed_sell = order.sell_amount;
         let executed_buy = pair.pool.out(Asset {
-            amount: order.amount,
+            amount: order.sell_amount,
             token: order.sell_token,
         });
         Quote {
@@ -516,16 +535,11 @@ impl Blockchain {
         let mut fulfillments = Vec::new();
         for order in orders {
             // Find the pair to use for this order and calculate the buy and sell amounts.
-            let sell_token = contracts::ERC20::at(&self.web3, self.get_token(order.sell_token));
-            let buy_token = contracts::ERC20::at(&self.web3, self.get_token(order.buy_token));
-            let pair = self
-                .pairs
-                .iter()
-                .find(|pair| {
-                    (pair.token_a, pair.token_b) == (order.sell_token, order.buy_token)
-                        || (pair.token_b, pair.token_a) == (order.sell_token, order.buy_token)
-                })
-                .expect("could not find uniswap pair for order");
+            let sell_token =
+                contracts::ERC20::at(&self.web3, self.get_token_wrapped(order.sell_token));
+            let buy_token =
+                contracts::ERC20::at(&self.web3, self.get_token_wrapped(order.buy_token));
+            let pair = self.find_pair(order);
             let quote = self.quote(order).await;
 
             // Fund the trader account with tokens needed for the solution.
@@ -638,10 +652,20 @@ impl Blockchain {
         }
     }
 
+    /// Returns the address of the token with the given symbol.
     pub fn get_token(&self, token: &str) -> eth::H160 {
         match token {
             "WETH" => self.weth.address(),
             "ETH" => eth::ETH_TOKEN.into(),
+            _ => self.tokens.get(token).unwrap().address(),
+        }
+    }
+
+    /// Returns the address of the token with the given symbol. Wrap ETH into
+    /// WETH.
+    pub fn get_token_wrapped(&self, token: &str) -> eth::H160 {
+        match token {
+            "WETH" | "ETH" => self.weth.address(),
             _ => self.tokens.get(token).unwrap().address(),
         }
     }

@@ -106,13 +106,13 @@ impl Solver {
                 prices_json.insert(
                     config
                         .blockchain
-                        .get_token(fulfillment.quote.order.sell_token),
+                        .get_token_wrapped(fulfillment.quote.order.sell_token),
                     fulfillment.quote.buy.to_string(),
                 );
                 prices_json.insert(
                     config
                         .blockchain
-                        .get_token(fulfillment.quote.order.buy_token),
+                        .get_token_wrapped(fulfillment.quote.order.buy_token),
                     (fulfillment.quote.sell - fulfillment.quote.order.surplus_fee()).to_string(),
                 );
                 trades_json.push(json!({
@@ -148,7 +148,9 @@ impl Solver {
                     let quote = &f.quote;
                     [
                         (
-                            hex_address(config.blockchain.get_token(quote.order.sell_token)),
+                            hex_address(
+                                config.blockchain.get_token_wrapped(quote.order.sell_token),
+                            ),
                             json!({
                                 "decimals": null,
                                 "symbol": null,
@@ -158,7 +160,7 @@ impl Solver {
                             }),
                         ),
                         (
-                            hex_address(config.blockchain.get_token(quote.order.buy_token)),
+                            hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
                             json!({
                                 "decimals": null,
                                 "symbol": null,

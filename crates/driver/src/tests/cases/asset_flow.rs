@@ -171,7 +171,7 @@ async fn mix() {
         )
         .order(Order {
             name: "partial liquidity order",
-            amount: 50.into(),
+            sell_amount: 50.into(),
             sell_token: "A",
             buy_token: "B",
             side: order::Side::Buy,
