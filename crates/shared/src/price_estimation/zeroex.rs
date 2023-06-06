@@ -3,7 +3,6 @@ use {
         trade_finder::{TradeEstimator, TradeVerifier},
         PriceEstimateResult,
         PriceEstimating,
-        PriceEstimationError,
         Query,
     },
     crate::{
@@ -12,15 +11,10 @@ use {
         zeroex_api::ZeroExApi,
     },
     ethcontract::H160,
-    futures::StreamExt,
-    model::order::OrderKind,
     std::sync::Arc,
 };
 
-pub struct ZeroExPriceEstimator {
-    inner: TradeEstimator,
-    buy_only: bool,
-}
+pub struct ZeroExPriceEstimator(TradeEstimator);
 
 impl ZeroExPriceEstimator {
     pub fn new(
@@ -28,27 +22,17 @@ impl ZeroExPriceEstimator {
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
         settlement: H160,
+        buy_only: bool,
     ) -> Self {
-        Self {
-            inner: TradeEstimator::new(
-                settlement,
-                Arc::new(ZeroExTradeFinder::new(api, excluded_sources)),
-                rate_limiter,
-            ),
-            buy_only: false,
-        }
+        Self(TradeEstimator::new(
+            settlement,
+            Arc::new(ZeroExTradeFinder::new(api, excluded_sources, buy_only)),
+            rate_limiter,
+        ))
     }
 
     pub fn verified(&self, verifier: TradeVerifier) -> Self {
-        Self {
-            inner: self.inner.clone().with_verifier(verifier),
-            buy_only: self.buy_only,
-        }
-    }
-
-    pub fn buy_only(mut self, value: bool) -> Self {
-        self.buy_only = value;
-        self
+        Self(self.0.clone().with_verifier(verifier))
     }
 }
 
@@ -57,28 +41,7 @@ impl PriceEstimating for ZeroExPriceEstimator {
         &'a self,
         queries: &'a [Query],
     ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        if !self.buy_only {
-            self.inner.estimates(queries)
-        } else {
-            async_stream::stream! {
-                let (sell, buy) = queries
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .partition::<Vec<_>, _>(|(_, query)| query.kind == OrderKind::Sell);
-
-                for (index, _) in sell {
-                    yield (index, Err(PriceEstimationError::UnsupportedOrderType));
-                }
-
-                let buy_queries = buy.iter().map(|(_, query)| *query).collect::<Vec<_>>();
-                for await (index, result) in self.inner.estimates(&buy_queries) {
-                    let (real_index, _) = buy[index];
-                    yield (real_index, result);
-                }
-            }
-            .boxed()
-        }
+        self.0.estimates(queries)
     }
 }
 
@@ -87,7 +50,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            price_estimation::{single_estimate, vec_estimates},
+            price_estimation::{single_estimate, vec_estimates, PriceEstimationError},
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
         ethcontract::futures::FutureExt as _,
@@ -95,7 +58,7 @@ mod tests {
         reqwest::Client,
     };
 
-    fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
+    fn create_estimator(api: Arc<dyn ZeroExApi>, buy_only: bool) -> ZeroExPriceEstimator {
         ZeroExPriceEstimator::new(
             api,
             Default::default(),
@@ -104,6 +67,7 @@ mod tests {
                 "test".into(),
             )),
             testlib::protocol::SETTLEMENT,
+            buy_only,
         )
     }
 
@@ -137,7 +101,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = single_estimate(
             &estimator,
@@ -186,7 +150,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = single_estimate(
             &estimator,
@@ -228,7 +192,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = create_estimator(Arc::new(zeroex_api)).buy_only(true);
+        let estimator = create_estimator(Arc::new(zeroex_api), true);
 
         let estimates = vec_estimates(
             &estimator,
@@ -280,7 +244,7 @@ mod tests {
         let gno = testlib::tokens::GNO;
 
         let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = single_estimate(
             &estimator,

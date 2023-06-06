@@ -21,14 +21,16 @@ pub struct ZeroExTradeFinder {
 struct Inner {
     api: Arc<dyn ZeroExApi>,
     excluded_sources: Vec<String>,
+    buy_only: bool,
 }
 
 impl ZeroExTradeFinder {
-    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>) -> Self {
+    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>, buy_only: bool) -> Self {
         Self {
             inner: Inner {
                 api,
                 excluded_sources,
+                buy_only,
             },
             sharing: Default::default(),
         }
@@ -45,6 +47,10 @@ impl ZeroExTradeFinder {
 
 impl Inner {
     async fn quote(&self, query: &Query) -> Result<Trade, TradeError> {
+        if self.buy_only && query.kind == OrderKind::Sell {
+            return Err(TradeError::UnsupportedOrderType);
+        }
+
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (None, Some(query.in_amount)),
             OrderKind::Sell => (Some(query.in_amount), None),
@@ -122,7 +128,7 @@ mod tests {
     };
 
     fn create_trader(api: Arc<dyn ZeroExApi>) -> ZeroExTradeFinder {
-        ZeroExTradeFinder::new(api, Default::default())
+        ZeroExTradeFinder::new(api, Default::default(), false)
     }
 
     #[tokio::test]

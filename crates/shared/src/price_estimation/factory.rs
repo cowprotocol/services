@@ -211,10 +211,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             PriceEstimatorType::Paraswap => {
                 self.create_estimator_entry::<ParaswapPriceEstimator>(&name, ())
             }
-            PriceEstimatorType::ZeroEx => self.create_estimator_entry::<ZeroExPriceEstimator>(
-                &name,
-                self.args.zeroex_only_estimate_buy_queries,
-            ),
+            PriceEstimatorType::ZeroEx => {
+                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, ())
+            }
             PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 &name,
                 HttpPriceEstimatorParams {
@@ -429,16 +428,16 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
     }
 }
 impl PriceEstimatorCreating for ZeroExPriceEstimator {
-    type Params = bool;
+    type Params = ();
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, buy_only: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
         Ok(ZeroExPriceEstimator::new(
             factory.components.zeroex.clone(),
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(name),
             factory.network.settlement,
-        )
-        .buy_only(buy_only))
+            factory.args.zeroex_only_estimate_buy_queries,
+        ))
     }
 
     fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
