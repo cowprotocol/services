@@ -719,6 +719,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true
+        fullAppData:
+          description: Full app data, which the contract level app data is a hash of. See `OrderCreation` for more information.
+          type: string
+          nullable: true
       required:
         - creationDate
         - class
