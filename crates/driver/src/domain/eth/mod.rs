@@ -270,7 +270,7 @@ pub struct BlockNo(pub u64);
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
-    pub call_data: Bytes,
+    pub call_data: Bytes<Vec<u8>>,
 }
 
 /// An onchain transaction.
@@ -279,7 +279,7 @@ pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
-    pub input: Bytes,
+    pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
 }
 

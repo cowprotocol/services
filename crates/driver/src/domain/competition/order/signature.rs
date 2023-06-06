@@ -4,7 +4,7 @@ use crate::{domain::eth, util::Bytes};
 #[derive(Debug, Clone)]
 pub struct Signature {
     pub scheme: Scheme,
-    pub data: Bytes,
+    pub data: Bytes<Vec<u8>>,
     /// The address used to sign and place this order.
     pub signer: eth::Address,
 }

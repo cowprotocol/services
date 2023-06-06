@@ -1,27 +1,30 @@
 /// A thin wrapper around a vector of bytes. Provides hex debug formatting.
-#[derive(Clone, PartialEq, Eq, Hash, Default)]
-pub struct Bytes(pub Vec<u8>);
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Bytes<T>(pub T);
 
-impl std::fmt::Debug for Bytes {
+impl<T> std::fmt::Debug for Bytes<T>
+where
+    T: AsRef<[u8]>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x{}", hex::encode(&self.0))
     }
 }
 
-impl From<Vec<u8>> for Bytes {
-    fn from(value: Vec<u8>) -> Self {
+impl<T> From<T> for Bytes<T> {
+    fn from(value: T) -> Self {
         Self(value)
     }
 }
 
-impl From<Bytes> for Vec<u8> {
-    fn from(value: Bytes) -> Self {
+impl From<Bytes<Vec<u8>>> for Vec<u8> {
+    fn from(value: Bytes<Vec<u8>>) -> Self {
         value.0
     }
 }
 
-impl FromIterator<u8> for Bytes {
-    fn from_iter<T: IntoIterator<Item = u8>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
+impl<const N: usize> From<Bytes<[u8; N]>> for [u8; N] {
+    fn from(value: Bytes<[u8; N]>) -> Self {
+        value.0
     }
 }
