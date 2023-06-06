@@ -617,6 +617,11 @@ impl OrderValidating for OrderValidator {
                 settlement_contract,
                 full_fee_amount,
                 class,
+                full_app_data: match order.app_data {
+                    OrderCreationAppData::Both { full, .. }
+                    | OrderCreationAppData::Full { full } => Some(full),
+                    _ => None,
+                },
                 ..Default::default()
             },
             signature: order.signature.clone(),
