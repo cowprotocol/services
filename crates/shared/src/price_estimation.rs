@@ -172,6 +172,11 @@ pub struct Arguments {
     /// more price estimators will not be asked for a quote.
     #[clap(long, env, default_value = "1")]
     pub quote_prediction_confidence: f64,
+
+    /// Use 0x estimator for only buy orders. This flag can be enabled to reduce
+    /// request pressure on the 0x API.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub zeroex_only_estimate_buy_queries: bool,
 }
 
 impl Display for Arguments {
@@ -232,6 +237,11 @@ impl Display for Arguments {
             f,
             "enable_quote_predictions: {:?}",
             self.enable_quote_predictions
+        )?;
+        writeln!(
+            f,
+            "zeroex_only_estimate_buy_queries: {:?}",
+            self.zeroex_only_estimate_buy_queries
         )?;
 
         Ok(())
