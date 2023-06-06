@@ -10,6 +10,7 @@ doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
+app-data-hash = { path = "../app-data-hash" }
 async-stream = "0.3"
 async-trait = { workspace = true }
 atty = "0.2"

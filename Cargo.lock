@@ -3433,6 +3433,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "app-data-hash",
  "async-stream",
  "async-trait",
  "atty",

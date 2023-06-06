@@ -2,7 +2,7 @@ use {
     crate::orderbook::{AddOrderError, Orderbook},
     anyhow::Result,
     model::{
-        order::{OrderCreation, OrderCreationAppData, OrderUid},
+        order::{OrderCreation, OrderUid},
         quote::QuoteId,
         signature,
     },
@@ -190,6 +190,21 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error("TooManyLimitOrders", "Too many limit orders"),
                 StatusCode::BAD_REQUEST,
             ),
+            ValidationError::InvalidAppData(err) => with_status(
+                error("InvalidAppData", format!("{:?}", err)),
+                StatusCode::BAD_REQUEST,
+            ),
+            ValidationError::AppDataHashMismatch { provided, actual } => with_status(
+                error(
+                    "AppDataHashMismatch",
+                    format!(
+                        "calculated app data hash {actual:?} doesn't match order app data field \
+                         {provided:?}",
+                    ),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");
                 shared::api::internal_error_reply()
@@ -229,12 +244,6 @@ pub fn post_order(
     create_order_request().and_then(move |order: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
-            if !matches!(order.app_data, OrderCreationAppData::Hash { .. }) {
-                return Ok(with_status(
-                    error("BadAppData", "New app data scheme isn't enabled."),
-                    StatusCode::BAD_REQUEST,
-                ));
-            }
             let result = orderbook.add_order(order.clone()).await;
             match &result {
                 Ok((order_uid, quote_id)) => {

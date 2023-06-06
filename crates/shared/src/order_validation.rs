@@ -20,11 +20,13 @@ use {
     database::{onchain_broadcasted_orders::OnchainOrderPlacementError, quotes::QuoteKind},
     ethcontract::{H160, H256, U256},
     model::{
+        app_id::AppDataHash,
         order::{
             BuyTokenDestination,
             Order,
             OrderClass,
             OrderCreation,
+            OrderCreationAppData,
             OrderData,
             OrderKind,
             OrderMetadata,
@@ -125,6 +127,11 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
+    InvalidAppData(anyhow::Error),
+    AppDataHashMismatch {
+        provided: AppDataHash,
+        actual: AppDataHash,
+    },
     Other(anyhow::Error),
 }
 
@@ -213,6 +220,7 @@ pub struct OrderValidator {
     pub code_fetcher: Arc<dyn CodeFetching>,
     pub enable_eth_smart_contract_payments: bool,
     enable_custom_interactions: bool,
+    app_data_validator: crate::app_data::Validator,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -279,6 +287,7 @@ impl OrderValidator {
         limit_order_counter: Arc<dyn LimitOrderCounting>,
         max_limit_orders_per_user: u64,
         code_fetcher: Arc<dyn CodeFetching>,
+        app_data_validator: crate::app_data::Validator,
     ) -> Self {
         Self {
             native_token,
@@ -297,6 +306,7 @@ impl OrderValidator {
             code_fetcher,
             enable_eth_smart_contract_payments: false,
             enable_custom_interactions: false,
+            app_data_validator,
         }
     }
 
@@ -424,9 +434,36 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
+        // Happens before signature verification because a miscalculated app data hash
+        // by the API user would lead to being unable to validate the signature below.
+        let validate = |app_data: &String| {
+            self.app_data_validator
+                .validate(app_data.as_bytes())
+                .map_err(ValidationError::InvalidAppData)
+        };
+        let app_data_hash = match &order.app_data {
+            OrderCreationAppData::Both { full, expected } => {
+                let validated = validate(full)?;
+                if validated.hash != *expected {
+                    return Err(ValidationError::AppDataHashMismatch {
+                        provided: *expected,
+                        actual: validated.hash,
+                    });
+                }
+                validated.hash
+            }
+            // This branch will eventually be removed. For backward compatibility can also consider
+            // treating an all zero hash as an empty app data object.
+            OrderCreationAppData::Hash { hash } => *hash,
+            OrderCreationAppData::Full { full } => validate(full)?.hash,
+        };
+
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
-        let data = order.data();
+        let data = OrderData {
+            app_data: app_data_hash,
+            ..order.data()
+        };
         let uid = data.uid(domain_separator, &owner);
 
         let additional_gas = if let Signature::Eip1271(signature) = &order.signature {
@@ -914,6 +951,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let result = validator
             .partial_validate(PreOrderData {
@@ -1073,6 +1111,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         )
         .with_fill_or_kill_limit_orders(true)
         .with_partially_fillable_limit_orders(true);
@@ -1159,6 +1198,7 @@ mod tests {
             Arc::new(limit_order_counter),
             max_limit_orders_per_user,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
 
         let creation = OrderCreation {
@@ -1295,6 +1335,7 @@ mod tests {
             Arc::new(limit_order_counter),
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         )
         .with_fill_or_kill_limit_orders(true);
 
@@ -1345,6 +1386,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1394,6 +1436,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1455,6 +1498,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1507,6 +1551,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1554,6 +1599,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1603,6 +1649,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1656,6 +1703,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1703,6 +1751,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -1754,6 +1803,7 @@ mod tests {
             Arc::new(limit_order_counter),
             0,
             Arc::new(MockCodeFetching::new()),
+            Default::default(),
         );
 
         let creation = OrderCreation {
@@ -1812,6 +1862,7 @@ mod tests {
                 Arc::new(limit_order_counter),
                 0,
                 Arc::new(MockCodeFetching::new()),
+                Default::default(),
             );
 
             let order = OrderCreation {
