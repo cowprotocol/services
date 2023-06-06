@@ -9,6 +9,7 @@ mod load;
 
 pub use load::load;
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
@@ -16,6 +17,12 @@ struct Config {
     /// support this, such as less popular blockchains.
     #[serde(default)]
     disable_access_list_simulation: bool,
+
+    /// Disable gas simulation and always use this fixed gas value instead. This
+    /// can be useful for testing, but shouldn't be used in production since it
+    /// will cause the driver to return invalid scores.
+    #[serde_as(as = "Option<serialize::U256>")]
+    disable_gas_simulation: Option<eth::U256>,
 
     /// Parameters related to settlement submission.
     #[serde(default)]

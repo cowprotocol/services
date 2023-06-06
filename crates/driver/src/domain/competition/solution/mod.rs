@@ -304,6 +304,8 @@ pub enum Error {
          exiting the settlement"
     )]
     AssetFlow,
+    #[error(transparent)]
+    Execution(#[from] trade::ExecutionError),
     #[error(
         "invalid internalization: solution attempts to internalize tokens which are not trusted"
     )]

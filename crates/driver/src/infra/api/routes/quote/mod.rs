@@ -15,6 +15,7 @@ async fn route(
     let order = order.0.into_domain()?;
     let quote = order
         .quote(state.eth(), state.solver(), state.liquidity(), state.now())
-        .await?;
-    Ok(axum::response::Json(dto::Quote::new(&quote)))
+        .await;
+    tracing::trace!(?order, ?quote, "quoted order");
+    Ok(axum::response::Json(dto::Quote::new(&quote?)))
 }

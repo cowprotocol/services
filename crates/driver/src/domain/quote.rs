@@ -27,13 +27,13 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn new(order: &Order, eth: &Ethereum, solution: competition::Solution) -> Result<Self, Error> {
+    fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
             .price(order.tokens.sell)
-            .ok_or(Error::QuotingFailed)?;
+            .ok_or(QuotingFailed::ClearingSellMissing)?;
         let buy_price = solution
             .price(order.tokens.buy)
-            .ok_or(Error::QuotingFailed)?;
+            .ok_or(QuotingFailed::ClearingBuyMissing)?;
         let amount = match order.side {
             order::Side::Sell => conv::u256::from_big_rational(
                 &(conv::u256::to_big_rational(order.amount.into())
@@ -81,10 +81,14 @@ impl Order {
             .solve(&self.fake_auction(gas_price), &liquidity, timeout)
             .await?;
         Quote::new(
-            self,
             eth,
-            // TODO #1468, for now just pick the first solution
-            solutions.into_iter().next().ok_or(Error::QuotingFailed)?,
+            self,
+            // TODO(#1468): choose the best solution in the future, but for now just pick the
+            // first solution
+            solutions
+                .into_iter()
+                .next()
+                .ok_or(QuotingFailed::NoSolutions)?,
         )
     }
 
@@ -143,8 +147,8 @@ impl Order {
                 token: self.tokens.sell,
             },
             // Note that we intentionally do not use [`eth::U256::max_value()`]
-            // as an order with this would cause overflows with the Smart
-            // Contract, so buy orders requiring excessively large sell amounts
+            // as an order with this would cause overflows with the smart
+            // contract, so buy orders requiring excessively large sell amounts
             // would not work anyway.
             order::Side::Buy => eth::Asset {
                 amount: eth::U256::one() << 192,
@@ -219,8 +223,8 @@ impl Tokens {
 pub enum Error {
     /// This can happen e.g. if there's no available liquidity for the tokens
     /// which the user is trying to trade.
-    #[error("solver was unable to generate a quote for this order")]
-    QuotingFailed,
+    #[error(transparent)]
+    QuotingFailed(#[from] QuotingFailed),
     #[error("{0:?}")]
     DeadlineExceeded(#[from] DeadlineExceeded),
     /// Encountered an unexpected error reading blockchain data.
@@ -230,6 +234,16 @@ pub enum Error {
     Solver(#[from] solver::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum QuotingFailed {
+    #[error("missing sell price in solution clearing prices")]
+    ClearingSellMissing,
+    #[error("missing buy price in solution clearing prices")]
+    ClearingBuyMissing,
+    #[error("solver returned no solutions")]
+    NoSolutions,
 }
 
 #[derive(Debug, thiserror::Error)]
