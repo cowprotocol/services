@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         domain::liquidity,
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, observe},
     },
     std::{collections::HashSet, sync::Arc},
 };
@@ -29,7 +29,7 @@ impl Fetcher {
         match self.inner.fetch(pairs).await {
             Ok(liquidity) => liquidity,
             Err(e) => {
-                tracing::warn!(?e, "failed to fetch liquidity");
+                observe::fetching_liquidity_failed(&e);
                 Default::default()
             }
         }

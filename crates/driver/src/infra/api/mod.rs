@@ -1,7 +1,7 @@
 use {
     crate::{
         domain,
-        infra::{self, liquidity, solver::Solver, time, Ethereum, Mempool, Simulator},
+        infra::{self, liquidity, observe, solver::Solver, time, Ethereum, Mempool, Simulator},
     },
     error::Error,
     futures::Future,
@@ -68,7 +68,7 @@ impl Api {
                 now: self.now,
             })));
             let path = format!("/{name}");
-            tracing::debug!("mounting {path}");
+            observe::mounting_solver(&path);
             app = app.nest(&path, router);
         }
 
