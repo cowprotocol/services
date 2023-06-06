@@ -1,4 +1,7 @@
-// TODO Document all the fns and the module itself
+//! This module implements the observability for the driver. It exposes
+//! functions which represent events that are meaningful to the system. These
+//! functions are called when the corresponding events occur. They log the event
+//! and update the metrics, if the event is worth measuring.
 
 use {
     crate::{
@@ -21,9 +24,14 @@ use {
 
 mod metrics;
 
+// TODO The idea is that some of the functions below will also update the
+// metrics. This should be fairly easy to do, just go down the list and think
+// about if the thing is worth measuring or not. This will be done in a
+// follow-up PR.
+
 /// Observe a received auction.
 pub fn auction(auction: &Auction) {
-    tracing::info!(?auction, "auction");
+    tracing::info!(?auction, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
@@ -39,11 +47,6 @@ pub fn fetched_liquidity(liquidity: &[Liquidity]) {
 /// Observe that fetching liquidity failed.
 pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
-}
-
-/// Observe that the solving process is about to start.
-pub fn solving() {
-    tracing::trace!("solving");
 }
 
 /// Observe the solutions returned by the solver.
@@ -114,6 +117,14 @@ pub fn settling(id: settlement::Id) {
     tracing::trace!(?id, "settling");
 }
 
+/// Observe the result of the settlement process.
+pub fn settled(id: settlement::Id, result: &Result<(), competition::Error>) {
+    match result {
+        Ok(()) => tracing::info!(?id, "settled"),
+        Err(err) => tracing::warn!(?id, ?err, "failed to settle"),
+    }
+}
+
 /// Observe the result of solving an auction.
 pub fn solved(auction: &Auction, result: &Result<Reveal, competition::Error>) {
     match result {
@@ -156,4 +167,9 @@ pub fn mempool_failed(err: &boundary::Error) {
 /// Observe that an invalid DTO was received.
 pub fn invalid_dto(err: &impl std::error::Error, endpoint: &str, what: &str) {
     tracing::warn!(?err, "invalid {what} dto received in {endpoint}");
+}
+
+/// Observe that the quoting process is about to start.
+pub fn quoting(order: &quote::Order) {
+    tracing::trace!(?order, "quoting");
 }

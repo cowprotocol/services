@@ -134,6 +134,7 @@ impl Solver {
             return Err(Error::RepeatedSolutionIds);
         }
 
+        observe::solutions(&solutions);
         Ok(solutions)
     }
 }

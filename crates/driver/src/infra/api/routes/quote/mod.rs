@@ -19,7 +19,7 @@ async fn route(
     let order = order.0.into_domain().tap_err(|err| {
         observe::invalid_dto(err, "/quote", "order");
     })?;
-    // TODO observe::quoting()
+    observe::quoting(&order);
     let quote = order
         .quote(state.eth(), state.solver(), state.liquidity(), state.now())
         .await;

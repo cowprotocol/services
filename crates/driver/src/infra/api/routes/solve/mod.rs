@@ -20,6 +20,7 @@ async fn route(
     let auction = auction.0.into_domain(state.eth()).await.tap_err(|err| {
         observe::invalid_dto(err, "/solve", "auction");
     })?;
+    observe::auction(&auction);
     let competition = state.competition();
     let result = competition.solve(&auction).await;
     observe::solved(&auction, &result);

@@ -1,5 +1,3 @@
-// TODO Bytes might be a bad name since it already means something else in the
-// ecosystem...
 /// A thin wrapper around a vector of bytes. Provides hex debug formatting.
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct Bytes(pub Vec<u8>);

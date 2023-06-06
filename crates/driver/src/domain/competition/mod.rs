@@ -60,9 +60,6 @@ pub struct Reveal {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Reveal, Error> {
-        observe::auction(auction);
-
-        observe::fetching_liquidity();
         let liquidity = self
             .liquidity
             .fetch(
@@ -78,15 +75,12 @@ impl Competition {
                     .collect(),
             )
             .await;
-        observe::fetched_liquidity(&liquidity);
 
         // Fetch the solutions from the solver.
-        observe::solving();
         let solutions = self
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
             .await?;
-        observe::solutions(&solutions);
 
         // Empty solutions aren't useful, so discard them.
         let solutions = solutions.into_iter().filter(|solution| {
@@ -197,11 +191,10 @@ impl Competition {
             .lock()
             .unwrap()
             .take()
-            .ok_or(Error::InvalidSolutionId)?;
+            .ok_or(Error::SolutionNotAvailable)?;
         if id != settlement.id {
             return Err(Error::InvalidSolutionId);
         }
-        observe::settling(id);
         mempool::execute(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)
@@ -210,6 +203,11 @@ impl Competition {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(
+        "no solution is available yet, this might mean that /settle was called before /solve \
+         returned"
+    )]
+    SolutionNotAvailable,
     #[error("no solution found for given id")]
     InvalidSolutionId,
     #[error("no solution found for the auction")]
