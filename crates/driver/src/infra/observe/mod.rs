@@ -4,6 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
+    super::Mempool,
     crate::{
         boundary,
         domain::{
@@ -160,8 +161,8 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
 }
 
 /// Observe that a mempool failed to send a transaction.
-pub fn mempool_failed(err: &boundary::Error) {
-    tracing::warn!(?err, "sending transaction via mempool failed");
+pub fn mempool_failed(mempool: &Mempool, err: &boundary::Error) {
+    tracing::warn!(?err, ?mempool, "sending transaction via mempool failed");
 }
 
 /// Observe that an invalid DTO was received.
