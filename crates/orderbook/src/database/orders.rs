@@ -129,6 +129,11 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             }) => surplus_fee_timestamp,
             _ => None,
         },
+        full_app_data: order
+            .metadata
+            .full_app_data
+            .as_ref()
+            .map(|s| s.as_bytes().to_vec()),
     };
     database::orders::insert_order(ex, &order)
         .await
@@ -405,6 +410,11 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         ethflow_data,
         onchain_user,
         onchain_order_data,
+        full_app_data: order
+            .full_app_data
+            .map(String::from_utf8)
+            .transpose()
+            .context("full app data isn't utf-8")?,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -511,6 +521,7 @@ mod tests {
             surplus_fee_timestamp: Default::default(),
             executed_surplus_fee: Default::default(),
             executed_solver_fee: Default::default(),
+            full_app_data: Default::default(),
         };
 
         // Open - sell (filled - 0%)

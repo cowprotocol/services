@@ -1206,6 +1206,7 @@ name = "e2e"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "app-data-hash",
  "autopilot",
  "chrono",
  "clap",

@@ -217,6 +217,7 @@ Column                    | Type                         | Nullable | Details
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
  surplus\_fee             | numeric                      | nullable | dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet and this order will not be part of our auctions
  surplus\_fee\_timestamp  | timestamptz                  | nullable | last time the backend attempted to update the surplus\_fee for this order, order with too old surplus\_fees will not be put in auctions because it is likely very inaccurate
+ full_app_data            | bytea                        | nullable | The raw bytes of the full app data the order's `app_data` field is a hash of. Null if the backend does not have the full app data. See <https://github.com/cowprotocol/services/issues/1465> for more context.
 
 
 Indexes:

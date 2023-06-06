@@ -287,6 +287,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             onchain_user: Default::default(),
             onchain_order_data: Default::default(),
             is_liquidity_order: order.is_liquidity(),
+            full_app_data: Default::default(),
         },
         signature: to_boundary_signature(&order.signature),
         interactions: Interactions {
