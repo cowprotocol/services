@@ -96,7 +96,7 @@ pub fn to_interaction(
         .map(|(target, value, call_data)| eth::Interaction {
             target: eth::Address(target),
             value: eth::Ether(value),
-            call_data: call_data.0,
+            call_data: call_data.0.into(),
         })
         .exactly_one()
         .unwrap()

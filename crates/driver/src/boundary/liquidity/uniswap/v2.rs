@@ -86,7 +86,7 @@ pub fn to_interaction(
     eth::Interaction {
         target: target.into(),
         value: value.into(),
-        call_data: call_data.0,
+        call_data: call_data.0.into(),
     }
 }
 
