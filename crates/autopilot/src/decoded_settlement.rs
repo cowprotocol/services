@@ -243,7 +243,7 @@ impl DecodedSettlement {
                     // fees we can only use every `OrderExecution` exactly once.
                     let order = orders.swap_remove(i);
                     acc + match self.fee(external_prices, &order, trade) {
-                        Some(fee) => fee,
+                        Some(fees) => fees.native,
                         None => {
                             tracing::warn!("possible incomplete fee calculation");
                             0.into()
@@ -266,7 +266,7 @@ impl DecodedSettlement {
         &self,
         external_prices: &ExternalPrices,
         mut orders: Vec<OrderExecution>,
-    ) -> Vec<(OrderUid, U256)> {
+    ) -> Vec<Fees> {
         self.trades
             .iter()
             .filter_map(|trade| {
@@ -282,13 +282,12 @@ impl DecodedSettlement {
                 // end up with the correct total fees we can only
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
-                match self.fee(external_prices, &order, trade) {
-                    Some(fee) => Some((order.order_uid, fee)),
-                    None => {
-                        tracing::warn!("possible incomplete fee calculation");
-                        None
-                    }
+                let fees = self.fee(external_prices, &order, trade);
+
+                if fees.is_none() {
+                    tracing::warn!("possible incomplete fee calculation");
                 }
+                fees
             })
             .collect()
     }
@@ -298,9 +297,9 @@ impl DecodedSettlement {
         external_prices: &ExternalPrices,
         order: &OrderExecution,
         trade: &DecodedTrade,
-    ) -> Option<U256> {
+    ) -> Option<Fees> {
         let solver_fee = match &order.executed_solver_fee {
-            Some(solver_fee) => u256_to_big_rational(solver_fee),
+            Some(solver_fee) => *solver_fee,
             None => {
                 // this should be a partial limit order
                 if !trade.flags.partially_fillable() {
@@ -327,7 +326,7 @@ impl DecodedSettlement {
                 let adjusted_buy_price = self.clearing_prices.get(buy_index).cloned()?;
 
                 // the logic is opposite to the code in function `custom_price_for_limit_order`
-                let fee = match trade.flags.order_kind() {
+                match trade.flags.order_kind() {
                     OrderKind::Buy => {
                         let required_sell_amount = trade
                             .executed_amount
@@ -351,19 +350,34 @@ impl DecodedSettlement {
                             .executed_amount
                             .checked_sub(sell_amount_needed_with_ucp)?
                     }
-                };
-
-                u256_to_big_rational(&fee)
+                }
             }
         };
 
         // converts the order's `solver_fee` which is denominated in `sell_token` to the
         // native token.
         tracing::trace!(?solver_fee, "fee before conversion to native token");
-        let fee = external_prices.try_get_native_amount(order.sell_token, solver_fee)?;
+        let fee = external_prices
+            .try_get_native_amount(order.sell_token, u256_to_big_rational(&solver_fee))?;
         tracing::trace!(?fee, "fee after conversion to native token");
-        big_rational_to_u256(&fee).ok()
+
+        Some(Fees {
+            order: order.order_uid,
+            sell: solver_fee,
+            native: big_rational_to_u256(&fee).ok()?,
+        })
     }
+}
+
+/// Computed executed fees for an order with solver-computed fees. These are
+/// computed based on-chain settlement data.
+pub struct Fees {
+    /// The UID of the order associated with these fees.
+    pub order: OrderUid,
+    /// The executed fees in the sell token.
+    pub sell: U256,
+    /// The executed fees in the native token.
+    pub native: U256,
 }
 
 fn surplus(

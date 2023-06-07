@@ -176,7 +176,10 @@ impl OnSettlementEventUpdater {
                         fee,
                         gas_used,
                         effective_gas_price,
-                        order_executions,
+                        order_executions: order_executions
+                            .iter()
+                            .map(|fees| (fees.order, fees.sell))
+                            .collect(),
                     });
                 }
                 Err(err) if matches!(err, DecodingError::InvalidSelector) => {
