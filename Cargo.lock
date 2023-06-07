@@ -1180,6 +1180,8 @@ dependencies = [
  "num",
  "number-conversions",
  "primitive-types 0.10.1",
+ "prometheus",
+ "prometheus-metric-storage",
  "rand",
  "reqwest",
  "secp256k1",

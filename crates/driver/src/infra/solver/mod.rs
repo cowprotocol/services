@@ -1,11 +1,12 @@
 use {
+    super::observe,
     crate::{
         domain::{
             competition::{auction::Auction, solution::Solution, SolverTimeout},
             eth,
             liquidity,
         },
-        infra::{self, blockchain::Ethereum, observe},
+        infra::{self, blockchain::Ethereum},
         util,
     },
     std::collections::HashSet,
@@ -24,10 +25,10 @@ const SOLVER_RESPONSE_MAX_BYTES: usize = 10_000_000;
 #[derive(Debug, Clone)]
 pub struct Name(pub String);
 
-#[derive(Debug, Clone)]
-pub struct Slippage {
-    pub relative: bigdecimal::BigDecimal,
-    pub absolute: Option<eth::Ether>,
+impl Name {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl From<String> for Name {
@@ -38,8 +39,14 @@ impl From<String> for Name {
 
 impl std::fmt::Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        f.write_str(self.as_str())
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Slippage {
+    pub relative: bigdecimal::BigDecimal,
+    pub absolute: Option<eth::Ether>,
 }
 
 /// Solvers are controlled by the driver. Their job is to search for solutions
@@ -117,14 +124,18 @@ impl Solver {
             auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();
-        observe::solver_request(&self.config.endpoint, &body);
+        observe::solver_request(self.name(), &self.config.endpoint, &body);
         let req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
             .timeout(timeout.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        observe::solver_response(&self.config.endpoint, res.as_ref().map(String::as_str));
+        observe::solver_response(
+            self.name(),
+            &self.config.endpoint,
+            res.as_ref().map(String::as_str),
+        );
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
@@ -134,7 +145,7 @@ impl Solver {
             return Err(Error::RepeatedSolutionIds);
         }
 
-        observe::solutions(&solutions);
+        observe::solutions(self.name(), &solutions);
         Ok(solutions)
     }
 }

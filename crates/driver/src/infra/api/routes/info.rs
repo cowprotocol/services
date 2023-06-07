@@ -4,6 +4,6 @@ pub(in crate::infra::api) fn info(app: axum::Router<State>) -> axum::Router<Stat
     app.route("/", axum::routing::get(route))
 }
 
-async fn route() -> &'static str {
-    "driver"
+async fn route(state: axum::extract::State<State>) -> String {
+    state.solver().name().to_string()
 }
