@@ -986,7 +986,7 @@ mod tests {
         );
 
         let zeroex_api = DefaultZeroExApi::test();
-        let finder = ZeroExTradeFinder::new(Arc::new(zeroex_api), vec![]);
+        let finder = ZeroExTradeFinder::new(Arc::new(zeroex_api), vec![], false);
 
         let estimator = TradeEstimator::new(
             testlib::protocol::SETTLEMENT,

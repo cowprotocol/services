@@ -436,6 +436,7 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(name),
             factory.network.settlement,
+            factory.args.zeroex_only_estimate_buy_queries,
         ))
     }
 

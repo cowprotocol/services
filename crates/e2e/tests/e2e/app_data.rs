@@ -61,7 +61,10 @@ async fn app_data(web3: Web3) {
     let order0 = create_order(OrderCreationAppData::Hash {
         hash: AppDataHash([1; 32]),
     });
-    services.create_order(&order0).await.unwrap();
+    let uid = services.create_order(&order0).await.unwrap();
+    let order0_ = services.get_order(&uid).await.unwrap();
+    assert_eq!(order0_.data.app_data, AppDataHash([1; 32]));
+    assert_eq!(order0_.metadata.full_app_data, None);
 
     // hash matches
     let app_data = "{}";
@@ -70,7 +73,10 @@ async fn app_data(web3: Web3) {
         full: app_data.to_string(),
         expected: AppDataHash(app_data_hash),
     });
-    services.create_order(&order1).await.unwrap();
+    let uid = services.create_order(&order1).await.unwrap();
+    let order1_ = services.get_order(&uid).await.unwrap();
+    assert_eq!(order1_.data.app_data, AppDataHash(app_data_hash));
+    assert_eq!(order1_.metadata.full_app_data, Some(app_data.to_string()));
 
     // hash doesn't match
     let order2 = create_order(OrderCreationAppData::Both {

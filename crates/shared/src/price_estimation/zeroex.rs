@@ -22,10 +22,11 @@ impl ZeroExPriceEstimator {
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
         settlement: H160,
+        buy_only: bool,
     ) -> Self {
         Self(TradeEstimator::new(
             settlement,
-            Arc::new(ZeroExTradeFinder::new(api, excluded_sources)),
+            Arc::new(ZeroExTradeFinder::new(api, excluded_sources, buy_only)),
             rate_limiter,
         ))
     }
@@ -49,7 +50,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            price_estimation::single_estimate,
+            price_estimation::{single_estimate, vec_estimates, PriceEstimationError},
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
         ethcontract::futures::FutureExt as _,
@@ -57,7 +58,7 @@ mod tests {
         reqwest::Client,
     };
 
-    fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
+    fn create_estimator(api: Arc<dyn ZeroExApi>, buy_only: bool) -> ZeroExPriceEstimator {
         ZeroExPriceEstimator::new(
             api,
             Default::default(),
@@ -66,6 +67,7 @@ mod tests {
                 "test".into(),
             )),
             testlib::protocol::SETTLEMENT,
+            buy_only,
         )
     }
 
@@ -99,7 +101,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = single_estimate(
             &estimator,
@@ -148,7 +150,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = single_estimate(
             &estimator,
@@ -168,13 +170,81 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn filter_out_sell_estimates() {
+        let mut zeroex_api = MockZeroExApi::new();
+
+        zeroex_api.expect_get_swap().return_once(|_| {
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 8986186353137488u64.into(),
+                        buy_amount: 100000000000000000u64.into(),
+                        allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 0.089_861_863_531_374_87,
+                        estimated_gas: 111000,
+                    },
+                    ..Default::default()
+                })
+            }
+            .boxed()
+        });
+
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
+
+        let estimator = create_estimator(Arc::new(zeroex_api), true);
+
+        let estimates = vec_estimates(
+            &estimator,
+            &[
+                Query {
+                    from: None,
+                    sell_token: weth,
+                    buy_token: gno,
+                    in_amount: 100000000000000000u64.into(),
+                    kind: OrderKind::Sell,
+                },
+                Query {
+                    from: None,
+                    sell_token: weth,
+                    buy_token: gno,
+                    in_amount: 100000000000000000u64.into(),
+                    kind: OrderKind::Buy,
+                },
+                Query {
+                    from: None,
+                    sell_token: weth,
+                    buy_token: gno,
+                    in_amount: 100000000000000000u64.into(),
+                    kind: OrderKind::Sell,
+                },
+            ],
+        )
+        .await;
+
+        assert_eq!(estimates.len(), 3);
+        assert!(matches!(
+            &estimates[0],
+            Err(PriceEstimationError::UnsupportedOrderType)
+        ));
+        assert!(matches!(
+            &estimates[1],
+            Ok(est) if est.out_amount.as_u64() == 8986186353137488u64
+        ));
+        assert!(matches!(
+            &estimates[2],
+            Err(PriceEstimationError::UnsupportedOrderType)
+        ));
+    }
+
+    #[tokio::test]
     #[ignore]
     async fn real_estimate() {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
         let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
-        let estimator = create_estimator(Arc::new(zeroex_api));
+        let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = single_estimate(
             &estimator,
