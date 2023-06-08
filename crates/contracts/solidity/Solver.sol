@@ -18,8 +18,7 @@ contract Solver {
     using Math for *;
     using SafeERC20 for *;
 
-    // initialize the storage to make overhead of gas measurements more predictable
-    uint256 private _simulationOverhead = 1;
+    uint256 private _simulationOverhead;
     uint256[] private _queriedBalances;
 
     /// @dev Executes the given transaction from the context of a solver.
@@ -72,8 +71,15 @@ contract Solver {
             // regular ERC20 token
             _queriedBalances.push(IERC20(token).balanceOf(owner));
         }
-        // -640 for 40 (presumably) non-zero bytes (16 gas) of call data
-        // TODO find out other costs (e.g. function call)
-        _simulationOverhead += gasStart - gasleft() - 640;
+        // Account for costs of gas used outside of metered section.
+        // These values have been dialed in for the ERC20 case since that happens more frequently
+        uint256 measurementOverhead;
+        if (_queriedBalances.length == 1) {
+            // reading cold storage costs more which results in higher overhead for the first call
+            measurementOverhead = 13355;
+        } else {
+            measurementOverhead = 4460;
+        }
+        _simulationOverhead += gasStart - gasleft() + measurementOverhead;
     }
 }
