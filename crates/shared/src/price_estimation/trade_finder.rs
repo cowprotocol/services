@@ -84,9 +84,13 @@ impl TradeEstimator {
     }
 
     async fn estimate(&self, query: Query) -> Result<Estimate, PriceEstimationError> {
-        let Some(owner) = query.from else {
-            return Err(PriceEstimationError::Other(anyhow::anyhow!("verified quotes require a 'from' and 'receiver' address")));
-        };
+        let owner = query.from.unwrap_or_default();
+        if query.from.is_none() {
+            tracing::warn!(
+                "trade verification requires a 'from' and 'receiver' address.assuming 0x000...000 \
+                 for now."
+            );
+        }
 
         let quote_query = QuoteQuery {
             sell_token: query.sell_token,
