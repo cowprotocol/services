@@ -22,7 +22,7 @@ pub async fn execute(
         async move {
             let result = mempool.execute(solver, settlement).await;
             if let Err(err) = result.as_ref() {
-                observe::mempool_failed(mempool, err);
+                observe::mempool_failed(solver.name(), mempool, err);
             }
             result
         }

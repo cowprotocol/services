@@ -1,4 +1,4 @@
-/// A thin wrapper around a vector of bytes. Provides hex debug formatting.
+/// A thin wrapper around a collection of bytes. Provides hex debug formatting.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Bytes<T>(pub T);
 

@@ -17,12 +17,12 @@ async fn route(
     order: axum::Json<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let order = order.0.into_domain().tap_err(|err| {
-        observe::invalid_dto(err, "/quote", "order");
+        observe::invalid_dto(state.solver().name(), err, "/quote", "order");
     })?;
-    observe::quoting(&order);
+    observe::quoting(state.solver().name(), &order);
     let quote = order
         .quote(state.eth(), state.solver(), state.liquidity(), state.now())
         .await;
-    observe::quoted(&order, &quote);
+    observe::quoted(state.solver().name(), &order, &quote);
     Ok(axum::response::Json(dto::Quote::new(&quote?)))
 }

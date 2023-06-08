@@ -23,6 +23,19 @@ pub fn setup_metrics_registry(prefix: Option<String>, labels: Option<HashMap<Str
     REGISTRY.set(storage_registry).unwrap();
 }
 
+/// Like [`setup_metrics_registry`], but can be called multiple times in a row.
+/// Later calls are ignored.
+///
+/// Useful for tests.
+pub fn setup_metrics_registry_reentrant(
+    prefix: Option<String>,
+    labels: Option<HashMap<String, String>>,
+) {
+    let registry = prometheus::Registry::new_custom(prefix, labels).unwrap();
+    let storage_registry = prometheus_metric_storage::StorageRegistry::new(registry);
+    REGISTRY.set(storage_registry).ok();
+}
+
 /// Get the global instance of the metrics registry.
 pub fn get_metrics_registry() -> &'static prometheus::Registry {
     get_metric_storage_registry().registry()

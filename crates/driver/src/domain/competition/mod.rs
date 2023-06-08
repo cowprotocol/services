@@ -85,7 +85,7 @@ impl Competition {
         // Empty solutions aren't useful, so discard them.
         let solutions = solutions.into_iter().filter(|solution| {
             if solution.is_empty() {
-                observe::empty_solution(solution.id);
+                observe::empty_solution(self.solver.name(), solution.id);
                 false
             } else {
                 true
@@ -94,7 +94,7 @@ impl Competition {
 
         // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(solution.id);
+            observe::encoding(self.solver.name(), solution.id);
             (
                 solution.id,
                 solution.encode(auction, &self.eth, &self.simulator).await,
@@ -105,7 +105,11 @@ impl Competition {
         // Filter out solutions that failed to encode.
         let mut settlements = settlements
             .into_iter()
-            .filter_map(|(id, result)| result.tap_err(|err| observe::encoding_failed(id, err)).ok())
+            .filter_map(|(id, result)| {
+                result
+                    .tap_err(|err| observe::encoding_failed(self.solver.name(), id, err))
+                    .ok()
+            })
             .collect_vec();
 
         // TODO(#1483): parallelize this
@@ -129,11 +133,11 @@ impl Competition {
                     Ok(m) => {
                         *other = m;
                         merged = true;
-                        observe::merged(&settlement, other);
+                        observe::merged(self.solver.name(), &settlement, other);
                         break;
                     }
                     Err(err) => {
-                        observe::not_merged(&settlement, other, err);
+                        observe::not_merged(self.solver.name(), &settlement, other, err);
                     }
                 }
             }
@@ -150,7 +154,7 @@ impl Competition {
         let scores = settlements
             .into_iter()
             .map(|settlement| {
-                observe::scoring(&settlement);
+                observe::scoring(self.solver.name(), &settlement);
                 (settlement.score(&self.eth, auction), settlement)
             })
             .collect_vec();
@@ -160,7 +164,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| observe::scoring_failed(settlement.id, err))
+                    .tap_err(|err| observe::scoring_failed(self.solver.name(), settlement.id, err))
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -168,7 +172,7 @@ impl Competition {
 
         // Observe the scores.
         for (score, settlement) in scores.iter() {
-            observe::score(settlement, score);
+            observe::score(self.solver.name(), settlement, score);
         }
 
         // Pick the best-scoring settlement.

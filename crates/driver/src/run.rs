@@ -8,6 +8,7 @@ use {
             config,
             liquidity,
             mempool,
+            observe,
             simulator::{self, Simulator},
             solver::Solver,
             Api,
@@ -36,7 +37,7 @@ pub async fn run(
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
-    boundary::initialize_tracing(&args.log);
+    observe::init(&args.log);
     let config = config::file::load(&args.config).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();

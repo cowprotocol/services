@@ -13,8 +13,8 @@ async fn route(
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
     let solution_id = solution_id.into();
-    observe::settling(solution_id);
+    observe::settling(state.solver().name(), solution_id);
     let result = competition.settle(solution_id).await;
-    observe::settled(solution_id, &result);
+    observe::settled(state.solver().name(), solution_id, &result);
     result.map_err(Into::into)
 }
