@@ -1,8 +1,5 @@
 use {
-    std::{
-        panic::PanicInfo,
-        sync::atomic::{AtomicBool, Ordering},
-    },
+    std::{panic::PanicInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
     tracing_subscriber::fmt::{time::UtcTime, writer::MakeWriterExt as _},
@@ -23,15 +20,8 @@ pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
 pub fn initialize_reentrant(env_filter: &str) {
     // The tracing subscriber below is global object so initializing it again in the
     // same process by a different thread would fail.
-    static INITIALIZED: AtomicBool = AtomicBool::new(false);
-    if INITIALIZED
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
-    }
-
-    set_tracing_subscriber(env_filter, LevelFilter::ERROR);
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| set_tracing_subscriber(env_filter, LevelFilter::ERROR));
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
