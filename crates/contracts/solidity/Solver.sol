@@ -72,7 +72,6 @@ contract Solver {
             _queriedBalances.push(IERC20(token).balanceOf(owner));
         }
         // Account for costs of gas used outside of metered section.
-        // These values have been dialed in for the ERC20 case since that happens more frequently
         uint256 measurementOverhead;
         if (_queriedBalances.length == 1) {
             // reading cold storage costs more which results in higher overhead for the first call
