@@ -338,13 +338,12 @@ impl TradeVerifier {
 
         let output = self.simulator.simulate(call, overrides).await?;
         let summary = SettleOutput::decode(&output)?;
-        let estimate = Estimate {
+        Ok(Estimate {
             out_amount: summary.out_amount(query.kind)?,
             gas: summary
                 .gas_used()
                 .context("couldn't compute gas for quote")?,
-        };
-        Ok(estimate)
+        })
     }
 }
 
