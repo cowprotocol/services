@@ -1,4 +1,7 @@
-use crate::domain::{self, eth, liquidity};
+use crate::{
+    domain::{self, eth, liquidity},
+    util::Bytes,
+};
 
 /// Interaction with a smart contract which is needed to execute this solution
 /// on the blockchain.
@@ -68,7 +71,7 @@ impl Interaction {
 pub struct Custom {
     pub target: eth::ContractAddress,
     pub value: eth::Ether,
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes<Vec<u8>>,
     pub allowances: Vec<eth::allowance::Required>,
     /// See the [`Interaction::inputs`] method.
     pub inputs: Vec<eth::Asset>,

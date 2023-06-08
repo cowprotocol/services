@@ -1,9 +1,7 @@
 use {
+    crate::util::Bytes,
     itertools::Itertools,
-    std::{
-        collections::{HashMap, HashSet},
-        fmt,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 pub mod allowance;
@@ -272,16 +270,16 @@ pub struct BlockNo(pub u64);
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,
-    pub call_data: Vec<u8>,
+    pub call_data: Bytes<Vec<u8>>,
 }
 
 /// An onchain transaction.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
-    pub input: Vec<u8>,
+    pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
 }
 
@@ -291,18 +289,6 @@ impl Tx {
             access_list,
             ..self
         }
-    }
-}
-
-impl fmt::Debug for Tx {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Tx")
-            .field("from", &self.from)
-            .field("to", &self.to)
-            .field("value", &self.value)
-            .field("input", &format_args!("0x{}", hex::encode(&self.input)))
-            .field("access_list", &self.access_list)
-            .finish()
     }
 }
 

@@ -1,4 +1,7 @@
-use crate::infra::api::{Error, State};
+use crate::infra::{
+    api::{Error, State},
+    observe,
+};
 
 pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/settle/:solution_id", axum::routing::post(route))
@@ -9,8 +12,9 @@ async fn route(
     axum::extract::Path(solution_id): axum::extract::Path<u64>,
 ) -> Result<(), (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    competition
-        .settle(solution_id.into())
-        .await
-        .map_err(Into::into)
+    let solution_id = solution_id.into();
+    observe::settling(solution_id);
+    let result = competition.settle(solution_id).await;
+    observe::settled(solution_id, &result);
+    result.map_err(Into::into)
 }

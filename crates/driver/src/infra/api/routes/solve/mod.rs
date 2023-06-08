@@ -2,7 +2,10 @@ mod dto;
 
 pub use dto::AuctionError;
 use {
-    crate::infra::api::{Error, State},
+    crate::infra::{
+        api::{Error, State},
+        observe,
+    },
     tap::TapFallible,
 };
 
@@ -15,11 +18,11 @@ async fn route(
     auction: axum::Json<dto::Auction>,
 ) -> Result<axum::Json<dto::Solution>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction = auction.0.into_domain(state.eth()).await.tap_err(|err| {
-        tracing::warn!(?err, "error creating auction");
+        observe::invalid_dto(err, "/solve", "auction");
     })?;
+    observe::auction(&auction);
     let competition = state.competition();
-    let reveal = competition.solve(&auction).await.tap_err(|err| {
-        tracing::warn!(?err, "error solving auction");
-    })?;
-    Ok(axum::Json(dto::Solution::new(reveal, &competition.solver)))
+    let result = competition.solve(&auction).await;
+    observe::solved(&auction, &result);
+    Ok(axum::Json(dto::Solution::new(result?, &competition.solver)))
 }

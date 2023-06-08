@@ -6,6 +6,7 @@ use {
             self,
             blockchain::Ethereum,
             mempool,
+            observe,
             solver::{self, Solver},
             time,
             Mempool,
@@ -59,7 +60,6 @@ pub struct Reveal {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Reveal, Error> {
-        tracing::trace!("fetching liquidity");
         let liquidity = self
             .liquidity
             .fetch(
@@ -77,7 +77,6 @@ impl Competition {
             .await;
 
         // Fetch the solutions from the solver.
-        tracing::trace!("solving");
         let solutions = self
             .solver
             .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
@@ -86,7 +85,7 @@ impl Competition {
         // Empty solutions aren't useful, so discard them.
         let solutions = solutions.into_iter().filter(|solution| {
             if solution.is_empty() {
-                tracing::info!(id = ?solution.id, "discarding solution: empty");
+                observe::empty_solution(solution.id);
                 false
             } else {
                 true
@@ -95,7 +94,7 @@ impl Competition {
 
         // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            tracing::trace!(id = ?solution.id, "encoding settlement");
+            observe::encoding(solution.id);
             (
                 solution.id,
                 solution.encode(auction, &self.eth, &self.simulator).await,
@@ -106,13 +105,7 @@ impl Competition {
         // Filter out solutions that failed to encode.
         let mut settlements = settlements
             .into_iter()
-            .filter_map(|(id, result)| {
-                result
-                    .tap_err(|err| {
-                        tracing::info!(?err, ?id, "discarding solution: settlement encoding failed")
-                    })
-                    .ok()
-            })
+            .filter_map(|(id, result)| result.tap_err(|err| observe::encoding_failed(id, err)).ok())
             .collect_vec();
 
         // TODO(#1483): parallelize this
@@ -123,7 +116,7 @@ impl Competition {
 
         // The merging algorithm works as follows: the [`settlements`] vector keeps the
         // "most merged" settlements until they can't be merged anymore, at
-        // which point they are pushed into the [`results`] vector.
+        // which point they are moved into the [`results`] vector.
 
         // The merged settlements in their final form.
         let mut results = Vec::new();
@@ -134,22 +127,13 @@ impl Competition {
             for other in settlements.iter_mut() {
                 match other.merge(&settlement, &self.eth, &self.simulator).await {
                     Ok(m) => {
-                        tracing::debug!(
-                            settlement_1 = ?settlement.solutions(),
-                            settlement_2 = ?other.solutions(),
-                            "merged solutions"
-                        );
                         *other = m;
                         merged = true;
+                        observe::merged(&settlement, other);
                         break;
                     }
                     Err(err) => {
-                        tracing::debug!(
-                            ?err,
-                            settlement_1 = ?settlement.solutions(),
-                            settlement_2 = ?other.solutions(),
-                            "solutions can't be merged"
-                        );
+                        observe::not_merged(&settlement, other, err);
                     }
                 }
             }
@@ -166,11 +150,7 @@ impl Competition {
         let scores = settlements
             .into_iter()
             .map(|settlement| {
-                tracing::trace!(
-                    solutions = ?settlement.solutions(),
-                    settlement_id = ?settlement.id,
-                    "scoring settlement"
-                );
+                observe::scoring(&settlement);
                 (settlement.score(&self.eth, auction), settlement)
             })
             .collect_vec();
@@ -180,26 +160,15 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
-                        tracing::info!(
-                            ?err,
-                            solutions = ?settlement.solutions(),
-                            "discarding settlement: failed scoring"
-                        );
-                    })
+                    .tap_err(|err| observe::scoring_failed(settlement.id, err))
                     .ok()
                     .map(|score| (score, settlement))
             })
             .collect_vec();
 
-        // Trace the scores.
+        // Observe the scores.
         for (score, settlement) in scores.iter() {
-            tracing::info!(
-                solutions = ?settlement.solutions(),
-                settlement_id = ?settlement.id,
-                score = score.0.to_f64_lossy(),
-                "settlement scored"
-            );
+            observe::score(settlement, score);
         }
 
         // Pick the best-scoring settlement.
@@ -207,8 +176,6 @@ impl Competition {
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
-
-        tracing::info!(?settlement, "winning settlement");
 
         let id = settlement.id;
         let orders = settlement.orders();
@@ -224,11 +191,10 @@ impl Competition {
             .lock()
             .unwrap()
             .take()
-            .ok_or(Error::InvalidSolutionId)?;
+            .ok_or(Error::SolutionNotAvailable)?;
         if id != settlement.id {
             return Err(Error::InvalidSolutionId);
         }
-        tracing::trace!(?id, "settling");
         mempool::execute(&self.mempools, &self.solver, settlement)
             .await
             .map_err(Into::into)
@@ -237,6 +203,11 @@ impl Competition {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error(
+        "no solution is available yet, this might mean that /settle was called before /solve \
+         returned"
+    )]
+    SolutionNotAvailable,
     #[error("no solution found for given id")]
     InvalidSolutionId,
     #[error("no solution found for the auction")]

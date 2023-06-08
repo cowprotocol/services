@@ -73,7 +73,7 @@ impl Tenderly {
                 network_id: self.network_id.to_string(),
                 from: tx.from.into(),
                 to: tx.to.into(),
-                input: tx.input,
+                input: tx.input.into(),
                 value: tx.value.into(),
                 save: self.config.save,
                 save_if_fails: self.config.save_if_fails,

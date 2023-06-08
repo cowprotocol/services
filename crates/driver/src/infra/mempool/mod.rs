@@ -1,5 +1,8 @@
 use {
-    crate::{domain::competition::solution::Settlement, infra::solver::Solver},
+    crate::{
+        domain::competition::solution::Settlement,
+        infra::{observe, solver::Solver},
+    },
     futures::{future::select_ok, FutureExt},
 };
 
@@ -18,8 +21,8 @@ pub async fn execute(
         let settlement = settlement.clone();
         async move {
             let result = mempool.execute(solver, settlement).await;
-            if result.is_err() {
-                tracing::warn!(?result, "sending transaction via mempool failed");
+            if let Err(err) = result.as_ref() {
+                observe::mempool_failed(mempool, err);
             }
             result
         }

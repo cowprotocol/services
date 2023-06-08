@@ -5,7 +5,7 @@ use {
             eth,
             liquidity,
         },
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, observe},
         util,
     },
     std::collections::HashSet,
@@ -117,14 +117,14 @@ impl Solver {
             auction, liquidity, timeout, weth, self.now,
         ))
         .unwrap();
-        tracing::trace!(%self.config.endpoint, %body, "sending request to solver");
+        observe::solver_request(&self.config.endpoint, &body);
         let req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
             .timeout(timeout.into());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        tracing::trace!(%self.config.endpoint, ?res, "got response from solver");
+        observe::solver_response(&self.config.endpoint, res.as_ref().map(String::as_str));
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
@@ -134,6 +134,7 @@ impl Solver {
             return Err(Error::RepeatedSolutionIds);
         }
 
+        observe::solutions(&solutions);
         Ok(solutions)
     }
 }
