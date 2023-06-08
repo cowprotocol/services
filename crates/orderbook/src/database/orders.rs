@@ -85,6 +85,8 @@ pub struct SolvableOrders {
 pub enum InsertionError {
     DuplicatedRecord,
     DbError(sqlx::Error),
+    /// Full app data to be inserted doesn't match existing.
+    AppDataMismatch(Vec<u8>),
 }
 
 impl From<sqlx::Error> for InsertionError {
@@ -129,11 +131,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             }) => surplus_fee_timestamp,
             _ => None,
         },
-        full_app_data: order
-            .metadata
-            .full_app_data
-            .as_ref()
-            .map(|s| s.as_bytes().to_vec()),
     };
     database::orders::insert_order(ex, &order)
         .await
@@ -179,18 +176,24 @@ impl OrderStoring for Postgres {
 
         let order = order.clone();
         let mut connection = self.pool.acquire().await?;
-        connection
-            .transaction(move |transaction| {
-                async move {
-                    insert_order(&order, transaction).await?;
-                    if let Some(quote) = quote {
-                        insert_quote(&order.metadata.uid, &quote, transaction).await?;
-                    }
-                    Ok(())
-                }
-                .boxed()
-            })
-            .await
+        let mut ex = connection.begin().await?;
+
+        insert_order(&order, &mut ex).await?;
+        if let Some(quote) = quote {
+            insert_quote(&order.metadata.uid, &quote, &mut ex).await?;
+        }
+        if let Some(full_app_data) = order.metadata.full_app_data {
+            let contract_app_data = &ByteArray(order.data.app_data.0);
+            let full_app_data = full_app_data.as_bytes();
+            let existing =
+                database::app_data::insert(&mut ex, contract_app_data, full_app_data).await?;
+            if full_app_data != existing {
+                return Err(InsertionError::AppDataMismatch(existing));
+            }
+        }
+
+        ex.commit().await?;
+        Ok(())
     }
 
     async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()> {

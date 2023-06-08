@@ -8,6 +8,20 @@ Some tables only store data emitted via smart contract events. Because we only h
 [CoWSwapEthFlow](https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol) we actually deployed twice so events related to the staging environment should only show up in the staging DB and likewise for production.
 It's also important to note that we only index events from blocks that we are certain will not get reorged. That means specifically that events will be indexed with a block delay of at least 64.
 
+### app\_data
+
+Associates the 32 bytes contract app data with the corresponding full app data.
+
+See [here](https://github.com/cowprotocol/services/issues/1465) for more details. In this table the contract app data is either the old unixfs based scheme, or the new keccak scheme. The new scheme can be validated by keccak-256 hashing the full app data, which should produce the contract app data. The old scheme cannot be validated.
+
+Column             | Type  | Nullable | Details
+-------------------|-------|----------|-------
+ contract\_app\_data | bytea | not null | 32 bytes. Referenced by `orders.app_data`.
+ full\_app\_data     | bytea | not null | Is utf-8 but not stored as string because the raw bytes are important for hashing.
+
+Indexes:
+- "app\_data\_pkey" PRIMARY KEY, btree (contract_app_data)
+
 ### auction\_participants
 
 This table is used for [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f). It stores which solvers (identified by ethereum address) participated in which auctions (identified by auction id). CIP-20 specifies that "solver teams which consistently provide solutions" get rewarded.
@@ -217,7 +231,6 @@ Column                    | Type                         | Nullable | Details
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
  surplus\_fee             | numeric                      | nullable | dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet and this order will not be part of our auctions
  surplus\_fee\_timestamp  | timestamptz                  | nullable | last time the backend attempted to update the surplus\_fee for this order, order with too old surplus\_fees will not be put in auctions because it is likely very inaccurate
- full_app_data            | bytea                        | nullable | The raw bytes of the full app data the order's `app_data` field is a hash of. Null if the backend does not have the full app data. See <https://github.com/cowprotocol/services/issues/1465> for more context.
 
 
 Indexes:

@@ -125,7 +125,6 @@ pub struct Order {
     pub class: OrderClass,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
-    pub full_app_data: Option<Vec<u8>>,
 }
 
 pub async fn insert_or_overwrite_interactions(
@@ -203,10 +202,9 @@ INSERT INTO orders (
     cancellation_timestamp,
     class,
     surplus_fee,
-    surplus_fee_timestamp,
-    full_app_data
+    surplus_fee_timestamp
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -250,7 +248,6 @@ async fn insert_order_execute_sqlx(
         .bind(order.class)
         .bind(&order.surplus_fee)
         .bind(order.surplus_fee_timestamp)
-        .bind(&order.full_app_data)
         .execute(ex)
         .await?;
     Ok(())
@@ -466,7 +463,7 @@ const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class, o.surplus_fee, o.surplus_fee_timestamp, o.full_app_data,
+o.class, o.surplus_fee, o.surplus_fee_timestamp,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -489,7 +486,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 (SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee,
-(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee
+(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee,
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
 const ORDERS_FROM: &str = "orders o";
@@ -897,7 +895,6 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order = Order {
-            full_app_data: Some(vec![0, 1]),
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
@@ -934,7 +931,6 @@ mod tests {
             order.surplus_fee_timestamp,
             full_order.surplus_fee_timestamp
         );
-        assert_eq!(order.full_app_data, full_order.full_app_data);
     }
 
     #[tokio::test]
@@ -2416,5 +2412,32 @@ mod tests {
                 ..Default::default()
             }]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_app_data() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order {
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+        let full_order = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(full_order.full_app_data.is_none());
+        let full_app_data = vec![0u8, 1, 2];
+        crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
+            .await
+            .unwrap();
+        let full_order = single_full_order(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(full_order.full_app_data, Some(full_app_data));
     }
 }

@@ -644,7 +644,6 @@ fn convert_onchain_order_placement(
         class,
         surplus_fee: Default::default(),
         surplus_fee_timestamp: Default::default(),
-        full_app_data: None,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
