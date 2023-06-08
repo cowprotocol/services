@@ -18,7 +18,8 @@ contract Solver {
     using Math for *;
     using SafeERC20 for *;
 
-    uint256 private _simulationOverhead = 0;
+    // initialize the storage to make overhead of gas measurements more predictable
+    uint256 private _simulationOverhead = 1;
     uint256[] private _queriedBalances;
 
     /// @dev Executes the given transaction from the context of a solver.
@@ -50,15 +51,11 @@ contract Solver {
         // Prepare the trade in the context of the trader so we are allowed
         // to set approvals and things like that.
         Trader(trader).prepareSwap(sellToken, sellAmount, nativeToken, receiver);
-        gasUsed = address(SETTLEMENT).doMeteredCallNoReturn(settlementCall);
-        gasUsed -= _simulationOverhead;
+        uint256 gasStart = gasleft();
+        // TODO can we assume the overhead of this function call to be negligible due to inlining?
+        address(SETTLEMENT).doCall(settlementCall);
+        gasUsed = gasStart - gasleft() - _simulationOverhead;
         queriedBalances = _queriedBalances;
-    }
-
-    /// @dev Simple wrapper around `storeBalance` to keep track of gas used due to
-    /// simulation overhead.
-    function storeBalanceMetered(address token, address owner) external {
-        _simulationOverhead += address(this).doMeteredCallNoReturn(abi.encodeCall(this.storeBalance, (token, owner)));
     }
 
     /// @dev Helper function that reads the `owner`s balance for a given `token` and
@@ -67,13 +64,16 @@ contract Solver {
     /// @param token - which token's we read the balance from
     /// @param owner - whos balance we are reading
     function storeBalance(address token, address owner) external {
+        uint256 gasStart = gasleft();
         if (token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
             // native ETH
             _queriedBalances.push(owner.balance);
         } else {
             // regular ERC20 token
-            // what happens when this does actually not return a `uint256`?
             _queriedBalances.push(IERC20(token).balanceOf(owner));
         }
+        // -640 for 40 (presumably) non-zero bytes (16 gas) of call data
+        // TODO find out other costs (e.g. function call)
+        _simulationOverhead += gasStart - gasleft() - 640;
     }
 }

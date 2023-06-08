@@ -230,7 +230,7 @@ fn add_balance_queries(
         // track how much `sell_token` the settlement contract actually spent
         OrderKind::Buy => (query.sell_token, settlement_contract),
     };
-    let query_balance = solver.methods().store_balance_metered(token, owner);
+    let query_balance = solver.methods().store_balance(token, owner);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
     settlement.interactions[1].insert(0, interaction.clone());
@@ -262,7 +262,6 @@ impl TradeVerifier {
     }
 
     async fn verify(&self, query: QuoteQuery, trade: Trade) -> Result<Estimate> {
-        tracing::error!(?query, "verifying quote");
         // TODO: add solver address to [`Trade`]; for now we simply use Quasilab's
         // address
         let solver = dummy_contract!(
@@ -338,12 +337,18 @@ impl TradeVerifier {
 
         let output = self.simulator.simulate(call, overrides).await?;
         let summary = SettleOutput::decode(&output)?;
-        Ok(Estimate {
+        let verified = Estimate {
             out_amount: summary.out_amount(query.kind)?,
-            gas: summary
-                .gas_used()
-                .context("couldn't compute gas for quote")?,
-        })
+            gas: summary.gas_used.as_u64(),
+        };
+        tracing::debug!(
+            ?query,
+            promised_gas = trade.gas_estimate,
+            promised_out_amount =? trade.out_amount,
+            ?verified,
+            "verified quote"
+        );
+        Ok(verified)
     }
 }
 
@@ -404,9 +409,7 @@ pub struct QuoteQuery {
 /// Output of `Trader::settle` smart contract call.
 #[derive(Debug)]
 struct SettleOutput {
-    /// Gas used for the `settle()` call. This still includes gas overhead from
-    /// measuring gas usage of helper function so that still needs to be
-    /// discounted for accurate results.
+    /// Gas used for the `settle()` call.
     gas_used: U256,
     /// Balances queried during the simulation in the order specified during the
     /// simulation set up.
@@ -436,25 +439,6 @@ impl SettleOutput {
             OrderKind::Buy => balance_before.checked_sub(*balance_after),
         };
         out_amount.context("underflow during out_amount computation")
-    }
-
-    /// Returns the units of gas used accounting for overhead measuring gas.
-    fn gas_used(&self) -> Option<u64> {
-        // Additional gas used per function call that we measure the gas use for.
-        const OVERHEAD_PER_MEASUREMENT: u64 = 23_861;
-        // How often we incurred overhead for measuring gas usage of function calls that
-        // are only needed for simulation purposes but are **not** required for
-        // the actual trade.
-        const MEASUREMENTS: u64 = 2;
-        const TOTAL_OVERHEAD: u64 = OVERHEAD_PER_MEASUREMENT * MEASUREMENTS;
-
-        let gas_used = self.gas_used.checked_sub(TOTAL_OVERHEAD.into())?;
-
-        if gas_used > u64::MAX.into() {
-            None
-        } else {
-            Some(gas_used.as_u64())
-        }
     }
 }
 
