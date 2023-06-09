@@ -142,6 +142,10 @@ mod tests {
             trade(non_stable_a, non_stable_b),
         ]);
         assert!(some_stable_to_stable_trade(&settlement));
+        let settlement = Settlement::with_default_prices(vec![trade(usdc, non_stable_a)]);
+        assert!(!some_stable_to_stable_trade(&settlement));
+        let settlement = Settlement::with_default_prices(vec![trade(non_stable_a, usdc)]);
+        assert!(!some_stable_to_stable_trade(&settlement));
         let settlement = Settlement::with_default_prices(vec![trade(non_stable_a, non_stable_b)]);
         assert!(!some_stable_to_stable_trade(&settlement));
     }
