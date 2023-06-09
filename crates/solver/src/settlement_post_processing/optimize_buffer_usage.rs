@@ -1,6 +1,7 @@
 use {
     super::SettlementSimulating,
     crate::settlement::Settlement,
+    primitive_types::H160,
     shared::token_list::AutoUpdatingTokenList,
 };
 
@@ -14,6 +15,17 @@ pub async fn optimize_buffer_usage(
     // We don't want to buy tokens that we don't trust. If no list is set, we settle
     // with external liquidity.
     if !is_only_selling_trusted_tokens(&settlement, &market_makable_token_list) {
+        return settlement;
+    }
+
+    // Sometimes solvers propose stable to stable trades that produce good prices
+    // but require enormous gas overhead. Normally these would be discarded but
+    // due to naive buffer usage rules it's technically allowed to internalize
+    // these trades which gets rid of their high gas cost. That's why we disable
+    // internalization of any settlement that contains a stable to stable
+    // trade until we have better rules for buffer usage. This code only affects
+    // Gnosis solvers.
+    if some_stable_to_stable_trade(&settlement) {
         return settlement;
     }
 
@@ -39,6 +51,23 @@ fn is_only_selling_trusted_tokens(
     !settlement
         .traded_orders()
         .any(|order| !market_makable_token_list.contains(&order.data.sell_token))
+}
+
+fn some_stable_to_stable_trade(settlement: &Settlement) -> bool {
+    let stable_coins = [
+        H160(hex_literal::hex!(
+            "A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" // USDC
+        )),
+        H160(hex_literal::hex!(
+            "6B175474E89094C44Da98b954EedeAC495271d0F" // DAI
+        )),
+        H160(hex_literal::hex!(
+            "dAC17F958D2ee523a2206206994597C13D831ec7" // USDT
+        )),
+    ];
+    settlement.traded_orders().any(|o| {
+        stable_coins.contains(&o.data.sell_token) && stable_coins.contains(&o.data.buy_token)
+    })
 }
 
 #[cfg(test)]
