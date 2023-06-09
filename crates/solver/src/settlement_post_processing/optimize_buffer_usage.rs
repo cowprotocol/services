@@ -79,6 +79,23 @@ mod tests {
         primitive_types::H160,
     };
 
+    fn trade(sell_token: H160, buy_token: H160) -> Trade {
+        Trade {
+            order: Order {
+                data: OrderData {
+                    sell_token,
+                    buy_token,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            executed_amount: 1.into(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn test_is_only_selling_trusted_tokens() {
         let good_token = H160::from_low_u64_be(1);
@@ -88,29 +105,44 @@ mod tests {
         let token_list =
             AutoUpdatingTokenList::new([good_token, another_good_token].into_iter().collect());
 
-        let trade = |token| Trade {
-            order: Order {
-                data: OrderData {
-                    sell_token: token,
-                    sell_amount: 1.into(),
-                    buy_amount: 1.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            executed_amount: 1.into(),
-            ..Default::default()
-        };
-
-        let settlement =
-            Settlement::with_default_prices(vec![trade(good_token), trade(another_good_token)]);
+        let settlement = Settlement::with_default_prices(vec![
+            trade(good_token, bad_token),
+            trade(another_good_token, bad_token),
+        ]);
         assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
 
         let settlement = Settlement::with_default_prices(vec![
-            trade(good_token),
-            trade(another_good_token),
-            trade(bad_token),
+            trade(good_token, bad_token),
+            trade(another_good_token, bad_token),
+            trade(bad_token, good_token),
         ]);
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
+    }
+
+    #[test]
+    fn prevent_stable_to_stable_trade_internalization() {
+        let usdc = H160(hex_literal::hex!(
+            "A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        ));
+        let dai = H160(hex_literal::hex!(
+            "6B175474E89094C44Da98b954EedeAC495271d0F"
+        ));
+        let usdt = H160(hex_literal::hex!(
+            "dAC17F958D2ee523a2206206994597C13D831ec7"
+        ));
+        let non_stable_a = H160([1; 20]);
+        let non_stable_b = H160([2; 20]);
+
+        let settlement = Settlement::with_default_prices(vec![trade(usdc, dai)]);
+        assert!(some_stable_to_stable_trade(&settlement));
+        let settlement = Settlement::with_default_prices(vec![trade(usdc, usdt)]);
+        assert!(some_stable_to_stable_trade(&settlement));
+        let settlement = Settlement::with_default_prices(vec![
+            trade(usdc, usdt),
+            trade(non_stable_a, non_stable_b),
+        ]);
+        assert!(some_stable_to_stable_trade(&settlement));
+        let settlement = Settlement::with_default_prices(vec![trade(non_stable_a, non_stable_b)]);
+        assert!(!some_stable_to_stable_trade(&settlement));
     }
 }
