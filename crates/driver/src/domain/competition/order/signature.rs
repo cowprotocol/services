@@ -1,10 +1,10 @@
-use crate::domain::eth;
+use crate::{domain::eth, util::Bytes};
 
 /// Signature over the order data.
 #[derive(Debug, Clone)]
 pub struct Signature {
     pub scheme: Scheme,
-    pub data: Vec<u8>,
+    pub data: Bytes<Vec<u8>>,
     /// The address used to sign and place this order.
     pub signer: eth::Address,
 }

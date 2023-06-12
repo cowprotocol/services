@@ -8,6 +8,7 @@ use {
             config,
             liquidity,
             mempool,
+            observe,
             simulator::{self, Simulator},
             solver::Solver,
             Api,
@@ -36,7 +37,7 @@ pub async fn run(
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
-    boundary::initialize_tracing(&args.log);
+    observe::init(&args.log);
     let config = config::file::load(&args.config).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
@@ -67,13 +68,12 @@ pub async fn run(
 
     futures::pin_mut!(serve);
     tokio::select! {
-        result = &mut serve => tracing::error!(?result, "API task exited"),
+        result = &mut serve => panic!("serve task exited: {result:?}"),
         _ = shutdown_signal() => {
-            tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => tracing::error!("API shutdown exceeded timeout"),
+                Err(_) => panic!("API shutdown exceeded timeout"),
             }
         }
     };

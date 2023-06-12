@@ -107,7 +107,7 @@ impl Solutions {
                                                     competition::order::signature::Scheme::Eip1271
                                                 }
                                             },
-                                            data: jit.order.signature,
+                                            data: jit.order.signature.into(),
                                             signer: solver.address(),
                                         },
                                     },
@@ -137,7 +137,7 @@ impl Solutions {
                                     competition::solution::interaction::Custom {
                                         target: interaction.target.into(),
                                         value: interaction.value.into(),
-                                        call_data: interaction.call_data,
+                                        call_data: interaction.call_data.into(),
                                         allowances: interaction
                                             .allowances
                                             .into_iter()

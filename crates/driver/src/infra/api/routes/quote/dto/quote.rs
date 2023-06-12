@@ -17,7 +17,7 @@ impl Quote {
                 .map(|interaction| Interaction {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
-                    call_data: interaction.call_data.clone(),
+                    call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
         }

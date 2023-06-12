@@ -1,7 +1,7 @@
 use crate::{
     domain::eth,
     infra::{blockchain, Ethereum},
-    util,
+    util::{self, Bytes},
 };
 
 pub mod signature;
@@ -178,17 +178,17 @@ pub const UID_LEN: usize = 56;
 
 /// UID of an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Uid(pub [u8; UID_LEN]);
+pub struct Uid(pub Bytes<[u8; UID_LEN]>);
 
 impl Default for Uid {
     fn default() -> Self {
-        Self([0; UID_LEN])
+        Self([0; UID_LEN].into())
     }
 }
 
 impl PartialEq<[u8; UID_LEN]> for Uid {
     fn eq(&self, other: &[u8; UID_LEN]) -> bool {
-        self.0 == *other
+        self.0 .0 == *other
     }
 }
 
@@ -205,13 +205,13 @@ pub enum Side {
 
 impl From<[u8; UID_LEN]> for Uid {
     fn from(inner: [u8; UID_LEN]) -> Self {
-        Self(inner)
+        Self(inner.into())
     }
 }
 
 impl From<Uid> for [u8; UID_LEN] {
     fn from(uid: Uid) -> Self {
-        uid.0
+        uid.0.into()
     }
 }
 
@@ -222,17 +222,17 @@ pub const APP_DATA_LEN: usize = 32;
 /// While this type holds the hash, the data itself is uploaded to IPFS. This
 /// hash is signed along with the order.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct AppData(pub [u8; APP_DATA_LEN]);
+pub struct AppData(pub Bytes<[u8; APP_DATA_LEN]>);
 
 impl From<[u8; APP_DATA_LEN]> for AppData {
     fn from(inner: [u8; APP_DATA_LEN]) -> Self {
-        Self(inner)
+        Self(inner.into())
     }
 }
 
 impl From<AppData> for [u8; APP_DATA_LEN] {
     fn from(app_data: AppData) -> Self {
-        app_data.0
+        app_data.0.into()
     }
 }
 

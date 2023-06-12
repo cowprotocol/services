@@ -2,7 +2,7 @@ use {
     crate::{
         boundary,
         domain::liquidity,
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, observe},
     },
     std::{collections::HashSet, sync::Arc},
 };
@@ -26,10 +26,14 @@ impl Fetcher {
     /// Fetches all relevant liquidity for the specified token pairs. Handles
     /// failures by logging and returning an empty vector.
     pub async fn fetch(&self, pairs: &HashSet<liquidity::TokenPair>) -> Vec<liquidity::Liquidity> {
+        observe::fetching_liquidity();
         match self.inner.fetch(pairs).await {
-            Ok(liquidity) => liquidity,
+            Ok(liquidity) => {
+                observe::fetched_liquidity(&liquidity);
+                liquidity
+            }
             Err(e) => {
-                tracing::warn!(?e, "failed to fetch liquidity");
+                observe::fetching_liquidity_failed(&e);
                 Default::default()
             }
         }

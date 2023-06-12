@@ -1,7 +1,7 @@
 use {
     crate::{
         domain,
-        infra::{self, liquidity, solver::Solver, time, Ethereum, Mempool, Simulator},
+        infra::{self, liquidity, observe, solver::Solver, time, Ethereum, Mempool, Simulator},
     },
     error::Error,
     futures::Future,
@@ -41,6 +41,9 @@ impl Api {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         );
 
+        // Add the metrics endpoint.
+        app = routes::metrics(app);
+
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
         // for all of them. This is important because liquidity collection is
@@ -68,7 +71,7 @@ impl Api {
                 now: self.now,
             })));
             let path = format!("/{name}");
-            tracing::debug!("mounting {path}");
+            observe::mounting_solver(&name, &path);
             app = app.nest(&path, router);
         }
 

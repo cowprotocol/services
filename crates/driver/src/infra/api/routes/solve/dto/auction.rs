@@ -78,7 +78,7 @@ impl Auction {
                             .map(|interaction| eth::Interaction {
                                 target: interaction.target.into(),
                                 value: interaction.value.into(),
-                                call_data: interaction.call_data,
+                                call_data: interaction.call_data.into(),
                             })
                             .collect(),
                         post_interactions: order
@@ -87,7 +87,7 @@ impl Auction {
                             .map(|interaction| eth::Interaction {
                                 target: interaction.target.into(),
                                 value: interaction.value.into(),
-                                call_data: interaction.call_data,
+                                call_data: interaction.call_data.into(),
                             })
                             .collect(),
                         sell_token_balance: match order.sell_token_balance {
@@ -120,7 +120,7 @@ impl Auction {
                                     competition::order::signature::Scheme::Eip1271
                                 }
                             },
-                            data: order.signature,
+                            data: order.signature.into(),
                             signer: order.owner.into(),
                         },
                     })

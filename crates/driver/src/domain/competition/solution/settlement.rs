@@ -160,7 +160,7 @@ impl Settlement {
                 from: settlement.solver,
                 to: trade.order().receiver(),
                 value: 1.into(),
-                input: Vec::new(),
+                input: Default::default(),
                 access_list: Default::default(),
             };
             Result::<_, Error>::Ok(simulator.access_list(tx).await?)

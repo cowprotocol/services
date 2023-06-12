@@ -38,6 +38,11 @@ bigdecimal = "0.3"
 rand = "0.8"
 web3 = "0.18"
 toml = "0.7"
+tap = "1.0.1"
+tempfile = "3.4"
+prometheus = "0.13"
+prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+global-metrics = { path = "../global-metrics" }
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.
@@ -51,15 +56,12 @@ clap = { workspace = true }
 contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
 model = { path = "../model" }
 number-conversions = { path = "../number-conversions" }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
 warp = { workspace = true }
-tap = "1.0.1"
-tempfile = "3.4"
 
 [dev-dependencies]
 maplit = { workspace = true }

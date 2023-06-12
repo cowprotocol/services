@@ -69,7 +69,9 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
             competition::Error::InvalidSolutionId => Kind::InvalidSolutionId,
-            competition::Error::SolutionNotFound => Kind::SolutionNotFound,
+            competition::Error::SolutionNotFound | competition::Error::SolutionNotAvailable => {
+                Kind::SolutionNotFound
+            }
             competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,

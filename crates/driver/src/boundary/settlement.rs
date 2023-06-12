@@ -189,7 +189,7 @@ impl Settlement {
             from: self.solver,
             to: tx.to.unwrap().into(),
             value: tx.value.unwrap_or_default().into(),
-            input,
+            input: input.into(),
             access_list: Default::default(),
         }
     }
@@ -297,7 +297,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
-                    call_data: interaction.call_data.clone(),
+                    call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
             post: order
@@ -306,7 +306,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
                 .map(|interaction| model::interaction::InteractionData {
                     target: interaction.target.into(),
                     value: interaction.value.into(),
-                    call_data: interaction.call_data.clone(),
+                    call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
         },
@@ -367,13 +367,13 @@ fn to_boundary_signature(signature: &order::Signature) -> model::signature::Sign
     // reflected in the types!
     match signature.scheme {
         order::signature::Scheme::Eip712 => model::signature::Signature::Eip712(
-            EcdsaSignature::from_bytes(signature.data.as_slice().try_into().unwrap()),
+            EcdsaSignature::from_bytes(signature.data.0.as_slice().try_into().unwrap()),
         ),
         order::signature::Scheme::EthSign => model::signature::Signature::EthSign(
-            EcdsaSignature::from_bytes(signature.data.as_slice().try_into().unwrap()),
+            EcdsaSignature::from_bytes(signature.data.0.as_slice().try_into().unwrap()),
         ),
         order::signature::Scheme::Eip1271 => {
-            model::signature::Signature::Eip1271(signature.data.clone())
+            model::signature::Signature::Eip1271(signature.data.clone().into())
         }
         order::signature::Scheme::PreSign => model::signature::Signature::PreSign,
     }
@@ -388,7 +388,7 @@ pub fn to_boundary_interaction(
         competition::solution::Interaction::Custom(custom) => Ok(InteractionData {
             target: custom.target.into(),
             value: custom.value.into(),
-            call_data: custom.call_data.clone(),
+            call_data: custom.call_data.clone().into(),
         }),
         competition::solution::Interaction::Liquidity(liquidity) => {
             let boundary_execution =
@@ -429,7 +429,7 @@ pub fn to_boundary_interaction(
             Ok(InteractionData {
                 target: interaction.target.into(),
                 value: interaction.value.into(),
-                call_data: interaction.call_data,
+                call_data: interaction.call_data.into(),
             })
         }
     }
