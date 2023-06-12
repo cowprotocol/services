@@ -175,12 +175,13 @@ fn encode_settlement(query: &QuoteQuery, trade: &Trade, native_token: H160) -> E
         OrderKind::Buy => vec![query.in_amount, trade.out_amount],
     };
 
-    // Configure the most disadvantageous trade possible. Should the trader not
-    // receive the amount promised by the [`Trade`] the simulation will still work
-    // and we can compute the actual [`Trade::out_amount`] afterwards.
+    // Configure the most disadvantageous trade possible (while taking possible
+    // overflows into account). Should the trader not receive the amount promised by
+    // the [`Trade`] the simulation will still work and we can compute the actual
+    // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
         OrderKind::Sell => (query.in_amount, 0.into()),
-        OrderKind::Buy => (U256::MAX, query.in_amount),
+        OrderKind::Buy => (trade.out_amount.max(U256::from(u128::MAX)), query.in_amount),
     };
     let fake_order = OrderData {
         sell_token: query.sell_token,
