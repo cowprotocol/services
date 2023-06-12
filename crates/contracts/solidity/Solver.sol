@@ -64,21 +64,14 @@ contract Solver {
     /// @param owner - whos balance we are reading
     function storeBalance(address token, address owner) external {
         uint256 gasStart = gasleft();
-        if (token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) {
-            // native ETH
-            _queriedBalances.push(owner.balance);
-        } else {
-            // regular ERC20 token
-            _queriedBalances.push(IERC20(token).balanceOf(owner));
-        }
-        // Account for costs of gas used outside of metered section.
-        uint256 measurementOverhead;
-        if (_queriedBalances.length == 1) {
-            // reading cold storage costs more which results in higher overhead for the first call
-            measurementOverhead = 13355;
-        } else {
-            measurementOverhead = 4460;
-        }
+        _queriedBalances.push(
+            token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+                ? owner.balance
+                : IERC20(token).balanceOf(owner)
+        );
+        // Account for costs of gas used outside of metered section. Noting that
+        // reading cold storage costs more which results in higher overhead for the first call
+        uint256 measurementOverhead = _queriedBalances.length == 1 ? 13355 : 4460;
         _simulationOverhead += gasStart - gasleft() + measurementOverhead;
     }
 }
