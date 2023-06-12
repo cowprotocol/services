@@ -173,13 +173,23 @@ pub fn extract_payload_with_max_size<T: DeserializeOwned + Send>(
     warp::body::content_length_limit(max_size).and(warp::body::json())
 }
 
+pub type BoxedRoute = BoxedFilter<(Box<dyn Reply>,)>;
+
+pub fn box_filter<Filter_, Reply_>(filter: Filter_) -> BoxedFilter<(Box<dyn Reply>,)>
+where
+    Filter_: Filter<Extract = (Reply_,), Error = Rejection> + Send + Sync + 'static,
+    Reply_: Reply + Send + 'static,
+{
+    filter.map(|a| Box::new(a) as Box<dyn Reply>).boxed()
+}
+
 /// Sets up basic metrics, cors and proper log tracing for all routes.
 ///
 /// # Panics
 ///
 /// This method panics if `routes` is empty.
 pub fn finalize_router(
-    routes: Vec<(&'static str, BoxedFilter<(ApiReply,)>)>,
+    routes: Vec<(&'static str, BoxedRoute)>,
     log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
@@ -191,7 +201,7 @@ pub fn finalize_router(
     let router = routes
         .into_iter()
         .fold(
-            Option::<BoxedFilter<(&'static str, ApiReply)>>::None,
+            Option::<BoxedFilter<(&'static str, Box<dyn Reply>)>>::None,
             |router, (method, route)| {
                 let route = route.map(move |result| (method, result)).untuple_one();
                 let next = match router {
@@ -207,7 +217,7 @@ pub fn finalize_router(
         warp::any()
             .map(Instant::now)
             .and(router)
-            .map(|timer, method, reply: ApiReply| {
+            .map(|timer, method, reply: Box<dyn Reply>| {
                 let response = reply.into_response();
                 metrics.on_request_completed(method, response.status(), timer);
                 response
