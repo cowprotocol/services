@@ -27,19 +27,17 @@ contract Trader {
     // The `Trader` contract gets deployed on the `from` address of the quote.
     // Since the `from` address might be a safe or other smart contract we still
     // need to make the `Trader` behave as the original `from` would have in
-    // case some custom interactions rely on that behvavior.
+    // case some custom interactions rely on that behavior.
     // To do that we simply implement fallback handlers that do delegate calls
     // to the original implementation.
     fallback() external payable {
-        _fallback();
-    }
-    receive() external payable {
-        _fallback();
-    }
-    function _fallback() private {
         bytes memory rdata = TRADER_IMPL.doDelegatecall(msg.data);
         assembly { return(add(rdata, 32), mload(rdata)) }
     }
+    // Proxying to the original trader implementation doesn't make sense since
+    // smart contracts that do something on `receive()` are not supported by the
+    // settlement contract anyway.
+    receive() external payable {}
 
     /// @dev Prepares everything needed by the trader for successfully executing the swap.
     /// This includes giving the required approval, wrapping the required ETH (if needed)
