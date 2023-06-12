@@ -70,6 +70,9 @@ contract Trader {
             // Simulate an approval to the settlement contract so the user doesn't have to
             // spend gas on that just to get a quote. If they are happy with the quote and
             // want to create an order they will actually have to do the approvals, though.
+            // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
+            // require that due to this attack:
+            // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
             IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
             IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
         }
