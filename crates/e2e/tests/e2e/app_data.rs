@@ -57,7 +57,7 @@ async fn app_data(web3: Web3) {
     let services = Services::new(onchain.contracts()).await;
     services.start_api(vec![]).await;
 
-    // Temporarily custom hash are still accepted.
+    // Temporarily custom hashes are still accepted.
     let order0 = create_order(OrderCreationAppData::Hash {
         hash: AppDataHash([1; 32]),
     });
@@ -85,4 +85,15 @@ async fn app_data(web3: Web3) {
     });
     let err = services.create_order(&order2).await.unwrap_err();
     dbg!(err);
+
+    // no full app data specified but hash matches existing hash in database from
+    // order1
+    let order3 = create_order(OrderCreationAppData::Hash {
+        hash: AppDataHash(app_data_hash),
+    });
+    let uid = services.create_order(&order3).await.unwrap();
+    let order3_ = services.get_order(&uid).await.unwrap();
+    assert_eq!(order3_.data.app_data, AppDataHash(app_data_hash));
+    // Contrast this with order0, which doesn't have full app data.
+    assert_eq!(order3_.metadata.full_app_data, Some(app_data.to_string()));
 }
