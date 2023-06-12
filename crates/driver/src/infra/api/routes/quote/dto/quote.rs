@@ -20,6 +20,7 @@ impl Quote {
                     call_data: interaction.call_data.clone().into(),
                 })
                 .collect(),
+            solver: quote.solver.0,
         }
     }
 }
@@ -31,6 +32,7 @@ pub struct Quote {
     #[serde_as(as = "serialize::U256")]
     amount: eth::U256,
     interactions: Vec<Interaction>,
+    solver: eth::H160,
 }
 
 #[serde_as]

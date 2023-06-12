@@ -102,6 +102,7 @@ impl From<dto::Quote> for Trade {
                     data: interaction.call_data,
                 })
                 .collect(),
+            solver: quote.solver,
         }
     }
 }
@@ -150,6 +151,7 @@ mod dto {
         #[serde_as(as = "DecimalU256")]
         pub amount: U256,
         pub interactions: Vec<Interaction>,
+        pub solver: H160,
     }
 
     #[serde_as]

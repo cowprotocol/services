@@ -264,14 +264,7 @@ impl TradeVerifier {
     }
 
     async fn verify(&self, query: QuoteQuery, trade: Trade) -> Result<Estimate> {
-        // TODO: add solver address to [`Trade`]; for now we simply use Quasilab's
-        // address
-        let solver = dummy_contract!(
-            Solver,
-            H160(hex_literal::hex!(
-                "1e8D9a45175B2a4122F7827ce1eA3B08327b2ba0"
-            ))
-        );
+        let solver = dummy_contract!(Solver, trade.solver);
 
         let settlement = encode_settlement(&query, &trade, self.native_token);
         let settlement = add_balance_queries(settlement, &query, self.settlement, &solver);

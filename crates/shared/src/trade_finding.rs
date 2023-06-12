@@ -38,7 +38,7 @@ pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub interactions: Vec<Interaction>,
-    // TODO add solver address for simulations
+    pub solver: H160,
 }
 
 impl Trade {
@@ -68,6 +68,9 @@ impl Trade {
             out_amount,
             gas_estimate,
             interactions,
+            // TODO replace this if we want to have verified quotes of non-colocated price
+            // estimators
+            solver: Default::default(),
         }
     }
 
@@ -210,6 +213,7 @@ mod tests {
                     data: vec![5, 6, 7, 8],
                 },
             ],
+            solver: Default::default(),
         };
 
         assert_eq!(

@@ -24,6 +24,7 @@ pub struct Quote {
     /// was a buy order.
     pub amount: eth::U256,
     pub interactions: Vec<eth::Interaction>,
+    pub solver: eth::Address,
 }
 
 impl Quote {
@@ -49,6 +50,7 @@ impl Quote {
         Ok(Self {
             amount,
             interactions: boundary::quote::encode_interactions(eth, &solution.interactions)?,
+            solver: solution.solver.address(),
         })
     }
 }
