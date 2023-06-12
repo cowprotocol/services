@@ -61,8 +61,7 @@ contract Trader {
                 // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
                 // on that just to get a quote. If they are happy with the quote and want to
                 // create an order they will actually have to do the wrapping, though.
-                (bool sent, ) = nativeToken.call{value: sellAmount - availableBalance}("");
-                require(sent, "'from' address does not have enough (W)ETH balance");
+                INativeERC20(nativeToken).deposit{value: sellAmount - availableBalance}();
             }
         }
 
