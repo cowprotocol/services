@@ -61,7 +61,7 @@ impl BalancerSor {
             }
         };
         let future = super::rate_limited(self.rate_limiter.clone(), future);
-        let future = self.sharing.shared(*query, future.boxed());
+        let future = self.sharing.shared(query.clone(), future.boxed());
         let quote = future.await?;
         Ok(Estimate {
             out_amount: quote.return_amount,

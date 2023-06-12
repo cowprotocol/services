@@ -221,7 +221,7 @@ impl HttpPriceEstimator {
         let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
         let settlement = self
             .sharing
-            .shared(*query, settlement_future.boxed())
+            .shared(query.clone(), settlement_future.boxed())
             .await?;
 
         if !settlement.orders.contains_key(&0) {

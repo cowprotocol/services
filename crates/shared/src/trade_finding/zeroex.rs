@@ -37,9 +37,9 @@ impl ZeroExTradeFinder {
     }
 
     fn shared_quote(&self, query: &Query) -> BoxShared<Result<Trade, TradeError>> {
-        self.sharing.shared_or_else(*query, |_| {
+        self.sharing.shared_or_else(query.clone(), |_| {
             let inner = self.inner.clone();
-            let query = *query;
+            let query = query.clone();
             async move { inner.quote(&query).await }.boxed()
         })
     }

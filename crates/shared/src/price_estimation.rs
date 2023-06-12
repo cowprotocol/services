@@ -297,7 +297,7 @@ impl Clone for PriceEstimationError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Query {
     /// Optional `from` address that would be executing the query.
     pub from: Option<H160>,

@@ -71,7 +71,7 @@ impl OneInchTradeFinder {
         allowed_protocols: Option<Vec<String>>,
     ) -> BoxShared<Result<Quote, TradeError>> {
         let query = InternalQuery {
-            data: *query,
+            data: query.clone(),
             allowed_protocols,
         };
 

@@ -137,7 +137,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
     ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
         let stream = async_stream::stream! {
             // Handle easy estimates first.
-            let mut queries: Vec<(usize, Query)> = queries.iter().copied().enumerate().collect();
+            let mut queries: Vec<(usize, Query)> = queries.iter().cloned().enumerate().collect();
             for easy in self.estimate_easy_queries(&mut queries).await {
                 yield easy;
             }
@@ -182,7 +182,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                 .collect();
 
             let inner_queries: Vec<Query> =
-                difficult_queries.iter().map(|query| query.query).collect();
+                difficult_queries.iter().map(|query| query.query.clone()).collect();
             let mut stream = self.inner.estimates(&inner_queries);
 
             while let Some((i, mut estimate)) = stream.next().await {
@@ -342,21 +342,21 @@ mod tests {
 
         let expected_forwarded_queries = [
             // SanitizedPriceEstimator will simply forward the Query in the common case
-            queries[0],
+            queries[0].clone(),
             Query {
                 // SanitizedPriceEstimator replaces ETH buy token with native token
                 buy_token: native_token,
-                ..queries[1]
+                ..queries[1].clone()
             },
             Query {
                 // SanitizedPriceEstimator replaces ETH buy token with native token
                 buy_token: native_token,
-                ..queries[2]
+                ..queries[2].clone()
             },
             Query {
                 // SanitizedPriceEstimator replaces ETH sell token with native token
                 sell_token: native_token,
-                ..queries[3]
+                ..queries[3].clone()
             },
         ];
 
@@ -496,7 +496,7 @@ mod tests {
             },
         ];
 
-        let expected_forwarded_queries = [queries[0]];
+        let expected_forwarded_queries = [queries[0].clone()];
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator

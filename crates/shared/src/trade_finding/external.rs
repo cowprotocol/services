@@ -67,7 +67,7 @@ impl ExternalTradeFinder {
         };
 
         self.sharing
-            .shared(*query, future.boxed())
+            .shared(query.clone(), future.boxed())
             .await
             .map_err(TradeError::from)
     }

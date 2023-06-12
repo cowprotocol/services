@@ -605,11 +605,12 @@ mod tests {
             ("first".to_owned(), Arc::new(first)),
             ("second".to_owned(), Arc::new(second)),
         ]);
-        let queries = &[Query {
+        let query = Query {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             ..Default::default()
-        }; 2];
+        };
+        let queries = &[query.clone(), query];
         let mut stream = estimator.estimates(queries);
 
         let (i, result) = stream.next().await.unwrap();

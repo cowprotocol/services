@@ -369,7 +369,7 @@ impl PriceEstimating for TradeEstimator {
         }));
 
         futures::stream::iter(queries)
-            .then(|query| self.estimate(*query))
+            .then(|query| self.estimate(query.clone()))
             .enumerate()
             .boxed()
     }
