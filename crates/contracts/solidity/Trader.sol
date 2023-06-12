@@ -77,8 +77,11 @@ contract Trader {
             IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
         }
 
-        (bool sent2, ) = receiver.call{value: 0}("");
-        require(sent2, "warming the storage for sending ETH to smart contract addresses failed");
+        // Warm the storage for sending ETH to smart contract addresses.
+        // We allow this call to revert becaues it was either unnecessary in the first place
+        // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
+        // contract.
+        receiver.call{value: 0}("");
     }
 
     /// @dev Roundtrip a token in two CoW protocol settlements. First, buy some
