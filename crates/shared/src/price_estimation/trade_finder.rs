@@ -237,13 +237,10 @@ fn add_balance_queries(
     let query_balance = solver.methods().store_balance(token, owner);
     let query_balance = Bytes(query_balance.tx.data.unwrap().0);
     let interaction = (solver.address(), 0.into(), query_balance);
+    // query balance right after we receive all `sell_token`
     settlement.interactions[1].insert(0, interaction.clone());
-    match query.kind {
-        // query `receiver` balance right after paying out funds (first post-interaction)
-        OrderKind::Sell => settlement.interactions[2].insert(0, interaction),
-        // query `settlement` balance right before paying out funds (last regular interaction)
-        OrderKind::Buy => settlement.interactions[1].push(interaction),
-    }
+    // query balance right after we payed out all `buy_token`
+    settlement.interactions[2].insert(0, interaction);
     settlement
 }
 
