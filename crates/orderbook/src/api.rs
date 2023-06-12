@@ -20,7 +20,7 @@ use {
         solver_competition::SolverCompetitionStoring,
     },
     shared::{
-        api::{error, finalize_router, ApiReply},
+        api::{box_filter, error, finalize_router, ApiReply},
         order_quoting::QuoteHandler,
         price_estimation::native::NativePriceEstimating,
     },
@@ -43,47 +43,56 @@ pub fn handle_all_routes(
     let routes = vec![
         (
             "v1/create_order",
-            post_order::post_order(orderbook.clone()).boxed(),
+            box_filter(post_order::post_order(orderbook.clone())),
         ),
         (
             "v1/get_order",
-            get_order_by_uid::get_order_by_uid(orderbook.clone()).boxed(),
+            box_filter(get_order_by_uid::get_order_by_uid(orderbook.clone())),
         ),
-        ("v1/get_trades", get_trades::get_trades(database).boxed()),
+        (
+            "v1/get_trades",
+            box_filter(get_trades::get_trades(database)),
+        ),
         (
             "v1/cancel_order",
-            cancel_order::cancel_order(orderbook.clone()).boxed(),
+            box_filter(cancel_order::cancel_order(orderbook.clone())),
         ),
         (
             "v1/cancel_orders",
-            cancel_orders::filter(orderbook.clone()).boxed(),
+            box_filter(cancel_orders::filter(orderbook.clone())),
         ),
         (
             "v1/replace_order",
-            replace_order::filter(orderbook.clone()).boxed(),
+            box_filter(replace_order::filter(orderbook.clone())),
         ),
         (
             "v1/get_user_orders",
-            get_user_orders::get_user_orders(orderbook.clone()).boxed(),
+            box_filter(get_user_orders::get_user_orders(orderbook.clone())),
         ),
         (
             "v1/get_orders_by_tx",
-            get_orders_by_tx::get_orders_by_tx(orderbook.clone()).boxed(),
+            box_filter(get_orders_by_tx::get_orders_by_tx(orderbook.clone())),
         ),
-        ("v1/post_quote", post_quote::post_quote(quotes).boxed()),
-        ("v1/auction", get_auction::get_auction(orderbook).boxed()),
+        ("v1/post_quote", box_filter(post_quote::post_quote(quotes))),
+        (
+            "v1/auction",
+            box_filter(get_auction::get_auction(orderbook)),
+        ),
         (
             "v1/solver_competition",
-            get_solver_competition::get(solver_competition.clone()).boxed(),
+            box_filter(get_solver_competition::get(solver_competition.clone())),
         ),
         (
             "v1/solver_competition",
-            post_solver_competition::post(solver_competition, solver_competition_auth).boxed(),
+            box_filter(post_solver_competition::post(
+                solver_competition,
+                solver_competition_auth,
+            )),
         ),
-        ("v1/version", version::version().boxed()),
+        ("v1/version", box_filter(version::version())),
         (
             "v1/get_native_price",
-            get_native_price::get_native_price(native_price_estimator).boxed(),
+            box_filter(get_native_price::get_native_price(native_price_estimator)),
         ),
     ];
 
