@@ -11,6 +11,7 @@ use {
     anyhow::Result,
     contracts::ERC20,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    serde::Serialize,
     thiserror::Error,
 };
 
@@ -81,7 +82,7 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,

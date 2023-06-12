@@ -102,7 +102,7 @@ mod tests {
         let est = single_estimate(
             &estimator,
             &Query {
-                from: None,
+                verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -151,7 +151,7 @@ mod tests {
         let est = single_estimate(
             &estimator,
             &Query {
-                from: None,
+                verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -194,21 +194,21 @@ mod tests {
             &estimator,
             &[
                 Query {
-                    from: None,
+                    verification: None,
                     sell_token: weth,
                     buy_token: gno,
                     in_amount: 100000000000000000u64.into(),
                     kind: OrderKind::Sell,
                 },
                 Query {
-                    from: None,
+                    verification: None,
                     sell_token: weth,
                     buy_token: gno,
                     in_amount: 100000000000000000u64.into(),
                     kind: OrderKind::Buy,
                 },
                 Query {
-                    from: None,
+                    verification: None,
                     sell_token: weth,
                     buy_token: gno,
                     in_amount: 100000000000000000u64.into(),
@@ -245,7 +245,7 @@ mod tests {
         let result = single_estimate(
             &estimator,
             &Query {
-                from: None,
+                verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 10u128.pow(18).into(),

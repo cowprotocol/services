@@ -10,6 +10,7 @@ use {
         db_order_conversions::order_kind_from,
         fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
         order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+        price_estimation::Verification,
     },
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, TimeZone as _, Utc},
@@ -143,8 +144,11 @@ impl QuoteParameters {
         // Treat quotes with `from: 0` as if they didn't specify a `from` address
         // for price quotes. This is because the 0 address typically has special
         // semantics and causes issues with trade simulations.
-        let from = if self.from != H160::zero() {
-            Some(self.from)
+        let verification = if self.from != H160::zero() {
+            Some(Verification {
+                from: self.from,
+                ..Default::default()
+            })
         } else {
             None
         };
@@ -161,7 +165,7 @@ impl QuoteParameters {
         };
 
         price_estimation::Query {
-            from,
+            verification,
             sell_token: self.sell_token,
             buy_token: self.buy_token,
             in_amount,
@@ -749,7 +753,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -865,7 +872,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -984,7 +994,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 42.into(),
