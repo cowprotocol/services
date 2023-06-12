@@ -4,6 +4,7 @@ use {
     chrono::Utc,
     ethcontract::H256,
     model::{
+        app_id::AppDataHash,
         auction::AuctionWithId,
         order::{
             Order,
@@ -22,7 +23,7 @@ use {
         metrics::LivenessChecking,
         order_validation::{OrderValidating, ValidationError},
     },
-    std::sync::Arc,
+    std::{borrow::Cow, sync::Arc},
     thiserror::Error,
 };
 
@@ -91,13 +92,35 @@ pub enum AddOrderError {
     OrderValidation(ValidationError),
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
+    #[error(
+        "contract app data {contract_app_data:?} is associated with full app data {existing:?} \
+         which is different from the provided {provided:?}"
+    )]
+    AppDataMismatch {
+        contract_app_data: AppDataHash,
+        provided: String,
+        existing: String,
+    },
 }
 
-impl From<InsertionError> for AddOrderError {
-    fn from(err: InsertionError) -> Self {
+impl AddOrderError {
+    fn from_insertion(err: InsertionError, order: &Order) -> Self {
         match err {
             InsertionError::DuplicatedRecord => AddOrderError::DuplicatedOrder,
             InsertionError::DbError(err) => AddOrderError::Database(err),
+            InsertionError::AppDataMismatch(existing) => AddOrderError::AppDataMismatch {
+                contract_app_data: order.data.app_data,
+                // Unwrap because this error can only occur if full app data was set.
+                provided: order.metadata.full_app_data.clone().unwrap(),
+                // Unwrap because we only store utf-8 full app data.
+                existing: {
+                    let s = String::from_utf8_lossy(&existing);
+                    if let Cow::Owned(_) = s {
+                        tracing::error!(uid=%order.metadata.uid, "app data is not utf-8")
+                    }
+                    s.into_owned()
+                },
+            },
         }
     }
 }
@@ -147,12 +170,6 @@ impl From<ValidationError> for ReplaceOrderError {
     }
 }
 
-impl From<InsertionError> for ReplaceOrderError {
-    fn from(err: InsertionError) -> Self {
-        Self::Add(err.into())
-    }
-}
-
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
@@ -187,7 +204,10 @@ impl Orderbook {
             .await?;
         let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
-        self.database.insert_order(&order, quote).await?;
+        self.database
+            .insert_order(&order, quote)
+            .await
+            .map_err(|err| AddOrderError::from_insertion(err, &order))?;
         Metrics::on_order_operation(&order, OrderOperation::Created);
 
         Ok((order.metadata.uid, quote_id))
@@ -318,7 +338,8 @@ impl Orderbook {
 
         self.database
             .replace_order(&old_order.metadata.uid, &new_order, new_quote)
-            .await?;
+            .await
+            .map_err(|err| AddOrderError::from_insertion(err, &new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(&new_order, OrderOperation::Created);
 

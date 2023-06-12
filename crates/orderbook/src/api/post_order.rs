@@ -225,6 +225,15 @@ impl IntoWarpReply for AddOrderError {
                 tracing::error!(?err, "AddOrderError");
                 shared::api::internal_error_reply()
             }
+            err @ AddOrderError::AppDataMismatch { .. } => {
+                tracing::error!(
+                    ?err,
+                    "An order with full app data passed validation but then failed to be inserted \
+                     because we already stored different full app data for the same contract app \
+                     data. This should be impossible."
+                );
+                shared::api::internal_error_reply()
+            }
         }
     }
 }
