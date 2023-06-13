@@ -510,18 +510,15 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verification = match order.from {
-            Some(from) => Some(Verification {
-                from,
-                receiver: order.receiver.unwrap_or(from),
-                sell_token_source: order.sell_token_balance,
-                buy_token_destination: order.buy_token_balance,
-                // TODO get these from the request
-                pre_interactions: vec![],
-                post_interactions: vec![],
-            }),
-            None => None,
-        };
+        let verification = Some(Verification {
+            from: owner,
+            receiver: order.receiver.unwrap_or(owner),
+            sell_token_source: order.sell_token_balance,
+            buy_token_destination: order.buy_token_balance,
+            // TODO get these from the request
+            pre_interactions: vec![],
+            post_interactions: vec![],
+        });
 
         let quote_parameters = QuoteSearchParameters {
             sell_token: data.sell_token,
