@@ -70,7 +70,7 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let quote = match request.price_quality {
-            PriceQuality::Optimal => {
+            PriceQuality::Optimal | PriceQuality::Verified => {
                 let quote = self.optimal_quoter.calculate_quote(request.into()).await?;
                 self.optimal_quoter
                     .store_quote(quote)
@@ -662,17 +662,8 @@ impl From<&OrderQuoteRequest> for PreOrderData {
 
 impl From<&OrderQuoteRequest> for QuoteParameters {
     fn from(request: &OrderQuoteRequest) -> Self {
-        // The `from` address is currently mandatory for quote requests. However, when
-        // the user did not connect their wallet they still want to get prices
-        // so in that case the field currently gets populated with the 0
-        // address. Using this address in quote verifications will definitely
-        // cause reverts in the simulation so we make an exception here.
-        // TODO: Get rid of this when quotes and price estimates use different
-        // endpoints.
-        let verification = if request.from == H160::zero() {
-            None
-        } else {
-            Some(Verification {
+        let verification = match request.price_quality {
+            PriceQuality::Verified => Some(Verification {
                 from: request.from,
                 receiver: request.receiver.unwrap_or(request.from),
                 sell_token_source: request.sell_token_balance,
@@ -680,7 +671,8 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
                 // TODO get from request
                 pre_interactions: vec![],
                 post_interactions: vec![],
-            })
+            }),
+            PriceQuality::Fast | PriceQuality::Optimal => None,
         };
 
         Self {
