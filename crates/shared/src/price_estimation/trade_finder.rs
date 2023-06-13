@@ -109,10 +109,11 @@ impl Inner {
                     .await
                     .map_err(PriceEstimationError::Other)
             }
-            (None, Some(_)) => Err(PriceEstimationError::Other(anyhow::anyhow!(
-                "verified quote was requested by not verification scheme was configured"
-            ))),
-            _ => {
+            (_, verification) => {
+                if verification.is_some() {
+                    // TODO turn this into a hard error when everything else is set up
+                    tracing::warn!("verified quote was requested by no verification scheme was configured");
+                }
                 let quote = self.finder.get_quote(&query).await?;
                 Ok(Estimate {
                     out_amount: quote.out_amount,

@@ -11,7 +11,7 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::PriceEstimationError,
+        price_estimation::{PriceEstimationError, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     },
     anyhow::{anyhow, Result},
@@ -510,6 +510,19 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
+        let verification = match order.from {
+            Some(from) => Some(Verification {
+                from,
+                receiver: order.receiver.unwrap_or(from),
+                sell_token_source: order.sell_token_balance,
+                buy_token_destination: order.buy_token_balance,
+                // TODO get these from the request
+                pre_interactions: vec![],
+                post_interactions: vec![],
+            }),
+            None => None,
+        };
+
         let quote_parameters = QuoteSearchParameters {
             sell_token: data.sell_token,
             buy_token: data.buy_token,
@@ -517,7 +530,7 @@ impl OrderValidating for OrderValidator {
             buy_amount: data.buy_amount,
             fee_amount: data.fee_amount,
             kind: data.kind,
-            from: owner,
+            verification,
         };
         let quote = if class == OrderClass::Market {
             let quote = get_quote_and_check_fee(
@@ -783,7 +796,7 @@ pub async fn get_quote_and_check_fee(
                         },
                     },
                 },
-                from: quote_search_parameters.from,
+                verification: quote_search_parameters.verification.clone(),
                 signing_scheme,
             };
 
@@ -1929,7 +1942,10 @@ mod tests {
             buy_amount: 4.into(),
             fee_amount: 6.into(),
             kind: OrderKind::Buy,
-            from: H160([0xf0; 20]),
+            verification: Some(Verification {
+                from: H160([0xf0; 20]),
+                ..Default::default()
+            }),
         };
         let quote_data = Quote {
             fee_amount: 6.into(),
@@ -1971,7 +1987,10 @@ mod tests {
 
     #[tokio::test]
     async fn get_quote_calculates_fresh_quote_when_not_found() {
-        let from = H160([0xf0; 20]);
+        let verification = Some(Verification {
+            from: H160([0xf0; 20]),
+            ..Default::default()
+        });
 
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
@@ -1982,7 +2001,7 @@ mod tests {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             kind: OrderKind::Sell,
-            from,
+            verification: verification.clone(),
             ..Default::default()
         };
         let quote_data = Quote {
@@ -2000,7 +2019,7 @@ mod tests {
                         value: quote_search_parameters.sell_amount,
                     },
                 },
-                from,
+                verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
             }))
             .returning({

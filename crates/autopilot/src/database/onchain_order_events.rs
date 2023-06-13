@@ -47,6 +47,7 @@ use {
             is_order_outside_market_price,
             onchain_order_placement_error_from,
         },
+        price_estimation::Verification,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -557,8 +558,16 @@ async fn get_quote(
         buy_amount: order_data.buy_amount,
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
-        // Original quote was made from user account, and not necessarily from owner.
-        from: order_placement.sender,
+        verification: Some(Verification {
+            // Original quote was made from user account, and not necessarily from owner.
+            from: order_placement.sender,
+            receiver: order_data.receiver.unwrap_or(order_placement.sender),
+            sell_token_source: SellTokenSource::Erc20,
+            buy_token_destination: BuyTokenDestination::Erc20,
+            // TODO do we have to get custom interactions here?
+            pre_interactions: vec![],
+            post_interactions: vec![],
+        }),
     };
     get_quote_and_check_fee(
         quoter,
