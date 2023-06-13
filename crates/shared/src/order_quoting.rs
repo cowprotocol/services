@@ -358,6 +358,8 @@ pub struct QuoteSearchParameters {
     pub buy_amount: U256,
     pub fee_amount: U256,
     pub kind: OrderKind,
+    /// If this is `Some` the quotes are expected to pass simulations using the
+    /// contained parameters.
     pub verification: Option<Verification>,
 }
 

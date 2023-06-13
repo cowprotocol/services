@@ -304,6 +304,8 @@ pub struct Query {
     /// buy_token.
     pub in_amount: U256,
     pub kind: OrderKind,
+    /// If this is `Some` the quotes are expected to pass simulations using the
+    /// contained parameters.
     pub verification: Option<Verification>,
 }
 
