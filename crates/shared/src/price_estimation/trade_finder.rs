@@ -112,7 +112,9 @@ impl Inner {
             (_, verification) => {
                 if verification.is_some() {
                     // TODO turn this into a hard error when everything else is set up
-                    tracing::warn!("verified quote was requested by no verification scheme was configured");
+                    tracing::warn!(
+                        "verified quote was requested by no verification scheme was configured"
+                    );
                 }
                 let quote = self.finder.get_quote(&query).await?;
                 Ok(Estimate {
