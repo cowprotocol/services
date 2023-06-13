@@ -662,7 +662,14 @@ impl From<&OrderQuoteRequest> for PreOrderData {
 
 impl From<&OrderQuoteRequest> for QuoteParameters {
     fn from(request: &OrderQuoteRequest) -> Self {
-        let verification = if request.from == Default::default() {
+        // The `from` address is currently mandatory for quote requests. However, when
+        // the user did not connect their wallet they still want to get prices
+        // so in that case the field currently gets populated with the 0
+        // address. Using this address in quote verifications will definitely
+        // cause reverts in the simulation so we make an exception here.
+        // TODO: Get rid of this when quotes and price estimates use different
+        // endpoints.
+        let verification = if request.from == H160::zero() {
             None
         } else {
             Some(Verification {
