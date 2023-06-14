@@ -463,7 +463,7 @@ pub async fn run(args: Arguments) {
         .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
         .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments)
         .with_custom_interactions(args.enable_custom_interactions)
-        .with_verified_quotes(args.price_estimation.trade_simulator.is_some())
+        .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
