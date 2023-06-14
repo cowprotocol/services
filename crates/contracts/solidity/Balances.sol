@@ -11,8 +11,8 @@ contract Balances {
     /// The on-chain 
     struct Contracts {
         ISettlement settlement;
-        IVault vault;
         IVaultRelayer vaultRelayer;
+        IVault vault;
     }
 
     /// @dev Retrieves the current effective balance for use with CoW Protocol.

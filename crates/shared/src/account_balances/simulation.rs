@@ -17,38 +17,47 @@ use {
 pub struct Balances {
     simulator: Arc<dyn CodeSimulating>,
     settlement: H160,
-    vault: H160,
     vault_relayer: H160,
+    vault: H160,
 }
 
 impl Balances {
     pub fn _new(
         simulator: Arc<dyn CodeSimulating>,
         settlement: H160,
-        vault: Option<H160>,
         vault_relayer: H160,
+        vault: Option<H160>,
     ) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
-        // address is not a contract. This is because Solidity generates code
-        // to verify that contracts exist at addresses that get called. This
-        // allows us to properly check if `SellTokenSource::{External,Internal}`
+        // address is not a contract and the `source` is set to one of
+        // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
+        // needed). This is because Solidity generates code to verify that
+        // contracts exist at addresses that get called. This allows us to
+        // properly check if the `source` is not supported for the deployment
         // work without additional code paths :tada:!
         let vault = vault.unwrap_or_default();
 
         Self {
             simulator,
             settlement,
-            vault,
             vault_relayer,
+            vault,
         }
     }
 
     async fn simulate(&self, query: &Query, amount: Option<U256>) -> Result<Simulation> {
+        // We simulate the balances from the Settlement contract's context. This
+        // allows us to check:
+        // 1. How the pre-interactions would behave as part of the settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as
+        //    part of a settlement
+        //
+        // This allows us to end up with very accurate balance simulations.
         let balances = dummy_contract!(contracts::support::Balances, self.settlement);
         let tx = balances
             .methods()
             .balance(
-                (self.settlement, self.vault, self.vault_relayer),
+                (self.settlement, self.vault_relayer, self.vault),
                 query.owner,
                 query.token,
                 amount.unwrap_or_default(),
@@ -163,8 +172,8 @@ mod tests {
         let balances = Balances::_new(
             Arc::new(Web3::new(ethrpc::create_env_test_transport())),
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
-            Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
+            Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
         );
 
         let owner = addr!("b0a4e99371dfb0734f002ae274933b4888f618ef");
