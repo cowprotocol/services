@@ -62,12 +62,10 @@ contract Balances {
             allowance = token.allowance(trader, address(contracts.vaultRelayer));
         } else if (source == keccak256("external")) {
             tokenBalance = token.balanceOf(trader);
-            if (
-                contracts.vault
-                    .hasApprovedRelayer(trader, address(contracts.vaultRelayer))
-            ) {
-                allowance = token.allowance(trader, address(contracts.vault));
-            }
+            allowance = contracts.vault
+                .hasApprovedRelayer(trader, address(contracts.vaultRelayer))
+                    ? token.allowance(trader, address(contracts.vault))
+                    : 0;
         } else if (source == keccak256("internal")) {
             address[] memory tokens = new address[](1);
             tokens[0] = address(token);
