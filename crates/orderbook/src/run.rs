@@ -135,7 +135,6 @@ pub async fn run(args: Arguments) {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
-    let database = Arc::new(postgres.clone());
 
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
@@ -430,7 +429,7 @@ pub async fn run(args: Arguments) {
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
-            database.clone(),
+            Arc::new(postgres.clone()),
             chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
                 .unwrap(),
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
@@ -455,7 +454,7 @@ pub async fn run(args: Arguments) {
             optimal_quoter.clone(),
             balance_fetcher,
             signature_validator,
-            database.clone(),
+            Arc::new(postgres.clone()),
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             shared::app_data::Validator { size_limit: 1_000 },
@@ -468,7 +467,7 @@ pub async fn run(args: Arguments) {
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
-        database.as_ref().clone(),
+        postgres.clone(),
         order_validator.clone(),
     ));
 
@@ -485,14 +484,13 @@ pub async fn run(args: Arguments) {
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
-        database.clone(),
+        postgres,
         orderbook.clone(),
         quotes,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;
         },
-        database.clone(),
         args.shared.solver_competition_auth,
         native_price_estimator,
     );

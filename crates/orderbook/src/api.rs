@@ -1,5 +1,6 @@
 mod cancel_order;
 mod cancel_orders;
+mod get_app_data;
 mod get_auction;
 mod get_native_price;
 mod get_order_by_uid;
@@ -14,11 +15,7 @@ mod replace_order;
 mod version;
 
 use {
-    crate::{
-        database::trades::TradeRetrieving,
-        orderbook::Orderbook,
-        solver_competition::SolverCompetitionStoring,
-    },
+    crate::{database::Postgres, orderbook::Orderbook},
     shared::{
         api::{box_filter, error, finalize_router, ApiReply},
         order_quoting::QuoteHandler,
@@ -29,10 +26,9 @@ use {
 };
 
 pub fn handle_all_routes(
-    database: Arc<dyn TradeRetrieving>,
+    database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
-    solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -51,7 +47,7 @@ pub fn handle_all_routes(
         ),
         (
             "v1/get_trades",
-            box_filter(get_trades::get_trades(database)),
+            box_filter(get_trades::get_trades(database.clone())),
         ),
         (
             "v1/cancel_order",
@@ -80,12 +76,12 @@ pub fn handle_all_routes(
         ),
         (
             "v1/solver_competition",
-            box_filter(get_solver_competition::get(solver_competition.clone())),
+            box_filter(get_solver_competition::get(Arc::new(database.clone()))),
         ),
         (
             "v1/solver_competition",
             box_filter(post_solver_competition::post(
-                solver_competition,
+                Arc::new(database.clone()),
                 solver_competition_auth,
             )),
         ),
@@ -94,6 +90,7 @@ pub fn handle_all_routes(
             "v1/get_native_price",
             box_filter(get_native_price::get_native_price(native_price_estimator)),
         ),
+        ("v1/get_app_data", get_app_data::get(database).boxed()),
     ];
 
     finalize_router(routes, "orderbook::api::request_summary")

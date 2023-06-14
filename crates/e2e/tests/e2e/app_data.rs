@@ -6,6 +6,7 @@ use {
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },
+    reqwest::StatusCode,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -66,22 +67,31 @@ async fn app_data(web3: Web3) {
     assert_eq!(order0_.data.app_data, AppDataHash([1; 32]));
     assert_eq!(order0_.metadata.full_app_data, None);
 
+    let err = services
+        .get_app_data(AppDataHash([1; 32]))
+        .await
+        .unwrap_err();
+    assert_eq!(err.0, StatusCode::NOT_FOUND);
+
     // hash matches
     let app_data = "{}";
-    let app_data_hash = app_data_hash::hash_full_app_data(app_data.as_bytes());
+    let app_data_hash = AppDataHash(app_data_hash::hash_full_app_data(app_data.as_bytes()));
     let order1 = create_order(OrderCreationAppData::Both {
         full: app_data.to_string(),
-        expected: AppDataHash(app_data_hash),
+        expected: app_data_hash,
     });
     let uid = services.create_order(&order1).await.unwrap();
     let order1_ = services.get_order(&uid).await.unwrap();
-    assert_eq!(order1_.data.app_data, AppDataHash(app_data_hash));
+    assert_eq!(order1_.data.app_data, app_data_hash);
     assert_eq!(order1_.metadata.full_app_data, Some(app_data.to_string()));
+
+    let app_data_ = services.get_app_data(app_data_hash).await.unwrap();
+    assert_eq!(app_data_, app_data);
 
     // hash doesn't match
     let order2 = create_order(OrderCreationAppData::Both {
         full: r#"{"hello":"world"}"#.to_string(),
-        expected: AppDataHash(app_data_hash),
+        expected: app_data_hash,
     });
     let err = services.create_order(&order2).await.unwrap_err();
     dbg!(err);
@@ -89,11 +99,11 @@ async fn app_data(web3: Web3) {
     // no full app data specified but hash matches existing hash in database from
     // order1
     let order3 = create_order(OrderCreationAppData::Hash {
-        hash: AppDataHash(app_data_hash),
+        hash: app_data_hash,
     });
     let uid = services.create_order(&order3).await.unwrap();
     let order3_ = services.get_order(&uid).await.unwrap();
-    assert_eq!(order3_.data.app_data, AppDataHash(app_data_hash));
+    assert_eq!(order3_.data.app_data, app_data_hash);
     // Contrast this with order0, which doesn't have full app data.
     assert_eq!(order3_.metadata.full_app_data, Some(app_data.to_string()));
 }

@@ -1,11 +1,14 @@
 use {
-    crate::database::trades::{TradeFilter, TradeRetrieving},
+    crate::database::{
+        trades::{TradeFilter, TradeRetrieving},
+        Postgres,
+    },
     anyhow::{Context, Result},
     model::order::OrderUid,
     primitive_types::H160,
     serde::Deserialize,
     shared::api::{error, ApiReply},
-    std::{convert::Infallible, sync::Arc},
+    std::convert::Infallible,
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
 };
 
@@ -47,9 +50,7 @@ fn get_trades_request(
         .map(|query: Query| query.validate())
 }
 
-pub fn get_trades(
-    db: Arc<dyn TradeRetrieving>,
-) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
+pub fn get_trades(db: Postgres) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_trades_request().and_then(move |request_result| {
         let database = db.clone();
         async move {

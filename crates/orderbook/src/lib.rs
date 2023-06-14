@@ -6,13 +6,12 @@ pub mod run;
 pub mod solver_competition;
 
 use {
-    crate::{database::trades::TradeRetrieving, orderbook::Orderbook},
+    crate::{database::Postgres, orderbook::Orderbook},
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
     futures::Future,
     model::DomainSeparator,
     shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating},
-    solver_competition::SolverCompetitionStoring,
     std::{net::SocketAddr, sync::Arc},
     tokio::{task, task::JoinHandle},
     warp::Filter,
@@ -20,12 +19,11 @@ use {
 
 #[allow(clippy::too_many_arguments)]
 pub fn serve_api(
-    database: Arc<dyn TradeRetrieving>,
+    database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> JoinHandle<()> {
@@ -33,7 +31,6 @@ pub fn serve_api(
         database,
         orderbook,
         quotes,
-        solver_competition,
         solver_competition_auth,
         native_price_estimator,
     )
