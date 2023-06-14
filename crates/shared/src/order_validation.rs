@@ -71,11 +71,18 @@ pub trait OrderValidating: Send + Sync {
     ///
     /// Furthermore, full order validation also calls partial_validate to ensure
     /// that other aspects of the order are not malformed.
+    ///
+    /// `full_app_data_override` can be used when the order specifies only a
+    /// contract app data hash without the full app data. In this case
+    /// `full_app_data_override` is used as the full app data and the contract
+    /// app data hash is not validated against it (the hash doesn't have to
+    /// match). The full app data is still otherwise validated.
     async fn validate_and_construct_order(
         &self,
         order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
+        full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError>;
 }
 
@@ -440,6 +447,7 @@ impl OrderValidating for OrderValidator {
         order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
+        full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
@@ -459,9 +467,14 @@ impl OrderValidating for OrderValidator {
                 }
                 validated.hash
             }
-            // This branch will eventually be removed. For backward compatibility can also consider
-            // treating an all zero hash as an empty app data object.
-            OrderCreationAppData::Hash { hash } => *hash,
+            OrderCreationAppData::Hash { hash } => {
+                // Eventually we're not going to accept orders that set only a hash and where we
+                // can't find full app data elsewhere.
+                if let Some(full) = &full_app_data_override {
+                    validate(full)?;
+                }
+                *hash
+            }
             OrderCreationAppData::Full { full } => validate(full)?.hash,
         };
 
@@ -637,7 +650,7 @@ impl OrderValidating for OrderValidator {
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
                     | OrderCreationAppData::Full { full } => Some(full),
-                    _ => None,
+                    OrderCreationAppData::Hash { .. } => full_app_data_override,
                 },
                 ..Default::default()
             },
@@ -1234,7 +1247,12 @@ mod tests {
             ..Default::default()
         };
         validator
-            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
+            .validate_and_construct_order(
+                creation.clone(),
+                &Default::default(),
+                Default::default(),
+                None,
+            )
             .await
             .unwrap();
 
@@ -1262,7 +1280,12 @@ mod tests {
         };
 
         assert!(validator
-            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .validate_and_construct_order(
+                creation.clone(),
+                &domain_separator,
+                Default::default(),
+                None
+            )
             .await
             .is_ok());
 
@@ -1286,7 +1309,12 @@ mod tests {
         };
 
         assert!(validator
-            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .validate_and_construct_order(
+                creation.clone(),
+                &domain_separator,
+                Default::default(),
+                None
+            )
             .await
             .is_ok());
 
@@ -1296,7 +1324,7 @@ mod tests {
         };
         let validator = validator.with_fill_or_kill_limit_orders(true);
         let (order, quote) = validator
-            .validate_and_construct_order(creation_, &domain_separator, Default::default())
+            .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
         assert_eq!(quote, None);
@@ -1309,7 +1337,7 @@ mod tests {
         };
         let validator = validator.with_partially_fillable_limit_orders(true);
         let (order, quote) = validator
-            .validate_and_construct_order(creation_, &domain_separator, Default::default())
+            .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
         assert_eq!(quote, None);
@@ -1371,7 +1399,12 @@ mod tests {
             ..Default::default()
         };
         let res = validator
-            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
+            .validate_and_construct_order(
+                creation.clone(),
+                &Default::default(),
+                Default::default(),
+                None,
+            )
             .await;
         assert!(
             matches!(res, Err(ValidationError::TooManyLimitOrders)),
@@ -1421,7 +1454,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
     }
@@ -1471,7 +1504,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(
             matches!(
@@ -1534,7 +1567,7 @@ mod tests {
             ..Default::default()
         };
         let (order, quote) = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await
             .unwrap();
 
@@ -1587,7 +1620,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::WrongOwner(_))));
     }
@@ -1634,7 +1667,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::Other(_))));
@@ -1684,7 +1717,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         dbg!(&result);
         assert!(matches!(
@@ -1738,7 +1771,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
@@ -1786,7 +1819,7 @@ mod tests {
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
@@ -1843,7 +1876,7 @@ mod tests {
 
         assert!(matches!(
             validator
-                .validate_and_construct_order(creation.clone(), &domain, Default::default())
+                .validate_and_construct_order(creation.clone(), &domain, Default::default(), None)
                 .await
                 .unwrap_err(),
             ValidationError::InvalidEip1271Signature(hash)
@@ -1907,6 +1940,7 @@ mod tests {
                         ),
                         &Default::default(),
                         Default::default(),
+                        None,
                     )
                     .now_or_never()
                     .unwrap()
@@ -1920,7 +1954,7 @@ mod tests {
                 ..order
             };
             validator
-                .validate_and_construct_order(order, &Default::default(), Default::default())
+                .validate_and_construct_order(order, &Default::default(), Default::default(), None)
                 .now_or_never()
                 .unwrap()
                 .unwrap();

@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+app-data-hash = { path = "../app-data-hash" }
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 cached = { workspace = true }
@@ -32,6 +33,7 @@ hex = { workspace = true }
 hex-literal = { workspace = true }
 maplit = { workspace = true }
 model = { path = "../model" }
+multibase = "0.9"
 num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }

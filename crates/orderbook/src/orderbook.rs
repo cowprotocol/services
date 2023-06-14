@@ -1,5 +1,8 @@
 use {
-    crate::database::orders::{InsertionError, OrderStoring},
+    crate::{
+        database::orders::{InsertionError, OrderStoring},
+        ipfs::Ipfs,
+    },
     anyhow::{Context, Result},
     chrono::Utc,
     ethcontract::H256,
@@ -11,6 +14,7 @@ use {
             OrderCancellation,
             OrderClass,
             OrderCreation,
+            OrderCreationAppData,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -91,7 +95,7 @@ pub enum AddOrderError {
     #[error("{0:?}")]
     OrderValidation(ValidationError),
     #[error("database error: {0}")]
-    Database(#[from] sqlx::Error),
+    Database(#[from] anyhow::Error),
     #[error(
         "contract app data {contract_app_data:?} is associated with full app data {existing:?} \
          which is different from the provided {provided:?}"
@@ -107,7 +111,7 @@ impl AddOrderError {
     fn from_insertion(err: InsertionError, order: &Order) -> Self {
         match err {
             InsertionError::DuplicatedRecord => AddOrderError::DuplicatedOrder,
-            InsertionError::DbError(err) => AddOrderError::Database(err),
+            InsertionError::DbError(err) => AddOrderError::Database(err.into()),
             InsertionError::AppDataMismatch(existing) => AddOrderError::AppDataMismatch {
                 contract_app_data: order.data.app_data,
                 // Unwrap because this error can only occur if full app data was set.
@@ -175,6 +179,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
+    ipfs: Option<Ipfs>,
 }
 
 impl Orderbook {
@@ -184,6 +189,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
+        ipfs: Option<Ipfs>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -191,16 +197,45 @@ impl Orderbook {
             settlement_contract,
             database,
             order_validator,
+            ipfs,
         }
+    }
+
+    /// Finds full app data for an order that only has the contract app data
+    /// hash.
+    ///
+    /// The full app data can be located in the database or on IPFS.
+    pub async fn find_full_app_data(&self, contract_app_data: &AppDataHash) -> Option<String> {
+        match self.database.get_full_app_data(contract_app_data).await {
+            Ok(Some(app_data)) => {
+                tracing::debug!("found full app data for {contract_app_data:?} in database");
+                return Some(app_data);
+            }
+            Ok(None) => (),
+            Err(_) => (),
+        }
+
+        let Some(ipfs) = &self.ipfs else { return None };
+        crate::ipfs::full_app_data_from_ipfs(ipfs, contract_app_data).await
     }
 
     pub async fn add_order(
         &self,
         payload: OrderCreation,
     ) -> Result<(OrderUid, Option<QuoteId>), AddOrderError> {
+        let full_app_data_override = match payload.app_data {
+            OrderCreationAppData::Hash { hash } => self.find_full_app_data(&hash).await,
+            _ => None,
+        };
+
         let (order, quote) = self
             .order_validator
-            .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
+            .validate_and_construct_order(
+                payload,
+                &self.domain_separator,
+                self.settlement_contract,
+                full_app_data_override,
+            )
             .await?;
         let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
@@ -320,6 +355,7 @@ impl Orderbook {
                 new_order,
                 &self.domain_separator,
                 self.settlement_contract,
+                None,
             )
             .await?;
 
@@ -434,7 +470,7 @@ mod tests {
         let mut order_validator = MockOrderValidating::new();
         order_validator
             .expect_validate_and_construct_order()
-            .returning(move |creation, _, _| {
+            .returning(move |creation, _, _, _| {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
@@ -458,6 +494,7 @@ mod tests {
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
+            ipfs: None,
         };
 
         // App data does not encode cancellation.
