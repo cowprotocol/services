@@ -47,7 +47,6 @@ use {
             is_order_outside_market_price,
             onchain_order_placement_error_from,
         },
-        price_estimation::Verification,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -478,8 +477,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
             }
             let (order_data, owner, signing_scheme, order_uid) = detailed_order_data?;
 
-            let quote_result =
-                get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await;
+            let quote_result = get_quote(quoter, order_data, signing_scheme, &quote_id).await;
             let order_data = convert_onchain_order_placement(
                 &event,
                 event_timestamp,
@@ -537,7 +535,6 @@ async fn get_quote(
     quoter: &dyn OrderQuoting,
     order_data: OrderData,
     signing_scheme: SigningScheme,
-    order_placement: &ContractOrderPlacement,
     quote_id: &i64,
 ) -> Result<Quote, OnchainOrderPlacementError> {
     let quote_signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
@@ -558,16 +555,14 @@ async fn get_quote(
         buy_amount: order_data.buy_amount,
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
-        verification: Some(Verification {
-            // Original quote was made from user account, and not necessarily from owner.
-            from: order_placement.sender,
-            receiver: order_data.receiver.unwrap_or(order_placement.sender),
-            sell_token_source: SellTokenSource::Erc20,
-            buy_token_destination: BuyTokenDestination::Erc20,
-            // TODO do we have to get custom interactions here?
-            pre_interactions: vec![],
-            post_interactions: vec![],
-        }),
+        // Verified quotes always have prices that are at most as good as unverified quotes but can
+        // be lower.
+        // If the best quote we can find or compute on the fly for this order suggests a worse
+        // price than the order was created with it will cause a `QuoteNotFound` or other error.
+        // Orders indexed with errors are not eligible for automatic refunding.
+        // Because we want to be generous with refunding EthFlow orders we therefore don't request a
+        // verified quote here on purpose.
+        verification: None,
     };
     get_quote_and_check_fee(
         quoter,
