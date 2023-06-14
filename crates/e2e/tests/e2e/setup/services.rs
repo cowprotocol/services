@@ -272,7 +272,7 @@ impl<'a> Services<'a> {
     ) -> Result<String, (StatusCode, String)> {
         let response = self
             .http
-            .get(format!("{API_HOST}/api/v1/app_data/by_hash/{app_data:?}"))
+            .get(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
             .send()
             .await
             .unwrap();

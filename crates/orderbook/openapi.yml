@@ -375,7 +375,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VersionResponse"
-  /api/v1/app_data/by_hash/{app_data_hash}:
+  /api/v1/app_data/{app_data_hash}:
     get:
       summary: Retrieve full app data from contract app data hash.
       parameters:

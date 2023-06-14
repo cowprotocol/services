@@ -13,7 +13,7 @@ use {
 };
 
 pub fn request() -> impl Filter<Extract = (AppDataHash,), Error = Rejection> + Clone {
-    warp::path!("v1" / "app_data" / "by_hash" / AppDataHash).and(warp::get())
+    warp::path!("v1" / "app_data" / AppDataHash).and(warp::get())
 }
 
 pub fn get(
