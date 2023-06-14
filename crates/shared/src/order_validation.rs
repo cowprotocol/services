@@ -221,6 +221,7 @@ pub struct OrderValidator {
     pub enable_eth_smart_contract_payments: bool,
     enable_custom_interactions: bool,
     app_data_validator: crate::app_data::Validator,
+    request_verified_quotes: bool,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -307,6 +308,7 @@ impl OrderValidator {
             enable_eth_smart_contract_payments: false,
             enable_custom_interactions: false,
             app_data_validator,
+            request_verified_quotes: false,
         }
     }
 
@@ -327,6 +329,11 @@ impl OrderValidator {
 
     pub fn with_custom_interactions(mut self, enable: bool) -> Self {
         self.enable_custom_interactions = enable;
+        self
+    }
+
+    pub fn with_verified_quotes(mut self, enable: bool) -> Self {
+        self.request_verified_quotes = enable;
         self
     }
 
@@ -510,7 +517,7 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let verification = Some(Verification {
+        let verification = self.request_verified_quotes.then_some(Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
