@@ -390,7 +390,7 @@ paths:
           content:
             application/json: {}
         404:
-          description: App data hash doesn't exist.
+          description: No full app data stored for this hash.
 components:
   schemas:
     TransactionHash:
