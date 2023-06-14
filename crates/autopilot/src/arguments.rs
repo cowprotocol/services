@@ -44,11 +44,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub tracing_node_url: Option<Url>,
 
-    /// An Ethereum node URL that supports `eth_call`s with state overrides to
-    /// be used exclusively for trade simulations.
-    #[clap(long, env)]
-    pub simulation_node_url: Option<Url>,
-
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
@@ -207,7 +202,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.token_owner_finder)?;
         write!(f, "{}", self.price_estimation)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        display_option(f, "simulation_node_url", &self.simulation_node_url)?;
         writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
         writeln!(
             f,

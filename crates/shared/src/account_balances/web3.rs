@@ -21,10 +21,11 @@ pub struct Web3BalanceFetcher {
 impl Web3BalanceFetcher {
     pub fn new(
         web3: Web3,
-        vault: Option<BalancerV2Vault>,
+        vault: Option<H160>,
         vault_relayer: H160,
         settlement_contract: H160,
     ) -> Self {
+        let vault = vault.map(|address| contracts::BalancerV2Vault::at(&web3, address));
         Self {
             web3,
             vault,
@@ -405,7 +406,7 @@ mod tests {
 
         let fetcher = Web3BalanceFetcher::new(
             web3,
-            Some(vault.clone()),
+            Some(vault.address()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
         );
@@ -504,7 +505,7 @@ mod tests {
 
         let fetcher = Web3BalanceFetcher::new(
             web3,
-            Some(vault.clone()),
+            Some(vault.address()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
         );

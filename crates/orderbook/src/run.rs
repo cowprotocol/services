@@ -17,7 +17,7 @@ use {
     futures::StreamExt,
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
     shared::{
-        account_balances::Web3BalanceFetcher,
+        account_balances,
         bad_token::{
             cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
@@ -75,6 +75,9 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
+    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
 
     let chain_id = web3
         .eth()
@@ -136,12 +139,20 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
 
-    let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+    let balance_fetcher = args.shared.balances.fetcher(
+        account_balances::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+            vault: vault.as_ref().map(|contract| contract.address()),
+        },
         web3.clone(),
-        vault.clone(),
-        vault_relayer,
-        settlement_contract.address(),
-    ));
+        simulation_web3.clone(),
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "balance_fetching".into())
+            .unwrap(),
+    );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -314,10 +325,6 @@ pub async fn run(args: Arguments) {
         chain_id,
     )
     .map(Arc::new);
-
-    let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,

@@ -40,7 +40,7 @@ use {
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
-        account_balances::Web3BalanceFetcher,
+        account_balances,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc,
@@ -79,6 +79,9 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
+    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
 
     let chain_id = web3
         .eth()
@@ -524,12 +527,20 @@ pub async fn run(args: Arguments) {
         .or_else(|| shared::network::block_interval(&network_id, chain_id))
         .expect("unknown network block interval");
 
-    let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+    let balance_fetcher = args.shared.balances.fetcher(
+        account_balances::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+            vault: vault_contract.as_ref().map(|contract| contract.address()),
+        },
         web3.clone(),
-        vault_contract.clone(),
-        vault_relayer,
-        settlement_contract.address(),
-    ));
+        simulation_web3.clone(),
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "balance_fetching".into())
+            .unwrap(),
+    );
 
     let mut driver = Driver::new(
         settlement_contract,

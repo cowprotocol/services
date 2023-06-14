@@ -16,10 +16,9 @@ use {
         Arguments,
         PriceEstimating,
         PriceEstimatorType,
-        TradeValidatorKind,
     },
     crate::{
-        arguments::{self, Driver},
+        arguments::{self, CodeSimulatorKind, Driver},
         bad_token::BadTokenDetecting,
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
@@ -115,14 +114,14 @@ impl<'a> PriceEstimatorFactory<'a> {
                 };
 
                 let simulator = match kind {
-                    TradeValidatorKind::Web3 => {
+                    CodeSimulatorKind::Web3 => {
                         Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
                     }
-                    TradeValidatorKind::Tenderly => Arc::new(
+                    CodeSimulatorKind::Tenderly => Arc::new(
                         tenderly_simulator()?
                             .save(false, args.tenderly_save_failed_trade_simulations),
                     ),
-                    TradeValidatorKind::Web3ThenTenderly => {
+                    CodeSimulatorKind::Web3ThenTenderly => {
                         Arc::new(code_simulation::Web3ThenTenderly::new(
                             web3_simulator()?,
                             tenderly_simulator()?,
