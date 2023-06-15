@@ -1,3 +1,4 @@
+mod app_data;
 pub mod auctions;
 pub mod orders;
 pub mod quotes;

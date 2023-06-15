@@ -375,6 +375,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VersionResponse"
+  /api/v1/app_data/{app_data_hash}:
+    get:
+      summary: Retrieve full app data from contract app data hash.
+      parameters:
+        - in: path
+          name: app_data_hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      responses:
+        200:
+          description: Full app data
+          content:
+            application/json: {}
+        404:
+          description: No full app data stored for this hash.
 components:
   schemas:
     TransactionHash:

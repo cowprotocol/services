@@ -6,6 +6,7 @@ use {
     clap::Parser,
     ethcontract::H256,
     model::{
+        app_id::AppDataHash,
         auction::AuctionWithId,
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
@@ -261,6 +262,26 @@ impl<'a> Services<'a> {
 
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
+    pub async fn get_app_data(
+        &self,
+        app_data: AppDataHash,
+    ) -> Result<String, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(body),
             code => Err((code, body)),
         }
     }
