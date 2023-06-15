@@ -428,12 +428,12 @@ fn to_domain_solution(
             let interaction = solution::Interaction::Liquidity(solution::LiquidityInteraction {
                 liquidity: (*liquidity).clone(),
                 input: eth::Asset {
-                    token: eth::TokenAddress(interaction.sell_token),
-                    amount: interaction.exec_sell_amount,
-                },
-                output: eth::Asset {
                     token: eth::TokenAddress(interaction.buy_token),
                     amount: interaction.exec_buy_amount,
+                },
+                output: eth::Asset {
+                    token: eth::TokenAddress(interaction.sell_token),
+                    amount: interaction.exec_sell_amount,
                 },
                 internalize: interaction.exec_plan.internal,
             });

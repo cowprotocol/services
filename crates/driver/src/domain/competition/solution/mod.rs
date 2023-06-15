@@ -303,7 +303,7 @@ pub enum Error {
         "invalid asset flow: token amounts entering the settlement do not equal token amounts \
          exiting the settlement"
     )]
-    AssetFlow,
+    AssetFlow(HashMap<eth::TokenAddress, num::BigInt>),
     #[error(transparent)]
     Execution(#[from] trade::ExecutionError),
     #[error(

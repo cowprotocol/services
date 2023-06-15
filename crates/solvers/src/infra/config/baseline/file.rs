@@ -45,7 +45,7 @@ pub async fn load(path: &Path) -> super::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+        .unwrap_or_else(|e| panic!("TOML syntax error while reading {path:?}: {e:?}"));
     let weth = match (config.chain_id, config.weth) {
         (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id).weth,
         (None, Some(weth)) => eth::WethAddress(weth),
