@@ -12,10 +12,10 @@ use {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeFetching: Send + Sync + 'static {
-    /// Fetches the code size at the specified address.
+    /// Fetches the code for the specified address.
     async fn code(&self, address: H160) -> Result<Bytes>;
 
-    /// Fetches the code for the specified address.
+    /// Fetches the code size at the specified address.
     async fn code_size(&self, address: H160) -> Result<usize>;
 }
 

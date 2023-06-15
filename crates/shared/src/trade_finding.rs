@@ -38,6 +38,7 @@ pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub interactions: Vec<Interaction>,
+    // TODO add solver address for simulations
 }
 
 impl Trade {
@@ -77,7 +78,7 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,

@@ -64,11 +64,10 @@ include_contracts! {
 
 pub mod support {
     include_contracts! {
-        AnyoneAuthenticator;
         FetchBlock;
         Multicall;
-        PhonyERC20;
         Trader;
+        Solver;
     }
 }
 
@@ -208,8 +207,7 @@ mod tests {
             }};
         }
 
-        assert_has_bytecode!(support::AnyoneAuthenticator);
-        assert_has_bytecode!(support::PhonyERC20);
         assert_has_bytecode!(support::Trader);
+        assert_has_bytecode!(support::Solver);
     }
 }

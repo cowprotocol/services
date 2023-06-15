@@ -13,78 +13,75 @@ contract Trader {
     using Math for *;
     using SafeERC20 for *;
 
-    /// @dev Simulates a executing a trade with the CoW protocol settlement
-    /// contract. This sort of simulation provides stronger guarantees that the
-    /// proposed trade is valid and would work in an actual settlement.
-    ///
-    /// @param tokens - tokens included in the settlement. Balances will be
-    /// tracked for each token included in this array. `tokens[0]` is the trade
-    /// sell token and `tokens[tokens.length - 1]` is the buy token.
-    /// @param clearingPrices - the clearing prices for the settlement. This
-    /// also doubles as the traded amounts, with `clearingPrices[0]` being the
-    /// buy amount and the `clearingPrices[tokens.length - 1]` the sell amount.
-    /// @param interactions - the interactions for settling the trade.
-    /// @param mint - mint some sell token if this is a non-zero value. This
-    /// requires that the sell token is mintable (which can be guaranteed by
-    /// replacing its code with the `PhonyERC20` contract).
-    ///
-    /// @return gasUsed - the cumulative gas used for executing the simulated
-    /// settlement.
-    /// @return traderBalances - the changes in balances of the trader (`this`)
-    /// for all tokens specified in the `tokens` array.
-    /// @return settlementBalances - the changes in balances of the CoW protocol
-    /// settlement contract for all tokens specified in the `tokens` array.
-    function settle(
-        address[] calldata tokens,
-        uint256[] calldata clearingPrices,
-        Interaction[][3] calldata interactions,
-        uint256 mint
-    ) external returns (
-        uint256 gasUsed,
-        int256[] memory traderBalances,
-        int256[] memory settlementBalances
-    ) {
-        if (mint != 0) {
-            IPhonyERC20(tokens[0]).mintPhonyTokens(address(this), mint);
+    /// @dev Address where the original code for the trader implementation is
+    /// expected to be. Use 0x10000 as its the first "valid" address, since
+    /// addresses up to 0xffff are reserved for pre-compiles.
+    /// This is used to proxy calls to the original implementation in case
+    /// the trader is actually a smart contract.
+    address constant private TRADER_IMPL = address(0x10000);
+
+    /// @dev Flag that ensures that `prepareSwap` gets called exactly once to
+    /// prevent custom interaction from calling it.
+    bool private _alreadyCalled = false;
+
+    // The `Trader` contract gets deployed on the `from` address of the quote.
+    // Since the `from` address might be a safe or other smart contract we still
+    // need to make the `Trader` behave as the original `from` would have in
+    // case some custom interactions rely on that behavior.
+    // To do that we simply implement fallback handlers that do delegate calls
+    // to the original implementation.
+    fallback() external payable {
+        bytes memory rdata = TRADER_IMPL.doDelegatecall(msg.data);
+        assembly { return(add(rdata, 32), mload(rdata)) }
+    }
+    // Proxying to the original trader implementation doesn't make sense since
+    // smart contracts that do something on `receive()` are not supported by the
+    // settlement contract anyway.
+    receive() external payable {}
+
+    /// @dev Prepares everything needed by the trader for successfully executing the swap.
+    /// This includes giving the required approval, wrapping the required ETH (if needed)
+    /// and warming the needed storage for sending native ETH to smart contracts.
+    /// @param sellToken - token being sold by the trade
+    /// @param sellAmount - expected amount to be sold according to the quote
+    /// @param nativeToken - ERC20 version of the chain's native token
+    /// @param receiver - address that will receive the bought tokens
+    function prepareSwap(
+        address sellToken,
+        uint256 sellAmount,
+        address nativeToken,
+        address payable receiver
+    ) external {
+        require(!_alreadyCalled, "prepareSwap can only be called once");
+        _alreadyCalled = true;
+
+        if (sellToken == nativeToken) {
+            uint256 availableBalance = IERC20(sellToken).balanceOf(address(this));
+            if (availableBalance < sellAmount) {
+                // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
+                // on that just to get a quote. If they are happy with the quote and want to
+                // create an order they will actually have to do the wrapping, though.
+                INativeERC20(nativeToken).deposit{value: sellAmount - availableBalance}();
+            }
         }
-        // Make sure to reset the approval before setting a new one - some
-        // popular tokens (like Tether USD) require this.
-        IERC20(tokens[0]).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
-        IERC20(tokens[0]).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
 
-        traderBalances = new int256[](tokens.length);
-        settlementBalances = new int256[](tokens.length);
-        for (uint256 i; i < tokens.length; ++i) {
-            traderBalances[i] = -IERC20(tokens[i]).balanceOf(address(this)).toInt();
-            settlementBalances[i] = -IERC20(tokens[i]).balanceOf(address(SETTLEMENT)).toInt();
+        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), address(SETTLEMENT.vaultRelayer()));
+        if (currentAllowance < sellAmount) {
+            // Simulate an approval to the settlement contract so the user doesn't have to
+            // spend gas on that just to get a quote. If they are happy with the quote and
+            // want to create an order they will actually have to do the approvals, though.
+            // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
+            // require that due to this attack:
+            // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+            IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
+            IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
         }
 
-        Trade[] memory trades = new Trade[](1);
-        trades[0] = Trade({
-            sellTokenIndex: 0,
-            buyTokenIndex: tokens.length - 1,
-            receiver: address(0),
-            sellAmount: clearingPrices[tokens.length - 1],
-            buyAmount: clearingPrices[0],
-            validTo: type(uint32).max,
-            appData: bytes32(0),
-            feeAmount: 0,
-            flags: 0x40, // EIP-1271
-            executedAmount: 0,
-            signature: abi.encodePacked(address(this))
-        });
-
-        gasUsed = address(SETTLEMENT).doMeteredCallNoReturn(
-            abi.encodeCall(
-                SETTLEMENT.settle,
-                (tokens, clearingPrices, trades, interactions)
-            )
-        );
-
-        for (uint256 i; i < tokens.length; ++i) {
-            traderBalances[i] += IERC20(tokens[i]).balanceOf(address(this)).toInt();
-            settlementBalances[i] += IERC20(tokens[i]).balanceOf(address(SETTLEMENT)).toInt();
-        }
+        // Warm the storage for sending ETH to smart contract addresses.
+        // We allow this call to revert becaues it was either unnecessary in the first place
+        // or failing to send `ETH` to the `receiver` will cause a revert in the settlement
+        // contract.
+        receiver.call{value: 0}("");
     }
 
     /// @dev Roundtrip a token in two CoW protocol settlements. First, buy some

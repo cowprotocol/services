@@ -1,11 +1,11 @@
 use {
+    crate::interaction::EncodedInteraction,
     ethcontract::Bytes,
     model::{
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
         signature::{Signature, SigningScheme},
     },
     primitive_types::{H160, U256},
-    shared::interaction::EncodedInteraction,
 };
 
 pub type EncodedTrade = (

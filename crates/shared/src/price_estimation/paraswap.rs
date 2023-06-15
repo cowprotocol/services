@@ -11,7 +11,6 @@ use {
         token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
-    ethcontract::H160,
     std::sync::Arc,
 };
 
@@ -23,10 +22,8 @@ impl ParaswapPriceEstimator {
         token_info: Arc<dyn TokenInfoFetching>,
         disabled_paraswap_dexs: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
-        settlement: H160,
     ) -> Self {
         Self(TradeEstimator::new(
-            settlement,
             Arc::new(ParaswapTradeFinder::new(
                 api,
                 token_info,
@@ -81,7 +78,6 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
-            testlib::protocol::SETTLEMENT,
         );
 
         let weth = testlib::tokens::WETH;

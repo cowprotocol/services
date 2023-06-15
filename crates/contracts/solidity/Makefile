@@ -7,7 +7,7 @@ SOLFLAGS := --overwrite --abi --bin --bin-runtime --metadata-hash none --optimiz
 TARGETDIR   := ../../../target/solidity
 ARTIFACTDIR := ../artifacts
 
-CONTRACTS := AnyoneAuthenticator.sol FetchBlock.sol Multicall.sol PhonyERC20.sol Trader.sol
+CONTRACTS := FetchBlock.sol Multicall.sol Trader.sol Solver.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
 .PHONY: artifacts

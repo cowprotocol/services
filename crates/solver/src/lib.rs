@@ -3,7 +3,6 @@ pub mod arguments;
 mod auction_preprocessing;
 pub mod driver;
 pub mod driver_logger;
-pub mod encoding;
 pub mod in_flight_orders;
 pub mod interactions;
 pub mod liquidity;

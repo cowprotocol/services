@@ -21,11 +21,9 @@ impl OneInchPriceEstimator {
         api: Arc<dyn OneInchClient>,
         disabled_protocols: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
-        settlement: H160,
         referrer_address: Option<H160>,
     ) -> Self {
         Self(TradeEstimator::new(
-            settlement,
             Arc::new(OneInchTradeFinder::new(
                 api,
                 disabled_protocols,
@@ -71,7 +69,6 @@ mod tests {
                     Default::default(),
                     "test".into(),
                 )),
-                testlib::protocol::SETTLEMENT,
                 None,
             )
         }
