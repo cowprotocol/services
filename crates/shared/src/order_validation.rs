@@ -1,5 +1,6 @@
 use {
     crate::{
+        account_balances,
         account_balances::{BalanceFetching, TransferSimulationError},
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
@@ -586,7 +587,16 @@ impl OrderValidating for OrderValidator {
         // If not, run extra queries for additional information.
         match self
             .balance_fetcher
-            .can_transfer(data.sell_token, owner, min_balance, data.sell_token_balance)
+            .can_transfer(
+                &account_balances::Query {
+                    token: data.sell_token,
+                    owner,
+                    source: data.sell_token_balance,
+                    // TODO(nlordell): Read from app-data
+                    interactions: vec![],
+                },
+                min_balance,
+            )
             .await
         {
             Ok(_) => (),
@@ -1204,7 +1214,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let mut signature_validating = MockSignatureValidating::new();
         signature_validating
@@ -1357,7 +1367,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
 
         let mut signature_validating = MockSignatureValidating::new();
         signature_validating
@@ -1425,7 +1435,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1475,7 +1485,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1537,7 +1547,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1590,7 +1600,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1638,7 +1648,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1688,7 +1698,7 @@ mod tests {
         });
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1742,7 +1752,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1790,7 +1800,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
+            .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let validator = OrderValidator::new(
@@ -1839,7 +1849,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _| Ok(()));
         signature_validator
             .expect_validate_signature_and_get_additional_gas()
             .returning(|_| Err(SignatureValidationError::Invalid));
@@ -1901,7 +1911,7 @@ mod tests {
                 .returning(|_| Ok(TokenQuality::Good));
             balance_fetcher
                 .expect_can_transfer()
-                .returning(move |_, _, _, _| Err(create_error()));
+                .returning(move |_, _| Err(create_error()));
             let mut limit_order_counter = MockLimitOrderCounting::new();
             limit_order_counter.expect_count().returning(|_| Ok(0u64));
             let validator = OrderValidator::new(
