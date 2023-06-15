@@ -1,5 +1,3 @@
-use crate::bad_token::TokenQuality;
-
 pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
@@ -19,15 +17,16 @@ pub mod zeroex;
 use {
     crate::{
         arguments::display_option,
-        bad_token::BadTokenDetecting,
+        bad_token::{BadTokenDetecting, TokenQuality},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
+        trade_finding::Interaction,
     },
     anyhow::Result,
     clap::ValueEnum,
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
-    model::order::OrderKind,
+    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     reqwest::Url,
     serde::{Deserialize, Serialize},
@@ -297,16 +296,35 @@ impl Clone for PriceEstimationError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Query {
-    /// Optional `from` address that would be executing the query.
-    pub from: Option<H160>,
     pub sell_token: H160,
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
     pub in_amount: U256,
     pub kind: OrderKind,
+    /// If this is `Some` the quotes are expected to pass simulations using the
+    /// contained parameters.
+    pub verification: Option<Verification>,
+}
+
+/// Conditions under which a given price estimate needs to work in order to be
+/// viable.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
+pub struct Verification {
+    /// This address needs to have the `sell_token`.
+    pub from: H160,
+    /// This address will receive the `buy_token`.
+    pub receiver: H160,
+    /// These interactions will be executed before the trade.
+    pub pre_interactions: Vec<Interaction>,
+    /// These interactions will be executed after the trade.
+    pub post_interactions: Vec<Interaction>,
+    /// `sell_token` will be taken via this approach.
+    pub sell_token_source: SellTokenSource,
+    /// `buy_token` will be sent via this approach.
+    pub buy_token_destination: BuyTokenDestination,
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]

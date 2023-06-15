@@ -61,7 +61,7 @@ impl BalancerSor {
             }
         };
         let future = super::rate_limited(self.rate_limiter.clone(), future);
-        let future = self.sharing.shared(*query, future.boxed());
+        let future = self.sharing.shared(query.clone(), future.boxed());
         let quote = future.await?;
         Ok(Estimate {
             out_amount: quote.return_amount,
@@ -117,7 +117,7 @@ mod tests {
         let gas = Arc::new(FixedGasPriceEstimator(1e7));
         let estimator = BalancerSor::new(api, rate_limiter, gas);
         let query = Query {
-            from: None,
+            verification: None,
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::DAI,
             in_amount: U256::from_f64_lossy(1e18),

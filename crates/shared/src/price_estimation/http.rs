@@ -221,7 +221,7 @@ impl HttpPriceEstimator {
         let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
         let settlement = self
             .sharing
-            .shared(*query, settlement_future.boxed())
+            .shared(query.clone(), settlement_future.boxed())
             .await?;
 
         if !settlement.orders.contains_key(&0) {
@@ -495,7 +495,7 @@ mod tests {
 
         let sell_order = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: 100.into(),
@@ -507,7 +507,7 @@ mod tests {
 
         let buy_order = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: 100.into(),
@@ -547,7 +547,7 @@ mod tests {
         );
         let err = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: 100.into(),
@@ -592,7 +592,7 @@ mod tests {
 
         let err = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: 100.into(),
@@ -686,7 +686,7 @@ mod tests {
         );
 
         let query = Query {
-            from: None,
+            verification: None,
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             in_amount: 100.into(),
@@ -817,7 +817,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount1,
@@ -838,7 +838,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
-                from: None,
+                verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount2,

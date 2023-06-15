@@ -89,14 +89,14 @@ mod tests {
     async fn records_metrics_for_each_query() {
         let queries = [
             Query {
-                from: None,
+                verification: None,
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
                 in_amount: 3.into(),
                 kind: OrderKind::Sell,
             },
             Query {
-                from: None,
+                verification: None,
                 sell_token: H160([4; 20]),
                 buy_token: H160([5; 20]),
                 in_amount: 6.into(),
@@ -105,10 +105,11 @@ mod tests {
         ];
 
         let mut estimator = MockPriceEstimating::new();
+        let expected_queries = queries.clone();
         estimator
             .expect_estimates()
             .times(1)
-            .withf(move |q| q == queries)
+            .withf(move |q| q == expected_queries)
             .returning(|_| {
                 futures::stream::iter([
                     Ok(Estimate::default()),

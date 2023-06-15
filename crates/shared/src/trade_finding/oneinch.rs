@@ -71,7 +71,7 @@ impl OneInchTradeFinder {
         allowed_protocols: Option<Vec<String>>,
     ) -> BoxShared<Result<Quote, TradeError>> {
         let query = InternalQuery {
-            data: *query,
+            data: query.clone(),
             allowed_protocols,
         };
 
@@ -189,7 +189,11 @@ impl Inner {
                 query.sell_token,
                 query.buy_token,
                 query.in_amount,
-                query.from.unwrap_or_default(),
+                query
+                    .verification
+                    .as_ref()
+                    .map(|v| v.from)
+                    .unwrap_or_default(),
                 allowed_protocols,
                 Slippage::ONE_PERCENT,
                 self.referrer_address,
@@ -275,7 +279,7 @@ mod tests {
 
         let quote = estimator
             .get_quote(&Query {
-                from: None,
+                verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: 1_000_000_000_000_000_000u128.into(),
@@ -361,7 +365,7 @@ mod tests {
 
         let trade = estimator
             .get_trade(&Query {
-                from: None,
+                verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: 1_000_000_000_000_000_000u128.into(),
@@ -414,7 +418,7 @@ mod tests {
 
         let est = estimator
             .get_trade(&Query {
-                from: None,
+                verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: 1_000_000_000_000_000_000u128.into(),
@@ -445,7 +449,7 @@ mod tests {
 
         let est = estimator
             .get_trade(&Query {
-                from: None,
+                verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: 1_000_000_000_000_000_000u128.into(),
@@ -473,7 +477,7 @@ mod tests {
 
         let est = estimator
             .get_trade(&Query {
-                from: None,
+                verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: 1_000_000_000_000_000_000u128.into(),
@@ -527,7 +531,7 @@ mod tests {
 
         let result = estimator
             .get_trade(&Query {
-                from: None,
+                verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 10u128.pow(18).into(),

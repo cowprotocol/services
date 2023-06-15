@@ -10,6 +10,7 @@ use {
         db_order_conversions::order_kind_from,
         fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
         order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+        price_estimation::Verification,
     },
     anyhow::{Context, Result},
     chrono::{DateTime, Duration, TimeZone as _, Utc},
@@ -69,7 +70,7 @@ impl QuoteHandler {
         self.order_validator.partial_validate(order).await?;
 
         let quote = match request.price_quality {
-            PriceQuality::Optimal => {
+            PriceQuality::Optimal | PriceQuality::Verified => {
                 let quote = self.optimal_quoter.calculate_quote(request.into()).await?;
                 self.optimal_quoter
                     .store_quote(quote)
@@ -134,21 +135,12 @@ pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
     pub side: OrderQuoteSide,
-    pub from: H160,
+    pub verification: Option<Verification>,
     pub signing_scheme: QuoteSigningScheme,
 }
 
 impl QuoteParameters {
     fn to_price_query(&self) -> price_estimation::Query {
-        // Treat quotes with `from: 0` as if they didn't specify a `from` address
-        // for price quotes. This is because the 0 address typically has special
-        // semantics and causes issues with trade simulations.
-        let from = if self.from != H160::zero() {
-            Some(self.from)
-        } else {
-            None
-        };
-
         let (kind, in_amount) = match self.side {
             OrderQuoteSide::Sell {
                 sell_amount:
@@ -161,7 +153,7 @@ impl QuoteParameters {
         };
 
         price_estimation::Query {
-            from,
+            verification: self.verification.clone(),
             sell_token: self.sell_token,
             buy_token: self.buy_token,
             in_amount,
@@ -366,7 +358,9 @@ pub struct QuoteSearchParameters {
     pub buy_amount: U256,
     pub fee_amount: U256,
     pub kind: OrderKind,
-    pub from: H160,
+    /// If this is `Some` the quotes are expected to pass simulations using the
+    /// contained parameters.
+    pub verification: Option<Verification>,
 }
 
 impl QuoteSearchParameters {
@@ -537,7 +531,11 @@ impl OrderQuoting for OrderQuoter {
             self.compute_quote_data(&parameters),
             self.fee_subsidy
                 .subsidy(SubsidyParameters {
-                    from: parameters.from,
+                    from: parameters
+                        .verification
+                        .as_ref()
+                        .map(|v| v.from)
+                        .unwrap_or_default(),
                 })
                 .map_err(From::from),
         )?;
@@ -589,7 +587,11 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let subsidy = SubsidyParameters {
-            from: parameters.from,
+            from: parameters
+                .verification
+                .as_ref()
+                .map(|v| v.from)
+                .unwrap_or_default(),
         };
 
         let now = self.now.now();
@@ -660,11 +662,24 @@ impl From<&OrderQuoteRequest> for PreOrderData {
 
 impl From<&OrderQuoteRequest> for QuoteParameters {
     fn from(request: &OrderQuoteRequest) -> Self {
+        let verification = match request.price_quality {
+            PriceQuality::Verified => Some(Verification {
+                from: request.from,
+                receiver: request.receiver.unwrap_or(request.from),
+                sell_token_source: request.sell_token_balance,
+                buy_token_destination: request.buy_token_balance,
+                // TODO get from request
+                pre_interactions: vec![],
+                post_interactions: vec![],
+            }),
+            PriceQuality::Fast | PriceQuality::Optimal => None,
+        };
+
         Self {
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             side: request.side,
-            from: request.from,
+            verification,
             signing_scheme: request.signing_scheme,
         }
     }
@@ -735,7 +750,10 @@ mod tests {
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee { value: 100.into() },
             },
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -749,7 +767,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -851,7 +872,10 @@ mod tests {
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: 100.into() },
             },
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -865,7 +889,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -970,7 +997,10 @@ mod tests {
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: 42.into(),
             },
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -984,7 +1014,10 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
-                    from: Some(H160([3; 20])),
+                    verification: Some(Verification {
+                        from: H160([3; 20]),
+                        ..Default::default()
+                    }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 42.into(),
@@ -1089,7 +1122,10 @@ mod tests {
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee { value: 100.into() },
             },
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -1153,7 +1189,10 @@ mod tests {
                     value: 100_000.into(),
                 },
             },
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
             signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
@@ -1222,7 +1261,10 @@ mod tests {
             buy_amount: 40.into(),
             fee_amount: 15.into(),
             kind: OrderKind::Sell,
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1304,7 +1346,10 @@ mod tests {
             buy_amount: 40.into(),
             fee_amount: 30.into(),
             kind: OrderKind::Sell,
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1375,7 +1420,10 @@ mod tests {
             buy_amount: 42.into(),
             fee_amount: 30.into(),
             kind: OrderKind::Buy,
-            from: H160([3; 20]),
+            verification: Some(Verification {
+                from: H160([3; 20]),
+                ..Default::default()
+            }),
         };
 
         let mut storage = MockQuoteStoring::new();

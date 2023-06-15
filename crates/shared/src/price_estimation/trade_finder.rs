@@ -9,6 +9,7 @@ use {
         PriceEstimating,
         PriceEstimationError,
         Query,
+        Verification,
     },
     crate::{
         code_fetching::CodeFetching,
@@ -33,7 +34,7 @@ use {
     },
     maplit::hashmap,
     model::{
-        order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource, BUY_ETH_ADDRESS},
+        order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
     std::sync::Arc,
@@ -84,61 +85,38 @@ impl TradeEstimator {
     }
 
     async fn estimate(&self, query: Query) -> Result<Estimate, PriceEstimationError> {
-        let owner = query.from.unwrap_or_default();
-        if query.from.is_none() {
-            tracing::warn!(
-                "trade verification requires a 'from' and 'receiver' address.assuming 0x000...000 \
-                 for now."
-            );
-        }
-
-        let quote_query = QuoteQuery {
-            sell_token: query.sell_token,
-            buy_token: query.buy_token,
-            kind: query.kind,
-            in_amount: query.in_amount,
-            // TODO drop this trait implementation when we actually split quotes from price
-            // estimates because trade verificaton requires data that doesn't exist for
-            // price estimation requests.
-            // Until then we try to keep this implementation as usable as posible.
-            from: owner,
-            receiver: owner,
-            pre_interactions: vec![],
-            post_interactions: vec![],
-            sell_token_source: Default::default(),
-            buy_token_destination: Default::default(),
-        };
         let estimate = rate_limited(
             self.rate_limiter.clone(),
-            self.inner.clone().estimate(quote_query),
+            self.inner.clone().estimate(query.clone()),
         );
         self.sharing.shared(query, estimate.boxed()).await
     }
 }
 
 impl Inner {
-    async fn estimate(
-        self: Arc<Self>,
-        query: QuoteQuery,
-    ) -> Result<Estimate, PriceEstimationError> {
-        let finder_query = Query {
-            from: Some(query.from),
-            sell_token: query.sell_token,
-            buy_token: query.buy_token,
-            kind: query.kind,
-            in_amount: query.in_amount,
-        };
-
-        match &self.verifier {
-            Some(verifier) => {
-                let trade = self.finder.get_trade(&finder_query).await?;
+    async fn estimate(self: Arc<Self>, query: Query) -> Result<Estimate, PriceEstimationError> {
+        match (&self.verifier, &query.verification) {
+            (Some(verifier), Some(verification)) => {
+                let trade = self.finder.get_trade(&query).await?;
+                let price_query = PriceQuery {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    in_amount: query.in_amount,
+                    kind: query.kind,
+                };
                 verifier
-                    .verify(query, trade)
+                    .verify(&price_query, verification, trade)
                     .await
                     .map_err(PriceEstimationError::Other)
             }
-            None => {
-                let quote = self.finder.get_quote(&finder_query).await?;
+            (_, verification) => {
+                if verification.is_some() {
+                    // TODO turn this into a hard error when everything else is set up
+                    tracing::warn!(
+                        "verified quote was requested by no verification scheme was configured"
+                    );
+                }
+                let quote = self.finder.get_quote(&query).await?;
                 Ok(Estimate {
                     out_amount: quote.out_amount,
                     gas: quote.gas_estimate,
@@ -152,7 +130,12 @@ fn encode_interactions(interactions: &[Interaction]) -> Vec<EncodedInteraction> 
     interactions.iter().map(|i| i.encode()).collect()
 }
 
-fn encode_settlement(query: &QuoteQuery, trade: &Trade, native_token: H160) -> EncodedSettlement {
+fn encode_settlement(
+    query: &PriceQuery,
+    verification: &Verification,
+    trade: &Trade,
+    native_token: H160,
+) -> EncodedSettlement {
     let mut trade_interactions = encode_interactions(&trade.interactions);
     if query.buy_token == BUY_ETH_ADDRESS {
         // Because the `driver` manages `WETH` unwraps under the hood the `TradeFinder`
@@ -188,21 +171,21 @@ fn encode_settlement(query: &QuoteQuery, trade: &Trade, native_token: H160) -> E
         sell_amount,
         buy_token: query.buy_token,
         buy_amount,
-        receiver: Some(query.receiver),
+        receiver: Some(verification.receiver),
         valid_to: u32::MAX,
         app_data: Default::default(),
         fee_amount: 0.into(),
         kind: query.kind,
         partially_fillable: false,
-        sell_token_balance: query.sell_token_source,
-        buy_token_balance: query.buy_token_destination,
+        sell_token_balance: verification.sell_token_source,
+        buy_token_balance: verification.buy_token_destination,
     };
 
     let fake_signature = Signature::default_with(SigningScheme::Eip1271);
     let encoded_trade = encode_trade(
         &fake_order,
         &fake_signature,
-        query.from,
+        verification.from,
         0,
         1,
         &query.in_amount,
@@ -213,9 +196,9 @@ fn encode_settlement(query: &QuoteQuery, trade: &Trade, native_token: H160) -> E
         clearing_prices,
         trades: vec![encoded_trade],
         interactions: [
-            encode_interactions(&query.pre_interactions),
+            encode_interactions(&verification.pre_interactions),
             trade_interactions,
-            encode_interactions(&query.post_interactions),
+            encode_interactions(&verification.post_interactions),
         ],
     }
 }
@@ -225,13 +208,14 @@ fn encode_settlement(query: &QuoteQuery, trade: &Trade, native_token: H160) -> E
 /// These balances will get used to compute an accurate price for the trade.
 fn add_balance_queries(
     mut settlement: EncodedSettlement,
-    query: &QuoteQuery,
+    query: &PriceQuery,
+    verification: &Verification,
     settlement_contract: H160,
     solver: &Solver,
 ) -> EncodedSettlement {
     let (token, owner) = match query.kind {
         // track how much `buy_token` the `receiver` actually got
-        OrderKind::Sell => (query.buy_token, query.receiver),
+        OrderKind::Sell => (query.buy_token, verification.receiver),
         // track how much `sell_token` the settlement contract actually spent
         OrderKind::Buy => (query.sell_token, settlement_contract),
     };
@@ -263,18 +247,17 @@ impl TradeVerifier {
         }
     }
 
-    async fn verify(&self, query: QuoteQuery, trade: Trade) -> Result<Estimate> {
-        // TODO: add solver address to [`Trade`]; for now we simply use Quasilab's
-        // address
-        let solver = dummy_contract!(
-            Solver,
-            H160(hex_literal::hex!(
-                "1e8D9a45175B2a4122F7827ce1eA3B08327b2ba0"
-            ))
-        );
+    async fn verify(
+        &self,
+        query: &PriceQuery,
+        verification: &Verification,
+        trade: Trade,
+    ) -> Result<Estimate> {
+        let solver = dummy_contract!(Solver, trade.solver);
 
-        let settlement = encode_settlement(&query, &trade, self.native_token);
-        let settlement = add_balance_queries(settlement, &query, self.settlement, &solver);
+        let settlement = encode_settlement(query, verification, &trade, self.native_token);
+        let settlement =
+            add_balance_queries(settlement, query, verification, self.settlement, &solver);
 
         let settlement_contract = dummy_contract!(GPv2Settlement, self.settlement);
         let settlement = settlement_contract
@@ -295,11 +278,11 @@ impl TradeVerifier {
         let simulation = solver
             .methods()
             .swap(
-                query.from,
+                verification.from,
                 query.sell_token,
                 sell_amount,
                 self.native_token,
-                query.receiver,
+                verification.receiver,
                 Bytes(settlement.data.unwrap().0),
             )
             .tx;
@@ -315,7 +298,7 @@ impl TradeVerifier {
 
         // Set up helper contracts impersonating trader and solver.
         let mut overrides = hashmap! {
-            query.from => StateOverride {
+            verification.from => StateOverride {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
@@ -325,7 +308,7 @@ impl TradeVerifier {
             },
         };
 
-        let trader_impl = self.code_fetcher.code(query.from).await?;
+        let trader_impl = self.code_fetcher.code(verification.from).await?;
         if !trader_impl.0.is_empty() {
             // Store `owner` implementation so `Trader` helper contract can proxy to it.
             overrides.insert(
@@ -345,6 +328,7 @@ impl TradeVerifier {
         };
         tracing::debug!(
             ?query,
+            ?verification,
             promised_gas = trade.gas_estimate,
             promised_out_amount =? trade.out_amount,
             ?verified,
@@ -376,7 +360,7 @@ impl PriceEstimating for TradeEstimator {
         }));
 
         futures::stream::iter(queries)
-            .then(|query| self.estimate(*query))
+            .then(|query| self.estimate(query.clone()))
             .enumerate()
             .boxed()
     }
@@ -393,19 +377,13 @@ impl From<TradeError> for PriceEstimationError {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
-pub struct QuoteQuery {
-    pub from: H160,
-    pub receiver: H160,
+#[derive(Debug)]
+pub struct PriceQuery {
     pub sell_token: H160,
     // This should be `BUY_ETH_ADDRESS` if you actually want to trade `ETH`
     pub buy_token: H160,
     pub kind: OrderKind,
     pub in_amount: U256,
-    pub pre_interactions: Vec<Interaction>,
-    pub post_interactions: Vec<Interaction>,
-    pub sell_token_source: SellTokenSource,
-    pub buy_token_destination: BuyTokenDestination,
 }
 
 /// Output of `Trader::settle` smart contract call.

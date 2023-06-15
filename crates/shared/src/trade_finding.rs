@@ -11,6 +11,7 @@ use {
     anyhow::Result,
     contracts::ERC20,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    serde::Serialize,
     thiserror::Error,
 };
 
@@ -38,7 +39,7 @@ pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
     pub interactions: Vec<Interaction>,
-    // TODO add solver address for simulations
+    pub solver: H160,
 }
 
 impl Trade {
@@ -68,6 +69,9 @@ impl Trade {
             out_amount,
             gas_estimate,
             interactions,
+            // TODO replace this if we want to have verified quotes of non-colocated price
+            // estimators
+            solver: Default::default(),
         }
     }
 
@@ -78,7 +82,7 @@ impl Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default, Serialize)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,
@@ -210,6 +214,7 @@ mod tests {
                     data: vec![5, 6, 7, 8],
                 },
             ],
+            solver: Default::default(),
         };
 
         assert_eq!(

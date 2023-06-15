@@ -16,9 +16,13 @@ use {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceQuality {
+    /// We pick the best quote of the fastest `n` price estimators.
     Fast,
     #[default]
+    /// We pick the best quote of all price estimators.
     Optimal,
+    /// Quotes may by discarde when they failed to be verified by simulation.
+    Verified,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
