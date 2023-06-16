@@ -5,7 +5,10 @@ mod web3;
 
 use {
     anyhow::Result,
-    model::order::{Order, SellTokenSource},
+    model::{
+        interaction::InteractionData,
+        order::{Order, SellTokenSource},
+    },
     primitive_types::{H160, U256},
 };
 
@@ -16,11 +19,12 @@ pub use self::{
     web3::Web3BalanceFetcher,
 };
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
     pub owner: H160,
     pub token: H160,
     pub source: SellTokenSource,
+    pub interactions: Vec<InteractionData>,
 }
 
 impl Query {
@@ -29,6 +33,7 @@ impl Query {
             owner: o.metadata.owner,
             token: o.data.sell_token,
             source: o.data.sell_token_balance,
+            interactions: o.interactions.pre.clone(),
         }
     }
 }
@@ -62,9 +67,7 @@ pub trait BalanceFetching: Send + Sync {
     // can perform more extensive tests.
     async fn can_transfer(
         &self,
-        token: H160,
-        from: H160,
+        query: &Query,
         amount: U256,
-        source: SellTokenSource,
     ) -> Result<(), TransferSimulationError>;
 }

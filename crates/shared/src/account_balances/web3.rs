@@ -133,6 +133,13 @@ impl BalanceFetching for Web3BalanceFetcher {
         let futures = queries
             .iter()
             .map(|query| {
+                if !query.interactions.is_empty() {
+                    tracing::warn!(
+                        ?query,
+                        "fetching balances for orders with interactions is not fully supported"
+                    );
+                }
+
                 let token = ERC20::at(&self.web3, query.token);
                 match (query.source, &self.vault) {
                     (SellTokenSource::Erc20, _) => {
@@ -168,23 +175,31 @@ impl BalanceFetching for Web3BalanceFetcher {
 
     async fn can_transfer(
         &self,
-        token: H160,
-        from: H160,
+        query: &Query,
         amount: U256,
-        source: SellTokenSource,
     ) -> Result<(), TransferSimulationError> {
-        match (source, &self.vault) {
+        if !query.interactions.is_empty() {
+            tracing::warn!(
+                ?query,
+                "fetching balances for orders with interactions is not fully supported"
+            );
+        }
+
+        match (query.source, &self.vault) {
             (SellTokenSource::Erc20, _) => {
                 // In the very likely case that we can transfer we only do one RPC call.
                 // Only do more calls in case we need to closer assess why the transfer is
                 // failing
-                if self.can_transfer_call(token, from, amount).await {
+                if self
+                    .can_transfer_call(query.token, query.owner, amount)
+                    .await
+                {
                     return Ok(());
                 }
                 let mut batch = CallBatch::new(self.web3.transport().clone());
-                let token = ERC20::at(&self.web3, token);
+                let token = ERC20::at(&self.web3, query.token);
                 let balance_future =
-                    erc20_balance_query(&mut batch, token, from, self.vault_relayer);
+                    erc20_balance_query(&mut batch, token, query.owner, self.vault_relayer);
                 // Batch needs to execute before we can await the query result
                 batch.execute_all(usize::MAX).await;
                 let Balance { balance, allowance } = balance_future.await?;
@@ -197,12 +212,16 @@ impl BalanceFetching for Web3BalanceFetcher {
                 return Err(TransferSimulationError::TransferFailed);
             }
             (SellTokenSource::External, Some(vault)) => {
-                if self.can_manage_user_balance_call(token, from, amount).await {
+                if self
+                    .can_manage_user_balance_call(query.token, query.owner, amount)
+                    .await
+                {
                     return Ok(());
                 }
                 let mut batch = CallBatch::new(self.web3.transport().clone());
-                let token = ERC20::at(&self.web3, token);
-                let balance_future = erc20_balance_query(&mut batch, token, from, vault.address());
+                let token = ERC20::at(&self.web3, query.token);
+                let balance_future =
+                    erc20_balance_query(&mut batch, token, query.owner, vault.address());
                 // Batch needs to execute before we can await the query result
                 batch.execute_all(usize::MAX).await;
                 let Balance { balance, allowance } = balance_future.await?;
@@ -261,6 +280,7 @@ mod tests {
                 owner,
                 token,
                 source: SellTokenSource::Erc20,
+                interactions: vec![],
             }])
             .await
             .into_iter()
@@ -294,6 +314,7 @@ mod tests {
                 owner,
                 token,
                 source: SellTokenSource::Erc20,
+                interactions: vec![],
             }])
             .await
             .into_iter()
@@ -338,6 +359,7 @@ mod tests {
                     owner: trader.address(),
                     token: token.address(),
                     source: SellTokenSource::Erc20,
+                    interactions: vec![],
                 }])
                 .await
                 .into_iter()
@@ -414,10 +436,13 @@ mod tests {
         assert!(matches!(
             fetcher
                 .can_transfer(
-                    token.address(),
-                    trader.address(),
+                    &Query {
+                        token: token.address(),
+                        owner: trader.address(),
+                        source: SellTokenSource::External,
+                        interactions: vec![],
+                    },
                     100.into(),
-                    SellTokenSource::External
                 )
                 .await,
             Err(TransferSimulationError::InsufficientBalance)
@@ -451,10 +476,13 @@ mod tests {
         assert!(matches!(
             fetcher
                 .can_transfer(
-                    token.address(),
-                    trader.address(),
+                    &Query {
+                        token: token.address(),
+                        owner: trader.address(),
+                        source: SellTokenSource::External,
+                        interactions: vec![],
+                    },
                     100.into(),
-                    SellTokenSource::External
                 )
                 .await,
             Ok(_),
@@ -462,10 +490,13 @@ mod tests {
         assert!(matches!(
             fetcher
                 .can_transfer(
-                    token.address(),
-                    trader.address(),
+                    &Query {
+                        token: token.address(),
+                        owner: trader.address(),
+                        source: SellTokenSource::External,
+                        interactions: vec![],
+                    },
                     1_000_000.into(),
-                    SellTokenSource::External
                 )
                 .await,
             Err(TransferSimulationError::InsufficientAllowance)
@@ -516,6 +547,7 @@ mod tests {
                     owner: trader.address(),
                     token: token.address(),
                     source: SellTokenSource::External,
+                    interactions: vec![],
                 }])
                 .await
                 .into_iter()

@@ -9,7 +9,6 @@ use {
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     futures::future,
     maplit::hashmap,
-    model::order::SellTokenSource,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -62,7 +61,11 @@ impl Balances {
                 query.token,
                 amount.unwrap_or_default(),
                 Bytes(query.source.as_bytes()),
-                vec![],
+                query
+                    .interactions
+                    .iter()
+                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                    .collect(),
             )
             .tx;
 
@@ -116,6 +119,7 @@ impl Simulation {
 #[async_trait::async_trait]
 impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+        // TODO(nlordell): Use `Multicall` here to use fewer node round-trips
         let futures = queries
             .iter()
             .map(|query| async {
@@ -133,21 +137,10 @@ impl BalanceFetching for Balances {
 
     async fn can_transfer(
         &self,
-        token: H160,
-        owner: H160,
+        query: &Query,
         amount: U256,
-        source: SellTokenSource,
     ) -> Result<(), TransferSimulationError> {
-        let simulation = self
-            .simulate(
-                &Query {
-                    owner,
-                    token,
-                    source,
-                },
-                Some(amount),
-            )
-            .await?;
+        let simulation = self.simulate(query, Some(amount)).await?;
 
         if simulation.token_balance < amount {
             return Err(TransferSimulationError::InsufficientBalance);
@@ -168,6 +161,7 @@ mod tests {
     use {
         super::*,
         crate::ethrpc::{self, Web3},
+        model::order::SellTokenSource,
     };
 
     #[ignore]
@@ -186,7 +180,15 @@ mod tests {
         let source = SellTokenSource::Erc20;
 
         balances
-            .can_transfer(token, owner, amount, source)
+            .can_transfer(
+                &Query {
+                    owner,
+                    token,
+                    source,
+                    interactions: vec![],
+                },
+                amount,
+            )
             .await
             .unwrap();
         println!("{owner} can transfer {amount} {token}!");

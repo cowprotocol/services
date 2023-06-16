@@ -6,8 +6,7 @@ use {
     anyhow::Result,
     futures::StreamExt,
     itertools::Itertools,
-    model::order::SellTokenSource,
-    primitive_types::{H160, U256},
+    primitive_types::U256,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -131,7 +130,7 @@ impl CachingBalanceFetcher {
                             // Only update balances that have been requested recently.
                             let oldest_allowed_request =
                                 cache.last_seen_block.saturating_sub(EVICTION_TIME);
-                            (entry.requested_at >= oldest_allowed_request).then_some(*query)
+                            (entry.requested_at >= oldest_allowed_request).then_some(query.clone())
                         })
                         .collect_vec()
                 };
@@ -171,7 +170,7 @@ impl BalanceFetching for CachingBalanceFetcher {
             return cached.into_iter().map(|(_, result)| result).collect();
         }
 
-        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i]).collect();
+        let missing_queries: Vec<Query> = missing.iter().map(|i| queries[*i].clone()).collect();
         let new_balances = self.inner.get_balances(&missing_queries).await;
 
         {
@@ -190,14 +189,12 @@ impl BalanceFetching for CachingBalanceFetcher {
 
     async fn can_transfer(
         &self,
-        token: H160,
-        from: H160,
+        query: &Query,
         amount: U256,
-        source: SellTokenSource,
     ) -> Result<(), TransferSimulationError> {
         // This only gets called when creating or replacing an order which doesn't
         // profit from caching.
-        self.inner.can_transfer(token, from, amount, source).await
+        self.inner.can_transfer(query, amount).await
     }
 }
 
@@ -206,6 +203,8 @@ mod tests {
     use {
         super::*,
         crate::{account_balances::MockBalanceFetching, current_block::BlockInfo},
+        ethcontract::H160,
+        model::order::SellTokenSource,
     };
 
     fn query(token: u8) -> Query {
@@ -213,6 +212,7 @@ mod tests {
             owner: H160([1; 20]),
             token: H160([token; 20]),
             source: SellTokenSource::Erc20,
+            interactions: vec![],
         }
     }
 

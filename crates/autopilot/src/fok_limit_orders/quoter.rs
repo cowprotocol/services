@@ -99,8 +99,9 @@ impl LimitOrderQuoter {
                     value: big_decimal_to_u256(&order_spec.sell_amount).unwrap(),
                 },
             },
-            // The remaining parameters are only relevant for subsidy computation which is
-            // irrelevant for the `surplus_fee`.
+            // Note that we do not verify surplus fee quotes. This is because
+            // we share quote computations across multiple orders, so
+            // verification doesn't really make sense in this context.
             ..Default::default()
         };
         match self.quoter.calculate_quote(parameters).await {
@@ -171,12 +172,22 @@ impl LimitOrderQuoter {
     }
 }
 
-fn query_from(data: &OrderQuotingData) -> Query {
-    Query {
+fn balance_query(data: &OrderQuotingData) -> Option<Query> {
+    // Note that we skip balance checks for orders with pre-interactions. This
+    // notably includes EthFlow orders, as the WETH for the trade will get
+    // deposited as part of a pre-interaction and might not be available when
+    // checking whether or not the owner has sufficient balance for the order.
+    // This exception is also needed for user orders with custom
+    // pre-interactions (for example, an order with a EIP-2612 `permit`
+    // pre-interaction to set an allowance). Additionally, balance checks are
+    // done at auction cutting time, so worst case scenario is we end up
+    // computing quotes for orders that will be ignored anyway.
+    (data.pre_interactions == 0).then(|| Query {
         owner: H160(data.owner.0),
         token: H160(data.sell_token.0),
         source: sell_token_source_from(data.sell_token_balance),
-    }
+        interactions: vec![],
+    })
 }
 
 fn order_spec_from(data: OrderQuotingData) -> OrderFeeSpecifier {
@@ -191,19 +202,9 @@ async fn orders_with_sufficient_balance(
     balance_fetcher: &dyn BalanceFetching,
     mut orders: Vec<OrderQuotingData>,
 ) -> Vec<OrderQuotingData> {
-    // Note that we skip balance checks for orders with pre-interactions. This
-    // notably includes EthFlow orders, as the WETH for the trade will get
-    // deposited as part of a pre-interaction and might not be available when
-    // checking whether or not the owner has sufficient balance for the order.
-    // This exception is also needed for user orders with custom
-    // pre-interactions (for example, an order with a EIP-2612 `permit`
-    // pre-interaction to set an allowance).
-    let do_balance_check = |order: &OrderQuotingData| order.pre_interactions == 0;
-
     let queries = orders
         .iter()
-        .filter(|order| do_balance_check(order))
-        .map(query_from)
+        .filter_map(balance_query)
         .unique()
         .collect_vec();
     let balances = balance_fetcher.get_balances(&queries).await;
@@ -222,15 +223,14 @@ async fn orders_with_sufficient_balance(
     let order_count_before = orders.len();
 
     orders.retain(|order| {
-        let keep = if !do_balance_check(order) {
-            true
-        } else if let Some(balance) = balances.get(&query_from(order)) {
-            balance >= &big_decimal_to_u256(&order.sell_amount).unwrap()
-        } else {
+        let keep = balance_query(order)
+            .and_then(|query| {
+                let balance = balances.get(&query)?;
+                Some(balance >= &big_decimal_to_u256(&order.sell_amount).unwrap())
+            })
             // In case the balance couldn't be fetched err on the safe side and assume
             // the order can be filled to not discard limit orders unjustly.
-            true
-        };
+            .unwrap_or(true);
 
         if !keep {
             let order = model::order::OrderUid(order.uid.0);
@@ -285,6 +285,7 @@ mod tests {
             owner: H160([1; 20]),
             token: H160([token; 20]),
             source: model::order::SellTokenSource::Erc20,
+            interactions: vec![],
         }
     }
 
