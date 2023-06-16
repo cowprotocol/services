@@ -106,7 +106,7 @@ impl Sor {
                 .map(|token| {
                     if *token == quote.token_in {
                         // Use positive swap limit for sell amounts (that is, maximum
-                        // amount that can be transferred in)
+                        // amount that can be transferred in).
                         I256::try_from(max_input).unwrap_or_default()
                     } else if *token == quote.token_out {
                         I256::try_from(min_output)

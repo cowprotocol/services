@@ -99,7 +99,7 @@ impl Settlement {
         }
 
         if flow.values().any(|v| v.is_negative()) {
-            return Err(Error::AssetFlow);
+            return Err(Error::AssetFlow(flow));
         }
 
         // Internalization rule: check that internalized interactions only use trusted
