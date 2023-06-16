@@ -2,6 +2,7 @@ use {
     crate::{
         arguments::Arguments,
         database::Postgres,
+        ipfs::Ipfs,
         orderbook::Orderbook,
         serve_api,
         verify_deployed_contract_constants,
@@ -472,11 +473,20 @@ pub async fn run(args: Arguments) {
         .with_custom_interactions(args.enable_custom_interactions)
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
+    let ipfs = args.ipfs_gateway.map(|url| {
+        Ipfs::new(
+            http_factory.create(),
+            url,
+            args.ipfs_pinata_auth
+                .map(|auth| format!("pinataGatewayToken={auth}")),
+        )
+    });
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
         postgres.clone(),
         order_validator.clone(),
+        ipfs,
     ));
 
     let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];

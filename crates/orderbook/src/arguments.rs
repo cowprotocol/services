@@ -2,7 +2,7 @@ use {
     primitive_types::H160,
     reqwest::Url,
     shared::{
-        arguments::display_option,
+        arguments::{display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, PriceEstimatorType},
@@ -158,6 +158,15 @@ pub struct Arguments {
     /// Enable support for orders with custom pre- and post-interactions.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_custom_interactions: bool,
+
+    /// If set, the orderbook will use this IPFS gateway to fetch full app data
+    /// for orders that only specify the contract app data hash.
+    #[clap(long, env)]
+    pub ipfs_gateway: Option<Url>,
+
+    /// Authentication key for Pinata IPFS gateway.
+    #[clap(long, env)]
+    pub ipfs_pinata_auth: Option<String>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -236,6 +245,8 @@ impl std::fmt::Display for Arguments {
             "enable_custom_interactions: {:?}",
             self.enable_custom_interactions
         )?;
+        writeln!(f, "ipfs_gateway: {:?}", self.ipfs_gateway)?;
+        display_secret_option(f, "ipfs_pinata_auth", &self.ipfs_pinata_auth)?;
 
         Ok(())
     }
