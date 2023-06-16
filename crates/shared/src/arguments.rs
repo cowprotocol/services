@@ -159,7 +159,7 @@ pub struct Arguments {
     pub node_url: Url,
 
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
-    /// be used exclusively for trade simulations.
+    /// be used for simulations.
     #[clap(long, env)]
     pub simulation_node_url: Option<Url>,
 
