@@ -1,6 +1,5 @@
 use {
     anyhow::{anyhow, Context, Result},
-    futures::future::Either,
     model::app_id::AppDataHash,
     reqwest::{Client, StatusCode},
     url::Url,
@@ -74,33 +73,25 @@ pub async fn full_app_data_from_ipfs(
     let old = old_app_data_cid(contract_app_data);
     let new = new_app_data_cid(contract_app_data);
     let fetch = |cid: String| async move {
-        let data = match ipfs.fetch(&cid).await {
-            Ok(data) => {
+        let result = ipfs.fetch(&cid).await;
+        match &result {
+            Ok(_) => {
                 tracing::debug!("found full app data for {contract_app_data:?} at CID {cid}");
-                data
             }
             Err(err) => {
                 tracing::debug!("no full app data for {contract_app_data:?} at CID {cid}: {err:?}");
-                return None;
             }
         };
-        match String::from_utf8(data) {
-            Ok(data) => Some(data),
-            Err(_) => {
-                tracing::debug!("CID {cid} doesn't point to utf-8");
-                None
-            }
+        let result = String::from_utf8(result?);
+        if result.is_err() {
+            tracing::debug!("CID {cid} doesn't point to utf-8");
         }
+        result.map_err(anyhow::Error::from)
     };
-    match futures::future::select(std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))).await {
-        Either::Left((complete, pending)) | Either::Right((complete, pending)) => {
-            if complete.is_some() {
-                complete
-            } else {
-                pending.await
-            }
-        }
-    }
+    futures::future::select_ok([std::pin::pin!(fetch(old)), std::pin::pin!(fetch(new))])
+        .await
+        .ok()
+        .map(|(ok, _rest)| ok)
 }
 
 fn new_app_data_cid(contract_app_data: &AppDataHash) -> String {
