@@ -14,8 +14,7 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{self, SlippageCalculator},
-            LimitOrder,
-            Liquidity,
+            LimitOrder, Liquidity,
         },
         metrics::SolverMetrics,
         s3_instance_upload::S3InstanceUploader,
@@ -25,16 +24,14 @@ use {
         solver::{
             balancer_sor_solver::BalancerSorSolver,
             http_solver::{
-                buffers::BufferRetriever,
-                instance_cache::SharedInstanceCreator,
-                instance_creation::InstanceCreator,
-                InstanceType,
+                buffers::BufferRetriever, instance_cache::SharedInstanceCreator,
+                instance_creation::InstanceCreator, InstanceType,
             },
         },
     },
     anyhow::{anyhow, Context, Result},
     contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
-    ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
+    ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
     model::{auction::AuctionId, order::Order, DomainSeparator},
     reqwest::Url,
     shared::{
@@ -46,8 +43,7 @@ use {
         http_client::HttpClientFactory,
         http_solver::{
             model::{AuctionResult, SimulatedTransaction},
-            DefaultHttpSolverApi,
-            SolverConfig,
+            DefaultHttpSolverApi, SolverConfig,
         },
         token_info::TokenInfoFetching,
         token_list::AutoUpdatingTokenList,
@@ -224,6 +220,7 @@ pub enum SolverType {
 #[derive(Clone)]
 pub enum SolverAccountArg {
     PrivateKey(PrivateKey),
+    KMS(kms::Account),
     Address(H160),
 }
 
@@ -231,6 +228,7 @@ impl Debug for SolverAccountArg {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             SolverAccountArg::PrivateKey(k) => write!(f, "PrivateKey({:?})", k.public_address()),
+            SolverAccountArg::KMS(a) => write!(f, "KMS({:?})", a.public_address()),
             SolverAccountArg::Address(a) => write!(f, "Address({a:?})"),
         }
     }
@@ -240,6 +238,7 @@ impl SolverAccountArg {
     pub fn into_account(self, chain_id: u64) -> Account {
         match self {
             SolverAccountArg::PrivateKey(key) => Account::Offline(key, Some(chain_id)),
+            SolverAccountArg::KMS(a) => Account::Kms(a, Some(chain_id)),
             SolverAccountArg::Address(address) => Account::Local(address, None),
         }
     }
