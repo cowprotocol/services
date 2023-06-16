@@ -58,8 +58,11 @@ jobs:
           pods:
                 "goerli-api-staging,\
                 goerli-autopilot-staging,\
+                goerli-baseline-staging,\
+                goerli-driver-staging,\
+                goerli-naive-staging,\
+                goerli-quasimodo-staging,\
                 goerli-refunder-staging,\
-                goerli-solver-staging,\
                 mainnet-api-staging,\
                 mainnet-autopilot-staging,\
                 mainnet-refunder-staging,\
