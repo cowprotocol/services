@@ -129,6 +129,9 @@ struct Storage {
     /// Ms each solver takes to compute their solution
     #[metric(name = "computation_time_ms", labels("solver_type", "solution_type"))]
     solver_computation_time: IntCounterVec,
+    /// Like `computation_time_ms` but the total count
+    #[metric(name = "computation_count", labels("solver_type", "solution_type"))]
+    solver_computation_count: IntCounterVec,
     /// Amount of orders labeled by liquidity type currently available to the
     /// solvers
     #[metric(name = "liquidity_gauge", labels("liquidity_type"))]
@@ -252,7 +255,11 @@ impl SolverMetrics for Metrics {
                     .as_millis()
                     .try_into()
                     .unwrap_or(u64::MAX),
-            )
+            );
+        self.metrics
+            .solver_computation_count
+            .with_label_values(&[solver_type, response])
+            .inc();
     }
 
     fn order_settled(&self, order: &Order, solver: &str) {
