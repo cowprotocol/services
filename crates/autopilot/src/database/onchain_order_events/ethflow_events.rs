@@ -148,7 +148,7 @@ mod test {
     use {
         super::*,
         ethcontract::{Bytes, EventMetadata, H160, U256},
-        model::order::{OrderData, OrderKind},
+        model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     };
 
     #[test]
@@ -191,8 +191,8 @@ mod test {
                 fee_amount,
                 Bytes(OrderKind::SELL),
                 true,
-                Bytes(OrderData::BALANCE_ERC20),
-                Bytes(OrderData::BALANCE_ERC20),
+                Bytes(SellTokenSource::ERC20),
+                Bytes(BuyTokenDestination::ERC20),
             ),
             signature: (0u8, Bytes(owner.as_ref().into())),
             data: ethcontract::Bytes(vec![
