@@ -260,15 +260,6 @@ pub struct OrderData {
 }
 
 impl OrderData {
-    // keccak256("erc20")
-    pub const BALANCE_ERC20: [u8; 32] =
-        hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
-    // keccak256("external")
-    pub const BALANCE_EXTERNAL: [u8; 32] =
-        hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
-    // keccak256("internal")
-    pub const BALANCE_INTERNAL: [u8; 32] =
-        hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
     // See <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L47>
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
@@ -296,15 +287,8 @@ impl OrderData {
             OrderKind::Buy => &OrderKind::BUY,
         });
         hash_data[351] = self.partially_fillable as u8;
-        hash_data[352..384].copy_from_slice(match self.sell_token_balance {
-            SellTokenSource::Erc20 => &Self::BALANCE_ERC20,
-            SellTokenSource::External => &Self::BALANCE_EXTERNAL,
-            SellTokenSource::Internal => &Self::BALANCE_INTERNAL,
-        });
-        hash_data[384..416].copy_from_slice(match self.buy_token_balance {
-            BuyTokenDestination::Erc20 => &Self::BALANCE_ERC20,
-            BuyTokenDestination::Internal => &Self::BALANCE_INTERNAL,
-        });
+        hash_data[352..384].copy_from_slice(&self.sell_token_balance.as_bytes());
+        hash_data[384..416].copy_from_slice(&self.buy_token_balance.as_bytes());
         signing::keccak256(&hash_data)
     }
 
@@ -914,19 +898,37 @@ pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
     #[default]
     Erc20,
-    /// ERC20 allowances to the Vault with GPv2 relayer approval
-    Internal,
     /// Internal balances to the Vault with GPv2 relayer approval
     External,
+    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    Internal,
 }
 
 impl SellTokenSource {
+    // keccak256("erc20")
+    pub const ERC20: [u8; 32] =
+        hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
+    // keccak256("external")
+    pub const EXTERNAL: [u8; 32] =
+        hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
+    // keccak256("internal")
+    pub const INTERNAL: [u8; 32] =
+        hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
+
     pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
         match bytes {
-            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
-            OrderData::BALANCE_EXTERNAL => Ok(Self::External),
-            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            Self::ERC20 => Ok(Self::Erc20),
+            Self::EXTERNAL => Ok(Self::External),
+            Self::INTERNAL => Ok(Self::Internal),
             _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+        }
+    }
+
+    pub fn as_bytes(&self) -> [u8; 32] {
+        match self {
+            Self::Erc20 => Self::ERC20,
+            Self::External => Self::EXTERNAL,
+            Self::Internal => Self::INTERNAL,
         }
     }
 }
@@ -945,11 +947,25 @@ pub enum BuyTokenDestination {
 }
 
 impl BuyTokenDestination {
+    // keccak256("erc20")
+    pub const ERC20: [u8; 32] =
+        hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
+    // keccak256("internal")
+    pub const INTERNAL: [u8; 32] =
+        hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
+
     pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
         match bytes {
-            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
-            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            Self::ERC20 => Ok(Self::Erc20),
+            Self::INTERNAL => Ok(Self::Internal),
             _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+        }
+    }
+
+    pub fn as_bytes(&self) -> [u8; 32] {
+        match self {
+            Self::Erc20 => Self::ERC20,
+            Self::Internal => Self::INTERNAL,
         }
     }
 }
