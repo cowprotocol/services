@@ -1,5 +1,3 @@
-use shared::token_list::{AutoUpdatingTokenList, TokenListConfiguration};
-
 pub mod arguments;
 pub mod database;
 pub mod decoded_settlement;
@@ -37,7 +35,7 @@ use {
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
-        account_balances::{CachingBalanceFetcher, Web3BalanceFetcher},
+        account_balances,
         bad_token::{
             cache::CachingDetector,
             instrumented::InstrumentedBadTokenDetectorExt,
@@ -74,6 +72,7 @@ use {
             PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        token_list::{AutoUpdatingTokenList, TokenListConfiguration},
         zeroex_api::DefaultZeroExApi,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
@@ -116,6 +115,9 @@ pub async fn main(args: arguments::Arguments) {
         &args.shared.node_url,
         "base",
     );
+    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
+        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
+    });
 
     let chain_id = web3
         .eth()
@@ -186,14 +188,21 @@ pub async fn main(args: arguments::Arguments) {
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
-    let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+    let balance_fetcher = args.shared.balances.cached(
+        account_balances::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+            vault: vault.as_ref().map(|contract| contract.address()),
+        },
         web3.clone(),
-        vault.clone(),
-        vault_relayer,
-        settlement_contract.address(),
-    ));
-    let balance_fetcher = Arc::new(CachingBalanceFetcher::new(balance_fetcher));
-    balance_fetcher.spawn_background_task(current_block_stream.clone());
+        simulation_web3.clone(),
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "balance_fetching".into())
+            .unwrap(),
+        current_block_stream.clone(),
+    );
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -355,10 +364,6 @@ pub async fn main(args: arguments::Arguments) {
         chain_id,
     )
     .map(Arc::new);
-
-    let simulation_web3 = args.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,

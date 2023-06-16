@@ -16,7 +16,7 @@ pub mod zeroex;
 
 use {
     crate::{
-        arguments::display_option,
+        arguments::{display_option, CodeSimulatorKind},
         bad_token::{BadTokenDetecting, TokenQuality},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
@@ -58,14 +58,6 @@ impl PriceEstimatorType {
     pub fn name(&self) -> String {
         format!("{self:?}")
     }
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum TradeValidatorKind {
-    Web3,
-    Tenderly,
-    Web3ThenTenderly,
 }
 
 /// Shared price estimation configuration arguments.
@@ -152,7 +144,7 @@ pub struct Arguments {
     /// parameter to be set. The `Tenderly` simulator requires `--tenderly-*`
     /// parameters to be set.
     #[clap(long, env)]
-    pub trade_simulator: Option<TradeValidatorKind>,
+    pub trade_simulator: Option<CodeSimulatorKind>,
 
     /// Flag to enable saving Tenderly simulations in the dashboard for failed
     /// trade simulations. This helps debugging reverted quote simulations.

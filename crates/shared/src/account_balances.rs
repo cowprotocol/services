@@ -1,3 +1,4 @@
+mod arguments;
 mod cached;
 mod simulation;
 mod web3;
@@ -8,7 +9,12 @@ use {
     primitive_types::{H160, U256},
 };
 
-pub use self::{cached::CachingBalanceFetcher, web3::Web3BalanceFetcher};
+pub use self::{
+    arguments::{Arguments, Contracts, Strategy},
+    cached::CachingBalanceFetcher,
+    simulation::Balances as SimulationBalanceFetcher,
+    web3::Web3BalanceFetcher,
+};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
