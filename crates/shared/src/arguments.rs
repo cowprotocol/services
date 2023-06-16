@@ -3,6 +3,7 @@
 
 use {
     crate::{
+        account_balances,
         current_block,
         ethrpc,
         fee_subsidy::cow_token::SubsidyTiers,
@@ -148,11 +149,19 @@ pub struct Arguments {
     pub tenderly: tenderly_api::Arguments,
 
     #[clap(flatten)]
+    pub balances: account_balances::Arguments,
+
+    #[clap(flatten)]
     pub logging: LoggingArguments,
 
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
+
+    /// An Ethereum node URL that supports `eth_call`s with state overrides to
+    /// be used for simulations.
+    #[clap(long, env)]
+    pub simulation_node_url: Option<Url>,
 
     /// The expected chain ID that the services are expected to run against.
     /// This can be optionally specified in order to check at startup whether
@@ -302,6 +311,15 @@ pub struct Arguments {
     pub balancer_v2_vault_address: Option<H160>,
 }
 
+/// The kind of EVM code simulator to use.
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum CodeSimulatorKind {
+    Web3,
+    Tenderly,
+    Web3ThenTenderly,
+}
+
 pub fn display_secret_option<T>(
     f: &mut Formatter<'_>,
     name: &str,
@@ -378,6 +396,7 @@ impl Display for Arguments {
         write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.tenderly)?;
+        write!(f, "{}", self.balances)?;
         writeln!(f, "log_filter: {}", self.logging.log_filter)?;
         writeln!(
             f,
@@ -386,6 +405,7 @@ impl Display for Arguments {
         )?;
         writeln!(f, "node_url: {}", self.node_url)?;
         display_option(f, "chain_id", &self.chain_id)?;
+        display_option(f, "simulation_node_url", &self.simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;

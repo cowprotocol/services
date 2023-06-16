@@ -22,7 +22,7 @@ pub struct Balances {
 }
 
 impl Balances {
-    pub fn _new(
+    pub fn new(
         simulator: Arc<dyn CodeSimulating>,
         settlement: H160,
         vault_relayer: H160,
@@ -79,10 +79,14 @@ impl Balances {
         };
 
         let output = self.simulator.simulate(call, overrides).await?;
-        Simulation::decode(&output)
+        let simulation = Simulation::decode(&output)?;
+
+        tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
+        Ok(simulation)
     }
 }
 
+#[derive(Debug)]
 struct Simulation {
     token_balance: U256,
     allowance: U256,
@@ -169,7 +173,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn test_for_user() {
-        let balances = Balances::_new(
+        let balances = Balances::new(
             Arc::new(Web3::new(ethrpc::create_env_test_transport())),
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
