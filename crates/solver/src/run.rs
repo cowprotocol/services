@@ -1,12 +1,12 @@
+use futures::future::join_all;
+
 use {
     crate::{
         arguments::{Arguments, TransactionStrategyArg},
         driver::Driver,
         liquidity::{
-            balancer_v2::BalancerV2Liquidity,
-            order_converter::OrderConverter,
-            uniswap_v2::UniswapLikeLiquidity,
-            uniswap_v3::UniswapV3Liquidity,
+            balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity,
             zeroex::ZeroExLiquidity,
         },
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
@@ -21,17 +21,11 @@ use {
                 eden_api::EdenApi,
                 flashbots_api::FlashbotsApi,
                 public_mempool_api::{
-                    validate_submission_node,
-                    PublicMempoolApi,
-                    SubmissionNode,
-                    SubmissionNodeKind,
+                    validate_submission_node, PublicMempoolApi, SubmissionNode, SubmissionNodeKind,
                 },
                 Strategy,
             },
-            GlobalTxPool,
-            SolutionSubmitter,
-            StrategyArgs,
-            TransactionStrategy,
+            GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
         },
     },
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
@@ -53,9 +47,7 @@ use {
         sources::{
             self,
             balancer_v2::{
-                pool_fetching::BalancerContracts,
-                BalancerFactoryKind,
-                BalancerPoolFetcher,
+                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
@@ -251,13 +243,19 @@ pub async fn run(args: Arguments) {
                 solver_accounts.len()
             );
 
-            solver_accounts
-                .into_iter()
-                .map(|account_arg| account_arg.into_account(chain_id))
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                solver_accounts
+                    .into_iter()
+                    .map(|account_arg| account_arg.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else if let Some(account_arg) = args.solver_account {
-            std::iter::repeat(account_arg.into_account(chain_id))
+            join_all(std::iter::repeat(account_arg).map(|account| account.into_account(chain_id)))
+                .await
+                .into_iter()
                 .zip(args.solvers)
                 .collect()
         } else {
@@ -370,6 +368,7 @@ pub async fn run(args: Arguments) {
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,
     )
+    .await
     .expect("failure creating solvers");
 
     metrics.initialize_solver_metrics(

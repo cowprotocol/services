@@ -1,3 +1,5 @@
+use futures::future::join_all;
+
 use {
     crate::{
         domain::eth,
@@ -19,22 +21,32 @@ pub async fn load(path: &Path) -> infra::Config {
     let config: file::Config = toml::de::from_str(&data)
         .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
     infra::Config {
-        solvers: config
-            .solvers
-            .into_iter()
-            .map(|config| {
-                let private_key = eth::PrivateKey::from_raw(config.private_key.0).unwrap();
-                solver::Config {
-                    endpoint: config.endpoint,
-                    name: config.name.into(),
-                    slippage: solver::Slippage {
-                        relative: config.relative_slippage,
-                        absolute: config.absolute_slippage.map(Into::into),
-                    },
-                    private_key,
+        solvers: join_all(config.solvers.into_iter().map(|config| async move {
+            let account = match config.account {
+                file::Account::PrivateKey(private_key) => {
+                    eth::Account::Offline(eth::PrivateKey::from_raw(private_key.0).unwrap(), None)
                 }
-            })
-            .collect(),
+                file::Account::Kms(key_id) => {
+                    let config = ethcontract::aws_config::load_from_env().await;
+                    let account = eth::KmsAccount::new((&config).into(), &key_id.0)
+                        .await
+                        .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                    eth::Account::Kms(account, None)
+                }
+            };
+            solver::Config {
+                endpoint: config.endpoint,
+                name: config.name.into(),
+                slippage: solver::Slippage {
+                    relative: config.relative_slippage,
+                    absolute: config.absolute_slippage.map(Into::into),
+                },
+                account,
+            }
+        }))
+        .await
+        .into_iter()
+        .collect(),
         liquidity: liquidity::Config {
             base_tokens: config
                 .liquidity

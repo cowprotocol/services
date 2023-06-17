@@ -23,7 +23,7 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 derivative = { workspace = true }
-ethcontract = { path = "../../../../CoW/ethcontract-rs/ethcontract", features = ["aws-kms"] }
+ethcontract = { workspace = true }
 ethcontract-mock = { workspace = true }
 flate2 = "1.0"
 futures = { workspace = true }

@@ -15,6 +15,7 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
+aws-arn = {version = "0.3.1", default-features = false, features = ["builders"]}
 axum = "0.6"
 num = "0.4"
 tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }

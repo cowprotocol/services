@@ -222,7 +222,7 @@ dependencies = [
  "contracts",
  "database",
  "derivative",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "futures",
  "gas-estimation",
  "global-metrics",
@@ -250,6 +250,16 @@ dependencies = [
  "tracing",
  "url",
  "web3",
+]
+
+[[package]]
+name = "aws-arn"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6da0fae6942d45915eebb3c2cfad48c5359d969a58b24696c71baf6a54489a98"
+dependencies = [
+ "lazy_static",
+ "regex",
 ]
 
 [[package]]
@@ -1127,8 +1137,8 @@ name = "contracts"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "ethcontract-generate 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
+ "ethcontract-generate",
  "maplit",
  "serde",
  "serde_json",
@@ -1519,13 +1529,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-arn",
  "axum",
  "bigdecimal",
  "chrono",
  "clap",
  "contracts",
  "ethabi 18.0.0",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "ethereum-types 0.14.1",
  "futures",
  "gas-estimation",
@@ -1574,7 +1585,7 @@ dependencies = [
  "contracts",
  "database",
  "driver",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "futures",
  "hex",
  "hex-literal",
@@ -1716,8 +1727,8 @@ dependencies = [
  "arrayvec",
  "aws-config",
  "aws-sdk-kms",
- "ethcontract-common 0.23.0",
- "ethcontract-derive 0.23.0",
+ "ethcontract-common",
+ "ethcontract-derive",
  "futures",
  "futures-timer",
  "hex",
@@ -1735,48 +1746,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethcontract"
-version = "0.23.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8556dce50fbb89c2f3a8e5e7c5199ada9d8390c1177b30960bce6b6350586f7"
-dependencies = [
- "arrayvec",
- "ethcontract-common 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ethcontract-derive 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "futures",
- "futures-timer",
- "hex",
- "jsonrpc-core",
- "lazy_static",
- "primitive-types 0.10.1",
- "secp256k1",
- "serde",
- "serde_json",
- "thiserror",
- "uint",
- "web3",
- "zeroize",
-]
-
-[[package]]
 name = "ethcontract-common"
 version = "0.23.0"
-dependencies = [
- "ethabi 16.0.0",
- "hex",
- "serde",
- "serde_derive",
- "serde_json",
- "thiserror",
- "tiny-keccak",
- "web3",
-]
-
-[[package]]
-name = "ethcontract-common"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8312590754c75b14aa2e7f0f759f3dc68817398ab5bb1115552fea2751b623fc"
 dependencies = [
  "ethabi 16.0.0",
  "hex",
@@ -1793,22 +1764,8 @@ name = "ethcontract-derive"
 version = "0.23.0"
 dependencies = [
  "anyhow",
- "ethcontract-common 0.23.0",
- "ethcontract-generate 0.23.0",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "ethcontract-derive"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942653d82ad2ade8fcf25dc065516653d1c965cf6c1982de5cc079fdd6dba93c"
-dependencies = [
- "anyhow",
- "ethcontract-common 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ethcontract-generate 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract-common",
+ "ethcontract-generate",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -1821,23 +1778,7 @@ dependencies = [
  "Inflector",
  "anyhow",
  "curl",
- "ethcontract-common 0.23.0",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "url",
-]
-
-[[package]]
-name = "ethcontract-generate"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdaf86f28ebe51e92aaab1d477458f8bd991880bf557881b4daae69529c76e42"
-dependencies = [
- "Inflector",
- "anyhow",
- "curl",
- "ethcontract-common 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract-common",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -1847,10 +1788,8 @@ dependencies = [
 [[package]]
 name = "ethcontract-mock"
 version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c248f7d5b465507f3d45df5fa91dd0fc743f2b9580cab2117b861e4242fee589"
 dependencies = [
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "hex",
  "mockall",
  "predicates",
@@ -3050,7 +2989,7 @@ dependencies = [
  "clap",
  "contracts",
  "database",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "futures",
  "gas-estimation",
  "global-metrics",
@@ -3502,7 +3441,7 @@ dependencies = [
  "clap",
  "contracts",
  "database",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "futures",
  "gas-estimation",
  "global-metrics",
@@ -3963,7 +3902,7 @@ dependencies = [
  "contracts",
  "database",
  "derivative",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "ethcontract-mock",
  "flate2",
  "futures",
@@ -4072,7 +4011,7 @@ dependencies = [
  "clap",
  "contracts",
  "derivative",
- "ethcontract 0.23.2",
+ "ethcontract",
  "ethcontract-mock",
  "flate2",
  "futures",
@@ -4380,7 +4319,7 @@ name = "testlib"
 version = "0.1.0"
 dependencies = [
  "contracts",
- "ethcontract 0.23.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ethcontract",
  "ethcontract-mock",
  "hex-literal",
 ]

@@ -4,11 +4,7 @@ use {
         s3_instance_upload_arguments::S3UploadArguments,
         settlement_access_list::AccessListEstimatorType,
         solver::{
-            score_computation,
-            single_order_solver,
-            ExternalSolverArg,
-            SolverAccountArg,
-            SolverType,
+            score_computation, single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType,
         },
     },
     ethcontract::U256,
@@ -52,8 +48,8 @@ pub struct Arguments {
     pub balancer_sor_url: Url,
 
     /// The account used by the driver to sign transactions. This can be either
-    /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
-    /// for signing with a local node account.
+    /// a 32-byte private key for offline signing, a 20-byte Ethereum address
+    /// for signing with a local node account, or a KMS key ID for signing with AWS.
     #[clap(long, env, hide_env_values = true)]
     pub solver_account: Option<SolverAccountArg>,
 
