@@ -1,12 +1,12 @@
-use futures::future::join_all;
-
 use {
     crate::{
         arguments::{Arguments, TransactionStrategyArg},
         driver::Driver,
         liquidity::{
-            balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-            uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity,
+            balancer_v2::BalancerV2Liquidity,
+            order_converter::OrderConverter,
+            uniswap_v2::UniswapLikeLiquidity,
+            uniswap_v3::UniswapV3Liquidity,
             zeroex::ZeroExLiquidity,
         },
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
@@ -21,16 +21,22 @@ use {
                 eden_api::EdenApi,
                 flashbots_api::FlashbotsApi,
                 public_mempool_api::{
-                    validate_submission_node, PublicMempoolApi, SubmissionNode, SubmissionNodeKind,
+                    validate_submission_node,
+                    PublicMempoolApi,
+                    SubmissionNode,
+                    SubmissionNodeKind,
                 },
                 Strategy,
             },
-            GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+            GlobalTxPool,
+            SolutionSubmitter,
+            StrategyArgs,
+            TransactionStrategy,
         },
     },
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
     ethcontract::errors::DeployError,
-    futures::{future, StreamExt},
+    futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
@@ -47,7 +53,9 @@ use {
         sources::{
             self,
             balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,

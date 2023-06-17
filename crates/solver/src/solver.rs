@@ -1,6 +1,3 @@
-use anyhow::anyhow;
-use futures::future::join_all;
-
 use {
     self::{
         baseline_solver::BaselineSolver,
@@ -17,7 +14,8 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{self, SlippageCalculator},
-            LimitOrder, Liquidity,
+            LimitOrder,
+            Liquidity,
         },
         metrics::SolverMetrics,
         s3_instance_upload::S3InstanceUploader,
@@ -27,14 +25,17 @@ use {
         solver::{
             balancer_sor_solver::BalancerSorSolver,
             http_solver::{
-                buffers::BufferRetriever, instance_cache::SharedInstanceCreator,
-                instance_creation::InstanceCreator, InstanceType,
+                buffers::BufferRetriever,
+                instance_cache::SharedInstanceCreator,
+                instance_creation::InstanceCreator,
+                InstanceType,
             },
         },
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
+    futures::future::join_all,
     model::{auction::AuctionId, order::Order, DomainSeparator},
     reqwest::Url,
     shared::{
@@ -46,7 +47,8 @@ use {
         http_client::HttpClientFactory,
         http_solver::{
             model::{AuctionResult, SimulatedTransaction},
-            DefaultHttpSolverApi, SolverConfig,
+            DefaultHttpSolverApi,
+            SolverConfig,
         },
         token_info::TokenInfoFetching,
         token_list::AutoUpdatingTokenList,
@@ -275,8 +277,8 @@ impl FromStr for SolverAccountArg {
             })
             .map_err(|err: Self::Err| {
                 err.context(
-                    "invalid solver account, it is neither a private key, an \
-            Ethereum address, nor a KMS key",
+                    "invalid solver account, it is neither a private key, an Ethereum address, \
+                     nor a KMS key",
                 )
             })
     }
@@ -290,7 +292,8 @@ impl FromStr for Arn {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        // Could be more strict here, but this should suffice to catch unintended configuration mistakes
+        // Could be more strict here, but this should suffice to catch unintended
+        // configuration mistakes
         if s.starts_with("arn:aws:kms:") {
             Ok(Self(s.to_string()))
         } else {

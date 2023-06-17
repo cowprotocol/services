@@ -1,10 +1,9 @@
-use futures::future::join_all;
-
 use {
     crate::{
         domain::eth,
         infra::{self, config::file, liquidity, mempool, simulator, solver},
     },
+    futures::future::join_all,
     std::path::Path,
     tokio::fs,
 };

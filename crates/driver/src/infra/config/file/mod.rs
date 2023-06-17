@@ -164,8 +164,8 @@ struct SolverConfig {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Account {
-    /// A private key is used to sign transactions. Expects a 32-byte hex encoded
-    /// string.
+    /// A private key is used to sign transactions. Expects a 32-byte hex
+    /// encoded string.
     PrivateKey(eth::H256),
     /// AWS KMS is used to sign transactions. Expects the key identifier
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
