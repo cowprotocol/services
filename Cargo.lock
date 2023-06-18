@@ -253,16 +253,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-arn"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6da0fae6942d45915eebb3c2cfad48c5359d969a58b24696c71baf6a54489a98"
-dependencies = [
- "lazy_static",
- "regex",
-]
-
-[[package]]
 name = "aws-config"
 version = "0.55.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1529,7 +1519,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "aws-arn",
  "axum",
  "bigdecimal",
  "chrono",
