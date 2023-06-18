@@ -261,11 +261,15 @@ pub async fn run(args: Arguments) {
             .zip(args.solvers)
             .collect()
         } else if let Some(account_arg) = args.solver_account {
-            join_all(std::iter::repeat(account_arg).map(|account| account.into_account(chain_id)))
-                .await
-                .into_iter()
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                std::iter::repeat(account_arg)
+                    .take(args.solvers.len())
+                    .map(|account| account.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else {
             panic!("either SOLVER_ACCOUNTS or SOLVER_ACCOUNT must be set")
         }
