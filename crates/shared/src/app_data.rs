@@ -1,6 +1,6 @@
 use {
     anyhow::{anyhow, Context, Result},
-    model::app_id::AppDataHash,
+    model::{app_id::AppDataHash, order::Interactions},
     serde::Deserialize,
     serde_json::Value,
 };
@@ -12,7 +12,10 @@ pub struct ValidatedAppData {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct BackendAppData {}
+pub struct BackendAppData {
+    #[serde(default)]
+    pub interactions: Interactions,
+}
 
 #[derive(Clone)]
 pub struct Validator {
