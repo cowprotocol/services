@@ -16,6 +16,7 @@ pub struct Web3BalanceFetcher {
     vault: Option<BalancerV2Vault>,
     vault_relayer: H160,
     settlement_contract: H160,
+    optimistic_pre_interaction_handling: bool,
 }
 
 impl Web3BalanceFetcher {
@@ -24,6 +25,7 @@ impl Web3BalanceFetcher {
         vault: Option<H160>,
         vault_relayer: H160,
         settlement_contract: H160,
+        optimistic_pre_interaction_handling: bool,
     ) -> Self {
         let vault = vault.map(|address| contracts::BalancerV2Vault::at(&web3, address));
         Self {
@@ -31,6 +33,7 @@ impl Web3BalanceFetcher {
             vault,
             vault_relayer,
             settlement_contract,
+            optimistic_pre_interaction_handling,
         }
     }
 
@@ -84,8 +87,15 @@ struct Balance {
 impl Balance {
     fn zero() -> Self {
         Self {
-            balance: 0.into(),
-            allowance: 0.into(),
+            balance: U256::zero(),
+            allowance: U256::zero(),
+        }
+    }
+
+    fn max() -> Self {
+        Self {
+            balance: U256::max_value(),
+            allowance: U256::max_value(),
         }
     }
 
@@ -138,6 +148,10 @@ impl BalanceFetching for Web3BalanceFetcher {
                         ?query,
                         "fetching balances for orders with interactions is not fully supported"
                     );
+
+                    if self.optimistic_pre_interaction_handling {
+                        return async { Ok(Balance::max()) }.boxed();
+                    }
                 }
 
                 let token = ERC20::at(&self.web3, query.token);
@@ -183,6 +197,10 @@ impl BalanceFetching for Web3BalanceFetcher {
                 ?query,
                 "fetching balances for orders with interactions is not fully supported"
             );
+
+            if self.optimistic_pre_interaction_handling {
+                return Ok(());
+            }
         }
 
         match (query.source, &self.vault) {
@@ -271,7 +289,8 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address());
+        let fetcher =
+            Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address(), false);
         let owner = H160(hex!("07c2af75788814BA7e5225b2F5c951eD161cB589"));
         let token = H160(hex!("dac17f958d2ee523a2206206994597c13d831ec7"));
 
@@ -304,7 +323,8 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address());
+        let fetcher =
+            Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address(), false);
         let owner = H160(hex!("401c51ebe418d2809921565e606b60851bace4ec"));
         // Token takes a fee.
         let token = H160(hex!("bae5f2d8a1299e5c4963eaff3312399253f27ccb"));
@@ -351,6 +371,7 @@ mod tests {
             None,
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            false,
         );
 
         let get_balance = || async {
@@ -431,6 +452,7 @@ mod tests {
             Some(vault.address()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            false,
         );
 
         assert!(matches!(
@@ -539,6 +561,7 @@ mod tests {
             Some(vault.address()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            false,
         );
 
         let get_balance = || async {
