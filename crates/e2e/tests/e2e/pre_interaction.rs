@@ -1,5 +1,6 @@
 use {
     crate::setup::*,
+    ethcontract::U256,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
@@ -32,6 +33,16 @@ async fn pre_interaction(web3: Web3) {
     let permit = cow
         .permit(&trader, onchain.contracts().allowance, to_wei(5))
         .await;
+    // Setup a malicious interaction for setting approvals to steal funds from
+    // the settlement contract.
+    let steal_cow = interaction(cow.approve(trader.address(), U256::max_value()).tx);
+    let steal_weth = interaction(
+        onchain
+            .contracts()
+            .weth
+            .approve(trader.address(), U256::max_value())
+            .tx,
+    );
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
@@ -56,7 +67,8 @@ async fn pre_interaction(web3: Web3) {
             full: json!({
                 "backend": {
                     "interactions": {
-                        "pre": [permit],
+                        "pre": [permit, steal_cow],
+                        "post": [steal_weth],
                     },
                 },
             })
@@ -101,4 +113,26 @@ async fn pre_interaction(web3: Web3) {
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
     wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
+
+    // Check malicious custom interactions did not work.
+    let allowance = cow
+        .allowance(
+            onchain.contracts().gp_settlement.address(),
+            trader.address(),
+        )
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, U256::zero());
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(
+            onchain.contracts().gp_settlement.address(),
+            trader.address(),
+        )
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, U256::zero());
 }

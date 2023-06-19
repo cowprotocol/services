@@ -118,6 +118,17 @@ pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::exp10(18)
 }
 
+pub fn interaction<T>(tx: TransactionBuilder<T>) -> InteractionData
+where
+    T: web3::Transport,
+{
+    InteractionData {
+        target: tx.to.unwrap(),
+        value: tx.value.unwrap_or_default(),
+        call_data: tx.data.unwrap().0,
+    }
+}
+
 #[derive(Debug)]
 pub struct TestAccount {
     account: Account,
@@ -239,11 +250,7 @@ impl CowToken {
             .await
             .expect("permit signature issue; good luck figuring this one out!");
 
-        InteractionData {
-            target: self.contract.address(),
-            value: U256::zero(),
-            call_data: permit.tx.data.unwrap().0,
-        }
+        interaction(permit.tx)
     }
 }
 
