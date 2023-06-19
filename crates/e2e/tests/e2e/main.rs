@@ -19,6 +19,7 @@ mod order_cancellation;
 mod partially_fillable_balance;
 mod partially_fillable_observed_score;
 mod partially_fillable_pool;
+mod pre_interaction;
 mod refunder;
 mod settlement_without_onchain_liquidity;
 mod smart_contract_orders;
