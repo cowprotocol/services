@@ -50,6 +50,7 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    MultiSendCallOnly;
     SolverTrampoline;
     SushiSwapFactory;
     SushiSwapRouter;
@@ -146,6 +147,7 @@ mod tests {
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(CowProtocolToken for *network);
             assert_has_deployment_address!(CowProtocolVirtualToken for *network);
+            assert_has_deployment_address!(MultiSendCallOnly for *network);
         }
         for network in &[MAINNET, GOERLI] {
             assert_has_deployment_address!(BalancerV2Vault for *network);
