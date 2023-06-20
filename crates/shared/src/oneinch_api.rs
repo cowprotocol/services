@@ -93,9 +93,7 @@ fn addr2str(addr: H160) -> String {
 impl SellOrderQuoteQuery {
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
         let endpoint = format!("v5.0/{chain_id}/quote");
-        let mut url = base_url
-            .join(&endpoint)
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(base_url, &endpoint);
 
         url.query_pairs_mut()
             .append_pair("fromTokenAddress", &addr2str(self.from_token_address))
@@ -244,9 +242,7 @@ impl SwapQuery {
     /// Encodes the swap query as
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
         let endpoint = format!("v5.0/{chain_id}/swap");
-        let mut url = base_url
-            .join(&endpoint)
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(base_url, &endpoint);
         url.query_pairs_mut()
             .append_pair("fromTokenAddress", &addr2str(self.quote.from_token_address))
             .append_pair("toTokenAddress", &addr2str(self.quote.to_token_address))
@@ -532,19 +528,13 @@ impl OneInchClient for OneInchClientImpl {
 
     async fn get_spender(&self) -> Result<Spender, OneInchError> {
         let endpoint = format!("v5.0/{}/approve/spender", self.chain_id);
-        let url = self
-            .base_url
-            .join(&endpoint)
-            .expect("unexpectedly invalid URL");
+        let url = crate::url::join(&self.base_url, &endpoint);
         logged_query(&self.client, url).await
     }
 
     async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
         let endpoint = format!("v5.0/{}/liquidity-sources", self.chain_id);
-        let url = self
-            .base_url
-            .join(&endpoint)
-            .expect("unexpectedly invalid URL");
+        let url = crate::url::join(&self.base_url, &endpoint);
         logged_query(&self.client, url).await
     }
 }

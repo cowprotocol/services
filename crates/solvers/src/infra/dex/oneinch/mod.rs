@@ -1,5 +1,8 @@
 use {
-    crate::domain::{auction, dex, eth},
+    crate::{
+        domain::{auction, dex, eth},
+        util,
+    },
     ethereum_types::H160,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
@@ -58,7 +61,7 @@ impl OneInch {
             Liquidity::Only(protocols) => Some(protocols),
             Liquidity::Exclude(excluded) => {
                 let request = client
-                    .get(endpoint.join("liquidity-sources").unwrap())
+                    .get(util::url::join(&endpoint, "liquidity-sources"))
                     .build()?;
                 tracing::trace!(request = %request.url(), "fetching 1inch liquidity sources");
                 let response = client.execute(request).await?;
@@ -87,7 +90,7 @@ impl OneInch {
         };
 
         let request = client
-            .get(endpoint.join("approve/spender").unwrap())
+            .get(util::url::join(&endpoint, "approve/spender"))
             .build()?;
         tracing::trace!(request = %request.url(), "fetching 1inch spender address");
         let response = client.execute(request).await?;
@@ -150,7 +153,7 @@ impl OneInch {
     async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
         let request = self
             .client
-            .get(self.endpoint.join("swap").unwrap())
+            .get(util::url::join(&self.endpoint, "swap"))
             .query(query)
             .build()?;
         tracing::trace!(request = %request.url(), "quoting");

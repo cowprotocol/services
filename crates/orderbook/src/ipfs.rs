@@ -47,11 +47,7 @@ impl Ipfs {
     }
 
     fn prepare_url(&self, cid: &str) -> Url {
-        let mut url = self.base.clone();
-        let mut path = url.path_segments_mut().unwrap();
-        path.push("ipfs");
-        path.push(cid);
-        std::mem::drop(path);
+        let mut url = shared::url::join(&self.base, &format!("ipfs/{cid}"));
         if let Some(query) = &self.query {
             url.set_query(Some(query.as_str()));
         }

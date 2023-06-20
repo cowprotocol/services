@@ -27,7 +27,7 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response(&["solve"], Some(request)).await
+        self.request_response("solve", Some(request)).await
     }
 
     pub async fn execute(
@@ -36,24 +36,19 @@ impl Driver {
         _request: &execute::Request,
     ) -> Result<execute::Response> {
         // TODO: should be execute
-        self.request_response(&["settle", solution_id], Option::<&()>::None)
+        self.request_response(&format!("settle/{solution_id}"), Option::<&()>::None)
             .await
     }
 
     async fn request_response<Response>(
         &self,
-        path: &[&str],
+        path: &str,
         request: Option<&impl serde::Serialize>,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
     {
-        let mut url = self.url.clone();
-        let mut segments = url.path_segments_mut().unwrap();
-        for path in path {
-            segments.push(path);
-        }
-        std::mem::drop(segments);
+        let url = shared::url::join(&self.url, path);
         let request = if let Some(request) = request {
             tracing::trace!(
                 path=&url.path(),

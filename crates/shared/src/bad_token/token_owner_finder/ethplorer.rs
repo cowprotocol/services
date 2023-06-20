@@ -46,7 +46,7 @@ impl EthplorerTokenOwnerFinder {
     }
 
     async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let mut url = self.base.join(&format!("{token:?}"))?;
+        let mut url = crate::url::join(&self.base, &format!("{token:?}"));
         // We technically only need one candidate, returning the top 2 in case there
         // is a race condition and tokens have just been transferred out.
         url.query_pairs_mut().append_pair("limit", "2");

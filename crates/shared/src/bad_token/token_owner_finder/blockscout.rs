@@ -27,12 +27,10 @@ impl BlockscoutTokenOwnerFinder {
 
         Ok(Self {
             client,
-            base: Url::try_from(BASE)
-                .expect("Invalid Blockscout Base URL")
-                .join(network)
-                .expect("Invalid Blockscout URL Segement")
-                .join("mainnet/api")
-                .expect("Invalid Blockscout URL Segement"),
+            base: crate::url::join(
+                &Url::parse(BASE).unwrap(),
+                &format!("{network}/mainnet/api"),
+            ),
             rate_limiter: None,
         })
     }

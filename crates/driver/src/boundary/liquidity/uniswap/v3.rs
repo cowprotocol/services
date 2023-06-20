@@ -10,7 +10,6 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    anyhow::Result,
     bigdecimal::ToPrimitive,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     itertools::Itertools,

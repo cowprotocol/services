@@ -33,7 +33,7 @@ impl DefaultBalancerSorApi {
     pub fn new(client: Client, base_url: impl IntoUrl, chain_id: u64) -> Result<Self> {
         ensure!(chain_id == 1, "Balancer SOR API only supported on Mainnet",);
 
-        let url = base_url.into_url()?.join(&chain_id.to_string())?;
+        let url = crate::url::join(&base_url.into_url()?, &chain_id.to_string());
         Ok(Self { client, url })
     }
 }
