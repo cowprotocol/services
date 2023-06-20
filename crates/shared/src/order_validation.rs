@@ -1,7 +1,7 @@
 use {
     crate::{
-        account_balances,
-        account_balances::{BalanceFetching, TransferSimulationError},
+        account_balances::{self, BalanceFetching, TransferSimulationError},
+        app_data::{BackendAppData, ValidatedAppData},
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -14,6 +14,7 @@ use {
         },
         price_estimation::{PriceEstimationError, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+        trade_finding,
     },
     anyhow::{anyhow, Result},
     async_trait::async_trait,
@@ -22,8 +23,10 @@ use {
     ethcontract::{H160, H256, U256},
     model::{
         app_id::AppDataHash,
+        interaction::InteractionData,
         order::{
             BuyTokenDestination,
+            Interactions,
             Order,
             OrderClass,
             OrderCreation,
@@ -99,6 +102,7 @@ pub enum PartialValidationError {
     UnsupportedOrderType,
     UnsupportedSignature,
     UnsupportedToken { token: H160, reason: String },
+    UnsupportedCustomInteraction,
     Other(anyhow::Error),
 }
 
@@ -362,6 +366,27 @@ impl OrderValidator {
         }
         Ok(())
     }
+
+    fn check_interactions(&self, interactions: &Interactions) -> Result<(), ValidationError> {
+        // Custom interactions are disabled, but some were specified.
+        if !self.enable_custom_interactions && !interactions.is_empty() {
+            return Err(ValidationError::Partial(
+                PartialValidationError::UnsupportedCustomInteraction,
+            ));
+        }
+
+        // Value has to be 0 for user interactions.
+        if interactions
+            .all()
+            .any(|interaction| !interaction.value.is_zero())
+        {
+            return Err(ValidationError::Partial(
+                PartialValidationError::UnsupportedCustomInteraction,
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -452,12 +477,15 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
-        let validate = |app_data: &String| {
-            self.app_data_validator
+        let validate = |app_data: &String| -> Result<_, ValidationError> {
+            let app_data = self
+                .app_data_validator
                 .validate(app_data.as_bytes())
-                .map_err(ValidationError::InvalidAppData)
+                .map_err(ValidationError::InvalidAppData)?;
+            self.check_interactions(&app_data.backend.interactions)?;
+            Ok(app_data)
         };
-        let app_data_hash = match &order.app_data {
+        let app_data = match &order.app_data {
             OrderCreationAppData::Both { full, expected } => {
                 let validated = validate(full)?;
                 if validated.hash != *expected {
@@ -466,23 +494,29 @@ impl OrderValidating for OrderValidator {
                         actual: validated.hash,
                     });
                 }
-                validated.hash
+                validated
             }
             OrderCreationAppData::Hash { hash } => {
                 // Eventually we're not going to accept orders that set only a hash and where we
                 // can't find full app data elsewhere.
-                if let Some(full) = &full_app_data_override {
-                    validate(full)?;
+                let backend = if let Some(full) = &full_app_data_override {
+                    validate(full)?.backend
+                } else {
+                    BackendAppData::default()
+                };
+
+                ValidatedAppData {
+                    hash: *hash,
+                    backend,
                 }
-                *hash
             }
-            OrderCreationAppData::Full { full } => validate(full)?.hash,
+            OrderCreationAppData::Full { full } => validate(full)?,
         };
 
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
-            app_data: app_data_hash,
+            app_data: app_data.hash,
             ..order.data()
         };
         let uid = data.uid(domain_separator, &owner);
@@ -531,14 +565,17 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
+        let map_interactions =
+            |interactions: &[InteractionData]| -> Vec<trade_finding::Interaction> {
+                interactions.iter().cloned().map(Into::into).collect()
+            };
         let verification = self.request_verified_quotes.then_some(Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
-            // TODO get these from the request
-            pre_interactions: vec![],
-            post_interactions: vec![],
+            pre_interactions: map_interactions(&app_data.backend.interactions.pre),
+            post_interactions: map_interactions(&app_data.backend.interactions.post),
         });
 
         let quote_parameters = QuoteSearchParameters {
@@ -592,8 +629,7 @@ impl OrderValidating for OrderValidator {
                     token: data.sell_token,
                     owner,
                     source: data.sell_token_balance,
-                    // TODO(nlordell): Read from app-data
-                    interactions: vec![],
+                    interactions: app_data.backend.interactions.pre.clone(),
                 },
                 min_balance,
             )
@@ -666,7 +702,7 @@ impl OrderValidating for OrderValidator {
             },
             signature: order.signature.clone(),
             data,
-            interactions: Default::default(),
+            interactions: app_data.backend.interactions,
         };
 
         Ok((order, quote))

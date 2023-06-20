@@ -87,6 +87,13 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
+            PartialValidationError::UnsupportedCustomInteraction => with_status(
+                error(
+                    "UnsupportedCustomInteraction",
+                    "The specified custom pre- or post- interaction is unsupported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             PartialValidationError::Other(err) => {
                 tracing::error!(?err, "PartialValidatonError");
                 shared::api::internal_error_reply()

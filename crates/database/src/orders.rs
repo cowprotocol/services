@@ -75,30 +75,6 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
-/// Time during the `settle()` call when an interaction should be executed.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "ExecutionTime")]
-#[sqlx(rename_all = "lowercase")]
-pub enum ExecutionTime {
-    /// Interaction that gets executed before sell tokens get transferred from
-    /// user to settlement contract.
-    #[default]
-    Pre,
-    /// Interaction that gets executed after buy tokens got sent from the
-    /// settlement contract to the user.
-    Post,
-}
-
-/// One row in the `interactions` table.
-#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
-pub struct Interaction {
-    pub target: Address,
-    pub value: BigDecimal,
-    pub data: Vec<u8>,
-    pub index: i32,
-    pub execution: ExecutionTime,
-}
-
 /// One row in the `orders` table.
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
 pub struct Order {
@@ -125,47 +101,6 @@ pub struct Order {
     pub class: OrderClass,
     pub surplus_fee: Option<BigDecimal>,
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
-}
-
-pub async fn insert_or_overwrite_interactions(
-    ex: &mut PgConnection,
-    uid_and_interaction: &[(OrderUid, Interaction)],
-) -> Result<(), sqlx::Error> {
-    for (order_uid, interaction) in uid_and_interaction.iter() {
-        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
-    }
-    Ok(())
-}
-
-pub async fn insert_or_overwrite_interaction(
-    ex: &mut PgConnection,
-    interaction: &Interaction,
-    order_uid: &OrderUid,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO interactions (
-    order_uid,
-    index,
-    target,
-    value,
-    data,
-    execution
-)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (order_uid, index) DO UPDATE
-SET target = $3,
-value = $4, data = $5
-    "#;
-    sqlx::query(QUERY)
-        .bind(&order_uid)
-        .bind(&interaction.index)
-        .bind(&interaction.target)
-        .bind(&interaction.value)
-        .bind(&interaction.data)
-        .bind(&interaction.execution)
-        .execute(ex)
-        .await?;
-    Ok(())
 }
 
 pub async fn insert_orders_and_ignore_conflicts(
@@ -275,6 +210,110 @@ pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
         }
     }
     false
+}
+
+/// Time during the `settle()` call when an interaction should be executed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "ExecutionTime")]
+#[sqlx(rename_all = "lowercase")]
+pub enum ExecutionTime {
+    /// Interaction that gets executed before sell tokens get transferred from
+    /// user to settlement contract.
+    #[default]
+    Pre,
+    /// Interaction that gets executed after buy tokens got sent from the
+    /// settlement contract to the user.
+    Post,
+}
+
+/// One row in the `interactions` table.
+#[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
+pub struct Interaction {
+    pub target: Address,
+    pub value: BigDecimal,
+    pub data: Vec<u8>,
+    pub index: i32,
+    pub execution: ExecutionTime,
+}
+
+pub async fn insert_interactions(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+    interactions: &[Interaction],
+) -> Result<(), sqlx::Error> {
+    for interaction in interactions {
+        insert_interaction(ex, order, interaction).await?;
+    }
+    Ok(())
+}
+
+pub async fn insert_interaction(
+    ex: &mut PgConnection,
+    order: &OrderUid,
+    interaction: &Interaction,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO interactions (
+    order_uid,
+    index,
+    target,
+    value,
+    data,
+    execution
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+    "#;
+    sqlx::query(QUERY)
+        .bind(&order)
+        .bind(&interaction.index)
+        .bind(&interaction.target)
+        .bind(&interaction.value)
+        .bind(&interaction.data)
+        .bind(&interaction.execution)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_or_overwrite_interactions(
+    ex: &mut PgConnection,
+    uid_and_interaction: &[(OrderUid, Interaction)],
+) -> Result<(), sqlx::Error> {
+    for (order_uid, interaction) in uid_and_interaction.iter() {
+        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
+    }
+    Ok(())
+}
+
+pub async fn insert_or_overwrite_interaction(
+    ex: &mut PgConnection,
+    interaction: &Interaction,
+    order_uid: &OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO interactions (
+    order_uid,
+    index,
+    target,
+    value,
+    data,
+    execution
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (order_uid, index) DO UPDATE
+SET target = $3,
+value = $4, data = $5
+    "#;
+    sqlx::query(QUERY)
+        .bind(&order_uid)
+        .bind(&interaction.index)
+        .bind(&interaction.target)
+        .bind(&interaction.value)
+        .bind(&interaction.data)
+        .bind(&interaction.execution)
+        .execute(ex)
+        .await?;
+    Ok(())
 }
 
 /// One row in the `order_quotes` table.
@@ -1023,21 +1062,21 @@ mod tests {
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
-        let post_interaction_1 = Interaction {
+        let post_interaction_0 = Interaction {
             execution: ExecutionTime::Post,
             ..Default::default()
         };
-        let post_interaction_2 = Interaction {
+        let post_interaction_1 = Interaction {
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
             index: 1,
             execution: ExecutionTime::Post,
         };
-        insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
+        insert_interaction(&mut db, &order.uid, &post_interaction_0)
             .await
             .unwrap();
-        insert_or_overwrite_interaction(&mut db, &post_interaction_2, &order.uid)
+        insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -1073,17 +1112,21 @@ mod tests {
         let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
             .await
             .unwrap();
-        assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_1);
-        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_2);
+        assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_0);
+        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
 
-        let post_interaction_overwrite = Interaction {
+        let post_interaction_overwrite_0 = Interaction {
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
             index: 0,
             execution: ExecutionTime::Post,
         };
-        insert_or_overwrite_interaction(&mut db, &post_interaction_overwrite, &order.uid)
+        let post_interaction_overwrite_1 = Interaction {
+            index: 1,
+            ..post_interaction_overwrite_0.clone()
+        };
+        insert_or_overwrite_interaction(&mut db, &post_interaction_overwrite_0, &order.uid)
             .await
             .unwrap();
         let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
@@ -1091,9 +1134,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             *post_interactions.get(0).unwrap(),
-            post_interaction_overwrite
+            post_interaction_overwrite_0
         );
-        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_2);
+        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
+
+        // Duplicate key!
+        assert!(
+            insert_interaction(&mut db, &order.uid, &post_interaction_overwrite_1)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
@@ -1105,18 +1155,18 @@ mod tests {
 
         let order = Order::default();
         insert_order(&mut db, &order).await.unwrap();
-        let pre_interaction_1 = Interaction::default();
-        let pre_interaction_2 = Interaction {
+        let pre_interaction_0 = Interaction::default();
+        let pre_interaction_1 = Interaction {
             target: ByteArray([1; 20]),
             value: BigDecimal::new(10.into(), 1),
             data: vec![0u8, 1u8],
             index: 1,
             execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
+        insert_interaction(&mut db, &order.uid, &pre_interaction_0)
             .await
             .unwrap();
-        insert_or_overwrite_interaction(&mut db, &pre_interaction_2, &order.uid)
+        insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
             .await
             .unwrap();
         let order_ = single_full_order(&mut db, &order.uid)
@@ -1152,24 +1202,38 @@ mod tests {
         let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
             .await
             .unwrap();
-        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_1);
-        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
+        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_0);
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
 
-        let pre_interaction_overwrite = Interaction {
+        let pre_interaction_overwrite_0 = Interaction {
             target: ByteArray([2; 20]),
             value: BigDecimal::new(100.into(), 1),
             data: vec![0u8, 2u8],
             index: 0,
             execution: ExecutionTime::Pre,
         };
-        insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite, &order.uid)
+        let pre_interaction_overwrite_1 = Interaction {
+            index: 1,
+            ..pre_interaction_overwrite_0.clone()
+        };
+        insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite_0, &order.uid)
             .await
             .unwrap();
         let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
             .await
             .unwrap();
-        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_overwrite);
-        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_2);
+        assert_eq!(
+            *pre_interactions.get(0).unwrap(),
+            pre_interaction_overwrite_0
+        );
+        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
+
+        // Duplicate key!
+        assert!(
+            insert_interaction(&mut db, &order.uid, &pre_interaction_overwrite_1)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

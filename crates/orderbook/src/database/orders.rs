@@ -96,6 +96,35 @@ impl From<sqlx::Error> for InsertionError {
 }
 
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+    let interactions = std::iter::empty()
+        .chain(
+            order
+                .interactions
+                .pre
+                .iter()
+                .map(|interaction| (interaction, database::orders::ExecutionTime::Pre)),
+        )
+        .chain(
+            order
+                .interactions
+                .post
+                .iter()
+                .map(|interaction| (interaction, database::orders::ExecutionTime::Post)),
+        )
+        .enumerate()
+        .map(
+            |(index, (interaction, execution))| database::orders::Interaction {
+                target: ByteArray(interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value),
+                data: interaction.call_data.clone(),
+                index: index
+                    .try_into()
+                    .expect("interactions count cannot overflow a i32"),
+                execution,
+            },
+        )
+        .collect::<Vec<_>>();
+
     let order = database::orders::Order {
         uid: ByteArray(order.metadata.uid.0),
         owner: ByteArray(order.metadata.owner.0),
@@ -132,6 +161,7 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             _ => None,
         },
     };
+
     database::orders::insert_order(ex, &order)
         .await
         .map_err(|err| {
@@ -140,7 +170,12 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
             } else {
                 InsertionError::DbError(err)
             }
-        })
+        })?;
+    database::orders::insert_interactions(ex, &order.uid, &interactions)
+        .await
+        .map_err(InsertionError::DbError)?;
+
+    Ok(())
 }
 
 async fn insert_quote(
@@ -479,6 +514,7 @@ mod tests {
             },
         },
         model::{
+            interaction::InteractionData,
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
@@ -933,5 +969,40 @@ mod tests {
         assert_eq!(order_status(1).await, OrderStatus::Cancelled);
         assert_eq!(order_status(2).await, OrderStatus::Cancelled);
         assert_eq!(order_status(3).await, OrderStatus::Open);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_with_interactions() {
+        let db = Postgres::new("postgresql://").unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let interaction = |byte: u8| InteractionData {
+            target: H160([byte; 20]),
+            value: byte.into(),
+            call_data: vec![byte; byte as _],
+        };
+
+        let uid = OrderUid([0x42; 56]);
+        let order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid,
+                ..Default::default()
+            },
+            interactions: Interactions {
+                pre: vec![interaction(1), interaction(2), interaction(3)],
+                post: vec![interaction(4), interaction(5)],
+            },
+            ..Default::default()
+        };
+
+        db.insert_order(&order, None).await.unwrap();
+
+        let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
+        assert_eq!(interactions, order.interactions);
     }
 }

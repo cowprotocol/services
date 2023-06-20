@@ -11,6 +11,7 @@ use {
     anyhow::Result,
     contracts::ERC20,
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
+    model::interaction::InteractionData,
     serde::Serialize,
     thiserror::Error,
 };
@@ -104,6 +105,16 @@ impl Interaction {
 
     pub fn encode(&self) -> EncodedInteraction {
         (self.target, self.value, Bytes(self.data.clone()))
+    }
+}
+
+impl From<InteractionData> for Interaction {
+    fn from(interaction: InteractionData) -> Self {
+        Self {
+            target: interaction.target,
+            value: interaction.value,
+            data: interaction.call_data,
+        }
     }
 }
 
