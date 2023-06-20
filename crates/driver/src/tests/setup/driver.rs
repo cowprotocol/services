@@ -164,6 +164,7 @@ async fn create_config_file(
         r#"[contracts]
            gp-v2-settlement = "{}"
            weth = "{}"
+           multisend = "{}"
 
            [submission]
            gas-price-cap = 1000000000000
@@ -180,6 +181,7 @@ async fn create_config_file(
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),
+        hex_address(blockchain.multisend.address()),
         solver::NAME,
         solver.addr,
         config.absolute_slippage,

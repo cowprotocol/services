@@ -367,8 +367,8 @@ pub struct Arguments {
     pub ethflow_contract: Option<H160>,
 
     /// Address of the `MultiCallSendOnly` contract used for trampolining custom
-    /// order interactions. If not specified, will contract deployed on the
-    /// current network.
+    /// order interactions. If not specified, the solver will use the default
+    /// contract deployment for the current network.
     #[clap(long, env)]
     pub multisend_contract: Option<H160>,
 

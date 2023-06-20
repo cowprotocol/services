@@ -136,4 +136,23 @@ async fn pre_interaction(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(allowance, U256::zero());
+
+    // Note that the allowances were set with the `MultiSend` contract! This is
+    // OK since anyone can already trivially set these allowances there by
+    // calling the contract directly, since it has not restrictions on who can
+    // call it.
+    let allowance = cow
+        .allowance(onchain.contracts().multisend.address(), trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, U256::max_value());
+    let allowance = onchain
+        .contracts()
+        .weth
+        .allowance(onchain.contracts().multisend.address(), trader.address())
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(allowance, U256::max_value());
 }

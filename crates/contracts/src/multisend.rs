@@ -1,9 +1,5 @@
 //! Module for encoding transactions for the Safe periphery `MultiSend` and
 //! `MultiSendCallOnly` contracts.
-//!
-//! Details about the encoding can be found:
-//! - <https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSend.sol#L17-L23>
-//! - <https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSendCallOnly.sol#L10-L16>
 
 use ethcontract::{Bytes, H160, U256};
 
@@ -23,6 +19,13 @@ pub enum Operation {
     DelegateCall = 1,
 }
 
+/// Encodes the multisend transactions into their compact byte representation.
+///
+/// Note that the `MultiSend` and `MultiSendCallOnly` contracts use a custom
+/// compact representation for transactions to call. Details about the encoding
+/// can be found:
+/// - <https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSend.sol#L17-L23>
+/// - <https://github.com/safe-global/safe-contracts/blob/v1.3.0/contracts/libraries/MultiSendCallOnly.sol#L10-L16>
 pub fn encode(transactions: &[Transaction]) -> Bytes<Vec<u8>> {
     let len = transactions.iter().map(Transaction::encoded_len).sum();
     let mut buffer = Vec::with_capacity(len);
