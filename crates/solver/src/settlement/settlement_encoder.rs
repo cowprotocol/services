@@ -2,6 +2,7 @@ use {
     super::{trade_surplus_in_native_token_with_prices, ExternalPrices, Trade, TradeExecution},
     crate::interactions::UnwrapWethInteraction,
     anyhow::{bail, ensure, Context as _, Result},
+    contracts::{multisend, CoWSwapEthFlow, MultiSendCallOnly},
     itertools::Either,
     model::{
         interaction::InteractionData,
@@ -13,8 +14,9 @@ use {
     shared::{
         conversions::U256Ext,
         encoded_settlement::EncodedSettlement,
+        ethrpc::Web3,
         http_solver::model::InternalizationStrategy,
-        interaction::Interaction,
+        interaction::{self, Interaction},
     },
     std::{
         collections::{hash_map::Entry, HashMap, HashSet},
@@ -95,6 +97,48 @@ pub struct PricedTrade<'a> {
     pub data: &'a Trade,
     pub sell_token_price: U256,
     pub buy_token_price: U256,
+}
+
+/// Contracts that are relevant to settlement encoding.
+#[derive(Clone, Debug)]
+pub struct Contracts {
+    pub ethflow: Option<CoWSwapEthFlow>,
+    pub multisend: MultiSendCallOnly,
+}
+
+impl Contracts {
+    pub fn new(web3: &Web3, ethflow: Option<H160>, multisend: H160) -> Self {
+        Self {
+            ethflow: ethflow.map(|address| CoWSwapEthFlow::at(web3, address)),
+            multisend: MultiSendCallOnly::at(web3, multisend),
+        }
+    }
+
+    #[cfg(test)]
+    pub async fn deployed(web3: &Web3) -> Result<Self> {
+        Ok(Self {
+            ethflow: None,
+            multisend: MultiSendCallOnly::deployed(web3).await?,
+        })
+    }
+
+    /// Returns the pre-interaction used for wrapping all EthFlow Ether in
+    /// preparation for swapping.
+    pub fn ethflow_wrap_all(&self) -> Option<InteractionData> {
+        self.ethflow
+            .as_ref()
+            .map(|ethflow| interaction::for_transaction(ethflow.wrap_all().tx))
+    }
+}
+
+#[cfg(test)]
+impl Default for Contracts {
+    fn default() -> Self {
+        Self {
+            ethflow: Some(shared::dummy_contract!(CoWSwapEthFlow, H160([0x8e; 20]))),
+            multisend: shared::dummy_contract!(MultiSendCallOnly, H160([0x8f; 20])),
+        }
+    }
 }
 
 impl SettlementEncoder {
@@ -198,6 +242,10 @@ impl SettlementEncoder {
         self.execution_plan
             .iter()
             .any(|(_, internalizable)| !internalizable)
+    }
+
+    pub fn has_custom_order_interactions(&self) -> bool {
+        !self.pre_interactions.is_empty() || !self.post_interactions.is_empty()
     }
 
     /// Adds an order trade using the uniform clearing prices for sell and buy
@@ -530,6 +578,7 @@ impl SettlementEncoder {
 
     pub fn finish(
         mut self,
+        contracts: &Contracts,
         internalization_strategy: InternalizationStrategy,
     ) -> EncodedSettlement {
         self.drop_unnecessary_tokens_and_prices();
@@ -593,15 +642,58 @@ impl SettlementEncoder {
             },
         );
 
+        // We trampoline the custom user interactions over the
+        // `MultiSendCallOnly` contract, ensuring that we aren't calling user-
+        // specified calls from a privileged context (i.e. the Settlement
+        // contract). We also collapse all `CoWSwapEthFlow::wrapAll` calls into
+        // one for gas efficiency.
+        let group_interactions = |interactions: Vec<InteractionData>| {
+            let ethflow_wrap_all = contracts.ethflow_wrap_all();
+
+            let (total_value, transactions, ethflow_interaction) = interactions.into_iter().fold(
+                (U256::zero(), vec![], None),
+                |(total_value, mut transactions, mut ethflow_interaction), interaction| {
+                    let total_value = total_value.saturating_add(interaction.value);
+                    let is_ethflow = ethflow_wrap_all.as_ref() == Some(&interaction);
+                    if is_ethflow {
+                        ethflow_interaction = Some(interaction);
+                    } else {
+                        transactions.push(multisend::Transaction {
+                            op: multisend::Operation::Call,
+                            to: interaction.target,
+                            value: interaction.value,
+                            data: interaction.call_data,
+                        });
+                    }
+
+                    (total_value, transactions, ethflow_interaction)
+                },
+            );
+
+            let mut encoded = Vec::new();
+            if let Some(ethflow_interaction) = ethflow_interaction {
+                encoded.extend(ethflow_interaction.encode());
+            }
+            if !transactions.is_empty() {
+                let multisend = interaction::for_transaction(
+                    contracts
+                        .multisend
+                        .multi_send(multisend::encode(&transactions))
+                        .value(total_value)
+                        .tx,
+                );
+                encoded.extend(multisend.encode());
+            }
+
+            encoded
+        };
+
         EncodedSettlement {
             tokens,
             clearing_prices,
             trades,
             interactions: [
-                self.pre_interactions
-                    .into_iter()
-                    .flat_map(|interaction| interaction.encode())
-                    .collect(),
+                group_interactions(self.pre_interactions),
                 iter::empty()
                     .chain(
                         self.execution_plan
@@ -622,10 +714,7 @@ impl SettlementEncoder {
                     )
                     .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
                     .collect(),
-                self.post_interactions
-                    .into_iter()
-                    .flat_map(|interaction| interaction.encode())
-                    .collect(),
+                group_interactions(self.post_interactions),
             ],
         }
     }
@@ -816,7 +905,10 @@ pub mod tests {
 
         assert_eq!(
             encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .finish(
+                    &Contracts::default(),
+                    InternalizationStrategy::SkipInternalizableInteraction
+                )
                 .interactions[1],
             UnwrapWethInteraction {
                 weth,
@@ -850,8 +942,10 @@ pub mod tests {
 
         assert!(settlement.add_trade(order01, 10.into(), 0.into()).is_ok());
         assert!(settlement.add_trade(order10, 20.into(), 0.into()).is_ok());
-        let finished_settlement =
-            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
+        let finished_settlement = settlement.finish(
+            &Contracts::default(),
+            InternalizationStrategy::SkipInternalizableInteraction,
+        );
         assert_eq!(
             finished_settlement.tokens,
             vec![token(0), token(1), token(1), token(0)]
@@ -888,8 +982,10 @@ pub mod tests {
         // ensures that the output of add_liquidity_order is not changed after adding
         // liquidity order
         assert_eq!(settlement.tokens, vec![token(1)]);
-        let finished_settlement =
-            settlement.finish(InternalizationStrategy::SkipInternalizableInteraction);
+        let finished_settlement = settlement.finish(
+            &Contracts::default(),
+            InternalizationStrategy::SkipInternalizableInteraction,
+        );
         // the initial price from:SettlementEncoder::new(maplit::hashmap! {
         //     token(1) => 9.into(),
         // });
@@ -945,7 +1041,10 @@ pub mod tests {
 
         assert_eq!(
             encoder
-                .finish(InternalizationStrategy::SkipInternalizableInteraction)
+                .finish(
+                    &Contracts::default(),
+                    InternalizationStrategy::SkipInternalizableInteraction
+                )
                 .interactions[1],
             [interaction.encode(), unwrap.encode()].concat(),
         );
@@ -1210,13 +1309,79 @@ pub mod tests {
         assert_eq!(encoder.pre_interactions, vec![i1.clone(), i1.clone()]);
         assert_eq!(encoder.post_interactions, vec![i2.clone(), i2.clone()]);
 
-        let i1 = (i1.target, i1.value, Bytes(i1.call_data));
-        let i2 = (i2.target, i2.value, Bytes(i2.call_data));
-        let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
+        let contracts = Contracts::default();
+        let multisend = |i: &[&InteractionData]| {
+            (
+                contracts.multisend.address(),
+                i.iter().fold(U256::zero(), |acc, i| acc + i.value),
+                ethcontract::Bytes(
+                    contracts
+                        .multisend
+                        .multi_send(multisend::encode(
+                            &i.iter()
+                                .map(|i| multisend::Transaction {
+                                    op: multisend::Operation::Call,
+                                    to: i.target,
+                                    value: i.value,
+                                    data: i.call_data.clone(),
+                                })
+                                .collect::<Vec<_>>(),
+                        ))
+                        .tx
+                        .data
+                        .unwrap()
+                        .0,
+                ),
+            )
+        };
+        let encoded = encoder.finish(&contracts, InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(
             encoded.interactions,
-            [vec![i1.clone(), i1], vec![], vec![i2.clone(), i2]]
+            [
+                vec![multisend(&[&i1, &i1])],
+                vec![],
+                vec![multisend(&[&i2, &i2])]
+            ]
         );
+    }
+
+    #[test]
+    fn ethflow_wrap_all_calls_get_collapsed() {
+        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
+        let contracts = Contracts::default();
+        let mut encoder = SettlementEncoder::new(prices);
+        let wrap_all = contracts.ethflow_wrap_all().unwrap();
+
+        for _ in 0..10 {
+            encoder
+                .add_trade(
+                    Order {
+                        data: OrderData {
+                            sell_token: token(1),
+                            sell_amount: 33.into(),
+                            buy_token: token(3),
+                            buy_amount: 11.into(),
+                            kind: OrderKind::Sell,
+                            ..Default::default()
+                        },
+                        interactions: Interactions {
+                            pre: vec![wrap_all.clone()],
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    33.into(),
+                    5.into(),
+                )
+                .unwrap();
+        }
+
+        let wrap_all = (wrap_all.target, wrap_all.value, Bytes(wrap_all.call_data));
+        let encoded = encoder.finish(
+            &Contracts::default(),
+            InternalizationStrategy::EncodeAllInteractions,
+        );
+        assert_eq!(encoded.interactions, [vec![wrap_all], vec![], vec![]]);
     }
 
     #[test]
@@ -1404,6 +1569,7 @@ pub mod tests {
         let prices = hashmap! {token(1) => 7.into(), token(2) => 2.into(),
         token(3) => 9.into(), token(4) => 44.into()};
 
+        let contracts = Contracts::default();
         let mut encoder = SettlementEncoder::new(prices);
 
         let order_1_3 = OrderBuilder::default()
@@ -1420,7 +1586,10 @@ pub mod tests {
             amount: 12.into(),
         });
 
-        let encoded = encoder.finish(InternalizationStrategy::SkipInternalizableInteraction);
+        let encoded = encoder.finish(
+            &contracts,
+            InternalizationStrategy::SkipInternalizableInteraction,
+        );
 
         // only token 1 and 2 have been included in orders by traders
         let expected_tokens: Vec<_> = [1, 3].into_iter().map(token).collect();
@@ -1453,16 +1622,18 @@ pub mod tests {
     fn optionally_encodes_internalizable_transactions() {
         let prices = hashmap! {token(1) => 7.into() };
 
+        let contracts = Contracts::default();
         let mut encoder = SettlementEncoder::new(prices);
         encoder.append_to_execution_plan_internalizable(Arc::new(TestInteraction), true);
         encoder.append_to_execution_plan_internalizable(Arc::new(TestInteraction), false);
 
-        let encoded = encoder
-            .clone()
-            .finish(InternalizationStrategy::SkipInternalizableInteraction);
+        let encoded = encoder.clone().finish(
+            &contracts,
+            InternalizationStrategy::SkipInternalizableInteraction,
+        );
         assert_eq!(encoded.interactions[1].len(), 1);
 
-        let encoded = encoder.finish(InternalizationStrategy::EncodeAllInteractions);
+        let encoded = encoder.finish(&contracts, InternalizationStrategy::EncodeAllInteractions);
         assert_eq!(encoded.interactions[1].len(), 2);
     }
 

@@ -7,7 +7,7 @@ use {
     },
     secp256k1::SecretKey,
     serde_json::json,
-    shared::ethrpc::Web3,
+    shared::{ethrpc::Web3, interaction},
     web3::signing::SecretKeyRef,
 };
 
@@ -35,8 +35,9 @@ async fn pre_interaction(web3: Web3) {
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.
-    let steal_cow = interaction(cow.approve(trader.address(), U256::max_value()).tx);
-    let steal_weth = interaction(
+    let steal_cow =
+        interaction::for_transaction(cow.approve(trader.address(), U256::max_value()).tx);
+    let steal_weth = interaction::for_transaction(
         onchain
             .contracts()
             .weth

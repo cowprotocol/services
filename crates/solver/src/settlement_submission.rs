@@ -1,5 +1,3 @@
-use crate::settlement::Revertable;
-
 mod dry_run;
 pub mod gelato;
 pub mod submitter;
@@ -8,7 +6,7 @@ use {
     self::gelato::GelatoSubmitter,
     crate::{
         metrics::SettlementSubmissionOutcome,
-        settlement::Settlement,
+        settlement::{self, Revertable, Settlement},
         settlement_access_list::AccessListEstimating,
     },
     anyhow::{anyhow, Result},
@@ -22,7 +20,12 @@ use {
     futures::FutureExt,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     primitive_types::{H256, U256},
-    shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference},
+    shared::{
+        code_fetching::CodeFetching,
+        encoded_settlement::EncodedSettlement,
+        ethrpc::Web3,
+        http_solver::model::{InternalizationStrategy, SubmissionPreference},
+    },
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -135,7 +138,8 @@ impl From<SubmissionReceipt> for TransactionReceipt {
 
 pub struct SolutionSubmitter {
     pub web3: Web3,
-    pub contract: GPv2Settlement,
+    pub settlement: GPv2Settlement,
+    pub settlement_encoding_contracts: settlement::Contracts,
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
     pub access_list_estimator: Arc<dyn AccessListEstimating>,
     // for gas price estimation
@@ -197,6 +201,8 @@ impl SolutionSubmitter {
         account: Account,
         nonce: U256,
     ) -> Result<SubmissionReceipt, SubmissionError> {
+        let settlement = SubmitterSettlement::new(settlement, &self.settlement_encoding_contracts);
+
         // Other transaction strategies than the ones below, depend on an
         // account signing a raw transaction for a nonce, and waiting until that
         // nonce increases to detect that it actually mined. However, the
@@ -207,7 +213,7 @@ impl SolutionSubmitter {
         for strategy in &self.transaction_strategies {
             match strategy {
                 TransactionStrategy::DryRun => {
-                    return dry_run::log_settlement(account, &self.contract, settlement)
+                    return dry_run::log_settlement(account, &self.settlement, settlement)
                         .await
                         .map(|tx| SubmissionReceipt {
                             tx,
@@ -218,7 +224,7 @@ impl SolutionSubmitter {
                 TransactionStrategy::Gelato(gelato) => {
                     return tokio::time::timeout(
                         self.max_confirm_time,
-                        gelato.relay_settlement(account, settlement),
+                        gelato.relay_settlement(account, settlement.encoded),
                     )
                     .await
                     .map(|tx| {
@@ -234,7 +240,7 @@ impl SolutionSubmitter {
         }
 
         // combine protocol enabled strategies with settlement prefered strategies
-        let strategies = match settlement.submitter {
+        let strategies = match settlement.inner.submitter {
             SubmissionPreference::ProtocolDefault => self.transaction_strategies.as_slice(),
             SubmissionPreference::Flashbots => {
                 let position = self
@@ -306,7 +312,7 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         max_fee_per_gas: f64,
         network_id: String,
-        settlement: Settlement,
+        settlement: SubmitterSettlement,
     ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -324,7 +330,7 @@ impl SolutionSubmitter {
 
         // No extra tip required if there is no revert risk
         let (additional_tip_percentage_of_max_fee, max_additional_tip) =
-            if settlement.revertable() == Revertable::NoRisk {
+            if settlement.inner.revertable() == Revertable::NoRisk {
                 tracing::debug!("Disabling additional tip because of NoRisk settlement");
                 (0., 0.)
             } else {
@@ -350,7 +356,7 @@ impl SolutionSubmitter {
             max_additional_tip,
         };
         let submitter = Submitter::new(
-            &self.contract,
+            &self.settlement,
             account,
             nonce,
             strategy_args.submit_api.as_ref(),
@@ -367,6 +373,38 @@ impl SolutionSubmitter {
                 tx,
                 strategy: strategy.label(),
             })
+    }
+}
+
+/// A settlement that is ready to be used by submitters.
+#[derive(Clone, Debug)]
+pub struct SubmitterSettlement {
+    inner: Settlement,
+    encoded: EncodedSettlement,
+}
+
+impl SubmitterSettlement {
+    pub fn new(settlement: Settlement, contracts: &settlement::Contracts) -> Self {
+        Self {
+            inner: settlement.clone(),
+            encoded: settlement.encode(
+                contracts,
+                InternalizationStrategy::SkipInternalizableInteraction,
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    fn for_settlement(settlement: Settlement) -> Self {
+        assert!(!settlement.encoder.has_custom_order_interactions());
+        Self::new(settlement, &settlement::Contracts::default())
+    }
+}
+
+#[cfg(test)]
+impl Default for SubmitterSettlement {
+    fn default() -> Self {
+        Self::for_settlement(Settlement::default())
     }
 }
 

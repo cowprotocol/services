@@ -200,7 +200,10 @@ impl SettlementHandler {
 mod tests {
     use {
         super::*,
-        crate::interactions::allowances::{Approval, MockAllowanceManaging},
+        crate::{
+            interactions::allowances::{Approval, MockAllowanceManaging},
+            settlement,
+        },
         maplit::{hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
@@ -437,7 +440,10 @@ mod tests {
         .unwrap();
 
         let [_, interactions, _] = encoder
-            .finish(InternalizationStrategy::SkipInternalizableInteraction)
+            .finish(
+                &settlement::Contracts::default(),
+                InternalizationStrategy::SkipInternalizableInteraction,
+            )
             .interactions;
         assert_eq!(
             interactions,

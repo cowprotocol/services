@@ -699,7 +699,7 @@ mod tests {
             liquidity::{order_converter::OrderConverter, LimitOrderId, LiquidityOrderId},
             metrics::NoopMetrics,
             order_balance_filter::{max_balance, BalancedOrder},
-            settlement::TradeExecution,
+            settlement::{self, TradeExecution},
             settlement_rater::MockSettlementRating,
         },
         anyhow::anyhow,
@@ -830,7 +830,10 @@ mod tests {
         assert_eq!(settlements.len(), 3);
 
         let merged = settlements.into_iter().nth(2).unwrap().encoder;
-        let merged = merged.finish(InternalizationStrategy::EncodeAllInteractions);
+        let merged = merged.finish(
+            &settlement::Contracts::default(),
+            InternalizationStrategy::EncodeAllInteractions,
+        );
         assert_eq!(merged.tokens.len(), 4);
         let token_index = |token: &H160| -> usize {
             merged

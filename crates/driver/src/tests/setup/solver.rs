@@ -179,6 +179,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                multisend: Some(config.blockchain.multisend.address().into()),
             },
         )
         .await

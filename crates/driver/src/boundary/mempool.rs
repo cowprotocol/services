@@ -20,6 +20,7 @@ use {
                 TransactionSubmitting,
             },
             SubTxPoolRef,
+            SubmitterSettlement,
         },
     },
     std::{fmt::Debug, sync::Arc},
@@ -152,7 +153,13 @@ impl Mempool {
         )?;
         submitter
             .submit(
-                settlement.boundary.inner,
+                SubmitterSettlement::new(
+                    settlement.boundary.inner,
+                    &solver::settlement::Contracts {
+                        ethflow: None,
+                        multisend: self.eth.contracts().multisend().clone(),
+                    },
+                ),
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
                     gas_estimate: settlement.gas.estimate.into(),

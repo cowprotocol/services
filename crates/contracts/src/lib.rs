@@ -2,6 +2,7 @@
 
 pub use ethcontract;
 
+pub mod multisend;
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;

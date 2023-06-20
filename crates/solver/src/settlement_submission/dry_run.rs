@@ -1,27 +1,23 @@
 //! Dry run settlement submission strategy. I.e. just log!
 
 use {
-    crate::{
-        settlement::Settlement,
-        settlement_simulation::{settle_method_builder, tenderly_link},
-    },
+    super::SubmitterSettlement,
+    crate::settlement_simulation::{settle_method_builder, tenderly_link},
     anyhow::Result,
     contracts::GPv2Settlement,
     ethcontract::Account,
-    shared::http_solver::model::InternalizationStrategy,
     web3::types::TransactionReceipt,
 };
 
 pub async fn log_settlement(
     account: Account,
     contract: &GPv2Settlement,
-    settlement: Settlement,
+    settlement: SubmitterSettlement,
 ) -> Result<TransactionReceipt> {
     let web3 = contract.raw_instance().web3();
     let current_block = web3.eth().block_number().await?;
     let network = web3.net().version().await?;
-    let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
-    let settlement = settle_method_builder(contract, settlement, account).tx;
+    let settlement = settle_method_builder(contract, settlement.encoded, account).tx;
     let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement, None, None);
 
     tracing::info!("not submitting transaction in dry-run mode");
@@ -49,7 +45,7 @@ mod tests {
         assert!(log_settlement(
             Account::Local(H160([2; 20]), None),
             &GPv2Settlement::at(&web3, H160([1; 20])),
-            Settlement::new(Default::default()),
+            SubmitterSettlement::default(),
         )
         .await
         .is_ok());
