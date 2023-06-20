@@ -103,47 +103,6 @@ pub struct Order {
     pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
-pub async fn insert_or_overwrite_interactions(
-    ex: &mut PgConnection,
-    uid_and_interaction: &[(OrderUid, Interaction)],
-) -> Result<(), sqlx::Error> {
-    for (order_uid, interaction) in uid_and_interaction.iter() {
-        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
-    }
-    Ok(())
-}
-
-pub async fn insert_or_overwrite_interaction(
-    ex: &mut PgConnection,
-    interaction: &Interaction,
-    order_uid: &OrderUid,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO interactions (
-    order_uid,
-    index,
-    target,
-    value,
-    data,
-    execution
-)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (order_uid, index) DO UPDATE
-SET target = $3,
-value = $4, data = $5
-    "#;
-    sqlx::query(QUERY)
-        .bind(&order_uid)
-        .bind(&interaction.index)
-        .bind(&interaction.target)
-        .bind(&interaction.value)
-        .bind(&interaction.data)
-        .bind(&interaction.execution)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
 pub async fn insert_orders_and_ignore_conflicts(
     ex: &mut PgConnection,
     orders: &[Order],
@@ -306,6 +265,47 @@ VALUES ($1, $2, $3, $4, $5, $6)
     "#;
     sqlx::query(QUERY)
         .bind(&order)
+        .bind(&interaction.index)
+        .bind(&interaction.target)
+        .bind(&interaction.value)
+        .bind(&interaction.data)
+        .bind(&interaction.execution)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_or_overwrite_interactions(
+    ex: &mut PgConnection,
+    uid_and_interaction: &[(OrderUid, Interaction)],
+) -> Result<(), sqlx::Error> {
+    for (order_uid, interaction) in uid_and_interaction.iter() {
+        insert_or_overwrite_interaction(ex, interaction, order_uid).await?;
+    }
+    Ok(())
+}
+
+pub async fn insert_or_overwrite_interaction(
+    ex: &mut PgConnection,
+    interaction: &Interaction,
+    order_uid: &OrderUid,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO interactions (
+    order_uid,
+    index,
+    target,
+    value,
+    data,
+    execution
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (order_uid, index) DO UPDATE
+SET target = $3,
+value = $4, data = $5
+    "#;
+    sqlx::query(QUERY)
+        .bind(&order_uid)
         .bind(&interaction.index)
         .bind(&interaction.target)
         .bind(&interaction.value)
