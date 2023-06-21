@@ -10,7 +10,6 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    anyhow::Result,
     bigdecimal::ToPrimitive,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     itertools::Itertools,
@@ -106,7 +105,7 @@ pub async fn collector(
     eth: &Ethereum,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
-) -> Result<Box<dyn LiquidityCollecting>> {
+) -> Box<dyn LiquidityCollecting> {
     let web3 = boundary::web3(eth);
     let router = UniswapV3SwapRouter::at(&web3, config.router.0);
 
@@ -125,12 +124,10 @@ pub async fn collector(
         .unwrap(),
     );
 
-    let collector = Box::new(UniswapV3Liquidity::new(
+    Box::new(UniswapV3Liquidity::new(
         router,
         eth.contracts().settlement().clone(),
         web3,
         pool_fetcher,
-    ));
-
-    Ok(collector)
+    ))
 }

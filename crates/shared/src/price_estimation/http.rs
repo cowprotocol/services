@@ -716,10 +716,10 @@ mod tests {
 
         let transport = HttpTransport::new(
             client.clone(),
-            Url::parse("https://mainnet.infura.io/v3/")
-                .unwrap()
-                .join(&infura_project_id)
-                .unwrap(),
+            crate::url::join(
+                &Url::parse("https://mainnet.infura.io/v3/").unwrap(),
+                &infura_project_id,
+            ),
             "main".into(),
         );
         let web3 = Web3::new(DynTransport::new(transport));

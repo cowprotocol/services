@@ -74,11 +74,7 @@ pub struct SwapQuery {
 impl SwapQuery {
     /// Encodes the swap query as a url with get parameters.
     fn format_url(&self, base_url: &Url, endpoint: &str) -> Url {
-        let mut url = base_url
-            .join("/swap/v1/")
-            .expect("unexpectedly invalid URL segment")
-            .join(endpoint)
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(base_url, &format!("swap/v1/{endpoint}"));
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
@@ -156,9 +152,7 @@ pub struct OrdersQuery {
 impl OrdersQuery {
     /// Encodes the orders query as a url with parameters.
     fn format_url(&self, base_url: &Url) -> Url {
-        let mut url = base_url
-            .join("/orderbook/v1/orders")
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(base_url, "/orderbook/v1/orders");
 
         if let Some(taker) = self.taker {
             url.query_pairs_mut().append_pair("taker", &addr2str(taker));

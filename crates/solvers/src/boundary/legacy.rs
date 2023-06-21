@@ -80,8 +80,8 @@ impl Legacy {
 }
 
 /// Mapping state used for marshalling domain auctions and solutions to and from
-/// their legacy HTTP solver DTO representations. This is needed becuase the
-/// legacy HTTP solver API uses arbirtary indices for identifying orders and
+/// their legacy HTTP solver DTO representations. This is needed because the
+/// legacy HTTP solver API uses arbitrary indices for identifying orders and
 /// AMMs that need to be back-referenced to auction domain values.
 #[derive(Default)]
 struct Mapping<'a> {

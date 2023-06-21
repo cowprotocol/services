@@ -23,8 +23,8 @@
 //! which returns a collection of relevant `WeightedPools` for a given
 //! collection of `TokenPair`.
 //!
-//! 3. `WeightedPool` & `StablePool`:
-//!     This is the public facing pool structure returned by the `PoolFetcher`
+//! 3. `WeightedPool` & `StablePool`: This is the public facing pool structure
+//!    returned by the `PoolFetcher`
 //! consisting of all     the pool's most recent information (both static and
 //! dynamic).     Essentially, this is all the relevant data from
 //! `RegisteredWeightedPool` and     `RegisteredStablePool` respectively along
