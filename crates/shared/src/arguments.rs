@@ -304,6 +304,10 @@ pub struct Arguments {
 
     /// Override address of the settlement contract.
     #[clap(long, env)]
+    pub settlement_entrypoint: Option<H160>,
+
+    /// Override address of the settlement contract.
+    #[clap(long, env)]
     pub native_token_address: Option<H160>,
 
     /// Override address of the balancer vault contract.

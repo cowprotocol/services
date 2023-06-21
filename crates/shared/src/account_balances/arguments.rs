@@ -1,5 +1,11 @@
 use {
-    super::{BalanceFetching, CachingBalanceFetcher, SimulationBalanceFetcher, Web3BalanceFetcher},
+    super::{
+        BalanceFetching,
+        CachingBalanceFetcher,
+        FixedBalanceReporting,
+        SimulationBalanceFetcher,
+        Web3BalanceFetcher,
+    },
     crate::{
         arguments::{display_option, CodeSimulatorKind},
         code_simulation::{CodeSimulating, TenderlyCodeSimulator, Web3ThenTenderly},
@@ -8,6 +14,7 @@ use {
         tenderly_api::TenderlyApi,
     },
     ethcontract::H160,
+    primitive_types::U256,
     std::{
         fmt::{self, Display, Formatter},
         sync::Arc,
@@ -42,6 +49,9 @@ pub enum Strategy {
     /// This strategy fully supports fetching balances for orders with custom
     /// interactions.
     Simulation,
+
+    /// Always return max uint256 as balance
+    Max,
 }
 
 /// Contracts required for balance simulation.
@@ -98,6 +108,7 @@ impl Arguments {
                     contracts.vault,
                 ))
             }
+            Strategy::Max => Arc::new(FixedBalanceReporting(U256::max_value())),
         }
     }
 

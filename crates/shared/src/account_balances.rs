@@ -71,3 +71,20 @@ pub trait BalanceFetching: Send + Sync {
         amount: U256,
     ) -> Result<(), TransferSimulationError>;
 }
+
+struct FixedBalanceReporting(U256);
+
+#[async_trait::async_trait]
+impl BalanceFetching for FixedBalanceReporting {
+    async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
+        queries.iter().map(|_| Ok(self.0)).collect()
+    }
+
+    async fn can_transfer(&self, _: &Query, amount: U256) -> Result<(), TransferSimulationError> {
+        if amount <= self.0 {
+            Ok(())
+        } else {
+            Err(TransferSimulationError::TransferFailed)
+        }
+    }
+}

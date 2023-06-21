@@ -108,6 +108,10 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load settlement contract"),
     };
+    let entrypoint_contract = match args.shared.settlement_entrypoint {
+        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
+        None => settlement_contract.clone(),
+    };
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
@@ -296,7 +300,7 @@ pub async fn run(args: Arguments) {
         native_token.address(),
         web3.clone(),
         args.weth_unwrap_factor,
-        settlement_contract.clone(),
+        entrypoint_contract.clone(),
         market_makable_token_list.clone(),
     ));
 
@@ -324,7 +328,7 @@ pub async fn run(args: Arguments) {
     );
     let settlement_rater = Arc::new(SettlementRater {
         access_list_estimator: access_list_estimator.clone(),
-        settlement_contract: settlement_contract.clone(),
+        settlement_contract: entrypoint_contract.clone(),
         web3: web3.clone(),
         code_fetcher: code_fetcher.clone(),
     });
@@ -507,7 +511,7 @@ pub async fn run(args: Arguments) {
     }
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
-        contract: settlement_contract.clone(),
+        contract: entrypoint_contract,
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         max_confirm_time: args.max_submission_seconds,

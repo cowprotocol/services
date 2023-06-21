@@ -5,12 +5,19 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        orders::{FullOrder, OrderKind as DbOrderKind},
+        orders::{
+            insert_or_overwrite_interactions,
+            ExecutionTime,
+            FullOrder,
+            Interaction,
+            OrderKind as DbOrderKind,
+        },
     },
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
         app_id::AppDataHash,
+        interaction::InteractionData,
         order::{
             EthflowData,
             Interactions,
@@ -191,6 +198,34 @@ impl OrderStoring for Postgres {
                 return Err(InsertionError::AppDataMismatch(existing));
             }
         }
+
+        let convert = |(index, interaction): (usize, InteractionData), execution| {
+            let db_interaction = Interaction {
+                target: ByteArray(interaction.target.0),
+                value: u256_to_big_decimal(&interaction.value),
+                data: interaction.call_data,
+                index: index.try_into().expect("Problem of the future"),
+                execution,
+            };
+            (ByteArray(order.metadata.uid.0), db_interaction)
+        };
+
+        let interactions: Vec<_> = order
+            .interactions
+            .pre
+            .into_iter()
+            .enumerate()
+            .map(|items| convert(items, ExecutionTime::Pre))
+            .chain(
+                order
+                    .interactions
+                    .post
+                    .into_iter()
+                    .enumerate()
+                    .map(|items| convert(items, ExecutionTime::Post)),
+            )
+            .collect();
+        insert_or_overwrite_interactions(&mut ex, interactions.as_slice()).await?;
 
         ex.commit().await?;
         Ok(())

@@ -639,11 +639,15 @@ impl OrderValidating for OrderValidator {
             Err(
                 TransferSimulationError::InsufficientAllowance
                 | TransferSimulationError::InsufficientBalance
-                | TransferSimulationError::TransferFailed,
-            ) if signing_scheme == SigningScheme::PreSign => {
-                // We have an exception for pre-sign orders where they do not
-                // require sufficient balance or allowance. The idea, is that
-                // this allows smart contracts to place orders bundled with
+                | TransferSimulationError::TransferFailed
+                | TransferSimulationError::Other(_),
+            ) if signing_scheme == SigningScheme::PreSign
+                || signing_scheme == SigningScheme::Eip1271 =>
+            {
+                // We have an exception for pre-sign/eip1271 orders where they
+                // do not require sufficient balance or
+                // allowance. The idea, is that this allows
+                // smart contracts to place orders bundled with
                 // other transactions that either produce the required balance
                 // or set the allowance. This would, for example, allow a Gnosis
                 // Safe to bundle the pre-signature transaction with a WETH wrap
