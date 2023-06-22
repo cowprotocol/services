@@ -157,10 +157,7 @@ pub struct PriceQuery {
 
 impl PriceQuery {
     pub fn into_url(self, partner: &str) -> Url {
-        let mut url = Url::parse(BASE_URL)
-            .expect("invalid base url")
-            .join("/prices")
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(&Url::parse(BASE_URL).expect("invalid base url"), "/prices");
 
         let side = match self.side {
             Side::Buy => "BUY",
@@ -319,10 +316,10 @@ struct TransactionBuilderQueryWithPartner<'a> {
 
 impl TransactionBuilderQueryWithPartner<'_> {
     pub fn into_request(self, client: &Client) -> RequestBuilder {
-        let mut url = Url::parse(BASE_URL)
-            .expect("invalid base url")
-            .join("/transactions/1")
-            .expect("unexpectedly invalid URL segment");
+        let mut url = crate::url::join(
+            &Url::parse(BASE_URL).expect("invalid base url"),
+            "/transactions/1",
+        );
         url.query_pairs_mut().append_pair("ignoreChecks", "true");
 
         tracing::trace!("Paraswap API (transaction) query url: {}", url);

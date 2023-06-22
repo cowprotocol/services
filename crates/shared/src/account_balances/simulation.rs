@@ -48,8 +48,8 @@ impl Balances {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as
-        //    part of a settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
+        //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
         let balances = dummy_contract!(contracts::support::Balances, self.settlement);

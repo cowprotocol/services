@@ -1,5 +1,8 @@
 use {
-    crate::domain::{auction, dex, eth, order},
+    crate::{
+        domain::{auction, dex, eth, order},
+        util,
+    },
     ethereum_types::H160,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
@@ -129,7 +132,7 @@ impl ZeroEx {
     async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
         let request = self
             .client
-            .get(self.endpoint.join("quote").unwrap())
+            .get(util::url::join(&self.endpoint, "quote"))
             .query(query)
             .build()?;
         tracing::trace!(request = %request.url(), "quoting");

@@ -146,7 +146,7 @@ struct SolverConfig {
     /// running behind a single driver.
     name: String,
 
-    /// The relative slippage allowed by the solver.
+    /// The relative slippage factor allowed by the solver.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     relative_slippage: bigdecimal::BigDecimal,
 

@@ -604,10 +604,10 @@ impl OrderValidating for OrderValidator {
         } else {
             // We don't try to get quotes for liquidity and limit orders
             // for two reasons:
-            // 1. They don't pay fees, meaning we don't need to know what the
-            //    min fee amount is.
-            // 2. We don't really care about the equivalent quote since they
-            //    aren't expected to follow regular order creation flow.
+            // 1. They don't pay fees, meaning we don't need to know what the min fee amount
+            //    is.
+            // 2. We don't really care about the equivalent quote since they aren't expected
+            //    to follow regular order creation flow.
             None
         };
 

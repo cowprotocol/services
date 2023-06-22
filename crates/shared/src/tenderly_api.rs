@@ -75,7 +75,7 @@ impl TenderlyApi for TenderlyHttpApi {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
         Ok(self
             .client
-            .post(self.url.join("simulate")?)
+            .post(crate::url::join(&self.url, "simulate"))
             .json(&simulation)
             .send()
             .await?
