@@ -1,0 +1,28 @@
+[package]
+name = "prices"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "prices"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "prices"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.6"
+tokio = { version = "1.28", features = ["macros", "rt-multi-thread", "signal", "time"] }
+futures = "0.3"
+thiserror = "1.0"
+
+# TODO These are only needed due to legacy code, remove them when the code is migrated
+
+anyhow = { workspace = true }
+primitive-types = { workspace = true }
+shared = { path = "../shared" }
+model = { path = "../model" }
