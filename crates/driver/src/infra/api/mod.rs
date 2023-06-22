@@ -1,7 +1,7 @@
 use {
     crate::{
         domain,
-        infra::{self, liquidity, observe, solver::Solver, time, Ethereum, Mempool, Simulator},
+        infra::{liquidity, observe, solver::Solver, Ethereum, Mempool, Simulator},
     },
     error::Error,
     futures::Future,
@@ -20,7 +20,6 @@ pub struct Api {
     pub simulator: Simulator,
     pub eth: Ethereum,
     pub mempools: Vec<Mempool>,
-    pub now: infra::time::Now,
     pub addr: SocketAddr,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -63,12 +62,10 @@ impl Api {
                     eth: self.eth.clone(),
                     liquidity: self.liquidity.clone(),
                     simulator: self.simulator.clone(),
-                    now: self.now,
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
-                now: self.now,
             })));
             let path = format!("/{name}");
             observe::mounting_solver(&name, &path);
@@ -103,10 +100,6 @@ impl State {
     fn liquidity(&self) -> &liquidity::Fetcher {
         &self.0.liquidity
     }
-
-    fn now(&self) -> time::Now {
-        self.0.now
-    }
 }
 
 #[derive(Debug)]
@@ -115,5 +108,4 @@ struct Inner {
     solver: Solver,
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
-    now: time::Now,
 }
