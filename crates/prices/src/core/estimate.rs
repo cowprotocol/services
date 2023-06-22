@@ -7,10 +7,8 @@ use {
 /// value of the [`estimator::Estimate`]s returned by the [`Estimator`]s.
 #[derive(Debug, Clone, Copy)]
 pub struct Estimate {
-    /// The [`Swap`] that was estimated.
-    pub swap: Swap,
     /// The amount of [`ToToken`] that the user receives.
-    pub to: swap::ToAmount,
+    pub amount: swap::ToAmount,
     /// The amount of [`ToToken`] paid in fees.
     pub fee: swap::ToAmount,
 }
@@ -37,9 +35,8 @@ pub async fn estimate(
     .await?;
 
     Ok(Estimate {
-        swap,
-        to: estimate.to,
-        fee: fee.to,
+        amount: estimate.amount,
+        fee: fee.amount,
     })
 }
 
@@ -64,7 +61,7 @@ async fn median_estimate(
     .collect();
 
     // Pick the median estimate.
-    estimates.sort_by_key(|estimate| estimate.to);
+    estimates.sort_by_key(|estimate| estimate.amount);
     estimates.get(estimates.len() / 2).copied().ok_or(Error)
 }
 
@@ -76,6 +73,12 @@ pub struct Deadline(pub std::time::Duration);
 impl From<Deadline> for std::time::Duration {
     fn from(value: Deadline) -> Self {
         value.0
+    }
+}
+
+impl From<std::time::Duration> for Deadline {
+    fn from(value: std::time::Duration) -> Self {
+        Self(value)
     }
 }
 

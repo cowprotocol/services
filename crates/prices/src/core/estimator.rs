@@ -8,14 +8,14 @@ use {
 /// [`crate::ToToken`]), the estimator returns an [`Estimate`] of how much of
 /// the [`crate::ToToken`] will be received, and how much will be paid in gas
 /// fees.
-pub trait Estimator {
+pub trait Estimator: std::fmt::Debug + Send + Sync + 'static {
     fn estimate(&self, swap: Swap, deadline: Deadline) -> BoxFuture<'_, Result<Estimate, Error>>;
 }
 
 /// An estimate returned by an [`Estimator`].
 #[derive(Debug, Clone, Copy)]
 pub struct Estimate {
-    pub to: swap::ToAmount,
+    pub amount: swap::ToAmount,
     /// The gas cost of the swap.
     pub gas: eth::Gas,
 }
@@ -23,10 +23,10 @@ pub struct Estimate {
 /// Estimator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct Error(Box<dyn std::error::Error>);
+pub struct Error(Box<dyn std::error::Error + Send + Sync + 'static>);
 
 impl Error {
-    pub fn new(err: impl std::error::Error + 'static) -> Self {
+    pub fn new(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self(Box::new(err))
     }
 }

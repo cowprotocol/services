@@ -2880,11 +2880,17 @@ dependencies = [
  "anyhow",
  "axum",
  "futures",
+ "hyper",
  "model",
  "primitive-types 0.10.1",
+ "serde",
+ "serde_json",
+ "serde_with 2.3.2",
  "shared",
  "thiserror",
  "tokio",
+ "tower",
+ "tower-http",
 ]
 
 [[package]]

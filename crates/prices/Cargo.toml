@@ -19,6 +19,12 @@ axum = "0.6"
 tokio = { version = "1.28", features = ["macros", "rt-multi-thread", "signal", "time"] }
 futures = "0.3"
 thiserror = "1.0"
+tower = "0.4"
+tower-http = { version = "0.3", features = ["limit", "trace"] }
+hyper = "0.14"
+serde = "1.0"
+serde_json = "1.0"
+serde_with = "2.0"
 
 # TODO These are only needed due to legacy code, remove them when the code is migrated
 
