@@ -1,4 +1,7 @@
-use {crate::core, futures::FutureExt};
+use {
+    crate::core,
+    futures::{future::BoxFuture, FutureExt},
+};
 
 /// An estimator which simply delegates to the legacy code.
 pub struct Estimator(Box<dyn shared::price_estimation::PriceEstimating>);
@@ -8,8 +11,7 @@ impl core::Estimator for Estimator {
         &self,
         swap: core::Swap,
         deadline: core::Deadline,
-    ) -> futures::future::BoxFuture<'_, Result<core::estimator::Estimate, core::estimator::Error>>
-    {
+    ) -> BoxFuture<'_, Result<core::estimator::Estimate, core::estimator::Error>> {
         async move {
             tokio::time::timeout(
                 deadline.into(),

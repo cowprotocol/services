@@ -1,5 +1,5 @@
-//! Core logic of the prices service. TODO Write more about SOLID and what
-//! constitutes "core logic".
+//! Core logic of the prices service. TODO Write more what constitutes "core
+//! logic".
 
 // TODO Remove this ASAP
 #![allow(dead_code)]

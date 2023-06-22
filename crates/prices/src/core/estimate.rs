@@ -68,7 +68,8 @@ async fn median_estimate(
     estimates.get(estimates.len() / 2).copied().ok_or(Error)
 }
 
-/// The estimation deadline. Estimates coming after this deadline are dropped.
+/// The estimation deadline. This is the maximum amount of time allocated to the
+/// [`Estimator`]s.
 #[derive(Debug, Clone, Copy)]
 pub struct Deadline(pub std::time::Duration);
 
