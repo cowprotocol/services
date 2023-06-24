@@ -11,7 +11,6 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub estimators: Vec<Box<dyn core::Estimator>>,
-    pub deadline: core::Deadline,
     pub addr: SocketAddr,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -39,7 +38,6 @@ impl Api {
         // Add state.
         let router = router.with_state(State(Arc::new(Inner {
             estimators: self.estimators,
-            deadline: self.deadline,
         })));
 
         // Start the server.
@@ -58,14 +56,9 @@ impl State {
     fn estimators(&self) -> &[Box<dyn core::Estimator>] {
         &self.0.estimators
     }
-
-    fn deadline(&self) -> core::Deadline {
-        self.0.deadline
-    }
 }
 
 #[derive(Debug)]
 struct Inner {
     estimators: Vec<Box<dyn core::Estimator>>,
-    deadline: core::Deadline,
 }

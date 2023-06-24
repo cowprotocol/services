@@ -231,7 +231,7 @@ pub struct Asset {
     pub token: TokenAddress,
 }
 
-/// An amount of native Ether tokens denominated in wei.
+/// An amount of Ether tokens denominated in wei.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Ether(pub U256);
 

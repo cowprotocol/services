@@ -25,6 +25,9 @@ hyper = "0.14"
 serde = "1.0"
 serde_json = "1.0"
 serde_with = "2.0"
+url = { version = "2.4", features = ["serde"] }
+toml = "0.7"
+clap = "4.3"
 
 # TODO These are only needed due to legacy code, remove them when the code is migrated
 

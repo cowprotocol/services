@@ -56,20 +56,21 @@ impl Inner {
             OrderKind::Sell => (Some(query.in_amount), None),
         };
 
-        let swap = self
-            .api
-            .get_swap(SwapQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
-                sell_amount,
-                buy_amount,
-                slippage_percentage: None,
-                taker_address: None,
-                excluded_sources: self.excluded_sources.clone(),
-                intent_on_filling: false,
-                enable_slippage_protection: false,
-            })
-            .await?;
+        let swap = dbg!(
+            self.api
+                .get_swap(SwapQuery {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    sell_amount,
+                    buy_amount,
+                    slippage_percentage: None,
+                    taker_address: None,
+                    excluded_sources: self.excluded_sources.clone(),
+                    intent_on_filling: false,
+                    enable_slippage_protection: false,
+                })
+                .await
+        )?;
 
         Ok(Trade::swap(
             query.sell_token,

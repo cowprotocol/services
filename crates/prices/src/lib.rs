@@ -1,17 +1,33 @@
-use {api::Api, std::time::Duration};
+use {api::Api, clap::Parser, std::time::Duration};
 
 mod api;
 mod boundary;
+mod cli;
+mod config;
 mod core;
 mod util;
 
-pub async fn main() {
+pub async fn main(args: impl Iterator<Item = String>) {
+    let args = cli::Args::parse_from(args);
+    let config = config::load(&args.config).await;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+
+    let mut estimators: Vec<Box<dyn core::Estimator>> = Vec::new();
+    if let Some(zeroex) = config.zeroex {
+        if zeroex.enable {
+            estimators.push(Box::new(
+                boundary::Zeroex {
+                    api_key: zeroex.api_key,
+                    endpoint: zeroex.endpoint,
+                    timeout: std::time::Duration::from_millis(config.timeout_ms),
+                }
+                .estimator(),
+            ));
+        }
+    }
     let serve = Api {
-        // TODO Load these values from configuration
-        estimators: vec![],
-        deadline: Duration::from_secs(5).into(),
-        addr: "0.0.0.0:11098".parse().unwrap(),
+        estimators,
+        addr: args.addr,
         addr_sender: None,
     }
     .serve(async {

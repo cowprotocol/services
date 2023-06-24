@@ -1,13 +1,15 @@
 //! Core logic of the prices service. TODO Write more what constitutes "core
 //! logic".
 
+// TODO Implement automatic wrapping for ETH
+
 mod estimate;
-pub mod estimator;
 pub mod eth;
+mod price;
 pub mod swap;
 
 pub use {
-    estimate::{estimate, Deadline, Estimate},
-    estimator::Estimator,
+    estimate::{estimate, Estimate, Estimator, EstimatorError},
+    price::Price,
     swap::Swap,
 };

@@ -1,13 +1,10 @@
 use {crate::domain::eth, bigdecimal::Zero};
 
-fn to_big_uint(value: eth::U256) -> num::BigUint {
+pub fn to_big_int(value: eth::U256) -> num::BigInt {
     let mut bytes = [0; 32];
     value.to_big_endian(&mut bytes);
-    num::BigUint::from_bytes_be(&bytes)
-}
-
-pub fn to_big_int(value: eth::U256) -> num::BigInt {
-    num::BigInt::from_biguint(num::bigint::Sign::Plus, to_big_uint(value))
+    let value = num::BigUint::from_bytes_be(&bytes);
+    num::BigInt::from_biguint(num::bigint::Sign::Plus, value)
 }
 
 pub fn to_big_rational(value: eth::U256) -> num::BigRational {

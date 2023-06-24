@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() {
-    prices::main().await;
+    prices::main(std::env::args()).await;
 }

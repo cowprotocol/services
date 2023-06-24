@@ -1,5 +1,10 @@
 use super::eth;
 
+// TODO This won't work. It doesn't correctly capture the realities of the
+// blockchain, such as the fact that UniswapV2 pools don't trade the same price
+// in both directions, especially if the pool is not very liquid. This needs to
+// turn into an `Order` with a `side`. The `Estimate` needs to hold `buy_amount`
+// and `sell_amount`.
 /// A token swap. Specifies how much of one token should be converted to another
 /// token.
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +68,12 @@ impl From<FromAmount> for eth::U256 {
 impl From<eth::U256> for FromAmount {
     fn from(value: eth::U256) -> Self {
         Self(value)
+    }
+}
+
+impl From<eth::Ether> for FromAmount {
+    fn from(value: eth::Ether) -> Self {
+        Self(value.0)
     }
 }
 

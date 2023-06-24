@@ -17,11 +17,17 @@ async fn route(
     swap: axum::Json<Swap>,
 ) -> Result<axum::Json<Estimate>, hyper::StatusCode> {
     let estimators = state.estimators();
-    let deadline = state.deadline();
-    core::estimate(swap.0.into(), deadline, estimators)
-        .await
-        .map(|estimate| axum::Json(estimate.into()))
-        .map_err(|_| hyper::StatusCode::BAD_REQUEST)
+    // TODO So I guess I need an ethereum node connection to get the gas price?
+    // TODO I could also pass it to estimate() and fetch the gas price in parallel
+    // with everything else
+    core::estimate(
+        swap.0.into(),
+        eth::U256::from(30000000000u64).into(),
+        estimators,
+    )
+    .await
+    .map(|estimate| axum::Json(estimate.into()))
+    .map_err(|_| hyper::StatusCode::BAD_REQUEST)
 }
 
 #[serde_as]

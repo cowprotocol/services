@@ -17,7 +17,7 @@ pub async fn load(path: &Path) -> infra::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     let config: file::Config = toml::de::from_str(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+        .unwrap_or_else(|_| panic!("Configuration error while reading {path:?}"));
     infra::Config {
         solvers: config
             .solvers
