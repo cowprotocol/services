@@ -116,6 +116,14 @@ pub async fn main(args: arguments::Arguments) {
         &args.shared.node_url,
         "base",
     );
+    let eip1271_web3 = args
+        .shared
+        .eip1271_signature_validation_node
+        .as_ref()
+        .map(|node_url| {
+            shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "eip1271")
+        })
+        .unwrap_or_else(|| web3.clone());
 
     let chain_id = web3
         .eth()
@@ -184,7 +192,7 @@ pub async fn main(args: arguments::Arguments) {
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
 
-    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = Arc::new(Web3SignatureValidator::new(eip1271_web3.clone()));
 
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),

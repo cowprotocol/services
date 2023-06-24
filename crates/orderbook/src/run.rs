@@ -75,6 +75,14 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
+    let eip1271_web3 = args
+        .shared
+        .eip1271_signature_validation_node
+        .as_ref()
+        .map(|node_url| {
+            shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "eip1271")
+        })
+        .unwrap_or_else(|| web3.clone());
 
     let chain_id = web3
         .eth()
@@ -114,7 +122,7 @@ pub async fn run(args: Arguments) {
         .expect("Failed to retrieve network version ID");
     let network_name = network_name(&network, chain_id);
 
-    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = Arc::new(Web3SignatureValidator::new(eip1271_web3.clone()));
 
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
