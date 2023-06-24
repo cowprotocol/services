@@ -163,6 +163,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub simulation_node_url: Option<Url>,
 
+    /// Custom node just for EIP-1271 signature validation gas simulation. If
+    /// not set then the default node is used.
+    #[clap(long, env)]
+    pub eip1271_signature_validation_node: Option<Url>,
+
     /// The expected chain ID that the services are expected to run against.
     /// This can be optionally specified in order to check at startup whether
     /// the connected nodes match to detect misconfigurations.
@@ -406,6 +411,11 @@ impl Display for Arguments {
         writeln!(f, "node_url: {}", self.node_url)?;
         display_option(f, "chain_id", &self.chain_id)?;
         display_option(f, "simulation_node_url", &self.simulation_node_url)?;
+        display_option(
+            f,
+            "eip1271_signature_validation_node",
+            &self.eip1271_signature_validation_node,
+        )?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
