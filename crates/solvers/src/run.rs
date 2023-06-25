@@ -2,6 +2,7 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
+        boundary,
         domain::solver::{self, Solver},
         infra::{cli, config, dex},
     },
@@ -10,11 +11,21 @@ use {
     tokio::sync::oneshot,
 };
 
+pub async fn start(args: impl IntoIterator<Item = String>) {
+    boundary::exit_process_on_panic::set_panic_hook();
+    let args = cli::Args::parse_from(args);
+    run_with(args, None).await;
+}
+
 pub async fn run(
     args: impl IntoIterator<Item = String>,
     bind: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
+    run_with(args, bind).await;
+}
+
+async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     crate::boundary::initialize_tracing(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 

@@ -1,16 +1,12 @@
 use {
-    crate::{
-        arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        orderbook::Orderbook,
-        serve_api,
-        verify_deployed_contract_constants,
-    },
+    crate::{api, arguments::Arguments, database::Postgres, ipfs::Ipfs, orderbook::Orderbook},
+    anyhow::{anyhow, Context, Result},
+    clap::Parser,
     contracts::{
         BalancerV2Vault,
         CowProtocolToken,
         CowProtocolVirtualToken,
+        GPv2Settlement,
         IUniswapV3Factory,
         WETH9,
     },
@@ -44,6 +40,7 @@ use {
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
             factory::{self, PriceEstimatorFactory},
+            native::NativePriceEstimating,
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
@@ -63,9 +60,22 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         zeroex_api::DefaultZeroExApi,
     },
-    std::{sync::Arc, time::Duration},
-    tokio::task,
+    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
+    tokio::{task, task::JoinHandle},
+    warp::Filter,
 };
+
+pub async fn start(args: impl Iterator<Item = String>) {
+    let args = Arguments::parse_from(args);
+    shared::tracing::initialize(
+        args.shared.logging.log_filter.as_str(),
+        args.shared.logging.log_stderr_threshold,
+    );
+    tracing::info!("running order book with validated arguments:\n{}", args);
+    shared::exit_process_on_panic::set_panic_hook();
+    global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
+    run(args).await;
+}
 
 pub async fn run(args: Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
@@ -569,4 +579,55 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
+}
+
+#[allow(clippy::too_many_arguments)]
+fn serve_api(
+    database: Postgres,
+    orderbook: Arc<Orderbook>,
+    quotes: Arc<QuoteHandler>,
+    address: SocketAddr,
+    shutdown_receiver: impl Future<Output = ()> + Send + 'static,
+    solver_competition_auth: Option<String>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
+) -> JoinHandle<()> {
+    let filter = api::handle_all_routes(
+        database,
+        orderbook,
+        quotes,
+        solver_competition_auth,
+        native_price_estimator,
+    )
+    .boxed();
+    tracing::info!(%address, "serving order book");
+    let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
+    task::spawn(server)
+}
+
+/// Check that important constants such as the EIP 712 Domain Separator and
+/// Order Type Hash used in this binary match the ones on the deployed
+/// contract instance. Signature inconsistencies due to a mismatch of these
+/// constants are hard to debug.
+async fn verify_deployed_contract_constants(
+    contract: &GPv2Settlement,
+    chain_id: u64,
+) -> Result<()> {
+    let web3 = contract.raw_instance().web3();
+    let bytecode = hex::encode(
+        web3.eth()
+            .code(contract.address(), None)
+            .await
+            .context("Could not load deployed bytecode")?
+            .0,
+    );
+
+    let domain_separator = DomainSeparator::new(chain_id, contract.address());
+    if !bytecode.contains(&hex::encode(domain_separator.0)) {
+        return Err(anyhow!("Bytecode did not contain domain separator"));
+    }
+
+    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
+        return Err(anyhow!("Bytecode did not contain order type hash"));
+    }
+    Ok(())
 }

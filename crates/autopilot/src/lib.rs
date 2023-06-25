@@ -24,6 +24,7 @@ use {
         fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
+    clap::Parser,
     contracts::{
         BalancerV2Vault,
         CowProtocolToken,
@@ -100,8 +101,20 @@ impl LivenessChecking for Liveness {
     }
 }
 
+pub async fn start(args: impl Iterator<Item = String>) {
+    let args = arguments::Arguments::parse_from(args);
+    shared::tracing::initialize(
+        args.shared.logging.log_filter.as_str(),
+        args.shared.logging.log_stderr_threshold,
+    );
+    shared::exit_process_on_panic::set_panic_hook();
+    tracing::info!("running autopilot with validated arguments:\n{}", args);
+    global_metrics::setup_metrics_registry(Some("gp_v2_autopilot".into()), None);
+    run(args).await;
+}
+
 /// Assumes tracing and metrics registry have already been set up.
-pub async fn main(args: arguments::Arguments) {
+pub async fn run(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
         crate::database::database_metrics(db.clone())

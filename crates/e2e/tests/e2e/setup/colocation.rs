@@ -24,7 +24,7 @@ max-partial-attempts = 5
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
     tokio::task::spawn(async move {
         let _config_file = config_file;
-        solvers::run::run(args.into_iter(), Some(bind)).await;
+        solvers::run(args.into_iter(), Some(bind)).await;
     });
 
     let solver_addr = bind_receiver.await.unwrap();

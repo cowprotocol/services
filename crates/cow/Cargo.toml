@@ -1,0 +1,17 @@
+[package]
+name = "cow"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+alerter = { path = "../alerter" }
+clap = { workspace = true }
+autopilot = { path = "../autopilot" }
+driver = { path = "../driver" }
+orderbook = { path = "../orderbook" }
+refunder = { path = "../refunder" }
+solver = { path = "../solver" }
+solvers = { path = "../solvers" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -34,6 +34,7 @@ use {
             TransactionStrategy,
         },
     },
+    clap::Parser,
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
     ethcontract::errors::DeployError,
     futures::{future, StreamExt},
@@ -67,6 +68,18 @@ use {
     },
     std::sync::Arc,
 };
+
+pub async fn start(args: impl Iterator<Item = String>) {
+    let args = Arguments::parse_from(args);
+    shared::tracing::initialize(
+        args.shared.logging.log_filter.as_str(),
+        args.shared.logging.log_stderr_threshold,
+    );
+    shared::exit_process_on_panic::set_panic_hook();
+    tracing::info!("running solver with validated arguments:\n{}", args);
+    global_metrics::setup_metrics_registry(Some("gp_v2_solver".into()), None);
+    run(args).await;
+}
 
 pub async fn run(args: Arguments) {
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
