@@ -1,7 +1,6 @@
 use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
-        infra,
         util::serialize,
     },
     number_conversions::rational_to_big_decimal,
@@ -16,7 +15,6 @@ impl Auction {
         liquidity: &[liquidity::Liquidity],
         timeout: competition::SolverTimeout,
         weth: eth::WethAddress,
-        now: infra::time::Now,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens
@@ -115,7 +113,7 @@ impl Auction {
                 .collect(),
             tokens,
             effective_gas_price: auction.gas_price.effective().into(),
-            deadline: timeout.deadline(now),
+            deadline: timeout.deadline(),
         }
     }
 }

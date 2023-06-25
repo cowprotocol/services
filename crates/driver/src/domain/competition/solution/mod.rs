@@ -6,7 +6,6 @@ use {
             eth,
         },
         infra::{
-            self,
             blockchain::{self, Ethereum},
             simulator,
             solver::Solver,
@@ -216,14 +215,13 @@ impl SolverTimeout {
     pub fn new(
         deadline: chrono::DateTime<chrono::Utc>,
         buffer: chrono::Duration,
-        now: time::Now,
     ) -> Option<SolverTimeout> {
-        let deadline = deadline - now.now() - buffer;
+        let deadline = deadline - time::now() - buffer;
         deadline.to_std().map(Self).ok()
     }
 
-    pub fn deadline(self, now: infra::time::Now) -> chrono::DateTime<chrono::Utc> {
-        now.now() + chrono::Duration::from_std(self.0).expect("reasonable solver timeout")
+    pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
+        time::now() + chrono::Duration::from_std(self.0).expect("reasonable solver timeout")
     }
 }
 

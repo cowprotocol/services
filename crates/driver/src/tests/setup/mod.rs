@@ -4,7 +4,7 @@ use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
     crate::{
         domain::{competition::order, eth},
-        infra,
+        infra::time,
         tests::{
             cases::{
                 AB_ORDER_AMOUNT,
@@ -221,7 +221,6 @@ pub fn setup() -> Setup {
         pools: Default::default(),
         orders: Default::default(),
         trusted: Default::default(),
-        now: infra::time::Now::Fake(chrono::Utc::now()),
         config_file: Default::default(),
         solutions: Default::default(),
         quote: Default::default(),
@@ -236,7 +235,6 @@ pub struct Setup {
     pools: Vec<blockchain::Pool>,
     orders: Vec<Order>,
     trusted: HashSet<&'static str>,
-    now: infra::time::Now,
     config_file: Option<PathBuf>,
     solutions: Vec<Solution>,
     /// Is this a test for the /quote endpoint?
@@ -483,7 +481,6 @@ impl Setup {
             pools,
             orders,
             trusted,
-            now,
             config_file,
             ..
         } = self;
@@ -538,7 +535,6 @@ impl Setup {
             trusted: &trusted,
             quotes: &quotes,
             deadline,
-            now: self.now,
             quote: self.quote,
         })
         .await;
@@ -549,7 +545,6 @@ impl Setup {
                 absolute_slippage,
                 solver_address,
                 solver_secret_key,
-                now: self.now,
                 enable_simulation: self.enable_simulation,
             },
             &solver,
@@ -565,7 +560,6 @@ impl Setup {
             fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
             trusted,
             deadline,
-            now,
             quotes,
             quote: self.quote,
         }
@@ -580,7 +574,7 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        self.now.now() + chrono::Duration::days(30)
+        time::now() + chrono::Duration::days(30)
     }
 }
 
@@ -593,7 +587,6 @@ pub struct Test {
     fulfillments: Vec<Fulfillment>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
-    now: infra::time::Now,
     /// Is this testing the /quote endpoint?
     quote: bool,
 }
@@ -620,7 +613,6 @@ impl Test {
             body,
             fulfillments: &self.fulfillments,
             blockchain: &self.blockchain,
-            now: self.now,
         }
     }
 
@@ -715,7 +707,6 @@ pub struct Solve<'a> {
     body: String,
     fulfillments: &'a [Fulfillment],
     blockchain: &'a Blockchain,
-    now: infra::time::Now,
 }
 
 impl<'a> Solve<'a> {
@@ -726,7 +717,6 @@ impl<'a> Solve<'a> {
             body: self.body,
             fulfillments: self.fulfillments,
             blockchain: self.blockchain,
-            now: self.now,
         }
     }
 
@@ -741,7 +731,6 @@ pub struct SolveOk<'a> {
     body: String,
     fulfillments: &'a [Fulfillment],
     blockchain: &'a Blockchain,
-    now: infra::time::Now,
 }
 
 impl SolveOk<'_> {
@@ -781,7 +770,7 @@ impl SolveOk<'_> {
                         )
                     })
                     .quote
-                    .order_uid(self.blockchain, self.now)
+                    .order_uid(self.blockchain)
                     .to_string()
             })
             .sorted()
