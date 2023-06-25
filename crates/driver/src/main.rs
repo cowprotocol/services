@@ -1,4 +1,4 @@
 #[tokio::main]
 async fn main() {
-    driver::main().await;
+    driver::start(std::env::args()).await;
 }
