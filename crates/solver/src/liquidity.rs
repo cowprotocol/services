@@ -179,6 +179,7 @@ pub struct LimitOrder {
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
+    pub receiver: H160,
     /// The fee that should be used for objective value computations.
     /// Takes partiall fill into account.
     pub solver_fee: U256,
@@ -262,6 +263,7 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
+            receiver: Default::default(),
             solver_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             id: Default::default(),

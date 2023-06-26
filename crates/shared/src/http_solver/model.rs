@@ -43,6 +43,7 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
+    pub receiver: H160,
     /// [DEPRECATED] All orders are always mature
     pub is_mature: bool,
     #[serde(default)]
@@ -527,6 +528,7 @@ mod tests {
         let native_token = H160([0xee; 20]);
         let buy_token = H160::from_low_u64_be(1337);
         let sell_token = H160::from_low_u64_be(43110);
+        let receiver = H160::from_low_u64_be(4369);
         let order_model = OrderModel {
             id: Some(OrderUid::default()),
             sell_token,
@@ -534,6 +536,7 @@ mod tests {
             sell_amount: U256::from(1),
             buy_amount: U256::from(2),
             allow_partial_fill: false,
+            receiver,
             is_sell_order: true,
             fee: TokenAmount {
                 amount: U256::from(2),
@@ -697,6 +700,7 @@ mod tests {
                 "token": "0x000000000000000000000000000000000000a866",
               },
               "is_liquidity_order": false,
+              "receiver": "0x0000000000000000000000000000000000001111",
               "cost": {
                 "amount": "1",
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",

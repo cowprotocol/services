@@ -133,6 +133,7 @@ impl HttpPriceEstimator {
                 has_atomic_execution: false,
                 reward: 0., // irrelevant for price estimation
                 is_mature: true, // irrelevant for price estimation
+                receiver: Default::default(), // could be relevant if we send more than one order at once for estimation
             },
         };
 

@@ -107,6 +107,7 @@ pub fn solve(
                 },
             }),
             exchange: Exchange::GnosisProtocol,
+            receiver: H160::zero(),
         })
         .collect_vec();
 

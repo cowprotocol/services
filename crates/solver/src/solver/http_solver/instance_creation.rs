@@ -266,6 +266,7 @@ fn order_models(
                     },
                     cost,
                     is_liquidity_order: order.is_liquidity_order(),
+                    receiver: order.receiver,
                     mandatory: false,
                     has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                     reward: 0.,

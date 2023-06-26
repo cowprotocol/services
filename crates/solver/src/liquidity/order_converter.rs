@@ -16,6 +16,7 @@ use {
     contracts::WETH9,
     ethcontract::U256,
     model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
+    primitive_types::H160,
     std::sync::Arc,
 };
 
@@ -80,6 +81,8 @@ impl OrderConverter {
             "order with 0 amounts",
         );
 
+        let receiver = order.data.receiver.unwrap_or_else(H160::zero);
+
         Ok(LimitOrder {
             id,
             sell_token: order.data.sell_token,
@@ -88,6 +91,7 @@ impl OrderConverter {
             buy_amount,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
+            receiver,
             solver_fee,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,

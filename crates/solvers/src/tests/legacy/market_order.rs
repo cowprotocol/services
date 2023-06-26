@@ -62,6 +62,7 @@ async fn quote() {
                     // Mandatory is true when request contains no auction id because that marks a
                     // /quote request.
                     "mandatory": true,
+                    "receiver": "0x0000000000000000000000000000000000000000",
                     "reward": 0.,
                     "sell_amount": "133700000000000000",
                     "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
@@ -262,6 +263,7 @@ async fn solve() {
                     "is_mature": true,
                     "is_sell_order": true,
                     "mandatory": false,
+                    "receiver": "0x0000000000000000000000000000000000000000",
                     "reward": 0.,
                     "sell_amount": "133700000000000000",
                     "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"

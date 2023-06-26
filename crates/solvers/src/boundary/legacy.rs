@@ -177,6 +177,7 @@ fn to_boundary_auction(
                 mandatory: auction.id.is_none(),
                 has_atomic_execution: false,
                 reward: 0.,
+                receiver: H160::zero(),
             },
         );
     }
@@ -302,6 +303,7 @@ fn to_boundary_auction(
                         mandatory: false,
                         has_atomic_execution: true,
                         reward: 0.,
+                        receiver: H160::zero(),
                     },
                 );
                 continue;
