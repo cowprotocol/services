@@ -68,7 +68,7 @@ pub struct Config {
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
     /// The private key of this solver, used for settlement submission.
-    pub account: eth::Account,
+    pub account: ethcontract::Account,
 }
 
 impl Solver {
@@ -105,8 +105,8 @@ impl Solver {
         self.config.account.address().into()
     }
 
-    /// The private key/account of this solver.
-    pub fn account(&self) -> eth::Account {
+    /// The account which should be used to sign settlements for this solver.
+    pub fn account(&self) -> ethcontract::Account {
         self.config.account.clone()
     }
 

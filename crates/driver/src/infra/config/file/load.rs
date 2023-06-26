@@ -22,15 +22,17 @@ pub async fn load(path: &Path) -> infra::Config {
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
-                file::Account::PrivateKey(private_key) => {
-                    eth::Account::Offline(eth::PrivateKey::from_raw(private_key.0).unwrap(), None)
-                }
+                file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
+                    ethcontract::PrivateKey::from_raw(private_key.0).unwrap(),
+                    None,
+                ),
                 file::Account::Kms(key_id) => {
                     let config = ethcontract::aws_config::load_from_env().await;
-                    let account = eth::KmsAccount::new((&config).into(), &key_id.0)
-                        .await
-                        .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
-                    eth::Account::Kms(account, None)
+                    let account =
+                        ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
+                            .await
+                            .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                    ethcontract::Account::Kms(account, None)
                 }
             };
             solver::Config {
