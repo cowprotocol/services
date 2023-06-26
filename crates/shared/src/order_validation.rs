@@ -536,6 +536,7 @@ impl OrderValidating for OrderValidator {
                         signer: owner,
                         hash,
                         signature: signature.to_owned(),
+                        interactions: app_data.backend.interactions.pre.clone(),
                     })
                     .await
                     .map_err(|err| match err {
@@ -948,6 +949,7 @@ mod tests {
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
         secp256k1::ONE_KEY,
+        serde_json::json,
     };
 
     #[test]
@@ -1306,9 +1308,38 @@ mod tests {
         let creation = OrderCreation {
             from: Some(H160([1; 20])),
             signature: Signature::Eip1271(vec![1, 2, 3]),
+            app_data: OrderCreationAppData::Full {
+                full: json!({
+                    "backend": {
+                        "interactions": {
+                            "pre": [
+                                {
+                                    "target": "0x1111111111111111111111111111111111111111",
+                                    "value": "0",
+                                    "callData": "0x112233",
+                                }
+                            ],
+                            "post": [
+                                {
+                                    "target": "0x2222222222222222222222222222222222222222",
+                                    "value": "0",
+                                    "callData": "0x112233",
+                                }
+                            ],
+                        },
+                    },
+                })
+                .to_string(),
+            },
             ..creation
         };
         let order_hash = hashed_eip712_message(&domain_separator, &creation.data().hash_struct());
+
+        let interactions = vec![InteractionData {
+            target: addr!("1111111111111111111111111111111111111111"),
+            value: U256::zero(),
+            call_data: vec![0x11, 0x22, 0x33],
+        }];
 
         let mut signature_validator = MockSignatureValidating::new();
         signature_validator
@@ -1317,10 +1348,12 @@ mod tests {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
+                interactions: interactions.clone(),
             }))
             .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
+            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
             ..validator
         };
@@ -1342,10 +1375,12 @@ mod tests {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
+                interactions: interactions.clone(),
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator {
+            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
             signature_configuration: SignatureConfiguration {
                 eip1271_skip_creation_validation: true,
