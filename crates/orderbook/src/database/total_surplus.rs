@@ -1,5 +1,5 @@
 use {
-    anyhow::{Context, Result},
+    anyhow::Result,
     database::{byte_array::ByteArray, Address},
     primitive_types::{H160, U256},
     sqlx::PgConnection,
@@ -7,7 +7,7 @@ use {
 
 /// Computes a user's total surplus received (price improvement over limit price
 /// and **NOT** quoted price) since march 2023.
-async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<i64, sqlx::Error> {
+async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<f64, sqlx::Error> {
     const TOTAL_SURPLUS_QUERY: &str = r#"
 with trade_components as (
     select
@@ -24,8 +24,8 @@ with trade_components as (
           when 'buy' then t.buy_amount * o.sell_amount / o.buy_amount
        end as limit_amount,
        o.kind,
-       (select price from auction_prices where ap.token = o.sell_token and ap.auction_id = oe.auction_id) as native_sell_price,
-       (select price from auction_prices where ap.token = o.buy_token and ap.auction_id = oe.auction_id) as native_buy_price
+       (select price from auction_prices ap where ap.token = o.sell_token and ap.auction_id = oe.auction_id) as native_sell_price,
+       (select price from auction_prices ap where ap.token = o.buy_token and ap.auction_id = oe.auction_id) as native_buy_price
     from orders o
     join trades t on o.uid = t.order_uid
     join order_quotes oq on o.uid = oq.order_uid
@@ -67,6 +67,6 @@ impl super::Postgres {
 
         let mut ex = self.pool.acquire().await?;
         let surplus = fetch_total_surplus(&mut ex, &ByteArray(user.0)).await?;
-        U256::try_from(surplus).context("failed to convert surplus to U256")
+        Ok(U256::from_f64_lossy(surplus))
     }
 }
