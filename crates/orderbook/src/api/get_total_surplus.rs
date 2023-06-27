@@ -5,9 +5,6 @@ use {
     warp::{http::StatusCode, reply::with_status, Filter, Rejection},
 };
 
-// TODO This endpoint is not documented for now because we don't want to
-// stabilize it quite yet. Once we're sure this is what we want, we should add
-// it to the openapi spec.
 pub fn get() -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     warp::path!("v1" / "users" / H160 / "total_surplus")
         .and(warp::get())
