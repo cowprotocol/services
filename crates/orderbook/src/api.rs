@@ -6,6 +6,7 @@ mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
 mod get_solver_competition;
+mod get_total_surplus;
 mod get_trades;
 mod get_user_orders;
 mod post_order;
@@ -91,6 +92,7 @@ pub fn handle_all_routes(
             box_filter(get_native_price::get_native_price(native_price_estimator)),
         ),
         ("v1/get_app_data", get_app_data::get(database).boxed()),
+        ("v1/get_total_surplus", box_filter(get_total_surplus::get())),
     ];
 
     finalize_router(routes, "orderbook::api::request_summary")
