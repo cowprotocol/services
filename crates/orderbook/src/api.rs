@@ -91,8 +91,14 @@ pub fn handle_all_routes(
             "v1/get_native_price",
             box_filter(get_native_price::get_native_price(native_price_estimator)),
         ),
-        ("v1/get_app_data", get_app_data::get(database).boxed()),
-        ("v1/get_total_surplus", box_filter(get_total_surplus::get())),
+        (
+            "v1/get_app_data",
+            get_app_data::get(database.clone()).boxed(),
+        ),
+        (
+            "v1/get_total_surplus",
+            box_filter(get_total_surplus::get(database)),
+        ),
     ];
 
     finalize_router(routes, "orderbook::api::request_summary")
