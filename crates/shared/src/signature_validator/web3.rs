@@ -7,6 +7,7 @@ use {
     contracts::ERC1271SignatureValidator,
     ethcontract::{
         batch::CallBatch,
+        dyns::DynViewMethodBuilder,
         errors::{ExecutionError, MethodError},
         Bytes,
     },
@@ -22,6 +23,25 @@ pub struct Web3SignatureValidator {
 impl Web3SignatureValidator {
     pub fn new(web3: Web3) -> Self {
         Self { web3 }
+    }
+}
+
+impl Web3SignatureValidator {
+    /// Creates the `ethcontract` method call
+    pub fn is_valid_signature(
+        &self,
+        check: SignatureCheck,
+    ) -> DynViewMethodBuilder<Bytes<[u8; 4]>> {
+        let instance = ERC1271SignatureValidator::at(&self.web3, check.signer);
+        instance
+            .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
+            // Some signatures may internally trap, which will use up all
+            // available gas. Setting a deterministic gas limit makes the gas
+            // computation deterministic, and technically allows these
+            // signatures to work within a settlement.
+            // Note that this is the same gas limit that is used for simulations
+            // in the `solver` crate.
+            .gas(15_000_000_u128.into())
     }
 }
 
@@ -42,11 +62,7 @@ impl SignatureValidating for Web3SignatureValidator {
                     );
                 }
 
-                let instance = ERC1271SignatureValidator::at(&self.web3, check.signer);
-                let call = instance
-                    .is_valid_signature(Bytes(check.hash), Bytes(check.signature))
-                    .batch_call(&mut batch);
-
+                let call = self.is_valid_signature(check).batch_call(&mut batch);
                 async move { check_erc1271_result(call.await?) }
             })
             .collect::<Vec<_>>();
@@ -66,9 +82,7 @@ impl SignatureValidating for Web3SignatureValidator {
             );
         }
 
-        let instance = ERC1271SignatureValidator::at(&self.web3, check.signer);
-        let check = instance.is_valid_signature(Bytes(check.hash), Bytes(check.signature.clone()));
-
+        let check = self.is_valid_signature(check);
         let (result, gas_estimate) =
             futures::join!(check.clone().call(), check.m.tx.estimate_gas());
 
