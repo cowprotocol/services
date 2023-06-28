@@ -46,9 +46,7 @@ pub async fn load(path: &Path) -> infra::Config {
                 account,
             }
         }))
-        .await
-        .into_iter()
-        .collect(),
+        .await,
         liquidity: liquidity::Config {
             base_tokens: config
                 .liquidity

@@ -233,7 +233,7 @@ impl Debug for SolverAccountArg {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             SolverAccountArg::PrivateKey(k) => write!(f, "PrivateKey({:?})", k.public_address()),
-            SolverAccountArg::Kms(key_id) => write!(f, "KMS({:?})", key_id),
+            SolverAccountArg::Kms(key_id) => write!(f, "KMS({key_id:?})"),
             SolverAccountArg::Address(a) => write!(f, "Address({a:?})"),
         }
     }
@@ -247,7 +247,7 @@ impl SolverAccountArg {
                 let config = ethcontract::aws_config::load_from_env().await;
                 let account = kms::Account::new((&config).into(), &key_id.0)
                     .await
-                    .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                    .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
                 Account::Kms(account, Some(chain_id))
             }
             SolverAccountArg::Address(address) => Account::Local(address, None),

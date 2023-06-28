@@ -155,8 +155,7 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
-    /// The private key used to sign transactions. Expects a 32-byte hex encoded
-    /// string.
+    /// The account which should be used to sign settlements for this solver.
     account: Account,
 }
 
