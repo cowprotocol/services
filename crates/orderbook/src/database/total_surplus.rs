@@ -9,7 +9,13 @@ use {
 /// and **NOT** quoted price) since march 2023.
 async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<f64, sqlx::Error> {
     const TOTAL_SURPLUS_QUERY: &str = r#"
-WITH trade_components AS (
+WITH regular_orders AS (
+    SELECT ARRAY_AGG(uid) AS ids FROM orders WHERE owner = '\x5fc79e21ceca2aa0f7a0aac71ef3ddde8f004e9e'
+),
+onchain_orders AS (
+    SELECT ARRAY_AGG(uid) AS ids FROM onchain_placed_orders WHERE sender = '\x5fc79e21ceca2aa0f7a0aac71ef3ddde8f004e9e'
+),
+trade_components AS (
     SELECT
        CASE kind
           -- so much was actually bought
@@ -28,11 +34,9 @@ WITH trade_components AS (
        (SELECT price FROM auction_prices ap WHERE ap.token = o.buy_token AND ap.auction_id = oe.auction_id) AS native_buy_price
     FROM orders o
     JOIN trades t ON o.uid = t.order_uid
-    LEFT JOIN onchain_placed_orders opo ON opo.uid = o.uid
     JOIN order_execution oe ON o.uid = oe.order_uid
-    WHERE
-        o.owner = $1
-        or opo.sender = $1
+    -- use this weird construction instead of `where owner=address or sender=address` to help postgres make efficient use of indices
+    where uid = ANY(array_cat((select ids from regular_orders), (select ids from onchain_orders)))
 ),
 trade_surplus AS (
     SELECT
