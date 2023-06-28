@@ -10,10 +10,10 @@ use {
 async fn fetch_total_surplus(ex: &mut PgConnection, user: &Address) -> Result<f64, sqlx::Error> {
     const TOTAL_SURPLUS_QUERY: &str = r#"
 WITH regular_orders AS (
-    SELECT ARRAY_AGG(uid) AS ids FROM orders WHERE owner = '\x5fc79e21ceca2aa0f7a0aac71ef3ddde8f004e9e'
+    SELECT ARRAY_AGG(uid) AS ids FROM orders WHERE owner = $1
 ),
 onchain_orders AS (
-    SELECT ARRAY_AGG(uid) AS ids FROM onchain_placed_orders WHERE sender = '\x5fc79e21ceca2aa0f7a0aac71ef3ddde8f004e9e'
+    SELECT ARRAY_AGG(uid) AS ids FROM onchain_placed_orders WHERE sender = $1
 ),
 trade_components AS (
     SELECT
