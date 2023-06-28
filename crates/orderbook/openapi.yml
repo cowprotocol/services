@@ -391,6 +391,22 @@ paths:
             application/json: {}
         404:
           description: No full app data stored for this hash.
+  /api/v1/users/{address}/total_surplus:
+    get:
+      summary: Return the total surplus earned by the user. This endpoint isn't stable yet.
+      parameters:
+        - in: path
+          name: address
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+      responses:
+        200:
+          description: The total surplus.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotalSurplus"
 components:
   schemas:
     TransactionHash:
@@ -1275,3 +1291,11 @@ components:
         price:
           type: number
           description: the estimated price of the token
+    TotalSurplus:
+      description: |
+        The total surplus.
+      type: object
+      properties:
+        totalSurplus:
+          type: string
+          description: the total surplus.
