@@ -51,7 +51,7 @@ trade_surplus AS (
     FROM trade_components
 )
 SELECT
-   SUM(surplus_in_wei) AS total_surplus_in_wei
+   COALESCE(SUM(surplus_in_wei), 0) AS total_surplus_in_wei
 FROM trade_surplus
 "#;
 
