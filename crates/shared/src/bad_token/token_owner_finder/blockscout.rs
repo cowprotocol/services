@@ -19,6 +19,7 @@ impl BlockscoutTokenOwnerFinder {
     pub fn try_with_network(client: Client, network_id: u64) -> Result<Self> {
         let base_url = match network_id {
             1 => "https://eth.blockscout.com/api",
+            5 => "https://eth-goerli.blockscout.com/api",
             100 => "https://blockscout.com/xdai/mainnet/api",
             _ => bail!("Unsupported Network"),
         };
