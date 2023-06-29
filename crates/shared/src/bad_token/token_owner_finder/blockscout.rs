@@ -9,8 +9,6 @@ use {
     serde::Deserialize,
 };
 
-const BASE: &str = "https://blockscout.com/";
-
 pub struct BlockscoutTokenOwnerFinder {
     client: Client,
     base: Url,
@@ -19,18 +17,15 @@ pub struct BlockscoutTokenOwnerFinder {
 
 impl BlockscoutTokenOwnerFinder {
     pub fn try_with_network(client: Client, network_id: u64) -> Result<Self> {
-        let network = match network_id {
-            1 => "eth/",
-            100 => "xdai/",
+        let base_url = match network_id {
+            1 => "https://eth.blockscout.com/api",
+            100 => "https://blockscout.com/xdai/mainnet/api",
             _ => bail!("Unsupported Network"),
         };
 
         Ok(Self {
             client,
-            base: crate::url::join(
-                &Url::parse(BASE).unwrap(),
-                &format!("{network}/mainnet/api"),
-            ),
+            base: Url::parse(base_url)?,
             rate_limiter: None,
         })
     }
