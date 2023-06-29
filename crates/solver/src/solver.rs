@@ -714,10 +714,6 @@ mod tests {
 
     #[test]
     fn errors_on_invalid_solver_account_arg() {
-        println!(
-            "{:?}",
-            "0x010203040506070809101112131415161718192021".parse::<SolverAccountArg>()
-        );
         assert!("0x010203040506070809101112131415161718192021"
             .parse::<SolverAccountArg>()
             .is_err());
