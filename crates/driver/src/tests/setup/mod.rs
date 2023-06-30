@@ -666,6 +666,7 @@ impl Test {
             status,
             test: self,
             solution_id,
+            body,
         }
     }
 
@@ -901,6 +902,7 @@ pub struct Settle<'a> {
     status: StatusCode,
     test: &'a Test,
     solution_id: String,
+    body: String,
 }
 
 pub struct SettleOk<'a> {
@@ -913,6 +915,25 @@ impl<'a> Settle<'a> {
     pub async fn ok(self) -> SettleOk<'a> {
         // Ensure that the response is OK.
         assert_eq!(self.status, hyper::StatusCode::OK);
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 1);
+        assert!(!result
+            .get("calldata")
+            .unwrap()
+            .get("internalized")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .is_empty());
+        assert!(!result
+            .get("calldata")
+            .unwrap()
+            .get("uninternalized")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .is_empty());
 
         // Ensure that the solution ID is included in the settlement.
         let tx = self
@@ -931,6 +952,20 @@ impl<'a> Settle<'a> {
         let len = input.len();
         let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
         assert_eq!(tx_solution_id.to_string(), self.solution_id);
+
+        // Ensure that the internalized calldata returned by the driver is equal to the
+        // calldata published to the blockchain.
+        let internalized = result
+            .get("calldata")
+            .unwrap()
+            .get("internalized")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            internalized,
+            format!("0x{}", hex::encode(&input).to_lowercase())
+        );
 
         SettleOk {
             test: self.test,

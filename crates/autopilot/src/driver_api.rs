@@ -1,5 +1,5 @@
 use {
-    crate::driver_model::{execute, solve},
+    crate::driver_model::{settle, solve},
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     shared::http_client::response_body_with_size_limit,
@@ -30,12 +30,11 @@ impl Driver {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn execute(
+    pub async fn settle(
         &self,
         solution_id: &str,
-        _request: &execute::Request,
-    ) -> Result<execute::Response> {
-        // TODO: should be execute
+        _request: &settle::Request,
+    ) -> Result<settle::Response> {
         self.request_response(&format!("settle/{solution_id}"), Option::<&()>::None)
             .await
     }

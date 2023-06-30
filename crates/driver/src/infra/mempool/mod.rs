@@ -12,7 +12,7 @@ pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Kind, Mempool
 pub async fn execute(
     mempools: &[Mempool],
     solver: &Solver,
-    settlement: Settlement,
+    settlement: &Settlement,
 ) -> Result<(), Error> {
     if mempools.is_empty() {
         return Err(Error::AllMempoolsFailed);
