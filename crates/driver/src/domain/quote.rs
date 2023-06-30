@@ -10,7 +10,6 @@ use {
             self,
             blockchain::{self, Ethereum},
             solver::{self, Solver},
-            time,
         },
         util::{self, conv},
     },
@@ -74,11 +73,10 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
-        now: time::Now,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let gas_price = eth.gas_price().await?;
-        let timeout = self.deadline.timeout(now)?;
+        let timeout = self.deadline.timeout()?;
         let solutions = solver
             .solve(&self.fake_auction(gas_price), &liquidity, timeout)
             .await?;
@@ -173,8 +171,8 @@ pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
     /// Computes the timeout for solving an auction.
-    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    pub fn timeout(self) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer()).ok_or(DeadlineExceeded)
     }
 
     pub fn time_buffer() -> chrono::Duration {

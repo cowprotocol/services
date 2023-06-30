@@ -65,7 +65,7 @@ impl Fetcher {
         )
         .await
         .into_iter()
-        .try_collect()?;
+        .collect();
 
         let uni_v2: Vec<_> = future::join_all(
             config

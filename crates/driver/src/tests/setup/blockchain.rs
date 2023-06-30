@@ -2,7 +2,7 @@ use {
     super::{Asset, Order},
     crate::{
         domain::{competition::order, eth},
-        infra,
+        infra::time,
         tests::{self, boundary},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
@@ -111,26 +111,22 @@ impl Quote {
     }
 
     /// The UID of the order.
-    pub fn order_uid(
-        &self,
-        blockchain: &Blockchain,
-        now: infra::time::Now,
-    ) -> tests::boundary::OrderUid {
-        self.boundary(blockchain, now).uid()
+    pub fn order_uid(&self, blockchain: &Blockchain) -> tests::boundary::OrderUid {
+        self.boundary(blockchain).uid()
     }
 
     /// The signature of the order.
-    pub fn order_signature(&self, blockchain: &Blockchain, now: infra::time::Now) -> Vec<u8> {
-        self.boundary(blockchain, now).signature()
+    pub fn order_signature(&self, blockchain: &Blockchain) -> Vec<u8> {
+        self.boundary(blockchain).signature()
     }
 
-    fn boundary(&self, blockchain: &Blockchain, now: infra::time::Now) -> tests::boundary::Order {
+    fn boundary(&self, blockchain: &Blockchain) -> tests::boundary::Order {
         tests::boundary::Order {
             sell_token: blockchain.get_token(self.order.sell_token),
             buy_token: blockchain.get_token(self.order.buy_token),
             sell_amount: self.sell_amount(),
             buy_amount: self.buy_amount(),
-            valid_to: u32::try_from(now.now().timestamp()).unwrap() + self.order.valid_for.0,
+            valid_to: u32::try_from(time::now().timestamp()).unwrap() + self.order.valid_for.0,
             user_fee: self.order.user_fee,
             side: self.order.side,
             secret_key: blockchain.trader_secret_key,

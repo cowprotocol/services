@@ -48,7 +48,7 @@ impl GelatoClient {
     pub async fn sponsored_call(&self, call: &GelatoCall) -> Result<TaskId> {
         let response = self
             .client
-            .post(self.base.join("relays/v2/sponsored-call")?)
+            .post(crate::url::join(&self.base, "relays/v2/sponsored-call"))
             .json(&CallWithKey {
                 call,
                 sponsor_api_key: &self.api_key,
@@ -67,7 +67,10 @@ impl GelatoClient {
     pub async fn task_status(&self, id: &TaskId) -> Result<Task> {
         let response = self
             .client
-            .get(self.base.join("tasks/status/")?.join(&id.0)?)
+            .get(crate::url::join(
+                &self.base,
+                &format!("tasks/status/{}", id.0),
+            ))
             .send()
             .await?;
 

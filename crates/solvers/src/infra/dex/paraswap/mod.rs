@@ -1,5 +1,8 @@
 use {
-    crate::domain::{auction, dex, eth},
+    crate::{
+        domain::{auction, dex, eth},
+        util,
+    },
     ethereum_types::Address,
 };
 
@@ -73,7 +76,7 @@ impl ParaSwap {
     ) -> Result<dto::Price, Error> {
         let request = self
             .client
-            .get(self.config.endpoint.join("prices").unwrap())
+            .get(util::url::join(&self.config.endpoint, "prices"))
             .query(&dto::PriceQuery::new(&self.config, order, tokens)?)
             .build()?;
         tracing::trace!("Querying ParaSwap price API: {request:?}");
@@ -96,12 +99,10 @@ impl ParaSwap {
         let body = dto::TransactionBody::new(price, &self.config, order, tokens, slippage)?;
         let request = self
             .client
-            .post(
-                self.config
-                    .endpoint
-                    .join("transactions/1?ignoreChecks=true")
-                    .unwrap(),
-            )
+            .post(util::url::join(
+                &self.config.endpoint,
+                "transactions/1?ignoreChecks=true",
+            ))
             .json(&body)
             .build()?;
         let body = serde_json::to_string(&body)?;

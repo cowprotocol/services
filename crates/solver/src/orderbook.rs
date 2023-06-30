@@ -21,7 +21,7 @@ impl OrderBookApi {
     }
 
     pub async fn get_auction(&self) -> Result<AuctionWithId> {
-        let url = self.base.join("api/v1/auction")?;
+        let url = shared::url::join(&self.base, "api/v1/auction");
         let response = self.client.get(url).send().await?;
         if let Err(err) = response.error_for_status_ref() {
             let body = response.text().await;
@@ -40,7 +40,7 @@ impl OrderBookApi {
         &self,
         body: &model::solver_competition::Request,
     ) -> Result<()> {
-        let url = self.base.join("api/v1/solver_competition")?;
+        let url = shared::url::join(&self.base, "api/v1/solver_competition");
         let mut request = self.client.post(url);
         if let Some(auth) = &self.competition_auth {
             request = request.header("Authorization", auth)

@@ -6,7 +6,7 @@ use {
     },
     crate::{
         domain::{competition::order, eth},
-        infra,
+        infra::time,
         tests::hex_address,
     },
     secp256k1::SecretKey,
@@ -23,7 +23,6 @@ pub struct Config {
     pub absolute_slippage: eth::U256,
     pub solver_address: eth::H160,
     pub solver_secret_key: SecretKey,
-    pub now: infra::time::Now,
     pub enable_simulation: bool,
 }
 
@@ -52,7 +51,7 @@ impl Driver {
             "--config".to_owned(),
             config_file.to_str().unwrap().to_owned(),
         ];
-        tokio::spawn(crate::run(args.into_iter(), config.now, Some(addr_sender)));
+        tokio::spawn(crate::run(args.into_iter(), Some(addr_sender)));
         let addr = addr_receiver.await.unwrap();
         Self {
             addr,
@@ -67,14 +66,14 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut orders_json = Vec::new();
     for quote in test.quotes.iter() {
         orders_json.push(json!({
-            "uid": quote.order_uid(&test.blockchain, test.now),
+            "uid": quote.order_uid(&test.blockchain),
             "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
             "solverFee": "0",
             "userFee": quote.order.user_fee.to_string(),
-            "validTo": u32::try_from(test.now.now().timestamp()).unwrap() + quote.order.valid_for.0,
+            "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
                 order::Side::Sell => "sell",
                 order::Side::Buy => "buy",
@@ -98,7 +97,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             },
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
-            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain, test.now)))
+            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain)))
         }));
     }
     for fulfillment in test.fulfillments.iter() {

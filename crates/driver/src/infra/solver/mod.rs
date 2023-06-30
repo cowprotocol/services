@@ -6,7 +6,7 @@ use {
             eth,
             liquidity,
         },
-        infra::{self, blockchain::Ethereum},
+        infra::blockchain::Ethereum,
         util,
     },
     std::collections::HashSet,
@@ -57,7 +57,6 @@ pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
-    now: infra::time::Now,
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +71,7 @@ pub struct Config {
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum, now: infra::time::Now) -> Self {
+    pub fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -87,7 +86,6 @@ impl Solver {
                 .unwrap(),
             config,
             eth,
-            now,
         }
     }
 
@@ -120,10 +118,8 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
-            auction, liquidity, timeout, weth, self.now,
-        ))
-        .unwrap();
+        let body =
+            serde_json::to_string(&dto::Auction::new(auction, liquidity, timeout, weth)).unwrap();
         observe::solver_request(self.name(), &self.config.endpoint, &body);
         let req = self
             .client

@@ -205,8 +205,7 @@ impl CodeSimulating for Web3ThenTenderly {
 
         // Spawn a background thread to simulate on Tenderly. This allows us:
         // 1. To return right away with the result form the Web3 simulator
-        // 2. Still simulate and save the simulation on Tenderly for debugging
-        //    purposes.
+        // 2. Still simulate and save the simulation on Tenderly for debugging purposes.
         if let Err(err) = &result {
             tracing::warn!(?err, "web3 code simulation failed, fallback to Tenderly");
 
