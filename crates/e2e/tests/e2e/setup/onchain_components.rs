@@ -1,10 +1,25 @@
 use {
     crate::setup::deploy::Contracts,
-    contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler},
+    contracts::{
+        CowProtocolToken,
+        ERC20Mintable,
+        GnosisSafe,
+        GnosisSafeCompatibilityFallbackHandler,
+    },
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
+    hex_literal::hex,
+    model::{
+        interaction::InteractionData,
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+        DomainSeparator,
+    },
+    secp256k1::SecretKey,
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
-    web3::signing::{Key, SecretKeyRef},
+    web3::{
+        signing,
+        signing::{Key, SecretKeyRef},
+    },
 };
 
 #[macro_export]
@@ -170,6 +185,76 @@ impl Deref for MintableToken {
     }
 }
 
+#[derive(Debug)]
+pub struct CowToken {
+    contract: CowProtocolToken,
+    holder: Account,
+}
+
+impl CowToken {
+    pub async fn fund(&self, to: H160, amount: U256) {
+        tx!(self.holder, self.contract.transfer(to, amount));
+    }
+
+    pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> InteractionData {
+        let domain = self.contract.domain_separator().call().await.unwrap();
+        let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
+        let deadline = U256::max_value();
+
+        let struct_hash = {
+            let mut buffer = [0_u8; 192];
+            buffer[0..32].copy_from_slice(&hex!(
+                "6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9"
+            ));
+            buffer[44..64].copy_from_slice(owner.address().as_bytes());
+            buffer[76..96].copy_from_slice(spender.as_bytes());
+            value.to_big_endian(&mut buffer[96..128]);
+            nonce.to_big_endian(&mut buffer[128..160]);
+            deadline.to_big_endian(&mut buffer[160..192]);
+
+            signing::keccak256(&buffer)
+        };
+
+        let signature = EcdsaSignature::sign(
+            EcdsaSigningScheme::Eip712,
+            &DomainSeparator(domain.0),
+            &struct_hash,
+            SecretKeyRef::from(&SecretKey::from_slice(owner.private_key()).unwrap()),
+        );
+
+        let permit = self.contract.permit(
+            owner.address(),
+            spender,
+            value,
+            deadline,
+            signature.v,
+            Bytes(signature.r.0),
+            Bytes(signature.s.0),
+        );
+
+        // double check the signatures are correct...
+        permit
+            .clone()
+            .call()
+            .await
+            .expect("permit signature issue; good luck figuring this one out!");
+
+        InteractionData {
+            target: self.contract.address(),
+            value: U256::zero(),
+            call_data: permit.tx.data.unwrap().0,
+        }
+    }
+}
+
+impl Deref for CowToken {
+    type Target = CowProtocolToken;
+
+    fn deref(&self) -> &Self::Target {
+        &self.contract
+    }
+}
+
 /// Wrapper over deployed [Contracts].
 /// Exposes various utility methods for tests.
 /// Deterministically generates unique accounts.
@@ -287,6 +372,66 @@ impl OnchainComponents {
         }
 
         tokens
+    }
+
+    pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
+        let contract =
+            CowProtocolToken::builder(&self.web3, holder.address(), holder.address(), supply)
+                .deploy()
+                .await
+                .expect("CowProtocolToken deployment failed");
+        CowToken { contract, holder }
+    }
+
+    pub async fn deploy_cow_weth_pool(
+        &self,
+        cow_supply: U256,
+        cow_amount: U256,
+        weth_amount: U256,
+    ) -> CowToken {
+        let holder = Account::Local(
+            self.web3
+                .eth()
+                .accounts()
+                .await
+                .expect("getting accounts failed")[0],
+            None,
+        );
+        let cow = self.deploy_cow_token(holder.clone(), cow_supply).await;
+
+        tx_value!(holder, weth_amount, self.contracts.weth.deposit());
+
+        tx!(
+            holder,
+            self.contracts
+                .uniswap_v2_factory
+                .create_pair(cow.address(), self.contracts.weth.address())
+        );
+        tx!(
+            holder,
+            cow.approve(self.contracts.uniswap_v2_router.address(), cow_amount)
+        );
+        tx!(
+            holder,
+            self.contracts
+                .weth
+                .approve(self.contracts.uniswap_v2_router.address(), weth_amount)
+        );
+        tx!(
+            holder,
+            self.contracts.uniswap_v2_router.add_liquidity(
+                cow.address(),
+                self.contracts.weth.address(),
+                cow_amount,
+                weth_amount,
+                0_u64.into(),
+                0_u64.into(),
+                holder.address(),
+                U256::max_value(),
+            )
+        );
+
+        cow
     }
 
     pub async fn send_wei(&self, to: H160, amount: U256) {

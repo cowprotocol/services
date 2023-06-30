@@ -104,7 +104,12 @@ fn run() -> Result<()> {
             "UniswapV2Router02",
             "@uniswap/v2-periphery@1.1.0-beta.0/build/UniswapV2Router02.json",
         )?
-        .npm("WETH9", "canonical-weth@1.4.0/build/contracts/WETH9.json")?;
+        .npm("WETH9", "canonical-weth@1.4.0/build/contracts/WETH9.json")?
+        .npm(
+            "CowProtocolToken",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
+             CowProtocolToken.json",
+        )?;
 
     vendor
         .abi_only()
@@ -183,11 +188,6 @@ fn run() -> Result<()> {
         .github(
             "ISwaprPair",
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
-        )?
-        .npm(
-            "CowProtocolToken",
-            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
-             CowProtocolToken.json",
         )?
         .npm(
             "CowProtocolVirtualToken",

@@ -26,6 +26,14 @@ pub struct Arguments {
     /// `Tenderly` or `Web3ThenTenderly`.
     #[clap(long, env, value_enum)]
     pub account_balances_simulator: Option<CodeSimulatorKind>,
+
+    /// Whether or not to optimistically treat account balance queries with
+    /// pre-interactions as if sufficient token balance and allowance is always
+    /// available. Useful for partially supporting pre-interactions in
+    /// environments where the required simulation infrastructure is not
+    /// available (such as in E2E tests).
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub account_balances_optimistic_pre_interaction_handling: bool,
 }
 
 /// Support token owner finding strategies.
@@ -66,6 +74,7 @@ impl Arguments {
                 contracts.vault,
                 contracts.vault_relayer,
                 contracts.settlement,
+                self.account_balances_optimistic_pre_interaction_handling,
             )),
             Strategy::Simulation => {
                 let web3_simulator =
