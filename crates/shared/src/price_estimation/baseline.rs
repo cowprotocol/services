@@ -31,6 +31,7 @@ pub struct BaselinePriceEstimator {
     native_token: H160,
     native_token_price_estimation_amount: U256,
     rate_limiter: Arc<RateLimiter>,
+    solver: H160,
 }
 
 impl BaselinePriceEstimator {
@@ -41,6 +42,7 @@ impl BaselinePriceEstimator {
         native_token: H160,
         native_token_price_estimation_amount: U256,
         rate_limiter: Arc<RateLimiter>,
+        solver: H160,
     ) -> Self {
         Self {
             pool_fetcher,
@@ -49,6 +51,7 @@ impl BaselinePriceEstimator {
             native_token,
             native_token_price_estimation_amount,
             rate_limiter,
+            solver,
         }
     }
 }
@@ -88,7 +91,11 @@ impl PriceEstimating for BaselinePriceEstimator {
             let (gas_price, pools) = init.as_ref().map_err(Clone::clone)?;
             let (path, out_amount) = self.estimate_price_helper(query, true, pools, *gas_price)?;
             let gas = estimate_gas(path.len());
-            Ok(Estimate { out_amount, gas })
+            Ok(Estimate {
+                out_amount,
+                gas,
+                solver: self.solver,
+            })
         };
         let estimate_all = move |init: Init| {
             let iter = queries
@@ -365,6 +372,7 @@ mod tests {
             token_a,
             1.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         assert!(single_estimate(
@@ -404,6 +412,7 @@ mod tests {
             token_a,
             1.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         assert!(single_estimate(
@@ -447,6 +456,7 @@ mod tests {
             token_b,
             1.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         assert!(single_estimate(
@@ -521,6 +531,7 @@ mod tests {
             token_a,
             10.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         let query = Query {
@@ -589,6 +600,7 @@ mod tests {
             intermediate,
             10.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
@@ -678,6 +690,7 @@ mod tests {
             native,
             1_000_000_000.into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
@@ -762,6 +775,7 @@ mod tests {
             token_a,
             10u128.pow(18).into(),
             default_rate_limiter(),
+            H160([1; 20]),
         );
 
         let gas_price = 1000000000000000.0;

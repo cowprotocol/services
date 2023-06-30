@@ -22,8 +22,7 @@ use {
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
-    anyhow::Result,
-    clap::ValueEnum,
+    anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -41,22 +40,45 @@ use {
     thiserror::Error,
 };
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ValueEnum)]
-#[clap(rename_all = "verbatim")]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum PriceEstimatorType {
-    Baseline,
-    Paraswap,
-    ZeroEx,
-    Quasimodo,
-    OneInch,
-    Yearn,
-    BalancerSor,
+    Baseline(H160),
+    Paraswap(H160),
+    ZeroEx(H160),
+    Quasimodo(H160),
+    OneInch(H160),
+    Yearn(H160),
+    BalancerSor(H160),
 }
 
 impl PriceEstimatorType {
     /// Returns the name of this price estimator type.
     pub fn name(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+impl std::str::FromStr for PriceEstimatorType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (estimator, address) = s
+            .split_once('|')
+            .context("not enough arguments for price estimator")?;
+        let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
+        let result = match estimator {
+            "Baseline" => PriceEstimatorType::Baseline(address),
+            "Paraswap" => PriceEstimatorType::Paraswap(address),
+            "ZeroEx" => PriceEstimatorType::ZeroEx(address),
+            "Quasimodo" => PriceEstimatorType::Quasimodo(address),
+            "OneInch" => PriceEstimatorType::OneInch(address),
+            "Yearn" => PriceEstimatorType::Yearn(address),
+            "BalancerSor" => PriceEstimatorType::BalancerSor(address),
+            estimator => {
+                anyhow::bail!("failed to convert to PriceEstimatorType: {estimator}")
+            }
+        };
+        Ok(result)
     }
 }
 
@@ -324,6 +346,8 @@ pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
     pub gas: u64,
+    /// Address of the solver that provided the quote.
+    pub solver: H160,
 }
 
 impl Estimate {

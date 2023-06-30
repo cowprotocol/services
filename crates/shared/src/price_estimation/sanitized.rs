@@ -97,6 +97,7 @@ impl SanitizedPriceEstimator {
                 let estimation = Estimate {
                     out_amount: query.in_amount,
                     gas: 0,
+                    solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial price estimation");
                 results.push((*index, Ok(estimation)));
@@ -107,6 +108,7 @@ impl SanitizedPriceEstimator {
                 let estimation = Estimate {
                     out_amount: query.in_amount,
                     gas: GAS_PER_WETH_UNWRAP,
+                    solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
                 results.push((*index, Ok(estimation)));
@@ -117,6 +119,7 @@ impl SanitizedPriceEstimator {
                 let estimation = Estimate {
                     out_amount: query.in_amount,
                     gas: GAS_PER_WETH_WRAP,
+                    solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
                 results.push((*index, Ok(estimation)));
@@ -370,18 +373,22 @@ mod tests {
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
+                        solver: Default::default(),
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
+                        solver: Default::default(),
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: u64::MAX,
+                        solver: Default::default(),
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
+                        solver: Default::default(),
                     }),
                 ])
                 .enumerate()
@@ -400,7 +407,8 @@ mod tests {
             result[0].as_ref().unwrap(),
             &Estimate {
                 out_amount: 1.into(),
-                gas: 100
+                gas: 100,
+                solver: Default::default(),
             }
         );
         assert_eq!(
@@ -410,6 +418,7 @@ mod tests {
                 //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
                 //Query with ETH as the buy_token.
                 gas: GAS_PER_WETH_UNWRAP + 100,
+                solver: Default::default(),
             }
         );
         assert!(matches!(
@@ -424,6 +433,7 @@ mod tests {
                 //sanitized_estimator will add ETH_WRAP_COST to the gas of any
                 //Query with ETH as the sell_token.
                 gas: GAS_PER_WETH_WRAP + 100,
+                solver: Default::default(),
             }
         );
         assert_eq!(
@@ -431,6 +441,7 @@ mod tests {
             &Estimate {
                 out_amount: 1.into(),
                 gas: 0,
+                solver: Default::default(),
             }
         );
         assert_eq!(
@@ -438,6 +449,7 @@ mod tests {
             &Estimate {
                 out_amount: 1.into(),
                 gas: 0,
+                solver: Default::default(),
             }
         );
         assert_eq!(
@@ -446,6 +458,7 @@ mod tests {
                 out_amount: 1.into(),
                 // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
                 gas: GAS_PER_WETH_UNWRAP,
+                solver: Default::default(),
             }
         );
         assert_eq!(
@@ -454,6 +467,7 @@ mod tests {
                 out_amount: 1.into(),
                 // Sanitized estimator will report a 1:1 estimate when wrapping native token.
                 gas: GAS_PER_WETH_WRAP,
+                solver: Default::default(),
             }
         );
         assert!(matches!(

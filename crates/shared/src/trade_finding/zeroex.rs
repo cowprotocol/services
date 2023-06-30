@@ -9,6 +9,7 @@ use {
     },
     futures::FutureExt as _,
     model::order::OrderKind,
+    primitive_types::H160,
     std::sync::Arc,
 };
 
@@ -22,15 +23,22 @@ struct Inner {
     api: Arc<dyn ZeroExApi>,
     excluded_sources: Vec<String>,
     buy_only: bool,
+    solver: H160,
 }
 
 impl ZeroExTradeFinder {
-    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>, buy_only: bool) -> Self {
+    pub fn new(
+        api: Arc<dyn ZeroExApi>,
+        excluded_sources: Vec<String>,
+        buy_only: bool,
+        solver: H160,
+    ) -> Self {
         Self {
             inner: Inner {
                 api,
                 excluded_sources,
                 buy_only,
+                solver,
             },
             sharing: Default::default(),
         }
@@ -84,6 +92,7 @@ impl Inner {
                 value: swap.value,
                 data: swap.data,
             },
+            self.solver,
         ))
     }
 }
@@ -95,6 +104,7 @@ impl TradeFinding for ZeroExTradeFinder {
         Ok(Quote {
             out_amount: trade.out_amount,
             gas_estimate: trade.gas_estimate,
+            solver: self.inner.solver,
         })
     }
 
@@ -128,7 +138,7 @@ mod tests {
     };
 
     fn create_trader(api: Arc<dyn ZeroExApi>) -> ZeroExTradeFinder {
-        ZeroExTradeFinder::new(api, Default::default(), false)
+        ZeroExTradeFinder::new(api, Default::default(), false, H160([1; 20]))
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ use {
     futures::{StreamExt, TryStreamExt},
     model::{auction::AuctionId, time::now_in_epoch_seconds},
     number_conversions::u256_to_big_decimal,
+    primitive_types::H160,
     shared::fee_subsidy::FeeParameters,
 };
 
@@ -47,6 +48,9 @@ pub struct LimitOrderQuote {
     /// The `buy_amount` of the quote associated with the `surplus_fee`
     /// estimation.
     pub buy_amount: U256,
+
+    /// The solver that provided the quote.
+    pub solver: H160,
 }
 
 impl Postgres {
@@ -92,6 +96,7 @@ impl Postgres {
                     sell_token_price: quote.fee_parameters.sell_token_price,
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                    solver: ByteArray(quote.solver.0),
                 }),
             ),
             FeeUpdate::Failure { timestamp } => (

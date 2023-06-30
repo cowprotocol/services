@@ -498,6 +498,7 @@ async fn parse_general_onchain_order_placement_data<'a>(
                     sell_token_price: quote.data.fee_parameters.sell_token_price,
                     sell_amount: u256_to_big_decimal(&quote.sell_amount),
                     buy_amount: u256_to_big_decimal(&quote.buy_amount),
+                    solver: ByteArray(quote.data.solver.0),
                 }),
                 Err(err) => {
                     let err_label = err.to_metrics_label();
@@ -1420,6 +1421,7 @@ mod test {
             sell_token_price: quote.data.fee_parameters.sell_token_price,
             sell_amount: u256_to_big_decimal(&quote.sell_amount),
             buy_amount: u256_to_big_decimal(&quote.buy_amount),
+            solver: ByteArray(quote.data.solver.0),
         };
         assert_eq!(result.1, vec![Some(expected_quote)]);
         assert_eq!(

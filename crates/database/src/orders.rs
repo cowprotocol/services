@@ -325,6 +325,7 @@ pub struct Quote {
     pub sell_token_price: f64,
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
+    pub solver: Address,
 }
 
 pub async fn insert_quotes(ex: &mut PgConnection, quotes: &[Quote]) -> Result<(), sqlx::Error> {
@@ -341,9 +342,10 @@ INSERT INTO order_quotes (
     gas_price,
     sell_token_price,
     sell_amount,
-    buy_amount
+    buy_amount,
+    solver
 )
-VALUES ($1, $2, $3, $4, $5, $6)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7)"#;
 
 pub async fn insert_quote_and_update_on_conflict(
     ex: &mut PgConnection,
@@ -367,6 +369,7 @@ buy_amount = $6
         .bind(quote.sell_token_price)
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
+        .bind(&quote.solver)
         .execute(ex)
         .await?;
     Ok(())
@@ -380,6 +383,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(quote.sell_token_price)
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
+        .bind(&quote.solver)
         .execute(ex)
         .await?;
     Ok(())
@@ -1295,6 +1299,7 @@ mod tests {
             sell_token_price: 3.,
             sell_amount: 4.into(),
             buy_amount: 5.into(),
+            solver: ByteArray([1; 20]),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1331,6 +1336,7 @@ mod tests {
             sell_token_price: 3.,
             sell_amount: 4.into(),
             buy_amount: 5.into(),
+            solver: ByteArray([1; 20]),
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)

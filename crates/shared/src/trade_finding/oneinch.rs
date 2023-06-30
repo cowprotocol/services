@@ -37,6 +37,7 @@ struct Inner {
     referrer_address: Option<H160>,
     spender_cache: Mutex<(H160, Instant)>,
     spender_max_age: Duration,
+    solver: H160,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -53,6 +54,7 @@ impl OneInchTradeFinder {
         api: Arc<dyn OneInchClient>,
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
+        solver: H160,
     ) -> Self {
         Self {
             inner: Arc::new(Inner::new(
@@ -60,6 +62,7 @@ impl OneInchTradeFinder {
                 disabled_protocols,
                 referrer_address,
                 SPENDER_MAX_AGE,
+                solver,
             )),
             sharing: Default::default(),
         }
@@ -105,6 +108,7 @@ impl OneInchTradeFinder {
                 value: swap.tx.value,
                 data: swap.tx.data,
             },
+            self.inner.solver,
         ))
     }
 }
@@ -115,6 +119,7 @@ impl Inner {
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
         spender_max_age: Duration,
+        solver: H160,
     ) -> Self {
         let outdated_timestamp = Instant::now().checked_sub(spender_max_age).unwrap();
         let outdated_cache_entry = (H160::default(), outdated_timestamp);
@@ -126,6 +131,7 @@ impl Inner {
             protocol_cache: Default::default(),
             spender_cache: Mutex::new(outdated_cache_entry),
             spender_max_age,
+            solver,
         }
     }
 
@@ -160,6 +166,7 @@ impl Inner {
         Ok(Quote {
             out_amount: quote.to_token_amount,
             gas_estimate: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
+            solver: self.solver,
         })
     }
 
@@ -243,7 +250,7 @@ mod tests {
     };
 
     fn create_trade_finder<T: OneInchClient>(api: T) -> OneInchTradeFinder {
-        OneInchTradeFinder::new(Arc::new(api), Vec::default(), None)
+        OneInchTradeFinder::new(Arc::new(api), Vec::default(), None, H160([1; 20]))
     }
 
     #[tokio::test]
@@ -508,7 +515,7 @@ mod tests {
             .expect_get_swap()
             .return_once(|_| async { Ok(Default::default()) }.boxed());
 
-        let trader = OneInchTradeFinder::new(Arc::new(oneinch), Vec::new(), None);
+        let trader = OneInchTradeFinder::new(Arc::new(oneinch), Vec::new(), None, H160([1; 20]));
 
         let query = Query {
             kind: OrderKind::Sell,
@@ -562,7 +569,13 @@ mod tests {
             one_inch
         };
 
-        let mut inner = Inner::new(Arc::new(mock_api(1)), vec![], None, SPENDER_MAX_AGE);
+        let mut inner = Inner::new(
+            Arc::new(mock_api(1)),
+            vec![],
+            None,
+            SPENDER_MAX_AGE,
+            H160([1; 20]),
+        );
 
         // Calling `Inner::spender()` twice within `SPENDER_MAX_AGE` will return
         // the same result twice and only issue one call to `OneInchClient::spender()`.

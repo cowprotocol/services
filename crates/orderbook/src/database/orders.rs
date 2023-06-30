@@ -190,6 +190,7 @@ async fn insert_quote(
         sell_token_price: quote.data.fee_parameters.sell_token_price,
         sell_amount: u256_to_big_decimal(&quote.sell_amount),
         buy_amount: u256_to_big_decimal(&quote.buy_amount),
+        solver: ByteArray(quote.data.solver.0),
     };
     database::orders::insert_quote(ex, &quote)
         .await

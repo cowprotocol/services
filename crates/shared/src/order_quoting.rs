@@ -275,6 +275,8 @@ pub struct QuoteData {
     /// Since different quote kinds have different expirations,
     /// we need to store the quote kind to prevent missuse of quotes.
     pub quote_kind: QuoteKind,
+    /// The address of the solver that provided the quote.
+    pub solver: H160,
 }
 
 impl TryFrom<QuoteRow> for QuoteData {
@@ -296,6 +298,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             kind: order_kind_from(row.order_kind),
             expiration: row.expiration_timestamp,
             quote_kind: row.quote_kind,
+            solver: H160(row.solver.0),
         })
     }
 }
@@ -515,6 +518,7 @@ impl OrderQuoter {
             kind: trade_query.kind,
             expiration,
             quote_kind,
+            solver: trade_estimate.solver,
         };
 
         Ok(quote)
@@ -781,6 +785,7 @@ mod tests {
                 futures::stream::iter([Ok(price_estimation::Estimate {
                     out_amount: 42.into(),
                     gas: 3,
+                    solver: H160([1; 20]),
                 })])
                 .enumerate()
                 .boxed()
@@ -820,6 +825,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
+                solver: H160([1; 20]),
             }))
             .returning(|_| Ok(1337));
 
@@ -854,6 +860,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -903,6 +910,7 @@ mod tests {
                 futures::stream::iter([Ok(price_estimation::Estimate {
                     out_amount: 42.into(),
                     gas: 3,
+                    solver: H160([1; 20]),
                 })])
                 .enumerate()
                 .boxed()
@@ -942,6 +950,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
+                solver: H160([1; 20]),
             }))
             .returning(|_| Ok(1337));
 
@@ -979,6 +988,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1028,6 +1038,7 @@ mod tests {
                 futures::stream::iter([Ok(price_estimation::Estimate {
                     out_amount: 100.into(),
                     gas: 3,
+                    solver: H160([1; 20]),
                 })])
                 .enumerate()
                 .boxed()
@@ -1067,6 +1078,7 @@ mod tests {
                 kind: OrderKind::Buy,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                 quote_kind: QuoteKind::Standard,
+                solver: H160([1; 20]),
             }))
             .returning(|_| Ok(1337));
 
@@ -1105,6 +1117,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1139,6 +1152,7 @@ mod tests {
             futures::stream::iter([Ok(price_estimation::Estimate {
                 out_amount: 100.into(),
                 gas: 200,
+                solver: H160([1; 20]),
             })])
             .enumerate()
             .boxed()
@@ -1206,6 +1220,7 @@ mod tests {
             futures::stream::iter([Ok(price_estimation::Estimate {
                 out_amount: 100.into(),
                 gas: 200,
+                solver: H160([1; 20]),
             })])
             .enumerate()
             .boxed()
@@ -1282,6 +1297,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
+                solver: H160([1; 20]),
             }))
         });
 
@@ -1319,6 +1335,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1367,6 +1384,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
+                solver: H160([1; 20]),
             }))
         });
 
@@ -1401,6 +1419,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1446,6 +1465,7 @@ mod tests {
                         kind: OrderKind::Buy,
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
+                        solver: H160([1; 20]),
                     },
                 )))
             });
@@ -1481,6 +1501,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
+                    solver: H160([1; 20]),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
