@@ -48,7 +48,7 @@ impl Api {
     pub fn new(client: Client, base: Url) -> Self {
         Self {
             client,
-            estimate: base.join("estimate").unwrap(),
+            estimate: crate::url::join(&base, "estimate"),
         }
     }
 

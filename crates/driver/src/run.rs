@@ -23,7 +23,7 @@ use {
 
 pub async fn main() {
     boundary::exit_process_on_panic::set_panic_hook();
-    run(std::env::args(), infra::time::Now::Real, None).await
+    run(std::env::args(), None).await
 }
 
 /// This function exists to enable running the driver for testing. The
@@ -33,7 +33,6 @@ pub async fn main() {
 /// time to be faked for testing purposes.
 pub async fn run(
     args: impl Iterator<Item = String>,
-    now: infra::time::Now,
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
@@ -44,7 +43,7 @@ pub async fn run(
     let eth = ethereum(&config, &args).await;
     let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
-        solvers: solvers(&config, &eth, now),
+        solvers: solvers(&config, &eth),
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: join_all(
@@ -58,7 +57,6 @@ pub async fn run(
         .flatten()
         .collect(),
         eth,
-        now,
         addr: args.addr,
         addr_sender,
     }
@@ -115,11 +113,11 @@ async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {
     .expect("initialize ethereum RPC API")
 }
 
-fn solvers(config: &config::Config, eth: &Ethereum, now: infra::time::Now) -> Vec<Solver> {
+fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
     config
         .solvers
         .iter()
-        .map(|config| Solver::new(config.clone(), eth.clone(), now))
+        .map(|config| Solver::new(config.clone(), eth.clone()))
         .collect()
 }
 

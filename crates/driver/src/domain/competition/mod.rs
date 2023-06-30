@@ -8,7 +8,6 @@ use {
             mempool,
             observe,
             solver::{self, Solver},
-            time,
             Mempool,
             Simulator,
         },
@@ -41,7 +40,6 @@ pub struct Competition {
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
     pub simulator: Simulator,
-    pub now: time::Now,
     pub mempools: Vec<Mempool>,
     pub settlement: Mutex<Option<Settlement>>,
 }
@@ -79,7 +77,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline.timeout(self.now)?)
+            .solve(auction, &liquidity, auction.deadline.timeout()?)
             .await?;
 
         // Empty solutions aren't useful, so discard them.

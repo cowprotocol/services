@@ -3,17 +3,17 @@
 //!
 //! To briefly list and describe each of the models.
 //!
-//! 1. `PoolCreated`:
-//!     contains only the `pool_address` as this is the only information known
+//! 1. `PoolCreated`: contains only the `pool_address` as this is the only
+//!    information known
 //! about the pool     at the time of event emission from the pool's factory
 //! contract.
 //!
-//! 2. `Factory::PoolInfo`
-//!     contains all constant/static information about the pool (that which is
+//! 2. `Factory::PoolInfo` contains all constant/static information about the
+//!    pool (that which is
 //! not block-sensitive).     The exact information varies on the pool kind.
 //!
-//! 3. `PoolStorage`:
-//!     This should be thought of as the Pool Registry's database which stores
+//! 3. `PoolStorage`: This should be thought of as the Pool Registry's database
+//!    which stores
 //! all static pool     information in data structures that provide efficient
 //! lookup searching for pools based     on token pairs.
 

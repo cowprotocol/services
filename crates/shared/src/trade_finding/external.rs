@@ -29,7 +29,7 @@ impl ExternalTradeFinder {
     #[allow(dead_code)]
     pub fn new(driver: Url, client: Client) -> Self {
         Self {
-            quote_endpoint: driver.join("quote").unwrap(),
+            quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: Default::default(),
             client,
         }

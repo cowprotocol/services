@@ -2,7 +2,7 @@ use {
     super::{blockchain, blockchain::Blockchain},
     crate::{
         domain::competition::{auction, order},
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        infra::{blockchain::contracts::Addresses, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -27,7 +27,6 @@ pub struct Config<'a> {
     pub trusted: &'a HashSet<&'static str>,
     pub quotes: &'a [super::blockchain::Quote],
     pub deadline: chrono::DateTime<chrono::Utc>,
-    pub now: infra::time::Now,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
 }
@@ -51,7 +50,7 @@ impl Solver {
                 quote.order.buy_token
             };
             orders_json.push(json!({
-                "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain, config.now) },
+                "uid": if config.quote { Default::default() } else { quote.order_uid(config.blockchain) },
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": match quote.order.side {
@@ -117,7 +116,7 @@ impl Solver {
                 );
                 trades_json.push(json!({
                     "kind": "fulfillment",
-                    "order": if config.quote { Default::default() } else { fulfillment.quote.order_uid(config.blockchain, config.now) },
+                    "order": if config.quote { Default::default() } else { fulfillment.quote.order_uid(config.blockchain) },
                     "executedAmount":
                         match fulfillment.quote.order.executed {
                             Some(executed) => executed.to_string(),
