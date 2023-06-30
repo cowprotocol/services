@@ -36,6 +36,7 @@ pub async fn load(path: &Path) -> legacy::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
+    // Not printing detailed error because it could potentially leak secrets.
     let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
     let contracts = contracts::Contracts::for_chain(config.chain_id);

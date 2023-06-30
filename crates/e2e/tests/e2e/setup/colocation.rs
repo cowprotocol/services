@@ -49,7 +49,7 @@ weth = "{:?}"
 name = "test_solver"
 endpoint = "{solver_endpoint}"
 relative-slippage = "0.1"
-private-key = "0x{}"
+account = "0x{}"
 
 [liquidity]
 base-tokens = []

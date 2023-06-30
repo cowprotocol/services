@@ -137,8 +137,8 @@ impl Mempool {
             } => use_soft_cancellations,
         };
         let estimator = AccessListEstimator(settlement.access_list.clone());
-        let account = ethcontract::Account::Offline(solver.private_key(), None);
         // TODO: move tx submission logic from legacy code into the driver (#1543)
+        let account = solver.account();
         let submitter = Submitter::new(
             self.eth.contracts().settlement(),
             &account,

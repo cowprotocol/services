@@ -52,6 +52,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
+    // Not printing detailed error because it could potentially leak secrets.
     let config = toml::de::from_str::<Config>(&data)
         .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
 

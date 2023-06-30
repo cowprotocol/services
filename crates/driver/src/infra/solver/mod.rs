@@ -67,7 +67,7 @@ pub struct Config {
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
     /// The private key of this solver, used for settlement submission.
-    pub private_key: eth::PrivateKey,
+    pub account: ethcontract::Account,
 }
 
 impl Solver {
@@ -100,12 +100,12 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.private_key.public_address().into()
+        self.config.account.address().into()
     }
 
-    /// The private key of this solver.
-    pub fn private_key(&self) -> eth::PrivateKey {
-        self.config.private_key.clone()
+    /// The account which should be used to sign settlements for this solver.
+    pub fn account(&self) -> ethcontract::Account {
+        self.config.account.clone()
     }
 
     /// Make a POST request instructing the solver to solve an auction.
