@@ -3,6 +3,7 @@ use {
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
+    solver::solver::Arn,
 };
 
 mod load;
@@ -154,9 +155,19 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
-    /// The private key used to sign transactions. Expects a 32-byte hex encoded
-    /// string.
-    private_key: eth::H256,
+    /// The account which should be used to sign settlements for this solver.
+    account: Account,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Account {
+    /// A private key is used to sign transactions. Expects a 32-byte hex
+    /// encoded string.
+    PrivateKey(eth::H256),
+    /// AWS KMS is used to sign transactions. Expects the key identifier.
+    Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
 }
 
 #[derive(Debug, Default, Deserialize)]

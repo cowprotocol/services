@@ -52,8 +52,9 @@ pub struct Arguments {
     pub balancer_sor_url: Url,
 
     /// The account used by the driver to sign transactions. This can be either
-    /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
-    /// for signing with a local node account.
+    /// a 32-byte private key for offline signing, a 20-byte Ethereum address
+    /// for signing with a local node account, or a KMS key ID for signing with
+    /// AWS.
     #[clap(long, env, hide_env_values = true)]
     pub solver_account: Option<SolverAccountArg>,
 

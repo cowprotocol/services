@@ -36,7 +36,7 @@ use {
     },
     contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
     ethcontract::errors::DeployError,
-    futures::{future, StreamExt},
+    futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
@@ -251,15 +251,25 @@ pub async fn run(args: Arguments) {
                 solver_accounts.len()
             );
 
-            solver_accounts
-                .into_iter()
-                .map(|account_arg| account_arg.into_account(chain_id))
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                solver_accounts
+                    .into_iter()
+                    .map(|account_arg| account_arg.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else if let Some(account_arg) = args.solver_account {
-            std::iter::repeat(account_arg.into_account(chain_id))
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                std::iter::repeat(account_arg)
+                    .take(args.solvers.len())
+                    .map(|account| account.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else {
             panic!("either SOLVER_ACCOUNTS or SOLVER_ACCOUNT must be set")
         }
@@ -370,6 +380,7 @@ pub async fn run(args: Arguments) {
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,
     )
+    .await
     .expect("failure creating solvers");
 
     metrics.initialize_solver_metrics(

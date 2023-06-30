@@ -176,7 +176,7 @@ async fn create_config_file(
            endpoint = "http://{}"
            absolute-slippage = "{}"
            relative-slippage = "{}"
-           private-key = "0x{}"
+           account = "0x{}"
            "#,
         hex_address(blockchain.settlement.address()),
         hex_address(blockchain.weth.address()),

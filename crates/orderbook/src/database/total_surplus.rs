@@ -30,8 +30,10 @@ trade_components AS (
           WHEN 'buy' THEN t.buy_amount * o.sell_amount / o.buy_amount
        END AS limit_amount,
        o.kind,
-       (SELECT price FROM auction_prices ap WHERE ap.token = o.sell_token AND ap.auction_id = oe.auction_id) AS native_sell_price,
-       (SELECT price FROM auction_prices ap WHERE ap.token = o.buy_token AND ap.auction_id = oe.auction_id) AS native_buy_price
+       CASE kind
+          WHEN 'sell' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.buy_token AND ap.auction_id = oe.auction_id)
+          WHEN 'buy' THEN (SELECT price FROM auction_prices ap WHERE ap.token = o.sell_token AND ap.auction_id = oe.auction_id)
+       END AS surplus_token_native_price
     FROM orders o
     JOIN trades t ON o.uid = t.order_uid
     JOIN order_execution oe ON o.uid = oe.order_uid
@@ -42,16 +44,14 @@ trade_surplus AS (
     SELECT
         CASE kind
             -- amounts refer to tokens bought; more is better
-            WHEN 'sell' THEN (trade_amount - limit_amount) * native_buy_price
+            WHEN 'sell' THEN (trade_amount - limit_amount) * surplus_token_native_price
             -- amounts refer to tokens sold; less is better
-            WHEN 'buy' THEN (limit_amount - trade_amount) * native_sell_price
-        END / POWER(10, 18) AS surplus_in_wei,
-        limit_amount,
-        trade_amount
+            WHEN 'buy' THEN (limit_amount - trade_amount) * surplus_token_native_price
+        END / POWER(10, 18) AS surplus_in_wei
     FROM trade_components
 )
 SELECT
-   SUM(surplus_in_wei) AS total_surplus_in_wei
+   COALESCE(SUM(surplus_in_wei), 0) AS total_surplus_in_wei
 FROM trade_surplus
 "#;
 

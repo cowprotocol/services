@@ -34,7 +34,8 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
-    ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256},
+    ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
+    futures::future::join_all,
     model::{auction::AuctionId, order::Order, DomainSeparator},
     reqwest::Url,
     shared::{
@@ -224,6 +225,7 @@ pub enum SolverType {
 #[derive(Clone)]
 pub enum SolverAccountArg {
     PrivateKey(PrivateKey),
+    Kms(Arn),
     Address(H160),
 }
 
@@ -231,15 +233,23 @@ impl Debug for SolverAccountArg {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {
             SolverAccountArg::PrivateKey(k) => write!(f, "PrivateKey({:?})", k.public_address()),
+            SolverAccountArg::Kms(key_id) => write!(f, "KMS({key_id:?})"),
             SolverAccountArg::Address(a) => write!(f, "Address({a:?})"),
         }
     }
 }
 
 impl SolverAccountArg {
-    pub fn into_account(self, chain_id: u64) -> Account {
+    pub async fn into_account(self, chain_id: u64) -> Account {
         match self {
             SolverAccountArg::PrivateKey(key) => Account::Offline(key, Some(chain_id)),
+            SolverAccountArg::Kms(key_id) => {
+                let config = ethcontract::aws_config::load_from_env().await;
+                let account = kms::Account::new((&config).into(), &key_id.0)
+                    .await
+                    .unwrap_or_else(|_| panic!("Unable to load KMS account {key_id:?}"));
+                Account::Kms(account, Some(chain_id))
+            }
             SolverAccountArg::Address(address) => Account::Local(address, None),
         }
     }
@@ -251,18 +261,44 @@ impl FromStr for SolverAccountArg {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<PrivateKey>()
             .map(SolverAccountArg::PrivateKey)
-            .or_else(|pk_err| {
+            .map_err(|pk_err| anyhow!("could not parse as private key: {}", pk_err))
+            .or_else(|error_chain| {
                 Ok(SolverAccountArg::Address(s.parse().map_err(
                     |addr_err| {
-                        anyhow!("could not parse as private key: {}", pk_err)
-                            .context(anyhow!("could not parse as address: {}", addr_err))
-                            .context(
-                                "invalid solver account, it is neither a private key or an \
-                                 Ethereum address",
-                            )
+                        error_chain.context(anyhow!("could not parse as address: {}", addr_err))
                     },
                 )?))
             })
+            .or_else(|error_chain: Self::Err| {
+                let key_id = Arn::from_str(s).map_err(|arn_err| {
+                    error_chain.context(anyhow!("could not parse as AWS ARN: {}", arn_err))
+                })?;
+                Ok(SolverAccountArg::Kms(key_id))
+            })
+            .map_err(|err: Self::Err| {
+                err.context(
+                    "invalid solver account, it is neither a private key, an Ethereum address, \
+                     nor a KMS key",
+                )
+            })
+    }
+}
+
+// Wrapper type for AWS ARN identifiers
+#[derive(Debug, Clone)]
+pub struct Arn(pub String);
+
+impl FromStr for Arn {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        // Could be more strict here, but this should suffice to catch unintended
+        // configuration mistakes
+        if s.starts_with("arn:aws:kms:") {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(anyhow!("Invalid ARN identifier: {}", s))
+        }
     }
 }
 
@@ -321,7 +357,7 @@ impl FromStr for ExternalSolverArg {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn create(
+pub async fn create(
     web3: Web3,
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
@@ -548,9 +584,9 @@ pub fn create(
         })
         .collect();
 
-    let external_solvers = external_solvers.into_iter().map(|solver| {
+    let external_solvers = join_all(external_solvers.into_iter().map(|solver| async move {
         shared(create_http_solver(
-            solver.account.into_account(chain_id),
+            solver.account.into_account(chain_id).await,
             solver.url,
             solver.name,
             SolverConfig {
@@ -561,7 +597,8 @@ pub fn create(
             slippage_configuration.get_global_calculator(),
             solver.use_liquidity,
         ))
-    });
+    }))
+    .await;
     solvers.extend(external_solvers);
 
     for solver in &solvers {
@@ -666,6 +703,13 @@ mod tests {
                 .unwrap(),
             SolverAccountArg::Address(H160([0x42; 20])),
         );
+
+        assert!(matches!(
+            "arn:aws:kms:eu-central-1:42:key/00000000-0000-0000-0000-00000000"
+                .parse::<SolverAccountArg>()
+                .unwrap(),
+            SolverAccountArg::Kms(_)
+        ));
     }
 
     #[test]
