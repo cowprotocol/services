@@ -19,9 +19,9 @@ async fn route(
     state: axum::extract::State<State>,
 ) -> Result<axum::Json<Calldata>, (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    observe::settling(state.solver().name());
+    observe::settling(state.solver().name(), competition.auction_id());
     let result = competition.settle().await;
-    observe::settled(state.solver().name(), &result);
+    observe::settled(state.solver().name(), competition.auction_id(), &result);
     let calldata = result?;
     Ok(axum::Json(Calldata::new(calldata)))
 }

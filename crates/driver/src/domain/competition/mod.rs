@@ -177,8 +177,8 @@ impl Competition {
         Ok(Reveal { score, orders })
     }
 
-    /// Execute the settlement generated as part of this competition. Use
-    /// [`Competition::solve`] to generate a settlement.
+    /// Execute the solution generated as part of this competition. Use
+    /// [`Competition::solve`] to generate the solution.
     pub async fn settle(&self) -> Result<Calldata, Error> {
         let settlement = self
             .settlement
@@ -201,6 +201,15 @@ impl Competition {
                 )
                 .into(),
         })
+    }
+
+    /// The ID of the auction being competed on.
+    pub fn auction_id(&self) -> Option<auction::Id> {
+        self.settlement
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.auction_id)
     }
 }
 

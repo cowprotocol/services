@@ -123,9 +123,8 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Response {
-        pub id: String,
         pub score: U256,
-        // address used by driver to submit the solution onchain
+        /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
         pub orders: Vec<OrderUid>,
     }

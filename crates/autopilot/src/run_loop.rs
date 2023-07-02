@@ -294,7 +294,7 @@ impl RunLoop {
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
-        driver.settle(&solution.id).await.context("settle")?;
+        driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
             .wait_for_settlement_transaction(id, solution.submission_address)

@@ -30,9 +30,8 @@ impl Driver {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn settle(&self, solution_id: &str) -> Result<settle::Response> {
-        self.request_response(&format!("settle"), Option::<&()>::None)
-            .await
+    pub async fn settle(&self) -> Result<settle::Response> {
+        self.request_response("settle", Option::<&()>::None).await
     }
 
     async fn request_response<Response>(
