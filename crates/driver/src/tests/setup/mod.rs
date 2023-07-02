@@ -644,13 +644,13 @@ impl Test {
     }
 
     /// Call the /settle endpoint.
-    pub async fn settle(&self, solution_id: String) -> Settle {
+    pub async fn settle(&self) -> Settle {
         let old_balances = self.balances().await;
         let res = blockchain::wait_for(
             &self.blockchain.web3,
             self.client
                 .post(format!(
-                    "http://{}/{}/settle/{solution_id}",
+                    "http://{}/{}/settle",
                     self.driver.addr,
                     solver::NAME
                 ))
@@ -665,7 +665,6 @@ impl Test {
             old_balances,
             status,
             test: self,
-            solution_id,
             body,
         }
     }
@@ -742,7 +741,7 @@ impl SolveOk<'_> {
     pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
+        assert_eq!(result.as_object().unwrap().len(), 3);
         assert!(result.get("score").is_some());
         let score = result.get("score").unwrap().as_str().unwrap();
         let score = eth::U256::from_dec_str(score).unwrap();
@@ -778,7 +777,7 @@ impl SolveOk<'_> {
             .collect_vec();
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
+        assert_eq!(result.as_object().unwrap().len(), 3);
         assert!(result.get("orders").is_some());
         let order_uids = result
             .get("orders")
@@ -791,15 +790,6 @@ impl SolveOk<'_> {
             .collect_vec();
         assert_eq!(order_uids, expected_order_uids);
         self
-    }
-
-    /// Get the solution ID from the response.
-    pub fn solution_id(self) -> String {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
-        assert!(result.get("id").is_some());
-        result.get("id").unwrap().as_str().unwrap().to_owned()
     }
 }
 
@@ -901,7 +891,6 @@ pub struct Settle<'a> {
     old_balances: HashMap<&'static str, eth::U256>,
     status: StatusCode,
     test: &'a Test,
-    solution_id: String,
     body: String,
 }
 
@@ -950,8 +939,8 @@ impl<'a> Settle<'a> {
             .unwrap();
         let input = tx.input.0;
         let len = input.len();
-        let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
-        assert_eq!(tx_solution_id.to_string(), self.solution_id);
+        let tx_auction_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
+        assert_eq!(tx_auction_id.to_string(), "1");
 
         // Ensure that the internalized calldata returned by the driver is equal to the
         // calldata published to the blockchain.

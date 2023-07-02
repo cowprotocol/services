@@ -35,6 +35,7 @@ itertools = "0.10"
 url = { version = "2.3", features = ["serde"] }
 ethabi = "18.0"
 bigdecimal = "0.3"
+# TODO I think I can remove this
 rand = "0.8"
 web3 = "0.18"
 toml = "0.7"

@@ -152,7 +152,9 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| observe::scoring_failed(self.solver.name(), settlement.id, err))
+                    .tap_err(|err| {
+                        observe::scoring_failed(self.solver.name(), settlement.auction_id, err)
+                    })
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -169,24 +171,21 @@ impl Competition {
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let id = settlement.id;
         let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Reveal { id, score, orders })
+        Ok(Reveal { score, orders })
     }
 
-    /// Execute a settlement generated as part of this competition.
-    pub async fn settle(&self, id: settlement::Id) -> Result<Calldata, Error> {
+    /// Execute the settlement generated as part of this competition. Use
+    /// [`Competition::solve`] to generate a settlement.
+    pub async fn settle(&self) -> Result<Calldata, Error> {
         let settlement = self
             .settlement
             .lock()
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        if id != settlement.id {
-            return Err(Error::InvalidSolutionId);
-        }
         mempool::execute(&self.mempools, &self.solver, &settlement).await?;
         Ok(Calldata {
             internalized: settlement
@@ -205,12 +204,11 @@ impl Competition {
     }
 }
 
-/// Solution information revealed to the protocol by the driver before
+/// Solution information revealed to the protocol by the driver before the
 /// settlement happens. Note that the calldata is only revealed once the
 /// protocol instructs the driver to settle, and not before.
 #[derive(Debug)]
 pub struct Reveal {
-    pub id: settlement::Id,
     pub score: Score,
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
