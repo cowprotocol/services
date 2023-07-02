@@ -239,8 +239,6 @@ pub enum Error {
          returned"
     )]
     SolutionNotAvailable,
-    #[error("no solution found for given id")]
-    InvalidSolutionId,
     #[error("no solution found for the auction")]
     SolutionNotFound,
     #[error("mempool error: {0:?}")]

@@ -280,7 +280,6 @@ pub fn quoting(solver: &solver::Name, order: &quote::Order) {
 fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
-        competition::Error::InvalidSolutionId => "InvalidSolutionId",
         competition::Error::SolutionNotFound => "SolutionNotFound",
         competition::Error::Mempool(mempool::Error::AllMempoolsFailed) => "MempoolsFailed",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
