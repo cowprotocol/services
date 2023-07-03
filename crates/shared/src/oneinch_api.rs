@@ -569,7 +569,7 @@ where
 
 /// A cache for 1Inch API auxiliary data.
 #[derive(Debug, Clone)]
-pub struct Cache(Arc<Mutex<CacheInner>>);
+pub struct Cache(Arc<CacheInner>);
 
 #[derive(Debug)]
 pub struct CacheInner {
@@ -579,16 +579,16 @@ pub struct CacheInner {
 
 #[derive(Debug)]
 struct CacheEntry<T> {
-    store: Option<(T, Instant)>,
+    store: Mutex<Option<(T, Instant)>>,
     max_age: Duration,
 }
 
 impl Cache {
-    pub fn new(cache_validity_in_seconds: Duration) -> Self {
-        Self(Arc::new(Mutex::new(CacheInner {
-            protocols: CacheEntry::new(cache_validity_in_seconds),
-            spender: CacheEntry::new(cache_validity_in_seconds),
-        })))
+    pub fn new(max_age: Duration) -> Self {
+        Self(Arc::new(CacheInner {
+            protocols: CacheEntry::new(max_age),
+            spender: CacheEntry::new(max_age),
+        }))
     }
 
     pub async fn allowed_protocols(
@@ -600,16 +600,14 @@ impl Cache {
             return Ok(None);
         }
 
-        let protocols = {
-            let mut inner = self.0.lock().await;
-            inner
-                .protocols
-                .get_or_update(move || {
-                    tracing::debug!("updating cached liquidity sources");
-                    api.get_liquidity_sources()
-                })
-                .await?
-        };
+        let protocols = self
+            .0
+            .protocols
+            .get_or_update(move || {
+                tracing::debug!("updating cached liquidity sources");
+                api.get_liquidity_sources()
+            })
+            .await?;
 
         let allowed_protocols = protocols
             .protocols
@@ -623,18 +621,14 @@ impl Cache {
     }
 
     pub async fn spender(&self, api: &dyn OneInchClient) -> Result<Spender> {
-        let spender = {
-            let mut inner = self.0.lock().await;
-            inner
-                .spender
-                .get_or_update(move || {
-                    tracing::debug!("updating cached spender address");
-                    api.get_spender()
-                })
-                .await?
-        };
-
-        Ok(spender)
+        Ok(self
+            .0
+            .spender
+            .get_or_update(move || {
+                tracing::debug!("updating cached spender address");
+                api.get_spender()
+            })
+            .await?)
     }
 }
 
@@ -647,25 +641,27 @@ impl Default for Cache {
 impl<T> CacheEntry<T> {
     fn new(max_age: Duration) -> Self {
         Self {
-            store: None,
+            store: Mutex::new(None),
             max_age,
         }
     }
 
-    async fn get_or_update<F, Fut>(&mut self, f: F) -> Result<T, OneInchError>
+    async fn get_or_update<F, Fut>(&self, f: F) -> Result<T, OneInchError>
     where
         T: Clone,
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, OneInchError>>,
     {
-        if let Some((cached, at)) = &self.store {
+        let mut store = self.store.lock().await;
+
+        if let Some((cached, at)) = store.as_ref() {
             if at.elapsed() < self.max_age {
                 return Ok(cached.clone());
             }
         }
 
         let fresh = f().await?;
-        self.store = Some((fresh.clone(), Instant::now()));
+        *store = Some((fresh.clone(), Instant::now()));
 
         Ok(fresh)
     }
