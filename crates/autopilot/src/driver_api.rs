@@ -11,7 +11,7 @@ const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
 pub struct Driver {
-    url: Url,
+    pub url: Url,
     client: Client,
 }
 

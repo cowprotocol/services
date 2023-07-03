@@ -172,7 +172,7 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!("settling with solver {}", index);
+            tracing::info!(url = %self.drivers[index].url, "settling with solver");
             match self.settle(id, &self.drivers[index], &solution).await {
                 Ok(()) => (),
                 Err(err) => {
