@@ -7,7 +7,7 @@ use {
         conversions::U256Ext,
         external_prices::ExternalPrices,
     },
-    std::collections::HashMap,
+    std::{collections::HashMap, ops::Neg},
 };
 
 /// An order processed by `balance_orders`.
@@ -133,24 +133,17 @@ pub fn balance_orders(
 /// Given the external price vector, orders are sorted descending by the
 /// expected surplus (likelyhood of being matchable)
 fn sort_orders_for_balance_priority(orders: &mut Vec<Order>, external_prices: &ExternalPrices) {
-    orders.sort_by(|lhs, rhs| {
-        let lhs_expected_surplus = (external_prices
-            .price(&lhs.data.sell_token)
+    orders.sort_by_cached_key(|order| {
+        let expected_surplus = (external_prices
+            .price(&order.data.sell_token)
             .expect("External prices contains all orders sell and buy tokens")
-            * lhs.data.sell_amount.to_big_int())
+            * order.data.sell_amount.to_big_int())
             - (external_prices
-                .price(&lhs.data.buy_token)
+                .price(&order.data.buy_token)
                 .expect("External prices contains all orders sell and buy tokens")
-                * lhs.data.buy_amount.to_big_int());
-        let rhs_expected_surplus = (external_prices
-            .price(&rhs.data.sell_token)
-            .expect("External prices contains all orders sell and buy tokens")
-            * rhs.data.sell_amount.to_big_int())
-            - (external_prices
-                .price(&rhs.data.buy_token)
-                .expect("External prices contains all orders sell and buy tokens")
-                * rhs.data.buy_amount.to_big_int());
-        rhs_expected_surplus.cmp(&lhs_expected_surplus)
+                * order.data.buy_amount.to_big_int());
+        // Negate value to sort descending
+        expected_surplus.neg()
     })
 }
 
