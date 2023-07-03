@@ -19,12 +19,12 @@ pub struct BackendAppData {
 
 #[derive(Clone)]
 pub struct Validator {
-    pub size_limit: usize,
+    size_limit: usize,
 }
 
 impl Default for Validator {
     fn default() -> Self {
-        Self { size_limit: 1000 }
+        Self { size_limit: 8192 }
     }
 }
 

@@ -5,11 +5,11 @@ mod trampoline;
 use {
     self::trampoline::Trampoline,
     super::SubmissionError,
-    crate::settlement::Settlement,
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
     ethcontract::{Account, H256},
     shared::{
+        encoded_settlement::EncodedSettlement,
         ethrpc::Web3,
         gelato_api::{GelatoClient, TaskId, TaskState},
     },
@@ -44,7 +44,7 @@ impl GelatoSubmitter {
     pub async fn relay_settlement(
         &self,
         account: Account,
-        settlement: Settlement,
+        settlement: EncodedSettlement,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let call = self.trampoline.prepare_call(&account, &settlement).await?;
         let task_id = self.client.sponsored_call(&call).await?;
@@ -113,7 +113,7 @@ mod tests {
             .unwrap();
 
         let solver = Account::Offline(env::var("SOLVER_ACCOUNT").unwrap().parse().unwrap(), None);
-        let settlement = Settlement::default();
+        let settlement = EncodedSettlement::default();
 
         let transaction = gelato.relay_settlement(solver, settlement).await.unwrap();
         println!("executed transaction {:?}", transaction.transaction_hash);

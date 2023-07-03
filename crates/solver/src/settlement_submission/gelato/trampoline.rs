@@ -5,7 +5,7 @@
 //! relayer using signed settlement calldata.
 
 use {
-    crate::{settlement::Settlement, settlement_simulation::settle_method_builder},
+    crate::settlement_simulation::settle_method_builder,
     anyhow::{bail, Result},
     contracts::{GPv2Settlement, SolverTrampoline},
     ethcontract::{Account, Bytes, U256},
@@ -14,10 +14,7 @@ use {
         signature::{EcdsaSignature, EcdsaSigningScheme},
         DomainSeparator,
     },
-    shared::{
-        gelato_api::GelatoCall,
-        http_solver::model::InternalizationStrategy::SkipInternalizableInteraction,
-    },
+    shared::{encoded_settlement::EncodedSettlement, gelato_api::GelatoCall},
     web3::signing::{self, SecretKeyRef},
 };
 
@@ -54,7 +51,7 @@ impl Trampoline {
     pub async fn prepare_call(
         &self,
         account: &Account,
-        settlement: &Settlement,
+        settlement: &EncodedSettlement,
     ) -> Result<GelatoCall> {
         let key = match account {
             Account::Offline(key, _) => SecretKeyRef::new(key),
@@ -63,7 +60,7 @@ impl Trampoline {
 
         let calldata = settle_method_builder(
             &self.contracts.settlement,
-            settlement.clone().encode(SkipInternalizableInteraction),
+            settlement.clone(),
             account.clone(),
         )
         .tx
@@ -151,7 +148,7 @@ mod tests {
         let trampoline = Trampoline::initialize(settlement).await.unwrap();
 
         let solver = Account::Offline(env::var("SOLVER_ACCOUNT").unwrap().parse().unwrap(), None);
-        let settlement = Settlement::default();
+        let settlement = EncodedSettlement::default();
 
         let call = trampoline.prepare_call(&solver, &settlement).await.unwrap();
         let simulation = tenderly

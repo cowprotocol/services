@@ -258,7 +258,7 @@ mod tests {
                 StablePoolOrder,
             },
             order_balance_filter::BalancedOrder,
-            settlement::Settlement,
+            settlement::{self, Settlement},
             solver::http_solver::settlement::{convert_settlement, SettlementContext},
         },
         contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9},
@@ -296,17 +296,22 @@ mod tests {
         let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
 
+        let contracts = settlement::Contracts::default();
         let settlements = vec![
             (
                 account.clone(),
-                Settlement::with_trades(Default::default(), vec![Default::default()])
-                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
+                Settlement::with_trades(Default::default(), vec![Default::default()]).encode(
+                    &contracts,
+                    InternalizationStrategy::SkipInternalizableInteraction,
+                ),
                 None,
             ),
             (
                 account.clone(),
-                Settlement::new(Default::default())
-                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
+                Settlement::new(Default::default()).encode(
+                    &contracts,
+                    InternalizationStrategy::SkipInternalizableInteraction,
+                ),
                 None,
             ),
         ];
@@ -698,9 +703,10 @@ mod tests {
         .map(|settlement| vec![settlement])
         .unwrap();
         let settlement = settlements.get(0).unwrap();
-        let settlement_encoded = settlement
-            .clone()
-            .encode(InternalizationStrategy::SkipInternalizableInteraction);
+        let settlement_encoded = settlement.clone().encode(
+            &settlement::Contracts::default(),
+            InternalizationStrategy::SkipInternalizableInteraction,
+        );
         println!("Settlement_encoded: {settlement_encoded:?}");
         let settlement = settle_method_builder(&contract, settlement_encoded, account).tx;
         println!(
@@ -724,15 +730,8 @@ mod tests {
         let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
 
         // 12 so that we hit more than one chunk.
-        let settlements = vec![
-            (
-                account.clone(),
-                Settlement::new(Default::default())
-                    .encode(InternalizationStrategy::SkipInternalizableInteraction),
-                None
-            );
-            SIMULATE_BATCH_SIZE + 2
-        ];
+        let settlements =
+            vec![(account.clone(), EncodedSettlement::default(), None); SIMULATE_BATCH_SIZE + 2];
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,

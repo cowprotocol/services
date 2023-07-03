@@ -1,11 +1,8 @@
 use {
     crate::{
-        driver::solver_settlements::{
-            RatedSettlement,
-            {self},
-        },
+        driver::solver_settlements::{self, RatedSettlement},
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
-        settlement::{PriceCheckTokens, Settlement},
+        settlement::{self, PriceCheckTokens, Settlement},
         settlement_rater::{Rating, SettlementRating},
         settlement_simulation::call_data,
         solver::{SimulationWithError, Solver, SolverInfo},
@@ -36,6 +33,7 @@ type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement);
 
 pub struct SettlementRanker {
+    pub settlement_encoding_contracts: settlement::Contracts,
     pub metrics: Arc<dyn SolverMetrics>,
     pub settlement_rater: Arc<dyn SettlementRating>,
     // TODO: these should probably come from the autopilot to make the test parameters identical
@@ -158,11 +156,10 @@ impl SettlementRanker {
         for (solver, settlement) in &solver_settlements {
             let uninternalized_calldata = format!(
                 "0x{}",
-                hex::encode(call_data(
-                    settlement
-                        .clone()
-                        .encode(InternalizationStrategy::EncodeAllInteractions)
-                )),
+                hex::encode(call_data(settlement.clone().encode(
+                    &self.settlement_encoding_contracts,
+                    InternalizationStrategy::EncodeAllInteractions
+                ))),
             );
 
             tracing::debug!(
