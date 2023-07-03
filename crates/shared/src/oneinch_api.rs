@@ -4,10 +4,10 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 //! Although there is no documentation about API v4.1, it exists and is
 //! identical to v4.0 except it uses EIP 1559 gas prices.
+
 use {
     crate::interaction::{EncodedInteraction, Interaction},
     anyhow::{ensure, Result},
-    cached::{Cached, TimedCache},
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
     model::u256_decimal,
@@ -15,10 +15,12 @@ use {
     serde::{de::DeserializeOwned, Deserialize},
     std::{
         fmt::{self, Display, Formatter},
-        sync::{Arc, Mutex},
-        time::Duration,
+        future::Future,
+        sync::Arc,
+        time::{Duration, Instant},
     },
     thiserror::Error,
+    tokio::sync::Mutex,
 };
 
 /// Parts to split a swap.
@@ -489,7 +491,7 @@ pub struct OneInchClientImpl {
 }
 
 impl OneInchClientImpl {
-    pub const DEFAULT_URL: &'static str = "https://api.1inch.exchange/";
+    pub const DEFAULT_URL: &'static str = "https://api.1inch.io/";
     // 1: mainnet, 100: gnosis chain
     pub const SUPPORTED_CHAINS: &'static [u64] = &[1, 100];
 
@@ -565,31 +567,31 @@ where
     }
 }
 
+/// A cache for 1Inch API auxiliary data.
 #[derive(Debug, Clone)]
-pub struct ProtocolCache(Arc<Mutex<TimedCache<(), Vec<ProtocolInfo>>>>);
+pub struct Cache(Arc<CacheInner>);
 
-impl ProtocolCache {
-    pub fn new(cache_validity_in_seconds: Duration) -> Self {
-        Self(Arc::new(Mutex::new(TimedCache::with_lifespan_and_refresh(
-            cache_validity_in_seconds.as_secs(),
-            false,
-        ))))
+#[derive(Debug)]
+pub struct CacheInner {
+    protocols: CacheEntry<Protocols>,
+    spender: CacheEntry<Spender>,
+}
+
+#[derive(Debug)]
+struct CacheEntry<T> {
+    store: Mutex<Option<(T, Instant)>>,
+    max_age: Duration,
+}
+
+impl Cache {
+    pub fn new(max_age: Duration) -> Self {
+        Self(Arc::new(CacheInner {
+            protocols: CacheEntry::new(max_age),
+            spender: CacheEntry::new(max_age),
+        }))
     }
 
-    pub async fn get_all_protocols(&self, api: &dyn OneInchClient) -> Result<Vec<ProtocolInfo>> {
-        if let Some(cached) = self.0.lock().unwrap().cache_get(&()) {
-            return Ok(cached.clone());
-        }
-
-        let all_protocols = api.get_liquidity_sources().await?.protocols;
-        // In the mean time the cache could have already been populated with new
-        // protocols, which we would now overwrite. This is fine.
-        self.0.lock().unwrap().cache_set((), all_protocols.clone());
-
-        Ok(all_protocols)
-    }
-
-    pub async fn get_allowed_protocols(
+    pub async fn allowed_protocols(
         &self,
         disabled_protocols: &[String],
         api: &dyn OneInchClient,
@@ -598,9 +600,17 @@ impl ProtocolCache {
             return Ok(None);
         }
 
-        let allowed_protocols = self
-            .get_all_protocols(api)
-            .await?
+        let protocols = self
+            .0
+            .protocols
+            .get_or_update(move || {
+                tracing::debug!("updating cached liquidity sources");
+                api.get_liquidity_sources()
+            })
+            .await?;
+
+        let allowed_protocols = protocols
+            .protocols
             .into_iter()
             // linear search through the slice is okay because it's very small
             .filter(|protocol| !disabled_protocols.contains(&protocol.id))
@@ -609,11 +619,51 @@ impl ProtocolCache {
 
         Ok(Some(allowed_protocols))
     }
+
+    pub async fn spender(&self, api: &dyn OneInchClient) -> Result<Spender> {
+        Ok(self
+            .0
+            .spender
+            .get_or_update(move || {
+                tracing::debug!("updating cached spender address");
+                api.get_spender()
+            })
+            .await?)
+    }
 }
 
-impl Default for ProtocolCache {
+impl Default for Cache {
     fn default() -> Self {
         Self::new(Duration::from_secs(60))
+    }
+}
+
+impl<T> CacheEntry<T> {
+    fn new(max_age: Duration) -> Self {
+        Self {
+            store: Mutex::new(None),
+            max_age,
+        }
+    }
+
+    async fn get_or_update<F, Fut>(&self, f: F) -> Result<T, OneInchError>
+    where
+        T: Clone,
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = Result<T, OneInchError>>,
+    {
+        let mut store = self.store.lock().await;
+
+        if let Some((cached, at)) = store.as_ref() {
+            if at.elapsed() < self.max_age {
+                return Ok(cached.clone());
+            }
+        }
+
+        let fresh = f().await?;
+        *store = Some((fresh.clone(), Instant::now()));
+
+        Ok(fresh)
     }
 }
 
@@ -642,7 +692,7 @@ mod tests {
 
     #[test]
     fn swap_query_serialization() {
-        let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
+        let base_url = Url::parse("https://api.1inch.io/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::percentage(0.5).unwrap(),
@@ -669,7 +719,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.exchange/v5.0/1/swap\
+            "https://api.1inch.io/v5.0/1/swap\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
@@ -680,7 +730,7 @@ mod tests {
 
     #[test]
     fn swap_query_serialization_options_parameters() {
-        let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
+        let base_url = Url::parse("https://api.1inch.io/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::percentage(0.5).unwrap(),
@@ -710,7 +760,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.exchange/v5.0/1/swap\
+            "https://api.1inch.io/v5.0/1/swap\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
@@ -742,14 +792,14 @@ mod tests {
                 "name": "Ethereum",
                 "decimals": 18,
                 "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                "logoURI": "https://tokens.1inch.exchange/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png"
+                "logoURI": "https://tokens.1inch.io/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png"
               },
               "toToken": {
                 "symbol": "1INCH",
                 "name": "1INCH Token",
                 "decimals": 18,
                 "address": "0x111111111117dc0aa78b770fa6a738034120c302",
-                "logoURI": "https://tokens.1inch.exchange/0x111111111117dc0aa78b770fa6a738034120c302.png"
+                "logoURI": "https://tokens.1inch.io/0x111111111117dc0aa78b770fa6a738034120c302.png"
               },
               "toTokenAmount": "501739725821378713485",
               "fromTokenAmount": "1000000000000000000",
@@ -945,7 +995,7 @@ mod tests {
 
     #[test]
     fn sell_order_quote_query_serialization() {
-        let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
+        let base_url = Url::parse("https://api.1inch.io/").unwrap();
         let url = SellOrderQuoteQuery {
             from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
             to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
@@ -964,7 +1014,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.exchange/v5.0/1/quote\
+            "https://api.1inch.io/v5.0/1/quote\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000"
@@ -973,7 +1023,7 @@ mod tests {
 
     #[test]
     fn sell_order_quote_query_serialization_optional_parameters() {
-        let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
+        let base_url = Url::parse("https://api.1inch.io/").unwrap();
         let url = SellOrderQuoteQuery {
             from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
             to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
@@ -995,7 +1045,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.exchange/v5.0/1/quote\
+            "https://api.1inch.io/v5.0/1/quote\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
@@ -1172,9 +1222,7 @@ mod tests {
     async fn allowing_all_protocols_will_not_use_api() {
         let mut api = MockOneInchClient::new();
         api.expect_get_liquidity_sources().times(0);
-        let allowed_protocols = ProtocolCache::default()
-            .get_allowed_protocols(&Vec::default(), &api)
-            .await;
+        let allowed_protocols = Cache::default().allowed_protocols(&[], &api).await;
         matches!(allowed_protocols, Ok(None));
     }
 
@@ -1191,12 +1239,12 @@ mod tests {
             .boxed()
         });
 
-        let cache = ProtocolCache::default();
+        let cache = Cache::default();
         let disabled_protocols = vec!["PMM1".to_string()];
 
-        for _ in 0..2 {
+        for _ in 0..10 {
             let allowed_protocols = cache
-                .get_allowed_protocols(&disabled_protocols, &api)
+                .allowed_protocols(&disabled_protocols, &api)
                 .await
                 .unwrap()
                 .unwrap();

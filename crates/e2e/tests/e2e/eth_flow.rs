@@ -215,7 +215,8 @@ async fn test_submit_quote(
             model::quote::SellAmount::AfterFee {
                 value: sell_amount_after_fees,
             },
-    } = quote.side else {
+    } = quote.side
+    else {
         panic!("untested!");
     };
 
