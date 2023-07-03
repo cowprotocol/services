@@ -55,8 +55,8 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
+    pub(super) contracts: solver::settlement::Contracts,
     pub solver: eth::Address,
-    contracts: solver::settlement::Contracts,
     risk: solution::Risk,
 }
 
@@ -161,11 +161,11 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
-            solver: solution.solver.address(),
             contracts: solver::settlement::Contracts {
                 ethflow: None,
                 multisend: eth.contracts().multisend().clone(),
             },
+            solver: solution.solver.address(),
             risk: solution.risk,
         })
     }

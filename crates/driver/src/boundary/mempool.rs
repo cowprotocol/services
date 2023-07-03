@@ -153,13 +153,7 @@ impl Mempool {
         )?;
         submitter
             .submit(
-                SubmitterSettlement::new(
-                    settlement.boundary.inner,
-                    &solver::settlement::Contracts {
-                        ethflow: None,
-                        multisend: self.eth.contracts().multisend().clone(),
-                    },
-                ),
+                SubmitterSettlement::new(settlement.boundary.inner, &settlement.boundary.contracts),
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
                     gas_estimate: settlement.gas.estimate.into(),
