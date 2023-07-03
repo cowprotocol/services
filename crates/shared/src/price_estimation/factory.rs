@@ -15,7 +15,8 @@ use {
         zeroex::ZeroExPriceEstimator,
         Arguments,
         PriceEstimating,
-        PriceEstimatorType,
+        PriceEstimator,
+        PriceEstimatorKind,
     },
     crate::{
         arguments::{self, CodeSimulatorKind, Driver},
@@ -52,7 +53,7 @@ pub struct PriceEstimatorFactory<'a> {
     network: Network,
     components: Components,
     trade_verifier: Option<TradeVerifier>,
-    estimators: HashMap<PriceEstimatorType, EstimatorEntry>,
+    estimators: HashMap<PriceEstimatorKind, EstimatorEntry>,
     external_estimators: HashMap<String, EstimatorEntry>,
 }
 
@@ -202,36 +203,35 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn create_estimator(&self, kind: PriceEstimatorType) -> Result<EstimatorEntry> {
-        let name = kind.name();
-        match kind {
-            PriceEstimatorType::Baseline(solver) => {
-                self.create_estimator_entry::<BaselinePriceEstimator>(&name, solver)
+    fn create_estimator(&self, estimator: PriceEstimator) -> Result<EstimatorEntry> {
+        let name = estimator.name();
+        match estimator.kind {
+            PriceEstimatorKind::Baseline => {
+                self.create_estimator_entry::<BaselinePriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Paraswap(solver) => {
-                self.create_estimator_entry::<ParaswapPriceEstimator>(&name, solver)
+            PriceEstimatorKind::Paraswap => {
+                self.create_estimator_entry::<ParaswapPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::ZeroEx(solver) => {
-                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, solver)
+            PriceEstimatorKind::ZeroEx => {
+                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Quasimodo(solver) => self
-                .create_estimator_entry::<HttpPriceEstimator>(
-                    &name,
-                    HttpPriceEstimatorParams {
-                        base: self
-                            .args
-                            .quasimodo_solver_url
-                            .clone()
-                            .context("quasimodo solver url not specified")?,
-                        solve_path: "solve".to_owned(),
-                        use_liquidity: true,
-                        solver,
-                    },
-                ),
-            PriceEstimatorType::OneInch(solver) => {
-                self.create_estimator_entry::<OneInchPriceEstimator>(&name, solver)
+            PriceEstimatorKind::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
+                &name,
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
+                        .quasimodo_solver_url
+                        .clone()
+                        .context("quasimodo solver url not specified")?,
+                    solve_path: "solve".to_owned(),
+                    use_liquidity: true,
+                    solver: estimator.address,
+                },
+            ),
+            PriceEstimatorKind::OneInch => {
+                self.create_estimator_entry::<OneInchPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Yearn(solver) => self.create_estimator_entry::<HttpPriceEstimator>(
+            PriceEstimatorKind::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 &name,
                 HttpPriceEstimatorParams {
                     base: self
@@ -241,21 +241,22 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .context("yearn solver url not specified")?,
                     solve_path: self.args.yearn_solver_path.clone(),
                     use_liquidity: false,
-                    solver,
+                    solver: estimator.address,
                 },
             ),
-            PriceEstimatorType::BalancerSor(solver) => {
-                self.create_estimator_entry::<BalancerSor>(&name, solver)
+            PriceEstimatorKind::BalancerSor => {
+                self.create_estimator_entry::<BalancerSor>(&name, estimator.address)
             }
         }
     }
 
-    fn get_estimator(&mut self, kind: PriceEstimatorType) -> Result<&EstimatorEntry> {
+    fn get_estimator(&mut self, estimator: PriceEstimator) -> Result<&EstimatorEntry> {
         #[allow(clippy::map_entry)]
-        if !self.estimators.contains_key(&kind) {
-            self.estimators.insert(kind, self.create_estimator(kind)?);
+        if !self.estimators.contains_key(&estimator.kind) {
+            self.estimators
+                .insert(estimator.kind, self.create_estimator(estimator)?);
         }
-        Ok(&self.estimators[&kind])
+        Ok(&self.estimators[&estimator.kind])
     }
 
     fn get_external_estimator(&mut self, driver: &Driver) -> Result<&EstimatorEntry> {
@@ -276,7 +277,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     fn get_estimators(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
         kinds
@@ -313,7 +314,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
@@ -331,7 +332,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn fast_price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         fast_price_estimation_results_required: NonZeroUsize,
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
@@ -347,7 +348,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn native_price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         drivers: &[Driver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(

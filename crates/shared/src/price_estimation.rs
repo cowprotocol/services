@@ -41,24 +41,30 @@ use {
 };
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PriceEstimatorType {
-    Baseline(H160),
-    Paraswap(H160),
-    ZeroEx(H160),
-    Quasimodo(H160),
-    OneInch(H160),
-    Yearn(H160),
-    BalancerSor(H160),
+pub enum PriceEstimatorKind {
+    Baseline,
+    Paraswap,
+    ZeroEx,
+    Quasimodo,
+    OneInch,
+    Yearn,
+    BalancerSor,
 }
 
-impl PriceEstimatorType {
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub struct PriceEstimator {
+    pub kind: PriceEstimatorKind,
+    pub address: H160,
+}
+
+impl PriceEstimator {
     /// Returns the name of this price estimator type.
     pub fn name(&self) -> String {
-        format!("{self:?}")
+        format!("{:?}", self.kind)
     }
 }
 
-impl std::str::FromStr for PriceEstimatorType {
+impl std::str::FromStr for PriceEstimator {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -66,19 +72,19 @@ impl std::str::FromStr for PriceEstimatorType {
             .split_once('|')
             .context("not enough arguments for price estimator")?;
         let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
-        let result = match estimator {
-            "Baseline" => PriceEstimatorType::Baseline(address),
-            "Paraswap" => PriceEstimatorType::Paraswap(address),
-            "ZeroEx" => PriceEstimatorType::ZeroEx(address),
-            "Quasimodo" => PriceEstimatorType::Quasimodo(address),
-            "OneInch" => PriceEstimatorType::OneInch(address),
-            "Yearn" => PriceEstimatorType::Yearn(address),
-            "BalancerSor" => PriceEstimatorType::BalancerSor(address),
+        let kind = match estimator {
+            "Baseline" => PriceEstimatorKind::Baseline,
+            "Paraswap" => PriceEstimatorKind::Paraswap,
+            "ZeroEx" => PriceEstimatorKind::ZeroEx,
+            "Quasimodo" => PriceEstimatorKind::Quasimodo,
+            "OneInch" => PriceEstimatorKind::OneInch,
+            "Yearn" => PriceEstimatorKind::Yearn,
+            "BalancerSor" => PriceEstimatorKind::BalancerSor,
             estimator => {
-                anyhow::bail!("failed to convert to PriceEstimatorType: {estimator}")
+                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
             }
         };
-        Ok(result)
+        Ok(PriceEstimator { kind, address })
     }
 }
 
@@ -529,7 +535,7 @@ mod tests {
             "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
             "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
         ] {
-            let parsed = arg.parse::<PriceEstimatorType>();
+            let parsed = arg.parse::<PriceEstimator>();
             assert!(
                 parsed.is_err(),
                 "string successfully parsed when it should have failed: {arg}"
@@ -537,33 +543,31 @@ mod tests {
         }
 
         let address = H160::from_low_u64_be(1);
-        let parsed: PriceEstimatorType = "Baseline|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::Baseline(address));
-        let parsed: PriceEstimatorType = "Paraswap|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::Paraswap(address));
-        let parsed: PriceEstimatorType = "ZeroEx|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::ZeroEx(address));
-        let parsed: PriceEstimatorType = "Quasimodo|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::Quasimodo(address));
-        let parsed: PriceEstimatorType = "OneInch|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::OneInch(address));
-        let parsed: PriceEstimatorType = "Yearn|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::Yearn(address));
-        let parsed: PriceEstimatorType = "BalancerSor|0x0000000000000000000000000000000000000001"
-            .parse()
-            .unwrap();
-        assert_eq!(parsed, PriceEstimatorType::BalancerSor(address));
+        let parsed = |arg: &str| arg.parse::<PriceEstimator>().unwrap();
+        let estimator = |kind| PriceEstimator { kind, address };
+        assert_eq!(
+            parsed("Baseline|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Baseline)
+        );
+        assert_eq!(
+            parsed("ZeroEx|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::ZeroEx)
+        );
+        assert_eq!(
+            parsed("Quasimodo|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Quasimodo)
+        );
+        assert_eq!(
+            parsed("OneInch|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::OneInch)
+        );
+        assert_eq!(
+            parsed("Yearn|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Yearn)
+        );
+        assert_eq!(
+            parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::BalancerSor)
+        );
     }
 }
