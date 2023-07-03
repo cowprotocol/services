@@ -6,7 +6,7 @@ use {
         },
         driver_api::Driver,
         driver_model::{
-            execute,
+            settle,
             solve::{self, Class},
         },
         solvable_orders::SolvableOrdersCache,
@@ -301,12 +301,12 @@ impl RunLoop {
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
-        let request = execute::Request {
+        let request = settle::Request {
             auction_id: id,
             transaction_identifier: id.to_be_bytes().into(),
         };
         let _response = driver
-            .execute(&solution.id, &request)
+            .settle(&solution.id, &request)
             .await
             .context("execute")?;
         // TODO: React to deadline expiring.

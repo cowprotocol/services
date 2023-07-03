@@ -143,10 +143,14 @@ pub fn settling(solver: &solver::Name, id: settlement::Id) {
 }
 
 /// Observe the result of the settlement process.
-pub fn settled(solver: &solver::Name, id: settlement::Id, result: &Result<(), competition::Error>) {
+pub fn settled(
+    solver: &solver::Name,
+    id: settlement::Id,
+    result: &Result<competition::Calldata, competition::Error>,
+) {
     match result {
-        Ok(()) => {
-            tracing::info!(%solver, ?id, "settled");
+        Ok(calldata) => {
+            tracing::info!(%solver, ?id, ?calldata, "settled");
             metrics::get()
                 .settlements
                 .with_label_values(&[solver.as_str(), "Success"])

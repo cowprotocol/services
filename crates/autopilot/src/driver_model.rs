@@ -131,7 +131,7 @@ pub mod solve {
     }
 }
 
-pub mod execute {
+pub mod settle {
     use {
         derivative::Derivative,
         model::{bytes_hex, order::OrderUid, u256_decimal},
@@ -155,15 +155,17 @@ pub mod execute {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
-        pub account: H160,
-        pub nonce: u64,
-        #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub clearing_prices: BTreeMap<H160, U256>,
-        pub trades: Vec<Trade>,
-        pub internalized_interactions: Vec<InternalizedInteraction>,
+        pub calldata: Calldata,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Calldata {
         #[serde(with = "bytes_hex")]
-        pub calldata: Vec<u8>,
-        pub signature: String,
+        pub internalized: Vec<u8>,
+        #[serde(with = "bytes_hex")]
+        pub uninternalized: Vec<u8>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]

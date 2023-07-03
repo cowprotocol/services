@@ -247,13 +247,16 @@ impl Settlement {
         Ok((access_list, gas))
     }
 
-    /// The onchain transaction representing this settlement.
-    pub fn tx(
+    /// The calldata for this settlement.
+    pub fn calldata(
         &self,
         contract: &contracts::GPv2Settlement,
         internalization: Internalization,
-    ) -> eth::Tx {
-        self.boundary.tx(self.id, contract, internalization)
+    ) -> Vec<u8> {
+        self.boundary
+            .tx(self.id, contract, internalization)
+            .input
+            .into()
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.

@@ -11,6 +11,7 @@ use {
             Mempool,
             Simulator,
         },
+        util::Bytes,
     },
     futures::future::join_all,
     itertools::Itertools,
@@ -42,17 +43,6 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Vec<Mempool>,
     pub settlement: Mutex<Option<Settlement>>,
-}
-
-/// Solution information revealed to the protocol by the solver. Note that the
-/// calldata is never revealed, as it would allow the solution to be stolen by
-/// other solvers.
-#[derive(Debug)]
-pub struct Reveal {
-    pub id: settlement::Id,
-    pub score: Score,
-    /// The orders solved by this solution.
-    pub orders: HashSet<order::Uid>,
 }
 
 impl Competition {
@@ -187,7 +177,7 @@ impl Competition {
     }
 
     /// Execute a settlement generated as part of this competition.
-    pub async fn settle(&self, id: settlement::Id) -> Result<(), Error> {
+    pub async fn settle(&self, id: settlement::Id) -> Result<Calldata, Error> {
         let settlement = self
             .settlement
             .lock()
@@ -197,10 +187,42 @@ impl Competition {
         if id != settlement.id {
             return Err(Error::InvalidSolutionId);
         }
-        mempool::execute(&self.mempools, &self.solver, settlement)
-            .await
-            .map_err(Into::into)
+        mempool::execute(&self.mempools, &self.solver, &settlement).await?;
+        Ok(Calldata {
+            internalized: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )
+                .into(),
+            uninternalized: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Disable,
+                )
+                .into(),
+        })
     }
+}
+
+/// Solution information revealed to the protocol by the driver before
+/// settlement happens. Note that the calldata is only revealed once the
+/// protocol instructs the driver to settle, and not before.
+#[derive(Debug)]
+pub struct Reveal {
+    pub id: settlement::Id,
+    pub score: Score,
+    /// The orders solved by this solution.
+    pub orders: HashSet<order::Uid>,
+}
+
+#[derive(Debug)]
+pub struct Calldata {
+    pub internalized: Bytes<Vec<u8>>,
+    /// The uninternalized calldata must be known so that the CoW solver team
+    /// can manually enforce certain rules which can not be enforced
+    /// automatically.
+    pub uninternalized: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug, thiserror::Error)]
