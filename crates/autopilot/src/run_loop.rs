@@ -5,10 +5,7 @@ use {
             Postgres,
         },
         driver_api::Driver,
-        driver_model::{
-            settle,
-            solve::{self, Class},
-        },
+        driver_model::solve::{self, Class},
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::{anyhow, Context, Result},
@@ -18,7 +15,7 @@ use {
         auction::{Auction, AuctionId},
         order::{LimitOrderClass, OrderClass},
     },
-    primitive_types::H256,
+    primitive_types::{H160, H256},
     rand::seq::SliceRandom,
     shared::{
         current_block::CurrentBlockStream,
@@ -175,14 +172,11 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!("executing with solver {}", index);
-            match self
-                .execute(auction, id, &self.drivers[index], &solution)
-                .await
-            {
+            tracing::info!(url = %self.drivers[index].url, "settling with solver");
+            match self.settle(id, &self.drivers[index], &solution).await {
                 Ok(()) => (),
                 Err(err) => {
-                    tracing::error!(?err, "solver {index} failed to execute");
+                    tracing::error!(?err, "solver {index} failed to settle");
                 }
             }
         }
@@ -294,24 +288,16 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn execute(
+    async fn settle(
         &self,
-        _auction: &Auction,
         id: AuctionId,
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
-        let request = settle::Request {
-            auction_id: id,
-            transaction_identifier: id.to_be_bytes().into(),
-        };
-        let _response = driver
-            .settle(&solution.id, &request)
-            .await
-            .context("execute")?;
+        driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
-            .wait_for_settlement_transaction(&request.transaction_identifier)
+            .wait_for_settlement_transaction(id, solution.submission_address)
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
@@ -323,7 +309,11 @@ impl RunLoop {
     /// Tries to find a `settle` contract call with calldata ending in `tag`.
     ///
     /// Returns None if no transaction was found within the deadline.
-    pub async fn wait_for_settlement_transaction(&self, tag: &[u8]) -> Result<Option<Transaction>> {
+    pub async fn wait_for_settlement_transaction(
+        &self,
+        id: AuctionId,
+        submission_address: H160,
+    ) -> Result<Option<Transaction>> {
         const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
         // Start earlier than current block because there might be a delay when
         // receiving the Solver's /execute response during which it already
@@ -334,7 +324,7 @@ impl RunLoop {
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_wait_time_blocks);
-        tracing::debug!(%current, %start, %deadline, ?tag, "waiting for tag");
+        tracing::debug!(%current, %start, %deadline, ?id, ?submission_address, "waiting for settlement");
 
         // Use the existing event indexing infrastructure to find the transaction. We
         // query all settlement events in the block range to get tx hashes and
@@ -370,7 +360,7 @@ impl RunLoop {
                     Some(tx) => tx,
                     None => continue,
                 };
-                if tx.input.0.ends_with(tag) {
+                if tx.input.0.ends_with(&id.to_be_bytes()) && tx.from == Some(submission_address) {
                     return Ok(Some(tx));
                 }
                 seen_transactions.insert(hash);

@@ -123,33 +123,15 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Response {
-        pub id: String,
         pub score: U256,
-        // address used by driver to submit the solution onchain
+        /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
         pub orders: Vec<OrderUid>,
     }
 }
 
 pub mod settle {
-    use {
-        derivative::Derivative,
-        model::{bytes_hex, order::OrderUid, u256_decimal},
-        primitive_types::{H160, U256},
-        serde::{Deserialize, Serialize},
-        serde_with::{serde_as, DisplayFromStr},
-        std::collections::BTreeMap,
-    };
-
-    #[derive(Clone, Derivative, Default, Serialize)]
-    #[serde(rename_all = "camelCase")]
-    #[derivative(Debug)]
-    pub struct Request {
-        pub auction_id: i64,
-        #[serde(with = "bytes_hex")]
-        #[derivative(Debug(format_with = "shared::debug_bytes"))]
-        pub transaction_identifier: Vec<u8>,
-    }
+    use {model::bytes_hex, serde::Deserialize, serde_with::serde_as};
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
@@ -166,25 +148,5 @@ pub mod settle {
         pub internalized: Vec<u8>,
         #[serde(with = "bytes_hex")]
         pub uninternalized: Vec<u8>,
-    }
-
-    #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Trade {
-        pub uid: OrderUid,
-        #[serde(with = "u256_decimal")]
-        pub executed_amount: U256,
-    }
-
-    #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct InternalizedInteraction {
-        #[serde(with = "bytes_hex")]
-        pub calldata: Vec<u8>,
-        #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub inputs: BTreeMap<H160, U256>,
-        #[serde_as(as = "BTreeMap<_, DisplayFromStr>")]
-        pub outputs: BTreeMap<H160, U256>,
     }
 }

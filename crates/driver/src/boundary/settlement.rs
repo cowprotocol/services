@@ -3,6 +3,7 @@ use {
         domain::{
             competition::{
                 self,
+                auction,
                 order,
                 solution::{
                     self,
@@ -167,7 +168,7 @@ impl Settlement {
 
     pub fn tx(
         &self,
-        id: settlement::Id,
+        auction_id: auction::Id,
         contract: &contracts::GPv2Settlement,
         internalization: Internalization,
     ) -> eth::Tx {
@@ -184,7 +185,7 @@ impl Settlement {
         );
         let tx = builder.into_inner();
         let mut input = tx.data.unwrap().0;
-        input.extend(id.0.to_be_bytes());
+        input.extend(auction_id.0.to_be_bytes());
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),

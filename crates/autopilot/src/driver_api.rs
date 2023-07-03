@@ -11,7 +11,7 @@ const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
 pub struct Driver {
-    url: Url,
+    pub url: Url,
     client: Client,
 }
 
@@ -30,13 +30,8 @@ impl Driver {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn settle(
-        &self,
-        solution_id: &str,
-        _request: &settle::Request,
-    ) -> Result<settle::Response> {
-        self.request_response(&format!("settle/{solution_id}"), Option::<&()>::None)
-            .await
+    pub async fn settle(&self) -> Result<settle::Response> {
+        self.request_response("settle", Option::<&()>::None).await
     }
 
     async fn request_response<Response>(

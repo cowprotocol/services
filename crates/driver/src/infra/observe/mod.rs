@@ -10,7 +10,8 @@ use {
         domain::{
             competition::{
                 self,
-                solution::{self, settlement, Settlement},
+                auction,
+                solution::{self, Settlement},
                 Auction,
                 Reveal,
                 Solution,
@@ -112,14 +113,14 @@ pub fn scoring(solver: &solver::Name, settlement: &Settlement) {
     tracing::trace!(
         %solver,
         solutions = ?settlement.solutions(),
-        settlement_id = ?settlement.id,
+        auction_id = ?settlement.auction_id,
         "scoring settlement"
     );
 }
 
 /// Observe that scoring failed.
-pub fn scoring_failed(solver: &solver::Name, id: settlement::Id, err: &boundary::Error) {
-    tracing::info!(%solver, ?id, ?err, "discarded solution: scoring failed");
+pub fn scoring_failed(solver: &solver::Name, auction_id: auction::Id, err: &boundary::Error) {
+    tracing::info!(%solver, ?auction_id, ?err, "discarded solution: scoring failed");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "ScoringFailed"])
@@ -131,33 +132,33 @@ pub fn score(solver: &solver::Name, settlement: &Settlement, score: &solution::S
     tracing::info!(
         %solver,
         solutions = ?settlement.solutions(),
-        settlement_id = ?settlement.id,
+        auction_id = ?settlement.auction_id,
         score = score.0.to_f64_lossy(),
         "settlement scored"
     );
 }
 
 /// Observe that the settlement process is about to start.
-pub fn settling(solver: &solver::Name, id: settlement::Id) {
-    tracing::trace!(%solver, ?id, "settling");
+pub fn settling(solver: &solver::Name, auction_id: Option<auction::Id>) {
+    tracing::trace!(%solver, ?auction_id, "settling");
 }
 
 /// Observe the result of the settlement process.
 pub fn settled(
     solver: &solver::Name,
-    id: settlement::Id,
+    auction_id: Option<auction::Id>,
     result: &Result<competition::Calldata, competition::Error>,
 ) {
     match result {
         Ok(calldata) => {
-            tracing::info!(%solver, ?id, ?calldata, "settled");
+            tracing::info!(%solver, ?calldata, ?auction_id, "settled");
             metrics::get()
                 .settlements
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?id, ?err, "failed to settle");
+            tracing::warn!(%solver, ?err, ?auction_id, "failed to settle");
             metrics::get()
                 .settlements
                 .with_label_values(&[solver.as_str(), competition_error(err)])
@@ -279,7 +280,6 @@ pub fn quoting(solver: &solver::Name, order: &quote::Order) {
 fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
-        competition::Error::InvalidSolutionId => "InvalidSolutionId",
         competition::Error::SolutionNotFound => "SolutionNotFound",
         competition::Error::Mempool(mempool::Error::AllMempoolsFailed) => "MempoolsFailed",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",

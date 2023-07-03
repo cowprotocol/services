@@ -27,10 +27,8 @@ async fn matrix() {
                 .done()
                 .await;
 
-            let id = test.solve().await.ok().default_score().solution_id();
-            let settle = test.settle(id).await;
-
-            settle.ok().await.ab_order_executed().await;
+            test.solve().await.ok().default_score();
+            test.settle().await.ok().await.ab_order_executed().await;
         }
     }
 }
