@@ -71,7 +71,7 @@ pub fn balance_orders(
     ethflow_contract: Option<H160>,
     external_prices: &ExternalPrices,
 ) -> Vec<BalancedOrder> {
-    sort_orders_for_balance_priority(&mut orders, &external_prices);
+    sort_orders_for_balance_priority(&mut orders, external_prices);
 
     let mut result: Vec<BalancedOrder> = Vec::new();
     for order in orders {
@@ -132,7 +132,7 @@ pub fn balance_orders(
 /// Prioritise which orders to account first for using users remaining balance.
 /// Given the external price vector, orders are sorted descending by the
 /// expected surplus (likelyhood of being matchable)
-fn sort_orders_for_balance_priority(orders: &mut Vec<Order>, external_prices: &ExternalPrices) {
+fn sort_orders_for_balance_priority(orders: &mut [Order], external_prices: &ExternalPrices) {
     orders.sort_by_cached_key(|order| {
         let expected_surplus = (external_prices
             .price(&order.data.sell_token)

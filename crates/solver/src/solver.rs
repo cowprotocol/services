@@ -610,7 +610,7 @@ fn balance_and_convert_orders(
         orders,
         &mut balances,
         ethflow_contract,
-        &external_prices,
+        external_prices,
     )
     .into_iter()
     .filter_map(|order| match converter.normalize_limit_order(order) {
