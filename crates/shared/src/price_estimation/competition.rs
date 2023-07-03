@@ -101,7 +101,9 @@ impl HistoricalWinners {
         required_confidence: f64,
     ) -> Vec<Prediction> {
         let lock = self.0.read().unwrap();
-        let Some(competition) = lock.get(quote) else { return vec![]; };
+        let Some(competition) = lock.get(quote) else {
+            return vec![];
+        };
         if competition.total_quotes < 100 {
             // Not enough data to generate a meaningful prediction.
             return vec![];
