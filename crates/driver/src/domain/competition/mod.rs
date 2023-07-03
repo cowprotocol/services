@@ -11,6 +11,7 @@ use {
             Mempool,
             Simulator,
         },
+        util::Bytes,
     },
     futures::future::join_all,
     itertools::Itertools,
@@ -42,17 +43,6 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Vec<Mempool>,
     pub settlement: Mutex<Option<Settlement>>,
-}
-
-/// Solution information revealed to the protocol by the solver. Note that the
-/// calldata is never revealed, as it would allow the solution to be stolen by
-/// other solvers.
-#[derive(Debug)]
-pub struct Reveal {
-    pub id: settlement::Id,
-    pub score: Score,
-    /// The orders solved by this solution.
-    pub orders: HashSet<order::Uid>,
 }
 
 impl Competition {
@@ -162,7 +152,9 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| observe::scoring_failed(self.solver.name(), settlement.id, err))
+                    .tap_err(|err| {
+                        observe::scoring_failed(self.solver.name(), settlement.auction_id, err)
+                    })
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -179,28 +171,65 @@ impl Competition {
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let id = settlement.id;
         let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Reveal { id, score, orders })
+        Ok(Reveal { score, orders })
     }
 
-    /// Execute a settlement generated as part of this competition.
-    pub async fn settle(&self, id: settlement::Id) -> Result<(), Error> {
+    /// Execute the solution generated as part of this competition. Use
+    /// [`Competition::solve`] to generate the solution.
+    pub async fn settle(&self) -> Result<Calldata, Error> {
         let settlement = self
             .settlement
             .lock()
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        if id != settlement.id {
-            return Err(Error::InvalidSolutionId);
-        }
-        mempool::execute(&self.mempools, &self.solver, settlement)
-            .await
-            .map_err(Into::into)
+        mempool::execute(&self.mempools, &self.solver, &settlement).await?;
+        Ok(Calldata {
+            internalized: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )
+                .into(),
+            uninternalized: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Disable,
+                )
+                .into(),
+        })
     }
+
+    /// The ID of the auction being competed on.
+    pub fn auction_id(&self) -> Option<auction::Id> {
+        self.settlement
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|s| s.auction_id)
+    }
+}
+
+/// Solution information revealed to the protocol by the driver before the
+/// settlement happens. Note that the calldata is only revealed once the
+/// protocol instructs the driver to settle, and not before.
+#[derive(Debug)]
+pub struct Reveal {
+    pub score: Score,
+    /// The orders solved by this solution.
+    pub orders: HashSet<order::Uid>,
+}
+
+#[derive(Debug)]
+pub struct Calldata {
+    pub internalized: Bytes<Vec<u8>>,
+    /// The uninternalized calldata must be known so that the CoW solver team
+    /// can manually enforce certain rules which can not be enforced
+    /// automatically.
+    pub uninternalized: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -210,8 +239,6 @@ pub enum Error {
          returned"
     )]
     SolutionNotAvailable,
-    #[error("no solution found for given id")]
-    InvalidSolutionId,
     #[error("no solution found for the auction")]
     SolutionNotFound,
     #[error("mempool error: {0:?}")]

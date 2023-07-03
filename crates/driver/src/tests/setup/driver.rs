@@ -112,8 +112,9 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "trusted": test.trusted.contains(fulfillment.quote.order.buy_token),
         }));
     }
-    // TODO Just noticed: the driver auction ID is a string, the solver auction ID
-    // is a number. We should reconcile this.
+    // TODO Just noticed: the solver auction ID is a string, the driver auction ID
+    // is a number. We should reconcile this. I think both should be numbers, due to
+    // the way they're being encoded in the settlement.
     json!({
         "id": 1,
         "tokens": tokens_json,
