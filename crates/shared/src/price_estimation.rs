@@ -70,7 +70,7 @@ impl std::str::FromStr for PriceEstimator {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (estimator, address) = s
             .split_once('|')
-            .context("not enough arguments for price estimator")?;
+            .unwrap_or((s, "0x0000000000000000000000000000000000000000"));
         let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
         let kind = match estimator {
             "Baseline" => PriceEstimatorKind::Baseline,
@@ -530,7 +530,6 @@ mod tests {
             "Baseline|0x000000000000000000000000000000000000000", // address too short
             "Baseline|0x00000000000000000000000000000000000000010", // address too long
             "Baseline,0x0000000000000000000000000000000000000001", // wrong separator
-            "Baseline",                                           // missing argument
             "Baseline|",                                          // missing argument
             "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
             "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
@@ -542,32 +541,37 @@ mod tests {
             );
         }
 
-        let address = H160::from_low_u64_be(1);
+        let address = H160::from_low_u64_be;
         let parsed = |arg: &str| arg.parse::<PriceEstimator>().unwrap();
-        let estimator = |kind| PriceEstimator { kind, address };
+        let estimator = |kind, address| PriceEstimator { kind, address };
+        // Fallback case to allow for default CLI arguments.
+        assert_eq!(
+            parsed("Baseline"),
+            estimator(PriceEstimatorKind::Baseline, address(0))
+        );
         assert_eq!(
             parsed("Baseline|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Baseline)
+            estimator(PriceEstimatorKind::Baseline, address(1))
         );
         assert_eq!(
             parsed("ZeroEx|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::ZeroEx)
+            estimator(PriceEstimatorKind::ZeroEx, address(1))
         );
         assert_eq!(
             parsed("Quasimodo|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Quasimodo)
+            estimator(PriceEstimatorKind::Quasimodo, address(1))
         );
         assert_eq!(
             parsed("OneInch|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::OneInch)
+            estimator(PriceEstimatorKind::OneInch, address(1))
         );
         assert_eq!(
             parsed("Yearn|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Yearn)
+            estimator(PriceEstimatorKind::Yearn, address(1))
         );
         assert_eq!(
             parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::BalancerSor)
+            estimator(PriceEstimatorKind::BalancerSor, address(1))
         );
     }
 }
