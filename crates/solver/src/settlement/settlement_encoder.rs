@@ -647,7 +647,7 @@ impl SettlementEncoder {
         // specified calls from a privileged context (i.e. the Settlement
         // contract). We also collapse all `CoWSwapEthFlow::wrapAll` calls into
         // one for gas efficiency.
-        let group_interactions = |interactions: Vec<InteractionData>| {
+        let custom_interactions = |interactions: Vec<InteractionData>| {
             let ethflow_wrap_all = contracts.ethflow_wrap_all();
 
             let (total_value, transactions, ethflow_interaction) = interactions.into_iter().fold(
@@ -693,7 +693,7 @@ impl SettlementEncoder {
             clearing_prices,
             trades,
             interactions: [
-                group_interactions(self.pre_interactions),
+                custom_interactions(self.pre_interactions),
                 iter::empty()
                     .chain(
                         self.execution_plan
@@ -714,7 +714,7 @@ impl SettlementEncoder {
                     )
                     .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
                     .collect(),
-                group_interactions(self.post_interactions),
+                custom_interactions(self.post_interactions),
             ],
         }
     }
