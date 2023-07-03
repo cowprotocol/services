@@ -90,13 +90,7 @@ pub struct Arguments {
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
-    #[clap(
-        long,
-        env,
-        default_value = "Baseline",
-        value_enum,
-        use_value_delimiter = true
-    )]
+    #[clap(long, env, value_enum, use_value_delimiter = true)]
     pub native_price_estimators: Vec<PriceEstimatorType>,
 
     /// How many successful price estimates for each order will cause a fast

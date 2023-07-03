@@ -82,13 +82,7 @@ pub struct Arguments {
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
-    #[clap(
-        long,
-        env,
-        default_value = "Baseline",
-        value_enum,
-        use_value_delimiter = true
-    )]
+    #[clap(long, env, value_enum, use_value_delimiter = true)]
     pub native_price_estimators: Vec<shared::price_estimation::PriceEstimatorType>,
 
     /// The minimum amount of time in seconds an order has to be valid for.

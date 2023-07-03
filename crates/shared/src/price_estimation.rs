@@ -512,3 +512,58 @@ pub mod mocks {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_price_estimators() {
+        for arg in [
+            "Baselin|0x0000000000000000000000000000000000000001", // incorrect estimator name
+            "Baseline|0x000000000000000000000000000000000000000", // address too short
+            "Baseline|0x00000000000000000000000000000000000000010", // address too long
+            "Baseline,0x0000000000000000000000000000000000000001", // wrong separator
+            "Baseline",                                           // missing argument
+            "Baseline|",                                          // missing argument
+            "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
+            "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
+        ] {
+            let parsed = arg.parse::<PriceEstimatorType>();
+            assert!(
+                parsed.is_err(),
+                "string successfully parsed when it should have failed: {arg}"
+            );
+        }
+
+        let address = H160::from_low_u64_be(1);
+        let parsed: PriceEstimatorType = "Baseline|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::Baseline(address));
+        let parsed: PriceEstimatorType = "Paraswap|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::Paraswap(address));
+        let parsed: PriceEstimatorType = "ZeroEx|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::ZeroEx(address));
+        let parsed: PriceEstimatorType = "Quasimodo|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::Quasimodo(address));
+        let parsed: PriceEstimatorType = "OneInch|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::OneInch(address));
+        let parsed: PriceEstimatorType = "Yearn|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::Yearn(address));
+        let parsed: PriceEstimatorType = "BalancerSor|0x0000000000000000000000000000000000000001"
+            .parse()
+            .unwrap();
+        assert_eq!(parsed, PriceEstimatorType::BalancerSor(address));
+    }
+}
