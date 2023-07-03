@@ -355,6 +355,7 @@ impl Solver for SingleOrderSolver {
             &self.order_converter,
             balances,
             orders,
+            &external_prices,
         );
         let mut orders =
             get_prioritized_orders(&orders, &external_prices, &self.order_prioritization_config);

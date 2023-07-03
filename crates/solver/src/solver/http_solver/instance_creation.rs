@@ -64,6 +64,7 @@ impl InstanceCreator {
             &converter,
             balances,
             orders,
+            &external_prices,
         );
         // The HTTP solver interface expects liquidity limit orders (like 0x
         // limit orders) to be added to the `orders` models and NOT the

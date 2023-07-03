@@ -1,9 +1,16 @@
 use {
     anyhow::{Context, Result},
-    model::order::Order,
+    model::{
+        order::{Order, OrderClass},
+        signature::Signature,
+    },
     primitive_types::{H160, U256},
-    shared::account_balances::{BalanceFetching, Query},
-    std::collections::HashMap,
+    shared::{
+        account_balances::{BalanceFetching, Query},
+        conversions::U256Ext,
+        external_prices::ExternalPrices,
+    },
+    std::{cmp::Ordering, collections::HashMap},
 };
 
 /// An order processed by `balance_orders`.
@@ -65,8 +72,9 @@ pub fn balance_orders(
     mut orders: Vec<Order>,
     balances: &mut HashMap<Query, U256>,
     ethflow_contract: Option<H160>,
+    external_prices: &ExternalPrices,
 ) -> Vec<BalancedOrder> {
-    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
+    sort_orders_for_balance_priority(&mut orders, &external_prices);
 
     let mut result: Vec<BalancedOrder> = Vec::new();
     for order in orders {
@@ -124,6 +132,43 @@ pub fn balance_orders(
     result
 }
 
+/// Prioritise which orders to account first for users remaining with the
+/// following rules:
+/// 1. Market orders take priority over limit and liquidity orders.
+/// 2. Market orders are sorted by arrival time (most recent first).
+/// 3. Limit and liquidity orders are treated equally important and sorted by
+/// expected surplus (highest first).
+fn sort_orders_for_balance_priority(orders: &mut Vec<Order>, external_prices: &ExternalPrices) {
+    orders.sort_by(
+        |lhs, rhs| match (&lhs.metadata.class, &rhs.metadata.class) {
+            (OrderClass::Market, OrderClass::Market) => {
+                rhs.metadata.creation_date.cmp(&lhs.metadata.creation_date)
+            }
+            (OrderClass::Market, _) => Ordering::Less,
+            (_, OrderClass::Market) => Ordering::Greater,
+            (_, _) => {
+                let lhs_expected_surplus = (external_prices
+                    .price(&lhs.data.sell_token)
+                    .expect("External prices contains all orders sell and buy tokens")
+                    * lhs.data.sell_amount.to_big_int())
+                    - (external_prices
+                        .price(&lhs.data.buy_token)
+                        .expect("External prices contains all orders sell and buy tokens")
+                        * lhs.data.buy_amount.to_big_int());
+                let rhs_expected_surplus = (external_prices
+                    .price(&rhs.data.sell_token)
+                    .expect("External prices contains all orders sell and buy tokens")
+                    * rhs.data.sell_amount.to_big_int())
+                    - (external_prices
+                        .price(&rhs.data.buy_token)
+                        .expect("External prices contains all orders sell and buy tokens")
+                        * rhs.data.buy_amount.to_big_int());
+                rhs_expected_surplus.cmp(&lhs_expected_surplus)
+            }
+        },
+    )
+}
+
 /// Computes the maximum amount that can be transferred out for a given order.
 ///
 /// While this is trivial for fill or kill orders (`sell_amount + fee_amount`),
@@ -145,6 +190,7 @@ mod tests {
         chrono::{TimeZone, Utc},
         maplit::hashmap,
         model::order::{OrderData, OrderMetadata},
+        num::BigRational,
     };
 
     #[tokio::test]
@@ -186,12 +232,13 @@ mod tests {
                     creation_date: Utc.timestamp_opt(0, 0).unwrap(),
                     ..Default::default()
                 },
+                signature: Signature::PreSign,
                 ..Default::default()
             },
         ];
 
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, None);
+        let orders_ = balance_orders(orders.clone(), &mut balances, None, &Default::default());
         assert_eq!(orders_.len(), 2);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_[0].order.data, orders[0].data);
@@ -205,7 +252,7 @@ mod tests {
 
         orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, None);
+        let orders_ = balance_orders(orders.clone(), &mut balances, None, &Default::default());
         assert_eq!(orders_.len(), 2);
         assert_eq!(orders_[0].order.data, orders[1].data);
         // Remaining balance is different because previous order has changed.
@@ -233,7 +280,7 @@ mod tests {
         }];
 
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, None);
+        let orders_ = balance_orders(orders.clone(), &mut balances, None, &Default::default());
         // 6 balance assigned to order, 3 remaining
         assert_eq!(orders_.len(), 1);
         assert_eq!(
@@ -260,7 +307,12 @@ mod tests {
         }];
 
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, Some(ethflow_address));
+        let orders_ = balance_orders(
+            orders.clone(),
+            &mut balances,
+            Some(ethflow_address),
+            &Default::default(),
+        );
         assert_eq!(orders_.len(), 1);
         assert_eq!(orders_[0].order, orders[0]);
     }
@@ -308,12 +360,118 @@ mod tests {
 
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
         let expected_result = vec![orders[0].clone(), orders[1].clone()];
-        let mut filtered_orders = balance_orders(orders, &mut balances, None);
+        let mut filtered_orders = balance_orders(orders, &mut balances, None, &Default::default());
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.order.metadata.creation_date);
         assert_eq!(expected_result.len(), filtered_orders.len());
         for (left, right) in expected_result.iter().zip(filtered_orders) {
             assert_eq!(left.data, right.order.data);
         }
+    }
+
+    #[test]
+    fn sorts_orders_by_priority() {
+        let gno = H160::from([1; 20]);
+        let weth = H160::from([2; 20]);
+        let cow = H160::from([3; 20]);
+
+        let external_prices = ExternalPrices::new(
+            weth,
+            hashmap! {
+                weth => BigRational::from_float(1.).unwrap(),
+                gno => BigRational::from_float(0.1).unwrap(),
+                cow => BigRational::from_float(0.0001).unwrap(),
+            },
+        )
+        .unwrap();
+        let mut orders = vec![
+            // First Liquidity order willing to buy GNO for 0.1 ETH (0 expected surplus)
+            Order {
+                data: OrderData {
+                    buy_token: gno,
+                    buy_amount: 10u8.into(),
+                    sell_token: weth,
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Liquidity,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // Second Liquidity order is willing to buy GNO for more (0.2 ETH, 0.1 ETH expected
+            // surplus)
+            Order {
+                data: OrderData {
+                    buy_token: gno,
+                    buy_amount: 10u8.into(),
+                    sell_token: weth,
+                    sell_amount: 2u8.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Liquidity,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // Last liquidity order willing to buy CoW below external price
+            Order {
+                data: OrderData {
+                    buy_token: cow,
+                    buy_amount: 20_000u16.into(),
+                    sell_token: weth,
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Liquidity,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // Regular market order gets prioritised over liquidity orders, despite low limit price
+            Order {
+                data: OrderData {
+                    buy_token: cow,
+                    buy_amount: 20_000u16.into(),
+                    sell_token: weth,
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Market,
+                    creation_date: Utc.timestamp_opt(1, 0).unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // More recent market order takes absolute priority (despite price being even worse)
+            Order {
+                data: OrderData {
+                    buy_token: cow,
+                    buy_amount: 30_000u16.into(),
+                    sell_token: weth,
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    class: OrderClass::Market,
+                    creation_date: Utc.timestamp_opt(2, 0).unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+
+        let original = orders.clone();
+        sort_orders_for_balance_priority(&mut orders, &external_prices);
+
+        assert_eq!(original[0], orders[3]);
+        assert_eq!(original[1], orders[2]);
+        assert_eq!(original[2], orders[4]);
+        assert_eq!(original[3], orders[1]);
+        assert_eq!(original[4], orders[0]);
     }
 }
