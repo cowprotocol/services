@@ -324,7 +324,7 @@ impl RunLoop {
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_wait_time_blocks);
-        tracing::debug!(%current, %start, %deadline, ?id, %submission_address, "waiting for settlement");
+        tracing::debug!(%current, %start, %deadline, ?id, ?submission_address, "waiting for settlement");
 
         // Use the existing event indexing infrastructure to find the transaction. We
         // query all settlement events in the block range to get tx hashes and
