@@ -1,16 +1,13 @@
 use {
     anyhow::{Context, Result},
-    model::{
-        order::{Order, OrderClass},
-        signature::Signature,
-    },
+    model::order::Order,
     primitive_types::{H160, U256},
     shared::{
         account_balances::{BalanceFetching, Query},
         conversions::U256Ext,
         external_prices::ExternalPrices,
     },
-    std::{cmp::Ordering, collections::HashMap},
+    std::collections::HashMap,
 };
 
 /// An order processed by `balance_orders`.
@@ -132,41 +129,29 @@ pub fn balance_orders(
     result
 }
 
-/// Prioritise which orders to account first for users remaining with the
-/// following rules:
-/// 1. Market orders take priority over limit and liquidity orders.
-/// 2. Market orders are sorted by arrival time (most recent first).
-/// 3. Limit and liquidity orders are treated equally important and sorted by
-/// expected surplus (highest first).
+/// Prioritise which orders to account first for using users remaining balance.
+/// Given the external price vector, orders are sorted descending by the
+/// expected surplus (likelyhood of being matchable)
 fn sort_orders_for_balance_priority(orders: &mut Vec<Order>, external_prices: &ExternalPrices) {
-    orders.sort_by(
-        |lhs, rhs| match (&lhs.metadata.class, &rhs.metadata.class) {
-            (OrderClass::Market, OrderClass::Market) => {
-                rhs.metadata.creation_date.cmp(&lhs.metadata.creation_date)
-            }
-            (OrderClass::Market, _) => Ordering::Less,
-            (_, OrderClass::Market) => Ordering::Greater,
-            (_, _) => {
-                let lhs_expected_surplus = (external_prices
-                    .price(&lhs.data.sell_token)
-                    .expect("External prices contains all orders sell and buy tokens")
-                    * lhs.data.sell_amount.to_big_int())
-                    - (external_prices
-                        .price(&lhs.data.buy_token)
-                        .expect("External prices contains all orders sell and buy tokens")
-                        * lhs.data.buy_amount.to_big_int());
-                let rhs_expected_surplus = (external_prices
-                    .price(&rhs.data.sell_token)
-                    .expect("External prices contains all orders sell and buy tokens")
-                    * rhs.data.sell_amount.to_big_int())
-                    - (external_prices
-                        .price(&rhs.data.buy_token)
-                        .expect("External prices contains all orders sell and buy tokens")
-                        * rhs.data.buy_amount.to_big_int());
-                rhs_expected_surplus.cmp(&lhs_expected_surplus)
-            }
-        },
-    )
+    orders.sort_by(|lhs, rhs| {
+        let lhs_expected_surplus = (external_prices
+            .price(&lhs.data.sell_token)
+            .expect("External prices contains all orders sell and buy tokens")
+            * lhs.data.sell_amount.to_big_int())
+            - (external_prices
+                .price(&lhs.data.buy_token)
+                .expect("External prices contains all orders sell and buy tokens")
+                * lhs.data.buy_amount.to_big_int());
+        let rhs_expected_surplus = (external_prices
+            .price(&rhs.data.sell_token)
+            .expect("External prices contains all orders sell and buy tokens")
+            * rhs.data.sell_amount.to_big_int())
+            - (external_prices
+                .price(&rhs.data.buy_token)
+                .expect("External prices contains all orders sell and buy tokens")
+                * rhs.data.buy_amount.to_big_int());
+        rhs_expected_surplus.cmp(&lhs_expected_surplus)
+    })
 }
 
 /// Computes the maximum amount that can be transferred out for a given order.
@@ -189,7 +174,10 @@ mod tests {
         super::*,
         chrono::{TimeZone, Utc},
         maplit::hashmap,
-        model::order::{OrderData, OrderMetadata},
+        model::{
+            order::{OrderClass, OrderData, OrderMetadata},
+            signature::Signature,
+        },
         num::BigRational,
     };
 
@@ -199,6 +187,7 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_amount: 3.into(),
+                    buy_amount: 3.into(),
                     fee_amount: 3.into(),
                     ..Default::default()
                 },
@@ -211,6 +200,7 @@ mod tests {
             Order {
                 data: OrderData {
                     sell_amount: 2.into(),
+                    buy_amount: 3.into(),
                     fee_amount: 2.into(),
                     ..Default::default()
                 },
@@ -236,11 +226,18 @@ mod tests {
                 ..Default::default()
             },
         ];
+        let external_prices = ExternalPrices::new(
+            orders[0].data.sell_token,
+            hashmap! {
+                orders[0].data.sell_token => BigRational::from_float(1.).unwrap(),
+            },
+        )
+        .unwrap();
 
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, None, &Default::default());
+        let orders_ = balance_orders(orders.clone(), &mut balances, None, &external_prices);
         assert_eq!(orders_.len(), 2);
-        // Second order has lower timestamp so it isn't picked.
+        // Second order has lower limit price so it isn't picked.
         assert_eq!(orders_[0].order.data, orders[0].data);
         // Third order is partially fillable so is picked with remaining balance.
         assert_eq!(orders_[1].order.data, orders[2].data);
@@ -250,9 +247,9 @@ mod tests {
             Some(&0.into())
         );
 
-        orders[1].metadata.creation_date = Utc.timestamp_opt(3, 0).unwrap();
+        orders[1].data.buy_amount = 1.into();
         let mut balances = hashmap! {Query::from_order(&orders[0]) => U256::from(9)};
-        let orders_ = balance_orders(orders.clone(), &mut balances, None, &Default::default());
+        let orders_ = balance_orders(orders.clone(), &mut balances, None, &external_prices);
         assert_eq!(orders_.len(), 2);
         assert_eq!(orders_[0].order.data, orders[1].data);
         // Remaining balance is different because previous order has changed.
@@ -385,7 +382,7 @@ mod tests {
         )
         .unwrap();
         let mut orders = vec![
-            // First Liquidity order willing to buy GNO for 0.1 ETH (0 expected surplus)
+            // First order willing to buy GNO for 0.1 ETH (0 expected surplus)
             Order {
                 data: OrderData {
                     buy_token: gno,
@@ -395,12 +392,12 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    class: OrderClass::Liquidity,
+                    class: OrderClass::Market,
                     ..Default::default()
                 },
                 ..Default::default()
             },
-            // Second Liquidity order is willing to buy GNO for more (0.2 ETH, 0.1 ETH expected
+            // Second order is willing to buy GNO for more (0.2 ETH, 0.1 ETH expected
             // surplus)
             Order {
                 data: OrderData {
@@ -416,7 +413,7 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // Last liquidity order willing to buy CoW below external price
+            // Last order willing to buy CoW below external price
             Order {
                 data: OrderData {
                     buy_token: cow,
@@ -431,47 +428,13 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // Regular market order gets prioritised over liquidity orders, despite low limit price
-            Order {
-                data: OrderData {
-                    buy_token: cow,
-                    buy_amount: 20_000u16.into(),
-                    sell_token: weth,
-                    sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    class: OrderClass::Market,
-                    creation_date: Utc.timestamp_opt(1, 0).unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            // More recent market order takes absolute priority (despite price being even worse)
-            Order {
-                data: OrderData {
-                    buy_token: cow,
-                    buy_amount: 30_000u16.into(),
-                    sell_token: weth,
-                    sell_amount: 1u8.into(),
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    class: OrderClass::Market,
-                    creation_date: Utc.timestamp_opt(2, 0).unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
         ];
 
         let original = orders.clone();
         sort_orders_for_balance_priority(&mut orders, &external_prices);
 
-        assert_eq!(original[0], orders[3]);
-        assert_eq!(original[1], orders[2]);
-        assert_eq!(original[2], orders[4]);
-        assert_eq!(original[3], orders[1]);
-        assert_eq!(original[4], orders[0]);
+        assert_eq!(original[0], orders[1]);
+        assert_eq!(original[1], orders[0]);
+        assert_eq!(original[2], orders[2]);
     }
 }
