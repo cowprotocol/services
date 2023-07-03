@@ -38,6 +38,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub multisend: contracts::MultiSendCallOnly,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
@@ -257,6 +258,14 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        let multisend = wait_for(
+            &web3,
+            contracts::MultiSendCallOnly::builder(&web3)
+                .from(trader_account.clone())
+                .deploy(),
+        )
+        .await
+        .unwrap();
         wait_for(
             &web3,
             authenticator
@@ -470,6 +479,7 @@ impl Blockchain {
             solver_secret_key: config.solver_secret_key,
             tokens,
             settlement,
+            multisend,
             domain_separator,
             weth,
             web3,
@@ -583,12 +593,18 @@ impl Blockchain {
                 .data
                 .unwrap()
                 .0;
-            let (amount_0_out, amount_1_out) = if pair.token_a == order.sell_token {
+            let (amount_a_out, amount_b_out) = if pair.token_a == order.sell_token {
                 (0.into(), quote.buy)
             } else {
                 // Surplus fees stay in the contract.
                 (quote.sell - quote.order.surplus_fee(), 0.into())
             };
+            let (amount_0_out, amount_1_out) =
+                if self.get_token(pair.token_a) < self.get_token(pair.token_b) {
+                    (amount_a_out, amount_b_out)
+                } else {
+                    (amount_b_out, amount_a_out)
+                };
             let swap_interaction = pair
                 .contract
                 .swap(

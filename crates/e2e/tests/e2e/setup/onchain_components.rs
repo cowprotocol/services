@@ -14,7 +14,7 @@ use {
         DomainSeparator,
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
+    shared::{ethrpc::Web3, interaction},
     std::{borrow::BorrowMut, ops::Deref},
     web3::{
         signing,
@@ -239,11 +239,7 @@ impl CowToken {
             .await
             .expect("permit signature issue; good luck figuring this one out!");
 
-        InteractionData {
-            target: self.contract.address(),
-            value: U256::zero(),
-            call_data: permit.tx.data.unwrap().0,
-        }
+        interaction::for_transaction(permit.tx)
     }
 }
 

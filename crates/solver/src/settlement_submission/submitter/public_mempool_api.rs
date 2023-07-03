@@ -5,7 +5,7 @@ use {
         Strategy,
         SubmissionLoopStatus,
     },
-    crate::settlement::{Revertable, Settlement},
+    crate::{settlement::Revertable, settlement_submission::SubmitterSettlement},
     anyhow::{ensure, Context, Result},
     ethcontract::{
         transaction::{Transaction, TransactionBuilder},
@@ -136,10 +136,10 @@ impl TransactionSubmitting for PublicMempoolApi {
         self.submit_transaction(tx).await
     }
 
-    fn submission_status(&self, settlement: &Settlement, _: &str) -> SubmissionLoopStatus {
+    fn submission_status(&self, settlement: &SubmitterSettlement, _: &str) -> SubmissionLoopStatus {
         // disable strategy if there is a slightest possibility for a transaction to be
         // reverted (check done only for mainnet)
-        if self.high_risk_disabled && settlement.revertable() == Revertable::HighRisk {
+        if self.high_risk_disabled && settlement.inner.revertable() == Revertable::HighRisk {
             return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
         }
 
@@ -211,17 +211,21 @@ pub async fn validate_submission_node(node: &Web3, expected_network_id: &String)
 }
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::settlement::NoopInteraction, std::sync::Arc};
+    use {
+        super::*,
+        crate::settlement::{NoopInteraction, Settlement},
+        std::sync::Arc,
+    };
 
     #[test]
     fn submission_status_configuration() {
         let high_risk_settlement = {
-            let mut settlement = Settlement::new(Default::default());
+            let mut settlement = Settlement::default();
             settlement
                 .encoder
                 .append_to_execution_plan(Arc::new(NoopInteraction));
             assert_eq!(settlement.revertable(), Revertable::HighRisk);
-            settlement
+            SubmitterSettlement::for_settlement(settlement)
         };
 
         let submitter = PublicMempoolApi::new(vec![], false);

@@ -25,14 +25,7 @@ use {
         ethrpc::Web3,
         external_prices::ExternalPrices,
         interaction::Interaction,
-        oneinch_api::{
-            OneInchClient,
-            OneInchClientImpl,
-            OneInchError,
-            ProtocolCache,
-            Slippage,
-            SwapQuery,
-        },
+        oneinch_api::{Cache, OneInchClient, OneInchClientImpl, OneInchError, Slippage, SwapQuery},
     },
     std::{
         fmt::{self, Display, Formatter},
@@ -51,7 +44,7 @@ pub struct OneInchSolver {
     client: Box<dyn OneInchClient>,
     #[derivative(Debug = "ignore")]
     allowance_fetcher: Box<dyn AllowanceManaging>,
-    protocol_cache: ProtocolCache,
+    cache: Cache,
     slippage_calculator: SlippageCalculator,
     referrer_address: Option<H160>,
 }
@@ -77,7 +70,7 @@ impl OneInchSolver {
             disabled_protocols: disabled_protocols.into_iter().collect(),
             client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
-            protocol_cache: ProtocolCache::default(),
+            cache: Cache::default(),
             slippage_calculator,
             referrer_address,
         })
@@ -101,7 +94,7 @@ impl OneInchSolver {
 
         let mut interactions: Vec<Arc<dyn Interaction>> = Vec::new();
 
-        let spender = self.client.get_spender().await?;
+        let spender = self.cache.spender(self.client.as_ref()).await?;
         // Fetching allowance before making the SwapQuery so that the Swap info is as
         // recent as possible
         if let Some(approval) = self
@@ -159,8 +152,8 @@ impl SingleOrderSolving for OneInchSolver {
             return Ok(None);
         }
         let protocols = self
-            .protocol_cache
-            .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
+            .cache
+            .allowed_protocols(&self.disabled_protocols, self.client.as_ref())
             .await?;
         let slippage = Slippage::percentage(
             self.slippage_calculator
@@ -235,7 +228,7 @@ mod tests {
             disabled_protocols: Vec::default(),
             client: Box::new(client),
             allowance_fetcher: Box::new(allowance_fetcher),
-            protocol_cache: ProtocolCache::default(),
+            cache: Cache::default(),
             slippage_calculator: SlippageCalculator::default(),
             referrer_address: None,
         }

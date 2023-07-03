@@ -3,7 +3,7 @@ use {
         analytics,
         driver::solver_settlements::RatedSettlement,
         metrics::{SolverMetrics, SolverSimulationOutcome},
-        settlement::Settlement,
+        settlement::{self, Settlement},
         settlement_simulation::{
             simulate_and_error_with_tenderly_link,
             simulate_before_after_access_list,
@@ -29,6 +29,7 @@ pub struct DriverLogger {
     pub tenderly: Option<Arc<dyn TenderlyApi>>,
     pub network_id: String,
     pub settlement_contract: GPv2Settlement,
+    pub settlement_encoding_contracts: settlement::Contracts,
     pub simulation_gas_limit: u128,
 }
 
@@ -152,6 +153,7 @@ impl DriverLogger {
         gas_price: GasPrice1559,
     ) {
         let contract = self.settlement_contract.clone();
+        let settlement_encoding_contracts = self.settlement_encoding_contracts.clone();
         let web3 = self.web3.clone();
         let network_id = self.network_id.clone();
         let metrics = self.metrics.clone();
@@ -160,10 +162,10 @@ impl DriverLogger {
             let simulations = simulate_and_error_with_tenderly_link(
                 errors.iter().map(|simulation_with_error| {
                     let simulation = &simulation_with_error.simulation;
-                    let settlement = simulation
-                        .settlement
-                        .clone()
-                        .encode(simulation.transaction.internalization);
+                    let settlement = simulation.settlement.clone().encode(
+                        &settlement_encoding_contracts,
+                        simulation.transaction.internalization,
+                    );
                     (
                         simulation.solver.account.clone(),
                         settlement,

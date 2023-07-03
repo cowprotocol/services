@@ -60,7 +60,13 @@ pub fn encode_interactions(
             .append_to_execution_plan_internalizable(Arc::new(boundary_interaction), false);
     }
 
-    let encoded_settlement = settlement.encode(InternalizationStrategy::EncodeAllInteractions);
+    let encoded_settlement = settlement.encode(
+        &solver::settlement::Contracts {
+            ethflow: None,
+            multisend: eth.contracts().multisend().clone(),
+        },
+        InternalizationStrategy::EncodeAllInteractions,
+    );
     Ok(encoded_settlement
         .interactions
         .into_iter()

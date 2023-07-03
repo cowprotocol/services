@@ -44,6 +44,7 @@ disable-access-list-simulation = true
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
+multisend = "{:?}"
 
 [[solver]]
 name = "test_solver"
@@ -66,6 +67,7 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
+        contracts.multisend.address(),
         hex::encode(solver_account.private_key()),
         contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),

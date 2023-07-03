@@ -92,6 +92,12 @@ impl From<Deadline> for chrono::DateTime<chrono::Utc> {
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub u64);
 
+impl Id {
+    pub fn to_be_bytes(self) -> [u8; 8] {
+        self.0.to_be_bytes()
+    }
+}
+
 impl From<u64> for Id {
     fn from(inner: u64) -> Self {
         Self(inner)
