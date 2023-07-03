@@ -224,7 +224,7 @@ impl SolutionSubmitter {
                 TransactionStrategy::Gelato(gelato) => {
                     return tokio::time::timeout(
                         self.max_confirm_time,
-                        gelato.relay_settlement(account, settlement.encoded),
+                        gelato.relay_settlement(account, settlement.encoded()),
                     )
                     .await
                     .map(|tx| {
@@ -380,17 +380,14 @@ impl SolutionSubmitter {
 #[derive(Clone, Debug)]
 pub struct SubmitterSettlement {
     inner: Settlement,
-    encoded: EncodedSettlement,
+    contracts: settlement::Contracts,
 }
 
 impl SubmitterSettlement {
     pub fn new(settlement: Settlement, contracts: &settlement::Contracts) -> Self {
         Self {
-            inner: settlement.clone(),
-            encoded: settlement.encode(
-                contracts,
-                InternalizationStrategy::SkipInternalizableInteraction,
-            ),
+            inner: settlement,
+            contracts: contracts.clone(),
         }
     }
 
@@ -398,6 +395,13 @@ impl SubmitterSettlement {
     fn for_settlement(settlement: Settlement) -> Self {
         assert!(!settlement.encoder.has_custom_order_interactions());
         Self::new(settlement, &settlement::Contracts::default())
+    }
+
+    pub fn encoded(&self) -> EncodedSettlement {
+        self.inner.clone().encode(
+            &self.contracts,
+            InternalizationStrategy::SkipInternalizableInteraction,
+        )
     }
 }
 

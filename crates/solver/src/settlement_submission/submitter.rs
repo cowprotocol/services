@@ -556,14 +556,10 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<Web3Transport, ()> {
-        settle_method_builder(
-            self.settlement,
-            settlement.encoded.clone(),
-            self.account.clone(),
-        )
-        .nonce(nonce)
-        .gas(U256::from_f64_lossy(gas_limit))
-        .gas_price(into_gas_price(gas_price))
+        settle_method_builder(self.settlement, settlement.encoded(), self.account.clone())
+            .nonce(nonce)
+            .gas(U256::from_f64_lossy(gas_limit))
+            .gas_price(into_gas_price(gas_price))
     }
 
     /// Estimate access list and validate

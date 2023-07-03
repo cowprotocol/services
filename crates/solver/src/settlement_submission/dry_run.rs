@@ -17,7 +17,7 @@ pub async fn log_settlement(
     let web3 = contract.raw_instance().web3();
     let current_block = web3.eth().block_number().await?;
     let network = web3.net().version().await?;
-    let settlement = settle_method_builder(contract, settlement.encoded, account).tx;
+    let settlement = settle_method_builder(contract, settlement.encoded(), account).tx;
     let simulation_link = tenderly_link(current_block.as_u64(), &network, settlement, None, None);
 
     tracing::info!("not submitting transaction in dry-run mode");
