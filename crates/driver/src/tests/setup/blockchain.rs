@@ -593,12 +593,18 @@ impl Blockchain {
                 .data
                 .unwrap()
                 .0;
-            let (amount_0_out, amount_1_out) = if pair.token_a == order.sell_token {
+            let (amount_a_out, amount_b_out) = if pair.token_a == order.sell_token {
                 (0.into(), quote.buy)
             } else {
                 // Surplus fees stay in the contract.
                 (quote.sell - quote.order.surplus_fee(), 0.into())
             };
+            let (amount_0_out, amount_1_out) =
+                if self.get_token(pair.token_a) < self.get_token(pair.token_b) {
+                    (amount_a_out, amount_b_out)
+                } else {
+                    (amount_b_out, amount_a_out)
+                };
             let swap_interaction = pair
                 .contract
                 .swap(
