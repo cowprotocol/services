@@ -24,7 +24,7 @@ pub enum OrderEventLabel {
     /// Order was included in the winning settlement and is in the process of
     /// being submitted on-chain.
     Executing,
-    /// Order was included in a settlement that did not win.
+    /// Order was included in a valid settlement.
     Considered,
     /// Order was settled on-chain.
     Traded,

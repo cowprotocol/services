@@ -14,7 +14,7 @@ use {
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
-        order::{LimitOrderClass, OrderClass, OrderUid},
+        order::{LimitOrderClass, OrderClass},
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
@@ -83,6 +83,11 @@ impl RunLoop {
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|solution| solution.1.score);
 
+        let events: Vec<_> = solutions
+            .iter()
+            .flat_map(|(_, s)| s.orders.iter().map(|o| (*o, OrderEventLabel::Considered)))
+            .collect();
+
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
             // The winner has score 0 so all solutions are empty.
@@ -90,8 +95,7 @@ impl RunLoop {
                 return;
             }
 
-            self.track_considered_orders(&solution, &solutions).await;
-
+            self.database.store_order_events(&events).await;
             let auction_id = id;
             let winner = solution.submission_address;
             let winning_score = solution.score;
@@ -308,15 +312,13 @@ impl RunLoop {
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
-        let uids = &solution.orders;
-        self.database
-            .store_order_events(
-                &uids
-                    .iter()
-                    .map(|uid| (*uid, OrderEventLabel::Executing))
-                    .collect_vec(),
-            )
-            .await;
+        let events = solution
+            .orders
+            .iter()
+            .map(|uid| (*uid, OrderEventLabel::Executing))
+            .collect_vec();
+        self.database.store_order_events(&events).await;
+
         driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
@@ -324,14 +326,12 @@ impl RunLoop {
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
-            self.database
-                .store_order_events(
-                    &uids
-                        .iter()
-                        .map(|uid| (*uid, OrderEventLabel::Traded))
-                        .collect_vec(),
-                )
-                .await;
+            let events = solution
+                .orders
+                .iter()
+                .map(|uid| (*uid, OrderEventLabel::Traded))
+                .collect_vec();
+            self.database.store_order_events(&events).await;
             tracing::debug!("settled in tx {:?}", tx.hash);
         }
         Ok(())
@@ -409,24 +409,5 @@ impl RunLoop {
             .save_competition(competition)
             .await
             .context("save competition data")
-    }
-
-    /// Stores [`OrderEventLabel::Considered`] for all orders that were not in
-    /// the winning solution but were proposed in other valid solutions.
-    async fn track_considered_orders(
-        &self,
-        winner: &solve::Response,
-        others: &[(usize, solve::Response)],
-    ) {
-        let winning_orders: HashSet<&OrderUid> = winner.orders.iter().collect();
-        let considered_orders: HashSet<&OrderUid> = others
-            .iter()
-            .flat_map(|(_, response)| response.orders.iter())
-            .collect();
-        let considered_orders = considered_orders
-            .difference(&winning_orders)
-            .map(|o| (**o, OrderEventLabel::Considered))
-            .collect_vec();
-        self.database.store_order_events(&considered_orders).await;
     }
 }

@@ -396,7 +396,7 @@ Indexes:
  filtered   | order was filtered from the auction and not sent to solvers
  invalid    | order can not be settled on-chain (e.g. user is missing funds, PreSign or EIP-1271 signature is invalid, etc.)
  executing  | order was included in the winning solution and is in the process of being submitted on-chain
- considered | order was not in the winning solution but in another valid solution
+ considered | order was in a valid solution
  traded     | order was traded on-chain
  cancelled  | user cancelled the order
 
