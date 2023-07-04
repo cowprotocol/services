@@ -641,17 +641,23 @@ fn balance_and_convert_orders(
     converter: &OrderConverter,
     mut balances: HashMap<account_balances::Query, U256>,
     orders: Vec<Order>,
+    external_prices: &ExternalPrices,
 ) -> Vec<LimitOrder> {
-    crate::order_balance_filter::balance_orders(orders, &mut balances, ethflow_contract)
-        .into_iter()
-        .filter_map(|order| match converter.normalize_limit_order(order) {
-            Ok(order) => Some(order),
-            Err(err) => {
-                tracing::debug!(?err, "error normalizing limit order");
-                None
-            }
-        })
-        .collect()
+    crate::order_balance_filter::balance_orders(
+        orders,
+        &mut balances,
+        ethflow_contract,
+        external_prices,
+    )
+    .into_iter()
+    .filter_map(|order| match converter.normalize_limit_order(order) {
+        Ok(order) => Some(order),
+        Err(err) => {
+            tracing::debug!(?err, "error normalizing limit order");
+            None
+        }
+    })
+    .collect()
 }
 
 #[cfg(test)]
