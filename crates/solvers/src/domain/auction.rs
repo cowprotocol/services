@@ -7,7 +7,7 @@ use {
 /// The auction that the solvers need to find solutions to.
 #[derive(Debug)]
 pub struct Auction {
-    pub id: Option<Id>,
+    pub id: Id,
     pub tokens: Tokens,
     pub orders: Vec<order::Order>,
     pub liquidity: Vec<liquidity::Liquidity>,
@@ -35,7 +35,7 @@ impl Tokens {
 
 /// The ID of an auction.
 #[derive(Clone, Debug)]
-pub struct Id(pub String);
+pub struct Id(pub i64);
 
 #[derive(Debug)]
 pub struct Token {

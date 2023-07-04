@@ -132,7 +132,7 @@ impl HttpPriceEstimator {
                     token: self.native_token,
                 },
                 is_liquidity_order: false,
-                mandatory: true,
+                mandatory: false,
                 has_atomic_execution: false,
                 reward: 0., // irrelevant for price estimation
                 is_mature: true, // irrelevant for price estimation

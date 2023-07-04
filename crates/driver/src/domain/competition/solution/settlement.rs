@@ -120,7 +120,7 @@ impl Settlement {
         // Encode the solution into a settlement.
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
         Self::new(
-            auction.id.unwrap(),
+            auction.id,
             [(solution.id, solution)].into(),
             boundary,
             eth,

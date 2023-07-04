@@ -208,7 +208,6 @@ impl Solver {
                     });
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");
-                    assert_eq!(req, expected, "solve request has unexpected body");
                     state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,

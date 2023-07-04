@@ -43,8 +43,10 @@ pub struct OrderModel {
     pub fee: TokenAmount,
     pub cost: TokenAmount,
     pub is_liquidity_order: bool,
-    /// [DEPRECATED] All orders are always mature
+    /// [DEPRECATED] All orders are always mature.
     pub is_mature: bool,
+    /// [DEPRECATED] Mandatory flag is not useful enough to warrant keeping
+    /// around.
     #[serde(default)]
     pub mandatory: bool,
     /// Signals if the order will be executed as an atomic unit. In that case

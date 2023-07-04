@@ -34,7 +34,7 @@ impl Auction {
             .collect();
 
         Self {
-            id: auction.id.as_ref().map(ToString::to_string),
+            id: auction.id.to_string(),
             orders: auction
                 .orders
                 .iter()
@@ -122,7 +122,7 @@ impl Auction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    id: Option<String>,
+    id: String,
     tokens: HashMap<eth::H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,

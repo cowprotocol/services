@@ -16,7 +16,7 @@ impl Auction {
     /// Converts a data transfer object into its domain object representation.
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
-            id: self.id.clone().map(auction::Id),
+            id: auction::Id(self.id),
             tokens: auction::Tokens(
                 self.tokens
                     .iter()
@@ -84,7 +84,8 @@ impl Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
-    id: Option<String>,
+    #[serde_as(as = "DisplayFromStr")]
+    id: i64,
     tokens: HashMap<H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,

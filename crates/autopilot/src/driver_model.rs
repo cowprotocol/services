@@ -62,6 +62,7 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
+        #[serde_as(as = "DisplayFromStr")]
         pub id: i64,
         pub tokens: Vec<Token>,
         pub orders: Vec<Order>,
