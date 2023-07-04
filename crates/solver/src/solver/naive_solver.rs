@@ -62,6 +62,7 @@ impl Solver for NaiveSolver {
             &self.order_converter,
             balances,
             orders,
+            &external_prices,
         );
         // Filter out partially fillable limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
