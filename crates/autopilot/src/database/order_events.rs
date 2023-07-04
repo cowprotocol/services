@@ -12,7 +12,7 @@ use {
 
 impl super::Postgres {
     /// Stores the given order event for all passed [`OrderUid`]s in a
-    /// background thread to not block the process.
+    /// background task to not block the thread.
     pub fn store_order_events(&self, uids: Vec<OrderUid>, label: OrderEventLabel) {
         if uids.is_empty() {
             return;

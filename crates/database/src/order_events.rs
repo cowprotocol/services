@@ -39,7 +39,8 @@ pub enum OrderEventLabel {
 pub struct OrderEvent {
     /// Which order this event belongs to
     pub order_uid: OrderUid,
-    /// When the event was noticed and **NOT** when it was inserted into the DB
+    /// When the event was noticed and not necessarily when it was inserted into
+    /// the DB
     pub timestamp: DateTime<Utc>,
     /// What kind of event happened
     pub label: OrderEventLabel,
