@@ -9,7 +9,7 @@ async fn sell_orders_on_both_sides() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 {
@@ -108,7 +108,7 @@ async fn sell_orders_on_one_side() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 {
@@ -207,7 +207,7 @@ async fn buy_orders_on_both_sides() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 {
@@ -306,7 +306,7 @@ async fn buy_and_sell_orders() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 {

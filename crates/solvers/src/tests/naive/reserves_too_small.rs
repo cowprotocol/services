@@ -9,7 +9,7 @@ async fn test() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 {

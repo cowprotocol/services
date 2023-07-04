@@ -97,7 +97,7 @@ async fn tested_amounts_adjust_depending_on_response() {
     let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let auction = json!({
-        "id": null,
+        "id": "1",
         "tokens": {
             "0xba100000625a3754423978a60c9317c58a424e3D": {
                 "decimals": 18,
@@ -275,7 +275,7 @@ async fn tested_amounts_wrap_around() {
     let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let auction = json!({
-        "id": null,
+        "id": "1",
         "tokens": {
             "0xba100000625a3754423978a60c9317c58a424e3D": {
                 "decimals": 18,
@@ -402,7 +402,7 @@ async fn moves_surplus_fee_to_buy_token() {
     let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
 
     let auction = json!({
-        "id": null,
+        "id": "1",
         "tokens": {
             "0xba100000625a3754423978a60c9317c58a424e3D": {
                 "decimals": 18,
@@ -575,7 +575,7 @@ async fn insufficient_room_for_surplus_fee() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {
                 "0xba100000625a3754423978a60c9317c58a424e3D": {
                     "decimals": 18,
@@ -676,7 +676,7 @@ async fn market() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {
                 "0xba100000625a3754423978a60c9317c58a424e3D": {
                     "decimals": 18,

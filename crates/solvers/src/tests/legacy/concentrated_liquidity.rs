@@ -48,7 +48,7 @@ async fn test() {
                 },
             },
             "metadata": {
-                "auction_id": null,
+                "auction_id": 1,
                 "environment": null,
                 "gas_price": 15000000000.0,
                 "native_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -92,7 +92,7 @@ async fn test() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [],
             "liquidity": [
