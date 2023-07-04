@@ -254,7 +254,9 @@ impl SolvableOrdersCache {
             orders: orders.clone(),
             prices,
         };
-        counter.record(&auction.orders);
+        let removed = counter.record(&auction.orders);
+        self.database
+            .store_order_events(removed, OrderEventLabel::Filtered);
 
         let id = if self.store_in_db {
             let id = self.database.replace_current_auction(&auction).await?;
@@ -702,10 +704,11 @@ impl OrderFilterCounter {
     }
 
     /// Records the filter counter to metrics.
-    fn record(mut self, orders: &[Order]) {
-        if self.orders.len() != orders.len() {
-            self.checkpoint("other", orders);
-        }
+    /// If there are orders that have been filtered out since the last
+    /// checkpoint these orders will get recorded with the readon "other".
+    /// Returns these catch-all orders.
+    fn record(mut self, orders: &[Order]) -> Vec<OrderUid> {
+        let removed = self.checkpoint("other", orders);
 
         self.metrics.auction_creations.inc();
 
@@ -724,6 +727,8 @@ impl OrderFilterCounter {
                 .with_label_values(&[reason])
                 .set(count as _);
         }
+
+        removed
     }
 }
 
