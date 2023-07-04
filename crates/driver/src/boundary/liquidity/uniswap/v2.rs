@@ -43,9 +43,9 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Option<liquid
         .downcast_ref::<uniswap_v2::Inner>()
         .expect("downcast uniswap settlement handler");
 
-    // Trading on Uniswap V2 pools where the reserves overflows `uint96`s does
+    // Trading on Uniswap V2 pools where the reserves overflows `uint112`s does
     // not work, so filter these pools out.
-    let max = (1_u128 << 96) - 1;
+    let max = 2_u128.pow(112) - 1;
     if pool.reserves.0 > max || pool.reserves.1 > max {
         return None;
     }
