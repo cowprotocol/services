@@ -10,10 +10,11 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     chrono::Utc,
+    database::order_events::OrderEventLabel,
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
-        order::{LimitOrderClass, OrderClass},
+        order::{LimitOrderClass, OrderClass, OrderUid},
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
@@ -88,6 +89,8 @@ impl RunLoop {
             if solution.score == 0.into() {
                 return;
             }
+
+            self.track_considered_orders(&solution, &solutions);
 
             let auction_id = id;
             let winner = solution.submission_address;
@@ -256,6 +259,10 @@ impl RunLoop {
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
+        self.database.store_order_events(
+            auction.orders.iter().map(|o| o.metadata.uid).collect(),
+            OrderEventLabel::Ready,
+        );
         let futures = self
             .drivers
             .iter()
@@ -294,6 +301,9 @@ impl RunLoop {
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
+        let uids = solution.orders.clone();
+        self.database
+            .store_order_events(uids.clone(), OrderEventLabel::Executing);
         driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
@@ -301,6 +311,8 @@ impl RunLoop {
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
+            self.database
+                .store_order_events(uids, OrderEventLabel::Traded);
             tracing::debug!("settled in tx {:?}", tx.hash);
         }
         Ok(())
@@ -378,5 +390,25 @@ impl RunLoop {
             .save_competition(competition)
             .await
             .context("save competition data")
+    }
+
+    /// Stores [`OrderEventLabel::Considered`] for all orders that were not in
+    /// the winning solution but were proposed in other valid solutions.
+    fn track_considered_orders(
+        &self,
+        winner: &solve::Response,
+        others: &[(usize, solve::Response)],
+    ) {
+        let winning_orders: HashSet<&OrderUid> = winner.orders.iter().collect();
+        let considered_orders: HashSet<&OrderUid> = others
+            .iter()
+            .flat_map(|(_, response)| response.orders.iter())
+            .collect();
+        let considered_orders: Vec<OrderUid> = considered_orders
+            .difference(&winning_orders)
+            .map(|o| **o)
+            .collect();
+        self.database
+            .store_order_events(considered_orders, OrderEventLabel::Considered);
     }
 }
