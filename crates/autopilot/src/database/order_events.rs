@@ -1,64 +1,41 @@
 pub use database::order_events::OrderEventLabel;
 use {
+    anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
         order_events::{self, OrderEvent},
     },
     model::order::OrderUid,
-    sqlx::PgConnection,
-    tracing::Instrument,
 };
 
 impl super::Postgres {
-    /// Stores the given order event for all passed [`OrderUid`]s in a
-    /// background task to not block the thread.
-    pub fn store_order_events(&self, uids: Vec<OrderUid>, label: OrderEventLabel) {
-        if uids.is_empty() {
-            return;
+    /// Inserts the given events with the current timestamp into the DB.
+    /// If this function encounters an error it will only be printed. More
+    /// elaborate error handling is not necessary because this is just
+    /// debugging information.
+    pub async fn store_order_events(&self, events: &[(OrderUid, OrderEventLabel)]) {
+        if let Err(err) = store_order_events(self, events, Utc::now()).await {
+            tracing::warn!(?err, "failed to insert order events");
         }
-
-        let now = Utc::now();
-        let db = self.0.clone();
-        tokio::task::spawn(
-            async move {
-                let mut ex = match db.acquire().await {
-                    Ok(ex) => ex,
-                    Err(err) => {
-                        tracing::warn!(
-                            ?label,
-                            ?uids,
-                            ?err,
-                            "failed to acquire DB connection; could not store order events"
-                        );
-                        return;
-                    }
-                };
-                store_order_events(&mut ex, &uids, now, label).await;
-            }
-            .instrument(tracing::Span::current()),
-        );
     }
 }
 
 async fn store_order_events(
-    ex: &mut PgConnection,
-    uids: &[OrderUid],
+    db: &super::Postgres,
+    events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
-    label: OrderEventLabel,
-) {
-    for uid in uids {
-        if let Err(err) = order_events::insert_order_event(
-            ex,
-            &OrderEvent {
-                order_uid: ByteArray(uid.0),
-                timestamp,
-                label,
-            },
-        )
-        .await
-        {
-            tracing::warn!(?label, ?uid, ?err, "failed to store order event");
-        }
+) -> Result<()> {
+    let mut ex = db.0.begin().await.context("begin transaction")?;
+    for (uid, label) in events {
+        let event = OrderEvent {
+            order_uid: ByteArray(uid.0),
+            timestamp,
+            label: *label,
+        };
+
+        order_events::insert_order_event(&mut ex, &event).await?
     }
+    ex.commit().await?;
+    Ok(())
 }

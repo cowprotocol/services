@@ -167,27 +167,24 @@ impl SolvableOrdersCache {
             .await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+        let mut order_events = vec![];
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Invalid);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let removed = counter.checkpoint("unsupported_token", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Invalid);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Invalid);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
         let removed = counter.checkpoint("insufficient_sell", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Invalid);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         // If we update due to an explicit notification we can reuse existing balances
         // as they cannot have changed.
@@ -220,13 +217,11 @@ impl SolvableOrdersCache {
 
         let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("insufficient_balance", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Invalid);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_dust_orders(orders, &new_balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Filtered);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -235,18 +230,15 @@ impl SolvableOrdersCache {
             self.metrics,
         );
         let removed = counter.checkpoint("missing_price", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Filtered);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         let removed = counter.checkpoint("out_of_market", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Filtered);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
         let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Filtered);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let auction = Auction {
             block,
@@ -255,8 +247,9 @@ impl SolvableOrdersCache {
             prices,
         };
         let removed = counter.record(&auction.orders);
-        self.database
-            .store_order_events(removed, OrderEventLabel::Filtered);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+
+        self.database.store_order_events(&order_events).await;
 
         let id = if self.store_in_db {
             let id = self.database.replace_current_auction(&auction).await?;
