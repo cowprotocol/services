@@ -6,7 +6,7 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
-    anyhow::Context,
+    anyhow::{anyhow, Context},
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
     url::Url,
@@ -63,7 +63,13 @@ impl ExternalTradeFinder {
             let text = response.text().await.map_err(PriceEstimationError::from)?;
             serde_json::from_str::<dto::Quote>(&text)
                 .map(Trade::from)
-                .map_err(PriceEstimationError::from)
+                .map_err(|err| {
+                    if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
+                        PriceEstimationError::from(err)
+                    } else {
+                        PriceEstimationError::from(err)
+                    }
+                })
         };
 
         self.sharing
@@ -103,6 +109,15 @@ impl From<dto::Quote> for Trade {
                 })
                 .collect(),
             solver: quote.solver,
+        }
+    }
+}
+
+impl From<dto::Error> for PriceEstimationError {
+    fn from(value: dto::Error) -> Self {
+        match value.kind.as_str() {
+            "QuotingFailed" => Self::NoLiquidity,
+            _ => Self::Other(anyhow!("{}", value.description)),
         }
     }
 }
@@ -164,5 +179,13 @@ mod dto {
         pub value: U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Error {
+        pub kind: String,
+        pub description: String,
     }
 }
