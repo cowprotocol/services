@@ -15,7 +15,8 @@ use {
         zeroex::ZeroExPriceEstimator,
         Arguments,
         PriceEstimating,
-        PriceEstimatorType,
+        PriceEstimator,
+        PriceEstimatorKind,
     },
     crate::{
         arguments::{self, CodeSimulatorKind, Driver},
@@ -52,7 +53,7 @@ pub struct PriceEstimatorFactory<'a> {
     network: Network,
     components: Components,
     trade_verifier: Option<TradeVerifier>,
-    estimators: HashMap<PriceEstimatorType, EstimatorEntry>,
+    estimators: HashMap<PriceEstimatorKind, EstimatorEntry>,
     external_estimators: HashMap<String, EstimatorEntry>,
 }
 
@@ -202,19 +203,19 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn create_estimator(&self, kind: PriceEstimatorType) -> Result<EstimatorEntry> {
-        let name = kind.name();
-        match kind {
-            PriceEstimatorType::Baseline => {
-                self.create_estimator_entry::<BaselinePriceEstimator>(&name, ())
+    fn create_estimator(&self, estimator: PriceEstimator) -> Result<EstimatorEntry> {
+        let name = estimator.name();
+        match estimator.kind {
+            PriceEstimatorKind::Baseline => {
+                self.create_estimator_entry::<BaselinePriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Paraswap => {
-                self.create_estimator_entry::<ParaswapPriceEstimator>(&name, ())
+            PriceEstimatorKind::Paraswap => {
+                self.create_estimator_entry::<ParaswapPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::ZeroEx => {
-                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, ())
+            PriceEstimatorKind::ZeroEx => {
+                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
+            PriceEstimatorKind::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
                 &name,
                 HttpPriceEstimatorParams {
                     base: self
@@ -224,12 +225,13 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .context("quasimodo solver url not specified")?,
                     solve_path: "solve".to_owned(),
                     use_liquidity: true,
+                    solver: estimator.address,
                 },
             ),
-            PriceEstimatorType::OneInch => {
-                self.create_estimator_entry::<OneInchPriceEstimator>(&name, ())
+            PriceEstimatorKind::OneInch => {
+                self.create_estimator_entry::<OneInchPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorType::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
+            PriceEstimatorKind::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
                 &name,
                 HttpPriceEstimatorParams {
                     base: self
@@ -239,20 +241,22 @@ impl<'a> PriceEstimatorFactory<'a> {
                         .context("yearn solver url not specified")?,
                     solve_path: self.args.yearn_solver_path.clone(),
                     use_liquidity: false,
+                    solver: estimator.address,
                 },
             ),
-            PriceEstimatorType::BalancerSor => {
-                self.create_estimator_entry::<BalancerSor>(&name, ())
+            PriceEstimatorKind::BalancerSor => {
+                self.create_estimator_entry::<BalancerSor>(&name, estimator.address)
             }
         }
     }
 
-    fn get_estimator(&mut self, kind: PriceEstimatorType) -> Result<&EstimatorEntry> {
+    fn get_estimator(&mut self, estimator: PriceEstimator) -> Result<&EstimatorEntry> {
         #[allow(clippy::map_entry)]
-        if !self.estimators.contains_key(&kind) {
-            self.estimators.insert(kind, self.create_estimator(kind)?);
+        if !self.estimators.contains_key(&estimator.kind) {
+            self.estimators
+                .insert(estimator.kind, self.create_estimator(estimator)?);
         }
-        Ok(&self.estimators[&kind])
+        Ok(&self.estimators[&estimator.kind])
     }
 
     fn get_external_estimator(&mut self, driver: &Driver) -> Result<&EstimatorEntry> {
@@ -273,7 +277,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     fn get_estimators(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
         kinds
@@ -310,7 +314,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
@@ -328,7 +332,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn fast_price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         fast_price_estimation_results_required: NonZeroUsize,
         drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
@@ -344,7 +348,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn native_price_estimator(
         &mut self,
-        kinds: &[PriceEstimatorType],
+        kinds: &[PriceEstimator],
         drivers: &[Driver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
@@ -390,9 +394,9 @@ trait PriceEstimatorCreating: Sized {
 }
 
 impl PriceEstimatorCreating for BaselinePriceEstimator {
-    type Params = ();
+    type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BaselinePriceEstimator::new(
             factory.components.uniswap_v2_pools.clone(),
             factory.components.gas_price.clone(),
@@ -400,13 +404,14 @@ impl PriceEstimatorCreating for BaselinePriceEstimator {
             factory.network.native_token,
             factory.native_token_price_estimation_amount()?,
             factory.rate_limiter(name),
+            solver,
         ))
     }
 }
 impl PriceEstimatorCreating for ParaswapPriceEstimator {
-    type Params = ();
+    type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(ParaswapPriceEstimator::new(
             Arc::new(DefaultParaswapApi {
                 client: factory.components.http_factory.create(),
@@ -419,6 +424,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
             factory.rate_limiter(name),
+            solver,
         ))
     }
 
@@ -427,14 +433,15 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
     }
 }
 impl PriceEstimatorCreating for ZeroExPriceEstimator {
-    type Params = ();
+    type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(ZeroExPriceEstimator::new(
             factory.components.zeroex.clone(),
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(name),
             factory.args.zeroex_only_estimate_buy_queries,
+            solver,
         ))
     }
 
@@ -444,9 +451,9 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
 }
 
 impl PriceEstimatorCreating for OneInchPriceEstimator {
-    type Params = ();
+    type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(OneInchPriceEstimator::new(
             factory
                 .components
@@ -456,6 +463,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
             factory.shared_args.disabled_one_inch_protocols.clone(),
             factory.rate_limiter(name),
             factory.shared_args.one_inch_referrer_address,
+            solver,
         ))
     }
 
@@ -465,9 +473,9 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
 }
 
 impl PriceEstimatorCreating for BalancerSor {
-    type Params = ();
+    type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, _: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BalancerSor::new(
             Arc::new(DefaultBalancerSorApi::new(
                 factory.components.http_factory.create(),
@@ -480,6 +488,7 @@ impl PriceEstimatorCreating for BalancerSor {
             )?),
             factory.rate_limiter(name),
             factory.components.gas_price.clone(),
+            solver,
         ))
     }
 }
@@ -489,6 +498,7 @@ struct HttpPriceEstimatorParams {
     base: Url,
     solve_path: String,
     use_liquidity: bool,
+    solver: H160,
 }
 
 impl PriceEstimatorCreating for HttpPriceEstimator {
@@ -520,6 +530,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
             factory.network.name.clone(),
             factory.rate_limiter(name),
             params.use_liquidity,
+            params.solver,
         ))
     }
 }

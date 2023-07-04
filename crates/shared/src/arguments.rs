@@ -8,7 +8,7 @@ use {
         ethrpc,
         fee_subsidy::cow_token::SubsidyTiers,
         gas_price_estimation::GasEstimatorType,
-        price_estimation::PriceEstimatorType,
+        price_estimation::PriceEstimator,
         rate_limiter::RateLimitingStrategy,
         sources::{
             balancer_v2::BalancerFactoryKind,
@@ -55,14 +55,8 @@ pub struct Driver {
 // as both crates can create orders
 #[derive(clap::Parser)]
 pub struct OrderQuotingArguments {
-    #[clap(
-        long,
-        env,
-        default_value = "Baseline",
-        value_enum,
-        use_value_delimiter = true
-    )]
-    pub price_estimators: Vec<PriceEstimatorType>,
+    #[clap(long, env, value_enum, use_value_delimiter = true)]
+    pub price_estimators: Vec<PriceEstimator>,
 
     /// A list of external drivers used for price estimation in the following
     /// format: `<NAME>|<URL>,<NAME>|<URL>`

@@ -32,6 +32,7 @@ pub trait TradeFinding: Send + Sync + 'static {
 pub struct Quote {
     pub out_amount: U256,
     pub gas_estimate: u64,
+    pub solver: H160,
 }
 
 /// A trade.
@@ -52,6 +53,7 @@ impl Trade {
         gas_estimate: u64,
         approval_target: Option<H160>,
         swap: Interaction,
+        solver: H160,
     ) -> Self {
         let interactions = match approval_target {
             Some(spender) => {
@@ -70,9 +72,7 @@ impl Trade {
             out_amount,
             gas_estimate,
             interactions,
-            // TODO replace this if we want to have verified quotes of non-colocated price
-            // estimators
-            solver: Default::default(),
+            solver,
         }
     }
 
@@ -174,6 +174,7 @@ mod tests {
                 value: 42.into(),
                 data: vec![1, 2, 3, 4],
             },
+            H160([1; 20]),
         );
 
         assert_eq!(
@@ -225,7 +226,7 @@ mod tests {
                     data: vec![5, 6, 7, 8],
                 },
             ],
-            solver: Default::default(),
+            solver: H160([1; 20]),
         };
 
         assert_eq!(

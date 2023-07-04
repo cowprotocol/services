@@ -116,6 +116,7 @@ impl TradeFinding for ExternalTradeFinder {
         Ok(Quote {
             out_amount: trade.out_amount,
             gas_estimate: trade.gas_estimate,
+            solver: trade.solver,
         })
     }
 

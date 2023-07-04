@@ -22,12 +22,14 @@ impl OneInchPriceEstimator {
         disabled_protocols: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
         referrer_address: Option<H160>,
+        solver: H160,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(OneInchTradeFinder::new(
                 api,
                 disabled_protocols,
                 referrer_address,
+                solver,
             )),
             rate_limiter,
         ))
@@ -70,6 +72,7 @@ mod tests {
                     "test".into(),
                 )),
                 None,
+                H160([1; 20]),
             )
         }
 

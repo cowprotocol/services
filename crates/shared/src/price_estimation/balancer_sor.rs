@@ -15,7 +15,7 @@ use {
     anyhow::Result,
     futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
     gas_estimation::GasPriceEstimating,
-    primitive_types::U256,
+    primitive_types::{H160, U256},
     std::sync::Arc,
 };
 
@@ -27,6 +27,7 @@ pub struct BalancerSor {
     >,
     rate_limiter: Arc<RateLimiter>,
     gas: Arc<dyn GasPriceEstimating>,
+    solver: H160,
 }
 
 impl BalancerSor {
@@ -34,12 +35,14 @@ impl BalancerSor {
         api: Arc<dyn BalancerSorApi>,
         rate_limiter: Arc<RateLimiter>,
         gas: Arc<dyn GasPriceEstimating>,
+        solver: H160,
     ) -> Self {
         Self {
             api,
             sharing: Default::default(),
             rate_limiter,
             gas,
+            solver,
         }
     }
 
@@ -66,6 +69,7 @@ impl BalancerSor {
         Ok(Estimate {
             out_amount: quote.return_amount,
             gas: SETTLEMENT_SINGLE_TRADE + (quote.swaps.len() as u64) * GAS_PER_BALANCER_SWAP,
+            solver: self.solver,
         })
     }
 }
@@ -115,7 +119,7 @@ mod tests {
             "test".into(),
         ));
         let gas = Arc::new(FixedGasPriceEstimator(1e7));
-        let estimator = BalancerSor::new(api, rate_limiter, gas);
+        let estimator = BalancerSor::new(api, rate_limiter, gas, Default::default());
         let query = Query {
             verification: None,
             sell_token: testlib::tokens::WETH,

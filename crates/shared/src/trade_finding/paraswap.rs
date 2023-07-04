@@ -32,6 +32,7 @@ struct Inner {
     paraswap: Arc<dyn ParaswapApi>,
     tokens: Arc<dyn TokenInfoFetching>,
     disabled_paraswap_dexs: Vec<String>,
+    solver: H160,
 }
 
 #[derive(Clone)]
@@ -46,12 +47,14 @@ impl ParaswapTradeFinder {
         api: Arc<dyn ParaswapApi>,
         tokens: Arc<dyn TokenInfoFetching>,
         disabled_paraswap_dexs: Vec<String>,
+        solver: H160,
     ) -> Self {
         Self {
             inner: Inner {
                 paraswap: api,
                 tokens,
                 disabled_paraswap_dexs,
+                solver,
             },
             sharing: Default::default(),
         }
@@ -104,6 +107,7 @@ impl Inner {
                 OrderKind::Sell => price.dest_amount,
             },
             gas_estimate: gas::SETTLEMENT_OVERHEAD + price.gas_cost,
+            solver: self.solver,
         };
 
         Ok(InternalQuote {
@@ -149,6 +153,7 @@ impl Inner {
                 value: tx.value,
                 data: tx.data,
             },
+            self.solver,
         ))
     }
 }
@@ -219,7 +224,12 @@ mod tests {
             }
         });
 
-        let trader = ParaswapTradeFinder::new(Arc::new(paraswap), Arc::new(tokens), Vec::new());
+        let trader = ParaswapTradeFinder::new(
+            Arc::new(paraswap),
+            Arc::new(tokens),
+            Vec::new(),
+            H160([1; 20]),
+        );
 
         let query = Query::default();
         let result = futures::try_join!(trader.get_quote(&query), trader.get_trade(&query));
@@ -236,7 +246,12 @@ mod tests {
             client: Client::new(),
             partner: "Test".to_string(),
         };
-        let finder = ParaswapTradeFinder::new(Arc::new(paraswap), Arc::new(tokens), Vec::new());
+        let finder = ParaswapTradeFinder::new(
+            Arc::new(paraswap),
+            Arc::new(tokens),
+            Vec::new(),
+            H160([1; 20]),
+        );
 
         let trade = finder
             .get_trade(&Query {

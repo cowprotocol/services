@@ -69,6 +69,7 @@ pub struct HttpPriceEstimator {
     network_name: String,
     rate_limiter: Arc<RateLimiter>,
     use_liquidity: bool,
+    solver: H160,
 }
 
 impl HttpPriceEstimator {
@@ -85,6 +86,7 @@ impl HttpPriceEstimator {
         network_name: String,
         rate_limiter: Arc<RateLimiter>,
         use_liquidity: bool,
+        solver: H160,
     ) -> Self {
         Self {
             api,
@@ -99,6 +101,7 @@ impl HttpPriceEstimator {
             network_name,
             rate_limiter,
             use_liquidity,
+            solver,
         }
     }
 
@@ -246,6 +249,7 @@ impl HttpPriceEstimator {
                 OrderKind::Sell => settlement.orders[&0].exec_buy_amount,
             },
             gas,
+            solver: self.solver,
         })
     }
 
@@ -491,6 +495,7 @@ mod tests {
             "test".into(),
             RateLimiter::test(),
             true,
+            Default::default(),
         );
 
         let sell_order = estimator
@@ -544,6 +549,7 @@ mod tests {
             "test".into(),
             RateLimiter::test(),
             true,
+            Default::default(),
         );
         let err = estimator
             .estimate(&Query {
@@ -588,6 +594,7 @@ mod tests {
             "test".into(),
             RateLimiter::test(),
             true,
+            Default::default(),
         );
 
         let err = estimator
@@ -683,6 +690,7 @@ mod tests {
             "test".into(),
             RateLimiter::test(),
             true,
+            Default::default(),
         );
 
         let query = Query {
@@ -813,6 +821,7 @@ mod tests {
             )),
             uniswap_v3_pools: Some(uniswap_v3_pool_fetcher),
             use_liquidity: true,
+            solver: Default::default(),
         };
 
         let result = estimator
