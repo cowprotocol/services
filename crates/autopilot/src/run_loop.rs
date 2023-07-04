@@ -353,7 +353,7 @@ impl RunLoop {
             // This could be a while loop. It isn't, because some care must be taken to not
             // accidentally keep the borrow alive, which would block senders. Technically
             // this is fine with while conditions but this is clearer.
-            if self.current_block.borrow().number <= deadline {
+            if self.current_block.borrow().number > deadline {
                 break;
             }
             let mut hashes = self
