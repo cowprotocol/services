@@ -695,7 +695,7 @@ impl OrderFilterCounter {
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
         for (order, class) in &filtered_orders {
-            self.orders.remove(&order).unwrap();
+            self.orders.remove(order).unwrap();
             tracing::debug!(%order, ?class, %reason, "filtered order")
         }
         filtered_orders.into_keys().collect()
