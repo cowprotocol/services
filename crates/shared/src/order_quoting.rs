@@ -182,9 +182,9 @@ pub struct Quote {
     /// The final minimum subsidized fee amount for any order created for this
     /// quote. The fee is denoted in the sell token.
     pub fee_amount: U256,
-    /// The actual fee amount that is esimated to be required in order to settle
-    /// the order on chain. This is the fee in full without any subsidies. The
-    /// fee is denoted in the sell token.
+    /// The actual fee amount that is estimated to be required in order to
+    /// settle the order on chain. This is the fee in full without any
+    /// subsidies. The fee is denoted in the sell token.
     pub full_fee_amount: U256,
 }
 
@@ -600,32 +600,39 @@ impl OrderQuoting for OrderQuoter {
 
         let now = self.now.now();
         let quote = async {
-            let (id, data) = match id {
-                Some(id) => {
-                    let data = self
-                        .storage
-                        .get(id)
-                        .await?
-                        .ok_or(FindQuoteError::NotFound(Some(id)))?;
-
-                    if !parameters.matches(&data) {
-                        return Err(FindQuoteError::ParameterMismatch(data));
-                    }
-                    if data.expiration < now {
-                        return Err(FindQuoteError::Expired(data.expiration));
-                    }
-
-                    (id, data)
-                }
+            let result = match id {
+                Some(id) => self
+                    .storage
+                    .get(id)
+                    .await?
+                    .ok_or_else(|| FindQuoteError::NotFound(Some(id)))
+                    .and_then(|data| {
+                        if !parameters.matches(&data) {
+                            Err(FindQuoteError::ParameterMismatch(data))
+                        } else if data.expiration < now {
+                            Err(FindQuoteError::Expired(data.expiration))
+                        } else {
+                            Ok((id, data))
+                        }
+                    }),
                 None => {
                     let quote_kind = quote_kind_from_signing_scheme(signing_scheme);
                     self.storage
                         .find(parameters, now, quote_kind)
                         .await?
-                        .ok_or(FindQuoteError::NotFound(None))?
+                        .ok_or(FindQuoteError::NotFound(None))
                 }
             };
-            Ok(Quote::new(Some(id), data))
+            match result {
+                Ok((found_id, data)) => {
+                    metrics::Metrics::found(id.map(|id| id == found_id).unwrap_or(false));
+                    Ok(Quote::new(Some(found_id), data))
+                }
+                Err(err) => {
+                    metrics::Metrics::not_found(&err);
+                    Err(err)
+                }
+            }
         };
 
         let (quote, subsidy) = futures::try_join!(
@@ -699,6 +706,48 @@ fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
             onchain_order: true,
         } => QuoteKind::PreSignOnchainOrder,
         _ => QuoteKind::Standard,
+    }
+}
+
+mod metrics {
+    use super::FindQuoteError;
+
+    #[derive(prometheus_metric_storage::MetricStorage)]
+    pub struct Metrics {
+        /// Counter for whether quotes where found by ID, fuzzy search or not
+        /// found at all and for what reason.
+        #[metric(name = "orderbook_quote_finding", labels("success", "type"))]
+        quote_finding_rate: prometheus::CounterVec,
+    }
+
+    impl Metrics {
+        fn get() -> &'static Self {
+            Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
+        }
+
+        pub fn found(by_id: bool) {
+            let label = match by_id {
+                true => "by_id",
+                false => "by_params",
+            };
+            Self::get()
+                .quote_finding_rate
+                .with_label_values(&["true", label])
+                .inc();
+        }
+
+        pub fn not_found(err: &FindQuoteError) {
+            let label = match err {
+                FindQuoteError::NotFound(_) => "not_found",
+                FindQuoteError::ParameterMismatch(_) => "parameter_mismatch",
+                FindQuoteError::Expired(_) => "expired",
+                FindQuoteError::Other(_) => "other",
+            };
+            Self::get()
+                .quote_finding_rate
+                .with_label_values(&["false", label])
+                .inc();
+        }
     }
 }
 
