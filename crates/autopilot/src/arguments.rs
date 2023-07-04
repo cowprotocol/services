@@ -85,11 +85,11 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "Baseline",
         value_enum,
-        use_value_delimiter = true
+        use_value_delimiter = true,
+        default_value = "Baseline"
     )]
-    pub native_price_estimators: Vec<shared::price_estimation::PriceEstimatorType>,
+    pub native_price_estimators: Vec<shared::price_estimation::PriceEstimator>,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(

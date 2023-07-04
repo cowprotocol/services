@@ -1,4 +1,7 @@
-use {crate::settlement_rater::SettlementRating, tracing::info_span};
+use {
+    crate::{settlement, settlement_rater::SettlementRating},
+    tracing::info_span,
+};
 
 pub mod gas;
 pub mod solver_settlements;
@@ -78,11 +81,13 @@ pub struct Driver {
     process_partially_fillable_liquidity_orders: bool,
     process_partially_fillable_limit_orders: bool,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    settlement_encoding_contracts: settlement::Contracts,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         settlement_contract: GPv2Settlement,
+        settlement_encoding_contracts: settlement::Contracts,
         liquidity_collector: LiquidityCollector,
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
@@ -113,6 +118,7 @@ impl Driver {
             gas::Estimator::new(gas_price_estimator).with_gas_price_cap(gas_price_cap);
 
         let settlement_ranker = SettlementRanker {
+            settlement_encoding_contracts: settlement_encoding_contracts.clone(),
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
@@ -127,6 +133,7 @@ impl Driver {
             tenderly,
             network_id,
             settlement_contract,
+            settlement_encoding_contracts: settlement_encoding_contracts.clone(),
             simulation_gas_limit,
         };
 
@@ -152,6 +159,7 @@ impl Driver {
             process_partially_fillable_liquidity_orders,
             process_partially_fillable_limit_orders,
             balance_fetcher,
+            settlement_encoding_contracts,
         }
     }
 
@@ -381,15 +389,15 @@ impl Driver {
                         })
                         .collect(),
                     call_data: settlement_simulation::call_data(
-                        rated_settlement
-                            .settlement
-                            .clone()
-                            .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
+                        rated_settlement.settlement.clone().encode(
+                            &self.settlement_encoding_contracts,
+                            InternalizationStrategy::SkipInternalizableInteraction,
+                        ), // rating is done with internalizations
                     ),
                     uninternalized_call_data: rated_settlement
                         .settlement
                         .clone()
-                        .encode_uninternalized_if_different()
+                        .encode_uninternalized_if_different(&self.settlement_encoding_contracts)
                         .map(settlement_simulation::call_data),
                 })
                 .collect(),

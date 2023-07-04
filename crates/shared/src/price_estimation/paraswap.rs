@@ -11,6 +11,7 @@ use {
         token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
+    primitive_types::H160,
     std::sync::Arc,
 };
 
@@ -22,12 +23,14 @@ impl ParaswapPriceEstimator {
         token_info: Arc<dyn TokenInfoFetching>,
         disabled_paraswap_dexs: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
+        solver: H160,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ParaswapTradeFinder::new(
                 api,
                 token_info,
                 disabled_paraswap_dexs,
+                solver,
             )),
             rate_limiter,
         ))
@@ -78,6 +81,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
+            H160([1; 20]),
         );
 
         let weth = testlib::tokens::WETH;

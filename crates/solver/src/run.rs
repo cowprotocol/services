@@ -13,6 +13,7 @@ use {
         metrics::Metrics,
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
+        settlement,
         settlement_post_processing::PostProcessingPipeline,
         settlement_rater::SettlementRater,
         settlement_submission::{
@@ -34,9 +35,15 @@ use {
             TransactionStrategy,
         },
     },
-    contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9},
+    contracts::{
+        BalancerV2Vault,
+        IUniswapLikeRouter,
+        MultiSendCallOnly,
+        UniswapV3SwapRouter,
+        WETH9,
+    },
     ethcontract::errors::DeployError,
-    futures::{future, StreamExt},
+    futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
     shared::{
@@ -133,6 +140,12 @@ pub async fn run(args: Arguments) {
         native_token.address(),
         &args.shared.base_tokens,
     ));
+    let multisend_contract = match args.multisend_contract {
+        Some(address) => MultiSendCallOnly::at(&web3, address),
+        None => MultiSendCallOnly::deployed(&web3)
+            .await
+            .expect("load multisend contract"),
+    };
 
     let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
@@ -251,15 +264,25 @@ pub async fn run(args: Arguments) {
                 solver_accounts.len()
             );
 
-            solver_accounts
-                .into_iter()
-                .map(|account_arg| account_arg.into_account(chain_id))
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                solver_accounts
+                    .into_iter()
+                    .map(|account_arg| account_arg.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else if let Some(account_arg) = args.solver_account {
-            std::iter::repeat(account_arg.into_account(chain_id))
-                .zip(args.solvers)
-                .collect()
+            join_all(
+                std::iter::repeat(account_arg)
+                    .take(args.solvers.len())
+                    .map(|account| account.into_account(chain_id)),
+            )
+            .await
+            .into_iter()
+            .zip(args.solvers)
+            .collect()
         } else {
             panic!("either SOLVER_ACCOUNTS or SOLVER_ACCOUNT must be set")
         }
@@ -292,11 +315,15 @@ pub async fn run(args: Arguments) {
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
+    let settlement_encoding_contracts =
+        settlement::Contracts::new(&web3, args.ethflow_contract, multisend_contract.address());
+
     let post_processing_pipeline = Arc::new(PostProcessingPipeline::new(
         native_token.address(),
         web3.clone(),
         args.weth_unwrap_factor,
         settlement_contract.clone(),
+        settlement_encoding_contracts.clone(),
         market_makable_token_list.clone(),
     ));
 
@@ -323,6 +350,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create access list estimator"),
     );
     let settlement_rater = Arc::new(SettlementRater {
+        settlement_encoding_contracts: settlement_encoding_contracts.clone(),
         access_list_estimator: access_list_estimator.clone(),
         settlement_contract: settlement_contract.clone(),
         web3: web3.clone(),
@@ -370,6 +398,7 @@ pub async fn run(args: Arguments) {
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,
     )
+    .await
     .expect("failure creating solvers");
 
     metrics.initialize_solver_metrics(
@@ -507,7 +536,8 @@ pub async fn run(args: Arguments) {
     }
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
-        contract: settlement_contract.clone(),
+        settlement: settlement_contract.clone(),
+        settlement_encoding_contracts: settlement_encoding_contracts.clone(),
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         max_confirm_time: args.max_submission_seconds,
@@ -544,6 +574,7 @@ pub async fn run(args: Arguments) {
 
     let mut driver = Driver::new(
         settlement_contract,
+        settlement_encoding_contracts,
         liquidity_collector,
         solver,
         gas_price_estimator,

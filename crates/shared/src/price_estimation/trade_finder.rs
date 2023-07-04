@@ -120,6 +120,7 @@ impl Inner {
                 Ok(Estimate {
                     out_amount: quote.out_amount,
                     gas: quote.gas_estimate,
+                    solver: quote.solver,
                 })
             }
         }
@@ -325,6 +326,7 @@ impl TradeVerifier {
         let verified = Estimate {
             out_amount: summary.out_amount(query.kind)?,
             gas: summary.gas_used.as_u64(),
+            solver: trade.solver,
         };
         tracing::debug!(
             ?query,

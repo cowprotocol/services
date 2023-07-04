@@ -22,8 +22,7 @@ use {
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
-    anyhow::Result,
-    clap::ValueEnum,
+    anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -41,9 +40,8 @@ use {
     thiserror::Error,
 };
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ValueEnum)]
-#[clap(rename_all = "verbatim")]
-pub enum PriceEstimatorType {
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum PriceEstimatorKind {
     Baseline,
     Paraswap,
     ZeroEx,
@@ -53,10 +51,40 @@ pub enum PriceEstimatorType {
     BalancerSor,
 }
 
-impl PriceEstimatorType {
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub struct PriceEstimator {
+    pub kind: PriceEstimatorKind,
+    pub address: H160,
+}
+
+impl PriceEstimator {
     /// Returns the name of this price estimator type.
     pub fn name(&self) -> String {
-        format!("{self:?}")
+        format!("{:?}", self.kind)
+    }
+}
+
+impl std::str::FromStr for PriceEstimator {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (estimator, address) = s
+            .split_once('|')
+            .unwrap_or((s, "0x0000000000000000000000000000000000000000"));
+        let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
+        let kind = match estimator {
+            "Baseline" => PriceEstimatorKind::Baseline,
+            "Paraswap" => PriceEstimatorKind::Paraswap,
+            "ZeroEx" => PriceEstimatorKind::ZeroEx,
+            "Quasimodo" => PriceEstimatorKind::Quasimodo,
+            "OneInch" => PriceEstimatorKind::OneInch,
+            "Yearn" => PriceEstimatorKind::Yearn,
+            "BalancerSor" => PriceEstimatorKind::BalancerSor,
+            estimator => {
+                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
+            }
+        };
+        Ok(PriceEstimator { kind, address })
     }
 }
 
@@ -324,6 +352,8 @@ pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
     pub gas: u64,
+    /// Address of the solver that provided the quote.
+    pub solver: H160,
 }
 
 impl Estimate {
@@ -486,5 +516,62 @@ pub mod mocks {
         ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
             futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_price_estimators() {
+        for arg in [
+            "Baselin|0x0000000000000000000000000000000000000001", // incorrect estimator name
+            "Baseline|0x000000000000000000000000000000000000000", // address too short
+            "Baseline|0x00000000000000000000000000000000000000010", // address too long
+            "Baseline,0x0000000000000000000000000000000000000001", // wrong separator
+            "Baseline|",                                          // missing argument
+            "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
+            "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
+        ] {
+            let parsed = arg.parse::<PriceEstimator>();
+            assert!(
+                parsed.is_err(),
+                "string successfully parsed when it should have failed: {arg}"
+            );
+        }
+
+        let address = H160::from_low_u64_be;
+        let parsed = |arg: &str| arg.parse::<PriceEstimator>().unwrap();
+        let estimator = |kind, address| PriceEstimator { kind, address };
+        // Fallback case to allow for default CLI arguments.
+        assert_eq!(
+            parsed("Baseline"),
+            estimator(PriceEstimatorKind::Baseline, address(0))
+        );
+        assert_eq!(
+            parsed("Baseline|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Baseline, address(1))
+        );
+        assert_eq!(
+            parsed("ZeroEx|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::ZeroEx, address(1))
+        );
+        assert_eq!(
+            parsed("Quasimodo|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Quasimodo, address(1))
+        );
+        assert_eq!(
+            parsed("OneInch|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::OneInch, address(1))
+        );
+        assert_eq!(
+            parsed("Yearn|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Yearn, address(1))
+        );
+        assert_eq!(
+            parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::BalancerSor, address(1))
+        );
     }
 }

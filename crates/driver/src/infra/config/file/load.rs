@@ -3,6 +3,7 @@ use {
         domain::eth,
         infra::{self, config::file, liquidity, mempool, simulator, solver},
     },
+    futures::future::join_all,
     std::path::Path,
     tokio::fs,
 };
@@ -16,25 +17,36 @@ pub async fn load(path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
+    // Not printing detailed error because it could leak private keys.
     let config: file::Config = toml::de::from_str(&data)
         .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
     infra::Config {
-        solvers: config
-            .solvers
-            .into_iter()
-            .map(|config| {
-                let private_key = eth::PrivateKey::from_raw(config.private_key.0).unwrap();
-                solver::Config {
-                    endpoint: config.endpoint,
-                    name: config.name.into(),
-                    slippage: solver::Slippage {
-                        relative: config.relative_slippage,
-                        absolute: config.absolute_slippage.map(Into::into),
-                    },
-                    private_key,
+        solvers: join_all(config.solvers.into_iter().map(|config| async move {
+            let account = match config.account {
+                file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
+                    ethcontract::PrivateKey::from_raw(private_key.0).unwrap(),
+                    None,
+                ),
+                file::Account::Kms(key_id) => {
+                    let config = ethcontract::aws_config::load_from_env().await;
+                    let account =
+                        ethcontract::transaction::kms::Account::new((&config).into(), &key_id.0)
+                            .await
+                            .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
+                    ethcontract::Account::Kms(account, None)
                 }
-            })
-            .collect(),
+            };
+            solver::Config {
+                endpoint: config.endpoint,
+                name: config.name.into(),
+                slippage: solver::Slippage {
+                    relative: config.relative_slippage,
+                    absolute: config.absolute_slippage.map(Into::into),
+                },
+                account,
+            }
+        }))
+        .await,
         liquidity: liquidity::Config {
             base_tokens: config
                 .liquidity

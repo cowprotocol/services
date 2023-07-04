@@ -47,8 +47,9 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
-            "--price-estimators=Baseline".to_string(),
-            "--native-price-estimators=Baseline".to_string(),
+            "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
+            "--native-price-estimators=Baseline|0x0000000000000000000000000000000000000001"
+                .to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval-seconds=1".to_string(),
         ]
@@ -123,6 +124,10 @@ impl<'a> Services<'a> {
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!(
+                "--multisend-contract={:?}",
+                self.contracts.multisend.address()
+            ),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

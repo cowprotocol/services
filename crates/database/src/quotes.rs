@@ -33,6 +33,7 @@ pub struct Quote {
     pub order_kind: OrderKind,
     pub expiration_timestamp: DateTime<Utc>,
     pub quote_kind: QuoteKind,
+    pub solver: Address,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not
@@ -49,9 +50,10 @@ INSERT INTO quotes (
     sell_token_price,
     order_kind,
     expiration_timestamp,
-    quote_kind
+    quote_kind,
+    solver
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -65,6 +67,7 @@ RETURNING id
         .bind(quote.order_kind)
         .bind(quote.expiration_timestamp)
         .bind(&quote.quote_kind)
+        .bind(&quote.solver)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -177,6 +180,7 @@ mod tests {
             order_kind: OrderKind::Sell,
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -209,6 +213,7 @@ mod tests {
             sell_token_price: 1.,
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
         };
 
         let token_b = ByteArray([2; 20]);
@@ -224,6 +229,7 @@ mod tests {
             sell_token_price: 1.,
             expiration_timestamp: now,
             quote_kind: QuoteKind::Standard,
+            solver: ByteArray([2; 20]),
         };
 
         // Save two measurements for token_a
@@ -394,6 +400,7 @@ mod tests {
                 order_kind: OrderKind::Sell,
                 expiration_timestamp: now,
                 quote_kind: QuoteKind::Eip1271OnchainOrder,
+                solver: ByteArray([1; 20]),
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;

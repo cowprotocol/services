@@ -6,7 +6,7 @@ use {
             eth,
             liquidity,
         },
-        infra::{self, blockchain::Ethereum},
+        infra::blockchain::Ethereum,
         util,
     },
     std::collections::HashSet,
@@ -57,7 +57,6 @@ pub struct Solver {
     client: reqwest::Client,
     config: Config,
     eth: Ethereum,
-    now: infra::time::Now,
 }
 
 #[derive(Debug, Clone)]
@@ -68,11 +67,11 @@ pub struct Config {
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
     /// The private key of this solver, used for settlement submission.
-    pub private_key: eth::PrivateKey,
+    pub account: ethcontract::Account,
 }
 
 impl Solver {
-    pub fn new(config: Config, eth: Ethereum, now: infra::time::Now) -> Self {
+    pub fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::CONTENT_TYPE,
@@ -87,7 +86,6 @@ impl Solver {
                 .unwrap(),
             config,
             eth,
-            now,
         }
     }
 
@@ -102,12 +100,12 @@ impl Solver {
 
     /// The blockchain address of this solver.
     pub fn address(&self) -> eth::Address {
-        self.config.private_key.public_address().into()
+        self.config.account.address().into()
     }
 
-    /// The private key of this solver.
-    pub fn private_key(&self) -> eth::PrivateKey {
-        self.config.private_key.clone()
+    /// The account which should be used to sign settlements for this solver.
+    pub fn account(&self) -> ethcontract::Account {
+        self.config.account.clone()
     }
 
     /// Make a POST request instructing the solver to solve an auction.
@@ -120,10 +118,8 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
-            auction, liquidity, timeout, weth, self.now,
-        ))
-        .unwrap();
+        let body =
+            serde_json::to_string(&dto::Auction::new(auction, liquidity, timeout, weth)).unwrap();
         observe::solver_request(self.name(), &self.config.endpoint, &body);
         let req = self
             .client

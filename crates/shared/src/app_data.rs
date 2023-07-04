@@ -1,6 +1,6 @@
 use {
     anyhow::{anyhow, Context, Result},
-    model::app_id::AppDataHash,
+    model::{app_id::AppDataHash, order::Interactions},
     serde::Deserialize,
     serde_json::Value,
 };
@@ -12,16 +12,19 @@ pub struct ValidatedAppData {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct BackendAppData {}
+pub struct BackendAppData {
+    #[serde(default)]
+    pub interactions: Interactions,
+}
 
 #[derive(Clone)]
 pub struct Validator {
-    pub size_limit: usize,
+    size_limit: usize,
 }
 
 impl Default for Validator {
     fn default() -> Self {
-        Self { size_limit: 1000 }
+        Self { size_limit: 8192 }
     }
 }
 

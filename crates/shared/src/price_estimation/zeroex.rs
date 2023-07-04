@@ -10,6 +10,7 @@ use {
         trade_finding::zeroex::ZeroExTradeFinder,
         zeroex_api::ZeroExApi,
     },
+    primitive_types::H160,
     std::sync::Arc,
 };
 
@@ -21,9 +22,15 @@ impl ZeroExPriceEstimator {
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
         buy_only: bool,
+        solver: H160,
     ) -> Self {
         Self(TradeEstimator::new(
-            Arc::new(ZeroExTradeFinder::new(api, excluded_sources, buy_only)),
+            Arc::new(ZeroExTradeFinder::new(
+                api,
+                excluded_sources,
+                buy_only,
+                solver,
+            )),
             rate_limiter,
         ))
     }
@@ -64,6 +71,7 @@ mod tests {
                 "test".into(),
             )),
             buy_only,
+            H160([1; 20]),
         )
     }
 

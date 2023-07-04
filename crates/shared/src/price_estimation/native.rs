@@ -126,6 +126,7 @@ mod tests {
             futures::stream::iter([Ok(Estimate {
                 out_amount: 123_456_789_000_000_000u128.into(),
                 gas: 0,
+                solver: H160([1; 20]),
             })])
             .enumerate()
             .boxed()

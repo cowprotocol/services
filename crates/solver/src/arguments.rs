@@ -52,8 +52,9 @@ pub struct Arguments {
     pub balancer_sor_url: Url,
 
     /// The account used by the driver to sign transactions. This can be either
-    /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
-    /// for signing with a local node account.
+    /// a 32-byte private key for offline signing, a 20-byte Ethereum address
+    /// for signing with a local node account, or a KMS key ID for signing with
+    /// AWS.
     #[clap(long, env, hide_env_values = true)]
     pub solver_account: Option<SolverAccountArg>,
 
@@ -364,6 +365,12 @@ pub struct Arguments {
     /// disabled.
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
+
+    /// Address of the `MultiCallSendOnly` contract used for trampolining custom
+    /// order interactions. If not specified, the solver will use the default
+    /// contract deployment for the current network.
+    #[clap(long, env)]
+    pub multisend_contract: Option<H160>,
 
     /// Controls whether we discard solutions without a fee for partially
     /// filllable limit orders or set the fee to 0. This can make sense on

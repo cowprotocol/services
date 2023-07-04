@@ -4,7 +4,7 @@ use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
     crate::{
         domain::{competition::order, eth},
-        infra,
+        infra::time,
         tests::{
             cases::{
                 AB_ORDER_AMOUNT,
@@ -221,7 +221,6 @@ pub fn setup() -> Setup {
         pools: Default::default(),
         orders: Default::default(),
         trusted: Default::default(),
-        now: infra::time::Now::Fake(chrono::Utc::now()),
         config_file: Default::default(),
         solutions: Default::default(),
         quote: Default::default(),
@@ -236,7 +235,6 @@ pub struct Setup {
     pools: Vec<blockchain::Pool>,
     orders: Vec<Order>,
     trusted: HashSet<&'static str>,
-    now: infra::time::Now,
     config_file: Option<PathBuf>,
     solutions: Vec<Solution>,
     /// Is this a test for the /quote endpoint?
@@ -483,7 +481,6 @@ impl Setup {
             pools,
             orders,
             trusted,
-            now,
             config_file,
             ..
         } = self;
@@ -538,7 +535,6 @@ impl Setup {
             trusted: &trusted,
             quotes: &quotes,
             deadline,
-            now: self.now,
             quote: self.quote,
         })
         .await;
@@ -549,7 +545,6 @@ impl Setup {
                 absolute_slippage,
                 solver_address,
                 solver_secret_key,
-                now: self.now,
                 enable_simulation: self.enable_simulation,
             },
             &solver,
@@ -565,7 +560,6 @@ impl Setup {
             fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
             trusted,
             deadline,
-            now,
             quotes,
             quote: self.quote,
         }
@@ -580,7 +574,7 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        self.now.now() + chrono::Duration::days(30)
+        time::now() + chrono::Duration::days(30)
     }
 }
 
@@ -593,7 +587,6 @@ pub struct Test {
     fulfillments: Vec<Fulfillment>,
     trusted: HashSet<&'static str>,
     deadline: chrono::DateTime<chrono::Utc>,
-    now: infra::time::Now,
     /// Is this testing the /quote endpoint?
     quote: bool,
 }
@@ -620,7 +613,6 @@ impl Test {
             body,
             fulfillments: &self.fulfillments,
             blockchain: &self.blockchain,
-            now: self.now,
         }
     }
 
@@ -652,13 +644,13 @@ impl Test {
     }
 
     /// Call the /settle endpoint.
-    pub async fn settle(&self, solution_id: String) -> Settle {
+    pub async fn settle(&self) -> Settle {
         let old_balances = self.balances().await;
         let res = blockchain::wait_for(
             &self.blockchain.web3,
             self.client
                 .post(format!(
-                    "http://{}/{}/settle/{solution_id}",
+                    "http://{}/{}/settle",
                     self.driver.addr,
                     solver::NAME
                 ))
@@ -673,7 +665,7 @@ impl Test {
             old_balances,
             status,
             test: self,
-            solution_id,
+            body,
         }
     }
 
@@ -715,7 +707,6 @@ pub struct Solve<'a> {
     body: String,
     fulfillments: &'a [Fulfillment],
     blockchain: &'a Blockchain,
-    now: infra::time::Now,
 }
 
 impl<'a> Solve<'a> {
@@ -726,7 +717,6 @@ impl<'a> Solve<'a> {
             body: self.body,
             fulfillments: self.fulfillments,
             blockchain: self.blockchain,
-            now: self.now,
         }
     }
 
@@ -741,7 +731,6 @@ pub struct SolveOk<'a> {
     body: String,
     fulfillments: &'a [Fulfillment],
     blockchain: &'a Blockchain,
-    now: infra::time::Now,
 }
 
 impl SolveOk<'_> {
@@ -752,7 +741,7 @@ impl SolveOk<'_> {
     pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
+        assert_eq!(result.as_object().unwrap().len(), 3);
         assert!(result.get("score").is_some());
         let score = result.get("score").unwrap().as_str().unwrap();
         let score = eth::U256::from_dec_str(score).unwrap();
@@ -781,14 +770,14 @@ impl SolveOk<'_> {
                         )
                     })
                     .quote
-                    .order_uid(self.blockchain, self.now)
+                    .order_uid(self.blockchain)
                     .to_string()
             })
             .sorted()
             .collect_vec();
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
+        assert_eq!(result.as_object().unwrap().len(), 3);
         assert!(result.get("orders").is_some());
         let order_uids = result
             .get("orders")
@@ -801,15 +790,6 @@ impl SolveOk<'_> {
             .collect_vec();
         assert_eq!(order_uids, expected_order_uids);
         self
-    }
-
-    /// Get the solution ID from the response.
-    pub fn solution_id(self) -> String {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
-        assert!(result.get("id").is_some());
-        result.get("id").unwrap().as_str().unwrap().to_owned()
     }
 }
 
@@ -911,7 +891,7 @@ pub struct Settle<'a> {
     old_balances: HashMap<&'static str, eth::U256>,
     status: StatusCode,
     test: &'a Test,
-    solution_id: String,
+    body: String,
 }
 
 pub struct SettleOk<'a> {
@@ -924,6 +904,25 @@ impl<'a> Settle<'a> {
     pub async fn ok(self) -> SettleOk<'a> {
         // Ensure that the response is OK.
         assert_eq!(self.status, hyper::StatusCode::OK);
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 1);
+        assert!(!result
+            .get("calldata")
+            .unwrap()
+            .get("internalized")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .is_empty());
+        assert!(!result
+            .get("calldata")
+            .unwrap()
+            .get("uninternalized")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .is_empty());
 
         // Ensure that the solution ID is included in the settlement.
         let tx = self
@@ -940,8 +939,22 @@ impl<'a> Settle<'a> {
             .unwrap();
         let input = tx.input.0;
         let len = input.len();
-        let tx_solution_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
-        assert_eq!(tx_solution_id.to_string(), self.solution_id);
+        let tx_auction_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
+        assert_eq!(tx_auction_id.to_string(), "1");
+
+        // Ensure that the internalized calldata returned by the driver is equal to the
+        // calldata published to the blockchain.
+        let internalized = result
+            .get("calldata")
+            .unwrap()
+            .get("internalized")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            internalized,
+            format!("0x{}", hex::encode(&input).to_lowercase())
+        );
 
         SettleOk {
             test: self.test,

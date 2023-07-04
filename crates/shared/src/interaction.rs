@@ -1,6 +1,8 @@
 use {
-    ethcontract::Bytes,
+    ethcontract::{transaction::TransactionBuilder, Bytes},
+    model::interaction::InteractionData,
     primitive_types::{H160, U256},
+    web3::Transport,
 };
 
 pub trait Interaction: std::fmt::Debug + Send + Sync {
@@ -29,8 +31,19 @@ impl Interaction for EncodedInteraction {
     }
 }
 
-impl Interaction for model::interaction::InteractionData {
+impl Interaction for InteractionData {
     fn encode(&self) -> Vec<EncodedInteraction> {
         vec![(self.target, self.value, Bytes(self.call_data.clone()))]
+    }
+}
+
+pub fn for_transaction<T>(tx: TransactionBuilder<T>) -> InteractionData
+where
+    T: Transport,
+{
+    InteractionData {
+        target: tx.to.unwrap(),
+        value: tx.value.unwrap_or_default(),
+        call_data: tx.data.unwrap().0,
     }
 }

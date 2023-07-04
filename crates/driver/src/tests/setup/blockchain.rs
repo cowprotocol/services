@@ -2,7 +2,7 @@ use {
     super::{Asset, Order},
     crate::{
         domain::{competition::order, eth},
-        infra,
+        infra::time,
         tests::{self, boundary},
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
@@ -38,6 +38,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub multisend: contracts::MultiSendCallOnly,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
@@ -111,26 +112,22 @@ impl Quote {
     }
 
     /// The UID of the order.
-    pub fn order_uid(
-        &self,
-        blockchain: &Blockchain,
-        now: infra::time::Now,
-    ) -> tests::boundary::OrderUid {
-        self.boundary(blockchain, now).uid()
+    pub fn order_uid(&self, blockchain: &Blockchain) -> tests::boundary::OrderUid {
+        self.boundary(blockchain).uid()
     }
 
     /// The signature of the order.
-    pub fn order_signature(&self, blockchain: &Blockchain, now: infra::time::Now) -> Vec<u8> {
-        self.boundary(blockchain, now).signature()
+    pub fn order_signature(&self, blockchain: &Blockchain) -> Vec<u8> {
+        self.boundary(blockchain).signature()
     }
 
-    fn boundary(&self, blockchain: &Blockchain, now: infra::time::Now) -> tests::boundary::Order {
+    fn boundary(&self, blockchain: &Blockchain) -> tests::boundary::Order {
         tests::boundary::Order {
             sell_token: blockchain.get_token(self.order.sell_token),
             buy_token: blockchain.get_token(self.order.buy_token),
             sell_amount: self.sell_amount(),
             buy_amount: self.buy_amount(),
-            valid_to: u32::try_from(now.now().timestamp()).unwrap() + self.order.valid_for.0,
+            valid_to: u32::try_from(time::now().timestamp()).unwrap() + self.order.valid_for.0,
             user_fee: self.order.user_fee,
             side: self.order.side,
             secret_key: blockchain.trader_secret_key,
@@ -256,6 +253,14 @@ impl Blockchain {
         let settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
+                .from(trader_account.clone())
+                .deploy(),
+        )
+        .await
+        .unwrap();
+        let multisend = wait_for(
+            &web3,
+            contracts::MultiSendCallOnly::builder(&web3)
                 .from(trader_account.clone())
                 .deploy(),
         )
@@ -474,6 +479,7 @@ impl Blockchain {
             solver_secret_key: config.solver_secret_key,
             tokens,
             settlement,
+            multisend,
             domain_separator,
             weth,
             web3,
@@ -587,12 +593,18 @@ impl Blockchain {
                 .data
                 .unwrap()
                 .0;
-            let (amount_0_out, amount_1_out) = if pair.token_a == order.sell_token {
+            let (amount_a_out, amount_b_out) = if pair.token_a == order.sell_token {
                 (0.into(), quote.buy)
             } else {
                 // Surplus fees stay in the contract.
                 (quote.sell - quote.order.surplus_fee(), 0.into())
             };
+            let (amount_0_out, amount_1_out) =
+                if self.get_token(pair.token_a) < self.get_token(pair.token_b) {
+                    (amount_a_out, amount_b_out)
+                } else {
+                    (amount_b_out, amount_a_out)
+                };
             let swap_interaction = pair
                 .contract
                 .swap(

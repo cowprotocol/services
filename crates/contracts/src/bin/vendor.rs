@@ -59,6 +59,11 @@ fn run() -> Result<()> {
             "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/\
              deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
         )?
+        .npm(
+            "CowProtocolToken",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
+             CowProtocolToken.json",
+        )?
         .github(
             "CoWSwapEthFlow",
             &format!(
@@ -90,6 +95,11 @@ fn run() -> Result<()> {
             "GnosisSafeCompatibilityFallbackHandler",
             "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/handler/\
              CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
+        )?
+        .npm(
+            "MultiSendCallOnly",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/libraries/\
+             MultiSendCallOnly.sol/MultiSendCallOnly.json",
         )?
         .npm(
             "GnosisSafeProxy",
@@ -183,11 +193,6 @@ fn run() -> Result<()> {
         .github(
             "ISwaprPair",
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
-        )?
-        .npm(
-            "CowProtocolToken",
-            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
-             CowProtocolToken.json",
         )?
         .npm(
             "CowProtocolVirtualToken",

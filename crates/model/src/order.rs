@@ -40,6 +40,16 @@ pub struct Interactions {
     pub post: Vec<InteractionData>,
 }
 
+impl Interactions {
+    pub fn is_empty(&self) -> bool {
+        self.all().next().is_none()
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &'_ InteractionData> + '_ {
+        self.pre.iter().chain(self.post.iter())
+    }
+}
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.

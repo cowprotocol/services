@@ -17,17 +17,14 @@ async fn possible() {
         .done()
         .await;
 
-    let id = test
-        .solve()
+    test.solve()
         .await
         .ok()
-        .orders(&[ab_order().name, cd_order().name])
-        .solution_id();
-    let settle = test.settle(id).await;
-
-    // Even though the solver returned two solutions, the executed settlement is a
-    // combination of the two, meaning the settlements were merged successfully.
-    settle
+        .orders(&[ab_order().name, cd_order().name]);
+    test.settle()
+        .await
+        // Even though the solver returned two solutions, the executed settlement is a
+        // combination of the two, meaning the settlements were merged successfully.
         .ok()
         .await
         .ab_order_executed()
@@ -56,13 +53,6 @@ async fn impossible() {
 
     // Only the first A-B order gets settled.
 
-    let id = test
-        .solve()
-        .await
-        .ok()
-        .orders(&[ab_order().name])
-        .solution_id();
-    let settle = test.settle(id).await;
-
-    settle.ok().await.ab_order_executed().await;
+    test.solve().await.ok().orders(&[ab_order().name]);
+    test.settle().await.ok().await.ab_order_executed().await;
 }

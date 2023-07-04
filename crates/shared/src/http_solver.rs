@@ -123,7 +123,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .checked_sub(Duration::from_secs(1))
             .context("no time left to send request")?;
 
-        let mut url = self.base.join(&self.solve_path).context("join base")?;
+        let mut url = crate::url::join(&self.base, &self.solve_path);
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
@@ -208,13 +208,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     }
 
     fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult) {
-        let mut url = match self.base.join("notify") {
-            Ok(url) => url,
-            Err(err) => {
-                tracing::error!(?err, "failed to create notify url");
-                return;
-            }
-        };
+        let mut url = crate::url::join(&self.base, "notify");
 
         let client = self.client.clone();
         let config_api_key = self.config.api_key.clone();

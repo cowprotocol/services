@@ -9,12 +9,14 @@ pub use crate::boundary::contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20, 
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
+    multisend: contracts::MultiSendCallOnly,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub multisend: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -27,6 +29,7 @@ impl Contracts {
                 .address
         });
         let settlement = contracts::GPv2Settlement::at(web3, address);
+
         let address = addresses.weth.map(Into::into).unwrap_or_else(|| {
             contracts::WETH9::raw_contract()
                 .networks
@@ -35,7 +38,21 @@ impl Contracts {
                 .address
         });
         let weth = contracts::WETH9::at(web3, address);
-        Self { settlement, weth }
+
+        let address = addresses.multisend.map(Into::into).unwrap_or_else(|| {
+            contracts::MultiSendCallOnly::raw_contract()
+                .networks
+                .get(network_id.as_str())
+                .unwrap()
+                .address
+        });
+        let multisend = contracts::MultiSendCallOnly::at(web3, address);
+
+        Self {
+            settlement,
+            weth,
+            multisend,
+        }
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
@@ -44,6 +61,10 @@ impl Contracts {
 
     pub fn weth(&self) -> &contracts::WETH9 {
         &self.weth
+    }
+
+    pub fn multisend(&self) -> &contracts::MultiSendCallOnly {
+        &self.multisend
     }
 
     pub fn weth_address(&self) -> eth::WethAddress {

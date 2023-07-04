@@ -5,6 +5,7 @@ use {
         CoWSwapEthFlow,
         GPv2AllowListAuthentication,
         GPv2Settlement,
+        MultiSendCallOnly,
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
@@ -24,6 +25,7 @@ pub struct Contracts {
     pub allowance: Address,
     pub domain_separator: DomainSeparator,
     pub ethflow: CoWSwapEthFlow,
+    pub multisend: MultiSendCallOnly,
 }
 
 impl Contracts {
@@ -101,7 +103,8 @@ impl Contracts {
                 .0,
         );
 
-        let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address(),));
+        let ethflow = deploy!(CoWSwapEthFlow(gp_settlement.address(), weth.address()));
+        let multisend = deploy!(MultiSendCallOnly());
 
         Self {
             balancer_vault,
@@ -113,6 +116,7 @@ impl Contracts {
             allowance,
             domain_separator,
             ethflow,
+            multisend,
         }
     }
 }

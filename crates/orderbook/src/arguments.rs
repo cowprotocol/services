@@ -5,7 +5,7 @@ use {
         arguments::{display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimatorType},
+        price_estimation::{self, PriceEstimator},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
@@ -93,11 +93,11 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "Baseline",
         value_enum,
-        use_value_delimiter = true
+        use_value_delimiter = true,
+        default_value = "Baseline"
     )]
-    pub native_price_estimators: Vec<PriceEstimatorType>,
+    pub native_price_estimators: Vec<PriceEstimator>,
 
     /// How many successful price estimates for each order will cause a fast
     /// price estimation to return its result early.

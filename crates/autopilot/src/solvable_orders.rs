@@ -316,6 +316,7 @@ async fn filter_invalid_signature_orders(
                     signer,
                     hash,
                     signature: signature.clone(),
+                    interactions: order.interactions.pre.clone(),
                 })
             }
             _ => None,
@@ -713,7 +714,17 @@ mod tests {
         futures::{FutureExt, StreamExt},
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
-        model::order::{LimitOrderClass, OrderBuilder, OrderData, OrderMetadata, OrderUid},
+        model::{
+            interaction::InteractionData,
+            order::{
+                Interactions,
+                LimitOrderClass,
+                OrderBuilder,
+                OrderData,
+                OrderMetadata,
+                OrderUid,
+            },
+        },
         primitive_types::H160,
         shared::{
             bad_token::list_based::ListBasedDetector,
@@ -885,6 +896,18 @@ mod tests {
                     uid: OrderUid::from_parts(H256([1; 32]), H160([11; 20]), 1),
                     ..Default::default()
                 },
+                interactions: Interactions {
+                    pre: vec![InteractionData {
+                        target: H160([0xe1; 20]),
+                        value: U256::zero(),
+                        call_data: vec![1, 2],
+                    }],
+                    post: vec![InteractionData {
+                        target: H160([0xe2; 20]),
+                        value: U256::zero(),
+                        call_data: vec![3, 4],
+                    }],
+                },
                 ..Default::default()
             },
             Order {
@@ -893,6 +916,18 @@ mod tests {
                     ..Default::default()
                 },
                 signature: Signature::Eip1271(vec![2, 2]),
+                interactions: Interactions {
+                    pre: vec![InteractionData {
+                        target: H160([0xe3; 20]),
+                        value: U256::zero(),
+                        call_data: vec![5, 6],
+                    }],
+                    post: vec![InteractionData {
+                        target: H160([0xe4; 20]),
+                        value: U256::zero(),
+                        call_data: vec![7, 9],
+                    }],
+                },
                 ..Default::default()
             },
             Order {
@@ -928,16 +963,23 @@ mod tests {
                     signer: H160([22; 20]),
                     hash: [2; 32],
                     signature: vec![2, 2],
+                    interactions: vec![InteractionData {
+                        target: H160([0xe3; 20]),
+                        value: U256::zero(),
+                        call_data: vec![5, 6],
+                    }],
                 },
                 SignatureCheck {
                     signer: H160([44; 20]),
                     hash: [4; 32],
                     signature: vec![4, 4, 4, 4],
+                    interactions: vec![],
                 },
                 SignatureCheck {
                     signer: H160([55; 20]),
                     hash: [5; 32],
                     signature: vec![5, 5, 5, 5, 5],
+                    interactions: vec![],
                 },
             ]))
             .returning(|_| vec![Ok(()), Err(SignatureValidationError::Invalid), Ok(())]);

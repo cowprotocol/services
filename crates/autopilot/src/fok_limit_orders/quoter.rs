@@ -146,6 +146,7 @@ impl LimitOrderQuoter {
                     fee_parameters: quote.data.fee_parameters,
                     sell_amount: quote.sell_amount,
                     buy_amount: quote.buy_amount,
+                    solver: quote.data.solver,
                 },
             },
             None => FeeUpdate::Failure { timestamp },

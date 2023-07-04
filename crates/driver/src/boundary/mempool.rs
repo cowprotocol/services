@@ -20,6 +20,7 @@ use {
                 TransactionSubmitting,
             },
             SubTxPoolRef,
+            SubmitterSettlement,
         },
     },
     std::{fmt::Debug, sync::Arc},
@@ -137,8 +138,8 @@ impl Mempool {
             } => use_soft_cancellations,
         };
         let estimator = AccessListEstimator(settlement.access_list.clone());
-        let account = ethcontract::Account::Offline(solver.private_key(), None);
         // TODO: move tx submission logic from legacy code into the driver (#1543)
+        let account = solver.account();
         let submitter = Submitter::new(
             self.eth.contracts().settlement(),
             &account,
@@ -152,14 +153,14 @@ impl Mempool {
         )?;
         submitter
             .submit(
-                settlement.boundary.inner,
+                SubmitterSettlement::new(settlement.boundary.inner, &settlement.boundary.contracts),
                 SubmitterParams {
                     target_confirm_time: self.config.target_confirm_time,
                     gas_estimate: settlement.gas.estimate.into(),
                     deadline: Some(std::time::Instant::now() + self.config.max_confirm_time),
                     retry_interval: self.config.retry_interval,
                     network_id: self.eth.network_id().to_string(),
-                    additional_call_data: settlement.id.to_be_bytes().into_iter().collect(),
+                    additional_call_data: settlement.auction_id.to_be_bytes().into_iter().collect(),
                     use_soft_cancellations,
                 },
             )

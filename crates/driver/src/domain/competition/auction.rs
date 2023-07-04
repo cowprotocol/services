@@ -1,10 +1,7 @@
 use {
-    crate::{
-        domain::{
-            competition::{self, solution},
-            eth,
-        },
-        infra::time,
+    crate::domain::{
+        competition::{self, solution},
+        eth,
     },
     std::{num::ParseIntError, str::FromStr},
     thiserror::Error,
@@ -71,8 +68,8 @@ pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
     /// Computes the timeout for solving an auction.
-    pub fn timeout(self, now: time::Now) -> Result<solution::SolverTimeout, DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer(), now).ok_or(DeadlineExceeded)
+    pub fn timeout(self) -> Result<solution::SolverTimeout, DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer()).ok_or(DeadlineExceeded)
     }
 
     pub fn time_buffer() -> chrono::Duration {
@@ -94,6 +91,12 @@ impl From<Deadline> for chrono::DateTime<chrono::Utc> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub u64);
+
+impl Id {
+    pub fn to_be_bytes(self) -> [u8; 8] {
+        self.0.to_be_bytes()
+    }
+}
 
 impl From<u64> for Id {
     fn from(inner: u64) -> Self {

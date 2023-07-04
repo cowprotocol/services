@@ -1,5 +1,5 @@
 use {
-    crate::driver_model::{execute, solve},
+    crate::driver_model::{settle, solve},
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     shared::http_client::response_body_with_size_limit,
@@ -11,7 +11,7 @@ const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
 pub struct Driver {
-    url: Url,
+    pub url: Url,
     client: Client,
 }
 
@@ -27,33 +27,22 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response(&["solve"], Some(request)).await
+        self.request_response("solve", Some(request)).await
     }
 
-    pub async fn execute(
-        &self,
-        solution_id: &str,
-        _request: &execute::Request,
-    ) -> Result<execute::Response> {
-        // TODO: should be execute
-        self.request_response(&["settle", solution_id], Option::<&()>::None)
-            .await
+    pub async fn settle(&self) -> Result<settle::Response> {
+        self.request_response("settle", Option::<&()>::None).await
     }
 
     async fn request_response<Response>(
         &self,
-        path: &[&str],
+        path: &str,
         request: Option<&impl serde::Serialize>,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
     {
-        let mut url = self.url.clone();
-        let mut segments = url.path_segments_mut().unwrap();
-        for path in path {
-            segments.push(path);
-        }
-        std::mem::drop(segments);
+        let url = shared::url::join(&self.url, path);
         let request = if let Some(request) = request {
             tracing::trace!(
                 path=&url.path(),

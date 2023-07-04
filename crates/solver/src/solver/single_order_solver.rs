@@ -392,8 +392,11 @@ impl Solver for SingleOrderSolver {
         let finalize = async {
             let mut index = 0;
             while let Some(intermediate) = rx.recv().await {
+                let id = intermediate.order.id.clone();
+                let span = tracing::info_span!("order", ?id);
                 match self
                     .finalize_settlement(intermediate, &external_prices, gas_price, index)
+                    .instrument(span)
                     .await
                 {
                     Ok(Some(settlement)) => {
@@ -401,7 +404,7 @@ impl Solver for SingleOrderSolver {
                     }
                     Ok(None) => (),
                     Err(err) => {
-                        tracing::warn!(?err, "failed to finalize intermediate settlement");
+                        tracing::warn!(?err, ?id, "failed to finalize intermediate settlement");
                     }
                 }
                 index += 1;
@@ -697,7 +700,7 @@ mod tests {
             liquidity::{order_converter::OrderConverter, LimitOrderId, LiquidityOrderId},
             metrics::NoopMetrics,
             order_balance_filter::{max_balance, BalancedOrder},
-            settlement::TradeExecution,
+            settlement::{self, TradeExecution},
             settlement_rater::MockSettlementRating,
         },
         anyhow::anyhow,
@@ -828,7 +831,10 @@ mod tests {
         assert_eq!(settlements.len(), 3);
 
         let merged = settlements.into_iter().nth(2).unwrap().encoder;
-        let merged = merged.finish(InternalizationStrategy::EncodeAllInteractions);
+        let merged = merged.finish(
+            &settlement::Contracts::default(),
+            InternalizationStrategy::EncodeAllInteractions,
+        );
         assert_eq!(merged.tokens.len(), 4);
         let token_index = |token: &H160| -> usize {
             merged

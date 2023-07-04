@@ -47,10 +47,10 @@ impl SubgraphClient {
         name: impl AsRef<str>,
         client: Client,
     ) -> Result<Self> {
-        let subgraph_url = base_url
-            .into_url()?
-            .join(&format!("{}/", org.as_ref()))?
-            .join(name.as_ref())?;
+        let subgraph_url = crate::url::join(
+            &base_url.into_url()?,
+            &format!("{}/{}", org.as_ref(), name.as_ref()),
+        );
         Ok(Self {
             client,
             subgraph_url,

@@ -3,6 +3,7 @@ use {
         domain::{
             competition::{
                 self,
+                auction,
                 order,
                 solution::{
                     self,
@@ -55,6 +56,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
+    pub(super) contracts: solver::settlement::Contracts,
     pub solver: eth::Address,
     risk: solution::Risk,
 }
@@ -160,6 +162,10 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
+            contracts: solver::settlement::Contracts {
+                ethflow: None,
+                multisend: eth.contracts().multisend().clone(),
+            },
             solver: solution.solver.address(),
             risk: solution.risk,
         })
@@ -167,16 +173,21 @@ impl Settlement {
 
     pub fn tx(
         &self,
-        id: settlement::Id,
+        auction_id: auction::Id,
         contract: &contracts::GPv2Settlement,
         internalization: Internalization,
     ) -> eth::Tx {
-        let encoded_settlement = self.inner.clone().encode(match internalization {
-            settlement::Internalization::Enable => {
-                InternalizationStrategy::SkipInternalizableInteraction
-            }
-            settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
-        });
+        let encoded_settlement = self.inner.clone().encode(
+            &self.contracts,
+            match internalization {
+                settlement::Internalization::Enable => {
+                    InternalizationStrategy::SkipInternalizableInteraction
+                }
+                settlement::Internalization::Disable => {
+                    InternalizationStrategy::EncodeAllInteractions
+                }
+            },
+        );
         let builder = settle_method_builder(
             contract,
             encoded_settlement,
@@ -184,7 +195,7 @@ impl Settlement {
         );
         let tx = builder.into_inner();
         let mut input = tx.data.unwrap().0;
-        input.extend(id.0.to_be_bytes());
+        input.extend(auction_id.0.to_be_bytes());
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),
@@ -228,6 +239,7 @@ impl Settlement {
         self.inner.merge(other.inner).map(|inner| Self {
             inner,
             solver: self.solver,
+            contracts: self.contracts,
             risk: self.risk.merge(other.risk),
         })
     }

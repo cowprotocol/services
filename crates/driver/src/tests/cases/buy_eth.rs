@@ -14,8 +14,6 @@ async fn test() {
         .done()
         .await;
 
-    let id = test.solve().await.ok().solution_id();
-    let settle = test.settle(id).await;
-
-    settle.ok().await.eth_order_executed().await;
+    test.solve().await.ok();
+    test.settle().await.ok().await.eth_order_executed().await;
 }

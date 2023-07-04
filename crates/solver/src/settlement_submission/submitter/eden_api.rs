@@ -1,15 +1,15 @@
 //! https://docs.edennetwork.io/for-traders/getting-started
 
 use {
-    crate::{
-        settlement::Settlement,
-        settlement_submission::submitter::{
+    crate::settlement_submission::{
+        submitter::{
             common::PrivateNetwork,
             Strategy,
             SubmissionLoopStatus,
             TransactionHandle,
             TransactionSubmitting,
         },
+        SubmitterSettlement,
     },
     anyhow::{bail, Context, Result},
     ethcontract::{
@@ -131,7 +131,7 @@ impl TransactionSubmitting for EdenApi {
 
     fn submission_status(
         &self,
-        _settlement: &Settlement,
+        _settlement: &SubmitterSettlement,
         _network_id: &str,
     ) -> SubmissionLoopStatus {
         SubmissionLoopStatus::Enabled
