@@ -1,5 +1,6 @@
 use {
     crate::setup::*,
+    database::order_events::{OrderEvent, OrderEventLabel},
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -68,7 +69,7 @@ async fn test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    services.create_order(&order).await.unwrap();
+    let uid = services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
@@ -78,6 +79,43 @@ async fn test(web3: Web3) {
     let balance = token.balance_of(trader.address()).call().await.unwrap();
     assert_eq!(balance, to_wei(1));
 
+    let all_events_registered = || async {
+        let events = crate::database::events_of_order(services.db(), &uid).await;
+        order_events_matching_fuzzy(
+            &events,
+            &[
+                OrderEventLabel::Created,
+                OrderEventLabel::Ready,
+                OrderEventLabel::Considered,
+                OrderEventLabel::Executing,
+                OrderEventLabel::Traded,
+            ],
+        )
+    };
+    wait_for_condition(TIMEOUT, all_events_registered)
+        .await
+        .unwrap();
+
     // TODO: test that we have other important per-auction data that should have
     // made its way into the DB.
+}
+
+fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {
+    let mut events = actual.iter();
+    let mut expectations = expected.iter();
+
+    while let Some(expectation) = expectations.next() {
+        loop {
+            let event = match events.next() {
+                Some(event) => event,
+                // we are still expecting events but none are left
+                None => return false,
+            };
+            if event.label == *expectation {
+                // found expected label; break inner loop to look for next label
+                break;
+            }
+        }
+    }
+    true
 }
