@@ -244,7 +244,7 @@ pub enum Error {
     #[error("mempool error: {0:?}")]
     Mempool(#[from] mempool::Error),
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] auction::DeadlineExceeded),
+    DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
 }
