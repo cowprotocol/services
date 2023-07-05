@@ -64,6 +64,7 @@ impl InstanceCreator {
             &converter,
             balances,
             orders,
+            external_prices,
         );
         // The HTTP solver interface expects liquidity limit orders (like 0x
         // limit orders) to be added to the `orders` models and NOT the
@@ -414,6 +415,7 @@ mod tests {
             order_balance_filter::max_balance,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
+        maplit::hashmap,
         model::{order::OrderData, TokenPair},
         shared::{dummy_contract, externalprices, token_info::MockTokenInfoFetching},
     };
@@ -429,6 +431,17 @@ mod tests {
             H160::from_low_u64_be(3),
             H160::from_low_u64_be(4),
         ];
+        let external_prices = ExternalPrices::new(
+            native_token,
+            hashmap! {
+                native_token => BigRational::from_float(1.).unwrap(),
+                tokens[0] => BigRational::from_float(1.).unwrap(),
+                tokens[1] => BigRational::from_float(1.).unwrap(),
+                tokens[2] => BigRational::from_float(1.).unwrap(),
+                tokens[3] => BigRational::from_float(1.).unwrap(),
+            },
+        )
+        .unwrap();
 
         let amms = [(native_token, tokens[0]), (tokens[0], tokens[1])]
             .iter()
@@ -494,7 +507,7 @@ mod tests {
 
         let balances = max_balance(&orders);
         let instances = solver
-            .prepare_instances(0, 0, orders, amms, 0., &Default::default(), balances)
+            .prepare_instances(0, 0, orders, amms, 0., &external_prices, balances)
             .await;
         assert_eq!(instances.filtered.orders.len(), 6);
         assert_eq!(instances.plain.orders.len(), 8);

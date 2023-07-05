@@ -31,7 +31,7 @@ use {
     tracing::Instrument,
 };
 
-pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Liquidity {
+pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Option<liquidity::Liquidity> {
     assert!(
         *pool.fee.numer() == 3 && *pool.fee.denom() == 1000,
         "uniswap pools have constant fees",
@@ -43,7 +43,14 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
         .downcast_ref::<uniswap_v2::Inner>()
         .expect("downcast uniswap settlement handler");
 
-    liquidity::Liquidity {
+    // Trading on Uniswap V2 pools where the reserves overflows `uint112`s does
+    // not work, so filter these pools out.
+    let max = 2_u128.pow(112) - 1;
+    if pool.reserves.0 > max || pool.reserves.1 > max {
+        return None;
+    }
+
+    Some(liquidity::Liquidity {
         id,
         gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
         kind: liquidity::Kind::UniswapV2(liquidity::uniswap::v2::Pool {
@@ -61,7 +68,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> liquidity::Li
             )
             .expect("invalid uniswap token pair"),
         }),
-    }
+    })
 }
 
 pub fn to_interaction(

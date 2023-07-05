@@ -183,7 +183,7 @@ impl ConstantProductPool {
                 .collect_tuple()
                 .ok_or("invalid number of constant product tokens")?;
             liquidity::constant_product::Reserves::new(a, b)
-                .ok_or("duplicate constant product token address")?
+                .ok_or("invalid constant product pool reserves")?
         };
 
         Ok(liquidity::Liquidity {

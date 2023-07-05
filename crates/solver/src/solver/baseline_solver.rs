@@ -57,6 +57,7 @@ impl Solver for BaselineSolver {
             &self.order_converter,
             balances,
             orders,
+            &external_prices,
         );
         Ok(self.solve_(orders, liquidity, slippage, gas_price))
     }

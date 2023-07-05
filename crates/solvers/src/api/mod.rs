@@ -53,6 +53,8 @@ async fn solve(
         }
     };
 
+    tracing::trace!(?auction);
+
     let solutions = state
         .solve(auction)
         .await
@@ -60,6 +62,8 @@ async fn solve(
         .next()
         .map(|solution| dto::Solutions::from_domain(&[solution]))
         .unwrap_or_default();
+
+    tracing::trace!(?solutions);
 
     (
         axum::http::StatusCode::OK,
