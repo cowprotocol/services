@@ -102,9 +102,8 @@ async fn test(web3: Web3) {
 
 fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {
     let mut events = actual.iter();
-    let mut expectations = expected.iter();
 
-    while let Some(expectation) = expectations.next() {
+    for expectation in expected {
         loop {
             let event = match events.next() {
                 Some(event) => event,
