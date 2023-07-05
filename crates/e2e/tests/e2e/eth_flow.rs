@@ -7,7 +7,6 @@ use {
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     hex_literal::hex,
     model::{
-        app_id::AppDataHash,
         order::{
             BuyTokenDestination,
             EthflowData,
@@ -15,6 +14,7 @@ use {
             Order,
             OrderBuilder,
             OrderClass,
+            OrderCreationAppData,
             OrderKind,
             OrderUid,
             SellTokenSource,
@@ -425,7 +425,7 @@ impl ExtendedEthFlowOrder {
             receiver: quote.receiver.expect("eth-flow order without receiver"),
             sell_amount: quote.sell_amount,
             buy_amount: quote.buy_amount,
-            app_data: ethcontract::Bytes(quote.app_data.0),
+            app_data: ethcontract::Bytes(quote.app_data.hash().0),
             fee_amount: quote.fee_amount,
             valid_to, // note: valid to in the quote is always unlimited
             partially_fillable: quote.partially_fillable,
@@ -588,7 +588,7 @@ impl EthFlowTradeIntent {
             buy_token: self.buy_token,
             receiver: Some(self.receiver),
             validity: Validity::For(3600),
-            app_data: AppDataHash([0x42; 32]),
+            app_data: OrderCreationAppData::default(),
             signing_scheme: QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
                 verification_gas_limit: 0,

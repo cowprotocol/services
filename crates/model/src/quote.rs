@@ -1,7 +1,7 @@
 use {
     crate::{
         app_id::AppDataHash,
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+        order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
         u256_decimal,
@@ -116,7 +116,7 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
 }
 
 /// The order parameters to quote a price and fee for.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteRequest {
     pub from: H160,
@@ -128,8 +128,8 @@ pub struct OrderQuoteRequest {
     pub side: OrderQuoteSide,
     #[serde(flatten)]
     pub validity: Validity,
-    #[serde(default)]
-    pub app_data: AppDataHash,
+    #[serde(flatten, deserialize_with = "deserialize_optional_app_data")]
+    pub app_data: OrderCreationAppData,
     #[serde(default)]
     pub partially_fillable: bool,
     #[serde(default)]
@@ -230,6 +230,31 @@ impl Serialize for Validity {
     }
 }
 
+fn deserialize_optional_app_data<'de, D>(deserializer: D) -> Result<OrderCreationAppData, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(rename = "appData", rename_all = "camelCase")]
+    struct Helper {
+        app_data: Option<String>,
+        app_data_hash: Option<AppDataHash>,
+    }
+
+    let data = Helper::deserialize(deserializer)?;
+    let result = match (data.app_data, data.app_data_hash) {
+        (Some(app_data), None) => match app_data.parse() {
+            Ok(hash) => OrderCreationAppData::Hash { hash },
+            Err(_) => OrderCreationAppData::Full { full: app_data },
+        },
+        (Some(full), Some(expected)) => OrderCreationAppData::Both { full, expected },
+        (None, None) => OrderCreationAppData::default(),
+        _ => return Err(de::Error::custom("invalid app data")),
+    };
+
+    Ok(result)
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum SellAmount {
@@ -255,7 +280,8 @@ pub struct OrderQuote {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    pub app_data: AppDataHash,
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
@@ -318,11 +344,11 @@ mod tests {
     fn deserialize_quote_requests() {
         let valid_json = [
             json!({
-                  "from": "0x0000000000000000000000000000000000000000",
-                  "sellToken": "0x0000000000000000000000000000000000000001",
-                  "buyToken": "0x0000000000000000000000000000000000000002",
-                  "kind": "buy",
-                  "buyAmountAfterFee": "1",
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -385,6 +411,31 @@ mod tests {
                 "buyAmountAfterFee": "1",
                 "signingScheme":  "presign",
             }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "appData": "",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "appData": "",
+                "appDataHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            }),
         ];
         let expected_standard_response = OrderQuoteRequest {
             sell_token: H160::from_low_u64_be(1),
@@ -392,13 +443,13 @@ mod tests {
             ..Default::default()
         };
         let modify_signing_scheme = |signing_scheme: QuoteSigningScheme| {
-            let mut response = expected_standard_response;
+            let mut response = expected_standard_response.clone();
             response.signing_scheme = signing_scheme;
             response
         };
         let expected_quote_responses = vec![
-            expected_standard_response,
-            expected_standard_response,
+            expected_standard_response.clone(),
+            expected_standard_response.clone(),
             modify_signing_scheme(QuoteSigningScheme::EthSign),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
@@ -418,10 +469,24 @@ mod tests {
             modify_signing_scheme(QuoteSigningScheme::PreSign {
                 onchain_order: false,
             }),
+            expected_standard_response.clone(),
+            OrderQuoteRequest {
+                app_data: OrderCreationAppData::Full {
+                    full: Default::default(),
+                },
+                ..expected_standard_response.clone()
+            },
+            OrderQuoteRequest {
+                app_data: OrderCreationAppData::Both {
+                    full: Default::default(),
+                    expected: Default::default(),
+                },
+                ..expected_standard_response.clone()
+            },
         ];
         for (i, json) in valid_json.iter().enumerate() {
             assert_eq!(
-                serde_json::from_value::<OrderQuoteRequest>(json.clone()).unwrap(),
+                serde_json::from_value::<OrderQuoteRequest>(dbg!(json.clone())).unwrap(),
                 *expected_quote_responses.get(i).unwrap()
             );
         }
@@ -452,13 +517,27 @@ mod tests {
                 "signingScheme": "ethsign",
                 "onchainOrder": true,
             }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "appDataHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            }),
         ];
-        for json in invalid_json.iter() {
+        let expected_errors = vec![
+            "ECDSA-signed orders cannot be on-chain",
+            "ECDSA-signed orders cannot be on-chain",
+            "ECDSA-signed orders cannot be on-chain",
+            "invalid app data",
+        ];
+        for (i, json) in invalid_json.iter().enumerate() {
             assert_eq!(
                 serde_json::from_value::<OrderQuoteRequest>(json.clone())
                     .unwrap_err()
                     .to_string(),
-                String::from("ECDSA-signed orders cannot be on-chain")
+                expected_errors[i],
             );
         }
     }
