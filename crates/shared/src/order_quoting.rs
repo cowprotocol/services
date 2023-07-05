@@ -209,6 +209,7 @@ impl Quote {
         subsidy: &Subsidy,
         scheme: &QuoteSigningScheme,
     ) -> Self {
+        // TODO(now)
         let additional_cost = scheme.additional_gas_amount();
 
         // Be careful not to modify `self.data` as this represents the actual
@@ -322,7 +323,6 @@ pub trait OrderQuoting: Send + Sync {
         &self,
         id: Option<QuoteId>,
         parameters: QuoteSearchParameters,
-        signing_scheme: &QuoteSigningScheme,
     ) -> Result<Quote, FindQuoteError>;
 }
 
@@ -404,7 +404,6 @@ pub trait QuoteStoring: Send + Sync {
         &self,
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
-        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
 }
 
@@ -586,7 +585,6 @@ impl OrderQuoting for OrderQuoter {
         &self,
         id: Option<QuoteId>,
         parameters: QuoteSearchParameters,
-        signing_scheme: &QuoteSigningScheme,
     ) -> Result<Quote, FindQuoteError> {
         let scaled_sell_amount = match parameters.kind {
             OrderKind::Sell => Some(parameters.sell_amount),
@@ -602,6 +600,7 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let now = self.now.now();
+        let signing_scheme = parameters.signing_scheme;
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
@@ -620,13 +619,11 @@ impl OrderQuoting for OrderQuoter {
 
                     (id, data)
                 }
-                None => {
-                    let quote_kind = quote_kind_from_signing_scheme(signing_scheme);
-                    self.storage
-                        .find(parameters, now, quote_kind)
-                        .await?
-                        .ok_or(FindQuoteError::NotFound(None))?
-                }
+                None => self
+                    .storage
+                    .find(parameters, now)
+                    .await?
+                    .ok_or(FindQuoteError::NotFound(None))?,
             };
             Ok(Quote::new(Some(id), data))
         };
@@ -638,7 +635,7 @@ impl OrderQuoting for OrderQuoter {
                 .map_err(FindQuoteError::from)
         )?;
 
-        let quote = quote.with_subsidy_and_signing_scheme(&subsidy, signing_scheme);
+        let quote = quote.with_subsidy_and_signing_scheme(&subsidy, &signing_scheme);
         let quote = match scaled_sell_amount {
             Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
             None => quote,
@@ -694,7 +691,7 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
     }
 }
 
-fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
+pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
     match scheme {
         QuoteSigningScheme::Eip1271 {
             onchain_order: true,
@@ -1328,10 +1325,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(Some(quote_id), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1414,10 +1408,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(Some(quote_id), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1464,8 +1455,8 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_find()
-            .with(eq(parameters.clone()), eq(now), eq(QuoteKind::Standard))
-            .returning(move |_, _, _| {
+            .with(eq(parameters.clone()), eq(now))
+            .returning(move |_, _| {
                 Ok(Some((
                     42,
                     QuoteData {
@@ -1498,10 +1489,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(None, parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(None, parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1573,16 +1561,13 @@ mod tests {
 
         assert!(matches!(
             quoter
-                .find_quote(Some(0), parameters.clone(), &QuoteSigningScheme::Eip712)
+                .find_quote(Some(0), parameters.clone())
                 .await
                 .unwrap_err(),
             FindQuoteError::ParameterMismatch(_),
         ));
         assert!(matches!(
-            quoter
-                .find_quote(Some(0), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap_err(),
+            quoter.find_quote(Some(0), parameters).await.unwrap_err(),
             FindQuoteError::Expired(_),
         ));
     }
@@ -1591,7 +1576,7 @@ mod tests {
     async fn find_quote_error_when_not_found() {
         let mut storage = MockQuoteStoring::new();
         storage.expect_get().returning(move |_| Ok(None));
-        storage.expect_find().returning(move |_, _, _| Ok(None));
+        storage.expect_find().returning(move |_, _| Ok(None));
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
@@ -1606,14 +1591,14 @@ mod tests {
 
         assert!(matches!(
             quoter
-                .find_quote(Some(0), Default::default(), &QuoteSigningScheme::Eip712)
+                .find_quote(Some(0), Default::default())
                 .await
                 .unwrap_err(),
             FindQuoteError::NotFound(Some(0)),
         ));
         assert!(matches!(
             quoter
-                .find_quote(None, Default::default(), &QuoteSigningScheme::Eip712)
+                .find_quote(None, Default::default())
                 .await
                 .unwrap_err(),
             FindQuoteError::NotFound(None),
