@@ -89,11 +89,6 @@ impl From<Deadline> for chrono::DateTime<chrono::Utc> {
 pub struct Id(i64);
 
 impl Id {
-    // The largest valid auction ID.
-    pub const MAX: i64 = i64::MAX;
-    // The smallest valid auction ID.
-    pub const MIN: i64 = 0;
-
     pub fn to_be_bytes(self) -> [u8; 8] {
         self.0.to_be_bytes()
     }
@@ -103,7 +98,7 @@ impl TryFrom<i64> for Id {
     type Error = InvalidId;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if (Self::MIN..=Self::MAX).contains(&value) {
+        if value >= 0 {
             Ok(Self(value))
         } else {
             Err(InvalidId)

@@ -1,5 +1,4 @@
 use {
-    super::competition::auction,
     crate::{
         boundary,
         domain::{
@@ -14,7 +13,6 @@ use {
         },
         util::{self, conv},
     },
-    rand::Rng,
     std::{collections::HashSet, iter},
 };
 
@@ -95,12 +93,8 @@ impl Order {
     }
 
     fn fake_auction(&self, gas_price: eth::GasPrice) -> competition::Auction {
-        let random_id = rand::thread_rng()
-            .gen_range(auction::Id::MIN..=auction::Id::MAX)
-            .try_into()
-            .unwrap();
         competition::Auction {
-            id: random_id,
+            id: 0.try_into().unwrap(),
             tokens: Default::default(),
             orders: vec![competition::Order {
                 uid: Default::default(),
