@@ -10,6 +10,7 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     chrono::Utc,
+    database::order_events::OrderEventLabel,
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
@@ -82,6 +83,11 @@ impl RunLoop {
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|solution| solution.1.score);
 
+        let events: Vec<_> = solutions
+            .iter()
+            .flat_map(|(_, s)| s.orders.iter().map(|o| (*o, OrderEventLabel::Considered)))
+            .collect();
+
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.pop() {
             // The winner has score 0 so all solutions are empty.
@@ -89,6 +95,7 @@ impl RunLoop {
                 return;
             }
 
+            self.database.store_order_events(&events).await;
             let auction_id = id;
             let winner = solution.submission_address;
             let winning_score = solution.score;
@@ -256,6 +263,17 @@ impl RunLoop {
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         };
+
+        self.database
+            .store_order_events(
+                &auction
+                    .orders
+                    .iter()
+                    .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+                    .collect_vec(),
+            )
+            .await;
+
         let futures = self
             .drivers
             .iter()
@@ -294,6 +312,13 @@ impl RunLoop {
         driver: &Driver,
         solution: &solve::Response,
     ) -> Result<()> {
+        let events = solution
+            .orders
+            .iter()
+            .map(|uid| (*uid, OrderEventLabel::Executing))
+            .collect_vec();
+        self.database.store_order_events(&events).await;
+
         driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
@@ -301,6 +326,12 @@ impl RunLoop {
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
+            let events = solution
+                .orders
+                .iter()
+                .map(|uid| (*uid, OrderEventLabel::Traded))
+                .collect_vec();
+            self.database.store_order_events(&events).await;
             tracing::debug!("settled in tx {:?}", tx.hash);
         }
         Ok(())
@@ -341,7 +372,7 @@ impl RunLoop {
             // This could be a while loop. It isn't, because some care must be taken to not
             // accidentally keep the borrow alive, which would block senders. Technically
             // this is fine with while conditions but this is clearer.
-            if self.current_block.borrow().number <= deadline {
+            if self.current_block.borrow().number > deadline {
                 break;
             }
             let mut hashes = self

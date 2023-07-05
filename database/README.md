@@ -14,13 +14,13 @@ Associates the 32 bytes contract app data with the corresponding full app data.
 
 See [here](https://github.com/cowprotocol/services/issues/1465) for more details. In this table the contract app data is either the old unixfs based scheme, or the new keccak scheme. The new scheme can be validated by keccak-256 hashing the full app data, which should produce the contract app data. The old scheme cannot be validated.
 
-Column             | Type  | Nullable | Details
--------------------|-------|----------|-------
+Column               | Type  | Nullable | Details
+---------------------|-------|----------|-------
  contract\_app\_data | bytea | not null | 32 bytes. Referenced by `orders.app_data`.
  full\_app\_data     | bytea | not null | Is utf-8 but not stored as string because the raw bytes are important for hashing.
 
 Indexes:
-- "app\_data\_pkey" PRIMARY KEY, btree (contract_app_data)
+- "app\_data\_pkey" PRIMARY KEY, btree (`contract_app_data`)
 
 ### auction\_participants
 
@@ -163,6 +163,19 @@ Indexes:
 - PRIMARY KEY: btree(`uid`)
 - event\_index: btree(`block_number`, `index`)
 - order\_sender: hash(sender)
+
+### order\_events
+
+Stores timestamped events throughout an order's life cycle. This information is used to get detailed metrics on a per order basis.
+
+ Column           | Type                     | Nullable | Details
+------------------|--------------------------|----------|--------
+ order\_uid       | bytea                    | not null | order this event belongs to
+ timestamp        | timestamptz              | not null | when the event was registered
+ label            | [enum](#ordereventlabel) | not null | which event happened exactly
+
+Indexes:
+- order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
 
 ### order\_execution
 
@@ -376,6 +389,19 @@ Indexes:
  invalid\_order\_data            | unused
  insufficient\_fee               | the proposed fee is less than quoted fee
  other                           | some unexpected error happened
+
+#### ordereventlabel
+
+ Value      | Meaning
+------------|--------
+ created    | order was added to the orderbook
+ ready      | order was included in an auction and sent to solvers
+ filtered   | order was filtered from the auction and not sent to solvers
+ invalid    | order can not be settled on-chain (e.g. user is missing funds, PreSign or EIP-1271 signature is invalid, etc.)
+ executing  | order was included in the winning solution and is in the process of being submitted on-chain
+ considered | order was in a valid solution
+ traded     | order was traded on-chain
+ cancelled  | user cancelled the order
 
 #### orderkind
 
