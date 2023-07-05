@@ -174,6 +174,9 @@ Stores timestamped events throughout an order's life cycle. This information is 
  timestamp        | timestamptz              | not null | when the event was registered
  label            | [enum](#ordereventlabel) | not null | which event happened exactly
 
+Indexes:
+- order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
+
 ### order\_execution
 
 Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
