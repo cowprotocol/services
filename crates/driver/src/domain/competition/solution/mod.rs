@@ -189,19 +189,11 @@ impl ClearingPrices {
     }
 }
 
-/// The time allocated for the solver to solve an auction.
+/// The time limit passed to the solver for solving an auction.
 #[derive(Debug, Clone, Copy)]
 pub struct SolverTimeout(chrono::Duration);
 
-impl From<SolverTimeout> for std::time::Duration {
-    fn from(value: SolverTimeout) -> Self {
-        value.0.to_std().unwrap()
-    }
-}
-
 impl SolverTimeout {
-    /// The time limit passed to the solver for solving an auction.
-    ///
     /// Solvers are given a time limit that's `buffer` less than the specified
     /// deadline. The reason for this is to allow the solver sufficient time to
     /// search for the most optimal solution, but still ensure there is time
@@ -221,6 +213,10 @@ impl SolverTimeout {
 
     pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
         time::now() + self.0
+    }
+
+    pub fn duration(self) -> chrono::Duration {
+        self.0
     }
 }
 

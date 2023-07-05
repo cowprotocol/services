@@ -125,7 +125,13 @@ impl Solver {
             .client
             .post(self.config.endpoint.clone())
             .body(body)
-            .timeout(timeout.into());
+            .timeout(
+                // Add a small buffer to the timeout to account for network latency. Otherwise the
+                // HTTP timeout might happen before the solver times out its search algorithm.
+                (timeout.duration() + chrono::Duration::milliseconds(500))
+                    .to_std()
+                    .unwrap(),
+            );
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         observe::solver_response(
             self.name(),
