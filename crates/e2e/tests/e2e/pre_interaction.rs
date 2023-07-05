@@ -7,7 +7,7 @@ use {
     },
     secp256k1::SecretKey,
     serde_json::json,
-    shared::{ethrpc::Web3, interaction},
+    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -35,15 +35,15 @@ async fn pre_interaction(web3: Web3) {
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.
-    let steal_cow =
-        interaction::for_transaction(cow.approve(trader.address(), U256::max_value()).tx);
-    let steal_weth = interaction::for_transaction(
+    let steal_cow = hook_for_transaction(cow.approve(trader.address(), U256::max_value()).tx).await;
+    let steal_weth = hook_for_transaction(
         onchain
             .contracts()
             .weth
             .approve(trader.address(), U256::max_value())
             .tx,
-    );
+    )
+    .await;
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
@@ -67,7 +67,7 @@ async fn pre_interaction(web3: Web3) {
         app_data: OrderCreationAppData::Full {
             full: json!({
                 "backend": {
-                    "interactions": {
+                    "hooks": {
                         "pre": [permit, steal_cow],
                         "post": [steal_weth],
                     },

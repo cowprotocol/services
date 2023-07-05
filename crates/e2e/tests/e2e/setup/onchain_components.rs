@@ -9,12 +9,12 @@ use {
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     hex_literal::hex,
     model::{
-        interaction::InteractionData,
+        order::Hook,
         signature::{EcdsaSignature, EcdsaSigningScheme},
         DomainSeparator,
     },
     secp256k1::SecretKey,
-    shared::{ethrpc::Web3, interaction},
+    shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
     web3::{
         signing,
@@ -118,6 +118,22 @@ pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::exp10(18)
 }
 
+pub async fn hook_for_transaction<T>(tx: TransactionBuilder<T>) -> Hook
+where
+    T: web3::Transport,
+{
+    let gas_limit = tx
+        .clone()
+        .estimate_gas()
+        .await
+        .expect("transaction reverted when estimating gas");
+    Hook {
+        target: tx.to.unwrap(),
+        call_data: tx.data.unwrap().0,
+        gas_limit,
+    }
+}
+
 #[derive(Debug)]
 pub struct TestAccount {
     account: Account,
@@ -196,7 +212,7 @@ impl CowToken {
         tx!(self.holder, self.contract.transfer(to, amount));
     }
 
-    pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> InteractionData {
+    pub async fn permit(&self, owner: &TestAccount, spender: H160, value: U256) -> Hook {
         let domain = self.contract.domain_separator().call().await.unwrap();
         let nonce = self.contract.nonces(owner.address()).call().await.unwrap();
         let deadline = U256::max_value();
@@ -232,14 +248,7 @@ impl CowToken {
             Bytes(signature.s.0),
         );
 
-        // double check the signatures are correct...
-        permit
-            .clone()
-            .call()
-            .await
-            .expect("permit signature issue; good luck figuring this one out!");
-
-        interaction::for_transaction(permit.tx)
+        hook_for_transaction(permit.tx).await
     }
 }
 

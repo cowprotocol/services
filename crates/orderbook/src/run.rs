@@ -12,6 +12,7 @@ use {
         CowProtocolToken,
         CowProtocolVirtualToken,
         IUniswapV3Factory,
+        MultiSendCallOnly,
         WETH9,
     },
     ethcontract::errors::DeployError,
@@ -132,6 +133,13 @@ pub async fn run(args: Arguments) {
             }
             Err(err) => panic!("failed to get balancer vault contract: {err}"),
         },
+    };
+
+    let multisend_contract = match args.multisend_contract_address {
+        Some(address) => MultiSendCallOnly::at(&web3, address),
+        None => MultiSendCallOnly::deployed(&web3)
+            .await
+            .expect("load multisend contract"),
     };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
@@ -459,6 +467,7 @@ pub async fn run(args: Arguments) {
             validity_configuration,
             signature_configuration,
             bad_token_detector.clone(),
+            multisend_contract,
             optimal_quoter.clone(),
             balance_fetcher,
             signature_validator,
