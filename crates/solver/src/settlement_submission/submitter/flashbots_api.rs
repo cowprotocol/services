@@ -5,7 +5,7 @@ use {
         Strategy,
         SubmissionLoopStatus,
     },
-    crate::settlement_submission::SubmitterSettlement,
+    crate::settlement::Settlement,
     anyhow::{Context, Result},
     ethcontract::transaction::TransactionBuilder,
     reqwest::{Client, IntoUrl},
@@ -55,7 +55,7 @@ impl TransactionSubmitting for FlashbotsApi {
 
     fn submission_status(
         &self,
-        _settlement: &SubmitterSettlement,
+        _settlement: &Settlement,
         _network_id: &str,
     ) -> SubmissionLoopStatus {
         SubmissionLoopStatus::Enabled

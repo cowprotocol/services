@@ -1,7 +1,7 @@
 use {
     crate::{
         driver::solver_settlements::RatedSettlement,
-        settlement::{self, Settlement},
+        settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
             call_data,
@@ -66,7 +66,6 @@ pub struct SettlementRater {
     pub access_list_estimator: Arc<dyn AccessListEstimating>,
     pub code_fetcher: Arc<dyn CodeFetching>,
     pub settlement_contract: GPv2Settlement,
-    pub settlement_encoding_contracts: settlement::Contracts,
     pub web3: Web3,
 }
 
@@ -81,9 +80,7 @@ impl SettlementRater {
         let tx = settle_method(
             gas_price,
             &self.settlement_contract,
-            settlement
-                .clone()
-                .encode(&self.settlement_encoding_contracts, internalization),
+            settlement.clone().encode(internalization),
             account.clone(),
         )
         .tx;
@@ -115,9 +112,7 @@ impl SettlementRater {
         let simulation_result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((
                 solver.account.clone(),
-                settlement
-                    .clone()
-                    .encode(&self.settlement_encoding_contracts, internalization),
+                settlement.clone().encode(internalization),
                 access_list.clone(),
             )),
             &self.settlement_contract,
@@ -138,11 +133,7 @@ impl SettlementRater {
                 tx_index: 0,
                 to: self.settlement_contract.address(),
                 from: solver.account.address(),
-                data: call_data(
-                    settlement
-                        .clone()
-                        .encode(&self.settlement_encoding_contracts, internalization),
-                ),
+                data: call_data(settlement.clone().encode(internalization)),
                 max_fee_per_gas: U256::from_f64_lossy(gas_price.max_fee_per_gas),
                 max_priority_fee_per_gas: U256::from_f64_lossy(gas_price.max_priority_fee_per_gas),
             },

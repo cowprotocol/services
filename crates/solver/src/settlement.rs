@@ -17,12 +17,7 @@ use {
     },
 };
 
-pub use self::settlement_encoder::{
-    verify_executed_amount,
-    Contracts,
-    PricedTrade,
-    SettlementEncoder,
-};
+pub use self::settlement_encoder::{verify_executed_amount, PricedTrade, SettlementEncoder};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
@@ -514,22 +509,15 @@ impl Settlement {
         }
     }
 
-    pub fn encode(
-        self,
-        contracts: &Contracts,
-        internalization_strategy: InternalizationStrategy,
-    ) -> EncodedSettlement {
-        self.encoder.finish(contracts, internalization_strategy)
+    pub fn encode(self, internalization_strategy: InternalizationStrategy) -> EncodedSettlement {
+        self.encoder.finish(internalization_strategy)
     }
 
-    pub fn encode_uninternalized_if_different(
-        self,
-        contracts: &Contracts,
-    ) -> Option<EncodedSettlement> {
+    pub fn encode_uninternalized_if_different(self) -> Option<EncodedSettlement> {
         if self.encoder.contains_internalized_interactions() {
             Some(
                 self.encoder
-                    .finish(contracts, InternalizationStrategy::EncodeAllInteractions),
+                    .finish(InternalizationStrategy::EncodeAllInteractions),
             )
         } else {
             None
@@ -628,22 +616,15 @@ pub mod tests {
         L: Settleable,
         S: SettlementHandling<L>,
     {
-        let contracts = Contracts::default();
         let actual_settlement = {
             let mut encoder = SettlementEncoder::new(prices.clone());
             handler.encode(execution, &mut encoder).unwrap();
-            encoder.finish(
-                &contracts,
-                InternalizationStrategy::SkipInternalizableInteraction,
-            )
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
         let expected_settlement = {
             let mut encoder = SettlementEncoder::new(prices);
             exec(&mut encoder);
-            encoder.finish(
-                &contracts,
-                InternalizationStrategy::SkipInternalizableInteraction,
-            )
+            encoder.finish(InternalizationStrategy::SkipInternalizableInteraction)
         };
 
         assert_eq!(actual_settlement, expected_settlement);
@@ -657,7 +638,10 @@ pub mod tests {
     /// Helper function for creating a settlement for the specified prices and
     /// trades for testing objective value computations.
     fn test_settlement(prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Settlement {
-        Settlement::with_trades(prices, trades)
+        Settlement {
+            encoder: SettlementEncoder::with_trades(prices, trades),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -1680,10 +1664,7 @@ pub mod tests {
                 solver_fee: 1_000_u128.into(),
             }],
         )
-        .encode(
-            &Contracts::default(),
-            InternalizationStrategy::SkipInternalizableInteraction,
-        );
+        .encode(InternalizationStrategy::SkipInternalizableInteraction);
 
         // Note that for limit order **both** the uniform clearing price of the
         // buy token as well as the executed clearing price accounting for fees

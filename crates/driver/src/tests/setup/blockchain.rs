@@ -38,7 +38,6 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
-    pub multisend: contracts::MultiSendCallOnly,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
@@ -258,14 +257,6 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let multisend = wait_for(
-            &web3,
-            contracts::MultiSendCallOnly::builder(&web3)
-                .from(trader_account.clone())
-                .deploy(),
-        )
-        .await
-        .unwrap();
         wait_for(
             &web3,
             authenticator
@@ -479,7 +470,6 @@ impl Blockchain {
             solver_secret_key: config.solver_secret_key,
             tokens,
             settlement,
-            multisend,
             domain_separator,
             weth,
             web3,
