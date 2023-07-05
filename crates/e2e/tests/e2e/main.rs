@@ -11,6 +11,7 @@ mod local_node;
 mod app_data;
 mod colocation_partial_fill;
 mod colocation_univ2;
+mod database;
 mod eth_flow;
 mod eth_integration;
 mod limit_orders;
