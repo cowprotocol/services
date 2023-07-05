@@ -896,8 +896,11 @@ mod tests {
                 from: H160([3; 20]),
                 ..Default::default()
             }),
-            signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: 0,
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 1,
+            },
+            additional_gas: 2,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -1006,8 +1009,8 @@ mod tests {
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 15.into(),
-                full_fee_amount: 30.into(),
+                fee_amount: 30.into(),
+                full_fee_amount: 60.into(),
             }
         );
     }
