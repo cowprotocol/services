@@ -103,7 +103,7 @@ impl TryFrom<i64> for Id {
     type Error = InvalidId;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if value >= 0 {
+        if (Self::MIN..=Self::MAX).contains(&value) {
             Ok(Self(value))
         } else {
             Err(InvalidId)
