@@ -40,9 +40,9 @@ impl Reserves {
     /// Returns `None` if the assets are denominated in the same token or if the
     /// balances are larger than the maximum allowed values.
     pub fn new(a: eth::Asset, b: eth::Asset) -> Option<Self> {
-        // UniswapV2-Like constant product pools are limited to uint96 values
+        // UniswapV2-Like constant product pools are limited to uint112 values
         // for token reserves - so verify this invariant.
-        let max = (U256::one() << 96) - 1;
+        let max = U256::from(2_u128.pow(112) - 1);
         if a.amount > max || b.amount > max {
             return None;
         }
