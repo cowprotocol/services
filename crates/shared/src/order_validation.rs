@@ -558,7 +558,7 @@ impl OrderValidating for OrderValidator {
         };
         let uid = data.uid(domain_separator, &owner);
 
-        let additional_gas = if let Signature::Eip1271(signature) = &order.signature {
+        let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
             if self
                 .signature_configuration
                 .eip1271_skip_creation_validation
@@ -623,6 +623,8 @@ impl OrderValidating for OrderValidator {
             buy_amount: data.buy_amount,
             fee_amount: data.fee_amount,
             kind: data.kind,
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: U256::zero(),
             verification,
         };
         let quote = if class == OrderClass::Market {
@@ -634,7 +636,7 @@ impl OrderValidating for OrderValidator {
                 convert_signing_scheme_into_quote_signing_scheme(
                     order.signature.scheme(),
                     true,
-                    additional_gas,
+                    verification_gas_limit,
                 )?,
             )
             .await?;
@@ -873,6 +875,9 @@ pub async fn get_quote_and_check_fee(
     fee_amount: U256,
     signing_scheme: QuoteSigningScheme,
 ) -> Result<Quote, ValidationError> {
+    // TODO(now)
+    let hooks = Hooks::default();
+
     let quote = match quoter
         .find_quote(quote_id, quote_search_parameters.clone(), &signing_scheme)
         .await
@@ -899,6 +904,7 @@ pub async fn get_quote_and_check_fee(
                 },
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme,
+                additional_gas: hooks.gas_limit(),
             };
 
             let quote = quoter.calculate_quote(parameters).await?;
@@ -2125,6 +2131,8 @@ mod tests {
             buy_amount: 4.into(),
             fee_amount: 6.into(),
             kind: OrderKind::Buy,
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: U256::zero(),
             verification: Some(Verification {
                 from: H160([0xf0; 20]),
                 ..Default::default()
@@ -2204,6 +2212,7 @@ mod tests {
                 },
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
+                additional_gas: U256::zero(),
             }))
             .returning({
                 let quote_data = quote_data.clone();
