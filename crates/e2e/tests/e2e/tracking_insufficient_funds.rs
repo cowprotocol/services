@@ -71,10 +71,7 @@ async fn test(web3: Web3) {
 
     let order_is_ready = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;
-        events
-            .iter()
-            .map(|e| e.label)
-            .any(|l| l == OrderEventLabel::Ready)
+        events.last().map(|e| e.label) == Some(OrderEventLabel::Ready)
     };
     wait_for_condition(TIMEOUT, order_is_ready).await.unwrap();
 
@@ -86,10 +83,7 @@ async fn test(web3: Web3) {
 
     let order_is_invalid = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;
-        events
-            .iter()
-            .map(|e| e.label)
-            .any(|l| l == OrderEventLabel::Invalid)
+        events.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
     };
     wait_for_condition(TIMEOUT, order_is_invalid).await.unwrap();
 }
