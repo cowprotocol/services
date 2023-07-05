@@ -628,7 +628,7 @@ impl OrderValidating for OrderValidator {
                 true,
                 verification_gas_limit,
             )?,
-            additional_gas: U256::zero(),
+            additional_gas: app_data.backend.hooks.gas_limit(),
             verification,
         };
         let quote = if class == OrderClass::Market {
@@ -637,7 +637,6 @@ impl OrderValidating for OrderValidator {
                 &quote_parameters,
                 order.quote_id,
                 data.fee_amount,
-                &app_data.backend.hooks,
             )
             .await?;
             Some(quote)
@@ -873,7 +872,6 @@ pub async fn get_quote_and_check_fee(
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
     fee_amount: U256,
-    hooks: &Hooks,
 ) -> Result<Quote, ValidationError> {
     let quote = match quoter
         .find_quote(quote_id, quote_search_parameters.clone())
@@ -901,7 +899,7 @@ pub async fn get_quote_and_check_fee(
                 },
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: hooks.gas_limit(),
+                additional_gas: quote_search_parameters.additional_gas,
             };
 
             let quote = quoter.calculate_quote(parameters).await?;
@@ -2118,7 +2116,7 @@ mod tests {
                 onchain_order: true,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: U256::zero(),
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([0xf0; 20]),
                 ..Default::default()
@@ -2140,7 +2138,6 @@ mod tests {
             &quote_search_parameters,
             quote_id,
             fee_amount,
-            &Default::default(),
         )
         .await
         .unwrap();
@@ -2190,7 +2187,7 @@ mod tests {
                 },
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
-                additional_gas: U256::zero(),
+                additional_gas: 0,
             }))
             .returning({
                 let quote_data = quote_data.clone();
@@ -2206,15 +2203,10 @@ mod tests {
                 })
             });
 
-        let quote = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            None,
-            fee_amount,
-            &Default::default(),
-        )
-        .await
-        .unwrap();
+        let quote =
+            get_quote_and_check_fee(&order_quoter, &quote_search_parameters, None, fee_amount)
+                .await
+                .unwrap();
 
         assert_eq!(
             quote,
@@ -2242,7 +2234,6 @@ mod tests {
             &quote_search_parameters,
             Some(0),
             U256::zero(),
-            &Default::default(),
         )
         .await
         .unwrap_err();
@@ -2265,7 +2256,6 @@ mod tests {
             &Default::default(),
             Default::default(),
             U256::one(),
-            &Default::default(),
         )
         .await
         .unwrap_err();
@@ -2286,7 +2276,6 @@ mod tests {
                     &Default::default(),
                     Default::default(),
                     Default::default(),
-                    &Default::default(),
                 )
                 .await
                 .unwrap_err();
@@ -2319,7 +2308,6 @@ mod tests {
                     &Default::default(),
                     Default::default(),
                     U256::zero(),
-                    &Default::default(),
                 )
                 .await
                 .unwrap_err();

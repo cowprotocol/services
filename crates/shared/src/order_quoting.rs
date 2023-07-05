@@ -137,7 +137,7 @@ pub struct QuoteParameters {
     pub side: OrderQuoteSide,
     pub verification: Option<Verification>,
     pub signing_scheme: QuoteSigningScheme,
-    pub additional_gas: U256,
+    pub additional_gas: u64,
 }
 
 impl QuoteParameters {
@@ -160,6 +160,12 @@ impl QuoteParameters {
             in_amount,
             kind,
         }
+    }
+
+    fn additional_cost(&self) -> u64 {
+        self.signing_scheme
+            .additional_gas_amount()
+            .saturating_add(self.additional_gas)
     }
 }
 
@@ -204,14 +210,11 @@ impl Quote {
 
     /// Applies a subsidy to the quote **with** the
     /// `QuoteSigningScheme.verification_gas_limit`
-    pub fn with_subsidy_and_signing_scheme(
+    pub fn with_subsidy_and_additional_cost(
         mut self,
         subsidy: &Subsidy,
-        scheme: &QuoteSigningScheme,
+        additional_cost: u64,
     ) -> Self {
-        // TODO(now)
-        let additional_cost = scheme.additional_gas_amount();
-
         // Be careful not to modify `self.data` as this represents the actual
         // quote data that is stored in the database. Instead, update the
         // computed fee fields.
@@ -363,7 +366,7 @@ pub struct QuoteSearchParameters {
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub signing_scheme: QuoteSigningScheme,
-    pub additional_gas: U256,
+    pub additional_gas: u64,
     /// If this is `Some` the quotes are expected to pass simulations using the
     /// contained parameters.
     pub verification: Option<Verification>,
@@ -384,6 +387,13 @@ impl QuoteSearchParameters {
         amounts_match
             && (self.sell_token, self.buy_token, self.kind)
                 == (data.sell_token, data.buy_token, data.kind)
+    }
+
+    /// Returns additional gas costs incurred by the quote.
+    fn additional_cost(&self) -> u64 {
+        self.signing_scheme
+            .additional_gas_amount()
+            .saturating_add(self.additional_gas)
     }
 }
 
@@ -547,7 +557,7 @@ impl OrderQuoting for OrderQuoter {
         )?;
 
         let mut quote = Quote::new(Default::default(), data)
-            .with_subsidy_and_signing_scheme(&subsidy, &parameters.signing_scheme);
+            .with_subsidy_and_additional_cost(&subsidy, parameters.additional_cost());
 
         // Make sure to scale the sell and buy amounts for quotes for sell
         // amounts before fees.
@@ -600,7 +610,7 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let now = self.now.now();
-        let signing_scheme = parameters.signing_scheme;
+        let additional_cost = parameters.additional_cost();
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
@@ -635,7 +645,7 @@ impl OrderQuoting for OrderQuoter {
                 .map_err(FindQuoteError::from)
         )?;
 
-        let quote = quote.with_subsidy_and_signing_scheme(&subsidy, &signing_scheme);
+        let quote = quote.with_subsidy_and_additional_cost(&subsidy, additional_cost);
         let quote = match scaled_sell_amount {
             Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
             None => quote,
@@ -686,7 +696,7 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
             verification,
             signing_scheme: request.signing_scheme,
             // TODO get from request
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         }
     }
 }
@@ -761,7 +771,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -887,7 +897,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -1016,7 +1026,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -1145,7 +1155,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1214,7 +1224,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1284,7 +1294,7 @@ mod tests {
             fee_amount: 15.into(),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()
@@ -1370,7 +1380,7 @@ mod tests {
             fee_amount: 30.into(),
             kind: OrderKind::Sell,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()
@@ -1445,7 +1455,7 @@ mod tests {
             fee_amount: 30.into(),
             kind: OrderKind::Buy,
             signing_scheme: QuoteSigningScheme::Eip712,
-            additional_gas: U256::zero(),
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()

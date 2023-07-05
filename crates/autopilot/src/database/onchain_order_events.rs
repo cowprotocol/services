@@ -20,7 +20,7 @@ use {
         orders::{insert_quotes, Order, OrderClass},
         PgTransaction,
     },
-    ethcontract::{Event as EthContractEvent, H160, U256},
+    ethcontract::{Event as EthContractEvent, H160},
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
@@ -557,7 +557,7 @@ async fn get_quote(
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
-        additional_gas: U256::zero(),
+        additional_gas: 0,
         // Verified quotes always have prices that are at most as good as unverified quotes but can
         // be lower.
         // If the best quote we can find or compute on the fly for this order suggests a worse
@@ -572,7 +572,6 @@ async fn get_quote(
         &parameters.clone(),
         Some(*quote_id),
         order_data.fee_amount,
-        &Default::default(),
     )
     .await
     .map_err(onchain_order_placement_error_from)
