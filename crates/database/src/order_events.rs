@@ -34,7 +34,7 @@ pub enum OrderEventLabel {
 
 /// Contains a single event of the life cycle of an order and when it was
 /// registered.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type, sqlx::FromRow)]
 pub struct OrderEvent {
     /// Which order this event belongs to
     pub order_uid: OrderUid,

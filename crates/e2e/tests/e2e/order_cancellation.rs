@@ -1,5 +1,6 @@
 use {
     crate::setup::*,
+    database::order_events::OrderEventLabel,
     ethcontract::prelude::U256,
     model::{
         app_id::AppDataHash,
@@ -157,6 +158,10 @@ async fn order_cancellation(web3: Web3) {
             OrderStatus::Open,
         );
     }
+    for uid in &order_uids {
+        let events = crate::database::events_of_order(services.db(), uid).await;
+        assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
+    }
 
     // Cancel one of them.
     cancel_order(order_uids[0]).await;
@@ -200,4 +205,9 @@ async fn order_cancellation(web3: Web3) {
             .status,
         OrderStatus::Cancelled,
     );
+
+    for uid in &order_uids {
+        let events = crate::database::events_of_order(services.db(), uid).await;
+        assert_eq!(events.last().unwrap().label, OrderEventLabel::Cancelled);
+    }
 }

@@ -26,12 +26,14 @@ pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
+const LOCAL_DB_URL: &str = "postgresql://";
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
 pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
+    db: Db,
 }
 
 impl<'a> Services<'a> {
@@ -42,6 +44,7 @@ impl<'a> Services<'a> {
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
+            db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
         }
     }
 
@@ -59,7 +62,7 @@ impl<'a> Services<'a> {
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
         [
             "--baseline-sources=None".to_string(),
-            "--network-block-interval=10".to_string(),
+            "--network-block-interval=1".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
@@ -294,12 +297,20 @@ impl<'a> Services<'a> {
     pub fn client(&self) -> &Client {
         &self.http
     }
+
+    /// Returns the underlying postgres connection pool that can be used do
+    /// execute raw SQL queries.
+    pub fn db(&self) -> &Db {
+        &self.db
+    }
 }
 
 pub async fn clear_database() {
     tracing::info!("Clearing database.");
-    let mut db = sqlx::PgConnection::connect("postgresql://").await.unwrap();
+    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
     let mut db = db.begin().await.unwrap();
     database::clear_DANGER_(&mut db).await.unwrap();
     db.commit().await.unwrap();
 }
+
+pub type Db = sqlx::Pool<sqlx::Postgres>;
