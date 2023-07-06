@@ -133,7 +133,7 @@ fn to_boundary_auction(
             .collect(),
         metadata: Some(MetadataModel {
             environment: None,
-            auction_id: Some(auction.id.0),
+            auction_id: auction.id.as_ref().map(|id| id.0),
             run_id: None,
             gas_price: Some(gas.gas_price),
             native_token: Some(weth.0),

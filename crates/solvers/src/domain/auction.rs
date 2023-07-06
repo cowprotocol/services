@@ -7,7 +7,8 @@ use {
 /// The auction that the solvers need to find solutions to.
 #[derive(Debug)]
 pub struct Auction {
-    pub id: Id,
+    /// [`None`] if the auction applies to a quote.
+    pub id: Option<Id>,
     pub tokens: Tokens,
     pub orders: Vec<order::Order>,
     pub liquidity: Vec<liquidity::Liquidity>,

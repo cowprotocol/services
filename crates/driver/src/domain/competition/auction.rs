@@ -11,7 +11,8 @@ use {
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
-    pub id: Id,
+    /// [`None`] if this auction applies to a quote.
+    pub id: Option<Id>,
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
     pub gas_price: eth::GasPrice,

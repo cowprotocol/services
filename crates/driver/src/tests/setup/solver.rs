@@ -199,13 +199,14 @@ impl Solver {
                         .0
                         .to_string();
                     let expected = json!({
-                        "id": if config.quote { None } else { Some("1") },
+                        "id": config.quote.then(|| 1),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline - auction::Deadline::time_buffer() - infra::Solver::http_time_buffer(),
                     });
+                    assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");
                     state.called = true;

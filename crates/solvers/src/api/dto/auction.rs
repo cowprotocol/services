@@ -16,7 +16,7 @@ impl Auction {
     /// Converts a data transfer object into its domain object representation.
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
-            id: auction::Id(self.id),
+            id: self.id.map(auction::Id),
             tokens: auction::Tokens(
                 self.tokens
                     .iter()
@@ -84,8 +84,8 @@ impl Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
-    #[serde_as(as = "DisplayFromStr")]
-    id: i64,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    id: Option<i64>,
     tokens: HashMap<H160, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,
@@ -242,7 +242,7 @@ impl WeightedProductPool {
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
             liquidity::weighted_product::Reserves::new(entries)
-                .ok_or("duplicate weighted token addresss")?
+                .ok_or("duplicate weighted token addresses")?
         };
 
         Ok(liquidity::Liquidity {
@@ -297,7 +297,7 @@ impl StablePool {
                     })
                 })
                 .collect::<Result<Vec<_>, Error>>()?;
-            liquidity::stable::Reserves::new(entries).ok_or("duplicate stable token addresss")?
+            liquidity::stable::Reserves::new(entries).ok_or("duplicate stable token addresses")?
         };
 
         Ok(liquidity::Liquidity {

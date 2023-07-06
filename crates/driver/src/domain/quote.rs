@@ -94,7 +94,7 @@ impl Order {
 
     fn fake_auction(&self, gas_price: eth::GasPrice) -> competition::Auction {
         competition::Auction {
-            id: 0.try_into().unwrap(),
+            id: None,
             tokens: Default::default(),
             orders: vec![competition::Order {
                 uid: Default::default(),

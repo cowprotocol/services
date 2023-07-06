@@ -16,7 +16,7 @@ use {
 impl Auction {
     pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
-            id: self.id.try_into()?,
+            id: Some(self.id.try_into()?),
             tokens: self
                 .tokens
                 .into_iter()
