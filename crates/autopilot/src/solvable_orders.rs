@@ -3,6 +3,7 @@ use {
     anyhow::Result,
     bigdecimal::BigDecimal,
     chrono::Utc,
+    database::order_events::OrderEventLabel,
     itertools::Itertools,
     model::{
         auction::Auction,
@@ -166,19 +167,24 @@ impl SolvableOrdersCache {
             .await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
+        let mut order_events = vec![];
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
-        counter.checkpoint("banned_user", &orders);
+        let removed = counter.checkpoint("banned_user", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        counter.checkpoint("unsupported_token", &orders);
+        let removed = counter.checkpoint("unsupported_token", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
-        counter.checkpoint("invalid_signature", &orders);
+        let removed = counter.checkpoint("invalid_signature", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
-        counter.checkpoint("insufficient_sell", &orders);
+        let removed = counter.checkpoint("insufficient_sell", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         // If we update due to an explicit notification we can reuse existing balances
         // as they cannot have changed.
@@ -210,10 +216,12 @@ impl SolvableOrdersCache {
         }
 
         let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
-        counter.checkpoint("insufficient_balance", &orders);
+        let removed = counter.checkpoint("insufficient_balance", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
         let orders = filter_dust_orders(orders, &new_balances, self.ethflow_contract_address);
-        counter.checkpoint("dust_order", &orders);
+        let removed = counter.checkpoint("dust_order", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -221,13 +229,16 @@ impl SolvableOrdersCache {
             &self.native_price_estimator,
             self.metrics,
         );
-        counter.checkpoint("missing_price", &orders);
+        let removed = counter.checkpoint("missing_price", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
-        counter.checkpoint("out_of_market", &orders);
+        let removed = counter.checkpoint("out_of_market", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
-        counter.checkpoint("fee_scaling_overflow", &orders);
+        let removed = counter.checkpoint("fee_scaling_overflow", &orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let auction = Auction {
             block,
@@ -235,7 +246,10 @@ impl SolvableOrdersCache {
             orders: orders.clone(),
             prices,
         };
-        counter.record(&auction.orders);
+        let removed = counter.record(&auction.orders);
+        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+
+        self.database.store_order_events(&order_events).await;
 
         let id = if self.store_in_db {
             let id = self.database.replace_current_auction(&auction).await?;
@@ -666,7 +680,7 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
-    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) {
+    fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
         let filtered_orders = orders
             .iter()
             .fold(self.orders.clone(), |mut order_uids, order| {
@@ -675,17 +689,19 @@ impl OrderFilterCounter {
             });
 
         *self.counts.entry(reason).or_default() += filtered_orders.len();
-        for (order, class) in filtered_orders {
-            self.orders.remove(&order).unwrap();
+        for (order, class) in &filtered_orders {
+            self.orders.remove(order).unwrap();
             tracing::debug!(%order, ?class, %reason, "filtered order")
         }
+        filtered_orders.into_keys().collect()
     }
 
     /// Records the filter counter to metrics.
-    fn record(mut self, orders: &[Order]) {
-        if self.orders.len() != orders.len() {
-            self.checkpoint("other", orders);
-        }
+    /// If there are orders that have been filtered out since the last
+    /// checkpoint these orders will get recorded with the readon "other".
+    /// Returns these catch-all orders.
+    fn record(mut self, orders: &[Order]) -> Vec<OrderUid> {
+        let removed = self.checkpoint("other", orders);
 
         self.metrics.auction_creations.inc();
 
@@ -704,6 +720,8 @@ impl OrderFilterCounter {
                 .with_label_values(&[reason])
                 .set(count as _);
         }
+
+        removed
     }
 }
 

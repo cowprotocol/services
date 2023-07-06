@@ -1,6 +1,6 @@
 use {
     crate::setup::*,
-    database::order_events::{OrderEvent, OrderEventLabel},
+    database::order_events::OrderEventLabel,
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -52,8 +52,6 @@ async fn test(web3: Web3) {
     services.start_api(vec![]).await;
 
     tracing::info!("Placing order");
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, 0.into());
     let order = OrderCreation {
         sell_token: onchain.contracts().weth.address(),
         sell_amount: to_wei(2),
@@ -71,50 +69,21 @@ async fn test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
-    tracing::info!("Waiting for trade.");
-    let trade_happened =
-        || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
-    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-
-    let balance = token.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance, to_wei(1));
-
-    let all_events_registered = || async {
+    let order_is_ready = || async {
         let events = crate::database::events_of_order(services.db(), &uid).await;
-        order_events_matching_fuzzy(
-            &events,
-            &[
-                OrderEventLabel::Created,
-                OrderEventLabel::Ready,
-                OrderEventLabel::Considered,
-                OrderEventLabel::Executing,
-                OrderEventLabel::Traded,
-            ],
-        )
+        events.last().map(|e| e.label) == Some(OrderEventLabel::Ready)
     };
-    wait_for_condition(TIMEOUT, all_events_registered)
-        .await
-        .unwrap();
+    wait_for_condition(TIMEOUT, order_is_ready).await.unwrap();
 
-    // TODO: test that we have other important per-auction data that should have
-    // made its way into the DB.
-}
+    tracing::info!("Withdrawing WETH to render the order invalid due to insufficient funds");
+    tx!(
+        trader.account(),
+        onchain.contracts().weth.withdraw(to_wei(3))
+    );
 
-fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {
-    let mut events = actual.iter();
-
-    for expectation in expected {
-        loop {
-            let event = match events.next() {
-                Some(event) => event,
-                // we are still expecting events but none are left
-                None => return false,
-            };
-            if event.label == *expectation {
-                // found expected label; break inner loop to look for next label
-                break;
-            }
-        }
-    }
-    true
+    let order_is_invalid = || async {
+        let events = crate::database::events_of_order(services.db(), &uid).await;
+        events.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
+    };
+    wait_for_condition(TIMEOUT, order_is_invalid).await.unwrap();
 }

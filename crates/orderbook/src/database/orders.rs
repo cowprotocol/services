@@ -5,6 +5,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
+        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
         orders::{FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
@@ -95,7 +96,36 @@ impl From<sqlx::Error> for InsertionError {
     }
 }
 
+/// Applies the needed DB modification to cancel a single order.
+async fn cancel_order(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let uid = ByteArray(order_uid.0);
+    insert_order_event(
+        ex,
+        &OrderEvent {
+            order_uid: uid,
+            timestamp: now,
+            label: OrderEventLabel::Cancelled,
+        },
+    )
+    .await?;
+    database::orders::cancel_order(ex, &uid, now).await?;
+    Ok(())
+}
+
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
+    insert_order_event(
+        ex,
+        &OrderEvent {
+            order_uid: ByteArray(order.metadata.uid.0),
+            timestamp: Utc::now(),
+            label: OrderEventLabel::Created,
+        },
+    )
+    .await?;
     let interactions = std::iter::empty()
         .chain(
             order
@@ -238,19 +268,14 @@ impl OrderStoring for Postgres {
             .with_label_values(&["cancel_orders"])
             .start_timer();
 
-        let mut connection = self.pool.acquire().await?;
+        let mut connection = self.pool.begin().await?;
+        for order_uid in order_uids {
+            cancel_order(&mut connection, &order_uid, now).await?;
+        }
         connection
-            .transaction(move |ex| {
-                async move {
-                    for order_uid in order_uids {
-                        let uid = ByteArray(order_uid.0);
-                        database::orders::cancel_order(ex, &uid, now).await?;
-                    }
-                    Ok(())
-                }
-                .boxed()
-            })
+            .commit()
             .await
+            .context("commit cancel multiple orders")
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
@@ -259,11 +284,9 @@ impl OrderStoring for Postgres {
             .with_label_values(&["cancel_order"])
             .start_timer();
 
-        let order_uid = *order_uid;
-        let mut ex = self.pool.acquire().await?;
-        database::orders::cancel_order(&mut ex, &ByteArray(order_uid.0), now)
-            .await
-            .context("cancel_order")
+        let mut ex = self.pool.begin().await?;
+        cancel_order(&mut ex, order_uid, now).await?;
+        ex.commit().await.context("commit cancel single order")
     }
 
     async fn replace_order(
