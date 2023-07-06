@@ -16,6 +16,7 @@ use {
                 Reveal,
                 Solution,
             },
+            eth,
             quote::{self, Quote},
             Liquidity,
         },
@@ -261,11 +262,11 @@ pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, 
 pub fn mempool_executed(
     solver: &solver::Name,
     mempool: &Mempool,
-    res: &Result<(), boundary::Error>,
+    res: &Result<eth::TxId, boundary::Error>,
 ) {
     match res {
-        Ok(()) => {
-            tracing::info!(%solver, ?mempool, "sending transaction via mempool succeeded");
+        Ok(txid) => {
+            tracing::info!(%solver, ?txid, ?mempool, "sending transaction via mempool succeeded");
         }
         Err(err) => {
             tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
