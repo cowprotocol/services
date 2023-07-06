@@ -21,8 +21,9 @@ pub mod flashbots_api;
 pub mod public_mempool_api;
 
 use {
-    super::{SubTxPoolRef, SubmissionError, SubmitterSettlement},
+    super::{SubTxPoolRef, SubmissionError},
     crate::{
+        settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::settle_method_builder,
         settlement_submission::gas_limit_for_estimate,
@@ -37,6 +38,7 @@ use {
         code_fetching::CodeFetching,
         conversions::into_gas_price,
         ethrpc::{Web3, Web3Transport},
+        http_solver::model::InternalizationStrategy,
         submitter_constants::{TX_ALREADY_KNOWN, TX_ALREADY_MINED},
     },
     std::{
@@ -120,11 +122,7 @@ pub trait TransactionSubmitting: Send + Sync {
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle>;
     /// Checks if transaction submitting is enabled at the moment
-    fn submission_status(
-        &self,
-        settlement: &SubmitterSettlement,
-        network_id: &str,
-    ) -> SubmissionLoopStatus;
+    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
     /// Returns type of the submitter.
     fn name(&self) -> Strategy;
 }
@@ -179,7 +177,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
 }
 
 pub struct Submitter<'a> {
-    settlement: &'a GPv2Settlement,
+    contract: &'a GPv2Settlement,
     account: &'a Account,
     nonce: U256,
     submit_api: &'a dyn TransactionSubmitting,
@@ -193,7 +191,7 @@ pub struct Submitter<'a> {
 impl<'a> Submitter<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        settlement: &'a GPv2Settlement,
+        contract: &'a GPv2Settlement,
         account: &'a Account,
         nonce: U256,
         submit_api: &'a dyn TransactionSubmitting,
@@ -204,7 +202,7 @@ impl<'a> Submitter<'a> {
         code_fetcher: &'a dyn CodeFetching,
     ) -> Result<Self> {
         Ok(Self {
-            settlement,
+            contract,
             account,
             nonce,
             submit_api,
@@ -224,7 +222,7 @@ impl<'a> Submitter<'a> {
     /// Only works on mainnet.
     pub async fn submit(
         &self,
-        settlement: SubmitterSettlement,
+        settlement: Settlement,
         params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let name = self.submit_api.name();
@@ -349,7 +347,7 @@ impl<'a> Submitter<'a> {
 
             loop {
                 if let Some(receipt) =
-                    find_mined_transaction(&self.settlement.raw_instance().web3(), &transactions)
+                    find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
                     tracing::debug!("found mined transaction {:?}", receipt.transaction_hash);
@@ -379,7 +377,7 @@ impl<'a> Submitter<'a> {
     }
 
     async fn nonce(&self) -> Result<U256> {
-        self.settlement
+        self.contract
             .raw_instance()
             .web3()
             .eth()
@@ -413,7 +411,7 @@ impl<'a> Submitter<'a> {
     /// vector.
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
-        settlement: SubmitterSettlement,
+        settlement: Settlement,
         params: SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
@@ -449,7 +447,8 @@ impl<'a> Submitter<'a> {
 
             // create transaction
 
-            let mut method = self.build_method(&settlement, &gas_price, self.nonce, gas_limit);
+            let mut method =
+                self.build_method(settlement.clone(), &gas_price, self.nonce, gas_limit);
 
             // append additional call data
 
@@ -551,12 +550,13 @@ impl<'a> Submitter<'a> {
     /// Prepare transaction for simulation
     fn build_method(
         &self,
-        settlement: &SubmitterSettlement,
+        settlement: Settlement,
         gas_price: &GasPrice1559,
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<Web3Transport, ()> {
-        settle_method_builder(self.settlement, settlement.encoded(), self.account.clone())
+        let settlement = settlement.encode(InternalizationStrategy::SkipInternalizableInteraction);
+        settle_method_builder(self.contract, settlement, self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
             .gas_price(into_gas_price(gas_price))
@@ -565,7 +565,7 @@ impl<'a> Submitter<'a> {
     /// Estimate access list and validate
     async fn estimate_access_list(
         &self,
-        settlement: &SubmitterSettlement,
+        settlement: &Settlement,
         tx: &TransactionBuilder<Web3Transport>,
     ) -> Result<AccessList> {
         let access_list = estimate_settlement_access_list(
@@ -573,7 +573,7 @@ impl<'a> Submitter<'a> {
             self.code_fetcher,
             self.web3.clone(),
             self.account.clone(),
-            &settlement.inner,
+            settlement,
             tx,
         )
         .await?;
@@ -621,7 +621,7 @@ impl<'a> Submitter<'a> {
         gas_price: &GasPrice1559,
         nonce: U256,
     ) -> TransactionBuilder<Web3Transport> {
-        TransactionBuilder::new(self.settlement.raw_instance().web3())
+        TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
@@ -725,11 +725,7 @@ fn track_strategy_outcome(strategy: &str, outcome: &str) {
 mod tests {
     use {
         super::{super::submitter::flashbots_api::FlashbotsApi, *},
-        crate::{
-            settlement,
-            settlement::Settlement,
-            settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
-        },
+        crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
         ethcontract::PrivateKey,
         gas_estimation::blocknative::BlockNative,
         reqwest::Client,
@@ -737,7 +733,6 @@ mod tests {
             code_fetching::MockCodeFetching,
             ethrpc::create_env_test_transport,
             gas_price_estimation::FakeGasPriceEstimator,
-            http_solver::model::InternalizationStrategy,
         },
         std::sync::Arc,
         tracing::level_filters::LevelFilter,
@@ -758,7 +753,7 @@ mod tests {
             .transaction_count(account.address(), None)
             .await
             .unwrap();
-        let settlement_contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let flashbots_api = FlashbotsApi::new(Client::new(), "https://rpc.flashbots.net").unwrap();
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(
@@ -794,13 +789,12 @@ mod tests {
             crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
                 std::iter::once((
                     account.clone(),
-                    settlement.clone().encode(
-                        &settlement::Contracts::default(),
-                        InternalizationStrategy::SkipInternalizableInteraction,
-                    ),
+                    settlement
+                        .clone()
+                        .encode(InternalizationStrategy::SkipInternalizableInteraction),
                     None,
                 )),
-                &settlement_contract,
+                &contract,
                 Default::default(),
             )
             .await
@@ -813,7 +807,7 @@ mod tests {
         let submitted_transactions = Default::default();
 
         let submitter = Submitter::new(
-            &settlement_contract,
+            &contract,
             &account,
             nonce,
             &flashbots_api,
@@ -834,9 +828,7 @@ mod tests {
             additional_call_data: Default::default(),
             use_soft_cancellations: false,
         };
-        let result = submitter
-            .submit(SubmitterSettlement::for_settlement(settlement), params)
-            .await;
+        let result = submitter.submit(settlement, params).await;
         tracing::debug!("finished with result {:?}", result);
     }
 

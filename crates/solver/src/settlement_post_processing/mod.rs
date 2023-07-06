@@ -1,5 +1,3 @@
-use crate::settlement;
-
 mod optimize_buffer_usage;
 mod optimize_score;
 mod optimize_unwrapping;
@@ -36,7 +34,6 @@ pub trait SettlementSimulating: Send + Sync {
 
 pub struct SettlementSimulator {
     settlement_contract: GPv2Settlement,
-    settlement_encoding_contracts: settlement::Contracts,
     gas_price: GasPrice1559,
     solver_account: Account,
     internalization: InternalizationStrategy,
@@ -45,8 +42,7 @@ pub struct SettlementSimulator {
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
     async fn estimate_gas(&self, settlement: Settlement) -> Result<U256> {
-        let settlement =
-            settlement.encode(&self.settlement_encoding_contracts, self.internalization);
+        let settlement = settlement.encode(self.internalization);
         simulate_and_estimate_gas_at_current_block(
             std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
@@ -76,7 +72,6 @@ pub trait PostProcessing: Send + Sync + 'static {
 
 pub struct PostProcessingPipeline {
     settlement_contract: GPv2Settlement,
-    settlement_encoding_contracts: settlement::Contracts,
     unwrap_factor: f64,
     weth: WETH9,
     buffer_retriever: BufferRetriever,
@@ -89,7 +84,6 @@ impl PostProcessingPipeline {
         web3: Web3,
         unwrap_factor: f64,
         settlement_contract: GPv2Settlement,
-        settlement_encoding_contracts: settlement::Contracts,
         market_makable_token_list: AutoUpdatingTokenList,
     ) -> Self {
         let weth = WETH9::at(&web3, native_token);
@@ -97,7 +91,6 @@ impl PostProcessingPipeline {
 
         Self {
             settlement_contract,
-            settlement_encoding_contracts,
             unwrap_factor,
             weth,
             buffer_retriever,
@@ -118,7 +111,6 @@ impl PostProcessing for PostProcessingPipeline {
     ) -> Settlement {
         let simulator = SettlementSimulator {
             settlement_contract: self.settlement_contract.clone(),
-            settlement_encoding_contracts: self.settlement_encoding_contracts.clone(),
             gas_price,
             solver_account: solver_account.clone(),
             internalization: InternalizationStrategy::SkipInternalizableInteraction,

@@ -130,10 +130,6 @@ impl<'a> Services<'a> {
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-            format!(
-                "--multisend-contract={:?}",
-                self.contracts.multisend.address()
-            ),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

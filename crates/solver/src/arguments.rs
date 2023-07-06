@@ -366,12 +366,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ethflow_contract: Option<H160>,
 
-    /// Address of the `MultiCallSendOnly` contract used for trampolining custom
-    /// order interactions. If not specified, the solver will use the default
-    /// contract deployment for the current network.
-    #[clap(long, env)]
-    pub multisend_contract: Option<H160>,
-
     /// Controls whether we discard solutions without a fee for partially
     /// filllable limit orders or set the fee to 0. This can make sense on
     /// chains where we are not so concerned about the fee (e.g. gc,

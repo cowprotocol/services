@@ -56,7 +56,6 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
-    pub(super) contracts: solver::settlement::Contracts,
     pub solver: eth::Address,
     risk: solution::Risk,
 }
@@ -162,10 +161,6 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
-            contracts: solver::settlement::Contracts {
-                ethflow: None,
-                multisend: eth.contracts().multisend().clone(),
-            },
             solver: solution.solver.address(),
             risk: solution.risk,
         })
@@ -177,17 +172,12 @@ impl Settlement {
         contract: &contracts::GPv2Settlement,
         internalization: Internalization,
     ) -> eth::Tx {
-        let encoded_settlement = self.inner.clone().encode(
-            &self.contracts,
-            match internalization {
-                settlement::Internalization::Enable => {
-                    InternalizationStrategy::SkipInternalizableInteraction
-                }
-                settlement::Internalization::Disable => {
-                    InternalizationStrategy::EncodeAllInteractions
-                }
-            },
-        );
+        let encoded_settlement = self.inner.clone().encode(match internalization {
+            settlement::Internalization::Enable => {
+                InternalizationStrategy::SkipInternalizableInteraction
+            }
+            settlement::Internalization::Disable => InternalizationStrategy::EncodeAllInteractions,
+        });
         let builder = settle_method_builder(
             contract,
             encoded_settlement,
@@ -239,7 +229,6 @@ impl Settlement {
         self.inner.merge(other.inner).map(|inner| Self {
             inner,
             solver: self.solver,
-            contracts: self.contracts,
             risk: self.risk.merge(other.risk),
         })
     }

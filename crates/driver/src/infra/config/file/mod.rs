@@ -178,9 +178,6 @@ pub struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     pub weth: Option<eth::H160>,
-
-    /// Override the default address of the MultiSendCallOnly contract.
-    pub multisend: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]
