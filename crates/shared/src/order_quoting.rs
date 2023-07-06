@@ -137,6 +137,7 @@ pub struct QuoteParameters {
     pub side: OrderQuoteSide,
     pub verification: Option<Verification>,
     pub signing_scheme: QuoteSigningScheme,
+    pub additional_gas: u64,
 }
 
 impl QuoteParameters {
@@ -159,6 +160,12 @@ impl QuoteParameters {
             in_amount,
             kind,
         }
+    }
+
+    fn additional_cost(&self) -> u64 {
+        self.signing_scheme
+            .additional_gas_amount()
+            .saturating_add(self.additional_gas)
     }
 }
 
@@ -203,13 +210,11 @@ impl Quote {
 
     /// Applies a subsidy to the quote **with** the
     /// `QuoteSigningScheme.verification_gas_limit`
-    pub fn with_subsidy_and_signing_scheme(
+    pub fn with_subsidy_and_additional_cost(
         mut self,
         subsidy: &Subsidy,
-        scheme: &QuoteSigningScheme,
+        additional_cost: u64,
     ) -> Self {
-        let additional_cost = scheme.additional_gas_amount();
-
         // Be careful not to modify `self.data` as this represents the actual
         // quote data that is stored in the database. Instead, update the
         // computed fee fields.
@@ -321,7 +326,6 @@ pub trait OrderQuoting: Send + Sync {
         &self,
         id: Option<QuoteId>,
         parameters: QuoteSearchParameters,
-        signing_scheme: &QuoteSigningScheme,
     ) -> Result<Quote, FindQuoteError>;
 }
 
@@ -361,6 +365,8 @@ pub struct QuoteSearchParameters {
     pub buy_amount: U256,
     pub fee_amount: U256,
     pub kind: OrderKind,
+    pub signing_scheme: QuoteSigningScheme,
+    pub additional_gas: u64,
     /// If this is `Some` the quotes are expected to pass simulations using the
     /// contained parameters.
     pub verification: Option<Verification>,
@@ -382,6 +388,13 @@ impl QuoteSearchParameters {
             && (self.sell_token, self.buy_token, self.kind)
                 == (data.sell_token, data.buy_token, data.kind)
     }
+
+    /// Returns additional gas costs incurred by the quote.
+    fn additional_cost(&self) -> u64 {
+        self.signing_scheme
+            .additional_gas_amount()
+            .saturating_add(self.additional_gas)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -401,7 +414,6 @@ pub trait QuoteStoring: Send + Sync {
         &self,
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
-        quote_kind: QuoteKind,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
 }
 
@@ -545,7 +557,7 @@ impl OrderQuoting for OrderQuoter {
         )?;
 
         let mut quote = Quote::new(Default::default(), data)
-            .with_subsidy_and_signing_scheme(&subsidy, &parameters.signing_scheme);
+            .with_subsidy_and_additional_cost(&subsidy, parameters.additional_cost());
 
         // Make sure to scale the sell and buy amounts for quotes for sell
         // amounts before fees.
@@ -583,7 +595,6 @@ impl OrderQuoting for OrderQuoter {
         &self,
         id: Option<QuoteId>,
         parameters: QuoteSearchParameters,
-        signing_scheme: &QuoteSigningScheme,
     ) -> Result<Quote, FindQuoteError> {
         let scaled_sell_amount = match parameters.kind {
             OrderKind::Sell => Some(parameters.sell_amount),
@@ -599,6 +610,7 @@ impl OrderQuoting for OrderQuoter {
         };
 
         let now = self.now.now();
+        let additional_cost = parameters.additional_cost();
         let quote = async {
             let (id, data) = match id {
                 Some(id) => {
@@ -617,13 +629,11 @@ impl OrderQuoting for OrderQuoter {
 
                     (id, data)
                 }
-                None => {
-                    let quote_kind = quote_kind_from_signing_scheme(signing_scheme);
-                    self.storage
-                        .find(parameters, now, quote_kind)
-                        .await?
-                        .ok_or(FindQuoteError::NotFound(None))?
-                }
+                None => self
+                    .storage
+                    .find(parameters, now)
+                    .await?
+                    .ok_or(FindQuoteError::NotFound(None))?,
             };
             Ok(Quote::new(Some(id), data))
         };
@@ -635,7 +645,7 @@ impl OrderQuoting for OrderQuoter {
                 .map_err(FindQuoteError::from)
         )?;
 
-        let quote = quote.with_subsidy_and_signing_scheme(&subsidy, signing_scheme);
+        let quote = quote.with_subsidy_and_additional_cost(&subsidy, additional_cost);
         let quote = match scaled_sell_amount {
             Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
             None => quote,
@@ -685,11 +695,13 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
             side: request.side,
             verification,
             signing_scheme: request.signing_scheme,
+            // TODO get from request
+            additional_gas: 0,
         }
     }
 }
 
-fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
+pub fn quote_kind_from_signing_scheme(scheme: &QuoteSigningScheme) -> QuoteKind {
     match scheme {
         QuoteSigningScheme::Eip1271 {
             onchain_order: true,
@@ -759,6 +771,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -883,7 +896,11 @@ mod tests {
                 from: H160([3; 20]),
                 ..Default::default()
             }),
-            signing_scheme: QuoteSigningScheme::Eip712,
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 1,
+            },
+            additional_gas: 2,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -992,8 +1009,8 @@ mod tests {
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 15.into(),
-                full_fee_amount: 30.into(),
+                fee_amount: 30.into(),
+                full_fee_amount: 60.into(),
             }
         );
     }
@@ -1012,6 +1029,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -1140,6 +1158,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1208,6 +1227,7 @@ mod tests {
                 ..Default::default()
             }),
             signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1276,6 +1296,8 @@ mod tests {
             buy_amount: 40.into(),
             fee_amount: 15.into(),
             kind: OrderKind::Sell,
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()
@@ -1316,10 +1338,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(Some(quote_id), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1363,6 +1382,8 @@ mod tests {
             buy_amount: 40.into(),
             fee_amount: 30.into(),
             kind: OrderKind::Sell,
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()
@@ -1400,10 +1421,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(Some(quote_id), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1439,6 +1457,8 @@ mod tests {
             buy_amount: 42.into(),
             fee_amount: 30.into(),
             kind: OrderKind::Buy,
+            signing_scheme: QuoteSigningScheme::Eip712,
+            additional_gas: 0,
             verification: Some(Verification {
                 from: H160([3; 20]),
                 ..Default::default()
@@ -1448,8 +1468,8 @@ mod tests {
         let mut storage = MockQuoteStoring::new();
         storage
             .expect_find()
-            .with(eq(parameters.clone()), eq(now), eq(QuoteKind::Standard))
-            .returning(move |_, _, _| {
+            .with(eq(parameters.clone()), eq(now))
+            .returning(move |_, _| {
                 Ok(Some((
                     42,
                     QuoteData {
@@ -1482,10 +1502,7 @@ mod tests {
         };
 
         assert_eq!(
-            quoter
-                .find_quote(None, parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap(),
+            quoter.find_quote(None, parameters).await.unwrap(),
             Quote {
                 id: Some(42),
                 data: QuoteData {
@@ -1557,16 +1574,13 @@ mod tests {
 
         assert!(matches!(
             quoter
-                .find_quote(Some(0), parameters.clone(), &QuoteSigningScheme::Eip712)
+                .find_quote(Some(0), parameters.clone())
                 .await
                 .unwrap_err(),
             FindQuoteError::ParameterMismatch(_),
         ));
         assert!(matches!(
-            quoter
-                .find_quote(Some(0), parameters, &QuoteSigningScheme::Eip712)
-                .await
-                .unwrap_err(),
+            quoter.find_quote(Some(0), parameters).await.unwrap_err(),
             FindQuoteError::Expired(_),
         ));
     }
@@ -1575,7 +1589,7 @@ mod tests {
     async fn find_quote_error_when_not_found() {
         let mut storage = MockQuoteStoring::new();
         storage.expect_get().returning(move |_| Ok(None));
-        storage.expect_find().returning(move |_, _, _| Ok(None));
+        storage.expect_find().returning(move |_, _| Ok(None));
 
         let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
@@ -1590,14 +1604,14 @@ mod tests {
 
         assert!(matches!(
             quoter
-                .find_quote(Some(0), Default::default(), &QuoteSigningScheme::Eip712)
+                .find_quote(Some(0), Default::default())
                 .await
                 .unwrap_err(),
             FindQuoteError::NotFound(Some(0)),
         ));
         assert!(matches!(
             quoter
-                .find_quote(None, Default::default(), &QuoteSigningScheme::Eip712)
+                .find_quote(None, Default::default())
                 .await
                 .unwrap_err(),
             FindQuoteError::NotFound(None),

@@ -4,6 +4,7 @@
 use {
     crate::{
         app_id::AppDataHash,
+        bytes_hex::BytesHex,
         interaction::InteractionData,
         quote::QuoteId,
         signature::{self, EcdsaSignature, EcdsaSigningScheme, Signature},
@@ -53,24 +54,24 @@ impl Hooks {
         self.pre.is_empty() && self.post.is_empty()
     }
 
-    pub fn gas_limit(&self) -> U256 {
+    pub fn gas_limit(&self) -> u64 {
         std::iter::empty()
             .chain(&self.pre)
             .chain(&self.post)
-            .fold(U256::zero(), |total, hook| {
-                total.saturating_add(hook.gas_limit)
-            })
+            .fold(0_u64, |total, hook| total.saturating_add(hook.gas_limit))
     }
 }
 
 /// A user-specified hook.
+#[serde_as]
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hook {
     pub target: H160,
-    #[serde(with = "crate::bytes_hex")]
+    #[serde_as(as = "BytesHex")]
     pub call_data: Vec<u8>,
-    pub gas_limit: U256,
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_limit: u64,
 }
 
 impl Debug for Hook {
