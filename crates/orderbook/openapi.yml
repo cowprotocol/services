@@ -64,7 +64,7 @@ paths:
               $ref: "#/components/schemas/OrderCancellations"
       responses:
         200:
-          description: Order(s) are deleted.
+          description: Order(s) are cancelled.
         400:
           description: Malformed signature.
           content:
@@ -100,7 +100,7 @@ paths:
         The successful deletion might not prevent solvers from settling the order.
         Authentication must be provided by providing an 
         [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of an
-        `OrderCancellation(bytes orderUids)` message.
+        `OrderCancellation(bytes orderUid)` message.
       parameters:
         - in: path
           name: UID
@@ -116,7 +116,7 @@ paths:
               $ref: "#/components/schemas/OrderCancellation"
       responses:
         200:
-          description: Order deleted.
+          description: Order cancelled.
         400:
           description: Malformed signature.
           content:
@@ -390,7 +390,7 @@ paths:
                 $ref: "#/components/schemas/VersionResponse"
   /api/v1/app_data/{app_data_hash}:
     get:
-      summary: Get the full appData from contract appDataHash.
+      summary: Get the full `appData` from contract `appDataHash`.
       parameters:
         - in: path
           name: app_data_hash
@@ -648,7 +648,7 @@ components:
           nullable: true
         appData:
           description: |
-            This field comes in two forms for backward compatibility. The first form (app data hash) 
+            This field comes in two forms for backward compatibility. The first form (`appDataHash`) 
             will eventually stop being accepted.
           anyOf:
             - $ref: "#/components/schemas/AppDataHash"
@@ -882,7 +882,7 @@ components:
     OrderCancellation:
       description: |
         [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of struct 
-        OrderCancellation { orderUid: bytes } from the order's owner.
+        `OrderCancellation(bytes orderUid)` from the order's owner.
       type: object
       properties:
         signature:
