@@ -214,7 +214,7 @@ paths:
             
             ### If `orderUid` is specified:
             
-            Return all trades relate to that `orderUid`. Given that an order may be partially
+            Return all trades related to that `orderUid`. Given that an order may be partially
             fillable, it is possible that an individual order may have *multiple* trades.
           content:
             application/json:
