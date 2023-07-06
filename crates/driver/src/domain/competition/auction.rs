@@ -4,7 +4,6 @@ use {
         eth,
     },
     std::{num::ParseIntError, str::FromStr},
-    thiserror::Error,
 };
 
 /// An auction is a set of orders that can be solved. The solvers calculate
@@ -68,8 +67,8 @@ pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
     /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer()).ok_or(DeadlineExceeded)
+    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer())
     }
 
     pub fn time_buffer() -> chrono::Duration {
@@ -117,7 +116,3 @@ impl FromStr for Id {
         FromStr::from_str(s).map(Self)
     }
 }
-
-#[derive(Debug, Error)]
-#[error("the solution deadline has been exceeded")]
-pub struct DeadlineExceeded;

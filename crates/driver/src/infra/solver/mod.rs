@@ -71,6 +71,10 @@ pub struct Config {
 }
 
 impl Solver {
+    pub fn http_time_buffer() -> chrono::Duration {
+        chrono::Duration::milliseconds(500)
+    }
+
     pub fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
@@ -118,14 +122,21 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body =
-            serde_json::to_string(&dto::Auction::new(auction, liquidity, timeout, weth)).unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(
+            auction,
+            liquidity,
+            // Reduce the timeout by a small buffer to account for network latency. Otherwise the
+            // HTTP timeout might happen before the solver times out its search algorithm.
+            timeout.reduce(Self::http_time_buffer()),
+            weth,
+        ))
+        .unwrap();
         observe::solver_request(self.name(), &self.config.endpoint, &body);
         let req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
-            .timeout(timeout.into());
+            .timeout(timeout.duration().to_std().unwrap());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         observe::solver_response(
             self.name(),
