@@ -149,7 +149,7 @@ async fn test(web3: Web3) {
     assert!(base.quote.fee_amount < with_eip1271.quote.fee_amount);
     assert!(base.quote.fee_amount < with_hooks.quote.fee_amount);
 
-    assert!(with_both.quote.fee_amount > with_hooks.quote.fee_amount);
+    assert!(with_both.quote.fee_amount > with_eip1271.quote.fee_amount);
     assert!(with_both.quote.fee_amount > with_hooks.quote.fee_amount);
 
     // TODO: test verified quotes, requires state overrides support.
