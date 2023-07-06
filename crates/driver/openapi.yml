@@ -165,6 +165,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
+        postInteractions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Interaction"
         sellTokenBalance:
           type: string
           enum: ["erc20", "internal", "external"]

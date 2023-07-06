@@ -13,11 +13,11 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_pre_interaction() {
-    run_test(pre_interaction).await;
+async fn local_node_test() {
+    run_test(test).await;
 }
 
-async fn pre_interaction(web3: Web3) {
+async fn test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

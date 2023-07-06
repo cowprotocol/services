@@ -27,8 +27,8 @@ impl Mempools {
             let solver = solver.clone();
             let settlement = settlement.clone();
             async move {
-                let result = mempool.execute(&solver, settlement).await;
-                observe::mempool_executed(solver.name(), &mempool, &result);
+                let result = mempool.execute(&solver, settlement.clone()).await;
+                observe::mempool_executed(solver.name(), &mempool, &settlement, &result);
                 result
             }
             .boxed()

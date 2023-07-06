@@ -262,14 +262,21 @@ pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, 
 pub fn mempool_executed(
     solver: &solver::Name,
     mempool: &Mempool,
+    settlement: &Settlement,
     res: &Result<eth::TxId, boundary::Error>,
 ) {
     match res {
         Ok(txid) => {
-            tracing::info!(%solver, ?txid, ?mempool, "sending transaction via mempool succeeded");
+            tracing::info!(
+                %solver, ?txid, ?mempool, ?settlement,
+                "sending transaction via mempool succeeded",
+            );
         }
         Err(err) => {
-            tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
+            tracing::warn!(
+                %solver, ?err, ?mempool, ?settlement,
+                "sending transaction via mempool failed",
+            );
         }
     }
 }
