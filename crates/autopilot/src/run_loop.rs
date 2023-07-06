@@ -14,6 +14,7 @@ use {
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
+        interaction::InteractionData,
         order::{LimitOrderClass, OrderClass},
     },
     primitive_types::{H160, H256},
@@ -216,6 +217,17 @@ impl RunLoop {
                             (Class::Limit, surplus_fee)
                         }
                     };
+                    let map_interactions =
+                        |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
+                            interactions
+                                .iter()
+                                .map(|interaction| solve::Interaction {
+                                    target: interaction.target,
+                                    value: interaction.value,
+                                    call_data: interaction.call_data.clone(),
+                                })
+                                .collect()
+                        };
                     solve::Order {
                         uid: order.metadata.uid,
                         sell_token: order.data.sell_token,
@@ -230,8 +242,8 @@ impl RunLoop {
                         owner: order.metadata.owner,
                         partially_fillable: order.data.partially_fillable,
                         executed: Default::default(),
-                        pre_interactions: Default::default(),
-                        post_interactions: Default::default(),
+                        pre_interactions: map_interactions(&order.interactions.pre),
+                        post_interactions: map_interactions(&order.interactions.post),
                         sell_token_balance: order.data.sell_token_balance,
                         buy_token_balance: order.data.buy_token_balance,
                         class,

@@ -49,6 +49,7 @@ pub mod solve {
         chrono::{DateTime, Utc},
         model::{
             app_id::AppDataHash,
+            bytes_hex::BytesHex,
             order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,
             u256_decimal::DecimalU256,
@@ -101,8 +102,8 @@ pub mod solve {
         pub partially_fillable: bool,
         #[serde_as(as = "DecimalU256")]
         pub executed: U256,
-        pub pre_interactions: Vec<()>,
-        pub post_interactions: Vec<()>,
+        pub pre_interactions: Vec<Interaction>,
+        pub post_interactions: Vec<Interaction>,
         pub sell_token_balance: SellTokenSource,
         pub buy_token_balance: BuyTokenDestination,
         pub class: Class,
@@ -119,6 +120,17 @@ pub mod solve {
         Market,
         Limit,
         Liquidity,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Interaction {
+        pub target: H160,
+        #[serde_as(as = "DecimalU256")]
+        pub value: U256,
+        #[serde_as(as = "BytesHex")]
+        pub call_data: Vec<u8>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
