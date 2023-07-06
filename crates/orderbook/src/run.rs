@@ -474,7 +474,7 @@ pub async fn run(args: Arguments) {
             Arc::new(postgres.clone()),
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
-            shared::app_data::Validator::default(),
+            shared::app_data::Validator::new(args.app_data_size_limit),
         )
         .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
         .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)

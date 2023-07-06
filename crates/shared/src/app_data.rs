@@ -22,6 +22,7 @@ pub struct Validator {
     size_limit: usize,
 }
 
+#[cfg(test)]
 impl Default for Validator {
     fn default() -> Self {
         Self { size_limit: 8192 }
@@ -29,6 +30,10 @@ impl Default for Validator {
 }
 
 impl Validator {
+    pub fn new(size_limit: usize) -> Self {
+        Self { size_limit }
+    }
+
     pub fn validate(&self, full_app_data: &[u8]) -> Result<ValidatedAppData> {
         if full_app_data.len() > self.size_limit {
             return Err(anyhow!(
