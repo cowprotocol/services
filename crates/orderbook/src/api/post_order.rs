@@ -8,7 +8,12 @@ use {
     },
     shared::{
         api::{error, extract_payload, ApiReply, IntoWarpReply},
-        order_validation::{OrderValidToError, PartialValidationError, ValidationError},
+        order_validation::{
+            AppDataValidationError,
+            OrderValidToError,
+            PartialValidationError,
+            ValidationError,
+        },
     },
     std::{convert::Infallible, sync::Arc},
     warp::{hyper::StatusCode, reply::with_status, Filter, Rejection},
@@ -87,17 +92,39 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::UnsupportedCustomInteraction => with_status(
+            PartialValidationError::Other(err) => {
+                tracing::error!(?err, "PartialValidatonError");
+                shared::api::internal_error_reply()
+            }
+        }
+    }
+}
+
+pub struct AppDataValidationErrorWrapper(pub AppDataValidationError);
+impl IntoWarpReply for AppDataValidationErrorWrapper {
+    fn into_warp_reply(self) -> ApiReply {
+        match self.0 {
+            AppDataValidationError::UnsupportedCustomInteraction => with_status(
                 error(
                     "UnsupportedCustomInteraction",
                     "The specified custom pre- or post- interaction is unsupported",
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::Other(err) => {
-                tracing::error!(?err, "PartialValidatonError");
-                shared::api::internal_error_reply()
-            }
+            AppDataValidationError::Invalid(err) => with_status(
+                error("InvalidAppData", format!("{:?}", err)),
+                StatusCode::BAD_REQUEST,
+            ),
+            AppDataValidationError::Mismatch { provided, actual } => with_status(
+                error(
+                    "AppDataHashMismatch",
+                    format!(
+                        "calculated app data hash {actual:?} doesn't match order app data field \
+                         {provided:?}",
+                    ),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
         }
     }
 }
@@ -107,6 +134,7 @@ impl IntoWarpReply for ValidationErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
         match self.0 {
             ValidationError::Partial(pre) => PartialValidationErrorWrapper(pre).into_warp_reply(),
+            ValidationError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
             ValidationError::QuoteNotFound => with_status(
                 error(
                     "QuoteNotFound",
@@ -195,20 +223,6 @@ impl IntoWarpReply for ValidationErrorWrapper {
             ),
             ValidationError::TooManyLimitOrders => with_status(
                 error("TooManyLimitOrders", "Too many limit orders"),
-                StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::InvalidAppData(err) => with_status(
-                error("InvalidAppData", format!("{:?}", err)),
-                StatusCode::BAD_REQUEST,
-            ),
-            ValidationError::AppDataHashMismatch { provided, actual } => with_status(
-                error(
-                    "AppDataHashMismatch",
-                    format!(
-                        "calculated app data hash {actual:?} doesn't match order app data field \
-                         {provided:?}",
-                    ),
-                ),
                 StatusCode::BAD_REQUEST,
             ),
 

@@ -72,10 +72,11 @@ where
 {
     let filters = [
         "warn",
-        "e2e=debug",
         "autopilot=debug",
         "driver=debug",
+        "e2e=debug",
         "orderbook=debug",
+        "shared=debug",
         "solver=debug",
         "solvers=debug",
         "orderbook::api::request_summary=off",

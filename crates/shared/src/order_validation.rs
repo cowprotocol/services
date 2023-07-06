@@ -67,6 +67,16 @@ pub trait OrderValidating: Send + Sync {
     ///     - buy & sell tokens passed "bad token" detection,
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
+    /// This validates an order's app-data and returns the parsed
+    /// `BackendAppData` value along with the corresponding rendered
+    /// interactions that were specified in the `app_data`.
+    fn validate_app_data(
+        &self,
+        app_data: &OrderCreationAppData,
+        full_app_data_override: &Option<String>,
+        order_partially_fillable: bool,
+    ) -> Result<OrderAppData, AppDataValidationError>;
+
     /// This is the full order validation performed at the time of order
     /// placement (i.e. once all the required fields on an Order are
     /// provided). Specifically, verifying that
@@ -104,7 +114,6 @@ pub enum PartialValidationError {
     UnsupportedOrderType,
     UnsupportedSignature,
     UnsupportedToken { token: H160, reason: String },
-    UnsupportedCustomInteraction,
     Other(anyhow::Error),
 }
 
@@ -115,8 +124,19 @@ impl From<OrderValidToError> for PartialValidationError {
 }
 
 #[derive(Debug)]
+pub enum AppDataValidationError {
+    Mismatch {
+        provided: AppDataHash,
+        actual: AppDataHash,
+    },
+    Invalid(anyhow::Error),
+    UnsupportedCustomInteraction,
+}
+
+#[derive(Debug)]
 pub enum ValidationError {
     Partial(PartialValidationError),
+    AppData(AppDataValidationError),
     /// The quote ID specified with the order could not be found.
     QuoteNotFound,
     /// The quote specified by ID is invalid. Either it doesn't match the order
@@ -141,12 +161,13 @@ pub enum ValidationError {
     ZeroAmount,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
-    InvalidAppData(anyhow::Error),
-    AppDataHashMismatch {
-        provided: AppDataHash,
-        actual: AppDataHash,
-    },
     Other(anyhow::Error),
+}
+
+impl From<AppDataValidationError> for ValidationError {
+    fn from(value: AppDataValidationError) -> Self {
+        Self::AppData(value)
+    }
 }
 
 pub fn onchain_order_placement_error_from(error: ValidationError) -> OnchainOrderPlacementError {
@@ -286,6 +307,11 @@ impl PreOrderData {
             },
         }
     }
+}
+
+pub struct OrderAppData {
+    pub inner: ValidatedAppData,
+    pub interactions: Interactions,
 }
 
 impl OrderValidator {
@@ -489,27 +515,25 @@ impl OrderValidating for OrderValidator {
         Ok(())
     }
 
-    async fn validate_and_construct_order(
+    fn validate_app_data(
         &self,
-        order: OrderCreation,
-        domain_separator: &DomainSeparator,
-        settlement_contract: H160,
-        full_app_data_override: Option<String>,
-    ) -> Result<(Order, Option<Quote>), ValidationError> {
-        // Happens before signature verification because a miscalculated app data hash
-        // by the API user would lead to being unable to validate the signature below.
-        let validate = |app_data: &String| -> Result<_, ValidationError> {
+        app_data: &OrderCreationAppData,
+        full_app_data_override: &Option<String>,
+        order_partially_fillable: bool,
+    ) -> Result<OrderAppData, AppDataValidationError> {
+        let validate = |app_data: &str| -> Result<_, AppDataValidationError> {
             let app_data = self
                 .app_data_validator
                 .validate(app_data.as_bytes())
-                .map_err(ValidationError::InvalidAppData)?;
+                .map_err(AppDataValidationError::Invalid)?;
             Ok(app_data)
         };
-        let app_data = match &order.app_data {
+
+        let app_data = match app_data {
             OrderCreationAppData::Both { full, expected } => {
                 let validated = validate(full)?;
                 if validated.hash != *expected {
-                    return Err(ValidationError::AppDataHashMismatch {
+                    return Err(AppDataValidationError::Mismatch {
                         provided: *expected,
                         actual: validated.hash,
                     });
@@ -517,9 +541,9 @@ impl OrderValidating for OrderValidator {
                 validated
             }
             OrderCreationAppData::Hash { hash } => {
-                // Eventually we're not going to accept orders that set only a hash and where we
-                // can't find full app data elsewhere.
-                let backend = if let Some(full) = &full_app_data_override {
+                // Eventually we're not going to accept orders that set only a
+                // hash and where we can't find full app data elsewhere.
+                let backend = if let Some(full) = full_app_data_override {
                     validate(full)?.backend
                 } else {
                     BackendAppData::default()
@@ -537,23 +561,40 @@ impl OrderValidating for OrderValidator {
         if !app_data.backend.hooks.is_empty() {
             // custom interactions are disabled
             if !self.enable_custom_interactions {
-                return Err(ValidationError::Partial(
-                    PartialValidationError::UnsupportedCustomInteraction,
-                ));
+                return Err(AppDataValidationError::UnsupportedCustomInteraction);
             }
             // custom interactions are not allowed for partially fillable orders
-            if order.partially_fillable {
-                return Err(ValidationError::Partial(
-                    PartialValidationError::UnsupportedCustomInteraction,
-                ));
+            if order_partially_fillable {
+                return Err(AppDataValidationError::UnsupportedCustomInteraction);
             }
         }
         let interactions = self.custom_interactions(&app_data.backend.hooks);
 
+        Ok(OrderAppData {
+            inner: app_data,
+            interactions,
+        })
+    }
+
+    async fn validate_and_construct_order(
+        &self,
+        order: OrderCreation,
+        domain_separator: &DomainSeparator,
+        settlement_contract: H160,
+        full_app_data_override: Option<String>,
+    ) -> Result<(Order, Option<Quote>), ValidationError> {
+        // Happens before signature verification because a miscalculated app data hash
+        // by the API user would lead to being unable to validate the signature below.
+        let app_data = self.validate_app_data(
+            &order.app_data,
+            &full_app_data_override,
+            order.partially_fillable,
+        )?;
+
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
-            app_data: app_data.hash,
+            app_data: app_data.inner.hash,
             ..order.data()
         };
         let uid = data.uid(domain_separator, &owner);
@@ -573,7 +614,7 @@ impl OrderValidating for OrderValidator {
                         signer: owner,
                         hash,
                         signature: signature.to_owned(),
-                        interactions: interactions.pre.clone(),
+                        interactions: app_data.interactions.pre.clone(),
                     })
                     .await
                     .map_err(|err| match err {
@@ -603,17 +644,13 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let map_interactions =
-            |interactions: &[InteractionData]| -> Vec<trade_finding::Interaction> {
-                interactions.iter().cloned().map(Into::into).collect()
-            };
         let verification = self.request_verified_quotes.then_some(Verification {
             from: owner,
             receiver: order.receiver.unwrap_or(owner),
             sell_token_source: order.sell_token_balance,
             buy_token_destination: order.buy_token_balance,
-            pre_interactions: map_interactions(&interactions.pre),
-            post_interactions: map_interactions(&interactions.post),
+            pre_interactions: trade_finding::map_interactions(&app_data.interactions.pre),
+            post_interactions: trade_finding::map_interactions(&app_data.interactions.post),
         });
 
         let quote_parameters = QuoteSearchParameters {
@@ -628,7 +665,7 @@ impl OrderValidating for OrderValidator {
                 true,
                 verification_gas_limit,
             )?,
-            additional_gas: app_data.backend.hooks.gas_limit(),
+            additional_gas: app_data.inner.backend.hooks.gas_limit(),
             verification,
         };
         let quote = if class == OrderClass::Market {
@@ -668,7 +705,7 @@ impl OrderValidating for OrderValidator {
                     token: data.sell_token,
                     owner,
                     source: data.sell_token_balance,
-                    interactions: interactions.pre.clone(),
+                    interactions: app_data.interactions.pre.clone(),
                 },
                 min_balance,
             )
@@ -741,7 +778,7 @@ impl OrderValidating for OrderValidator {
             },
             signature: order.signature.clone(),
             data,
-            interactions,
+            interactions: app_data.interactions,
         };
 
         Ok((order, quote))
