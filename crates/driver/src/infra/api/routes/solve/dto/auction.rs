@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{competition, competition::order, eth},
+        domain::{
+            competition,
+            competition::{auction, order},
+            eth,
+        },
         infra::Ethereum,
         util::serialize,
     },
@@ -12,7 +16,7 @@ use {
 impl Auction {
     pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
         Ok(competition::Auction {
-            id: Some((self.id as u64).into()),
+            id: Some(self.id.try_into()?),
             tokens: self
                 .tokens
                 .into_iter()
@@ -142,10 +146,17 @@ pub enum Error {
     GasPrice(#[source] crate::infra::blockchain::Error),
 }
 
+impl From<auction::InvalidId> for Error {
+    fn from(_value: auction::InvalidId) -> Self {
+        Self::InvalidAuctionId
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Auction {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     id: i64,
     tokens: Vec<Token>,
     orders: Vec<Order>,

@@ -133,7 +133,7 @@ fn to_boundary_auction(
             .collect(),
         metadata: Some(MetadataModel {
             environment: None,
-            auction_id: auction.id.as_ref().and_then(|id| id.0.parse().ok()),
+            auction_id: auction.id.as_ref().map(|id| id.0),
             run_id: None,
             gas_price: Some(gas.gas_price),
             native_token: Some(weth.0),
@@ -172,9 +172,7 @@ fn to_boundary_auction(
                 cost: gas.gp_order_cost(),
                 is_liquidity_order: order.class == order::Class::Liquidity,
                 is_mature: true,
-                // Auctions for a /quote request don't have an id and always contain exactly a
-                // single user order that is mandatory to be matched.
-                mandatory: auction.id.is_none(),
+                mandatory: false,
                 has_atomic_execution: false,
                 reward: 0.,
             },

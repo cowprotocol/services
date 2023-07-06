@@ -185,7 +185,7 @@ impl Settlement {
         );
         let tx = builder.into_inner();
         let mut input = tx.data.unwrap().0;
-        input.extend(auction_id.0.to_be_bytes());
+        input.extend(auction_id.to_be_bytes());
         eth::Tx {
             from: self.solver,
             to: tx.to.unwrap().into(),

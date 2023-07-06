@@ -9,7 +9,7 @@ async fn sell_orders_on_both_sides() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {},
             "orders": [
                 // Unreasonable order a -> b

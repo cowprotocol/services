@@ -3,7 +3,7 @@ use {
         competition::{self, solution},
         eth,
     },
-    std::{num::ParseIntError, str::FromStr},
+    thiserror::Error,
 };
 
 /// An auction is a set of orders that can be solved. The solvers calculate
@@ -11,9 +11,7 @@ use {
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
-    // TODO Make this non-optional and simplify things
-    /// [`None`] if the auction is used for quoting, [`Some`] if the auction is
-    /// used for competition.
+    /// [`None`] if this auction applies to a quote.
     pub id: Option<Id>,
     pub tokens: Vec<Token>,
     pub orders: Vec<competition::Order>,
@@ -89,7 +87,7 @@ impl From<Deadline> for chrono::DateTime<chrono::Utc> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Id(pub u64);
+pub struct Id(i64);
 
 impl Id {
     pub fn to_be_bytes(self) -> [u8; 8] {
@@ -97,9 +95,15 @@ impl Id {
     }
 }
 
-impl From<u64> for Id {
-    fn from(inner: u64) -> Self {
-        Self(inner)
+impl TryFrom<i64> for Id {
+    type Error = InvalidId;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        if value >= 0 {
+            Ok(Self(value))
+        } else {
+            Err(InvalidId)
+        }
     }
 }
 
@@ -109,10 +113,10 @@ impl std::fmt::Display for Id {
     }
 }
 
-impl FromStr for Id {
-    type Err = ParseIntError;
+#[derive(Debug, Error)]
+#[error("the solution deadline has been exceeded")]
+pub struct DeadlineExceeded;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        FromStr::from_str(s).map(Self)
-    }
-}
+#[derive(Debug, Error)]
+#[error("invalid auction id")]
+pub struct InvalidId;

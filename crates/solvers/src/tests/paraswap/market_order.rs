@@ -152,7 +152,7 @@ async fn sell() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {
                 "0xe41d2489571d322189246dafa5ebde1f4699f498": {
                     "decimals": 18,
@@ -403,7 +403,7 @@ async fn buy() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {
                 "0xe41d2489571d322189246dafa5ebde1f4699f498": {
                     "decimals": 18,

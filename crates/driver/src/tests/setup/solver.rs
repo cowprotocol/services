@@ -206,9 +206,9 @@ impl Solver {
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline - auction::Deadline::time_buffer() - infra::Solver::http_time_buffer(),
                     });
+                    assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");
-                    assert_eq!(req, expected, "solve request has unexpected body");
                     state.called = true;
                     axum::response::Json(json!({
                         "solutions": solutions_json,

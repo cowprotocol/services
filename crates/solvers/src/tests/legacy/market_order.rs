@@ -12,10 +12,11 @@ async fn quote() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::glob(
             "solve\
-             [?]instance_name=*_Mainnet_1_0\
+             [?]instance_name=*_Mainnet_1_1\
                &time_limit=*\
                &max_nr_exec_orders=100\
-               &use_internal_buffers=true"
+               &use_internal_buffers=true\
+               &auction_id=1"
         ),
         req: json!({
             "amms": {
@@ -35,7 +36,7 @@ async fn quote() {
                 }
             },
             "metadata": {
-                "auction_id": null,
+                "auction_id": 1,
                 "environment": null,
                 "gas_price": 15000000000.0,
                 "native_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -59,9 +60,7 @@ async fn quote() {
                     "is_liquidity_order": false,
                     "is_mature": true,
                     "is_sell_order": true,
-                    // Mandatory is true when request contains no auction id because that marks a
-                    // /quote request.
-                    "mandatory": true,
+                    "mandatory": false,
                     "reward": 0.,
                     "sell_amount": "133700000000000000",
                     "sell_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
@@ -120,7 +119,7 @@ async fn quote() {
 
     let solution = engine
         .solve(json!({
-            "id": null,
+            "id": "1",
             "tokens": {
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                     "decimals": 18,
