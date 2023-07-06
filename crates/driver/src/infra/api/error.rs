@@ -14,7 +14,6 @@ enum Kind {
     SolutionNotFound,
     DeadlineExceeded,
     Unknown,
-    TransactionPublishingFailed,
     InvalidAuctionId,
     MissingSurplusFee,
     QuoteSameTokens,
@@ -35,7 +34,6 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::SolutionNotFound => "No solution found for the auction",
             Kind::DeadlineExceeded => "Exceeded solution deadline",
             Kind::Unknown => "An unknown error occurred",
-            Kind::TransactionPublishingFailed => "Failed to publish the settlement transaction",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
             Kind::MissingSurplusFee => "Auction contains a limit order with no surplus fee",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
@@ -69,7 +67,6 @@ impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
             competition::Error::SolutionNotFound | competition::Error::SolutionNotAvailable => {
                 Kind::SolutionNotFound
             }
-            competition::Error::Mempool(_) => Kind::TransactionPublishingFailed,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
         };

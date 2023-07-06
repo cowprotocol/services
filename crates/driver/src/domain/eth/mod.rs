@@ -272,6 +272,16 @@ pub struct Interaction {
     pub call_data: Bytes<Vec<u8>>,
 }
 
+/// A transaction ID, AKA transaction hash.
+#[derive(Clone, Debug)]
+pub struct TxId(pub H256);
+
+impl From<H256> for TxId {
+    fn from(value: H256) -> Self {
+        Self(value)
+    }
+}
+
 /// An onchain transaction.
 #[derive(Clone, Debug)]
 pub struct Tx {

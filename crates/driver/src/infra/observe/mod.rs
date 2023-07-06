@@ -19,7 +19,7 @@ use {
             quote::{self, Quote},
             Liquidity,
         },
-        infra::{mempool, solver},
+        infra::solver,
         util::http,
     },
     url::Url,
@@ -257,10 +257,6 @@ pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, 
     }
 }
 
-pub fn no_mempools() {
-    tracing::warn!("no mempools configured, transactions will not be sent");
-}
-
 /// Observe the result of mempool transaction execution.
 pub fn mempool_executed(
     solver: &solver::Name,
@@ -296,7 +292,6 @@ fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
         competition::Error::SolutionNotFound => "SolutionNotFound",
-        competition::Error::Mempool(mempool::Error::AllMempoolsFailed) => "MempoolsFailed",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
