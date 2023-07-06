@@ -1,6 +1,7 @@
 use {
     crate::{
         boundary,
+        domain::Mempools,
         infra::{
             self,
             blockchain::{self, Ethereum},
@@ -46,16 +47,19 @@ pub async fn run(
         solvers: solvers(&config, &eth),
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
-        mempools: join_all(
-            config
-                .mempools
-                .iter()
-                .map(|mempool| Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone())),
+        mempools: Mempools::new(
+            join_all(
+                config
+                    .mempools
+                    .iter()
+                    .map(|mempool| Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone())),
+            )
+            .await
+            .into_iter()
+            .flatten()
+            .collect(),
         )
-        .await
-        .into_iter()
-        .flatten()
-        .collect(),
+        .unwrap(),
         eth,
         addr: args.addr,
         addr_sender,

@@ -16,10 +16,11 @@ use {
                 Reveal,
                 Solution,
             },
+            eth,
             quote::{self, Quote},
             Liquidity,
         },
-        infra::{mempool, solver},
+        infra::solver,
         util::http,
     },
     url::Url,
@@ -257,9 +258,20 @@ pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, 
     }
 }
 
-/// Observe that a mempool failed to send a transaction.
-pub fn mempool_failed(solver: &solver::Name, mempool: &Mempool, err: &boundary::Error) {
-    tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
+/// Observe the result of mempool transaction execution.
+pub fn mempool_executed(
+    solver: &solver::Name,
+    mempool: &Mempool,
+    res: &Result<eth::TxId, boundary::Error>,
+) {
+    match res {
+        Ok(txid) => {
+            tracing::info!(%solver, ?txid, ?mempool, "sending transaction via mempool succeeded");
+        }
+        Err(err) => {
+            tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
+        }
+    }
 }
 
 /// Observe that an invalid DTO was received.
@@ -281,7 +293,6 @@ fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
         competition::Error::SolutionNotFound => "SolutionNotFound",
-        competition::Error::Mempool(mempool::Error::AllMempoolsFailed) => "MempoolsFailed",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",

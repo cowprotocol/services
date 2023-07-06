@@ -1,7 +1,8 @@
 use {
     crate::{
         domain,
-        infra::{liquidity, observe, solver::Solver, Ethereum, Mempool, Simulator},
+        domain::Mempools,
+        infra::{liquidity, observe, solver::Solver, Ethereum, Simulator},
     },
     error::Error,
     futures::Future,
@@ -19,7 +20,7 @@ pub struct Api {
     pub liquidity: liquidity::Fetcher,
     pub simulator: Simulator,
     pub eth: Ethereum,
-    pub mempools: Vec<Mempool>,
+    pub mempools: Mempools,
     pub addr: SocketAddr,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.

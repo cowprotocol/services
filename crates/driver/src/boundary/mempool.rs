@@ -111,7 +111,7 @@ impl Mempool {
     }
 
     /// Publish the settlement and wait for it to be confirmed.
-    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<()> {
+    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<eth::TxId> {
         let web3 = boundary::web3(&self.eth);
         let nonce = web3
             .eth()
@@ -150,7 +150,7 @@ impl Mempool {
             web3.clone(),
             &web3,
         )?;
-        submitter
+        let receipt = submitter
             .submit(
                 settlement.boundary.inner,
                 SubmitterParams {
@@ -164,7 +164,7 @@ impl Mempool {
                 },
             )
             .await?;
-        Ok(())
+        Ok(receipt.transaction_hash.into())
     }
 }
 
