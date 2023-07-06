@@ -218,6 +218,11 @@ impl SolverTimeout {
     pub fn duration(self) -> chrono::Duration {
         self.0
     }
+
+    #[must_use]
+    pub fn reduce(self, duration: chrono::Duration) -> Self {
+        Self(self.0 - duration)
+    }
 }
 
 /// The solution score. This is often referred to as the "objective value".
