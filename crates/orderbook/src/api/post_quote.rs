@@ -1,5 +1,5 @@
 use {
-    super::post_order::PartialValidationErrorWrapper,
+    super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
     anyhow::Result,
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
@@ -40,9 +40,8 @@ pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
 impl IntoWarpReply for OrderQuoteErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
         match self.0 {
-            OrderQuoteError::Validation(err) => {
-                PartialValidationErrorWrapper(err).into_warp_reply()
-            }
+            OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_warp_reply(),
+            OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_warp_reply(),
             OrderQuoteError::CalculateQuote(err) => {
                 CalculateQuoteErrorWrapper(err).into_warp_reply()
             }
@@ -128,7 +127,7 @@ mod tests {
                     sell_amount: SellAmount::AfterFee { value: 1337.into() },
                 },
                 validity: Validity::To(0x12345678),
-                app_data: AppDataHash([0x90; 32]),
+                app_data: AppDataHash([0x90; 32]).into(),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
@@ -165,7 +164,7 @@ mod tests {
                     sell_amount: SellAmount::BeforeFee { value: 1337.into() },
                 },
                 validity: Validity::For(1000),
-                app_data: AppDataHash([0x90; 32]),
+                app_data: AppDataHash([0x90; 32]).into(),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 price_quality: PriceQuality::Fast,
@@ -198,7 +197,7 @@ mod tests {
                     buy_amount_after_fee: U256::from(1337),
                 },
                 validity: Validity::To(0x12345678),
-                app_data: AppDataHash([0x90; 32]),
+                app_data: AppDataHash([0x90; 32]).into(),
                 partially_fillable: false,
                 ..Default::default()
             }

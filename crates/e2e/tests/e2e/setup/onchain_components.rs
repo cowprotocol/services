@@ -126,7 +126,8 @@ where
         .clone()
         .estimate_gas()
         .await
-        .expect("transaction reverted when estimating gas");
+        .expect("transaction reverted when estimating gas")
+        .as_u64();
     Hook {
         target: tx.to.unwrap(),
         call_data: tx.data.unwrap().0,

@@ -2,7 +2,7 @@ use {
     super::{blockchain, blockchain::Blockchain},
     crate::{
         domain::competition::{auction, order},
-        infra::{blockchain::contracts::Addresses, Ethereum},
+        infra::{self, blockchain::contracts::Addresses, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -204,7 +204,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": config.deadline - auction::Deadline::time_buffer(),
+                        "deadline": config.deadline - auction::Deadline::time_buffer() - infra::Solver::http_time_buffer(),
                     });
                     let mut state = state.0.lock().unwrap();
                     assert!(!state.called, "solve was already called");

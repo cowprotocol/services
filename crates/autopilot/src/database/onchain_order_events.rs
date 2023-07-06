@@ -556,6 +556,8 @@ async fn get_quote(
         buy_amount: order_data.buy_amount,
         fee_amount: order_data.fee_amount,
         kind: order_data.kind,
+        signing_scheme: quote_signing_scheme,
+        additional_gas: 0,
         // Verified quotes always have prices that are at most as good as unverified quotes but can
         // be lower.
         // If the best quote we can find or compute on the fly for this order suggests a worse
@@ -570,7 +572,6 @@ async fn get_quote(
         &parameters.clone(),
         Some(*quote_id),
         order_data.fee_amount,
-        quote_signing_scheme,
     )
     .await
     .map_err(onchain_order_placement_error_from)
@@ -731,7 +732,6 @@ mod test {
         model::{
             app_id::AppDataHash,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
-            quote::QuoteSigningScheme,
             signature::SigningScheme,
             DomainSeparator,
         },
@@ -1225,11 +1225,6 @@ mod test {
             ]),
         };
 
-        let signing_scheme = QuoteSigningScheme::Eip1271 {
-            onchain_order: true,
-            verification_gas_limit: 0u64,
-        };
-
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
@@ -1250,14 +1245,13 @@ mod test {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
-            .with(eq(Some(quote_id_1)), always(), eq(signing_scheme))
-            .returning(move |_, _, _| Ok(Quote::default()));
+            .with(eq(Some(quote_id_1)), always())
+            .returning(move |_, _| Ok(Quote::default()));
         let quote_id_2 = 6i64;
         order_quoter
             .expect_find_quote()
-            .with(eq(Some(quote_id_2)), always(), eq(signing_scheme))
-            .returning(move |_, _, _| Err(FindQuoteError::NotFound(None)));
+            .with(eq(Some(quote_id_2)), always())
+            .returning(move |_, _| Err(FindQuoteError::NotFound(None)));
         let result_vec = parse_general_onchain_order_placement_data(
             &order_quoter,
             vec![
@@ -1358,7 +1352,7 @@ mod test {
         let cloned_quote = quote.clone();
         order_quoter
             .expect_find_quote()
-            .returning(move |_, _, _| Ok(cloned_quote.clone()));
+            .returning(move |_, _| Ok(cloned_quote.clone()));
         let mut custom_onchain_order_parser = MockOnchainOrderParsing::<u8, u8>::new();
         custom_onchain_order_parser
             .expect_parse_custom_event_data()

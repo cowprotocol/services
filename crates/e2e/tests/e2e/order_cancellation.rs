@@ -9,7 +9,6 @@ use {
             OrderCancellation,
             OrderCancellations,
             OrderCreation,
-            OrderCreationAppData,
             OrderStatus,
             OrderUid,
             SignedOrderCancellations,
@@ -61,7 +60,7 @@ async fn order_cancellation(web3: Web3) {
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: to_wei(1) },
             },
-            app_data: AppDataHash([salt; 32]),
+            app_data: AppDataHash([salt; 32]).into(),
             ..Default::default()
         };
         async move {
@@ -75,9 +74,7 @@ async fn order_cancellation(web3: Web3) {
                 buy_token: quote.buy_token,
                 buy_amount: (quote.buy_amount * 99) / 100,
                 valid_to: quote.valid_to,
-                app_data: OrderCreationAppData::Hash {
-                    hash: quote.app_data,
-                },
+                app_data: quote.app_data,
                 ..Default::default()
             }
             .sign(

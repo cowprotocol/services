@@ -158,6 +158,10 @@ impl Clone for TradeError {
     }
 }
 
+pub fn map_interactions(interactions: &[InteractionData]) -> Vec<Interaction> {
+    interactions.iter().cloned().map(Into::into).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, hex_literal::hex};

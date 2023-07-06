@@ -171,8 +171,8 @@ pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
     /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer()).ok_or(DeadlineExceeded)
+    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::time_buffer())
     }
 
     pub fn time_buffer() -> chrono::Duration {
@@ -226,7 +226,7 @@ pub enum Error {
     #[error(transparent)]
     QuotingFailed(#[from] QuotingFailed),
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] DeadlineExceeded),
+    DeadlineExceeded(#[from] solution::DeadlineExceeded),
     /// Encountered an unexpected error reading blockchain data.
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
@@ -245,10 +245,6 @@ pub enum QuotingFailed {
     #[error("solver returned no solutions")]
     NoSolutions,
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("the quoting deadline has been exceeded")]
-pub struct DeadlineExceeded;
 
 #[derive(Debug, thiserror::Error)]
 #[error("the quoted tokens are the same")]
