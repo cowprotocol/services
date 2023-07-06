@@ -103,12 +103,15 @@ impl<'a> Services<'a> {
     /// Wait until the service is responsive.
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args = [
-            "orderbook",
-            "--enable-presign-orders=true",
-            "--enable-eip1271-orders=true",
+            "orderbook".to_string(),
+            "--enable-presign-orders=true".to_string(),
+            "--enable-eip1271-orders=true".to_string(),
+            format!(
+                "--multisend-contract-address={:?}",
+                self.contracts.multisend.address()
+            ),
         ]
         .into_iter()
-        .map(ToString::to_string)
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
         .chain(extra_args.into_iter());

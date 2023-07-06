@@ -167,6 +167,12 @@ pub struct Arguments {
     /// Authentication key for Pinata IPFS gateway.
     #[clap(long, env)]
     pub ipfs_pinata_auth: Option<String>,
+
+    /// Override the address of the `MultiCallSendOnly` contract used for
+    /// trampolining custom order interactions. If not specified, the default
+    /// contract deployment for the current network will be used.
+    #[clap(long, env)]
+    pub multisend_contract_address: Option<H160>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -247,6 +253,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "ipfs_gateway: {:?}", self.ipfs_gateway)?;
         display_secret_option(f, "ipfs_pinata_auth", &self.ipfs_pinata_auth)?;
+        display_option(
+            f,
+            "multisend_contract_address",
+            &self.multisend_contract_address.map(|a| format!("{a:?}")),
+        )?;
 
         Ok(())
     }

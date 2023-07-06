@@ -22,7 +22,7 @@ use {
     serde_with::{serde_as, DisplayFromStr},
     std::{
         collections::HashSet,
-        fmt::{self, Debug, Display},
+        fmt::{self, Debug, Display, Formatter},
         str::FromStr,
     },
     strum::{AsRefStr, EnumString, EnumVariantNames},
@@ -40,13 +40,49 @@ pub struct Interactions {
     pub post: Vec<InteractionData>,
 }
 
-impl Interactions {
+/// Order hooks are user-specified Ethereum calls that get executed as part of
+/// a pre- or post- interaction.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Hooks {
+    pub pre: Vec<Hook>,
+    pub post: Vec<Hook>,
+}
+
+impl Hooks {
     pub fn is_empty(&self) -> bool {
-        self.all().next().is_none()
+        self.pre.is_empty() && self.post.is_empty()
     }
 
-    pub fn all(&self) -> impl Iterator<Item = &'_ InteractionData> + '_ {
-        self.pre.iter().chain(self.post.iter())
+    pub fn gas_limit(&self) -> U256 {
+        std::iter::empty()
+            .chain(&self.pre)
+            .chain(&self.post)
+            .fold(U256::zero(), |total, hook| {
+                total.saturating_add(hook.gas_limit)
+            })
+    }
+}
+
+/// A user-specified hook.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hook {
+    pub target: H160,
+    #[serde(with = "crate::bytes_hex")]
+    pub call_data: Vec<u8>,
+    pub gas_limit: U256,
+}
+
+impl Debug for Hook {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("Hook")
+            .field("target", &self.target)
+            .field(
+                "call_data",
+                &format_args!("0x{}", hex::encode(&self.call_data)),
+            )
+            .field("gas_limit", &self.gas_limit)
+            .finish()
     }
 }
 
