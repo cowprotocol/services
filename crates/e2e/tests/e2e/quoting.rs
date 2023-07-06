@@ -15,7 +15,9 @@ async fn local_node_test() {
     run_test(test).await;
 }
 
-// Test that quoting works as expected
+// Test that quoting works as expected, specifically, that we can quote for a
+// token pair and additional gas from ERC-1271 and hooks are included in the
+// quoted fee amount.
 async fn test(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -100,12 +102,55 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
+    let with_both = services
+        .submit_quote(&OrderQuoteRequest {
+            signing_scheme: QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+                verification_gas_limit: 50_000,
+            },
+            app_data: OrderCreationAppData::Full {
+                full: serde_json::to_string(&json!({
+                    "backend": {
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "5000",
+                                },
+                            ],
+                            "post": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "5000",
+                                },
+                            ],
+                        },
+                    },
+                }))
+                .unwrap(),
+            },
+            ..request.clone()
+        })
+        .await
+        .unwrap();
+
     let base = services.submit_quote(&request).await.unwrap();
 
-    tracing::debug!(?with_eip1271, ?with_hooks, ?base, "Computed quotes.");
+    tracing::debug!(
+        ?with_eip1271,
+        ?with_hooks,
+        ?with_both,
+        ?base,
+        "Computed quotes."
+    );
 
     assert!(base.quote.fee_amount < with_eip1271.quote.fee_amount);
     assert!(base.quote.fee_amount < with_hooks.quote.fee_amount);
+
+    assert!(with_both.quote.fee_amount > with_hooks.quote.fee_amount);
+    assert!(with_both.quote.fee_amount > with_hooks.quote.fee_amount);
 
     // TODO: test verified quotes, requires state overrides support.
 }

@@ -67,7 +67,9 @@ pub trait OrderValidating: Send + Sync {
     ///     - buy & sell tokens passed "bad token" detection,
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
-    /// This validates an order's app-data and returns TODONOW
+    /// This validates an order's app-data and returns the parsed
+    /// `BackendAppData` value along with the corresponding rendered
+    /// interactions that were specified in the `app_data`.
     fn validate_app_data(
         &self,
         app_data: &OrderCreationAppData,

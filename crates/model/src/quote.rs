@@ -230,6 +230,10 @@ impl Serialize for Validity {
     }
 }
 
+/// Manual `Deserialize` implementation for OrderCreationAppData that allows for
+/// `appData` to be omitted. This is needed because `#[serde(default, flatten)]`
+/// does not work as expected and will generate errors for quotes without
+/// `appData` specified.
 fn deserialize_optional_app_data<'de, D>(deserializer: D) -> Result<OrderCreationAppData, D::Error>
 where
     D: Deserializer<'de>,
@@ -417,7 +421,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "appData": "0x1111111111111111111111111111111111111111111111111111111111111111",
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -425,7 +429,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "appData": "",
+                "appData": "1",
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -433,8 +437,8 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "appData": "",
-                "appDataHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "appData": "2",
+                "appDataHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
             }),
         ];
         let expected_standard_response = OrderQuoteRequest {
@@ -469,24 +473,29 @@ mod tests {
             modify_signing_scheme(QuoteSigningScheme::PreSign {
                 onchain_order: false,
             }),
-            expected_standard_response.clone(),
+            OrderQuoteRequest {
+                app_data: OrderCreationAppData::Hash {
+                    hash: AppDataHash([0x11; 32]),
+                },
+                ..expected_standard_response.clone()
+            },
             OrderQuoteRequest {
                 app_data: OrderCreationAppData::Full {
-                    full: Default::default(),
+                    full: "1".to_string(),
                 },
                 ..expected_standard_response.clone()
             },
             OrderQuoteRequest {
                 app_data: OrderCreationAppData::Both {
-                    full: Default::default(),
-                    expected: Default::default(),
+                    full: "2".to_string(),
+                    expected: AppDataHash([0x22; 32]),
                 },
                 ..expected_standard_response.clone()
             },
         ];
         for (i, json) in valid_json.iter().enumerate() {
             assert_eq!(
-                serde_json::from_value::<OrderQuoteRequest>(dbg!(json.clone())).unwrap(),
+                serde_json::from_value::<OrderQuoteRequest>(json.clone()).unwrap(),
                 *expected_quote_responses.get(i).unwrap()
             );
         }
@@ -517,6 +526,7 @@ mod tests {
                 "signingScheme": "ethsign",
                 "onchainOrder": true,
             }),
+            // `appDataHash` cannot be specified without a `appData` pre-image.
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
                 "sellToken": "0x0000000000000000000000000000000000000001",
