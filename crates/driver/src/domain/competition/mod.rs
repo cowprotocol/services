@@ -1,14 +1,13 @@
 use {
     self::solution::settlement,
+    super::Mempools,
     crate::{
         domain::{competition::solution::Settlement, liquidity},
         infra::{
             self,
             blockchain::Ethereum,
-            mempool,
             observe,
             solver::{self, Solver},
-            Mempool,
             Simulator,
         },
         util::Bytes,
@@ -41,7 +40,7 @@ pub struct Competition {
     pub eth: Ethereum,
     pub liquidity: infra::liquidity::Fetcher,
     pub simulator: Simulator,
-    pub mempools: Vec<Mempool>,
+    pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
 }
 
@@ -186,7 +185,7 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        mempool::execute(&self.mempools, &self.solver, &settlement).await?;
+        self.mempools.execute(&self.solver, &settlement);
         Ok(Calldata {
             internalized: settlement
                 .calldata(
@@ -241,8 +240,6 @@ pub enum Error {
     SolutionNotAvailable,
     #[error("no solution found for the auction")]
     SolutionNotFound,
-    #[error("mempool error: {0:?}")]
-    Mempool(#[from] mempool::Error),
     #[error("{0:?}")]
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
