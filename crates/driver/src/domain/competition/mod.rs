@@ -186,7 +186,7 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        mempool::execute(&self.mempools, &self.solver, &settlement).await?;
+        mempool::execute(&self.mempools, &self.solver, &settlement);
         Ok(Calldata {
             internalized: settlement
                 .calldata(

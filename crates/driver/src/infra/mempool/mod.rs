@@ -8,29 +8,23 @@ use {
 
 pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Kind, Mempool};
 
-/// Publish a settlement to the mempools and wait until it is confirmed.
-pub async fn execute(
-    mempools: &[Mempool],
-    solver: &Solver,
-    settlement: &Settlement,
-) -> Result<(), Error> {
+/// Publish a settlement to the mempools. Wait until it is confirmed in the
+/// background.
+pub fn execute(mempools: &[Mempool], solver: &Solver, settlement: &Settlement) {
     if mempools.is_empty() {
-        return Err(Error::AllMempoolsFailed);
+        observe::no_mempools();
+        return;
     }
-    select_ok(mempools.iter().map(|mempool| {
+    tokio::spawn(select_ok(mempools.iter().cloned().map(|mempool| {
+        let solver = solver.clone();
         let settlement = settlement.clone();
         async move {
-            let result = mempool.execute(solver, settlement).await;
-            if let Err(err) = result.as_ref() {
-                observe::mempool_failed(solver.name(), mempool, err);
-            }
+            let result = mempool.execute(&solver, settlement).await;
+            observe::mempool_executed(solver.name(), &mempool, &result);
             result
         }
         .boxed()
-    }))
-    .await
-    .map_err(|_| Error::AllMempoolsFailed)?;
-    Ok(())
+    })));
 }
 
 #[derive(Debug, thiserror::Error)]

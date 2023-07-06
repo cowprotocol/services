@@ -257,9 +257,24 @@ pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, 
     }
 }
 
-/// Observe that a mempool failed to send a transaction.
-pub fn mempool_failed(solver: &solver::Name, mempool: &Mempool, err: &boundary::Error) {
-    tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
+pub fn no_mempools() {
+    tracing::warn!("no mempools configured, transactions will not be sent");
+}
+
+/// Observe the result of mempool transaction execution.
+pub fn mempool_executed(
+    solver: &solver::Name,
+    mempool: &Mempool,
+    res: &Result<(), boundary::Error>,
+) {
+    match res {
+        Ok(()) => {
+            tracing::info!(%solver, ?mempool, "sending transaction via mempool succeeded");
+        }
+        Err(err) => {
+            tracing::warn!(%solver, ?err, ?mempool, "sending transaction via mempool failed");
+        }
+    }
 }
 
 /// Observe that an invalid DTO was received.
