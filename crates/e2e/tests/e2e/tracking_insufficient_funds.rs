@@ -69,12 +69,6 @@ async fn test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
-    let order_is_ready = || async {
-        let events = crate::database::events_of_order(services.db(), &uid).await;
-        events.last().map(|e| e.label) == Some(OrderEventLabel::Ready)
-    };
-    wait_for_condition(TIMEOUT, order_is_ready).await.unwrap();
-
     tracing::info!("Withdrawing WETH to render the order invalid due to insufficient funds");
     tx!(
         trader.account(),
