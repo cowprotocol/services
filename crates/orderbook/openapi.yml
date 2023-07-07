@@ -29,17 +29,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/UID"
         400:
-          description: Error during order validation
+          description: Error during order validation.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderPostError"
         403:
-          description: Forbidden, your account is deny-listed
+          description: Forbidden, your account is deny-listed.
         429:
-          description: Too many order placements
+          description: Too many order placements.
         500:
-          description: Error adding an order
+          description: Error adding an order.
       requestBody:
         description: The order to create.
         required: true
@@ -48,14 +48,15 @@ paths:
             schema:
               $ref: "#/components/schemas/OrderCreation"
     delete:
-      summary: Cancels multiple orders by marking them invalid with a timestamp.
+      summary: Cancel multiple orders by marking them invalid with a timestamp.
       description: |
-        This is a best effort cancellation, and might not prevent solvers from
+        This is a *best effort* cancellation, and might not prevent solvers from
         settling the orders (if the order is part of an in-flight settlement
-        transaction for example). Authentication must be provided by an EIP-712
-        signature of an "OrderCacellations(bytes[] orderUids)" message.
+        transaction for example). Authentication must be provided by an
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) 
+        signature of an `OrderCancellations(bytes[] orderUids)` message.
       requestBody:
-        description: "Signed OrderCancellations"
+        description: Signed `OrderCancellations`.
         required: true
         content:
           application/json:
@@ -63,15 +64,15 @@ paths:
               $ref: "#/components/schemas/OrderCancellations"
       responses:
         200:
-          description: Orders deleted
+          description: Order(s) are cancelled.
         400:
-          description: Malformed signature
+          description: Malformed signature.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderCancellationError"
         401:
-          description: Invalid signature
+          description: Invalid signature.
         404:
           description: One or more orders were not found and no orders were cancelled.
   /api/v1/orders/{UID}:
@@ -91,14 +92,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/Order"
         404:
-          description: Order was not found
+          description: Order was not found.
     delete:
       deprecated: true
-      summary: Cancels order by marking it invalid with a timestamp.
+      summary: Cancel an order by marking it invalid with a timestamp.
       description: |
         The successful deletion might not prevent solvers from settling the order.
-        Authentication must be provided by providing an EIP-712 signature of an
-        "OrderCacellation(bytes orderUids)" message.
+        Authentication must be provided by providing an 
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of an
+        `OrderCancellation(bytes orderUid)` message.
       parameters:
         - in: path
           name: UID
@@ -106,7 +108,7 @@ paths:
             $ref: "#/components/schemas/UID"
           required: true
       requestBody:
-        description: "Signed OrderCancellation"
+        description: Signed `OrderCancellation`
         required: true
         content:
           application/json:
@@ -114,25 +116,26 @@ paths:
               $ref: "#/components/schemas/OrderCancellation"
       responses:
         200:
-          description: Order deleted
+          description: Order cancelled.
         400:
-          description: Malformed signature
+          description: Malformed signature.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrderCancellationError"
         401:
-          description: Invalid signature
+          description: Invalid signature.
         404:
-          description: Order was not found
+          description: Order was not found.
     patch:
-      summary: Cancels order and replaces it with a new one
+      summary: Cancel an order and replace it with a new one
       description: |
         Cancel an order by providing a replacement order where the app data field
-        is the EIP-712-struct-hash of a cancellation for the original order. This
-        allows an old order to be cancelled AND a new order to be created in an
-        atomic operation with a single signature. This may be useful for replacing
-        orders when on-chain prices move outside of the original order's limit price.
+        is the [EIP-712](https://eips.ethereum.org/EIPS/eip-712) `hashStruct` of a
+        cancellation for the original order. This allows an old order to be cancelled
+        AND a new order to be created in an atomic operation with a single signature.
+        This may be useful for replacing orders when on-chain prices move outside of
+        the original order's limit price.
       parameters:
         - in: path
           name: UID
@@ -140,7 +143,7 @@ paths:
             $ref: "#/components/schemas/UID"
           required: true
       requestBody:
-        description: "replacement order"
+        description: Replacement order.
         required: true
         content:
           application/json:
@@ -162,12 +165,12 @@ paths:
         401:
           description: |
             Invalid replacement order. This can happen if the old and new orders have
-            different signers, the new order's app data is not an encoded cancellation of
-            the old order, or the new order is based on presign or EIP-1271 signatures.
+            different signers, the new order's `appData` is not an encoded cancellation of
+            the old order, or the new order is based on `presign` or `eip1271` signatures.
         403:
           description: Forbidden
         404:
-          description: Order was not found
+          description: Order was not found.
   /api/v1/transactions/{txHash}/orders:
     get:
       summary: Get orders by settlement transaction hash.
@@ -179,7 +182,7 @@ paths:
           required: true
       responses:
         200:
-          description: Order
+          description: Order(s).
           content:
             application/json:
               schema:
@@ -188,9 +191,9 @@ paths:
                   $ref: "#/components/schemas/Order"
   /api/v1/trades:
     get:
-      summary: Get existing Trades.
+      summary: Get existing trades.
       description: |
-        Exactly one of owner or order_uid has to be set.
+        Exactly one of `owner` or `orderUid` must be set.
       parameters:
         - name: owner
           in: query
@@ -204,7 +207,15 @@ paths:
           required: false
       responses:
         200:
-          description: all trades
+          description: |
+            ### If `owner` is specified:
+            
+            Return all trades related to that `owner`.
+            
+            ### If `orderUid` is specified:
+            
+            Return all trades related to that `orderUid`. Given that an order may be partially
+            fillable, it is possible that an individual order may have *multiple* trades.
           content:
             application/json:
               schema:
@@ -213,14 +224,16 @@ paths:
                   $ref: "#/components/schemas/Trade"
   /api/v1/auction:
     get:
-      summary: Gets the current batch auction.
+      summary: Get the current batch auction.
       description: |
-        The current batch auction that solvers should be solving right now. Includes the list of
-        solvable orders, the block on which the batch was created, as well as prices for all tokens
-        being traded (used for objective value computation).
+        The current batch auction that solvers should be solving right now. This includes:
+        
+        * A list of solvable orders.
+        * The block on which the batch was created.
+        * Prices for all tokens being traded (used for objective value computation).
       responses:
         200:
-          description: the auction
+          description: Batch auction.
           content:
             application/json:
               schema:
@@ -229,9 +242,9 @@ paths:
     get:
       summary: Get orders of one user paginated.
       description: |
-        The orders are ordered by their creation date descending (newest orders first).
-        To enumerate all orders start with offset 0 and keep increasing the offset by the total
-        number of returned results. When a response contains less than the limit the last page has
+        The orders are sorted by their creation date descending (newest orders first).
+        To enumerate all orders start with `offset` 0 and keep increasing the `offset` by the total
+        number of returned results. When a response contains less than `limit` the last page has
         been reached.
       parameters:
         - name: owner
@@ -255,7 +268,7 @@ paths:
           required: false
       responses:
         200:
-          description: the orders
+          description: The orders.
           content:
             application/json:
               schema:
@@ -278,7 +291,7 @@ paths:
             $ref: "#/components/schemas/Address"
       responses:
         200:
-          description: the estimated native price
+          description: The estimated native price.
           content:
             application/json:
               schema:
@@ -286,17 +299,16 @@ paths:
         400:
           description: Error finding the price.
         404:
-          description: No liquidity was found
+          description: No liquidity was found.
         500:
-          description: Unexpected error
+          description: Unexpected error.
   /api/v1/quote:
     post:
-      summary: Quotes a price and fee for the specified order parameters.
+      summary: Quote a price and fee for the specified order parameters.
       description: |
-        This API endpoint accepts a partial order and computes the minimum fee and
-        a price estimate for the order. It returns a full order that can be used
-        directly for signing, and with an included signature, passed directly to
-        the order creation endpoint.
+        Given a partial order compute the minimum fee and a price estimate for the order. Return a 
+        full order that can be used directly for signing, and with an included signature, passed 
+        directly to the order creation endpoint.
       requestBody:
         description: The order parameters to compute a quote for.
         required: true
@@ -318,16 +330,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/FeeAndQuoteError"
         403:
-          description: Forbidden, your account is deny-listed
+          description: Forbidden, your account is deny-listed.
         429:
-          description: Too many order quotes
+          description: Too many order quotes.
         500:
-          description: Unexpected error quoting an order
+          description: Unexpected error quoting an order.
   /api/v1/solver_competition/{auction_id}:
     get:
-      summary: Information about solver competition
+      summary: Get information about a solver competition.
       description: |
-        Returns the competition information by auction id.
+        Returns the competition information by `auction_id`.
       parameters:
         - name: auction_id
           in: path
@@ -336,7 +348,7 @@ paths:
             type: integer
       responses:
         200:
-          description: competition info
+          description: Competition
           content:
             application/json:
               schema:
@@ -345,39 +357,40 @@ paths:
           description: No competition information available for this auction id.
   /api/v1/solver_competition/by_tx_hash/{tx_hash}:
     get:
-      summary: Information about solver competition
+      summary: Get information about solver competition.
       description: |
-        Returns the competition information by transaction hash.
+        Returns the competition information by `tx_hash`.
       parameters:
         - name: tx_hash
+          description: Transaction hash in which the competition was settled.
           in: path
           required: true
           schema:
             $ref: "#/components/schemas/TransactionHash"
       responses:
         200:
-          description: competition info
+          description: Competition
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
         404:
-          description: No competition information available for this tx hash.
+          description: No competition information available for this `tx_hash`.
   /api/v1/version:
     get:
-      summary: Information about the current deployed version of the API
+      summary: Get the API's current deployed version.
       description: |
         Returns the git commit hash, branch name and release tag (code: https://github.com/cowprotocol/services).
       responses:
         200:
-          description: version info
+          description: Version
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/VersionResponse"
   /api/v1/app_data/{app_data_hash}:
     get:
-      summary: Retrieve full app data from contract app data hash.
+      summary: Get the full `appData` from contract `appDataHash`.
       parameters:
         - in: path
           name: app_data_hash
@@ -386,14 +399,18 @@ paths:
           required: true
       responses:
         200:
-          description: Full app data
+          description: Full `appData`.
           content:
             application/json: {}
         404:
-          description: No full app data stored for this hash.
+          description: No full `appData` stored for this hash.
   /api/v1/users/{address}/total_surplus:
     get:
-      summary: Return the total surplus earned by the user. This endpoint isn't stable yet.
+      summary: Get the total surplus earned by the user. [UNSTABLE]
+      description: |
+        ### Caution
+        
+        This endpoint is under active development and should NOT be considered stable.
       parameters:
         - in: path
           name: address
@@ -426,11 +443,11 @@ components:
       type: string
       example: "1234567890"
     CallData:
-      description: Data sent to a contract in a transaction encoded as a hex with `0x` prefix.
+      description: Some `calldata` sent to a contract in a transaction encoded as a hex with `0x` prefix.
       type: string
       example: "0xca11da7a"
     TokenAmount:
-      description: Amount of a token. uint256 encoded in decimal.
+      description: Amount of a token. `uint256` encoded in decimal.
       type: string
       example: "1234567890"
     OnchainOrderData:
@@ -438,23 +455,22 @@ components:
       properties:
         sender:
           description: |
-            If orders are placed as onchain orders, the owner of the order might
+            If orders are placed as on-chain orders, the owner of the order might
             be a smart contract, but not the user placing the order. The
-            actual user will be provided in this field
+            actual user will be provided in this field.
           allOf:
             - $ref: "#/components/schemas/Address"
         placementError:
           description: |
-            Describes the error, if the order placement was not
-            successful. This could happen, for example, if the
-            valid_to is too high, or no valid quote was found or generated
+            Describes the error, if the order placement was not successful. This could
+            happen, for example, if the `validTo` is too high, or no valid quote was
+            found or generated.
           type: string
           enum: [QuoteNotFound, ValidToTooFarInFuture, PreValidationError]
       required:
         - sender
     EthflowData:
-      description: |
-        Provides the additional data for ethflow orders
+      description: Provides the additional data for ethflow orders.
       type: object
       properties:
         refundTxHash:
@@ -466,37 +482,39 @@ components:
           nullable: true
         userValidTo:
           description: |
-            Describes the valid to of an order ethflow order.
-            Note that for ethflow orders, the valid_to encoded in the smart
-            contract is max(uint)
+            Describes the `validTo` of an order ethflow order.
+            
+            **NOTE**: For ethflow orders, the `validTo` encoded in the smart
+            contract is `type(uint256).max`.
           type: integer
       required:
         - refundTxHash
         - userValidTo
     OrderKind:
-      description: Is this a buy order or sell order?
+      description: Is this order a buy or sell?
       type: string
       enum: [buy, sell]
     OrderClass:
-      description: Order class
+      description: Order class.
       type: string
       enum: [market, limit, liquidity]
     SellTokenSource:
-      description: Where should the sell token be drawn from?
+      description: Where should the `sellToken` be drawn from?
       type: string
       enum: [erc20, internal, external]
     BuyTokenDestination:
-      description: Where should the buy token be transfered to?
+      description: Where should the `buyToken` be transferred to?
       type: string
       enum: [erc20, internal]
     PriceQuality:
       description: |
         How good should the price estimate be?
-        Note that orders are supposed to be created from "optimal" price estimates.
+        
+        **NOTE**: Orders are supposed to be created from `optimal` price estimates.
       type: string
       enum: [fast, optimal]
     OrderStatus:
-      description: The current order status
+      description: The current order status.
       type: string
       enum: [presignaturePending, open, fulfilled, cancelled, expired]
     OrderParameters:
@@ -504,43 +522,43 @@ components:
       type: object
       properties:
         sellToken:
-          description: "ERC20 token to be sold"
+          description: ERC-20 token to be sold.
           allOf:
             - $ref: "#/components/schemas/Address"
         buyToken:
-          description: "ERC20 token to be bought"
+          description: ERC-20 token to be bought.
           allOf:
             - $ref: "#/components/schemas/Address"
         receiver:
           description: |
-            An optional address to receive the proceeds of the trade instead of the
-            owner (i.e. the order signer).
+            An optional Ethereum address to receive the proceeds of the trade instead
+            of the owner (i.e. the order signer).
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: true
         sellAmount:
-          description: "Amount of sellToken to be sold in atoms"
+          description: Amount of `sellToken` to be sold in atoms.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
-          description: "Amount of buyToken to be bought in atoms"
+          description: Amount of `buyToken` to be bought in atoms.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         validTo:
-          description: Unix timestamp until the order is valid. uint32.
+          description: Unix timestamp (`uint32`) until which the order is valid.
           type: integer
         appData:
           $ref: "#/components/schemas/AppDataHash"
         feeAmount:
-          description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
+          description: feeRatio * sellAmount + minimal_fee in atoms.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:
-          description: "The kind is either a buy or sell order"
+          description: The kind is either a buy or sell order.
           allOf:
             - $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
-          description: Is this a fill-or-kill order or a partially fillable order?
+          description: Is the order fill-or-kill or partially fillable?
           type: boolean
         sellTokenBalance:
           allOf:
@@ -615,7 +633,7 @@ components:
           $ref: "#/components/schemas/Signature"
         from:
           description: |
-            If set, the backend enforces that this address matches what is decoded as the signer of
+            If set, the backend enforces that this address matches what is decoded as the *signer* of
             the signature. This helps catch errors with invalid signature encodings as the backend
             might otherwise silently work with an unexpected address that for example does not have
             any balance.
@@ -625,33 +643,46 @@ components:
         quoteId:
           description: |
             Orders can optionally include a quote ID. This way the order can be linked to a quote
-            and enable providing more metadata when analyzing order slippage.
+            and enable providing more metadata when analysing order slippage.
           type: integer
           nullable: true
         appData:
           description: |
-            This field comes in two forms for backward compatibility. The first form (app data hash) will eventually stop being accepted.
+            This field comes in two forms for backward compatibility. The first form (`appDataHash`) 
+            will eventually stop being accepted.
           anyOf:
             - $ref: "#/components/schemas/AppDataHash"
             - title: Full App Data
               description: |
-                Short:
+                **Short**:
 
-                If you do not care about app data, set this field to `\"{}\"` and make sure that the order you signed for this request had its app data field set to `0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d`.
+                If you do not care about `appData`, set this field to `"{}"` and make sure that the
+                order you signed for this request had its `appData` field set to
+                `0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d`.
 
-                Long:
+                **Long**:
 
-                A string encoding a json object like `"{\"hello\":\"world\"}"`.
+                A string encoding a JSON object like `"{"hello":"world"}"`.
 
-                This field determines the smart contract order's app data field, which is assumed to be set to the keccak-256 hash of the utf-8 encoded bytes of this string. You must ensure that the signature that is part of this request indeed signed a smart contract order with the app data field set appropriately. If this isn't the case, signature verification will fail. For easier debugging you can additionally set the `appDataHash` field.
+                This field determines the smart contract order's `appData` field, which is assumed to
+                be set to the `keccak256` hash of the UTF-8 encoded bytes of this string. You must
+                ensure that the signature that is part of this request indeed signed a smart contract
+                order with the `appData` field set appropriately. If this isn't the case, signature
+                verification will fail. For easier debugging it is recommended to additionally set the 
+                `appDataHash` field.
 
-                This field must be the encoding of a valid json object. The json object can contain arbitrary application specific data (json key values). The optional key `backend` is special. It has to conform to the schema documented in `BackendAppData`.
+                The field must be the encoding of a valid JSON object. The JSON object can contain
+                arbitrary application specific data (JSON key values). The optional key `backend` is
+                special. It **MUST** conform to the schema documented in `BackendAppData`.
 
-                The total byte size of this field's utf-8 encoded bytes is limited to 1000.
+                The total byte size of this field's UTF-8 encoded bytes is limited to 1000.
               type: string
         appDataHash:
           description: |
-           May be set for debugging purposes. If set, this field is compared to what the backend internally calculates as the app data hash based on the contents of `appData`. If the hash does not match, an error is returned. If this field is set, then `appData` must be a string encoding of a json object.
+           May be set for debugging purposes. If set, this field is compared to what the backend
+           internally calculates as the app data hash based on the contents of `appData`. If the
+           hash does not match, an error is returned. If this field is set, then `appData` **MUST** be
+           a string encoding of a JSON object.
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
@@ -671,8 +702,8 @@ components:
       type: object
     OrderMetaData:
       description: |
-        Extra order data that is returned to users when querying orders
-        but not provided by users when creating orders.
+        Extra order data that is returned to users when querying orders but not provided by users
+        when creating orders.
       type: object
       properties:
         creationDate:
@@ -686,36 +717,40 @@ components:
         uid:
           $ref: "#/components/schemas/UID"
         availableBalance:
-          description: Unused field that is currently always set to null and will be removed in the future.
+          description: |
+            Unused field that is currently always set to `null` and will be removed in the future.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
           nullable: true
           deprecated: true
         executedSellAmount:
-          description: "The total amount of sellToken that has been executed for this order including fees."
+          description: |
+            The total amount of `sellToken` that has been executed for this order including fees.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         executedSellAmountBeforeFees:
-          description: "The total amount of sellToken that has been executed for this order without fees."
+          description: |
+            The total amount of `sellToken` that has been executed for this order without fees.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         executedBuyAmount:
-          description: "The total amount of buyToken that has been executed for this order."
+          description: |
+            The total amount of `buyToken` that has been executed for this order.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         executedFeeAmount:
-          description: "The total amount of fees that have been executed for this order."
+          description: The total amount of fees that have been executed for this order.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         invalidated:
           description: Has this order been invalidated?
           type: boolean
         status:
-          description: Order status
+          description: Order status.
           allOf:
             - $ref: "#/components/schemas/OrderStatus"
         fullFeeAmount:
-          description: "Amount that the signed fee would be without subsidies"
+          description: Amount that the signed fee would be without subsidies.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         isLiquidityOrder:
@@ -724,35 +759,38 @@ components:
             placed with the intent of actively getting traded. Instead they facilitate the
             trade of normal orders by allowing them to be matched against liquidity orders which
             uses less gas and can have better prices than external liquidity.
+            
             As such liquidity orders will only be used in order to improve settlement of normal
             orders. They should not be expected to be traded otherwise and should not expect to get
             surplus.
           type: boolean
         ethflowData:
-          description: |
-            For ethflow orders - order that are placed onchain with native eth -, this field
-            contains a struct with two variables user_valid_to and is_refunded
           allOf:
             - $ref: "#/components/schemas/EthflowData"
         onchainUser:
           description: |
             This represents the actual trader of an on-chain order.
-            In that case, the owner would be the EthFlow contract in the case of EthFlow orders and not the actual trader.
+            
+            ### ethflow orders
+            
+            In this case, the `owner` would be the `EthFlow` contract and *not* the actual trader.
           allOf:
             - $ref: "#/components/schemas/Address"
         onchainOrderData:
           description: |
-            There is some data only available for orders that are placed onchain. This data
-            can be found in this object
+            There is some data only available for orders that are placed on-chain. This data
+            can be found in this object.
           allOf:
             - $ref: "#/components/schemas/OnchainOrderData"
         executedSurplusFee:
-          description: "Surplus fee that the limit order was executed with."
+          description: Surplus fee that the limit order was executed with.
           allOf:
             - $ref: "#/components/schemas/BigUint"
           nullable: true
         fullAppData:
-          description: Full app data, which the contract level app data is a hash of. See `OrderCreation` for more information.
+          description: |
+            Full `appData`, which the contract-level `appData` is a hash of. See `OrderCreation`
+            for more information.
           type: string
           nullable: true
       required:
@@ -789,7 +827,7 @@ components:
           description: |
             The latest block on which a settlement has been processed.
 
-            Note that under certain conditions it is possible for a settlement to have been mined as
+            **NOTE**: Under certain conditions it is possible for a settlement to have been mined as
             part of `block` but not have yet been processed.
         orders:
           type: array
@@ -809,7 +847,7 @@ components:
           items:
             $ref: "#/components/schemas/UID"
           description: |
-            The uids of the orders included in the auction.
+            The UIDs of the orders included in the auction.
         prices:
           $ref: "#/components/schemas/AuctionPrices"
     AuctionPrices:
@@ -823,16 +861,16 @@ components:
         $ref: "#/components/schemas/BigUint"
     OrderCancellations:
       description: |
-        EIP-712 signature of struct OrderCancellations { orderUid: bytes[] } from the order's owner
+        EIP-712 signature of struct OrderCancellations { orderUid: bytes[] } from the order's owner.
       type: object
       properties:
         orderUids:
           type: array
-          description: "UIDs of orders to cancel"
+          description: UIDs of orders to cancel.
           items:
             $ref: "#/components/schemas/UID"
         signature:
-          description: "OrderCancellation signed by owner"
+          description: "`OrderCancellation` signed by the owner."
           allOf:
             - $ref: "#/components/schemas/EcdsaSignature"
         signingScheme:
@@ -843,7 +881,8 @@ components:
         - signingScheme
     OrderCancellation:
       description: |
-        EIP-712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of struct 
+        `OrderCancellation(bytes orderUid)` from the order's owner.
       type: object
       properties:
         signature:
@@ -857,45 +896,45 @@ components:
         - signingScheme
     Trade:
       description: |
-        Trade data such as executed amounts, fees, order id and block number.
+        Trade data such as executed amounts, fees, `orderUid` and `block` number.
       type: object
       properties:
         blockNumber:
-          description: "Block in which trade occurred."
+          description: Block in which trade occurred.
           type: integer
         logIndex:
-          description: "Index in which transaction was included in block."
+          description: Index in which transaction was included in block.
           type: integer
         orderUid:
-          description: "Unique ID of the order matched by this trade."
+          description: UID of the order matched by this trade.
           allOf:
             - $ref: "#/components/schemas/UID"
         owner:
-          description: "Address of trader."
+          description: Address of trader.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellToken:
-          description: "Address of token sold."
+          description: Address of token sold.
           allOf:
             - $ref: "#/components/schemas/Address"
         buyToken:
-          description: "Address of token bought."
+          description: Address of token bought.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:
-          description: "Total amount of sellToken that has been executed for this trade (including fees)."
+          description: Total amount of `sellToken` that has been executed for this trade (including fees).
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         sellAmountBeforeFees:
-          description: "The total amount of sellToken that has been executed for this order without fees."
+          description: The total amount of `sellToken` that has been executed for this order without fees.
           allOf:
             - $ref: "#/components/schemas/BigUint"
         buyAmount:
-          description: "Total amount of buyToken received in this trade."
+          description: Total amount of `buyToken` received in this trade.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         txHash:
-          description: "Hash of the corresponding settlement transaction containing the trade (if available)."
+          description: "Transaction hash of the corresponding settlement transaction containing the trade (if available)."
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
           nullable: true
@@ -913,8 +952,8 @@ components:
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
-        Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
-        and bytes 52..56 valid to,
+        Bytes 0..32 are the order digest, bytes 30..52 the owner address and bytes 
+        52..56 the expiry (`validTo`) as a `uint32` unix epoch timestamp.
       type: string
       # ENS order
       example: "0xff2e2e54d178997f173266817c1e9ed6fee1a1aae4b43971c53b543cffcc2969845c6f5599fbb25dbdd1b9b013daf85c03f3c63763e4bc4a"
@@ -932,7 +971,7 @@ components:
         - $ref: "#/components/schemas/EcdsaSignature"
         - $ref: "#/components/schemas/PreSignature"
     EcdsaSignature:
-      description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
+      description: 65 bytes encoded as hex with `0x` prefix. `r || s || v` from the spec.
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     PreSignature:
@@ -1049,7 +1088,7 @@ components:
       description: The buy or sell side when quoting an order.
       oneOf:
         - type: object
-          description: Quote a sell order given the final total sell amount including fees
+          description: Quote a sell order given the final total `sellAmount` including fees.
           properties:
             kind:
               type: string
@@ -1064,45 +1103,45 @@ components:
             - kind
             - sellAmountBeforeFee
         - type: object
-          description: Quote a sell order given the sell amount.
+          description: Quote a sell order given the `sellAmount`.
           properties:
             kind:
               type: string
               enum: [sell]
             sellAmountAfterFee:
-              description: The sell amount for the order.
+              description: The `sellAmount` for the order.
               allOf:
                 - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - sellAmountAfterFee
         - type: object
-          description: Quote a buy order given an exact buy amount.
+          description: Quote a buy order given an exact `buyAmount`.
           properties:
             kind:
               type: string
               enum: [buy]
             buyAmountAfterFee:
-              description: The buy amount for the order.
+              description: The `buyAmount` for the order.
               allOf:
                 - $ref: "#/components/schemas/TokenAmount"
           required:
             - kind
             - buyAmountAfterFee
     OrderQuoteValidity:
-      description: The validity for the order
+      description: The validity for the order.
       oneOf:
         - type: object
-          description: Absolute validity
+          description: Absolute validity.
           properties:
             validTo:
-              description: Unix timestamp until the order is valid. uint32.
+              description: Unix timestamp (`uint32`) until which the order is valid.
               type: integer
         - type: object
           description: Relative validity
           properties:
             validFor:
-              description: Number of seconds that the order should be valid for. uint32.
+              description: Number (`uint32`) of seconds that the order should be valid for.
               type: integer
     OrderQuoteRequest:
       description: Request fee and price quote.
@@ -1112,24 +1151,24 @@ components:
         - type: object
           properties:
             sellToken:
-              description: "ERC20 token to be sold"
+              description: ERC-20 token to be sold
               allOf:
                 - $ref: "#/components/schemas/Address"
             buyToken:
-              description: "ERC20 token to be bought"
+              description: ERC-20 token to be bought
               allOf:
                 - $ref: "#/components/schemas/Address"
             receiver:
               description: |
                 An optional address to receive the proceeds of the trade instead of the
-                owner (i.e. the order signer).
+                `owner` (i.e. the order signer).
               allOf:
                 - $ref: "#/components/schemas/Address"
               nullable: true
             appData:
               $ref: "#/components/schemas/AppDataHash"
             partiallyFillable:
-              description: Is this a fill-or-kill order or a partially fillable order?
+              description: Is the order fill-or-kill or partially fillable?
               type: boolean
             sellTokenBalance:
               allOf:
@@ -1150,7 +1189,9 @@ components:
                 - $ref: "#/components/schemas/SigningScheme"
               default: "eip712"
             onchainOrder:
-              description: "Flag to signal whether the order is intended for onchain order placement. Only valid for non ECDSA-signed orders"
+              description: |
+                Flag to signal whether the order is intended for on-chain order placement. Only valid
+                for non ECDSA-signed orders."
               default: false
           required:
             - sellToken
@@ -1158,7 +1199,7 @@ components:
             - from
     OrderQuoteResponse:
       description: |
-        An order quoted by the back end that can be directly signed and
+        An order quoted by the backend that can be directly signed and
         submitted to the order creation backend.
       type: object
       properties:
@@ -1174,7 +1215,7 @@ components:
           example: "1985-03-10T18:35:18.814523Z"
         id:
           description: |
-            Order ID linked to a quote to enable providing more metadata when analyzing
+            Quote ID linked to a quote to enable providing more metadata when analysing
             order slippage.
           type: integer
       required:
@@ -1183,13 +1224,13 @@ components:
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.
-        The auction id corresponds to the id external solvers are provided
+        The `auctionId` corresponds to the id external solvers are provided
         with.
       type: object
       properties:
         auctionId:
           type: integer
-          description: The id of the auction the competition info is for.
+          description: The ID of the auction the competition info is for.
         transactionHash:
           type: string
           nullable: true
@@ -1198,7 +1239,7 @@ components:
           description: The hash of the transaction that the winning solution of this info was submitted in.
         gasPrice:
           type: number
-          description: gas price used for ranking solutions
+          description: Gas price used for ranking solutions.
         liquidityCollectedBlock:
           type: integer
         competitionSimulationBlock:
@@ -1215,18 +1256,18 @@ components:
       properties:
         solver:
           type: string
-          description: name of the solver
+          description: Name of the solver.
         solverAddress:
           type: string
           description: |
-            The address used by the solver to execute the settlement onchain.
+            The address used by the solver to execute the settlement on-chain.
             This field is missing for old settlements, the zero address has been used instead.
         objective:
           type: object
           properties:
             total:
               type: number
-              description: the total objective value used for ranking solutions
+              description: The total objective value used for ranking solutions.
             surplus:
               type: number
             fees:
@@ -1239,8 +1280,8 @@ components:
           allOf:
             - $ref: "#/components/schemas/BigUint"
           description: |
-            The score of the current auction as defined in CIP-20.
-            It is null for old auctions.
+            The score of the current auction as defined in [CIP-20](https://snapshot.org/#/cow.eth/proposal/0x2d3f9bd1ea72dca84b03e97dda3efc1f4a42a772c54bd2037e8b62e7d09a491f).
+            It is `null` for old auctions.
           nullable: true
         clearingPrices:
           type: object
@@ -1250,7 +1291,7 @@ components:
             The prices of tokens for settled user orders as passed to the settlement contract.
         orders:
           type: array
-          description: the touched orders
+          description: Touched orders.
           items:
             type: object
             properties:
@@ -1261,14 +1302,17 @@ components:
         callData:
           allOf:
             - $ref: "#/components/schemas/CallData"
-          description: Transaction call data that is executed onchain if the settlement is executed.
+          description: Transaction `calldata` that is executed on-chain if the settlement is executed.
         uninternalizedCallData:
           allOf:
             - $ref: "#/components/schemas/CallData"
           description: |
-            Full call data as generated from the original solver output.
-            It can be different from the executed transaction if part of the settlements are internalized (use internal liquidity in lieu of trading against onchain liquidity).
-            This field is omitted in case it coincides with callData.
+            Full `calldata` as generated from the original solver output.
+            
+            It can be different from the executed transaction if part of the settlements are internalised
+            (use internal liquidity in lieu of trading against on-chain liquidity).
+            
+            This field is omitted in case it coincides with `callData`.
     VersionResponse:
       description: |
         The version of the codebase that is currently running.
@@ -1276,13 +1320,13 @@ components:
       properties:
         branch:
           type: string
-          description: the git branch name at the time of build
+          description: The git branch name at the time of build.
         commit:
           type: string
-          description: the git commit hash at the time of build
+          description: The git commit hash at the time of build.
         version:
           type: string
-          description: the git tagged version (if any) at the time of the build
+          description: The git tagged version (if any) at the time of the build.
     NativePriceResponse:
       description: |
         The estimated native price for the token
@@ -1290,7 +1334,7 @@ components:
       properties:
         price:
           type: number
-          description: the estimated price of the token
+          description: Estimated price of the token.
     TotalSurplus:
       description: |
         The total surplus.
@@ -1298,4 +1342,4 @@ components:
       properties:
         totalSurplus:
           type: string
-          description: the total surplus.
+          description: The total surplus.
