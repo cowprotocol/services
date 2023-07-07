@@ -173,6 +173,10 @@ pub struct Arguments {
     /// contract deployment for the current network will be used.
     #[clap(long, env)]
     pub multisend_contract_address: Option<H160>,
+
+    /// Set the maximum size in bytes of order app data.
+    #[clap(long, env, default_value = "8192")]
+    pub app_data_size_limit: usize,
 }
 
 impl std::fmt::Display for Arguments {
@@ -258,6 +262,7 @@ impl std::fmt::Display for Arguments {
             "multisend_contract_address",
             &self.multisend_contract_address.map(|a| format!("{a:?}")),
         )?;
+        writeln!(f, "app_data_size_limit: {}", self.app_data_size_limit)?;
 
         Ok(())
     }
