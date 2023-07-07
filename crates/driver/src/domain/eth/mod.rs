@@ -159,12 +159,6 @@ impl From<ContractAddress> for H160 {
     }
 }
 
-impl From<ContractAddress> for ethereum_types::H160 {
-    fn from(value: ContractAddress) -> Self {
-        value.0 .0.into()
-    }
-}
-
 impl From<ContractAddress> for Address {
     fn from(value: ContractAddress) -> Self {
         value.0.into()

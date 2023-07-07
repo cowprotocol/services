@@ -1,22 +1,16 @@
 use {
     reqwest::StatusCode,
-    serde_json::json,
-    shared::api::ApiReply,
     std::convert::Infallible,
-    warp::{reply::with_status, Filter, Rejection},
+    warp::{reply::with_status, Filter, Rejection, Reply},
 };
 
-pub fn version() -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
+pub fn version() -> impl Filter<Extract = (Box<dyn Reply>,), Error = Rejection> + Clone {
     warp::path!("v1" / "version")
         .and(warp::get())
         .and_then(|| async {
-            Result::<_, Infallible>::Ok(with_status(
-                warp::reply::json(&json!({
-                    "version": env!("VERGEN_GIT_SEMVER_LIGHTWEIGHT"),
-                    "commit": env!("VERGEN_GIT_SHA"),
-                    "branch": env!("VERGEN_GIT_BRANCH"),
-                })),
+            Result::<_, Infallible>::Ok(Box::new(with_status(
+                env!("VERGEN_GIT_DESCRIBE"),
                 StatusCode::OK,
-            ))
+            )) as Box<dyn Reply>)
         })
 }

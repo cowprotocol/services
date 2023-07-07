@@ -91,6 +91,7 @@ mod tests {
         super::*,
         crate::events::{Event, EventIndex, Settlement},
         sqlx::Connection,
+        std::ops::DerefMut,
     };
 
     fn is_duplicate_auction_id_error(err: &sqlx::Error) -> bool {
@@ -140,7 +141,7 @@ mod tests {
             .unwrap();
 
         let auction_id: i64 = sqlx::query_scalar("SELECT auction_id FROM auction_transaction")
-            .fetch_one(&mut db)
+            .fetch_one(db.deref_mut())
             .await
             .unwrap();
         assert_eq!(auction_id, 1);
@@ -167,7 +168,7 @@ mod tests {
             .unwrap();
 
         let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
-            .fetch_one(&mut db)
+            .fetch_one(db.deref_mut())
             .await
             .unwrap();
         assert_eq!(auction_id, None);
@@ -177,7 +178,7 @@ mod tests {
             .unwrap();
 
         let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
-            .fetch_one(&mut db)
+            .fetch_one(db.deref_mut())
             .await
             .unwrap();
         assert_eq!(auction_id, Some(1));

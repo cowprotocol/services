@@ -1,6 +1,7 @@
 use {
     crate::{auction::AuctionId, Address, PgTransaction},
     sqlx::PgConnection,
+    std::ops::DerefMut,
 };
 
 /// Participant of a solver competition for a given auction.
@@ -20,7 +21,7 @@ pub async fn insert(
         sqlx::query(QUERY)
             .bind(participant.auction_id)
             .bind(participant.participant)
-            .execute(&mut *ex)
+            .execute(ex.deref_mut())
             .await?;
     }
     Ok(())

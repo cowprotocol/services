@@ -2,6 +2,7 @@ use {
     crate::{auction::AuctionId, Address, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
+    std::ops::DerefMut,
 };
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -21,7 +22,7 @@ pub async fn insert(ex: &mut PgTransaction<'_>, score: Score) -> Result<(), sqlx
         .bind(score.winning_score)
         .bind(score.reference_score)
         .bind(score.block_deadline)
-        .execute(ex)
+        .execute(ex.deref_mut())
         .await?;
     Ok(())
 }

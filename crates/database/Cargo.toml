@@ -11,7 +11,7 @@ chrono = { workspace = true, features = ["clock"] }
 const_format = "0.2"
 futures = { workspace = true }
 hex = { workspace = true }
-sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 hex-literal = { workspace = true }

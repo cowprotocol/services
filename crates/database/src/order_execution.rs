@@ -2,6 +2,7 @@ use {
     crate::{auction::AuctionId, OrderUid, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
+    std::ops::DerefMut,
 };
 
 pub async fn save(
@@ -43,7 +44,7 @@ WHERE order_uid = $2 AND auction_id = $3
         .bind(surplus_fee)
         .bind(order)
         .bind(auction)
-        .execute(ex)
+        .execute(ex.deref_mut())
         .await?;
     Ok(())
 }

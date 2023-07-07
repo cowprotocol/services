@@ -27,8 +27,8 @@
 use {
     crate::current_block::CurrentBlockStream,
     anyhow::Result,
+    cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
-    lru::LruCache,
     prometheus::IntCounterVec,
     std::{
         cmp,
@@ -269,7 +269,7 @@ struct Mutexed<K, V>
 where
     K: CacheKey<V>,
 {
-    recently_used: LruCache<K, ()>,
+    recently_used: SizedCache<K, ()>,
     // For quickly finding at which block an entry is cached.
     cached_most_recently_at_block: HashMap<K, u64>,
     // Tuple ordering allows us to efficiently construct range queries by block.
@@ -290,7 +290,7 @@ where
         maximum_recent_block_age: u64,
     ) -> Self {
         Self {
-            recently_used: LruCache::new(entries_lru_size),
+            recently_used: SizedCache::with_size(entries_lru_size.get()),
             cached_most_recently_at_block: HashMap::new(),
             entries: BTreeMap::new(),
             last_update_block: current_block,
@@ -299,7 +299,7 @@ where
     }
 
     fn get(&mut self, key: K, block: Option<u64>) -> Option<&[V]> {
-        self.recently_used.put(key.clone(), ());
+        self.recently_used.cache_set(key.clone(), ());
         let block = block.or_else(|| {
             self.cached_most_recently_at_block
                 .get(&key)
@@ -351,7 +351,7 @@ where
     }
 
     fn keys_of_recently_used_entries(&self) -> impl Iterator<Item = K> + '_ {
-        self.recently_used.iter().map(|(key, _)| key.clone())
+        self.recently_used.key_order().cloned()
     }
 }
 

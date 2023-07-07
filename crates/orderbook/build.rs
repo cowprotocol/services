@@ -1,12 +1,13 @@
 use {
-    anyhow::Result,
-    vergen::{vergen, Config, SemverKind},
+    anyhow::{Context, Result},
+    vergen::EmitBuilder,
 };
 
 fn main() -> Result<()> {
-    let mut config = Config::default();
-    // Github releases create lightweight tags (not annotated tags) meaning we need
-    // to adjust the SEMVER kind in order to see our tag names Related issue: https://github.com/orgs/community/discussions/4924
-    *config.git_mut().semver_kind_mut() = SemverKind::Lightweight;
-    vergen(config)
+    // Set environment variable VERGEN_GIT_DESCRIBE for use in the /version API
+    // route.
+    EmitBuilder::builder()
+        .git_describe(true, true, None)
+        .emit()
+        .context("emit")
 }

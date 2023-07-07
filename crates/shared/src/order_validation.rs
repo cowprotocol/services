@@ -1008,8 +1008,8 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
-        secp256k1::ONE_KEY,
         serde_json::json,
+        std::str::FromStr,
     };
 
     #[test]
@@ -2103,7 +2103,7 @@ mod tests {
                         order.clone().sign(
                             signing_scheme,
                             &Default::default(),
-                            SecretKeyRef::new(&ONE_KEY),
+                            SecretKeyRef::new(&secp256k1::SecretKey::from_str("0000000000000000000000000000000000000000000000000000000000000001").unwrap()),
                         ),
                         &Default::default(),
                         Default::default(),
