@@ -97,15 +97,14 @@ fn run() -> Result<()> {
              CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
         )?
         .npm(
-            "MultiSendCallOnly",
-            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/libraries/\
-             MultiSendCallOnly.sol/MultiSendCallOnly.json",
-        )?
-        .npm(
             "GnosisSafeProxy",
             "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/proxies/GnosisSafeProxy.\
              sol/GnosisSafeProxy.json",
         )?
+        .manual(
+            "HooksTrampoline",
+            "Manually vendored ABI and bytecode for hooks trampoline contract",
+        )
         .npm(
             "UniswapV2Factory",
             "@uniswap/v2-core@1.0.1/build/UniswapV2Factory.json",

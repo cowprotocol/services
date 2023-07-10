@@ -139,12 +139,11 @@ async fn test(web3: Web3) {
         .unwrap();
     assert_eq!(allowance, U256::zero());
 
-    // Note that the allowances were set with the `MultiSend` contract! This is
-    // OK since anyone can already trivially set these allowances there by
-    // calling the contract directly, since it has not restrictions on who can
-    // call it.
+    // Note that the allowances were set with the `HooksTrampoline` contract!
+    // This is OK since the `HooksTrampoline` contract is not used for holding
+    // any funds.
     let allowance = cow
-        .allowance(onchain.contracts().multisend.address(), trader.address())
+        .allowance(onchain.contracts().hooks.address(), trader.address())
         .call()
         .await
         .unwrap();
@@ -152,7 +151,7 @@ async fn test(web3: Web3) {
     let allowance = onchain
         .contracts()
         .weth
-        .allowance(onchain.contracts().multisend.address(), trader.address())
+        .allowance(onchain.contracts().hooks.address(), trader.address())
         .call()
         .await
         .unwrap();

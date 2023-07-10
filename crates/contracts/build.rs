@@ -295,17 +295,17 @@ fn main() {
         builder.add_method_alias("isValidSignature(bytes,bytes)", "is_valid_signature_legacy")
     });
     generate_contract("GnosisSafeProxy");
-    generate_contract_with_config("MultiSendCallOnly", |builder| {
-        builder
-            .add_network_str(MAINNET, "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D")
-            .add_network_str(GOERLI, "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D")
-            .add_network_str(GNOSIS, "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D")
-    });
     generate_contract_with_config("HoneyswapFactory", |builder| {
         builder.add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
     });
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
+    });
+    generate_contract_with_config("HooksTrampoline", |builder| {
+        builder
+            .add_network_str(MAINNET, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(GOERLI, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(GNOSIS, "0xD49Fa4e610d489aB98008bC4424B9F7276fF34bA")
     });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
