@@ -303,9 +303,9 @@ fn main() {
     });
     generate_contract_with_config("HooksTrampoline", |builder| {
         builder
-            .add_network_str(MAINNET, "0xFCF4E1ffd4C778c358f371B9a624b28386b4ecAB")
-            .add_network_str(GOERLI, "0xFCF4E1ffd4C778c358f371B9a624b28386b4ecAB")
-            .add_network_str(GNOSIS, "0xFCF4E1ffd4C778c358f371B9a624b28386b4ecAB")
+            .add_network_str(MAINNET, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(GOERLI, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
+            .add_network_str(GNOSIS, "0xD49Fa4e610d489aB98008bC4424B9F7276fF34bA")
     });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
