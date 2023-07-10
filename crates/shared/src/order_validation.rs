@@ -18,9 +18,9 @@ use {
     },
     anyhow::{anyhow, Result},
     async_trait::async_trait,
-    contracts::{multisend, MultiSendCallOnly, WETH9},
+    contracts::{HooksTrampoline, WETH9},
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
-    ethcontract::{H160, H256, U256},
+    ethcontract::{Bytes, H160, H256, U256},
     model::{
         app_id::AppDataHash,
         interaction::InteractionData,
@@ -244,7 +244,7 @@ pub struct OrderValidator {
     validity_configuration: OrderValidPeriodConfiguration,
     signature_configuration: SignatureConfiguration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    multisend: MultiSendCallOnly,
+    hooks: HooksTrampoline,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
@@ -323,7 +323,7 @@ impl OrderValidator {
         validity_configuration: OrderValidPeriodConfiguration,
         signature_configuration: SignatureConfiguration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        multisend: MultiSendCallOnly,
+        hooks: HooksTrampoline,
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         signature_validator: Arc<dyn SignatureValidating>,
@@ -339,7 +339,7 @@ impl OrderValidator {
             validity_configuration,
             signature_configuration,
             bad_token_detector,
-            multisend,
+            hooks,
             quoter,
             balance_fetcher,
             signature_validator,
@@ -399,28 +399,27 @@ impl OrderValidator {
     }
 
     fn custom_interactions(&self, hooks: &Hooks) -> Interactions {
-        // TODO: encode gas limit for hooks, which requires a different
-        // trampoline contract than `MultiSendCallOnly`.
         let to_interactions = |hooks: &[Hook]| -> Vec<InteractionData> {
             if hooks.is_empty() {
                 vec![]
             } else {
                 vec![InteractionData {
-                    target: self.multisend.address(),
+                    target: self.hooks.address(),
                     value: U256::zero(),
                     call_data: self
-                        .multisend
-                        .multi_send(multisend::encode(
-                            &hooks
+                        .hooks
+                        .execute(
+                            hooks
                                 .iter()
-                                .map(|hook| multisend::Transaction {
-                                    op: multisend::Operation::Call,
-                                    to: hook.target,
-                                    value: U256::zero(),
-                                    data: hook.call_data.clone(),
+                                .map(|hook| {
+                                    (
+                                        hook.target,
+                                        Bytes(hook.call_data.clone()),
+                                        hook.gas_limit.into(),
+                                    )
                                 })
-                                .collect::<Vec<_>>(),
-                        ))
+                                .collect(),
+                        )
                         .tx
                         .data
                         .unwrap()
@@ -1089,7 +1088,7 @@ mod tests {
             validity_configuration,
             SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
@@ -1250,7 +1249,7 @@ mod tests {
             validity_configuration,
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
             Arc::new(MockSignatureValidating::new()),
@@ -1325,7 +1324,7 @@ mod tests {
 
         let max_limit_orders_per_user = 1;
 
-        let multisend = dummy_contract!(MultiSendCallOnly, [0xcf; 20]);
+        let hooks = dummy_contract!(HooksTrampoline, [0xcf; 20]);
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
@@ -1340,7 +1339,7 @@ mod tests {
             },
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            multisend.clone(),
+            hooks.clone(),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
@@ -1382,14 +1381,14 @@ mod tests {
                                 {
                                     "target": "0x1111111111111111111111111111111111111111",
                                     "callData": "0x112233",
-                                    "gasLimit": "0",
+                                    "gasLimit": "42",
                                 }
                             ],
                             "post": [
                                 {
                                     "target": "0x2222222222222222222222222222222222222222",
                                     "callData": "0x112233",
-                                    "gasLimit": "0",
+                                    "gasLimit": "42",
                                 }
                             ],
                         },
@@ -1401,16 +1400,15 @@ mod tests {
         };
         let order_hash = hashed_eip712_message(&domain_separator, &creation.data().hash_struct());
 
-        let interactions = vec![InteractionData {
-            target: multisend.address(),
+        let pre_interactions = vec![InteractionData {
+            target: hooks.address(),
             value: U256::zero(),
-            call_data: multisend
-                .multi_send(multisend::encode(&[multisend::Transaction {
-                    op: multisend::Operation::Call,
-                    to: addr!("1111111111111111111111111111111111111111"),
-                    value: U256::zero(),
-                    data: vec![0x11, 0x22, 0x33],
-                }]))
+            call_data: hooks
+                .execute(vec![(
+                    addr!("1111111111111111111111111111111111111111"),
+                    Bytes(vec![0x11, 0x22, 0x33]),
+                    42.into(),
+                )])
                 .tx
                 .data
                 .unwrap()
@@ -1424,7 +1422,7 @@ mod tests {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
-                interactions: interactions.clone(),
+                interactions: pre_interactions.clone(),
             }))
             .returning(|_| Ok(0u64));
 
@@ -1451,7 +1449,7 @@ mod tests {
                 signer: creation.from.unwrap(),
                 hash: order_hash,
                 signature: vec![1, 2, 3],
-                interactions: interactions.clone(),
+                interactions: pre_interactions.clone(),
             }))
             .returning(|_| Err(SignatureValidationError::Invalid));
 
@@ -1537,7 +1535,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             signature_validating,
@@ -1594,7 +1592,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1645,7 +1643,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1708,7 +1706,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1762,7 +1760,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1811,7 +1809,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1862,7 +1860,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1917,7 +1915,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -1966,7 +1964,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
@@ -2019,7 +2017,7 @@ mod tests {
             OrderValidPeriodConfiguration::any(),
             SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
-            dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+            dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
             Arc::new(signature_validator),
@@ -2079,7 +2077,7 @@ mod tests {
                 OrderValidPeriodConfiguration::any(),
                 SignatureConfiguration::all(),
                 Arc::new(bad_token_detector),
-                dummy_contract!(MultiSendCallOnly, [0xcf; 20]),
+                dummy_contract!(HooksTrampoline, [0xcf; 20]),
                 Arc::new(order_quoter),
                 Arc::new(balance_fetcher),
                 Arc::new(MockSignatureValidating::new()),

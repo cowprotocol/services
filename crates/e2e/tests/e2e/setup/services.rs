@@ -107,8 +107,8 @@ impl<'a> Services<'a> {
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
             format!(
-                "--multisend-contract-address={:?}",
-                self.contracts.multisend.address()
+                "--hooks-contract-address={:?}",
+                self.contracts.hooks.address()
             ),
         ]
         .into_iter()

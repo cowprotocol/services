@@ -168,11 +168,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub ipfs_pinata_auth: Option<String>,
 
-    /// Override the address of the `MultiCallSendOnly` contract used for
+    /// Override the address of the `HooksTrampoline` contract used for
     /// trampolining custom order interactions. If not specified, the default
     /// contract deployment for the current network will be used.
     #[clap(long, env)]
-    pub multisend_contract_address: Option<H160>,
+    pub hooks_contract_address: Option<H160>,
 
     /// Set the maximum size in bytes of order app data.
     #[clap(long, env, default_value = "8192")]
@@ -259,8 +259,8 @@ impl std::fmt::Display for Arguments {
         display_secret_option(f, "ipfs_pinata_auth", &self.ipfs_pinata_auth)?;
         display_option(
             f,
-            "multisend_contract_address",
-            &self.multisend_contract_address.map(|a| format!("{a:?}")),
+            "hooks_contract_address",
+            &self.hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         writeln!(f, "app_data_size_limit: {}", self.app_data_size_limit)?;
 
