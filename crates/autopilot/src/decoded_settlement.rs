@@ -540,14 +540,12 @@ pub fn decode_function_input(
 mod tests {
     use {
         super::*,
-        ethcontract::H160,
-        shared::ethrpc::Web3,
+        shared::addr,
         std::{collections::BTreeMap, str::FromStr},
     };
 
-    #[tokio::test]
-    #[ignore]
-    async fn total_surplus_test() {
+    #[test]
+    fn total_surplus_test() {
         // transaction hash:
         // 0x4ed25533ae840fa36951c670b1535265977491b8c4db38d6fe3b2cffe3dad298
 
@@ -561,9 +559,6 @@ mod tests {
 
         // surplus: 33350701806766732
 
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
         let call_data = hex_literal::hex!(
             "13d79a0b0000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000005e
             000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000f2d719407fdbeff09d87557abb7232601fd9f29000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000
@@ -604,22 +599,23 @@ mod tests {
         //calculate surplus
         let auction_external_prices = BTreeMap::from([
             (
-                H160::from_str("0x0f2d719407fdbeff09d87557abb7232601fd9f29").unwrap(),
+                addr!("0f2d719407fdbeff09d87557abb7232601fd9f29"),
                 U256::from(773763471505852u128),
             ),
             (
-                H160::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap(),
+                addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                 U256::from(596635491559324261891964928u128),
             ),
             (
-                H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                 U256::from(596703190526849003475173376u128),
             ),
             (
-                H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                addr!("f4d2888d29d722226fafa5d9b24f9164c092421e"),
                 U256::from(130282568907757u128),
             ),
         ]);
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
         let surplus = settlement.total_surplus(&external_prices).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
@@ -627,9 +623,8 @@ mod tests {
         assert_eq!(surplus, 33350701806766732.);
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn total_fees_test() {
+    #[test]
+    fn total_fees_test() {
         // transaction hash:
         // 0x4ed25533ae840fa36951c670b1535265977491b8c4db38d6fe3b2cffe3dad298
 
@@ -643,9 +638,6 @@ mod tests {
 
         // fees: 45377573614605000
 
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
         let call_data = hex_literal::hex!(
             "13d79a0b0000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000005e
             000000000000000000000000000000000000000000000000000000000000000040000000000000000000000000f2d719407fdbeff09d87557abb7232601fd9f29000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec70000000
@@ -686,22 +678,23 @@ mod tests {
         //calculate fees
         let auction_external_prices = BTreeMap::from([
             (
-                H160::from_str("0x0f2d719407fdbeff09d87557abb7232601fd9f29").unwrap(),
+                addr!("0f2d719407fdbeff09d87557abb7232601fd9f29"),
                 U256::from(773763471505852u128),
             ),
             (
-                H160::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap(),
+                addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                 U256::from(596635491559324261891964928u128),
             ),
             (
-                H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                 U256::from(596703190526849003475173376u128),
             ),
             (
-                H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                addr!("f4d2888d29d722226fafa5d9b24f9164c092421e"),
                 U256::from(130282568907757u128),
             ),
         ]);
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
@@ -712,7 +705,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
-                sell_token: H160::from_str("0xdac17f958d2ee523a2206206994597c13d831ec7").unwrap(),
+                sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                 buy_token: Default::default(),
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
@@ -723,7 +716,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
-                sell_token: H160::from_str("0xf4d2888d29d722226fafa5d9b24f9164c092421e").unwrap(),
+                sell_token: addr!("f4d2888d29d722226fafa5d9b24f9164c092421e"),
                 buy_token: Default::default(),
                 executed_amount: 5701912712048588025933u128.into(),
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
@@ -736,9 +729,8 @@ mod tests {
         assert_eq!(fees, 45377573614605000.);
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn total_fees_test_partial_limit_order() {
+    #[test]
+    fn total_fees_test_partial_limit_order() {
         // transaction hash:
         // 0x00e0e45ccc01b1bc99350444742cf5b4701d0c3eb85bc8c8f60a07e1e8cc4a36
 
@@ -750,9 +742,6 @@ mod tests {
 
         // fees: 3768095572151423
 
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
         let call_data = hex_literal::hex!(
             "13d79a0b0000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000003e
             00000000000000000000000000000000000000000000000000000000000000004000000000000000000000000ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce700000000
@@ -773,14 +762,15 @@ mod tests {
         //calculate fees
         let auction_external_prices = BTreeMap::from([
             (
-                H160::from_str("0xba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70").unwrap(),
+                addr!("ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70"),
                 U256::from(8302940),
             ),
             (
-                H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                 U256::from(1000000000000000000u128),
             ),
         ]);
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
@@ -791,8 +781,8 @@ mod tests {
                 kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(), // irrelevant
                 sell_amount: 14955083027u128.into(),            // irrelevant
-                sell_token: H160::from_str("0xba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70").unwrap(),
-                buy_token: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                sell_token: addr!("ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70"),
+                buy_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                 executed_amount: 134069619089011499167823218927u128.into(),
                 signature: hex::decode("f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd71514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c").unwrap(),
             },
@@ -804,9 +794,8 @@ mod tests {
         assert_eq!(fees, 3768095572151424.);
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn execution_amount_does_not_matter_for_fok_orders() {
+    #[test]
+    fn execution_amount_does_not_matter_for_fok_orders() {
         // transaction hash:
         // 0x
 
@@ -818,9 +807,6 @@ mod tests {
 
         // fees: 463182886014406361088
 
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
         let call_data = hex_literal::hex!(
             "13d79a0b
              0000000000000000000000000000000000000000000000000000000000000080
@@ -890,14 +876,15 @@ mod tests {
         //calculate fees
         let auction_external_prices = BTreeMap::from([
             (
-                H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 U256::from(1000000000000000000u128),
             ),
             (
-                H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
+                addr!("f88baf18fab7e330fa0c4f83949e23f52fececce"),
                 U256::from(29428019732094u128),
             ),
         ]);
+        let native_token = addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
@@ -908,8 +895,8 @@ mod tests {
                 kind: OrderKind::Sell,
                 buy_amount: 89238894792574185u128.into(),
                 sell_amount: 3026871740084629982950u128.into(),
-                sell_token: H160::from_str("0xf88baf18fab7e330fa0c4f83949e23f52fececce").unwrap(),
-                buy_token: H160::from_str("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee").unwrap(),
+                sell_token: addr!("f88baf18fab7e330fa0c4f83949e23f52fececce"),
+                buy_token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 executed_amount: 0.into(),
                 signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
             },
