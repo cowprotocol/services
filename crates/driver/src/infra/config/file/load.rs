@@ -63,6 +63,15 @@ pub async fn load(path: &Path) -> infra::Config {
                     pool_code: config.pool_code.into(),
                 })
                 .collect(),
+            swapr: config
+                .liquidity
+                .swapr
+                .into_iter()
+                .map(|config| liquidity::config::UniswapV2 {
+                    router: config.router.into(),
+                    pool_code: config.pool_code.into(),
+                })
+                .collect(),
             uniswap_v3: config
                 .liquidity
                 .uniswap_v3

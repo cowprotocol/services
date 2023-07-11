@@ -68,7 +68,7 @@ impl HistoricalWinners {
     /// Updates the metrics for the given trade.
     pub fn record_winner(&self, trade: Trade, winner: EstimatorIndex) {
         let mut lock = self.0.write().unwrap();
-        let mut competition = lock.entry(trade).or_default();
+        let competition = lock.entry(trade).or_default();
         competition.total_quotes += 1;
         let winner_index = competition
             .winners

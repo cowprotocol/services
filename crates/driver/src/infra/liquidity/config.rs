@@ -12,6 +12,9 @@ pub struct Config {
     /// for.
     pub uniswap_v2: Vec<UniswapV2>,
 
+    /// The collection of Swapr compatible exchanges to fetch liquidity for.
+    pub swapr: Vec<UniswapV2>,
+
     /// The collection of Uniswap V3 compatible exchanges to fetch liquidity
     /// for.
     pub uniswap_v3: Vec<UniswapV3>,

@@ -169,7 +169,8 @@ fn to_boundary_auction(
                     amount: order.fee().amount,
                     token: order.fee().token.0,
                 },
-                cost: gas.gp_order_cost(),
+                // TODONOW
+                cost: gas.gp_order_cost(0.into()),
                 is_liquidity_order: order.class == order::Class::Liquidity,
                 is_mature: true,
                 mandatory: false,

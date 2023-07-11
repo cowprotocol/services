@@ -215,6 +215,10 @@ struct LiquidityConfig {
     #[serde(default)]
     uniswap_v2: Vec<UniswapV2Config>,
 
+    /// Liquidity provided by a Swapr compatible contract.
+    #[serde(default)]
+    swapr: Vec<UniswapV2Config>,
+
     /// Liquidity provided by a Uniswap V3 compatible contract.
     #[serde(default)]
     uniswap_v3: Vec<UniswapV3Config>,
