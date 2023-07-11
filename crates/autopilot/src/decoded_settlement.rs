@@ -192,6 +192,11 @@ impl DecodedSettlement {
 
         // Try decoding calldata with up to 32 bytes of metadata since we might not
         // know how many bytes of call data get added by the solver.
+        // Although `decode_input()` of the `ethabi` crate would know exactly how many
+        // additional bytes were part of the call data it doesn't return that
+        // number. That's why we parse the call data assuming the most number of
+        // supported metadata bytes and reduce until we finally find a
+        // configuration that actually deserializes.
         for meta_data_len in (1..=Self::MAX_METADATA_LEN).rev() {
             if let Ok(decoded) = Self::try_new(without_selector, function, meta_data_len) {
                 return Ok(decoded);
