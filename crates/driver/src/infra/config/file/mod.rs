@@ -203,51 +203,106 @@ struct TenderlyConfig {
     save_if_fails: bool,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct LiquidityConfig {
+pub struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
     #[serde(default)]
-    base_tokens: Vec<eth::H160>,
+    pub base_tokens: Vec<eth::H160>,
 
     /// Liquidity provided by a Uniswap V2 compatible contract.
     #[serde(default)]
-    uniswap_v2: Vec<UniswapV2Config>,
+    pub uniswap_v2: Vec<UniswapV2Config>,
 
     /// Liquidity provided by a Swapr compatible contract.
     #[serde(default)]
-    swapr: Vec<UniswapV2Config>,
+    pub swapr: Vec<SwaprConfig>,
 
     /// Liquidity provided by a Uniswap V3 compatible contract.
     #[serde(default)]
-    uniswap_v3: Vec<UniswapV3Config>,
+    pub uniswap_v3: Vec<UniswapV3Config>,
 }
 
-// TODO it would be nice to provide presets so that you can write:
-// ```
-// [[liquidity.uniswap-v2]]
-// preset = "uniswap"
-//
-// [[liquidity.uniswap-v2]]
-// preset = "sushiswap"
-// ```
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct UniswapV2Config {
-    /// The address of the Uniswap V2 compatible router contract.
-    router: eth::H160,
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum UniswapV2Config {
+    #[serde(rename_all = "kebab-case")]
+    Preset { preset: UniswapV2Preset },
 
-    /// The digest of the pool initialization code.
-    pool_code: eth::H256,
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        /// The address of the Uniswap V2 compatible router contract.
+        router: eth::H160,
+
+        /// The digest of the pool initialization code.
+        pool_code: eth::H256,
+    },
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-struct UniswapV3Config {
-    /// Addresses of Uniswap V3 compatible router contracts.
-    router: eth::H160,
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UniswapV2Preset {
+    UniswapV2,
+    SushiSwap,
+    Honeyswap,
+    Baoswap,
+    PancakeSwap,
+}
 
-    /// How many pools to initialize during start up.
-    max_pools_to_initialize: u64,
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum SwaprConfig {
+    #[serde(rename_all = "kebab-case")]
+    Preset { preset: SwaprPreset },
+
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        /// The address of the Swapr compatible router contract.
+        router: eth::H160,
+
+        /// The digest of the pool initialization code.
+        pool_code: eth::H256,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum SwaprPreset {
+    Swapr,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum UniswapV3Config {
+    #[serde(rename_all = "kebab-case")]
+    Preset {
+        preset: UniswapV3Preset,
+
+        /// How many pools to initialize during start up.
+        #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
+        max_pools_to_initialize: u64,
+    },
+
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        /// Addresses of Uniswap V3 compatible router contracts.
+        router: eth::H160,
+
+        /// How many pools to initialize during start up.
+        #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
+        max_pools_to_initialize: u64,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum UniswapV3Preset {
+    UniswapV3,
+}
+
+mod uniswap_v3 {
+    pub fn default_max_pools_to_initialize() -> u64 {
+        50
+    }
 }

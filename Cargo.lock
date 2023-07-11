@@ -118,7 +118,7 @@ checksum = "7de8ce5e0f9f8d88245311066a578d72b7af3e7088f32783804676302df237e4"
 name = "app-data-hash"
 version = "0.1.0"
 dependencies = [
- "hex-literal",
+ "hex-literal 0.3.4",
  "tiny-keccak",
 ]
 
@@ -227,7 +227,7 @@ dependencies = [
  "gas-estimation",
  "global-metrics",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "itertools",
  "maplit",
  "mockall",
@@ -1426,7 +1426,7 @@ dependencies = [
  "const_format",
  "futures",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "sqlx",
  "tokio",
 ]
@@ -1531,6 +1531,7 @@ dependencies = [
  "gas-estimation",
  "global-metrics",
  "hex",
+ "hex-literal 0.4.1",
  "hyper",
  "itertools",
  "maplit",
@@ -1577,7 +1578,7 @@ dependencies = [
  "ethcontract",
  "futures",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "model",
  "orderbook",
  "rand",
@@ -2223,6 +2224,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ebdb29d2ea9ed0083cd8cece49bbd968021bd99b0849edb4a9a7ee0fdf6a4e0"
 
 [[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+
+[[package]]
 name = "hkdf"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2746,7 +2753,7 @@ dependencies = [
  "chrono",
  "derivative",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "lazy_static",
  "maplit",
  "num",
@@ -2993,7 +3000,7 @@ dependencies = [
  "gas-estimation",
  "global-metrics",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "maplit",
  "mockall",
  "model",
@@ -3908,7 +3915,7 @@ dependencies = [
  "gas-estimation",
  "global-metrics",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "itertools",
  "lazy_static",
  "lru",
@@ -4017,7 +4024,7 @@ dependencies = [
  "gas-estimation",
  "global-metrics",
  "hex",
- "hex-literal",
+ "hex-literal 0.3.4",
  "itertools",
  "jsonrpc-core",
  "lazy_static",
@@ -4320,7 +4327,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "ethcontract-mock",
- "hex-literal",
+ "hex-literal 0.3.4",
 ]
 
 [[package]]

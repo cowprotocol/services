@@ -24,14 +24,23 @@ base-tokens = [
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
 ]
 
-# [[liquidity.uniswap-v2]] # Mainnet Uniswap V2 configuration
+# [[liquidity.uniswap-v2]] # Uniswap V2 configuration
+# preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
+
+# [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
 # router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 # pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
 
-# [[liquidity.swapr]] # Mainnet Swapr configuration
+# [[liquidity.swapr]] # Swapr configuration
+# preset = "swapr"
+
+# [[liquidity.swapr]] # Custom Swapr configuration
 # router = "0xb9960d9bca016e9748be75dd52f02188b9d0829f"
 # pool-code = "0xd306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776"
 
-# [[liquidity.uniswap-v2]] # Can specify other Uniswap V2 clones as well, like SushiSwap
-# router = "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F"
-# pool-code = "0xe18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303"
+# [[liquidity.uniswap-v2]] # Uniswap V2 configuration
+# preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
+
+# [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
+# router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+# pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"

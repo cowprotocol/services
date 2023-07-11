@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::eth,
-        infra::{self, config::file, liquidity, mempool, simulator, solver},
-    },
+    crate::infra::{self, config::file, mempool, simulator, solver},
     futures::future::join_all,
     std::path::Path,
     tokio::fs,
@@ -47,41 +44,7 @@ pub async fn load(path: &Path) -> infra::Config {
             }
         }))
         .await,
-        liquidity: liquidity::Config {
-            base_tokens: config
-                .liquidity
-                .base_tokens
-                .into_iter()
-                .map(eth::TokenAddress::from)
-                .collect(),
-            uniswap_v2: config
-                .liquidity
-                .uniswap_v2
-                .into_iter()
-                .map(|config| liquidity::config::UniswapV2 {
-                    router: config.router.into(),
-                    pool_code: config.pool_code.into(),
-                })
-                .collect(),
-            swapr: config
-                .liquidity
-                .swapr
-                .into_iter()
-                .map(|config| liquidity::config::UniswapV2 {
-                    router: config.router.into(),
-                    pool_code: config.pool_code.into(),
-                })
-                .collect(),
-            uniswap_v3: config
-                .liquidity
-                .uniswap_v3
-                .into_iter()
-                .map(|config| liquidity::config::UniswapV3 {
-                    router: config.router.into(),
-                    max_pools_to_initialize: config.max_pools_to_initialize,
-                })
-                .collect(),
-        },
+        liquidity: config.liquidity,
         mempools: config
             .submission
             .mempools

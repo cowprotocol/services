@@ -37,12 +37,15 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
 pub async fn collector(
     eth: &Ethereum,
     blocks: &CurrentBlockStream,
-    config: &infra::liquidity::config::UniswapV2,
+    config: &infra::liquidity::config::Swapr,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     boundary::liquidity::uniswap::v2::collector_with_reader(
         eth,
         blocks,
-        config,
+        &infra::liquidity::config::UniswapV2 {
+            router: config.router,
+            pool_code: config.pool_code,
+        },
         |web3, pair_provider| {
             SwaprPoolReader(DefaultPoolReader {
                 web3,
