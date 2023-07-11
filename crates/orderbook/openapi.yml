@@ -53,7 +53,7 @@ paths:
         This is a *best effort* cancellation, and might not prevent solvers from
         settling the orders (if the order is part of an in-flight settlement
         transaction for example). Authentication must be provided by an
-        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) 
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712)
         signature of an `OrderCancellations(bytes[] orderUids)` message.
       requestBody:
         description: Signed `OrderCancellations`.
@@ -98,7 +98,7 @@ paths:
       summary: Cancel an order by marking it invalid with a timestamp.
       description: |
         The successful deletion might not prevent solvers from settling the order.
-        Authentication must be provided by providing an 
+        Authentication must be provided by providing an
         [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of an
         `OrderCancellation(bytes orderUid)` message.
       parameters:
@@ -209,11 +209,11 @@ paths:
         200:
           description: |
             ### If `owner` is specified:
-            
+
             Return all trades related to that `owner`.
-            
+
             ### If `orderUid` is specified:
-            
+
             Return all trades related to that `orderUid`. Given that an order may be partially
             fillable, it is possible that an individual order may have *multiple* trades.
           content:
@@ -227,7 +227,7 @@ paths:
       summary: Get the current batch auction.
       description: |
         The current batch auction that solvers should be solving right now. This includes:
-        
+
         * A list of solvable orders.
         * The block on which the batch was created.
         * Prices for all tokens being traded (used for objective value computation).
@@ -306,8 +306,8 @@ paths:
     post:
       summary: Quote a price and fee for the specified order parameters.
       description: |
-        Given a partial order compute the minimum fee and a price estimate for the order. Return a 
-        full order that can be used directly for signing, and with an included signature, passed 
+        Given a partial order compute the minimum fee and a price estimate for the order. Return a
+        full order that can be used directly for signing, and with an included signature, passed
         directly to the order creation endpoint.
       requestBody:
         description: The order parameters to compute a quote for.
@@ -409,7 +409,7 @@ paths:
       summary: Get the total surplus earned by the user. [UNSTABLE]
       description: |
         ### Caution
-        
+
         This endpoint is under active development and should NOT be considered stable.
       parameters:
         - in: path
@@ -483,7 +483,7 @@ components:
         userValidTo:
           description: |
             Describes the `validTo` of an order ethflow order.
-            
+
             **NOTE**: For ethflow orders, the `validTo` encoded in the smart
             contract is `type(uint256).max`.
           type: integer
@@ -509,7 +509,7 @@ components:
     PriceQuality:
       description: |
         How good should the price estimate be?
-        
+
         **NOTE**: Orders are supposed to be created from `optimal` price estimates.
       type: string
       enum: [fast, optimal]
@@ -648,7 +648,7 @@ components:
           nullable: true
         appData:
           description: |
-            This field comes in two forms for backward compatibility. The first form (`appDataHash`) 
+            This field comes in two forms for backward compatibility. The first form (`appDataHash`)
             will eventually stop being accepted.
           anyOf:
             - $ref: "#/components/schemas/AppDataHash"
@@ -668,12 +668,23 @@ components:
                 be set to the `keccak256` hash of the UTF-8 encoded bytes of this string. You must
                 ensure that the signature that is part of this request indeed signed a smart contract
                 order with the `appData` field set appropriately. If this isn't the case, signature
-                verification will fail. For easier debugging it is recommended to additionally set the 
+                verification will fail. For easier debugging it is recommended to additionally set the
                 `appDataHash` field.
 
                 The field must be the encoding of a valid JSON object. The JSON object can contain
                 arbitrary application specific data (JSON key values). The optional key `backend` is
                 special. It **MUST** conform to the schema documented in `BackendAppData`.
+
+                The intended use of the other keys of the object is follow the standardized format
+                defined [here](https://github.com/cowprotocol/app-data). Example:
+
+                ```json
+                {
+                  "version": "0.7.0",
+                  "appCode": "YOUR_APP_CODE",
+                  "metadata": {}
+                }
+                ```
 
                 The total byte size of this field's UTF-8 encoded bytes is limited to 1000.
               type: string
@@ -759,7 +770,7 @@ components:
             placed with the intent of actively getting traded. Instead they facilitate the
             trade of normal orders by allowing them to be matched against liquidity orders which
             uses less gas and can have better prices than external liquidity.
-            
+
             As such liquidity orders will only be used in order to improve settlement of normal
             orders. They should not be expected to be traded otherwise and should not expect to get
             surplus.
@@ -770,9 +781,9 @@ components:
         onchainUser:
           description: |
             This represents the actual trader of an on-chain order.
-            
+
             ### ethflow orders
-            
+
             In this case, the `owner` would be the `EthFlow` contract and *not* the actual trader.
           allOf:
             - $ref: "#/components/schemas/Address"
@@ -881,7 +892,7 @@ components:
         - signingScheme
     OrderCancellation:
       description: |
-        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of struct 
+        [EIP-712](https://eips.ethereum.org/EIPS/eip-712) signature of struct
         `OrderCancellation(bytes orderUid)` from the order's owner.
       type: object
       properties:
@@ -952,7 +963,7 @@ components:
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
-        Bytes 0..32 are the order digest, bytes 30..52 the owner address and bytes 
+        Bytes 0..32 are the order digest, bytes 30..52 the owner address and bytes
         52..56 the expiry (`validTo`) as a `uint32` unix epoch timestamp.
       type: string
       # ENS order
@@ -1308,10 +1319,10 @@ components:
             - $ref: "#/components/schemas/CallData"
           description: |
             Full `calldata` as generated from the original solver output.
-            
+
             It can be different from the executed transaction if part of the settlements are internalised
             (use internal liquidity in lieu of trading against on-chain liquidity).
-            
+
             This field is omitted in case it coincides with `callData`.
     VersionResponse:
       description: |
