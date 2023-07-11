@@ -17,8 +17,8 @@ impl GasModel {
         }
     }
 
-    pub fn gp_order_cost(&self, additional_gas: U256) -> TokenAmount {
-        self.cost_for_gas(additional_gas.saturating_add(GAS_PER_ORDER.into()))
+    pub fn gp_order_cost(&self) -> TokenAmount {
+        self.cost_for_gas(GAS_PER_ORDER.into())
     }
 
     pub fn zeroex_order_cost(&self) -> TokenAmount {

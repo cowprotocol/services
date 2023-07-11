@@ -247,8 +247,7 @@ fn order_models(
             }
 
             let cost = match order.exchange {
-                // TODONOW
-                Exchange::GnosisProtocol => gas_model.gp_order_cost(0.into()),
+                Exchange::GnosisProtocol => gas_model.gp_order_cost(),
                 Exchange::ZeroEx => gas_model.zeroex_order_cost(),
             };
 
