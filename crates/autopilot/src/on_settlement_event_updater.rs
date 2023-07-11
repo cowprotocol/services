@@ -113,6 +113,9 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
+        // 1. decode settlement
+        // 2. if it has additional data use that as the auction_id
+        // 3. else assume we should find the id using the old way
         let auction_id = self.db.get_auction_id(tx_from, tx_nonce).await?;
         let mut update = SettlementUpdate {
             block_number: event.block_number,

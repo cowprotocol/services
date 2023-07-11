@@ -47,6 +47,10 @@ pub struct DecodedSettlement {
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<DecodedTrade>,
     pub interactions: [Vec<DecodedInteraction>; 3],
+    /// Data that was appended to the regular call data of the `settle()` call
+    /// as a form of on-chain meta data. This gets used to associated a
+    /// settlement with an auction.
+    pub metadata: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -125,32 +129,6 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for DecodedInteraction {
     }
 }
 
-impl From<DecodedSettlementTokenized> for DecodedSettlement {
-    fn from((tokens, clearing_prices, trades, interactions): DecodedSettlementTokenized) -> Self {
-        DecodedSettlement {
-            tokens,
-            clearing_prices,
-            trades: trades
-                .into_iter()
-                .map(|trade| DecodedTrade {
-                    sell_token_index: trade.0,
-                    buy_token_index: trade.1,
-                    receiver: trade.2,
-                    sell_amount: trade.3,
-                    buy_amount: trade.4,
-                    valid_to: trade.5,
-                    app_data: trade.6,
-                    fee_amount: trade.7,
-                    flags: trade.8.into(),
-                    executed_amount: trade.9,
-                    signature: trade.10,
-                })
-                .collect(),
-            interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
-        }
-    }
-}
-
 /// It's possible that the same order gets filled in portions across multiple or
 /// even the same settlement. This struct describes the details of such a fill.
 /// Note that most orders only have a single fill as they are fill-or-kill
@@ -202,11 +180,55 @@ impl DecodedSettlement {
             .abi
             .function("settle")
             .unwrap();
-        let decoded_input = decode_function_input(function, input)?;
-        <DecodedSettlementTokenized>::from_token(Token::Tuple(decoded_input))
-            .map(Into::into)
-            .context("failed to decode settlement")
-            .map_err(From::from)
+        let without_selector = input
+            .strip_prefix(&function.selector())
+            .ok_or(DecodingError::InvalidSelector)?;
+
+        // Try decoding calldata with up to 32 bytes of metadata since we might not
+        // know how many bytes of call data get added by the solver.
+        for meta_data_len in (1..=32).rev() {
+            if let Ok(decoded) = Self::try_new(without_selector, function, meta_data_len) {
+                return Ok(decoded);
+            }
+        }
+        // Handle this case separately to return a detailed error.
+        Self::try_new(without_selector, function, 0).map_err(Into::into)
+    }
+
+    fn try_new(data: &[u8], function: &Function, meta_data_len: usize) -> Result<Self> {
+        if meta_data_len > data.len() {
+            anyhow::bail!("not enough call data to strip meta data ({meta_data_len} bytes)");
+        }
+        let (calldata, metadata) = data.split_at(data.len() - meta_data_len);
+        let tokenized = function
+            .decode_input(calldata)
+            .context("tokenizing settlement calldata failed")?;
+        let decoded = <DecodedSettlementTokenized>::from_token(Token::Tuple(tokenized))
+            .context("decoding tokenized settlement calldata failed")?;
+
+        let (tokens, clearing_prices, trades, interactions) = decoded;
+        Ok(Self {
+            tokens,
+            clearing_prices,
+            trades: trades
+                .into_iter()
+                .map(|trade| DecodedTrade {
+                    sell_token_index: trade.0,
+                    buy_token_index: trade.1,
+                    receiver: trade.2,
+                    sell_amount: trade.3,
+                    buy_amount: trade.4,
+                    valid_to: trade.5,
+                    app_data: trade.6,
+                    fee_amount: trade.7,
+                    flags: trade.8.into(),
+                    executed_amount: trade.9,
+                    signature: trade.10,
+                })
+                .collect(),
+            interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
+            metadata: metadata.into(),
+        })
     }
 
     /// Returns the total surplus denominated in the native asset for the
@@ -592,7 +614,7 @@ mod tests {
             000000000000000000000000000000044a9059cbb00000000000000000000000005e3734ff2b3127e01070eb225afe910525959ad00000000000000000000000000000000000000000000000000000001cf862866000000000000000000000000000000000000000000000000000000000000000000000000000000001d94bedcb3641ba
             060091ed090d28bbdccdb7f1d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000006420cf38cc000000000000000000000000000000000000000
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-            000000000"
+            000000000123432"
         );
         let settlement = DecodedSettlement::new(&call_data).unwrap();
 
