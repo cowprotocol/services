@@ -43,4 +43,9 @@ impl Fee {
         }
         Some(Self(bps))
     }
+
+    /// Returns the fee in basis points.
+    pub fn bps(&self) -> u32 {
+        self.0
+    }
 }

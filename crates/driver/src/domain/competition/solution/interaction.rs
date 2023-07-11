@@ -50,7 +50,7 @@ impl Interaction {
                     liquidity::Kind::UniswapV3(pool) => pool.router.into(),
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
                     liquidity::Kind::BalancerV2Weighted(_) => todo!(),
-                    liquidity::Kind::Swapr(_) => todo!(),
+                    liquidity::Kind::Swapr(pool) => pool.base.router.into(),
                     liquidity::Kind::ZeroEx(_) => todo!(),
                 };
                 vec![eth::Allowance {
