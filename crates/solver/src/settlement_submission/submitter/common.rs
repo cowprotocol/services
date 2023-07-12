@@ -2,7 +2,6 @@ use {
     super::super::submitter::TransactionHandle,
     anyhow::Result,
     ethcontract::transaction::{Transaction, TransactionBuilder},
-    futures::FutureExt,
     shared::ethrpc::{Web3, Web3Transport},
     web3::{api::Namespace, types::Bytes},
 };
@@ -27,7 +26,7 @@ impl PrivateNetwork {
         &self,
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
-        let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
+        let (raw_signed_transaction, tx_hash) = match tx.build().await? {
             Transaction::Request(_) => unreachable!("verified offline account was used"),
             Transaction::Raw { bytes, hash } => (bytes.0, hash),
         };
