@@ -19,22 +19,18 @@ pub struct Addresses {
 
 impl Contracts {
     pub(super) fn new(web3: &DynWeb3, network_id: &eth::NetworkId, addresses: Addresses) -> Self {
-        let address = addresses.settlement.map(Into::into).unwrap_or_else(|| {
-            contracts::GPv2Settlement::raw_contract()
-                .networks
-                .get(network_id.as_str())
-                .unwrap()
-                .address
-        });
+        let address = addresses
+            .settlement
+            .or_else(|| deployment_address(contracts::GPv2Settlement::raw_contract(), network_id))
+            .unwrap()
+            .into();
         let settlement = contracts::GPv2Settlement::at(web3, address);
 
-        let address = addresses.weth.map(Into::into).unwrap_or_else(|| {
-            contracts::WETH9::raw_contract()
-                .networks
-                .get(network_id.as_str())
-                .unwrap()
-                .address
-        });
+        let address = addresses
+            .weth
+            .or_else(|| deployment_address(contracts::WETH9::raw_contract(), network_id))
+            .unwrap()
+            .into();
         let weth = contracts::WETH9::at(web3, address);
         Self { settlement, weth }
     }
@@ -50,6 +46,15 @@ impl Contracts {
     pub fn weth_address(&self) -> eth::WethAddress {
         self.weth.address().into()
     }
+}
+
+/// Returns the address of a contract for the specified network, or `None` if
+/// there is no known deployment for the contract on that network.
+pub fn deployment_address(
+    contract: &ethcontract::Contract,
+    network_id: &eth::NetworkId,
+) -> Option<eth::ContractAddress> {
+    Some(contract.networks.get(network_id.as_str())?.address.into())
 }
 
 /// A trait for initializing contract instances with dynamic addresses.

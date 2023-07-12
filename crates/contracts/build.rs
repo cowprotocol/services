@@ -253,9 +253,6 @@ fn main() {
         )
     });
     generate_contract("BalancerV2LiquidityBootstrappingPool");
-    generate_contract_with_config("BaoswapFactory", |builder| {
-        builder.add_network_str(GNOSIS, "0x45DE240fbE2077dd3e711299538A09854FAE9c9b")
-    });
     generate_contract_with_config("BaoswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x6093AeBAC87d62b1A5a4cEec91204e35020E38bE")
     });
@@ -295,9 +292,6 @@ fn main() {
         builder.add_method_alias("isValidSignature(bytes,bytes)", "is_valid_signature_legacy")
     });
     generate_contract("GnosisSafeProxy");
-    generate_contract_with_config("HoneyswapFactory", |builder| {
-        builder.add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
-    });
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
@@ -311,22 +305,14 @@ fn main() {
     generate_contract("IUniswapLikePair");
     // EIP-1271 contract - SignatureValidator
     generate_contract("ERC1271SignatureValidator");
-    generate_contract_with_config("SushiSwapFactory", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
-            .add_network_str(GOERLI, "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
-            .add_network_str(GNOSIS, "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
+    generate_contract_with_config("PancakeRouter", |builder| {
+        builder.add_network_str(MAINNET, "0xEfF92A263d31888d860bD50809A8D171709b7b1c")
     });
     generate_contract_with_config("SushiSwapRouter", |builder| {
         builder
             .add_network_str(MAINNET, "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
             .add_network_str(GOERLI, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str(GNOSIS, "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
-    });
-    generate_contract_with_config("SwaprFactory", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xd34971BaB6E5E356fd250715F5dE0492BB070452")
-            .add_network_str(GNOSIS, "0x5D48C95AdfFD4B40c1AAADc4e08fc44117E02179")
     });
     generate_contract_with_config("SwaprRouter", |builder| {
         builder

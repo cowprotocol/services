@@ -29,7 +29,6 @@ include_contracts! {
     BalancerV2WeightedPoolFactory;
     BalancerV2WeightedPoolFactoryV3;
     BalancerV2WeightedPoolFactoryV4;
-    BaoswapFactory;
     BaoswapRouter;
     CoWSwapEthFlow;
     CoWSwapOnchainOrders;
@@ -43,7 +42,6 @@ include_contracts! {
     GnosisSafe;
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
-    HoneyswapFactory;
     HoneyswapRouter;
     HooksTrampoline;
     ISwaprPair;
@@ -51,10 +49,9 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    PancakeRouter;
     SolverTrampoline;
-    SushiSwapFactory;
     SushiSwapRouter;
-    SwaprFactory;
     SwaprRouter;
     UniswapV2Factory;
     UniswapV2Router02;
@@ -142,7 +139,6 @@ mod tests {
 
         for network in &[MAINNET, GOERLI, GNOSIS] {
             assert_has_deployment_address!(GPv2Settlement for *network);
-            assert_has_deployment_address!(SushiSwapFactory for *network);
             assert_has_deployment_address!(SushiSwapRouter for *network);
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(CowProtocolToken for *network);
@@ -159,20 +155,18 @@ mod tests {
             assert_has_deployment_address!(IUniswapV3Factory for *network);
         }
 
-        // only gnosis
-        assert_has_deployment_address!(BaoswapFactory for GNOSIS);
-        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
-        assert_has_deployment_address!(HoneyswapFactory for GNOSIS);
-        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
-        assert_has_deployment_address!(SwaprFactory for GNOSIS);
-        assert_has_deployment_address!(SwaprRouter for GNOSIS);
-
         // only mainnet
         assert_has_deployment_address!(BalancerV2StablePoolFactory for MAINNET);
         assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for MAINNET);
         assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for MAINNET);
         assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for MAINNET);
+        assert_has_deployment_address!(PancakeRouter for MAINNET);
         assert_has_deployment_address!(IZeroEx for MAINNET);
+
+        // only gnosis
+        assert_has_deployment_address!(BaoswapRouter for GNOSIS);
+        assert_has_deployment_address!(HoneyswapRouter for GNOSIS);
+        assert_has_deployment_address!(SwaprRouter for GNOSIS);
     }
 
     #[test]

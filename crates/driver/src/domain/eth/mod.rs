@@ -320,6 +320,12 @@ impl From<CodeDigest> for H256 {
     }
 }
 
+impl From<[u8; 32]> for CodeDigest {
+    fn from(value: [u8; 32]) -> Self {
+        Self(H256(value))
+    }
+}
+
 impl From<CodeDigest> for [u8; 32] {
     fn from(value: CodeDigest) -> Self {
         value.0 .0
