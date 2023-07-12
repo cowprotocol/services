@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary,
+        boundary::{self, Result},
         domain::{
             eth,
             liquidity::{
@@ -10,7 +10,6 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
-    bigdecimal::ToPrimitive,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     itertools::Itertools,
     shared::{
@@ -33,40 +32,43 @@ use {
     },
 };
 
-pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Option<liquidity::Liquidity> {
+pub fn to_domain(id: liquidity::Id, pool: ConcentratedLiquidity) -> Result<liquidity::Liquidity> {
+    anyhow::ensure!(
+        pool.pool.tokens.len() == 2,
+        "Uniswap V3 pools should have exactly 2 tokens",
+    );
+
     let handler = pool
         .settlement_handling
         .as_any()
         .downcast_ref::<uniswap_v3::UniswapV3SettlementHandler>()
         .expect("downcast uniswap settlement handler");
 
-    let liquidity = liquidity::Liquidity {
+    Ok(liquidity::Liquidity {
         id,
         gas: eth::Gas(pool.pool.gas_stats.mean_gas),
         kind: liquidity::Kind::UniswapV3(Pool {
             router: handler.inner.router.address().into(),
             address: pool.pool.address.into(),
             tokens: liquidity::TokenPair::new(
-                pool.pool.tokens.get(0)?.id.into(),
-                pool.pool.tokens.get(1)?.id.into(),
+                pool.pool.tokens[0].id.into(),
+                pool.pool.tokens[1].id.into(),
             )?,
             sqrt_price: SqrtPrice(pool.pool.state.sqrt_price),
             liquidity: Liquidity(pool.pool.state.liquidity.as_u128()),
-            tick: Tick(pool.pool.state.tick.to_i32()?),
+            tick: Tick(pool.pool.state.tick.try_into()?),
             liquidity_net: pool
                 .pool
                 .state
                 .liquidity_net
                 .iter()
-                .map(|(key, value)| -> Option<_> {
-                    Some((Tick(key.to_i32()?), LiquidityNet(value.to_i128()?)))
+                .map(|(key, value)| -> Result<_> {
+                    Ok((Tick(key.try_into()?), LiquidityNet(value.try_into()?)))
                 })
-                .collect::<Option<BTreeMap<_, _>>>()?,
+                .collect::<Result<BTreeMap<_, _>>>()?,
             fee: Fee(pool.pool.state.fee),
         }),
-    };
-
-    Some(liquidity)
+    })
 }
 
 pub fn to_interaction(

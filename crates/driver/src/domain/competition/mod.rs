@@ -55,7 +55,7 @@ impl Competition {
                     .iter()
                     .filter_map(|order| match order.kind {
                         order::Kind::Market | order::Kind::Limit { .. } => {
-                            liquidity::TokenPair::new(order.sell.token, order.buy.token)
+                            liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
                         }
                         order::Kind::Liquidity => None,
                     })

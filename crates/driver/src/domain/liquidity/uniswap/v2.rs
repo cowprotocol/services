@@ -48,13 +48,13 @@ impl Pool {
 pub struct Reserves(eth::Asset, eth::Asset);
 
 impl Reserves {
-    /// Creates new Uniswap V2 token reserves, returns `None` if the specified
+    /// Creates new Uniswap V2 token reserves, returns `Err` if the specified
     /// token addresses are equal.
-    pub fn new(a: eth::Asset, b: eth::Asset) -> Option<Self> {
+    pub fn new(a: eth::Asset, b: eth::Asset) -> Result<Self, InvalidReserves> {
         match a.token.cmp(&b.token) {
-            Ordering::Less => Some(Self(a, b)),
-            Ordering::Equal => None,
-            Ordering::Greater => Some(Self(b, a)),
+            Ordering::Less => Ok(Self(a, b)),
+            Ordering::Equal => Err(InvalidReserves),
+            Ordering::Greater => Ok(Self(b, a)),
         }
     }
 
@@ -77,3 +77,7 @@ impl IntoIterator for Reserves {
         [self.0, self.1].into_iter()
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid Uniswap V2 token reserves; assets cannot have the same token address")]
+pub struct InvalidReserves;

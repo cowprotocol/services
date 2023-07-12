@@ -147,6 +147,9 @@ impl Fetcher {
                     Liquidity::LimitOrder(_) => unreachable!(),
                     Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),
                 }
+                // Ignore "bad" liquidity - this allows the driver to continue
+                // solving with the other good stuff.
+                .ok()
             })
             .collect();
         Ok(liquidity)

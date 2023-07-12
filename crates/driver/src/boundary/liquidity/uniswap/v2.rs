@@ -1,13 +1,12 @@
 use {
     crate::{
-        boundary,
+        boundary::{self, Result},
         domain::{
             eth,
             liquidity::{self, uniswap},
         },
         infra::{self, blockchain::Ethereum},
     },
-    anyhow::Result,
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
     futures::StreamExt,
@@ -35,13 +34,13 @@ use {
     tracing::Instrument,
 };
 
-pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Option<liquidity::Liquidity> {
+pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     assert!(
         *pool.fee.numer() == 3 && *pool.fee.denom() == 1000,
         "uniswap pools have constant fees",
     );
 
-    Some(liquidity::Liquidity {
+    Ok(liquidity::Liquidity {
         id,
         gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
         kind: liquidity::Kind::UniswapV2(to_domain_pool(pool)?),
@@ -60,15 +59,16 @@ pub fn router(pool: &ConstantProductOrder) -> eth::ContractAddress {
 
 pub(in crate::boundary::liquidity) fn to_domain_pool(
     pool: ConstantProductOrder,
-) -> Option<uniswap::v2::Pool> {
+) -> Result<uniswap::v2::Pool> {
     // Trading on Uniswap V2 pools where the reserves overflows `uint112`s does
-    // not work, so filter these pools out.
-    let max = 2_u128.pow(112) - 1;
-    if pool.reserves.0 > max || pool.reserves.1 > max {
-        return None;
-    }
+    // not work, so error if the reserves exceed this maximum.
+    let limit = 2_u128.pow(112);
+    anyhow::ensure!(
+        pool.reserves.0 < limit && pool.reserves.1 < limit,
+        "pool reserves overflow uint112",
+    );
 
-    Some(liquidity::uniswap::v2::Pool {
+    Ok(liquidity::uniswap::v2::Pool {
         address: pool.address.into(),
         router: router(&pool),
         reserves: liquidity::uniswap::v2::Reserves::new(

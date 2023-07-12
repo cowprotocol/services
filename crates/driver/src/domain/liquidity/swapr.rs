@@ -37,11 +37,11 @@ impl Pool {
 impl Fee {
     /// Creates a new fee from the specified basis points. Returns `None` for
     /// invalid fee values (i.e. outside the range `[0, 1000]`).
-    pub fn new(bps: u32) -> Option<Self> {
+    pub fn new(bps: u32) -> Result<Self, InvalidFee> {
         if !(0..=1000).contains(&bps) {
-            return None;
+            return Err(InvalidFee);
         }
-        Some(Self(bps))
+        Ok(Self(bps))
     }
 
     /// Returns the fee in basis points.
@@ -49,3 +49,7 @@ impl Fee {
         self.0
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid Swapr fee outside of 0%-10% range")]
+pub struct InvalidFee;

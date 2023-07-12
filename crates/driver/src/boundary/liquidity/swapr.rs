@@ -1,10 +1,9 @@
 use {
     crate::{
-        boundary,
+        boundary::{self, Result},
         domain::liquidity::{self, swapr},
         infra::{self, blockchain::Ethereum},
     },
-    anyhow::Result,
     shared::{
         current_block::CurrentBlockStream,
         price_estimation,
@@ -16,15 +15,16 @@ use {
 /// The base unit for basis points, i.e. how many basis points in 100%.
 const BPS_BASE: u32 = 10_000;
 
-pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Option<liquidity::Liquidity> {
+pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     // invalid Swapr fee ratio; does not have exact BPS representation
-    if (pool.fee.numer() * BPS_BASE) % pool.fee.denom() != 0 {
-        return None;
-    };
+    anyhow::ensure!(
+        (pool.fee.numer() * BPS_BASE) % pool.fee.denom() == 0,
+        "invalid Swapr fee ratio; does not have exact BPS representation",
+    );
 
     let bps = (pool.fee.numer() * BPS_BASE) / pool.fee.denom();
     let fee = swapr::Fee::new(bps)?;
-    Some(liquidity::Liquidity {
+    Ok(liquidity::Liquidity {
         id,
         gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
         kind: liquidity::Kind::Swapr(swapr::Pool {
