@@ -46,7 +46,7 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Reveal, Error> {
+    pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
         let liquidity = self
             .liquidity
             .fetch(
@@ -173,12 +173,12 @@ impl Competition {
         let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Reveal { score, orders })
+        Ok(Solved { score, orders })
     }
 
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
-    pub async fn settle(&self) -> Result<Calldata, Error> {
+    pub async fn settle(&self) -> Result<Settled, Error> {
         let settlement = self
             .settlement
             .lock()
@@ -186,14 +186,14 @@ impl Competition {
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
         self.mempools.execute(&self.solver, &settlement);
-        Ok(Calldata {
-            internalized: settlement
+        Ok(Settled {
+            internalized_calldata: settlement
                 .calldata(
                     self.eth.contracts().settlement(),
                     settlement::Internalization::Enable,
                 )
                 .into(),
-            uninternalized: settlement
+            uninternalized_calldata: settlement
                 .calldata(
                     self.eth.contracts().settlement(),
                     settlement::Internalization::Disable,
@@ -216,19 +216,19 @@ impl Competition {
 /// settlement happens. Note that the calldata is only revealed once the
 /// protocol instructs the driver to settle, and not before.
 #[derive(Debug)]
-pub struct Reveal {
+pub struct Solved {
     pub score: Score,
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
 }
 
 #[derive(Debug)]
-pub struct Calldata {
-    pub internalized: Bytes<Vec<u8>>,
+pub struct Settled {
+    pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
-    pub uninternalized: Bytes<Vec<u8>>,
+    pub uninternalized_calldata: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug, thiserror::Error)]

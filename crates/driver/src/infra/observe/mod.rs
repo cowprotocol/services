@@ -13,8 +13,8 @@ use {
                 auction,
                 solution::{self, Settlement},
                 Auction,
-                Reveal,
                 Solution,
+                Solved,
             },
             eth,
             quote::{self, Quote},
@@ -148,7 +148,7 @@ pub fn settling(solver: &solver::Name, auction_id: Option<auction::Id>) {
 pub fn settled(
     solver: &solver::Name,
     auction_id: Option<auction::Id>,
-    result: &Result<competition::Calldata, competition::Error>,
+    result: &Result<competition::Settled, competition::Error>,
 ) {
     match result {
         Ok(calldata) => {
@@ -172,7 +172,7 @@ pub fn settled(
 pub fn solved(
     solver: &solver::Name,
     auction: &Auction,
-    result: &Result<Reveal, competition::Error>,
+    result: &Result<Solved, competition::Error>,
 ) {
     match result {
         Ok(reveal) => {

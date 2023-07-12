@@ -12,7 +12,7 @@ use {
 };
 
 impl Solution {
-    pub fn new(reveal: competition::Reveal, solver: &Solver) -> Self {
+    pub fn new(reveal: competition::Solved, solver: &Solver) -> Self {
         Self {
             score: reveal.score.into(),
             submission_address: solver.address().into(),
