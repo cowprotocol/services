@@ -504,7 +504,10 @@ impl Driver {
                     Some(receipt.transaction_hash)
                 }
                 Err(SubmissionError::Revert(hash)) => Some(hash),
-                _ => None,
+                Err(err) => {
+                    tracing::warn!(?err, "settlement submission error");
+                    None
+                }
             };
             if let Some(hash) = hash {
                 tracing::debug!(?hash, "settled transaction");
