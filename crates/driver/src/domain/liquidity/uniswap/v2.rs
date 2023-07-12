@@ -23,7 +23,7 @@ pub struct Pool {
 }
 
 impl Pool {
-    /// Encodes a pool swap as an interaction. Returns `None` if the swap
+    /// Encodes a pool swap as an interaction. Returns `Err` if the swap
     /// parameters are invalid for the pool, specifically if the input and
     /// output tokens don't correspond to the pool's token pair.
     pub fn swap(
@@ -31,16 +31,20 @@ impl Pool {
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
         receiver: &eth::Address,
-    ) -> Option<eth::Interaction> {
+    ) -> Result<eth::Interaction, InvalidSwap> {
         if !self.reserves.has_tokens(&input.0.token, &output.0.token) {
-            return None;
+            return Err(InvalidSwap);
         }
 
-        Some(boundary::liquidity::uniswap::v2::to_interaction(
+        Ok(boundary::liquidity::uniswap::v2::to_interaction(
             self, input, output, receiver,
         ))
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("swap parameters do not match pool")]
+pub struct InvalidSwap;
 
 /// The reserves of a Uniswap V2 pool. These reserves are ordered by token
 /// address and are guaranteed to be for distinct tokens.
@@ -48,13 +52,13 @@ impl Pool {
 pub struct Reserves(eth::Asset, eth::Asset);
 
 impl Reserves {
-    /// Creates new Uniswap V2 token reserves, returns `None` if the specified
+    /// Creates new Uniswap V2 token reserves, returns `Err` if the specified
     /// token addresses are equal.
-    pub fn new(a: eth::Asset, b: eth::Asset) -> Option<Self> {
+    pub fn new(a: eth::Asset, b: eth::Asset) -> Result<Self, InvalidReserves> {
         match a.token.cmp(&b.token) {
-            Ordering::Less => Some(Self(a, b)),
-            Ordering::Equal => None,
-            Ordering::Greater => Some(Self(b, a)),
+            Ordering::Less => Ok(Self(a, b)),
+            Ordering::Equal => Err(InvalidReserves),
+            Ordering::Greater => Ok(Self(b, a)),
         }
     }
 
@@ -77,3 +81,7 @@ impl IntoIterator for Reserves {
         [self.0, self.1].into_iter()
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid Uniswap V2 token reserves; assets cannot have the same token address")]
+pub struct InvalidReserves;

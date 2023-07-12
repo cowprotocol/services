@@ -107,7 +107,31 @@ impl Auction {
                     }
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
                     liquidity::Kind::BalancerV2Weighted(_) => todo!(),
-                    liquidity::Kind::Swapr(_) => todo!(),
+                    liquidity::Kind::Swapr(pool) => {
+                        for token in pool.base.reserves.iter().map(|r| r.token) {
+                            tokens.entry(token.into()).or_insert_with(Default::default);
+                        }
+
+                        Liquidity::ConstantProduct(ConstantProductPool {
+                            id: liquidity.id.into(),
+                            address: pool.base.address.into(),
+                            gas_estimate: liquidity.gas.into(),
+                            tokens: pool
+                                .base
+                                .reserves
+                                .iter()
+                                .map(|asset| {
+                                    (
+                                        asset.token.into(),
+                                        ConstantProductReserve {
+                                            balance: asset.amount,
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            fee: bigdecimal::BigDecimal::new(pool.fee.bps().into(), 4),
+                        })
+                    }
                     liquidity::Kind::ZeroEx(_) => todo!(),
                 })
                 .collect(),

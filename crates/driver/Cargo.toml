@@ -15,34 +15,34 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
-axum = "0.6"
-num = "0.4"
-tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
-futures = "0.3"
-serde = "1.0"
-serde_json = "1.0"
-ethereum-types = "0.14"
-hex = "0.4"
-reqwest = "0.11"
-thiserror = "1.0"
-chrono = { version = "0.4", features = ["clock"], default-features = false }
-tower = "0.4"
-tower-http = { version = "0.3", features = ["limit", "trace"] }
-hyper = "0.14"
-serde_with = "2.0"
 async-trait = "0.1"
-itertools = "0.10"
-url = { version = "2.3", features = ["serde"] }
-ethabi = "18.0"
+axum = "0.6"
 bigdecimal = "0.3"
-rand = "0.8"
-web3 = "0.18"
-toml = "0.7"
-tap = "1.0.1"
-tempfile = "3.4"
+chrono = { version = "0.4", features = ["clock"], default-features = false }
+ethabi = "18.0"
+ethereum-types = "0.14"
+futures = "0.3"
+global-metrics = { path = "../global-metrics" }
+hex = "0.4"
+hyper = "0.14"
+itertools = "0.10"
+num = "0.4"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
-global-metrics = { path = "../global-metrics" }
+rand = "0.8"
+reqwest = "0.11"
+serde = "1.0"
+serde_json = "1.0"
+serde_with = "2.0"
+tap = "1.0.1"
+tempfile = "3.4"
+thiserror = "1.0"
+tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
+toml = "0.7"
+tower = "0.4"
+tower-http = { version = "0.3", features = ["limit", "trace"] }
+url = { version = "2.3", features = ["serde"] }
+web3 = "0.18"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.

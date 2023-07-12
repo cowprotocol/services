@@ -25,6 +25,7 @@ use {
     },
 };
 
+pub mod swapr;
 pub mod uniswap;
 
 /// The default poll interval for the block stream updating task.
@@ -44,6 +45,7 @@ fn cache_config() -> CacheConfig {
 pub struct Fetcher {
     blocks: CurrentBlockStream,
     inner: LiquidityCollector,
+    swapr_routers: HashSet<eth::ContractAddress>,
 }
 
 impl Fetcher {
@@ -57,16 +59,6 @@ impl Fetcher {
         let block_stream = blocks.stream(boundary::web3(eth)).await?;
         let block_retriever = blocks.retriever(boundary::web3(eth));
 
-        let uni_v3: Vec<_> = future::join_all(
-            config
-                .uniswap_v3
-                .iter()
-                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
-        )
-        .await
-        .into_iter()
-        .collect();
-
         let uni_v2: Vec<_> = future::join_all(
             config
                 .uniswap_v2
@@ -76,6 +68,27 @@ impl Fetcher {
         .await
         .into_iter()
         .try_collect()?;
+
+        let swapr_routers = config.swapr.iter().map(|config| config.router).collect();
+        let swapr: Vec<_> = future::join_all(
+            config
+                .swapr
+                .iter()
+                .map(|config| swapr::collector(eth, &block_stream, config)),
+        )
+        .await
+        .into_iter()
+        .try_collect()?;
+
+        let uni_v3: Vec<_> = future::join_all(
+            config
+                .uniswap_v3
+                .iter()
+                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
+        )
+        .await
+        .into_iter()
+        .collect();
 
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),
@@ -90,9 +103,10 @@ impl Fetcher {
         Ok(Self {
             blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources: [uni_v2, uni_v3].into_iter().flatten().collect(),
+                liquidity_sources: [uni_v2, swapr, uni_v3].into_iter().flatten().collect(),
                 base_tokens: Arc::new(base_tokens),
             },
+            swapr_routers,
         })
     }
 
@@ -121,12 +135,21 @@ impl Fetcher {
             .filter_map(|(index, liquidity)| {
                 let id = liquidity::Id(index);
                 match liquidity {
-                    Liquidity::ConstantProduct(pool) => uniswap::v2::to_domain(id, pool),
+                    Liquidity::ConstantProduct(pool) => {
+                        if self.swapr_routers.contains(&uniswap::v2::router(&pool)) {
+                            swapr::to_domain(id, pool)
+                        } else {
+                            uniswap::v2::to_domain(id, pool)
+                        }
+                    }
                     Liquidity::BalancerWeighted(_) => unreachable!(),
                     Liquidity::BalancerStable(_) => unreachable!(),
                     Liquidity::LimitOrder(_) => unreachable!(),
                     Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),
                 }
+                // Ignore "bad" liquidity - this allows the driver to continue
+                // solving with the other good stuff.
+                .ok()
             })
             .collect();
         Ok(liquidity)

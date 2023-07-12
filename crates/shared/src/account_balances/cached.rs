@@ -30,7 +30,7 @@ impl BalanceCache {
     /// Retrieves cached balance and updates the `requested_at` field.
     fn get_cached_balance(&mut self, query: &Query) -> Option<U256> {
         match self.data.get_mut(query) {
-            Some(mut entry) => {
+            Some(entry) => {
                 entry.requested_at = self.last_seen_block;
                 Some(entry.balance)
             }
@@ -46,7 +46,7 @@ impl BalanceCache {
             return;
         }
 
-        if let Some(mut entry) = self.data.get_mut(query) {
+        if let Some(entry) = self.data.get_mut(query) {
             entry.updated_at = update_block;
             entry.balance = balance;
         }
