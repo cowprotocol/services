@@ -4,6 +4,7 @@ use {
     ethcontract::{H160, U256},
     model::order::OrderUid,
     number_conversions::u256_to_big_decimal,
+    sqlx::PgConnection,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -28,7 +29,7 @@ pub struct SettlementUpdate {
 
 impl super::Postgres {
     pub async fn update_settlement_details(
-        &self,
+        ex: &mut PgConnection,
         settlement_update: SettlementUpdate,
     ) -> anyhow::Result<()> {
         let _timer = super::Metrics::get()
@@ -36,11 +37,9 @@ impl super::Postgres {
             .with_label_values(&["update_settlement_details"])
             .start_timer();
 
-        let mut ex = self.0.begin().await?;
-
         // update settlements
         database::auction_transaction::insert_settlement_tx_info(
-            &mut ex,
+            ex,
             settlement_update.block_number,
             settlement_update.log_index,
             &ByteArray(settlement_update.tx_from.0),
@@ -51,7 +50,7 @@ impl super::Postgres {
 
         if let Some(auction_data) = settlement_update.auction_data {
             database::settlement_observations::insert(
-                &mut ex,
+                ex,
                 Observation {
                     block_number: settlement_update.block_number,
                     log_index: settlement_update.log_index,
@@ -69,7 +68,7 @@ impl super::Postgres {
             // is calculated AFTER the settlement is settled on chain.
             for order_execution in auction_data.order_executions {
                 database::order_execution::update_surplus_fee(
-                    &mut ex,
+                    ex,
                     &ByteArray(order_execution.0 .0), // order uid
                     auction_data.auction_id,
                     Some(order_execution.1) // order fee
@@ -81,8 +80,6 @@ impl super::Postgres {
                 .context("insert_missing_order_executions")?;
             }
         }
-
-        ex.commit().await?;
         Ok(())
     }
 }
