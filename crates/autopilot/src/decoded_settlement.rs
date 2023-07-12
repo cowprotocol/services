@@ -40,7 +40,7 @@ type DecodedSettlementTokenized = (
     [Vec<(Address, U256, Bytes<Vec<u8>>)>; 3],
 );
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
@@ -50,13 +50,10 @@ pub struct DecodedSettlement {
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This gets used to associated a
     /// settlement with an auction.
-    /// If a settlement contains more than [`Self::MAX_METADATA_LEN`] bytes of
-    /// metadata only the last [`Self::MAX_METADATA_LEN`] bytes of metadata will
-    /// be captured.
-    pub metadata: Vec<u8>,
+    pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedTrade {
     pub sell_token_index: U256,
     pub buy_token_index: U256,
@@ -88,7 +85,7 @@ impl DecodedTrade {
 /// Trade flags are encoded in a 256-bit integer field. For more information on
 /// how flags are encoded see:
 /// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TradeFlags(pub U256);
 
 impl TradeFlags {
@@ -115,7 +112,7 @@ impl From<U256> for TradeFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedInteraction {
     pub target: Address,
     pub value: U256,
@@ -178,8 +175,9 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
 }
 
 impl DecodedSettlement {
-    /// How many bytes of metadata will be decoded at most.
-    pub const MAX_METADATA_LEN: usize = 32;
+    /// Number of bytes that may be appended to the calldata to store an auction
+    /// id.
+    pub const META_DATA_LEN: usize = 8;
 
     pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
@@ -190,27 +188,26 @@ impl DecodedSettlement {
             .strip_prefix(&function.selector())
             .ok_or(DecodingError::InvalidSelector)?;
 
-        // Try decoding calldata with up to 32 bytes of metadata since we might not
-        // know how many bytes of call data get added by the solver.
-        // Although `decode_input()` of the `ethabi` crate would know exactly how many
-        // additional bytes were part of the call data it doesn't return that
-        // number. That's why we parse the call data assuming the most number of
-        // supported metadata bytes and reduce until we finally find a
-        // configuration that actually deserializes.
-        for meta_data_len in (1..=Self::MAX_METADATA_LEN).rev() {
-            if let Ok(decoded) = Self::try_new(without_selector, function, meta_data_len) {
-                return Ok(decoded);
-            }
+        // Decoding calldata without expecting metadata can succeed even if metadata
+        // was appended. The other way around would not work so we do that first.
+        if let Ok(decoded) = Self::try_new(without_selector, function, true) {
+            return Ok(decoded);
         }
-        // Handle this case separately to return a detailed error.
-        Self::try_new(without_selector, function, 0).map_err(Into::into)
+        Self::try_new(without_selector, function, false).map_err(Into::into)
     }
 
-    fn try_new(data: &[u8], function: &Function, meta_data_len: usize) -> Result<Self> {
-        if meta_data_len > data.len() {
-            anyhow::bail!("not enough call data to strip meta data ({meta_data_len} bytes)");
-        }
-        let (calldata, metadata) = data.split_at(data.len() - meta_data_len);
+    fn try_new(data: &[u8], function: &Function, with_metadata: bool) -> Result<Self> {
+        let metadata_len = if with_metadata {
+            anyhow::ensure!(
+                data.len() % 32 == Self::META_DATA_LEN,
+                "calldata does not contain the expected number of bytes to include metadata"
+            );
+            Self::META_DATA_LEN
+        } else {
+            0
+        };
+
+        let (calldata, metadata) = data.split_at(data.len() - metadata_len);
         let tokenized = function
             .decode_input(calldata)
             .context("tokenizing settlement calldata failed")?;
@@ -238,7 +235,7 @@ impl DecodedSettlement {
                 })
                 .collect(),
             interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
-            metadata: metadata.into(),
+            metadata: metadata.try_into().ok().map(Bytes),
         })
     }
 
@@ -1008,19 +1005,30 @@ mod tests {
         )
         .to_vec();
 
-        let metadata = |bytes: std::ops::RangeInclusive<u8>| bytes.collect::<Vec<_>>();
-        let max_metadata_len = u8::try_from(DecodedSettlement::MAX_METADATA_LEN).unwrap();
+        let original = DecodedSettlement::new(&call_data).unwrap();
 
-        for i in 0..=max_metadata_len - 1 {
-            let metadata = metadata(0..=i);
-            let with_metadata = [call_data.clone(), metadata.clone()].concat();
-            let settlement = DecodedSettlement::new(&with_metadata).unwrap();
-            assert_eq!(settlement.metadata, metadata);
-        }
+        // If not enough call data got appended we parse it like it didn't have any
+        // Not enough metadata appended to the calldata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN - 1];
+        let with_metadata = [call_data.clone(), metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
 
-        let too_long_metadata = metadata(0..=max_metadata_len);
-        let with_metadata = [call_data, too_long_metadata].concat();
-        let settlement = DecodedSettlement::new(&with_metadata).unwrap();
-        assert_eq!(settlement.metadata, metadata(1..=max_metadata_len));
+        // Same if too much metadata gets added.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data.clone(), vec![100], metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+
+        // If we add exactly the expected number of bytes we can parse the metadata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data, metadata.to_vec()].concat();
+        let with_metadata = DecodedSettlement::new(&with_metadata).unwrap();
+        assert_eq!(with_metadata.metadata, Some(Bytes(metadata)));
+
+        // Content of the remaining fields is identical to the original
+        let metadata_removed_again = DecodedSettlement {
+            metadata: None,
+            ..with_metadata
+        };
+        assert_eq!(original, metadata_removed_again);
     }
 }

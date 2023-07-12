@@ -47,8 +47,8 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         external_prices::ExternalPrices,
     },
-    std::time::Duration,
-    web3::types::TransactionId,
+    std::{ops::DerefMut, time::Duration},
+    web3::types::{Transaction, TransactionId},
 };
 
 pub struct OnSettlementEventUpdater {
@@ -113,10 +113,14 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        // 1. decode settlement
-        // 2. if it has additional data use that as the auction_id
-        // 3. else assume we should find the id using the old way
-        let auction_id = self.db.get_auction_id(tx_from, tx_nonce).await?;
+        let mut auction_id = self.db.get_auction_id(tx_from, tx_nonce).await?;
+        if auction_id.is_none() {
+            // This settlement either belongs to the other environment (staging, prod) or it
+            // was issued using solver-driver colocation. In that case solvers
+            // are supposed to append the `auction_id` to the calldata.
+            auction_id = self.recover_auction_id_from_calldata(&transaction).await?;
+        }
+
         let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
@@ -204,6 +208,65 @@ impl OnSettlementEventUpdater {
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
 
         Ok(true)
+    }
+
+    /// With solver driver colocation solvers are supposed to append the
+    /// `auction_id` to the settlement calldata. This function tries to
+    /// recover that `auction_id`. This function only returns an error if
+    /// retrying the operation makes sense. If all went well and there
+    /// simply is no sensible `auction_id` `Ok(None)` will be returned.
+    async fn recover_auction_id_from_calldata(&self, tx: &Transaction) -> Result<Option<i64>> {
+        let metadata = match DecodedSettlement::new(&tx.input.0) {
+            Ok(settlement) => settlement.metadata,
+            Err(err) => {
+                tracing::warn!(
+                    ?tx,
+                    ?err,
+                    "could not decode settlement tx, unclear which auction it belongs to"
+                );
+                return Ok(None);
+            }
+        };
+        let auction_id = match metadata {
+            Some(bytes) => i64::from_be_bytes(bytes.0),
+            None => {
+                tracing::warn!(?tx, "could not recover the auction_id from the calldata");
+                return Ok(None);
+            }
+        };
+        let participants = database::auction_participants::fetch(
+            self.db
+                .0
+                .acquire()
+                .await
+                .context("acquire DB connection")?
+                .deref_mut(),
+            auction_id,
+        )
+        .await
+        .context("fetch auction participants")?;
+
+        if participants.is_empty() {
+            tracing::debug!(
+                auction_id,
+                ?tx,
+                "settlement likely originated from other environment"
+            );
+            Ok(None)
+        } else if participants
+            .iter()
+            .any(|p| Some(H160(p.participant.0)) == tx.from)
+        {
+            tracing::debug!(auction_id, "extracted auction_id from settlement metadata");
+            Ok(Some(auction_id))
+        } else {
+            tracing::warn!(
+                auction_id,
+                ?tx,
+                "settlement was submitted by solver that didn't participate in the competition"
+            );
+            Ok(None)
+        }
     }
 }
 
