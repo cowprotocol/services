@@ -1,3 +1,4 @@
+pub use crate::domain::liquidity::uniswap::v2::InvalidSwap;
 use crate::domain::{
     eth,
     liquidity::{self, uniswap},
@@ -18,7 +19,7 @@ pub struct Pool {
 pub struct Fee(u32);
 
 impl Pool {
-    /// Encodes a pool swap as an interaction. Returns `None` if the swap
+    /// Encodes a pool swap as an interaction. Returns `Err` if the swap
     /// parameters are invalid for the pool, specifically if the input and
     /// output tokens don't correspond to the pool's token pair.
     pub fn swap(
@@ -26,7 +27,7 @@ impl Pool {
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
         receiver: &eth::Address,
-    ) -> Option<eth::Interaction> {
+    ) -> Result<eth::Interaction, InvalidSwap> {
         // Note that swap interactions are identical in Swapr and Uniswap V2
         // pools. The only difference is the input/output computation uses
         // different fees.
@@ -35,7 +36,7 @@ impl Pool {
 }
 
 impl Fee {
-    /// Creates a new fee from the specified basis points. Returns `None` for
+    /// Creates a new fee from the specified basis points. Returns `Err` for
     /// invalid fee values (i.e. outside the range `[0, 1000]`).
     pub fn new(bps: u32) -> Result<Self, InvalidFee> {
         if !(0..=1000).contains(&bps) {
