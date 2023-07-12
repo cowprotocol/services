@@ -42,8 +42,8 @@ impl Auction {
                     uid: order.uid.into(),
                     sell_token: order.solver_sell().token.into(),
                     buy_token: order.solver_buy(weth).token.into(),
-                    sell_amount: order.solver_sell().amount,
-                    buy_amount: order.solver_buy(weth).amount,
+                    sell_amount: order.solver_sell().amount.into(),
+                    buy_amount: order.solver_buy(weth).amount.into(),
                     fee_amount: order.fee.solver.into(),
                     kind: match order.side {
                         competition::order::Side::Buy => Kind::Buy,
@@ -76,7 +76,7 @@ impl Auction {
                                     (
                                         asset.token.into(),
                                         ConstantProductReserve {
-                                            balance: asset.amount,
+                                            balance: asset.amount.into(),
                                         },
                                     )
                                 })
@@ -124,7 +124,7 @@ impl Auction {
                                     (
                                         asset.token.into(),
                                         ConstantProductReserve {
-                                            balance: asset.amount,
+                                            balance: asset.amount.into(),
                                         },
                                     )
                                 })

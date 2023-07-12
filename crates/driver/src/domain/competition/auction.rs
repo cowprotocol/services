@@ -3,6 +3,7 @@ use {
         competition::{self, solution},
         eth,
     },
+    std::collections::HashMap,
     thiserror::Error,
 };
 
@@ -11,25 +12,84 @@ use {
 /// solving them.
 #[derive(Debug)]
 pub struct Auction {
-    /// [`None`] if this auction applies to a quote.
+    /// [`None`] if this auction applies to a quote. See
+    /// [`crate::domain::quote`].
     pub id: Option<Id>,
-    pub tokens: Vec<Token>,
-    pub orders: Vec<competition::Order>,
+    pub orders: Orders,
+    pub tokens: Tokens,
     pub gas_price: eth::GasPrice,
     pub deadline: Deadline,
 }
 
-impl Auction {
-    pub fn is_trusted(&self, token: eth::TokenAddress) -> bool {
-        self.tokens
-            .iter()
-            .find(|t| t.address == token)
-            .map(|token| token.trusted)
-            .unwrap_or(false)
+/// The orders for an auction. The orders get sorted such that those which are
+/// more likely to be fulfilled come before less likely orders.
+#[derive(Debug)]
+pub struct Orders(Vec<competition::Order>);
+
+impl Orders {
+    pub fn new(mut orders: Vec<competition::Order>, tokens: &Tokens) -> Self {
+        // Sort orders such that most likely to be fulfilled come first.
+        orders.sort_by(|left, right| {
+            // Market orders are preferred over limit orders, as the expectation is that
+            // they should be immediately fulfillable. Liquidity orders come last, as they
+            // are the most niche and rarely used.
+            let left_kind = match left.kind {
+                competition::order::Kind::Market => 2,
+                competition::order::Kind::Limit { .. } => 1,
+                competition::order::Kind::Liquidity => 0,
+            };
+            let right_kind = match right.kind {
+                competition::order::Kind::Market => 2,
+                competition::order::Kind::Limit { .. } => 1,
+                competition::order::Kind::Liquidity => 0,
+            };
+            match left_kind.cmp(&right_kind) {
+                std::cmp::Ordering::Equal => {
+                    // If the orders are of the same kind, then sort by likelihood of fulfillment
+                    // based on token prices.
+                    left.likelihood(tokens).cmp(&right.likelihood(tokens))
+                }
+                other => other,
+            }
+        });
+        orders.reverse();
+
+        // TODO Filter out orders based on user balance
+
+        Self(orders)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &competition::Order> {
+        self.0.iter()
     }
 }
 
-#[derive(Debug)]
+/// The tokens that are used in an auction.
+#[derive(Debug, Default)]
+pub struct Tokens(HashMap<eth::TokenAddress, Token>);
+
+impl Tokens {
+    pub fn new(tokens: impl Iterator<Item = Token>) -> Self {
+        Self(tokens.map(|token| (token.address, token)).collect())
+    }
+
+    pub fn get(&self, address: eth::TokenAddress) -> Token {
+        self.0.get(&address).cloned().unwrap_or(Token {
+            decimals: None,
+            symbol: None,
+            address,
+            price: None,
+            available_balance: Default::default(),
+            trusted: false,
+        })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Token> {
+        self.0.values()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
@@ -46,6 +106,13 @@ pub struct Token {
 /// 10**18 of another token.
 #[derive(Debug, Clone, Copy)]
 pub struct Price(pub eth::Ether);
+
+impl Price {
+    /// Apply this price to some token amount, converting that token into ETH.
+    pub fn apply(self, amount: eth::TokenAmount) -> eth::Ether {
+        (amount.0 * self.0 .0).into()
+    }
+}
 
 impl From<Price> for eth::U256 {
     fn from(value: Price) -> Self {

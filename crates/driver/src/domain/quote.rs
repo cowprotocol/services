@@ -1,4 +1,5 @@
 use {
+    super::competition::auction,
     crate::{
         boundary,
         domain::{
@@ -96,28 +97,30 @@ impl Order {
         competition::Auction {
             id: None,
             tokens: Default::default(),
-            orders: vec![competition::Order {
-                uid: Default::default(),
-                receiver: None,
-                valid_to: util::Timestamp::MAX,
-                buy: self.buy(),
-                sell: self.sell(),
-                side: self.side,
-                fee: Default::default(),
-                kind: competition::order::Kind::Market,
-                app_data: Default::default(),
-                partial: competition::order::Partial::No,
-                // TODO add actual pre- and post-interactions (#1491)
-                pre_interactions: Default::default(),
-                post_interactions: Default::default(),
-                sell_token_balance: competition::order::SellTokenBalance::Erc20,
-                buy_token_balance: competition::order::BuyTokenBalance::Erc20,
-                signature: competition::order::Signature {
-                    scheme: competition::order::signature::Scheme::Eip1271,
-                    data: Default::default(),
-                    signer: Default::default(),
-                },
-            }],
+            orders: auction::Orders::new(
+                vec![competition::Order {
+                    uid: Default::default(),
+                    receiver: None,
+                    valid_to: util::Timestamp::MAX,
+                    buy: self.buy(),
+                    sell: self.sell(),
+                    side: self.side,
+                    fee: Default::default(),
+                    kind: competition::order::Kind::Market,
+                    app_data: Default::default(),
+                    partial: competition::order::Partial::No,
+                    pre_interactions: Default::default(),
+                    post_interactions: Default::default(),
+                    sell_token_balance: competition::order::SellTokenBalance::Erc20,
+                    buy_token_balance: competition::order::BuyTokenBalance::Erc20,
+                    signature: competition::order::Signature {
+                        scheme: competition::order::signature::Scheme::Eip1271,
+                        data: Default::default(),
+                        signer: Default::default(),
+                    },
+                }],
+                &Default::default(),
+            ),
             gas_price: gas_price.effective().into(),
             deadline: Default::default(),
         }
@@ -128,7 +131,7 @@ impl Order {
     fn buy(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
-                amount: eth::U256::one(),
+                amount: eth::U256::one().into(),
                 token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
@@ -151,7 +154,7 @@ impl Order {
             // contract, so buy orders requiring excessively large sell amounts
             // would not work anyway.
             order::Side::Buy => eth::Asset {
-                amount: eth::U256::one() << 192,
+                amount: (eth::U256::one() << 192).into(),
                 token: self.tokens.sell,
             },
         }

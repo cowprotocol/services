@@ -533,7 +533,7 @@ impl Setup {
             blockchain: &blockchain,
             solutions: &solutions,
             trusted: &trusted,
-            quotes: &quotes,
+            quoted_orders: &quotes,
             deadline,
             quote: self.quote,
         })
@@ -560,7 +560,7 @@ impl Setup {
             fulfillments: solutions.into_iter().flat_map(|s| s.fulfillments).collect(),
             trusted,
             deadline,
-            quotes,
+            quoted_orders: quotes,
             quote: self.quote,
         }
     }
@@ -579,7 +579,7 @@ impl Setup {
 }
 
 pub struct Test {
-    quotes: Vec<blockchain::Quote>,
+    quoted_orders: Vec<blockchain::QuotedOrder>,
     blockchain: Blockchain,
     driver: Driver,
     client: reqwest::Client,
@@ -762,14 +762,14 @@ impl SolveOk<'_> {
             .map(|name| {
                 self.fulfillments
                     .iter()
-                    .find(|f| f.quote.order.name == *name)
+                    .find(|f| f.quoted_order.order.name == *name)
                     .unwrap_or_else(|| {
                         panic!(
                             "unexpected orders {order_names:?}: fulfillment not found in {:?}",
                             self.fulfillments,
                         )
                     })
-                    .quote
+                    .quoted_order
                     .order_uid(self.blockchain)
                     .to_string()
             })
@@ -841,11 +841,11 @@ impl QuoteOk<'_> {
         let fulfillment = &self.fulfillments[0];
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         let amount = result.get("amount").unwrap().as_str().unwrap().to_owned();
-        let expected = match fulfillment.quote.order.side {
-            order::Side::Buy => {
-                (fulfillment.quote.sell - fulfillment.quote.order.surplus_fee()).to_string()
-            }
-            order::Side::Sell => fulfillment.quote.buy.to_string(),
+        let expected = match fulfillment.quoted_order.order.side {
+            order::Side::Buy => (fulfillment.quoted_order.sell
+                - fulfillment.quoted_order.order.surplus_fee())
+            .to_string(),
+            order::Side::Sell => fulfillment.quoted_order.buy.to_string(),
         };
         assert_eq!(amount, expected);
         self

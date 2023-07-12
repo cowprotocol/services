@@ -75,7 +75,7 @@ pub mod solve {
     #[serde(rename_all = "camelCase")]
     pub struct Token {
         pub address: H160,
-        #[serde_as(as = "Option<DisplayFromStr>")]
+        #[serde_as(as = "Option<DecimalU256>")]
         pub price: Option<U256>,
         pub trusted: bool,
         pub decimals: Option<u8>,

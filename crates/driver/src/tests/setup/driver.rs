@@ -9,6 +9,7 @@ use {
         infra::time,
         tests::hex_address,
     },
+    rand::seq::SliceRandom,
     secp256k1::SecretKey,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
@@ -64,7 +65,11 @@ impl Driver {
 pub fn solve_req(test: &Test) -> serde_json::Value {
     let mut tokens_json = Vec::new();
     let mut orders_json = Vec::new();
-    for quote in test.quotes.iter() {
+    // The orders are shuffled before being sent to the driver, to ensure that the
+    // driver sorts them correctly before forwarding them to the solver.
+    let mut quotes = test.quoted_orders.clone();
+    quotes.shuffle(&mut rand::thread_rng());
+    for quote in quotes.iter() {
         orders_json.push(json!({
             "uid": quote.order_uid(&test.blockchain),
             "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
@@ -102,14 +107,14 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     }
     for fulfillment in test.fulfillments.iter() {
         tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quote.order.sell_token)),
+            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.sell_token)),
             "price": "1000000000000000000",
-            "trusted": test.trusted.contains(fulfillment.quote.order.sell_token),
+            "trusted": test.trusted.contains(fulfillment.quoted_order.order.sell_token),
         }));
         tokens_json.push(json!({
-            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quote.order.buy_token)),
+            "address": hex_address(test.blockchain.get_token_wrapped(fulfillment.quoted_order.order.buy_token)),
             "price": "1000000000000000000",
-            "trusted": test.trusted.contains(fulfillment.quote.order.buy_token),
+            "trusted": test.trusted.contains(fulfillment.quoted_order.order.buy_token),
         }));
     }
     json!({
@@ -122,11 +127,11 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
 
 /// Create a request for the driver /quote endpoint.
 pub fn quote_req(test: &Test) -> serde_json::Value {
-    if test.quotes.len() != 1 {
+    if test.quoted_orders.len() != 1 {
         panic!("when testing /quote, there must be exactly one order");
     }
 
-    let quote = test.quotes.first().unwrap();
+    let quote = test.quoted_orders.first().unwrap();
     json!({
         "sellToken": hex_address(test.blockchain.get_token(quote.order.sell_token)),
         "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),

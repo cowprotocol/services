@@ -81,7 +81,7 @@ impl Settlement {
             solution
                 .prices()?
                 .into_iter()
-                .map(|asset| (asset.token.into(), asset.amount))
+                .map(|asset| (asset.token.into(), asset.amount.into()))
                 .collect(),
         );
 
@@ -239,8 +239,8 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         data: OrderData {
             sell_token: order.sell.token.into(),
             buy_token: order.buy.token.into(),
-            sell_amount: order.sell.amount,
-            buy_amount: order.buy.amount,
+            sell_amount: order.sell.amount.into(),
+            buy_amount: order.buy.amount.into(),
             fee_amount: order.fee.user.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
@@ -319,8 +319,8 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         sell_token: order.sell.token.into(),
         buy_token: order.buy.token.into(),
         receiver: Some(order.receiver.into()),
-        sell_amount: order.sell.amount,
-        buy_amount: order.buy.amount,
+        sell_amount: order.sell.amount.into(),
+        buy_amount: order.buy.amount.into(),
         valid_to: order.valid_to.into(),
         app_data: AppDataHash(order.app_data.into()),
         fee_amount: order.fee.into(),
@@ -407,11 +407,11 @@ pub fn to_boundary_interaction(
 
             let input = liquidity::MaxInput(eth::Asset {
                 token: boundary_execution.input_max.token.into(),
-                amount: boundary_execution.input_max.amount,
+                amount: boundary_execution.input_max.amount.into(),
             });
             let output = liquidity::ExactOutput(eth::Asset {
                 token: boundary_execution.output.token.into(),
-                amount: boundary_execution.output.amount,
+                amount: boundary_execution.output.amount.into(),
             });
 
             let interaction = match &liquidity.liquidity.kind {

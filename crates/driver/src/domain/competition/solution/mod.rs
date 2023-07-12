@@ -118,11 +118,10 @@ impl Solution {
     /// The clearing prices, represented as a list of assets. If there are any
     /// orders which buy ETH, this will contain the correct ETH price.
     pub fn prices(&self) -> Result<Vec<eth::Asset>, Error> {
-        let prices = self
-            .prices
-            .0
-            .iter()
-            .map(|(&token, &amount)| eth::Asset { token, amount });
+        let prices = self.prices.0.iter().map(|(&token, &amount)| eth::Asset {
+            token,
+            amount: amount.into(),
+        });
 
         if self.user_trades().any(|trade| trade.order().buys_eth()) {
             // The solution contains an order which buys ETH. Solvers only produce solutions
@@ -153,7 +152,8 @@ impl Solution {
                     .0
                     .get(&self.weth.into())
                     .ok_or(Error::MissingWethClearingPrice)?
-                    .to_owned(),
+                    .to_owned()
+                    .into(),
             });
 
             return Ok(prices);

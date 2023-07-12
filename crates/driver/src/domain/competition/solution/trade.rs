@@ -180,6 +180,15 @@ impl Trade {
         &self,
         solution: &competition::Solution,
     ) -> Result<Execution, ExecutionError> {
+        #[derive(Debug, Clone, Copy)]
+        struct ExecutionParams {
+            side: order::Side,
+            kind: order::Kind,
+            sell: eth::Asset,
+            buy: eth::Asset,
+            executed: order::TargetAmount,
+        }
+
         // Values needed to calculate the executed amounts.
         let ExecutionParams {
             side,
@@ -237,7 +246,8 @@ impl Trade {
                                 .checked_mul(buy_price)
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_div(sell_price)
-                                .ok_or(ExecutionError::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: sell.token,
                         },
                     },
@@ -252,7 +262,8 @@ impl Trade {
                                 .checked_mul(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_ceil_div(&buy_price)
-                                .ok_or(ExecutionError::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: buy.token,
                         },
                     },
@@ -270,10 +281,12 @@ impl Trade {
                         sell: eth::Asset {
                             amount: sell
                                 .amount
+                                .0
                                 .checked_mul(executed.into())
                                 .ok_or(ExecutionError::Overflow)?
-                                .checked_div(buy.amount)
-                                .ok_or(ExecutionError::Overflow)?,
+                                .checked_div(buy.amount.into())
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: sell.token,
                         },
                     },
@@ -285,10 +298,12 @@ impl Trade {
                         buy: eth::Asset {
                             amount: buy
                                 .amount
+                                .0
                                 .checked_mul(executed.into())
                                 .ok_or(ExecutionError::Overflow)?
-                                .checked_div(sell.amount)
-                                .ok_or(ExecutionError::Overflow)?,
+                                .checked_div(sell.amount.into())
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: buy.token,
                         },
                     },
@@ -339,7 +354,8 @@ impl Trade {
                                 // amount by the surplus fee. We know that the user placed an order
                                 // big enough to cover the surplus fee.
                                 .checked_add(surplus_fee.into())
-                                .ok_or(ExecutionError::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: sell.token,
                         },
                     },
@@ -361,7 +377,8 @@ impl Trade {
                                 .checked_mul(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_ceil_div(&buy_price)
-                                .ok_or(ExecutionError::Overflow)?,
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: buy.token,
                         },
                     },
@@ -378,15 +395,6 @@ pub struct Execution {
     pub sell: eth::Asset,
     /// The total amount being bought.
     pub buy: eth::Asset,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ExecutionParams {
-    side: order::Side,
-    kind: order::Kind,
-    sell: eth::Asset,
-    buy: eth::Asset,
-    executed: order::TargetAmount,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -15,22 +15,18 @@ use {
 
 impl Auction {
     pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
-        Ok(competition::Auction {
-            id: Some(self.id.try_into()?),
-            tokens: self
-                .tokens
-                .into_iter()
-                .map(|token| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
-                    address: token.address.into(),
-                    price: token.price.map(Into::into),
-                    available_balance: Default::default(),
-                    trusted: token.trusted,
-                })
-                .collect(),
-            orders: self
-                .orders
+        let tokens = auction::Tokens::new(self.tokens.into_iter().map(|token| {
+            competition::auction::Token {
+                decimals: token.decimals,
+                symbol: token.symbol,
+                address: token.address.into(),
+                price: token.price.map(Into::into),
+                available_balance: Default::default(),
+                trusted: token.trusted,
+            }
+        }));
+        let orders = auction::Orders::new(
+            self.orders
                 .into_iter()
                 .map(|order| {
                     Ok(competition::Order {
@@ -38,11 +34,11 @@ impl Auction {
                         receiver: order.receiver.map(Into::into),
                         valid_to: order.valid_to.into(),
                         buy: eth::Asset {
-                            amount: order.buy_amount,
+                            amount: order.buy_amount.into(),
                             token: order.buy_token.into(),
                         },
                         sell: eth::Asset {
-                            amount: order.sell_amount,
+                            amount: order.sell_amount.into(),
                             token: order.sell_token.into(),
                         },
                         side: match order.kind {
@@ -130,6 +126,12 @@ impl Auction {
                     })
                 })
                 .try_collect::<_, _, Error>()?,
+            &tokens,
+        );
+        Ok(competition::Auction {
+            id: Some(self.id.try_into()?),
+            orders,
+            tokens,
             gas_price: eth.gas_price().await.map_err(Error::GasPrice)?,
             deadline: self.deadline.into(),
         })
