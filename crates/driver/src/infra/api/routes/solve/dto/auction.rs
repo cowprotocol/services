@@ -21,8 +21,8 @@ impl Auction {
                 .tokens
                 .into_iter()
                 .map(|token| competition::auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: token.decimals,
+                    symbol: token.symbol,
                     address: token.address.into(),
                     price: token.price.map(Into::into),
                     available_balance: Default::default(),
@@ -171,6 +171,8 @@ struct Token {
     #[serde_as(as = "Option<serialize::U256>")]
     pub price: Option<eth::U256>,
     pub trusted: bool,
+    pub decimals: Option<u8>,
+    pub symbol: Option<String>,
 }
 
 #[serde_as]
