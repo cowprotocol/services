@@ -47,7 +47,7 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         external_prices::ExternalPrices,
     },
-    std::{ops::DerefMut, time::Duration},
+    std::time::Duration,
     web3::types::{Transaction, TransactionId},
 };
 
@@ -216,6 +216,7 @@ impl OnSettlementEventUpdater {
     /// retrying the operation makes sense. If all went well and there
     /// simply is no sensible `auction_id` `Ok(None)` will be returned.
     async fn recover_auction_id_from_calldata(&self, tx: &Transaction) -> Result<Option<i64>> {
+        let tx_from = tx.from.context("tx is missing sender")?;
         let metadata = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
@@ -234,38 +235,26 @@ impl OnSettlementEventUpdater {
                 return Ok(None);
             }
         };
-        let participants = database::auction_participants::fetch(
-            self.db
-                .0
-                .acquire()
-                .await
-                .context("acquire DB connection")?
-                .deref_mut(),
-            auction_id,
-        )
-        .await
-        .context("fetch auction participants")?;
 
-        if participants.is_empty() {
-            tracing::debug!(
-                auction_id,
-                ?tx,
-                "settlement likely originated from other environment"
-            );
-            Ok(None)
-        } else if participants
-            .iter()
-            .any(|p| Some(H160(p.participant.0)) == tx.from)
-        {
-            tracing::debug!(auction_id, "extracted auction_id from settlement metadata");
-            Ok(Some(auction_id))
-        } else {
-            tracing::warn!(
-                auction_id,
-                ?tx,
-                "settlement was submitted by solver that didn't participate in the competition"
-            );
-            Ok(None)
+        let mut ex = self.db.0.begin().await.context("acquire DB connection")?;
+        match database::settlement_scores::fetch(&mut ex, auction_id).await? {
+            None => {
+                tracing::debug!(
+                    auction_id,
+                    "calldata claims to settle auction with missing competition"
+                );
+                Ok(None)
+            }
+            Some(score) if score.winner.0 != tx_from.0 => {
+                tracing::warn!(
+                    auction_id,
+                    ?tx_from,
+                    winner = ?score.winner,
+                    "solution submitted by solver other than the winner"
+                );
+                Ok(None)
+            }
+            _ => Ok(Some(auction_id)),
         }
     }
 }
