@@ -53,17 +53,6 @@ impl super::Postgres {
 
         let mut ex = self.0.begin().await.context("begin")?;
 
-        // TODO this needs to happen somehow
-        // let transaction = request.transaction;
-        // database::auction_transaction::upsert_auction_transaction(
-        //     &mut ex,
-        //     request.auction,
-        //     &ByteArray(transaction.account.0),
-        //     transaction.nonce.try_into().context("convert nonce")?,
-        // )
-        // .await
-        // .context("upsert_auction_transaction")?;
-
         for order_execution in &competition.order_executions {
             let (solver_fee, surplus_fee) = match order_execution.executed_fee {
                 ExecutedFee::Solver(solver_fee) => (solver_fee, None),
