@@ -26,6 +26,31 @@ SET auction_id = EXCLUDED.auction_id
     Ok(())
 }
 
+/// Inserts a row **iff** we don't have an entry for the given `auction_id` yet.
+/// This is useful to associate a settlement transaction coming from a colocated
+/// driver with an auction.
+/// In that case anybody could claim to settle the given auction but we only
+/// ever want to store the first claim.
+pub async fn try_insert_auction_transaction(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    tx_from: &Address,
+    tx_nonce: i64,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
+VALUES ($1, $2, $3)
+ON CONFLICT (auction_id) DO NOTHING
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(tx_from)
+        .bind(tx_nonce)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
 pub async fn insert_settlement_tx_info(
     ex: &mut PgConnection,
     block_number: i64,

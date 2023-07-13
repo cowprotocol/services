@@ -49,6 +49,16 @@ impl super::Postgres {
         .context("insert_settlement_tx_info")?;
 
         if let Some(auction_data) = settlement_update.auction_data {
+            // no-op for settlements before colocation
+            database::auction_transaction::try_insert_auction_transaction(
+                ex,
+                auction_data.auction_id,
+                &ByteArray(settlement_update.tx_from.0),
+                settlement_update.tx_nonce,
+            )
+            .await
+            .context("failed to insert auction_transaction")?;
+
             database::settlement_observations::insert(
                 ex,
                 Observation {
