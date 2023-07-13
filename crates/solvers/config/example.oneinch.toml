@@ -1,4 +1,0 @@
-relative-slippage = "0.1"
-absolute-slippage = "12"
-[dex]
-chain-id = "5"

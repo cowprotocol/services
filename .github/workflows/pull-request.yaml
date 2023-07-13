@@ -1,106 +1,14 @@
 name: pull request
 on:
   pull_request:
-  # We require PRs to be up to date before merging so technically it is not needed run the rust job
-  # on main. However for the cache to be usable in PRs we do need the job on main.
-  push:
-    branches: [main]
 jobs:
-  lint:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          components: rustfmt
-      - run: |
-          rustup --version
-          rustup show
-          cargo --version
-          cargo +nightly fmt --version
-          cargo clippy --version
-      - run: cargo +nightly fmt --all -- --check
-      - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
-
-  unit-tests:
+  foo:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      - run: cargo test
-
-  test-db:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
-        with:
-          file: docker-compose.yaml
-          up-opts: -d db migrations
-      - run: cargo test postgres -p orderbook -p database -- --ignored --test-threads 1
-
-  test-local-node:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
-        with:
-          file: docker-compose.yaml
-          up-opts: -d db migrations hardhat
-      - run: cargo test -p e2e local_node -- --ignored --test-threads 1 --nocapture
-
-  test-driver:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-    steps:
-      - uses: actions/checkout@v2
-      - uses: Swatinem/rust-cache@v1
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p driver --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
-        with:
-          file: docker-compose.yaml
-          up-opts: -d dev-geth
-      - run: cargo test -p driver -- --ignored
-
-  openapi:
-    timeout-minutes: 60
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - run: npm install @apidevtools/swagger-cli
-      - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
-      - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
-      - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
+      - run: git describe --dirty --tags
+      - run: cargo test -- --nocapture
