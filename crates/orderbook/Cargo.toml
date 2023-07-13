@@ -44,7 +44,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 shared = { path = "../shared" }
-sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = { workspace = true }
@@ -60,4 +60,4 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = "7"
+vergen = { version = "8", features = ["git", "gitcl"] }

@@ -408,14 +408,13 @@ mod tests {
                             serde_json::from_value::<CallRequest>(params[0].clone()).unwrap();
                         assert_eq!(call.data.unwrap(), allowance_call_data(owner, spender));
 
-                        match call.to.unwrap() {
-                            addr!("1111111111111111111111111111111111111111") => {
-                                Ok(allowance_return_data(1337.into()))
-                            }
-                            addr!("2222222222222222222222222222222222222222") => {
-                                Err(web3::Error::Decoder("test error".to_string()))
-                            }
-                            token => panic!("call to unexpected token {token:?}"),
+                        let to = call.to.unwrap();
+                        if to == addr!("1111111111111111111111111111111111111111") {
+                            Ok(allowance_return_data(1337.into()))
+                        } else if to == addr!("2222222222222222222222222222222222222222") {
+                            Err(web3::Error::Decoder("test error".to_string()))
+                        } else {
+                            panic!("call to unexpected token {to:?}")
                         }
                     })
                     .collect())

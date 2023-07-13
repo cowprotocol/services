@@ -1,4 +1,4 @@
-use {crate::PgTransaction, bigdecimal::BigDecimal};
+use {crate::PgTransaction, bigdecimal::BigDecimal, std::ops::DerefMut};
 
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
@@ -25,7 +25,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
         .bind(observation.fee)
         .bind(observation.block_number)
         .bind(observation.log_index)
-        .execute(ex)
+        .execute(ex.deref_mut())
         .await?;
     Ok(())
 }

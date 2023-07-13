@@ -385,9 +385,7 @@ paths:
         200:
           description: Version
           content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VersionResponse"
+            text/plain: {}
   /api/v1/app_data/{app_data_hash}:
     get:
       summary: Get the full `appData` from contract `appDataHash`.
@@ -1324,20 +1322,6 @@ components:
             (use internal liquidity in lieu of trading against on-chain liquidity).
 
             This field is omitted in case it coincides with `callData`.
-    VersionResponse:
-      description: |
-        The version of the codebase that is currently running.
-      type: object
-      properties:
-        branch:
-          type: string
-          description: The git branch name at the time of build.
-        commit:
-          type: string
-          description: The git commit hash at the time of build.
-        version:
-          type: string
-          description: The git tagged version (if any) at the time of the build.
     NativePriceResponse:
       description: |
         The estimated native price for the token

@@ -92,16 +92,7 @@ impl Slippage {
 
     /// Rounds a relative slippage value to the specified decimal precision.
     pub fn round(&self, arg: u32) -> Self {
-        // This seems weird, but it is because `BigDecimal::round` panics for
-        // values with too much precision. See `tests::bigdecimal_round_panics`
-        // for an example of this. Specifically, the `round` implementation is
-        // internally casting its `BigInt` digits to a `i128` and unwrapping.
-        // This means that there is a maximum of 38-digits of precision
-        // (specifically, `i128::MAX.to_string().len() - 1`) allowed when
-        // rounding. So, in order to be pragmatic (and seeing that 38 digits of
-        // precision is more than enough for slippage), first truncate the
-        // value to the maximum precision and then round.
-        Self(self.0.with_prec(38).round(arg as _))
+        Self(self.0.round(arg as _))
     }
 }
 
@@ -221,17 +212,6 @@ mod tests {
             assert_eq!(computed.sub(asset.amount), min);
             assert_eq!(computed.add(asset.amount), max);
         }
-    }
-
-    #[test]
-    #[should_panic]
-    fn bigdecimal_round_panics() {
-        let value =
-            "42.115792089237316195423570985008687907853269984665640564039457584007913129639935"
-                .parse::<BigDecimal>()
-                .unwrap();
-
-        let _ = value.round(4);
     }
 
     #[test]

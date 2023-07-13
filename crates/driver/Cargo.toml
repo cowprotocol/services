@@ -26,7 +26,7 @@ global-metrics = { path = "../global-metrics" }
 hex = "0.4"
 hex-literal = "0.4"
 hyper = "0.14"
-itertools = "0.10"
+itertools = "0.11"
 num = "0.4"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
@@ -34,16 +34,16 @@ rand = "0.8"
 reqwest = "0.11"
 serde = "1.0"
 serde_json = "1.0"
-serde_with = "2.0"
+serde_with = "3.0"
 tap = "1.0.1"
 tempfile = "3.4"
 thiserror = "1.0"
 tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = "0.7"
 tower = "0.4"
-tower-http = { version = "0.3", features = ["limit", "trace"] }
+tower-http = { version = "0.4", features = ["limit", "trace"] }
 url = { version = "2.3", features = ["serde"] }
-web3 = "0.18"
+web3 = "0.19"
 
 # These still use { workspace = true } because they're used at
 # the boundary between driver and shared.

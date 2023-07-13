@@ -18,7 +18,6 @@ use {
     hex_literal::hex,
     num::BigUint,
     primitive_types::{H160, H256, U256},
-    secp256k1::ONE_KEY,
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::{serde_as, DisplayFromStr},
     std::{
@@ -564,7 +563,12 @@ impl Default for OrderCancellation {
         Self::for_order(
             OrderUid::default(),
             &DomainSeparator::default(),
-            SecretKeyRef::new(&ONE_KEY),
+            SecretKeyRef::new(
+                &secp256k1::SecretKey::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+            ),
         )
     }
 }

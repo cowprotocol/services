@@ -2,6 +2,7 @@ use {
     crate::{auction::AuctionId, Address, PgTransaction},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
+    std::ops::DerefMut,
 };
 
 /// External token price for a given auction.
@@ -23,7 +24,7 @@ pub async fn insert(
             .bind(price.auction_id)
             .bind(price.token)
             .bind(price.price.clone())
-            .execute(&mut *ex)
+            .execute(ex.deref_mut())
             .await?;
     }
     Ok(())
