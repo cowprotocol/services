@@ -63,7 +63,7 @@ impl SettlementRanker {
                 if settlements.is_empty() {
                     solver.notify_auction_result(
                         auction_id,
-                        AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+                        AuctionResult::Rejected(SolverRejectionReason::EmptySolution),
                     );
                 }
                 let settlements: Vec<_> = settlements.into_iter().filter_map(|settlement| {

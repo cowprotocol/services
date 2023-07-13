@@ -356,6 +356,9 @@ pub enum SolverRejectionReason {
     /// The solver didn't return a successful response
     RunError(SolverRunError),
 
+    /// The solver returned an empty solution
+    EmptySolution,
+
     /// The solution candidate didn't include any user orders
     NoUserOrders,
 
