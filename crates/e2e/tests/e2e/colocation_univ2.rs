@@ -96,8 +96,29 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
-    // TODO: test that we have other important per-auction data that should have
-    // made its way into the DB.
+    onchain.mint_blocks_past_reorg_threshold().await;
+
+    let cip_20_data_updated = || async {
+        let data = match crate::database::most_recent_cip_20_data(services.db()).await {
+            Some(data) => data,
+            None => return false,
+        };
+
+        // trade execution for order can be found
+        data.trades.iter().any(|t| t.order_uid.0 == uid.0)
+            // sell and buy token price can be found
+            && data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
+            && data.prices.iter().any(|p| p.token.0 == token.address().0)
+            // solver participated in the competition
+            && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
+            // and won the auction
+            && data.score.winner.0 == solver.address().0
+            // and submitted the solution
+            && data.tx.tx_from.0 == solver.address().0
+    };
+    wait_for_condition(TIMEOUT, cip_20_data_updated)
+        .await
+        .unwrap();
 }
 
 fn order_events_matching_fuzzy(actual: &[OrderEvent], expected: &[OrderEventLabel]) -> bool {

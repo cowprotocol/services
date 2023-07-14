@@ -35,7 +35,7 @@ pub async fn fetch(
 SELECT *
 FROM settlement_observations so
 JOIN settlements s ON s.log_index = so.log_index AND s.block_number = so.block_number
-WHERE so.tx_hash = $1
+WHERE s.tx_hash = $1
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
 }
