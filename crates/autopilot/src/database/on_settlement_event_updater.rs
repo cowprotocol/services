@@ -1,5 +1,5 @@
 use {
-    anyhow::Context,
+    anyhow::{Context, Result},
     database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::{H160, U256},
     model::order::OrderUid,
@@ -9,13 +9,47 @@ use {
 
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
-    pub auction_id: i64,
+    pub auction_id: AuctionId,
     pub gas_used: U256,
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
     // pairs <order id, fee> for partial limit orders
     pub order_executions: Vec<(OrderUid, U256)>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuctionId {
+    /// We were able to recover this ID from our DB which means that it was
+    /// submitted by us when the protocol was not yet using colocated
+    /// drivers. This ID can therefore be trusted.
+    Centralized(i64),
+    /// This ID had to be recovered from the calldata of a settlement call. That
+    /// means it was submitted by a colocated driver. Because these drivers
+    /// could submit a solution at any time and with wrong or malicious IDs
+    /// this can not be trusted. For DB updates that modify existing
+    /// data based on these IDs we have to ensure they can only be executed once
+    /// (the first time we see this ID). That is required to prevent
+    /// malicious drivers from overwriting data for already settled
+    /// auctions.
+    Colocated(i64),
+}
+
+impl AuctionId {
+    /// Returns the underlying `auction_id` assuming the caller verified that
+    /// the next DB update will not run into problems with this ID.
+    pub fn assume_verified(&self) -> i64 {
+        match &self {
+            Self::Centralized(id) => *id,
+            Self::Colocated(id) => *id,
+        }
+    }
+}
+
+impl Default for AuctionId {
+    fn default() -> Self {
+        Self::Colocated(0)
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -31,7 +65,7 @@ impl super::Postgres {
     pub async fn update_settlement_details(
         ex: &mut PgConnection,
         settlement_update: SettlementUpdate,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["update_settlement_details"])
@@ -49,16 +83,19 @@ impl super::Postgres {
         .context("insert_settlement_tx_info")?;
 
         if let Some(auction_data) = settlement_update.auction_data {
-            // no-op for settlements before colocation
-            database::auction_transaction::try_insert_auction_transaction(
+            // Link the `auction_id` to the settlement tx. This is needed for
+            // colocated solutions and is a no-op for centralized
+            // solutions.
+            let insert_succesful = database::auction_transaction::try_insert_auction_transaction(
                 ex,
-                auction_data.auction_id,
+                auction_data.auction_id.assume_verified(),
                 &ByteArray(settlement_update.tx_from.0),
                 settlement_update.tx_nonce,
             )
             .await
             .context("failed to insert auction_transaction")?;
 
+            // It's always fine to store a settlement observation.
             database::settlement_observations::insert(
                 ex,
                 Observation {
@@ -73,21 +110,23 @@ impl super::Postgres {
             .await
             .context("insert_settlement_observations")?;
 
-            // update order executions for partial limit orders
-            // partial limit orders are a special kind of orders for which the surplus_fee
-            // is calculated AFTER the settlement is settled on chain.
-            for order_execution in auction_data.order_executions {
-                database::order_execution::update_surplus_fee(
-                    ex,
-                    &ByteArray(order_execution.0 .0), // order uid
-                    auction_data.auction_id,
-                    Some(order_execution.1) // order fee
-                        .as_ref()
-                        .map(u256_to_big_decimal)
-                        .as_ref(),
-                )
-                .await
-                .context("insert_missing_order_executions")?;
+            if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
+                // update order executions for partial limit orders
+                // partial limit orders are a special kind of orders for which the surplus_fee
+                // is calculated AFTER the settlement is settled on chain.
+                for order_execution in auction_data.order_executions {
+                    database::order_execution::update_surplus_fee(
+                        ex,
+                        &ByteArray(order_execution.0 .0), // order uid
+                        auction_data.auction_id.assume_verified(),
+                        Some(order_execution.1) // order fee
+                            .as_ref()
+                            .map(u256_to_big_decimal)
+                            .as_ref(),
+                    )
+                    .await
+                    .context("insert_missing_order_executions")?;
+                }
             }
         }
         Ok(())

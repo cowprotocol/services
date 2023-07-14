@@ -36,19 +36,24 @@ pub async fn try_insert_auction_transaction(
     auction_id: AuctionId,
     tx_from: &Address,
     tx_nonce: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<bool, sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
 VALUES ($1, $2, $3)
 ON CONFLICT (auction_id) DO NOTHING
+RETURNING (
+    CASE auction_id
+    WHEN NULL THEN FALSE
+    ELSE TRUE
+    END
+) as update_happened
     ;"#;
-    sqlx::query(QUERY)
+    sqlx::query_scalar(QUERY)
         .bind(auction_id)
         .bind(tx_from)
         .bind(tx_nonce)
-        .execute(ex)
-        .await?;
-    Ok(())
+        .fetch_one(ex)
+        .await
 }
 
 pub async fn insert_settlement_tx_info(
@@ -108,6 +113,15 @@ pub async fn get_auction_id(
         .fetch_optional(ex)
         .await?;
     Ok(auction)
+}
+
+pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"SELECT COUNT(*) FROM auction_transaction WHERE auction_id = $1;"#;
+    let count: i64 = sqlx::query_scalar(QUERY)
+        .bind(&auction_id)
+        .fetch_one(ex)
+        .await?;
+    Ok(count >= 1)
 }
 
 #[cfg(test)]

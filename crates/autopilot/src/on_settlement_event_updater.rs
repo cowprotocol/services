@@ -33,7 +33,7 @@
 use {
     crate::{
         database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
+            on_settlement_event_updater::{AuctionData, AuctionId, SettlementUpdate},
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
@@ -119,12 +119,15 @@ impl OnSettlementEventUpdater {
 
         let mut auction_id =
             database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
-                .await?;
+                .await?
+                .map(AuctionId::Centralized);
         if auction_id.is_none() {
             // This settlement either belongs to the other environment (staging, prod) or it
             // was issued using solver-driver colocation. In that case solvers
             // are supposed to append the `auction_id` to the calldata.
-            auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction).await?;
+            auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
+                .await?
+                .map(AuctionId::Colocated);
         }
 
         let mut update = SettlementUpdate {
@@ -154,12 +157,15 @@ impl OnSettlementEventUpdater {
             let effective_gas_price = receipt
                 .effective_gas_price
                 .with_context(|| format!("no effective gas price {hash:?}"))?;
-            let auction_external_prices = Postgres::get_auction_prices(&mut ex, auction_id)
-                .await
-                .with_context(|| {
-                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-            })?;
-            let orders = Postgres::order_executions_for_tx(&mut ex, &hash, auction_id).await?;
+            let auction_external_prices =
+                Postgres::get_auction_prices(&mut ex, auction_id.assume_verified())
+                    .await
+                    .with_context(|| {
+                        format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+                    })?;
+            let orders =
+                Postgres::order_executions_for_tx(&mut ex, &hash, auction_id.assume_verified())
+                    .await?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),
@@ -243,9 +249,9 @@ impl OnSettlementEventUpdater {
         };
 
         let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let observation =
-            database::settlement_observations::fetch(ex, &ByteArray(tx.hash.0)).await?;
-        match (score, observation) {
+        let data_already_recorded =
+            database::auction_transaction::data_exists(ex, auction_id).await?;
+        match (score, data_already_recorded) {
             (None, _) => {
                 tracing::debug!(
                     auction_id,
@@ -262,14 +268,14 @@ impl OnSettlementEventUpdater {
                 );
                 Ok(None)
             }
-            (Some(_), Some(_)) => {
+            (Some(_), true) => {
                 tracing::warn!(
                     auction_id,
-                    "settlement observation already recorded for this auction"
+                    "settlement data already recorded for this auction"
                 );
                 Ok(None)
             }
-            (Some(_), None) => Ok(Some(auction_id)),
+            (Some(_), false) => Ok(Some(auction_id)),
         }
     }
 }
