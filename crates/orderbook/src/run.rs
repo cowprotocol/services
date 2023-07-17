@@ -484,7 +484,11 @@ pub async fn run(args: Arguments) {
     );
     let ipfs = args.ipfs_gateway.map(|url| {
         Ipfs::new(
-            http_factory.create(),
+            http_factory
+                .builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
             url,
             args.ipfs_pinata_auth
                 .map(|auth| format!("pinataGatewayToken={auth}")),
