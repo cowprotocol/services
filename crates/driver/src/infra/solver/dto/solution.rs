@@ -21,9 +21,9 @@ impl Solutions {
         self.solutions
             .into_iter()
             .map(|solution| {
-                Ok(competition::Solution {
-                    id: solution.id.into(),
-                    trades: solution
+                competition::Solution::new(
+                    solution.id.into(),
+                    solution
                         .trades
                         .into_iter()
                         .map(|trade| match trade {
@@ -121,14 +121,12 @@ impl Solutions {
                             )),
                         })
                         .try_collect()?,
-                    prices: competition::solution::ClearingPrices::new(
-                        solution
-                            .prices
-                            .into_iter()
-                            .map(|(address, price)| (address.into(), price))
-                            .collect(),
-                    ),
-                    interactions: solution
+                    solution
+                        .prices
+                        .into_iter()
+                        .map(|(address, price)| (address.into(), price))
+                        .collect(),
+                    solution
                         .interactions
                         .into_iter()
                         .map(|interaction| match interaction {
@@ -197,10 +195,10 @@ impl Solutions {
                             }
                         })
                         .try_collect()?,
+                    solver.clone(),
+                    solution.risk.into(),
                     weth,
-                    solver: solver.clone(),
-                    risk: solution.risk.into(),
-                })
+                ).map_err(|competition::solution::InvalidClearingPrices| super::Error("invalid clearing prices"))
             })
             .collect()
     }

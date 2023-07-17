@@ -72,7 +72,7 @@ impl Competition {
         // Empty solutions aren't useful, so discard them.
         let solutions = solutions.into_iter().filter(|solution| {
             if solution.is_empty() {
-                observe::empty_solution(self.solver.name(), solution.id);
+                observe::empty_solution(self.solver.name(), solution.id());
                 false
             } else {
                 true
@@ -81,9 +81,9 @@ impl Competition {
 
         // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(self.solver.name(), solution.id);
+            observe::encoding(self.solver.name(), solution.id());
             (
-                solution.id,
+                solution.id(),
                 solution.encode(auction, &self.eth, &self.simulator).await,
             )
         }))

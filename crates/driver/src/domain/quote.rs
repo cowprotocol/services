@@ -30,10 +30,10 @@ pub struct Quote {
 impl Quote {
     fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
-            .price(order.tokens.sell)
+            .clearing_price(order.tokens.sell)
             .ok_or(QuotingFailed::ClearingSellMissing)?;
         let buy_price = solution
-            .price(order.tokens.buy)
+            .clearing_price(order.tokens.buy)
             .ok_or(QuotingFailed::ClearingBuyMissing)?;
         let amount = match order.side {
             order::Side::Sell => conv::u256::from_big_rational(
@@ -49,8 +49,8 @@ impl Quote {
         };
         Ok(Self {
             amount,
-            interactions: boundary::quote::encode_interactions(eth, &solution.interactions)?,
-            solver: solution.solver.address(),
+            interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
+            solver: solution.solver().address(),
         })
     }
 }

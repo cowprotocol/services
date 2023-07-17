@@ -32,18 +32,68 @@ pub use {interaction::Interaction, settlement::Settlement, trade::Trade};
 /// [`competition::Auction`]. See also [`settlement::Settlement`].
 #[derive(Debug, Clone)]
 pub struct Solution {
-    pub id: Id,
-    /// Trades settled by this solution.
-    pub trades: Vec<Trade>,
-    pub prices: ClearingPrices,
-    pub interactions: Vec<Interaction>,
-    pub weth: eth::WethAddress,
-    /// The solver which generated this solution.
-    pub solver: Solver,
-    pub risk: Risk,
+    id: Id,
+    trades: Vec<Trade>,
+    prices: HashMap<eth::TokenAddress, eth::U256>,
+    interactions: Vec<Interaction>,
+    solver: Solver,
+    risk: Risk,
+    weth: eth::WethAddress,
 }
 
 impl Solution {
+    pub fn new(
+        id: Id,
+        trades: Vec<Trade>,
+        prices: HashMap<eth::TokenAddress, eth::U256>,
+        interactions: Vec<Interaction>,
+        solver: Solver,
+        risk: Risk,
+        weth: eth::WethAddress,
+    ) -> Result<Self, InvalidClearingPrices> {
+        if trades.iter().all(|trade| {
+            prices.contains_key(&trade.sell_token().wrap(weth))
+                && prices.contains_key(&trade.buy_token().wrap(weth))
+        }) {
+            Ok(Self {
+                id,
+                trades,
+                prices,
+                interactions,
+                solver,
+                risk,
+                weth,
+            })
+        } else {
+            Err(InvalidClearingPrices)
+        }
+    }
+
+    /// The ID of this solution.
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    /// Trades settled by this solution.
+    pub fn trades(&self) -> &[Trade] {
+        &self.trades
+    }
+
+    /// Interactions executed by this solution.
+    pub fn interactions(&self) -> &[Interaction] {
+        &self.interactions
+    }
+
+    /// The solver which generated this solution.
+    pub fn solver(&self) -> &Solver {
+        &self.solver
+    }
+
+    /// The risk of this solution.
+    pub fn risk(&self) -> Risk {
+        self.risk
+    }
+
     /// Approval interactions necessary for encoding the settlement.
     pub async fn approvals(
         &self,
@@ -117,10 +167,16 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator).await
     }
 
-    /// The clearing prices, represented as a list of assets. If there are any
-    /// orders which buy ETH, this will contain the correct ETH price.
-    pub fn prices(&self) -> Result<Vec<eth::Asset>, Error> {
-        let prices = self.prices.0.iter().map(|(&token, &amount)| eth::Asset {
+    /// Token prices settled by this solution, expressed using an arbitrary
+    /// reference unit chosen by the solver. These values are only
+    /// meaningful in relation to each others.
+    ///
+    /// The rule which relates two prices for tokens X and Y is:
+    /// ```
+    /// amount_x * price_x = amount_y * price_y
+    /// ```
+    pub fn clearing_prices(&self) -> Result<Vec<eth::Asset>, Error> {
+        let prices = self.prices.iter().map(|(&token, &amount)| eth::Asset {
             token,
             amount: amount.into(),
         });
@@ -149,46 +205,22 @@ impl Solution {
             // Add a clearing price for ETH equal to WETH.
             prices.push(eth::Asset {
                 token: eth::ETH_TOKEN,
-                amount: self
-                    .prices
-                    .0
-                    .get(&self.weth.into())
-                    .ok_or(Error::MissingWethClearingPrice)?
-                    .to_owned()
-                    .into(),
+                amount: self.prices[&self.weth.into()].to_owned().into(),
             });
 
             return Ok(prices);
         }
 
-        // TODO: We should probably filter out all unused prices.
+        // TODO: We should probably filter out all unused prices to save gas.
 
         Ok(prices.collect_vec())
     }
 
     /// Clearing price for the given token.
-    pub fn price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
+    pub fn clearing_price(&self, token: eth::TokenAddress) -> Option<eth::U256> {
         // The clearing price of ETH is equal to WETH.
         let token = token.wrap(self.weth);
-        self.prices.0.get(&token).map(ToOwned::to_owned)
-    }
-}
-
-// TODO Make this just a hashmap field with the docs
-/// Token prices for this solution, expressed using an arbitrary reference
-/// unit chosen by the solver. These values are only meaningful in relation
-/// to each others.
-///
-/// The rule which relates two prices for tokens X and Y is:
-/// ```
-/// amount_x * price_x = amount_y * price_y
-/// ```
-#[derive(Debug, Clone)]
-pub struct ClearingPrices(HashMap<eth::TokenAddress, eth::U256>);
-
-impl ClearingPrices {
-    pub fn new(prices: HashMap<eth::TokenAddress, eth::U256>) -> Self {
-        Self(prices)
+        self.prices.get(&token).map(ToOwned::to_owned)
     }
 }
 
@@ -296,8 +328,6 @@ pub enum Error {
     Blockchain(#[from] blockchain::Error),
     #[error("boundary error: {0:?}")]
     Boundary(#[from] boundary::Error),
-    #[error("missing weth clearing price")]
-    MissingWethClearingPrice,
     #[error("simulation error: {0:?}")]
     Simulation(#[from] simulator::Error),
     #[error(
@@ -322,3 +352,7 @@ pub enum Error {
 #[derive(Debug, Error)]
 #[error("the solution deadline has been exceeded")]
 pub struct DeadlineExceeded;
+
+#[derive(Debug, Error)]
+#[error("invalid clearing prices")]
+pub struct InvalidClearingPrices;

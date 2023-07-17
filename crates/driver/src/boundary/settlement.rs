@@ -79,13 +79,13 @@ impl Settlement {
 
         let mut settlement = solver::settlement::Settlement::new(
             solution
-                .prices()?
+                .clearing_prices()?
                 .into_iter()
                 .map(|asset| (asset.token.into(), asset.amount.into()))
                 .collect(),
         );
 
-        for trade in &solution.trades {
+        for trade in solution.trades() {
             let (boundary_order, execution) = match trade {
                 competition::solution::Trade::Fulfillment(trade) => {
                     // TODO: The `http_solver` module filters out orders with 0
@@ -130,8 +130,8 @@ impl Settlement {
         }
 
         let slippage_calculator = SlippageCalculator {
-            relative: to_big_decimal(solution.solver.slippage().relative.clone()),
-            absolute: solution.solver.slippage().absolute.map(Into::into),
+            relative: to_big_decimal(solution.solver().slippage().relative.clone()),
+            absolute: solution.solver().slippage().absolute.map(Into::into),
         };
         let external_prices = ExternalPrices::try_from_auction_prices(
             native_token.address(),
@@ -147,7 +147,7 @@ impl Settlement {
         )?;
         let slippage_context = slippage_calculator.context(&external_prices);
 
-        for interaction in &solution.interactions {
+        for interaction in solution.interactions() {
             let boundary_interaction = to_boundary_interaction(
                 &slippage_context,
                 settlement_contract.address().into(),
@@ -161,8 +161,8 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
-            solver: solution.solver.address(),
-            risk: solution.risk,
+            solver: solution.solver().address(),
+            risk: solution.risk(),
         })
     }
 

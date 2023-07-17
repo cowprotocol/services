@@ -147,6 +147,22 @@ impl Jit {
 }
 
 impl Trade {
+    /// The token being sold by this trade.
+    pub(super) fn sell_token(&self) -> eth::TokenAddress {
+        match self {
+            Self::Fulfillment(fulfillment) => fulfillment.order.sell.token,
+            Self::Jit(jit) => jit.order.sell.token,
+        }
+    }
+
+    /// The token being bought by this trade.
+    pub(super) fn buy_token(&self) -> eth::TokenAddress {
+        match self {
+            Self::Fulfillment(fulfillment) => fulfillment.order.buy.token,
+            Self::Jit(jit) => jit.order.buy.token,
+        }
+    }
+
     /// The surplus fee associated with this trade, if any.
     ///
     /// The protocol determines the fee for fill-or-kill limit orders whereas
@@ -227,11 +243,11 @@ impl Trade {
                 // Market orders use clearing prices to calculate the executed amounts. See the
                 // [`competition::Solution::prices`] field for an explanation of how these work.
                 let sell_price = solution
-                    .price(sell.token)
+                    .clearing_price(sell.token)
                     .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
-                    .price(buy.token)
+                    .clearing_price(buy.token)
                     .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
@@ -329,11 +345,11 @@ impl Trade {
                     .expect("all limit orders must have a surplus fee");
 
                 let sell_price = solution
-                    .price(sell.token)
+                    .clearing_price(sell.token)
                     .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
                     .to_owned();
                 let buy_price = solution
-                    .price(buy.token)
+                    .clearing_price(buy.token)
                     .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
                     .to_owned();
                 match side {
