@@ -51,19 +51,22 @@ impl Solution {
         risk: Risk,
         weth: eth::WethAddress,
     ) -> Result<Self, InvalidClearingPrices> {
-        if trades.iter().all(|trade| {
-            prices.contains_key(&trade.sell_token().wrap(weth))
-                && prices.contains_key(&trade.buy_token().wrap(weth))
+        let solution = Self {
+            id,
+            trades,
+            prices,
+            interactions,
+            solver,
+            risk,
+            weth,
+        };
+
+        // Check that the solution includes clearing prices for all user trades.
+        if solution.user_trades().all(|trade| {
+            solution.clearing_price(trade.order().sell.token).is_some()
+                && solution.clearing_price(trade.order().buy.token).is_some()
         }) {
-            Ok(Self {
-                id,
-                trades,
-                prices,
-                interactions,
-                solver,
-                risk,
-                weth,
-            })
+            Ok(solution)
         } else {
             Err(InvalidClearingPrices)
         }

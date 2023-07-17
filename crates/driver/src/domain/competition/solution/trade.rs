@@ -147,22 +147,6 @@ impl Jit {
 }
 
 impl Trade {
-    /// The token being sold by this trade.
-    pub(super) fn sell_token(&self) -> eth::TokenAddress {
-        match self {
-            Self::Fulfillment(fulfillment) => fulfillment.order.sell.token,
-            Self::Jit(jit) => jit.order.sell.token,
-        }
-    }
-
-    /// The token being bought by this trade.
-    pub(super) fn buy_token(&self) -> eth::TokenAddress {
-        match self {
-            Self::Fulfillment(fulfillment) => fulfillment.order.buy.token,
-            Self::Jit(jit) => jit.order.buy.token,
-        }
-    }
-
     /// The surplus fee associated with this trade, if any.
     ///
     /// The protocol determines the fee for fill-or-kill limit orders whereas
