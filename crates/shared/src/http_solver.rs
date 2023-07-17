@@ -182,6 +182,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             let body = serde_json::to_vec(&model).unwrap();
             request = request.body(body);
         };
+        // temporary log, not needed once the code is stable for colocation
+        tracing::debug!(
+            "http request url: {}, timeout: {:?}, body: {:?}",
+            query,
+            timeout,
+            model
+        );
         let mut response = request.send().await.context("failed to send request")?;
         let status = response.status();
         let response_body =
@@ -189,7 +196,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .await
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
-        tracing::trace!(body = %text, "response");
+        tracing::debug!(body = %text, "http response");
         let context = || format!("request query {query}, response body {text}");
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::RateLimited);
