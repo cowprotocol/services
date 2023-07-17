@@ -15,7 +15,7 @@ use {
         },
     },
     crate::{
-        arguments::duration_from_seconds,
+        arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
         bad_token::token_owner_finder::{
             ethplorer::EthplorerTokenOwnerFinder,
             solvers::{
@@ -170,10 +170,26 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "token_owner_finder_http_timeout: {:?}",
-            self.token_owner_finders
+            "blockscout_http_timeout: {:?}",
+            self.blockscout_http_timeout,
         )?;
-
+        display_secret_option(f, "ethplorer_api_key", &self.ethplorer_api_key)?;
+        display_option(
+            f,
+            "token_owner_finder_rate_limiter",
+            &self.token_owner_finder_rate_limiter,
+        )?;
+        writeln!(f, "whitelisted_owners, {:?}", self.whitelisted_owners)?;
+        display_list(
+            f,
+            "solver_token_owners_urls",
+            &self.solver_token_owners_urls,
+        )?;
+        writeln!(
+            f,
+            "solver_token_owners_cache_update_intervals, {:?}",
+            self.solver_token_owners_cache_update_intervals
+        )?;
         Ok(())
     }
 }
