@@ -51,7 +51,7 @@ impl Competition {
             .liquidity
             .fetch(
                 &auction
-                    .orders
+                    .orders()
                     .iter()
                     .filter_map(|order| match order.kind {
                         order::Kind::Market | order::Kind::Limit { .. } => {
@@ -66,7 +66,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline.timeout()?)
+            .solve(auction, &liquidity, auction.deadline().timeout()?)
             .await?;
 
         // Empty solutions aren't useful, so discard them.

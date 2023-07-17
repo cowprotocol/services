@@ -29,7 +29,7 @@ impl Solutions {
                         .map(|trade| match trade {
                             Trade::Fulfillment(fulfillment) => {
                                 let order = auction
-                                    .orders
+                                    .orders()
                                     .iter()
                                     .find(|order| order.uid == fulfillment.order)
                                     // TODO this error should reference the UID

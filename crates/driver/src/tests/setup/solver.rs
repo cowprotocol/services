@@ -137,42 +137,39 @@ impl Solver {
                 "risk": solution.risk.to_string(),
             }));
         }
-        let tokens_json = if config.quote {
-            Default::default()
-        } else {
-            config
-                .solutions
-                .iter()
-                .flat_map(|s| s.fulfillments.iter())
-                .flat_map(|f| {
-                    let quote = &f.quoted_order;
-                    [
-                        (
-                            hex_address(
-                                config.blockchain.get_token_wrapped(quote.order.sell_token),
-                            ),
-                            json!({
-                                "decimals": null,
-                                "symbol": null,
-                                "referencePrice": "1000000000000000000",
-                                "availableBalance": "0",
-                                "trusted": config.trusted.contains(quote.order.sell_token),
-                            }),
+
+        let tokens_json = config
+            .solutions
+            .iter()
+            .flat_map(|s| s.fulfillments.iter())
+            .flat_map(|f| {
+                let quote = &f.quoted_order;
+                [
+                    (
+                        hex_address(
+                            config.blockchain.get_token_wrapped(quote.order.sell_token),
                         ),
-                        (
-                            hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
-                            json!({
-                                "decimals": null,
-                                "symbol": null,
-                                "referencePrice": "1000000000000000000",
-                                "availableBalance": "0",
-                                "trusted": config.trusted.contains(quote.order.buy_token),
-                            }),
-                        ),
-                    ]
-                })
-                .collect::<HashMap<_, _>>()
-        };
+                        json!({
+                            "decimals": null,
+                            "symbol": null,
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            "availableBalance": "0",
+                            "trusted": config.trusted.contains(quote.order.sell_token),
+                        }),
+                    ),
+                    (
+                        hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
+                        json!({
+                            "decimals": null,
+                            "symbol": null,
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            "availableBalance": "0",
+                            "trusted": config.trusted.contains(quote.order.buy_token),
+                        }),
+                    ),
+                ]
+            })
+            .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
         let eth = Ethereum::ethrpc(

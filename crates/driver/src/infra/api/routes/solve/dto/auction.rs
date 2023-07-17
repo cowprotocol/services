@@ -15,17 +15,8 @@ use {
 
 impl Auction {
     pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
-        let tokens = auction::Tokens::new(self.tokens.into_iter().map(|token| {
-            competition::auction::Token {
-                decimals: token.decimals,
-                symbol: token.symbol,
-                address: token.address.into(),
-                price: token.price.map(Into::into),
-                available_balance: Default::default(),
-                trusted: token.trusted,
-            }
-        }));
-        let orders = auction::Orders::new(
+        competition::Auction::new(
+            Some(self.id.try_into()?),
             self.orders
                 .into_iter()
                 .map(|order| {
@@ -125,16 +116,22 @@ impl Auction {
                         },
                     })
                 })
-                .try_collect::<_, _, Error>()?,
-            &tokens,
-        );
-        Ok(competition::Auction {
-            id: Some(self.id.try_into()?),
-            orders,
-            tokens,
-            gas_price: eth.gas_price().await.map_err(Error::GasPrice)?,
-            deadline: self.deadline.into(),
-        })
+                .try_collect::<_, Vec<_>, Error>()?,
+            self.tokens
+                .into_iter()
+                .map(|token| competition::auction::Token {
+                    decimals: token.decimals,
+                    symbol: token.symbol,
+                    address: token.address.into(),
+                    price: token.price.map(Into::into),
+                    available_balance: Default::default(),
+                    trusted: token.trusted,
+                }),
+            eth.gas_price().await.map_err(Error::GasPrice)?,
+            self.deadline.into(),
+            eth.contracts().weth_address(),
+        )
+        .map_err(Into::into)
     }
 }
 
@@ -144,6 +141,8 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
+    #[error("invalid tokens in auction")]
+    InvalidTokens,
     #[error("error getting gas price")]
     GasPrice(#[source] crate::infra::blockchain::Error),
 }
@@ -151,6 +150,12 @@ pub enum Error {
 impl From<auction::InvalidId> for Error {
     fn from(_value: auction::InvalidId) -> Self {
         Self::InvalidAuctionId
+    }
+}
+
+impl From<auction::InvalidTokens> for Error {
+    fn from(_value: auction::InvalidTokens) -> Self {
+        Self::InvalidTokens
     }
 }
 

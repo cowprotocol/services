@@ -17,7 +17,7 @@ impl Auction {
         weth: eth::WethAddress,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
-            .tokens
+            .tokens()
             .iter()
             .map(|token| {
                 (
@@ -34,9 +34,9 @@ impl Auction {
             .collect();
 
         Self {
-            id: auction.id.as_ref().map(ToString::to_string),
+            id: auction.id().as_ref().map(ToString::to_string),
             orders: auction
-                .orders
+                .orders()
                 .iter()
                 .map(|order| Order {
                     uid: order.uid.into(),
@@ -136,7 +136,7 @@ impl Auction {
                 })
                 .collect(),
             tokens,
-            effective_gas_price: auction.gas_price.effective().into(),
+            effective_gas_price: auction.gas_price().effective().into(),
             deadline: timeout.deadline(),
         }
     }

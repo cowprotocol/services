@@ -7,7 +7,7 @@ use crate::{
 pub mod signature;
 
 pub use signature::Signature;
-use {super::auction, bigdecimal::Zero};
+use {super::auction, bigdecimal::Zero, num::CheckedDiv};
 
 /// An order in the auction.
 #[derive(Debug, Clone)]
@@ -184,7 +184,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                conv::u256::to_big_rational(buy.0) / conv::u256::to_big_rational(sell.0)
+                conv::u256::to_big_rational(buy.0)
+                    .checked_div(&conv::u256::to_big_rational(sell.0))
+                    .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),
         }

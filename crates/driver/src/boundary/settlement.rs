@@ -136,7 +136,7 @@ impl Settlement {
         let external_prices = ExternalPrices::try_from_auction_prices(
             native_token.address(),
             auction
-                .tokens
+                .tokens()
                 .iter()
                 .filter_map(|token| {
                     token
@@ -204,7 +204,7 @@ impl Settlement {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
-                .tokens
+                .tokens()
                 .iter()
                 .filter_map(|token| {
                     token
@@ -213,7 +213,7 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let gas_price = u256_to_big_rational(&auction.gas_price.effective().into());
+        let gas_price = u256_to_big_rational(&auction.gas_price().effective().into());
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,

@@ -79,7 +79,11 @@ impl Order {
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
-            .solve(&self.fake_auction(gas_price), &liquidity, timeout)
+            .solve(
+                &self.fake_auction(gas_price, eth.contracts().weth_address()),
+                &liquidity,
+                timeout,
+            )
             .await?;
         Quote::new(
             eth,
@@ -93,37 +97,58 @@ impl Order {
         )
     }
 
-    fn fake_auction(&self, gas_price: eth::GasPrice) -> competition::Auction {
-        competition::Auction {
-            id: None,
-            tokens: Default::default(),
-            orders: auction::Orders::new(
-                vec![competition::Order {
-                    uid: Default::default(),
-                    receiver: None,
-                    valid_to: util::Timestamp::MAX,
-                    buy: self.buy(),
-                    sell: self.sell(),
-                    side: self.side,
-                    fee: Default::default(),
-                    kind: competition::order::Kind::Market,
-                    app_data: Default::default(),
-                    partial: competition::order::Partial::No,
-                    pre_interactions: Default::default(),
-                    post_interactions: Default::default(),
-                    sell_token_balance: competition::order::SellTokenBalance::Erc20,
-                    buy_token_balance: competition::order::BuyTokenBalance::Erc20,
-                    signature: competition::order::Signature {
-                        scheme: competition::order::signature::Scheme::Eip1271,
-                        data: Default::default(),
-                        signer: Default::default(),
-                    },
-                }],
-                &Default::default(),
-            ),
-            gas_price: gas_price.effective().into(),
-            deadline: Default::default(),
-        }
+    fn fake_auction(
+        &self,
+        gas_price: eth::GasPrice,
+        weth: eth::WethAddress,
+    ) -> competition::Auction {
+        competition::Auction::new(
+            None,
+            vec![competition::Order {
+                uid: Default::default(),
+                receiver: None,
+                valid_to: util::Timestamp::MAX,
+                buy: self.buy(),
+                sell: self.sell(),
+                side: self.side,
+                fee: Default::default(),
+                kind: competition::order::Kind::Market,
+                app_data: Default::default(),
+                partial: competition::order::Partial::No,
+                pre_interactions: Default::default(),
+                post_interactions: Default::default(),
+                sell_token_balance: competition::order::SellTokenBalance::Erc20,
+                buy_token_balance: competition::order::BuyTokenBalance::Erc20,
+                signature: competition::order::Signature {
+                    scheme: competition::order::signature::Scheme::Eip1271,
+                    data: Default::default(),
+                    signer: Default::default(),
+                },
+            }],
+            [
+                auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: self.tokens.sell,
+                    price: None,
+                    available_balance: Default::default(),
+                    trusted: false,
+                },
+                auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: self.tokens.buy,
+                    price: None,
+                    available_balance: Default::default(),
+                    trusted: false,
+                },
+            ]
+            .into_iter(),
+            gas_price.effective().into(),
+            Default::default(),
+            weth,
+        )
+        .unwrap()
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to
