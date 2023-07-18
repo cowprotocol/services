@@ -15,22 +15,9 @@ use {
 
 impl Auction {
     pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
-        Ok(competition::Auction {
-            id: Some(self.id.try_into()?),
-            tokens: self
-                .tokens
-                .into_iter()
-                .map(|token| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
-                    address: token.address.into(),
-                    price: token.price.map(Into::into),
-                    available_balance: Default::default(),
-                    trusted: token.trusted,
-                })
-                .collect(),
-            orders: self
-                .orders
+        competition::Auction::new(
+            Some(self.id.try_into()?),
+            self.orders
                 .into_iter()
                 .map(|order| {
                     Ok(competition::Order {
@@ -38,11 +25,11 @@ impl Auction {
                         receiver: order.receiver.map(Into::into),
                         valid_to: order.valid_to.into(),
                         buy: eth::Asset {
-                            amount: order.buy_amount,
+                            amount: order.buy_amount.into(),
                             token: order.buy_token.into(),
                         },
                         sell: eth::Asset {
-                            amount: order.sell_amount,
+                            amount: order.sell_amount.into(),
                             token: order.sell_token.into(),
                         },
                         side: match order.kind {
@@ -129,10 +116,22 @@ impl Auction {
                         },
                     })
                 })
-                .try_collect::<_, _, Error>()?,
-            gas_price: eth.gas_price().await.map_err(Error::GasPrice)?,
-            deadline: self.deadline.into(),
-        })
+                .try_collect::<_, Vec<_>, Error>()?,
+            self.tokens
+                .into_iter()
+                .map(|token| competition::auction::Token {
+                    decimals: token.decimals,
+                    symbol: token.symbol,
+                    address: token.address.into(),
+                    price: token.price.map(Into::into),
+                    available_balance: Default::default(),
+                    trusted: token.trusted,
+                }),
+            eth.gas_price().await.map_err(Error::GasPrice)?,
+            self.deadline.into(),
+            eth.contracts().weth_address(),
+        )
+        .map_err(Into::into)
     }
 }
 
@@ -142,6 +141,8 @@ pub enum Error {
     InvalidAuctionId,
     #[error("surplus fee is missing for limit order")]
     MissingSurplusFee,
+    #[error("invalid tokens in auction")]
+    InvalidTokens,
     #[error("error getting gas price")]
     GasPrice(#[source] crate::infra::blockchain::Error),
 }
@@ -149,6 +150,12 @@ pub enum Error {
 impl From<auction::InvalidId> for Error {
     fn from(_value: auction::InvalidId) -> Self {
         Self::InvalidAuctionId
+    }
+}
+
+impl From<auction::InvalidTokens> for Error {
+    fn from(_value: auction::InvalidTokens) -> Self {
+        Self::InvalidTokens
     }
 }
 

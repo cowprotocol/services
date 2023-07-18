@@ -182,6 +182,36 @@ impl TokenAddress {
     }
 }
 
+/// An ERC20 token amount.
+///
+/// https://eips.ethereum.org/EIPS/eip-20
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TokenAmount(pub U256);
+
+impl From<U256> for TokenAmount {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<TokenAmount> for U256 {
+    fn from(value: TokenAmount) -> Self {
+        value.0
+    }
+}
+
+impl From<u128> for TokenAmount {
+    fn from(value: u128) -> Self {
+        Self(value.into())
+    }
+}
+
+impl std::fmt::Display for TokenAmount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// The address of the WETH contract.
 #[derive(Debug, Clone, Copy)]
 pub struct WethAddress(pub TokenAddress);
@@ -220,7 +250,7 @@ impl From<TokenAddress> for ContractAddress {
 /// particular token.
 #[derive(Debug, Clone, Copy)]
 pub struct Asset {
-    pub amount: U256,
+    pub amount: TokenAmount,
     pub token: TokenAddress,
 }
 

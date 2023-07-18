@@ -81,19 +81,19 @@ pub struct Solution {
 
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
-    pub quote: Quote,
+    pub quoted_order: QuotedOrder,
     pub interactions: Vec<Interaction>,
 }
 
 /// An order for which buy and sell amounts have been calculated.
 #[derive(Debug, Clone)]
-pub struct Quote {
+pub struct QuotedOrder {
     pub order: Order,
     pub buy: eth::U256,
     pub sell: eth::U256,
 }
 
-impl Quote {
+impl QuotedOrder {
     /// The buy amount with the surplus factor.
     pub fn buy_amount(&self) -> eth::U256 {
         match self.order.side {
@@ -507,14 +507,14 @@ impl Blockchain {
 
     /// Quote an order using a UniswapV2 pool. This determines the buy and sell
     /// amount of the order.
-    pub async fn quote(&self, order: &Order) -> Quote {
+    pub async fn quote(&self, order: &Order) -> QuotedOrder {
         let pair = self.find_pair(order);
         let executed_sell = order.sell_amount;
         let executed_buy = pair.pool.out(Asset {
             amount: order.sell_amount,
             token: order.sell_token,
         });
-        Quote {
+        QuotedOrder {
             order: order.clone(),
             buy: executed_buy,
             sell: executed_sell,
@@ -608,7 +608,7 @@ impl Blockchain {
                 .unwrap()
                 .0;
             fulfillments.push(Fulfillment {
-                quote: quote.clone(),
+                quoted_order: quote.clone(),
                 interactions: vec![
                     Interaction {
                         address: sell_token.address(),
@@ -634,14 +634,16 @@ impl Blockchain {
                         inputs: vec![eth::Asset {
                             token: sell_token.address().into(),
                             // Surplus fees stay in the contract.
-                            amount: quote.sell - quote.order.surplus_fee()
+                            amount: (quote.sell - quote.order.surplus_fee()
                                 + quote.order.execution_diff.increase_sell
-                                - quote.order.execution_diff.decrease_sell,
+                                - quote.order.execution_diff.decrease_sell)
+                                .into(),
                         }],
                         outputs: vec![eth::Asset {
                             token: buy_token.address().into(),
-                            amount: quote.buy + quote.order.execution_diff.increase_buy
-                                - quote.order.execution_diff.decrease_buy,
+                            amount: (quote.buy + quote.order.execution_diff.increase_buy
+                                - quote.order.execution_diff.decrease_buy)
+                                .into(),
                         }],
                         internalize: order.internalize,
                     },

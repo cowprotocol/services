@@ -73,7 +73,8 @@ impl Settlement {
             .iter()
             .flat_map(|interaction| interaction.inputs())
         {
-            *flow.entry(input.token).or_default() -= util::conv::u256::to_big_int(input.amount);
+            *flow.entry(input.token).or_default() -=
+                util::conv::u256::to_big_int(input.amount.into());
         }
 
         // Interaction outputs represent flow into the contract, i.e. positive flow.
@@ -82,7 +83,8 @@ impl Settlement {
             .iter()
             .flat_map(|interaction| interaction.outputs())
         {
-            *flow.entry(output.token).or_default() += util::conv::u256::to_big_int(output.amount);
+            *flow.entry(output.token).or_default() +=
+                util::conv::u256::to_big_int(output.amount.into());
         }
 
         // For trades, the sold amounts are always entering the contract (positive
@@ -90,11 +92,12 @@ impl Settlement {
         // (negative flow).
         for trade in solution.trades.iter() {
             let trade::Execution { sell, buy } = trade.execution(&solution)?;
-            *flow.entry(sell.token).or_default() += util::conv::u256::to_big_int(sell.amount);
+            *flow.entry(sell.token).or_default() +=
+                util::conv::u256::to_big_int(sell.amount.into());
             // Within the settlement contract, the orders which buy ETH are wrapped into
             // WETH, and hence contribute to WETH flow.
             *flow.entry(buy.token.wrap(solution.weth)).or_default() -=
-                util::conv::u256::to_big_int(buy.amount);
+                util::conv::u256::to_big_int(buy.amount.into());
         }
 
         if flow.values().any(|v| v.is_negative()) {
@@ -111,7 +114,7 @@ impl Settlement {
                 interaction
                     .inputs()
                     .iter()
-                    .all(|asset| auction.is_trusted(asset.token))
+                    .all(|asset| auction.tokens().get(asset.token).trusted)
             })
         {
             return Err(Error::UntrustedInternalization);
@@ -120,7 +123,7 @@ impl Settlement {
         // Encode the solution into a settlement.
         let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
         Self::new(
-            auction.id.unwrap(),
+            auction.id().unwrap(),
             [(solution.id, solution)].into(),
             boundary,
             eth,
