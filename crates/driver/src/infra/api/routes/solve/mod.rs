@@ -20,9 +20,10 @@ async fn route(
     let auction = auction.0.into_domain(state.eth()).await.tap_err(|err| {
         observe::invalid_dto(state.solver().name(), err, "/solve", "auction");
     })?;
+    let auction_id = auction.id().unwrap();
     observe::auction(state.solver().name(), &auction);
     let competition = state.competition();
-    let result = competition.solve(&auction).await;
-    observe::solved(state.solver().name(), &auction, &result);
+    let result = competition.solve(auction).await;
+    observe::solved(state.solver().name(), auction_id, &result);
     Ok(axum::Json(dto::Solution::new(result?, &competition.solver)))
 }

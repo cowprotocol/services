@@ -76,14 +76,9 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
-        let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
-            .solve(
-                &self.fake_auction(gas_price, eth.contracts().weth_address()),
-                &liquidity,
-                timeout,
-            )
+            .solve(&self.fake_auction(eth).await?, &liquidity, timeout)
             .await?;
         Quote::new(
             eth,
@@ -97,11 +92,7 @@ impl Order {
         )
     }
 
-    fn fake_auction(
-        &self,
-        gas_price: eth::GasPrice,
-        weth: eth::WethAddress,
-    ) -> competition::Auction {
+    async fn fake_auction(&self, eth: &Ethereum) -> Result<competition::Auction, Error> {
         competition::Auction::new(
             None,
             vec![competition::Order {
@@ -144,11 +135,14 @@ impl Order {
                 },
             ]
             .into_iter(),
-            gas_price.effective().into(),
             Default::default(),
-            weth,
+            eth,
         )
-        .unwrap()
+        .await
+        .map_err(|err| match err {
+            auction::Error::InvalidTokens => panic!("fake auction with invalid tokens"),
+            auction::Error::Blockchain(e) => e.into(),
+        })
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to

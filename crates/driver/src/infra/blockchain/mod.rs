@@ -85,6 +85,23 @@ impl Ethereum {
         Ok(eth::Allowance { spender, amount }.into())
     }
 
+    /// Fetch the ERC20 balance for the account. See the balanceOf method in
+    /// EIP-20.
+    ///
+    /// https://eips.ethereum.org/EIPS/eip-20#methods
+    pub async fn balance_of(
+        &self,
+        owner: eth::Address,
+        token: eth::TokenAddress,
+    ) -> Result<eth::TokenAmount, Error> {
+        contracts::ERC20::at(&self.web3, token.into())
+            .balance_of(owner.into())
+            .call()
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
+    }
+
     /// Check if a smart contract is deployed to the given address.
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
         let code = self.web3.eth().code(address.into(), None).await?;

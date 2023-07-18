@@ -46,7 +46,9 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
+    pub async fn solve(&self, auction: Auction) -> Result<Solved, Error> {
+        let auction = auction.prioritize(&self.eth).await;
+
         let liquidity = self
             .liquidity
             .fetch(
@@ -66,7 +68,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().timeout()?)
+            .solve(&auction, &liquidity, auction.deadline().timeout()?)
             .await?;
 
         // Empty solutions aren't useful, so discard them.
@@ -80,12 +82,15 @@ impl Competition {
         });
 
         // Encode the solutions into settlements.
-        let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(self.solver.name(), solution.id());
-            (
-                solution.id(),
-                solution.encode(auction, &self.eth, &self.simulator).await,
-            )
+        let settlements = join_all(solutions.map(|solution| {
+            let auction = &auction;
+            async move {
+                observe::encoding(self.solver.name(), solution.id());
+                (
+                    solution.id(),
+                    solution.encode(auction, &self.eth, &self.simulator).await,
+                )
+            }
         }))
         .await;
 
@@ -142,7 +147,7 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(self.solver.name(), &settlement);
-                (settlement.score(&self.eth, auction), settlement)
+                (settlement.score(&self.eth, &auction), settlement)
             })
             .collect_vec();
 
@@ -173,7 +178,11 @@ impl Competition {
         let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Solved { score, orders })
+        Ok(Solved {
+            auction,
+            score,
+            orders,
+        })
     }
 
     /// Execute the solution generated as part of this competition. Use
@@ -220,6 +229,9 @@ pub struct Solved {
     pub score: Score,
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
+    /// The auction that was solved. The auction may have been modified before
+    /// solving. See [`Auction::prioritize`].
+    pub auction: Auction,
 }
 
 #[derive(Debug)]

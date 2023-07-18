@@ -517,7 +517,7 @@ impl Blockchain {
         QuotedOrder {
             order: order.clone(),
             buy: executed_buy,
-            sell: executed_sell,
+            sell: dbg!(executed_sell),
         }
     }
 
@@ -545,7 +545,7 @@ impl Blockchain {
             );
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
-            } else {
+            } else if order.funded {
                 wait_for(
                     &self.web3,
                     self.tokens
@@ -553,7 +553,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            eth::U256::from(2) * quote.sell + order.user_fee,
+                            eth::U256::from(100000000000u64) * quote.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
                         .send(),

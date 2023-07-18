@@ -103,6 +103,10 @@ impl Order {
         }
     }
 
+    pub fn creator(&self) -> Creator {
+        Creator(self.signature.signer)
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -303,6 +307,16 @@ pub enum SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+/// The address which created the order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Creator(eth::Address);
+
+impl From<Creator> for eth::Address {
+    fn from(value: Creator) -> Self {
+        value.0
+    }
 }
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to

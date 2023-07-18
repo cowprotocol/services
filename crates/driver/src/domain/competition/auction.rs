@@ -1,8 +1,14 @@
 use {
-    crate::domain::{
-        competition::{self, solution},
-        eth,
+    super::order,
+    crate::{
+        domain::{
+            competition::{self, solution},
+            eth,
+        },
+        infra::{blockchain, Ethereum},
     },
+    futures::future::join_all,
+    itertools::Itertools,
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -23,49 +29,29 @@ pub struct Auction {
 }
 
 impl Auction {
-    pub fn new(
+    pub async fn new(
         id: Option<Id>,
-        mut orders: Vec<competition::Order>,
+        orders: Vec<competition::Order>,
         tokens: impl Iterator<Item = Token>,
-        gas_price: eth::GasPrice,
         deadline: Deadline,
-        weth: eth::WethAddress,
-    ) -> Result<Self, InvalidTokens> {
+        eth: &Ethereum,
+    ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
         // Ensure that tokens are included for each order.
+        let weth = eth.contracts().weth_address();
         if !orders.iter().all(|order| {
             tokens.0.contains_key(&order.buy.token.wrap(weth))
                 && tokens.0.contains_key(&order.sell.token.wrap(weth))
         }) {
-            return Err(InvalidTokens);
+            return Err(Error::InvalidTokens);
         }
-
-        // Sort orders such that most likely to be fulfilled come first.
-        orders.sort_by_key(|order| {
-            // Market orders are preferred over limit orders, as the expectation is that
-            // they should be immediately fulfillable. Liquidity orders come last, as they
-            // are the most niche and rarely used.
-            let class = match order.kind {
-                competition::order::Kind::Market => 2,
-                competition::order::Kind::Limit { .. } => 1,
-                competition::order::Kind::Liquidity => 0,
-            };
-            std::cmp::Reverse((
-                class,
-                // If the orders are of the same kind, then sort by likelihood of fulfillment
-                // based on token prices.
-                order.likelihood(&tokens),
-            ))
-        });
-
-        // TODO Filter out orders based on user balance
 
         Ok(Self {
             id,
             orders,
             tokens,
-            gas_price,
+            gas_price: eth.gas_price().await?,
             deadline,
         })
     }
@@ -76,10 +62,91 @@ impl Auction {
         self.id
     }
 
-    /// The orders for the auction. The orders are sorted such that those which
-    /// are more likely to be fulfilled come before less likely orders.
+    /// The orders for the auction.
     pub fn orders(&self) -> &[competition::Order] {
         &self.orders
+    }
+
+    // Prioritize the orders such that those which are more likely to be fulfilled
+    // come before less likely orders. Filter out orders which the order creator
+    // doesn't have enough balance to pay for.
+    //
+    // Prioritization is skipped during quoting. It's only used during competition.
+    pub async fn prioritize(mut self, eth: &Ethereum) -> Self {
+        // Sort orders so that most likely to be fulfilled come first.
+        self.orders.sort_by_key(|order| {
+            // Market orders are preferred over limit orders, as the expectation is that
+            // they should be immediately fulfillable. Liquidity orders come last, as they
+            // are the most niche and rarely used.
+            let class = match order.kind {
+                competition::order::Kind::Market => 2,
+                competition::order::Kind::Limit { .. } => 1,
+                competition::order::Kind::Liquidity => 0,
+            };
+            std::cmp::Reverse((
+                class,
+                // TODO No need to expose Tokens anymore, just use the auction
+                // If the orders are of the same kind, then sort by likelihood of fulfillment
+                // based on token prices.
+                order.likelihood(&self.tokens),
+            ))
+        });
+
+        // Fetch balances of each token for each creator.
+        let tokens_by_creator = self
+            .orders
+            .iter()
+            .flat_map(|order| {
+                [
+                    (order.creator(), order.sell.token),
+                    (order.creator(), order.buy.token),
+                ]
+            })
+            .unique()
+            .collect_vec();
+        let mut balances: HashMap<(order::Creator, eth::TokenAddress), eth::TokenAmount> =
+            join_all(tokens_by_creator.into_iter().map(|(creator, token)| {
+                async move {
+                    let balance = eth
+                        .balance_of(creator.into(), token)
+                        .await
+                        // If fetching the balance of this creator fails, don't filter out their
+                        // orders. Pretend like they have infinite balance.
+                        .unwrap_or(eth::U256::MAX.into());
+                    ((creator, token), balance)
+                }
+            }))
+            .await
+            .into_iter()
+            .collect();
+        // Filter out orders which the creator doesn't have enough balance to pay for.
+        self.orders.retain(|order| {
+            // This only applies to non-partial orders.
+            if order.is_partial() {
+                return true;
+            }
+
+            // Sell amounts are withdrawn from the creator's balance when the order settles.
+            // In case the creator doesn't have enough balance to pay for the order, filter
+            // it out.
+            let sell_balance = balances
+                .get_mut(&(order.creator(), order.sell.token))
+                .unwrap();
+            match sell_balance.0.checked_sub(order.sell.amount.into()) {
+                Some(remaining) => sell_balance.0 = remaining,
+                None => return false,
+            }
+
+            // Buy amounts are deposited into the creator's balance when the order settles.
+            let buy_balance = balances
+                .get_mut(&(order.creator(), order.buy.token))
+                .unwrap();
+            buy_balance.0 = buy_balance.0.saturating_add(order.buy.amount.into());
+
+            true
+        });
+
+        self
     }
 
     /// The tokens used in the auction.
@@ -226,9 +293,13 @@ pub struct DeadlineExceeded;
 pub struct InvalidId;
 
 #[derive(Debug, Error)]
-#[error("invalid auction tokens")]
-pub struct InvalidTokens;
-
-#[derive(Debug, Error)]
 #[error("price cannot be zero")]
 pub struct InvalidPrice;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("invalid auction tokens")]
+    InvalidTokens,
+    #[error("blockchain error: {0:?}")]
+    Blockchain(#[from] blockchain::Error),
+}

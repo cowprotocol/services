@@ -171,19 +171,19 @@ pub fn settled(
 /// Observe the result of solving an auction.
 pub fn solved(
     solver: &solver::Name,
-    auction: &Auction,
+    auction_id: auction::Id,
     result: &Result<Solved, competition::Error>,
 ) {
     match result {
-        Ok(reveal) => {
-            tracing::info!(%solver, ?auction, ?reveal, "solved auction");
+        Ok(solved) => {
+            tracing::info!(%solver, ?solved, "solved auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?auction, ?err, "failed to solve auction");
+            tracing::warn!(%solver, ?auction_id, ?err, "failed to solve auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), competition_error(err)])
