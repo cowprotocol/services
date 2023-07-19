@@ -119,9 +119,11 @@ impl Auction {
             .await
             .into_iter()
             .collect();
+
         // Filter out orders which the trader doesn't have enough balance to pay for.
         self.orders.retain(|order| {
-            // This only applies to non-partial orders.
+            // Partial orders don't require the trader to hold the full balance, since they
+            // don't have to be fully fulfilled.
             if order.is_partial() {
                 return true;
             }

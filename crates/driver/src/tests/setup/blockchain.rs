@@ -517,7 +517,7 @@ impl Blockchain {
         QuotedOrder {
             order: order.clone(),
             buy: executed_buy,
-            sell: dbg!(executed_sell),
+            sell: executed_sell,
         }
     }
 
