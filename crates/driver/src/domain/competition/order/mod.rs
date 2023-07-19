@@ -103,8 +103,8 @@ impl Order {
         }
     }
 
-    pub fn creator(&self) -> Creator {
-        Creator(self.signature.signer)
+    pub fn trader(&self) -> Trader {
+        Trader(self.signature.signer)
     }
 
     pub fn is_partial(&self) -> bool {
@@ -309,12 +309,12 @@ pub enum BuyTokenBalance {
     Internal,
 }
 
-/// The address which created the order.
+/// The address which placed the order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Creator(eth::Address);
+pub struct Trader(eth::Address);
 
-impl From<Creator> for eth::Address {
-    fn from(value: Creator) -> Self {
+impl From<Trader> for eth::Address {
+    fn from(value: Trader) -> Self {
         value.0
     }
 }

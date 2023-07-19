@@ -68,8 +68,8 @@ impl Auction {
     }
 
     // Prioritize the orders such that those which are more likely to be fulfilled
-    // come before less likely orders. Filter out orders which the order creator
-    // doesn't have enough balance to pay for.
+    // come before less likely orders. Filter out orders which the trader doesn't
+    // have enough balance to pay for.
     //
     // Prioritization is skipped during quoting. It's only used during competition.
     pub async fn prioritize(mut self, eth: &Ethereum) -> Self {
@@ -92,54 +92,54 @@ impl Auction {
             ))
         });
 
-        // Fetch balances of each token for each creator.
-        let tokens_by_creator = self
+        // Fetch balances of each token for each trader.
+        let tokens_by_trader = self
             .orders
             .iter()
             .flat_map(|order| {
                 [
-                    (order.creator(), order.sell.token),
-                    (order.creator(), order.buy.token),
+                    (order.trader(), order.sell.token),
+                    (order.trader(), order.buy.token),
                 ]
             })
             .unique()
             .collect_vec();
-        let mut balances: HashMap<(order::Creator, eth::TokenAddress), eth::TokenAmount> =
-            join_all(tokens_by_creator.into_iter().map(|(creator, token)| {
+        let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> =
+            join_all(tokens_by_trader.into_iter().map(|(trader, token)| {
                 async move {
                     let balance = eth
-                        .balance_of(creator.into(), token)
+                        .balance_of(trader.into(), token)
                         .await
-                        // If fetching the balance of this creator fails, don't filter out their
+                        // If fetching the balance of this trader fails, don't filter out their
                         // orders. Pretend like they have infinite balance.
                         .unwrap_or(eth::U256::MAX.into());
-                    ((creator, token), balance)
+                    ((trader, token), balance)
                 }
             }))
             .await
             .into_iter()
             .collect();
-        // Filter out orders which the creator doesn't have enough balance to pay for.
+        // Filter out orders which the trader doesn't have enough balance to pay for.
         self.orders.retain(|order| {
             // This only applies to non-partial orders.
             if order.is_partial() {
                 return true;
             }
 
-            // Sell amounts are withdrawn from the creator's balance when the order settles.
-            // In case the creator doesn't have enough balance to pay for the order, filter
+            // Sell amounts are withdrawn from the trader's balance when the order settles.
+            // In case the trader doesn't have enough balance to pay for the order, filter
             // it out.
             let sell_balance = balances
-                .get_mut(&(order.creator(), order.sell.token))
+                .get_mut(&(order.trader(), order.sell.token))
                 .unwrap();
             match sell_balance.0.checked_sub(order.sell.amount.into()) {
                 Some(remaining) => sell_balance.0 = remaining,
                 None => return false,
             }
 
-            // Buy amounts are deposited into the creator's balance when the order settles.
+            // Buy amounts are deposited into the trader's balance when the order settles.
             let buy_balance = balances
-                .get_mut(&(order.creator(), order.buy.token))
+                .get_mut(&(order.trader(), order.buy.token))
                 .unwrap();
             buy_balance.0 = buy_balance.0.saturating_add(order.buy.amount.into());
 
