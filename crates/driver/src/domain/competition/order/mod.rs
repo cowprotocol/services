@@ -170,7 +170,7 @@ impl Order {
     /// Should the order fee be determined by the solver? This is true for
     /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
-        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+        matches!(self.kind, Kind::Limit { .. })
     }
 
     /// The likelihood that this order will be fulfilled, based on token prices.

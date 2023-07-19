@@ -95,7 +95,7 @@ impl Execution {
                     true => {
                         let fee = order.executed_fee_amount;
                         match enforce_correct_fees {
-                            true => fee.context("no fee for partially fillable limit order")?,
+                            true => fee.context("no fee for limit order")?,
                             false => fee.unwrap_or_default(),
                         }
                     }

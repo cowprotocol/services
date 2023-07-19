@@ -260,9 +260,9 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the list of partial limit order executions with their fees,
+    /// Returns the list of limit order executions with their fees,
     /// which are supposed to be updated whenever a new settlement is executed.
-    pub fn partial_order_executions(
+    pub fn order_executions(
         &self,
         external_prices: &ExternalPrices,
         mut orders: Vec<OrderExecution>,
@@ -270,10 +270,6 @@ impl DecodedSettlement {
         self.trades
             .iter()
             .filter_map(|trade| {
-                if !trade.flags.partially_fillable() {
-                    return None;
-                }
-
                 let i = orders
                     .iter()
                     .position(|order| trade.matches_execution(order))?;
@@ -301,12 +297,6 @@ impl DecodedSettlement {
         let solver_fee = match &order.executed_solver_fee {
             Some(solver_fee) => *solver_fee,
             None => {
-                // this should be a partial limit order
-                if !trade.flags.partially_fillable() {
-                    tracing::warn!("missing solver fee for non partial fee order");
-                    return None;
-                }
-
                 // get uniform prices
                 let sell_index = self
                     .tokens

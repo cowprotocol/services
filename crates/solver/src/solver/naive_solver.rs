@@ -64,7 +64,7 @@ impl Solver for NaiveSolver {
             orders,
             &external_prices,
         );
-        // Filter out partially fillable limit orders until we add support for computing
+        // Filter out limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
         orders.retain(|o| !o.solver_determines_fee() || !self.enforce_correct_fees);
         let slippage = self.slippage_calculator.context(&external_prices);

@@ -13,7 +13,7 @@ pub struct AuctionData {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
-    // pairs <order id, fee> for partial limit orders
+    // pairs <order id, fee> for limit orders
     pub order_executions: Vec<(OrderUid, U256)>,
 }
 
@@ -64,8 +64,8 @@ impl super::Postgres {
             .await
             .context("insert_settlement_observations")?;
 
-            // update order executions for partial limit orders
-            // partial limit orders are a special kind of orders for which the surplus_fee
+            // update order executions for limit orders
+            // limit orders are a special kind of orders for which the surplus_fee
             // is calculated AFTER the settlement is settled on chain.
             for order_execution in auction_data.order_executions {
                 database::order_execution::update_surplus_fee(

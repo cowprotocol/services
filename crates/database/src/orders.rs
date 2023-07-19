@@ -718,6 +718,7 @@ WHERE
 
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
+/// cleanup: fok limit orders should be allowed to not have surplus fee
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,

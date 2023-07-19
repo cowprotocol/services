@@ -12,10 +12,9 @@ use {
         order_balance_filter::BalancedOrder,
         settlement::SettlementEncoder,
     },
-    anyhow::{ensure, Context, Result},
+    anyhow::{ensure, Result},
     contracts::WETH9,
-    ethcontract::U256,
-    model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
+    model::order::{Order, OrderClass, BUY_ETH_ADDRESS},
     std::sync::Arc,
 };
 
@@ -55,12 +54,7 @@ impl OrderConverter {
             available_sell_token_balance,
         )?;
 
-        let sell_amount = match &order.metadata.class {
-            OrderClass::Limit(limit) if !order.data.partially_fillable => {
-                compute_synthetic_order_amounts_for_limit_order(&order, limit)?
-            }
-            _ => order.data.sell_amount,
-        };
+        let sell_amount = order.data.sell_amount;
 
         let id = match order.metadata.class {
             OrderClass::Market => LimitOrderId::Market(order.metadata.uid),
@@ -103,30 +97,6 @@ struct OrderSettlementHandler {
     native_token: WETH9,
 }
 
-/// Returns the `sell_amount` adjusted for limit orders.
-fn compute_synthetic_order_amounts_for_limit_order(
-    order: &Order,
-    limit: &LimitOrderClass,
-) -> Result<U256> {
-    anyhow::ensure!(
-        order.metadata.class.is_limit(),
-        "this function should only be called for limit orders"
-    );
-    // Solvable limit orders always have a surplus fee. It would be nice if this was
-    // enforced in the API.
-    let surplus_fee = limit
-        .surplus_fee
-        .context("solvable order without surplus fee")?;
-
-    order
-        .data
-        .sell_amount
-        .checked_add(order.data.fee_amount)
-        .context("surplus_fee adjustment would overflow sell_amount")?
-        .checked_sub(surplus_fee)
-        .context("surplus_fee adjustment would underflow sell_amount")
-}
-
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -163,7 +133,8 @@ pub mod tests {
         crate::settlement::tests::assert_settlement_encoded_with,
         ethcontract::H160,
         maplit::hashmap,
-        model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata},
+        model::order::{LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata},
+        primitive_types::U256,
         shared::dummy_contract,
     };
 

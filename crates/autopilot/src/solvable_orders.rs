@@ -182,10 +182,6 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("invalid_signature", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
-        let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
-        let removed = counter.checkpoint("insufficient_sell", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
-
         // If we update due to an explicit notification we can reuse existing balances
         // as they cannot have changed.
         let old_balances = {
@@ -578,19 +574,6 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
-fn filter_fok_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    // Unwrap because solvable fok orders always have a surplus fee.
-    orders.retain(
-        |order| match (&order.metadata.class, order.data.partially_fillable) {
-            (OrderClass::Limit(limit), false) => {
-                order.data.sell_amount > limit.surplus_fee.unwrap()
-            }
-            _ => true,
-        },
-    );
-    orders
-}
-
 /// Filter out limit orders which are far enough outside the estimated native
 /// token price.
 fn filter_mispriced_limit_orders(
@@ -599,19 +582,6 @@ fn filter_mispriced_limit_orders(
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
-        let surplus_fee = match (&order.metadata.class, order.data.partially_fillable) {
-            // Solvable fok limit orders always have a surplus fee.
-            (OrderClass::Limit(limit), false) => limit.surplus_fee.unwrap(),
-            // Partially fillable limit orders do not have a surplus fee.
-            (OrderClass::Limit(_), true) => 0.into(),
-            _ => return true,
-        };
-
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
-        if effective_sell_amount.is_zero() {
-            return false;
-        }
-
         let sell_price = *prices.get(&order.data.sell_token).unwrap();
         let buy_price = *prices.get(&order.data.buy_token).unwrap();
 
@@ -619,7 +589,7 @@ fn filter_mispriced_limit_orders(
         // sell discounting the surplus fee is higher than buy with the
         // configurable price factor.
         let (sell_native, buy_native) = match (
-            effective_sell_amount.checked_mul(sell_price),
+            order.data.sell_amount.checked_mul(sell_price),
             order.data.buy_amount.checked_mul(buy_price),
         ) {
             (Some(sell), Some(buy)) => (sell, buy),

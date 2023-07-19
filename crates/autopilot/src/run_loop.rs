@@ -127,18 +127,11 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.metadata.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        let executed_fee = match auction_order.metadata.class {
-                            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                                match auction_order.data.partially_fillable {
-                                    // we don't know the surplus fee in advance. will be populated
-                                    // after the transaction containing the order is mined
-                                    true => ExecutedFee::Surplus(None),
-                                    // calculated by the protocol, therefore we can trust the
-                                    // auction
-                                    false => ExecutedFee::Surplus(surplus_fee),
-                                }
-                            }
-                            _ => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                        let executed_fee = match auction_order.solver_determines_fee() {
+                            // we don't know the surplus fee in advance. will be populated
+                            // after the transaction containing the order is mined
+                            true => ExecutedFee::Surplus(None),
+                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
                             order_id: *order_id,
