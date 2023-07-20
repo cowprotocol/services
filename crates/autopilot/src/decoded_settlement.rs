@@ -5,6 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
+    database::orders::OrderClass,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
     model::{
         order::{OrderKind, OrderUid},
@@ -167,6 +168,8 @@ pub struct OrderExecution {
     pub buy_amount: U256,
     pub executed_amount: U256,
     pub signature: Vec<u8>, //encoded signature
+    // For limit orders the solver computes the fee
+    pub solver_determines_fee: bool,
 }
 
 impl TryFrom<database::orders::OrderExecution> for OrderExecution {
@@ -192,6 +195,7 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
                     .encode_for_settlement(H160(order.owner.0))
                     .to_vec()
             },
+            solver_determines_fee: order.class == OrderClass::Limit,
         })
     }
 }
@@ -280,8 +284,8 @@ impl DecodedSettlement {
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
 
-                // No need to update if value already exists (for market orders for example)
-                if order.executed_solver_fee.is_some() {
+                // Update fee only for orders with solver computed fees (limit orders)
+                if !order.solver_determines_fee {
                     return None;
                 }
 
@@ -706,6 +710,7 @@ mod tests {
                 buy_token: Default::default(),
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
+                solver_determines_fee: false,
             },
             OrderExecution {
                 order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
@@ -717,6 +722,7 @@ mod tests {
                 buy_token: Default::default(),
                 executed_amount: 5701912712048588025933u128.into(),
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
+                solver_determines_fee: false,
             }
         ];
         let fees = settlement
@@ -782,6 +788,7 @@ mod tests {
                 buy_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                 executed_amount: 134069619089011499167823218927u128.into(),
                 signature: hex::decode("f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd71514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c").unwrap(),
+                solver_determines_fee: true,
             },
         ];
         let fees = settlement
@@ -896,6 +903,7 @@ mod tests {
                 buy_token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 executed_amount: 0.into(),
                 signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+                solver_determines_fee: false,
             },
         ];
         let fees = settlement

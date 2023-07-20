@@ -117,8 +117,7 @@ impl RunLoop {
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
             // Save order executions for all orders in the solution. Surplus fees for
-            // partial limit orders will be saved after settling the order
-            // onchain.
+            // limit orders will be saved after settling the order onchain.
             let mut order_executions = vec![];
             for order_id in &solution.orders {
                 let auction_order = auction
