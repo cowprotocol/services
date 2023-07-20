@@ -1,4 +1,8 @@
-use {crate::settlement_rater::SettlementRating, tracing::info_span};
+use {
+    crate::settlement_rater::SettlementRating,
+    shared::http_solver::model::{AuctionResult, SubmissionResult},
+    tracing::info_span,
+};
 
 pub mod gas;
 pub mod solver_settlements;
@@ -501,10 +505,26 @@ impl Driver {
             {
                 Ok(receipt) => {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
+                    winning_solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::SubmittedOnchain(SubmissionResult::Success(
+                            receipt.block_hash.unwrap_or_default(),
+                        )),
+                    );
                     Some(receipt.transaction_hash)
                 }
-                Err(SubmissionError::Revert(hash)) => Some(hash),
+                Err(SubmissionError::Revert(hash)) => {
+                    winning_solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::SubmittedOnchain(SubmissionResult::Revert(hash)),
+                    );
+                    Some(hash)
+                }
                 Err(err) => {
+                    winning_solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::SubmittedOnchain(SubmissionResult::Fail),
+                    );
                     tracing::warn!(?err, "settlement submission error");
                     None
                 }

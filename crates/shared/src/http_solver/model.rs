@@ -13,7 +13,7 @@ use {
         u256_decimal::{self, DecimalU256},
     },
     num::BigRational,
-    primitive_types::U256,
+    primitive_types::{H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     std::collections::{BTreeMap, BTreeSet, HashMap},
@@ -338,6 +338,15 @@ pub struct ExecutionPlanCoordinatesModel {
     pub position: u32,
 }
 
+/// The result of a submission process for a winning solver
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SubmissionResult {
+    Success(H256),
+    Revert(H256),
+    Fail,
+}
+
 /// The result a given solver achieved in the auction
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -348,6 +357,10 @@ pub enum AuctionResult {
 
     /// Solution was invalid for some reason
     Rejected(SolverRejectionReason),
+
+    /// For winners, additional notify is sent after submission onchain is
+    /// finalized
+    SubmittedOnchain(SubmissionResult),
 }
 
 #[derive(Debug, Serialize)]
