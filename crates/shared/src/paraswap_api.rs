@@ -121,9 +121,8 @@ where
             }
             "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT"
             | "No routes found with enough liquidity"
-            | "Too much slippage on quote, please try again" => {
-                Err(ParaswapResponseError::InsufficientLiquidity(message))
-            }
+            | "Too much slippage on quote, please try again"
+            | "Bad USD price" => Err(ParaswapResponseError::InsufficientLiquidity(message)),
             _ => Err(ParaswapResponseError::Other(anyhow::anyhow!(message))),
         },
     }
