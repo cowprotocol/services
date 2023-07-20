@@ -338,7 +338,7 @@ pub struct ExecutionPlanCoordinatesModel {
     pub position: u32,
 }
 
-/// The result a given solver achieved in the auction
+/// The result of a submission process for a winning solver
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SubmissionResult {
