@@ -260,8 +260,9 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the list of limit order executions with their fees,
+    /// Returns the list of executions with their fees,
     /// which are supposed to be updated whenever a new settlement is executed.
+    /// Done for the orders that have solver-computed fees (limit orders).
     pub fn order_executions(
         &self,
         external_prices: &ExternalPrices,
@@ -278,6 +279,12 @@ impl DecodedSettlement {
                 // end up with the correct total fees we can only
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
+
+                // No need to update if value already exists (for market orders for example)
+                if order.executed_solver_fee.is_some() {
+                    return None;
+                }
+
                 let fees = self.fee(external_prices, &order, trade);
 
                 if fees.is_none() {
