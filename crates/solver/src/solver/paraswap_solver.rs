@@ -153,7 +153,7 @@ impl ParaswapSolver {
         &self,
         order: &LimitOrder,
         token_info: &HashMap<H160, TokenInfo>,
-    ) -> Result<PriceResponse> {
+    ) -> Result<PriceResponse, ParaswapResponseError> {
         let (amount, side) = match order.kind {
             model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
             model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
