@@ -595,7 +595,7 @@ impl Cache {
         &self,
         disabled_protocols: &[String],
         api: &dyn OneInchClient,
-    ) -> Result<Option<Vec<String>>> {
+    ) -> Result<Option<Vec<String>>, OneInchError> {
         if disabled_protocols.is_empty() {
             return Ok(None);
         }
@@ -620,15 +620,14 @@ impl Cache {
         Ok(Some(allowed_protocols))
     }
 
-    pub async fn spender(&self, api: &dyn OneInchClient) -> Result<Spender> {
-        Ok(self
-            .0
+    pub async fn spender(&self, api: &dyn OneInchClient) -> Result<Spender, OneInchError> {
+        self.0
             .spender
             .get_or_update(move || {
                 tracing::debug!("updating cached spender address");
                 api.get_spender()
             })
-            .await?)
+            .await
     }
 }
 
