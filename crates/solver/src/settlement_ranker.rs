@@ -60,6 +60,12 @@ impl SettlementRanker {
         let name = solver.name();
         match settlements {
             Ok(settlements) => {
+                if settlements.is_empty() {
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::EmptySolution),
+                    );
+                }
                 let settlements: Vec<_> = settlements.into_iter().filter_map(|settlement| {
                     tracing::debug!(solver_name = %name, ?settlement, "found solution");
 

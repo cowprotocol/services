@@ -79,13 +79,13 @@ impl Settlement {
 
         let mut settlement = solver::settlement::Settlement::new(
             solution
-                .prices()?
+                .clearing_prices()?
                 .into_iter()
-                .map(|asset| (asset.token.into(), asset.amount))
+                .map(|asset| (asset.token.into(), asset.amount.into()))
                 .collect(),
         );
 
-        for trade in &solution.trades {
+        for trade in solution.trades() {
             let (boundary_order, execution) = match trade {
                 competition::solution::Trade::Fulfillment(trade) => {
                     // TODO: The `http_solver` module filters out orders with 0
@@ -130,13 +130,13 @@ impl Settlement {
         }
 
         let slippage_calculator = SlippageCalculator {
-            relative: to_big_decimal(solution.solver.slippage().relative.clone()),
-            absolute: solution.solver.slippage().absolute.map(Into::into),
+            relative: to_big_decimal(solution.solver().slippage().relative.clone()),
+            absolute: solution.solver().slippage().absolute.map(Into::into),
         };
         let external_prices = ExternalPrices::try_from_auction_prices(
             native_token.address(),
             auction
-                .tokens
+                .tokens()
                 .iter()
                 .filter_map(|token| {
                     token
@@ -147,7 +147,7 @@ impl Settlement {
         )?;
         let slippage_context = slippage_calculator.context(&external_prices);
 
-        for interaction in &solution.interactions {
+        for interaction in solution.interactions() {
             let boundary_interaction = to_boundary_interaction(
                 &slippage_context,
                 settlement_contract.address().into(),
@@ -161,8 +161,8 @@ impl Settlement {
 
         Ok(Self {
             inner: settlement,
-            solver: solution.solver.address(),
-            risk: solution.risk,
+            solver: solution.solver().address(),
+            risk: solution.risk(),
         })
     }
 
@@ -204,7 +204,7 @@ impl Settlement {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
-                .tokens
+                .tokens()
                 .iter()
                 .filter_map(|token| {
                     token
@@ -213,7 +213,7 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let gas_price = u256_to_big_rational(&auction.gas_price.effective().into());
+        let gas_price = u256_to_big_rational(&auction.gas_price().effective().into());
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
@@ -239,8 +239,8 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         data: OrderData {
             sell_token: order.sell.token.into(),
             buy_token: order.buy.token.into(),
-            sell_amount: order.sell.amount,
-            buy_amount: order.buy.amount,
+            sell_amount: order.sell.amount.into(),
+            buy_amount: order.buy.amount.into(),
             fee_amount: order.fee.user.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
@@ -319,8 +319,8 @@ fn to_boundary_jit_order(domain: &DomainSeparator, order: &order::Jit) -> Order 
         sell_token: order.sell.token.into(),
         buy_token: order.buy.token.into(),
         receiver: Some(order.receiver.into()),
-        sell_amount: order.sell.amount,
-        buy_amount: order.buy.amount,
+        sell_amount: order.sell.amount.into(),
+        buy_amount: order.buy.amount.into(),
         valid_to: order.valid_to.into(),
         app_data: AppDataHash(order.app_data.into()),
         fee_amount: order.fee.into(),
@@ -407,11 +407,11 @@ pub fn to_boundary_interaction(
 
             let input = liquidity::MaxInput(eth::Asset {
                 token: boundary_execution.input_max.token.into(),
-                amount: boundary_execution.input_max.amount,
+                amount: boundary_execution.input_max.amount.into(),
             });
             let output = liquidity::ExactOutput(eth::Asset {
                 token: boundary_execution.output.token.into(),
-                amount: boundary_execution.output.amount,
+                amount: boundary_execution.output.amount.into(),
             });
 
             let interaction = match &liquidity.liquidity.kind {

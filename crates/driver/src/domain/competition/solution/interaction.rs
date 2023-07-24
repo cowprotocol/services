@@ -58,7 +58,7 @@ impl Interaction {
                         address,
                         token: interaction.input.token,
                     },
-                    amount: interaction.input.amount,
+                    amount: interaction.input.amount.into(),
                 }
                 .into()]
             }

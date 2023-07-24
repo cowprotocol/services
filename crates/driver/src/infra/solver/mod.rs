@@ -147,7 +147,7 @@ impl Solver {
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
         // Ensure that solution IDs are unique.
-        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id).collect();
+        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id()).collect();
         if ids.len() != solutions.len() {
             return Err(Error::RepeatedSolutionIds);
         }

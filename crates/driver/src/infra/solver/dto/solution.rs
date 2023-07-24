@@ -21,15 +21,15 @@ impl Solutions {
         self.solutions
             .into_iter()
             .map(|solution| {
-                Ok(competition::Solution {
-                    id: solution.id.into(),
-                    trades: solution
+                competition::Solution::new(
+                    solution.id.into(),
+                    solution
                         .trades
                         .into_iter()
                         .map(|trade| match trade {
                             Trade::Fulfillment(fulfillment) => {
                                 let order = auction
-                                    .orders
+                                    .orders()
                                     .iter()
                                     .find(|order| order.uid == fulfillment.order)
                                     // TODO this error should reference the UID
@@ -57,11 +57,11 @@ impl Solutions {
                                 competition::solution::trade::Jit::new(
                                     competition::order::Jit {
                                         sell: eth::Asset {
-                                            amount: jit.order.sell_amount,
+                                            amount: jit.order.sell_amount.into(),
                                             token: jit.order.sell_token.into(),
                                         },
                                         buy: eth::Asset {
-                                            amount: jit.order.buy_amount,
+                                            amount: jit.order.buy_amount.into(),
                                             token: jit.order.buy_token.into(),
                                         },
                                         fee: jit.order.fee_amount.into(),
@@ -121,14 +121,12 @@ impl Solutions {
                             )),
                         })
                         .try_collect()?,
-                    prices: competition::solution::ClearingPrices::new(
-                        solution
-                            .prices
-                            .into_iter()
-                            .map(|(address, price)| (address.into(), price))
-                            .collect(),
-                    ),
-                    interactions: solution
+                    solution
+                        .prices
+                        .into_iter()
+                        .map(|(address, price)| (address.into(), price))
+                        .collect(),
+                    solution
                         .interactions
                         .into_iter()
                         .map(|interaction| match interaction {
@@ -156,7 +154,7 @@ impl Solutions {
                                             .inputs
                                             .into_iter()
                                             .map(|input| eth::Asset {
-                                                amount: input.amount,
+                                                amount: input.amount.into(),
                                                 token: input.token.into(),
                                             })
                                             .collect(),
@@ -164,7 +162,7 @@ impl Solutions {
                                             .outputs
                                             .into_iter()
                                             .map(|input| eth::Asset {
-                                                amount: input.amount,
+                                                amount: input.amount.into(),
                                                 token: input.token.into(),
                                             })
                                             .collect(),
@@ -184,11 +182,11 @@ impl Solutions {
                                     competition::solution::interaction::Liquidity {
                                         liquidity,
                                         input: eth::Asset {
-                                            amount: interaction.input_amount,
+                                            amount: interaction.input_amount.into(),
                                             token: interaction.input_token.into(),
                                         },
                                         output: eth::Asset {
-                                            amount: interaction.output_amount,
+                                            amount: interaction.output_amount.into(),
                                             token: interaction.output_token.into(),
                                         },
                                         internalize: interaction.internalize,
@@ -197,10 +195,10 @@ impl Solutions {
                             }
                         })
                         .try_collect()?,
+                    solver.clone(),
+                    solution.risk.into(),
                     weth,
-                    solver: solver.clone(),
-                    risk: solution.risk.into(),
-                })
+                ).map_err(|competition::solution::InvalidClearingPrices| super::Error("invalid clearing prices"))
             })
             .collect()
     }

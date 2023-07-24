@@ -49,7 +49,7 @@ struct ApiMetrics {
     requests_rejected: prometheus::IntCounterVec,
 
     /// Execution time for each API request.
-    #[metric(labels("method"))]
+    #[metric(labels("method"), buckets(0.1, 0.5, 1, 2, 4, 6, 8, 10))]
     requests_duration_seconds: prometheus::HistogramVec,
 }
 

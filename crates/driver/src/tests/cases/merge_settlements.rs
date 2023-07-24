@@ -8,12 +8,12 @@ use crate::tests::{
 #[ignore]
 async fn possible() {
     let test = setup()
-        .pool(ab_pool())
         .pool(cd_pool())
-        .order(ab_order())
+        .pool(ab_pool())
         .order(cd_order())
-        .solution(ab_solution())
+        .order(ab_order())
         .solution(cd_solution())
+        .solution(ab_solution())
         .done()
         .await;
 
@@ -39,13 +39,13 @@ async fn possible() {
 async fn impossible() {
     let test = setup()
         .pool(ab_pool())
+        .order(ab_order().rename("reduced order").reduce_amount(1000000000000000u128.into()))
         .order(ab_order())
-        .order(ab_order().rename("second order").reduce_amount(1000000000000000u128.into()))
         // These two solutions result in different clearing prices (due to different surplus),
         // so they can't be merged.
         .solution(ab_solution())
         .solution(Solution {
-            orders: vec!["second order"],
+            orders: vec!["reduced order"],
             ..ab_solution().reduce_score()
         })
         .done()
