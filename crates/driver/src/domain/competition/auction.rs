@@ -104,21 +104,24 @@ impl Auction {
             })
             .unique()
             .collect::<HashSet<_>>();
-        let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> =
-            join_all(tokens_by_trader.into_iter().map(|(trader, token)| {
-                async move {
-                    let balance = eth
-                        .balance_of(trader.into(), token)
-                        .await
-                        // If fetching the balance of this trader fails, don't filter out their
-                        // orders. Pretend like they have infinite balance.
-                        .unwrap_or(eth::U256::MAX.into());
-                    ((trader, token), balance)
-                }
-            }))
-            .await
-            .into_iter()
-            .collect();
+        let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> = join_all(
+            tokens_by_trader
+                .into_iter()
+                .map(|(trader, token)| async move {
+                    let balance = match eth.balance_of(trader.into(), token).await {
+                        Ok(balance) => balance,
+                        Err(err) => {
+                            tracing::warn!(?trader, ?token, ?err, "failed to fetch balance");
+                            return None;
+                        }
+                    };
+                    Some(((trader, token), balance))
+                }),
+        )
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
 
         // Filter out orders which the trader doesn't have enough balance to pay for.
         self.orders.retain(|order| {
