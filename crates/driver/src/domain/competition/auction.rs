@@ -96,12 +96,7 @@ impl Auction {
         let tokens_by_trader = self
             .orders
             .iter()
-            .flat_map(|order| {
-                [
-                    (order.trader(), order.sell.token),
-                    (order.trader(), order.buy.token),
-                ]
-            })
+            .map(|order| (order.trader(), order.sell.token))
             .unique()
             .collect::<HashSet<_>>();
         let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> = join_all(
