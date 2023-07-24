@@ -3,7 +3,7 @@ use {
     crate::{
         domain::{
             competition::{self, solution},
-            eth,
+            eth::{self, TokenAmount},
         },
         infra::{blockchain, Ethereum},
     },
@@ -118,31 +118,32 @@ impl Auction {
         .flatten()
         .collect();
 
-        // Filter out orders which the trader doesn't have enough balance to pay for.
         self.orders.retain(|order| {
-            // Partial orders don't require the trader to hold the full balance, since they
-            // don't have to be fully fulfilled.
-            if order.is_partial() {
-                return true;
+            // TODO: Ethflow
+
+            let Some(TokenAmount(remaining_balance)) =
+                balances.get_mut(&(order.trader(), order.sell.token))
+            else {
+                return false;
+            };
+            let Some(mut needed_balance) = order.sell.amount.0.checked_add(order.fee.user.0) else {
+                return false;
+            };
+            match order.is_partial() {
+                true => {
+                    if *remaining_balance == 0.into() {
+                        return false;
+                    }
+                    // TODO: Take previous partial fill into account. This reduces needed balance.
+                    needed_balance = needed_balance.min(*remaining_balance);
+                }
+                false => {
+                    if *remaining_balance < needed_balance {
+                        return false;
+                    }
+                }
             }
-
-            // Sell amounts are withdrawn from the trader's balance when the order settles.
-            // In case the trader doesn't have enough balance to pay for the order, filter
-            // it out.
-            let sell_balance = balances
-                .get_mut(&(order.trader(), order.sell.token))
-                .unwrap();
-            match sell_balance.0.checked_sub(order.sell.amount.into()) {
-                Some(remaining) => sell_balance.0 = remaining,
-                None => return false,
-            }
-
-            // Buy amounts are deposited into the trader's balance when the order settles.
-            let buy_balance = balances
-                .get_mut(&(order.trader(), order.buy.token))
-                .unwrap();
-            buy_balance.0 = buy_balance.0.saturating_add(order.buy.amount.into());
-
+            *remaining_balance -= needed_balance;
             true
         });
 
