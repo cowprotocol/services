@@ -222,6 +222,10 @@ pub struct LiquidityConfig {
     /// Liquidity provided by a Uniswap V3 compatible contract.
     #[serde(default)]
     pub uniswap_v3: Vec<UniswapV3Config>,
+
+    /// Liquidity provided by a Balancer V2 compatible contract.
+    #[serde(default)]
+    pub balancer_v2: Vec<BalancerV2Config>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -305,4 +309,35 @@ mod uniswap_v3 {
     pub fn default_max_pools_to_initialize() -> u64 {
         50
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum BalancerV2Config {
+    #[serde(rename_all = "kebab-case")]
+    Preset { preset: BalancerV2Preset },
+
+    #[serde(rename_all = "kebab-case")]
+    Manual {
+        /// Addresses of Balancer V2 compatible vault contract.
+        vault: eth::H160,
+
+        /// The weighted pool factory contract addresses.
+        weighted: Vec<eth::H160>,
+
+        /// The stable pool factory contract addresses.
+        stable: Vec<eth::H160>,
+
+        /// The liquidity bootstrapping pool factory contract addresses.
+        ///
+        /// These are weighted pools with dynamic weights for initial token
+        /// offerings.
+        liquidity_bootstrapping: Vec<eth::H160>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum BalancerV2Preset {
+    BalancerV2,
 }
