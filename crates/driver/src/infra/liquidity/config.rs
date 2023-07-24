@@ -22,6 +22,10 @@ pub struct Config {
     /// The collection of Uniswap V3 compatible exchanges to fetch liquidity
     /// for.
     pub uniswap_v3: Vec<UniswapV3>,
+
+    /// The collection of Balancer V2 compatible exchanges to fetch liquidity
+    /// for.
+    pub balancer_v2: Vec<BalancerV2>,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.
@@ -121,6 +125,55 @@ impl UniswapV3 {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
             max_pools_to_initialize,
+        })
+    }
+}
+
+/// Balancer V2 liquidity fetching options.
+#[derive(Clone, Debug)]
+pub struct BalancerV2 {
+    /// The address of the Uniswap V3 compatible router contract.
+    pub vault: eth::ContractAddress,
+
+    /// Weighted pool factory addresses.
+    pub weighted: Vec<eth::ContractAddress>,
+
+    /// Stable pool factory addresses.
+    pub stable: Vec<eth::ContractAddress>,
+
+    /// Liquidity bootstrapping pool factory addresses.
+    pub liquidity_bootstrapping: Vec<eth::ContractAddress>,
+}
+
+impl BalancerV2 {
+    /// Returns the liquidity configuration for Balancer V2.
+    #[allow(clippy::self_named_constructors)]
+    pub fn balancer_v2(network: &eth::NetworkId) -> Option<Self> {
+        let factory_addresses =
+            |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
+                contracts
+                    .iter()
+                    .copied()
+                    .filter_map(|c| deployment_address(c, network))
+                    .collect()
+            };
+
+        Some(Self {
+            vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), network)?,
+            weighted: factory_addresses(&[
+                contracts::BalancerV2WeightedPoolFactory::raw_contract(),
+                contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
+                contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
+                contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),
+            ]),
+            stable: factory_addresses(&[
+                contracts::BalancerV2StablePoolFactory::raw_contract(),
+                contracts::BalancerV2StablePoolFactoryV2::raw_contract(),
+            ]),
+            liquidity_bootstrapping: factory_addresses(&[
+                contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
+                contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
+            ]),
         })
     }
 }
