@@ -80,6 +80,13 @@ impl Fetcher {
         .into_iter()
         .try_collect()?;
 
+        if !config.balancer_v2.is_empty() {
+            todo!(
+                "Balancer V2 liquidity fetcher not implemented: {:?}",
+                config.balancer_v2
+            );
+        }
+
         let uni_v3: Vec<_> = future::join_all(
             config
                 .uniswap_v3

@@ -203,13 +203,44 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
                         )
                     }
                 }
-                .expect("no Swapr preset for current network"),
+                .expect("no Uniswap V3 preset for current network"),
                 config::file::UniswapV3Config::Manual {
                     router,
                     max_pools_to_initialize,
                 } => liquidity::config::UniswapV3 {
                     router: router.into(),
                     max_pools_to_initialize,
+                },
+            })
+            .collect(),
+        balancer_v2: config
+            .liquidity
+            .balancer_v2
+            .iter()
+            .cloned()
+            .map(|config| match config {
+                config::file::BalancerV2Config::Preset { preset } => match preset {
+                    config::file::BalancerV2Preset::BalancerV2 => {
+                        liquidity::config::BalancerV2::balancer_v2(eth.network_id())
+                    }
+                }
+                .expect("no Balancer V2 preset for current network"),
+                config::file::BalancerV2Config::Manual {
+                    vault,
+                    weighted,
+                    stable,
+                    liquidity_bootstrapping,
+                } => liquidity::config::BalancerV2 {
+                    vault: vault.into(),
+                    weighted: weighted
+                        .into_iter()
+                        .map(eth::ContractAddress::from)
+                        .collect(),
+                    stable: stable.into_iter().map(eth::ContractAddress::from).collect(),
+                    liquidity_bootstrapping: liquidity_bootstrapping
+                        .into_iter()
+                        .map(eth::ContractAddress::from)
+                        .collect(),
                 },
             })
             .collect(),
