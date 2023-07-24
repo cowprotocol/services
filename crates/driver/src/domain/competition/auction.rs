@@ -9,7 +9,7 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
 
@@ -103,7 +103,7 @@ impl Auction {
                 ]
             })
             .unique()
-            .collect_vec();
+            .collect::<HashSet<_>>();
         let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> =
             join_all(tokens_by_trader.into_iter().map(|(trader, token)| {
                 async move {
