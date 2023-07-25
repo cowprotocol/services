@@ -148,6 +148,7 @@ impl Order {
         } else {
             self.sell
         }
+        // todo not sure about this one
     }
 
     /// The buy asset to pass to the solver. This is a special case due to
