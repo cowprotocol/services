@@ -63,7 +63,7 @@ pub async fn collector(
                 })
                 .collect::<Vec<_>>(),
             config
-                .weighted
+                .liquidity_bootstrapping
                 .iter()
                 .map(|&factory| {
                     (

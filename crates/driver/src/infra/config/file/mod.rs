@@ -319,6 +319,7 @@ pub enum BalancerV2Config {
         preset: BalancerV2Preset,
 
         /// Deny listed Balancer V2 pools.
+        #[serde(default)]
         pool_deny_list: Vec<eth::H256>,
     },
 
@@ -340,6 +341,7 @@ pub enum BalancerV2Config {
         liquidity_bootstrapping: Vec<eth::H160>,
 
         /// Deny listed Balancer V2 pools.
+        #[serde(default)]
         pool_deny_list: Vec<eth::H256>,
     },
 }
