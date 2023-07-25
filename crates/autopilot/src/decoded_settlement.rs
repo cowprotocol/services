@@ -15,7 +15,7 @@ use {
     number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
     shared::{
         conversions::U256Ext,
-        db_order_conversions::{order_kind_from, signing_scheme_from},
+        db_order_conversions::signing_scheme_from,
         external_prices::ExternalPrices,
     },
     web3::ethabi::{Function, Token},
@@ -161,7 +161,6 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
 pub struct OrderExecution {
     pub order_uid: OrderUid,
     pub executed_solver_fee: Option<U256>,
-    pub kind: OrderKind,
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -182,7 +181,6 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
                 .executed_solver_fee
                 .as_ref()
                 .and_then(big_decimal_to_u256),
-            kind: order_kind_from(order.kind),
             sell_token: H160(order.sell_token.0),
             buy_token: H160(order.buy_token.0),
             sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
@@ -703,7 +701,6 @@ mod tests {
             OrderExecution {
                 order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
                 executed_solver_fee: Some(48263037u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
                 sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
@@ -715,7 +712,6 @@ mod tests {
             OrderExecution {
                 order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
                 executed_solver_fee: Some(127253135942751092736u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
                 sell_token: addr!("f4d2888d29d722226fafa5d9b24f9164c092421e"),
@@ -781,7 +777,6 @@ mod tests {
             OrderExecution {
                 order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
                 executed_solver_fee: None,
-                kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(), // irrelevant
                 sell_amount: 14955083027u128.into(),            // irrelevant
                 sell_token: addr!("ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70"),
@@ -896,7 +891,6 @@ mod tests {
             OrderExecution {
                 order_uid: Default::default(),
                 executed_solver_fee: Some(463182886014406361088u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 89238894792574185u128.into(),
                 sell_amount: 3026871740084629982950u128.into(),
                 sell_token: addr!("f88baf18fab7e330fa0c4f83949e23f52fececce"),
