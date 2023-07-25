@@ -315,7 +315,12 @@ mod uniswap_v3 {
 #[serde(untagged, deny_unknown_fields)]
 pub enum BalancerV2Config {
     #[serde(rename_all = "kebab-case")]
-    Preset { preset: BalancerV2Preset },
+    Preset {
+        preset: BalancerV2Preset,
+
+        /// Deny listed Balancer V2 pools.
+        pool_deny_list: Vec<eth::H256>,
+    },
 
     #[serde(rename_all = "kebab-case")]
     Manual {
@@ -333,6 +338,9 @@ pub enum BalancerV2Config {
         /// These are weighted pools with dynamic weights for initial token
         /// offerings.
         liquidity_bootstrapping: Vec<eth::H160>,
+
+        /// Deny listed Balancer V2 pools.
+        pool_deny_list: Vec<eth::H256>,
     },
 }
 
