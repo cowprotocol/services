@@ -55,7 +55,13 @@ pub struct Driver {
 // as both crates can create orders
 #[derive(clap::Parser)]
 pub struct OrderQuotingArguments {
-    #[clap(long, env, value_enum, use_value_delimiter = true)]
+    #[clap(
+        long,
+        env,
+        value_enum,
+        use_value_delimiter = true,
+        default_value = "Baseline"
+    )]
     pub price_estimators: Vec<PriceEstimator>,
 
     /// A list of external drivers used for price estimation in the following
