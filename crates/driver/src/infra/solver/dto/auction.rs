@@ -41,7 +41,7 @@ impl Auction {
             .flat_map(|liquidity| match &liquidity.kind {
                 liquidity::Kind::UniswapV2(pool) => pool.reserves.iter().map(|r| r.token).collect(),
                 liquidity::Kind::UniswapV3(pool) => vec![pool.tokens.get().0, pool.tokens.get().1],
-                liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                liquidity::Kind::BalancerV2Stable(pool) => pool.reserves.tokens().collect(),
                 liquidity::Kind::BalancerV2Weighted(pool) => pool.reserves.tokens().collect(),
                 liquidity::Kind::Swapr(pool) => {
                     pool.base.reserves.iter().map(|r| r.token).collect()
@@ -116,7 +116,29 @@ impl Auction {
                             fee: rational_to_big_decimal(&pool.fee.0),
                         })
                     }
-                    liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                    liquidity::Kind::BalancerV2Stable(pool) => Liquidity::Stable(StablePool {
+                        id: liquidity.id.into(),
+                        address: pool.id.address().into(),
+                        gas_estimate: liquidity.gas.into(),
+                        tokens: pool
+                            .reserves
+                            .iter()
+                            .map(|r| {
+                                (
+                                    r.asset.token.into(),
+                                    StableReserve {
+                                        balance: r.asset.amount.into(),
+                                        scaling_factor: r.scale.factor(),
+                                    },
+                                )
+                            })
+                            .collect(),
+                        amplification_parameter: rational_to_big_decimal(&num::BigRational::new(
+                            u256_to_big_int(&pool.amplification_parameter.factor()),
+                            u256_to_big_int(&pool.amplification_parameter.precision()),
+                        )),
+                        fee: bigdecimal::BigDecimal::new(u256_to_big_int(&pool.fee.into()), 18),
+                    }),
                     liquidity::Kind::BalancerV2Weighted(pool) => {
                         Liquidity::WeightedProduct(WeightedProductPool {
                             id: liquidity.id.into(),
@@ -302,7 +324,8 @@ struct StablePool {
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
     tokens: IndexMap<eth::H160, StableReserve>,
-    amplification_parameter: f64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    amplification_parameter: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }

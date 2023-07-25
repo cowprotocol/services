@@ -1,6 +1,10 @@
 use {
     crate::{
         boundary,
+        domain::{
+            eth,
+            liquidity::{self, balancer},
+        },
         infra::{self, blockchain::Ethereum},
     },
     contracts::{
@@ -8,9 +12,11 @@ use {
         BalancerV2StablePoolFactory,
         BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
+        GPv2Settlement,
     },
     shared::{
         current_block::{BlockRetrieving, CurrentBlockStream},
+        http_solver::model::TokenAmount,
         sources::balancer_v2::{
             pool_fetching::BalancerContracts,
             BalancerFactoryKind,
@@ -19,7 +25,8 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     solver::{
-        liquidity::balancer_v2::BalancerV2Liquidity,
+        interactions::allowances::Allowances,
+        liquidity::{balancer_v2, balancer_v2::BalancerV2Liquidity},
         liquidity_collector::LiquidityCollecting,
     },
     std::sync::Arc,
@@ -27,6 +34,42 @@ use {
 
 pub mod stable;
 pub mod weighted;
+
+struct Pool {
+    vault: eth::ContractAddress,
+    id: balancer::v2::Id,
+}
+
+fn to_interaction(
+    pool: &Pool,
+    input: &liquidity::MaxInput,
+    output: &liquidity::ExactOutput,
+    receiver: &eth::Address,
+) -> eth::Interaction {
+    let web3 = shared::ethrpc::dummy::web3();
+    let handler = balancer_v2::SettlementHandler::new(
+        pool.id.into(),
+        // Note that this code assumes `receiver == sender`. This assumption is
+        // also baked into the Balancer V2 logic in the `shared` crate, so to
+        // change this assumption, we would need to change it there as well.
+        GPv2Settlement::at(&web3, receiver.0),
+        BalancerV2Vault::at(&web3, pool.vault.into()),
+        Arc::new(Allowances::empty(receiver.0)),
+    );
+
+    let interaction = handler.swap(
+        TokenAmount::new(input.0.token.into(), input.0.amount),
+        TokenAmount::new(output.0.token.into(), output.0.amount),
+    );
+
+    let (target, value, call_data) = interaction.encode_swap();
+
+    eth::Interaction {
+        target: target.into(),
+        value: value.into(),
+        call_data: call_data.0.into(),
+    }
+}
 
 pub async fn collector(
     eth: &Ethereum,

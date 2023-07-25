@@ -421,10 +421,12 @@ pub fn to_boundary_interaction(
                 liquidity::Kind::UniswapV3(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid uniswap v3 execution")?,
-                liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                liquidity::Kind::BalancerV2Stable(pool) => pool
+                    .swap(&input, &output, &settlement_contract.into())
+                    .context("invalid balancer v2 stable execution")?,
                 liquidity::Kind::BalancerV2Weighted(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
-                    .context("invalid balancer v2 execution")?,
+                    .context("invalid balancer v2 weighted execution")?,
                 liquidity::Kind::Swapr(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid swapr execution")?,

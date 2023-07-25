@@ -337,7 +337,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
                             })?,
                         amplification_parameter: amm.amplification_parameter.as_big_rational(),
                     }),
-                    fee: amm.fee.clone(),
+                    fee: amm.fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
                     address: amm.address,

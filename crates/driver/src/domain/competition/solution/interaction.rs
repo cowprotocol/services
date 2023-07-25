@@ -48,7 +48,7 @@ impl Interaction {
                 let address = match &interaction.liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => pool.router.into(),
                     liquidity::Kind::UniswapV3(pool) => pool.router.into(),
-                    liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                    liquidity::Kind::BalancerV2Stable(pool) => pool.vault.into(),
                     liquidity::Kind::BalancerV2Weighted(pool) => pool.vault.into(),
                     liquidity::Kind::Swapr(pool) => pool.base.router.into(),
                     liquidity::Kind::ZeroEx(_) => todo!(),

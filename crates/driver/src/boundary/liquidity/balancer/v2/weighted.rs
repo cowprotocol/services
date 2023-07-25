@@ -6,13 +6,8 @@ use {
             liquidity::{self, balancer},
         },
     },
-    contracts::{BalancerV2Vault, GPv2Settlement},
-    shared::{http_solver::model::TokenAmount, price_estimation},
-    solver::{
-        interactions::allowances::Allowances,
-        liquidity::{balancer_v2, WeightedProductOrder},
-    },
-    std::sync::Arc,
+    shared::price_estimation,
+    solver::liquidity::{balancer_v2, WeightedProductOrder},
 };
 
 pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquidity::Liquidity> {
@@ -69,27 +64,13 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = shared::ethrpc::dummy::web3();
-    let handler = balancer_v2::SettlementHandler::new(
-        pool.id.into(),
-        // Note that this code assumes `receiver == sender`. This assumption is
-        // also baked into the Balancer V2 logic in the `shared` crate, so to
-        // change this assumption, we would need to change it there as well.
-        GPv2Settlement::at(&web3, receiver.0),
-        BalancerV2Vault::at(&web3, pool.vault.into()),
-        Arc::new(Allowances::empty(receiver.0)),
-    );
-
-    let interaction = handler.swap(
-        TokenAmount::new(input.0.token.into(), input.0.amount),
-        TokenAmount::new(output.0.token.into(), output.0.amount),
-    );
-
-    let (target, value, call_data) = interaction.encode_swap();
-
-    eth::Interaction {
-        target: target.into(),
-        value: value.into(),
-        call_data: call_data.0.into(),
-    }
+    super::to_interaction(
+        &super::Pool {
+            vault: pool.vault,
+            id: pool.id,
+        },
+        input,
+        output,
+        receiver,
+    )
 }

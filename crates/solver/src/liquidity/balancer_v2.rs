@@ -88,7 +88,7 @@ impl BalancerV2Liquidity {
             .map(|pool| StablePoolOrder {
                 address: pool.common.address,
                 reserves: pool.reserves,
-                fee: pool.common.swap_fee.into(),
+                fee: pool.common.swap_fee,
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.id,
@@ -220,7 +220,6 @@ mod tests {
         maplit::{hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
-        num::BigRational,
         primitive_types::H160,
         shared::{
             baseline_solver::BaseTokens,
@@ -407,10 +406,7 @@ mod tests {
         );
         assert_eq!(
             (&stable_orders[0].reserves, &stable_orders[0].fee),
-            (
-                &stable_pools[0].reserves,
-                &BigRational::new(2.into(), 1000.into())
-            ),
+            (&stable_pools[0].reserves, &"0.002".parse().unwrap()),
         );
     }
 

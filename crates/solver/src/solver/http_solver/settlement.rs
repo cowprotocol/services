@@ -508,7 +508,7 @@ mod tests {
             signature::Signature,
             TokenPair,
         },
-        num::{rational::Ratio, BigRational},
+        num::rational::Ratio,
         shared::sources::balancer_v2::{
             pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
             swap::fixed_point::Bfp,
@@ -586,7 +586,7 @@ mod tests {
                         scaling_exponent: 0,
                     },
                 },
-                fee: BigRational::new(3.into(), 1.into()),
+                fee: "3".parse().unwrap(),
                 amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
                 settlement_handling: sp_amm_handler.clone(),
             }),
@@ -872,7 +872,7 @@ mod tests {
                     scaling_exponent: 0
                 },
             },
-            fee: BigRational::new(1.into(), 1000.into()),
+            fee: "0.001".parse().unwrap(),
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
