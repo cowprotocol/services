@@ -15,7 +15,7 @@ use {
     model::{
         auction::{Auction, AuctionId},
         interaction::InteractionData,
-        order::{LimitOrderClass, OrderClass},
+        order::OrderClass,
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
@@ -213,12 +213,10 @@ impl RunLoop {
                 .orders
                 .iter()
                 .map(|order| {
-                    let (class, surplus_fee) = match order.metadata.class {
-                        OrderClass::Market => (Class::Market, None),
-                        OrderClass::Liquidity => (Class::Liquidity, None),
-                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                            (Class::Limit, surplus_fee)
-                        }
+                    let class = match order.metadata.class {
+                        OrderClass::Market => Class::Market,
+                        OrderClass::Liquidity => Class::Liquidity,
+                        OrderClass::Limit(_) => Class::Limit,
                     };
                     let map_interactions =
                         |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
@@ -250,7 +248,6 @@ impl RunLoop {
                         sell_token_balance: order.data.sell_token_balance,
                         buy_token_balance: order.data.buy_token_balance,
                         class,
-                        surplus_fee,
                         app_data: order.data.app_data,
                         signature: order.signature.clone(),
                     }
