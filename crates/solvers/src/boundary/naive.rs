@@ -139,9 +139,7 @@ pub fn solve(
                             .unwrap()
                             .clone(),
                     )
-                    .expect(
-                        "all orders can be filled, as limit orders are filtered out",
-                    ),
+                    .expect("all orders can be filled, as limit orders are filtered out"),
                 )
             })
             .collect(),
