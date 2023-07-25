@@ -28,8 +28,8 @@ impl Order {
     }
 
     /// Returns `true` if the order expects a solver-computed fee.
-    pub fn has_solver_fee(&self) -> bool {
-        self.partially_fillable && self.class == Class::Limit
+    pub fn solver_determines_fee(&self) -> bool {
+        self.class == Class::Limit
     }
 }
 
