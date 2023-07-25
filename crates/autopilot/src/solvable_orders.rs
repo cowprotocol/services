@@ -582,12 +582,15 @@ fn filter_mispriced_limit_orders(
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
+        if !order.is_limit_order() {
+            return true;
+        }
+
         let sell_price = *prices.get(&order.data.sell_token).unwrap();
         let buy_price = *prices.get(&order.data.buy_token).unwrap();
 
         // Convert the sell and buy price to the native token (ETH) and make sure that
-        // sell discounting the surplus fee is higher than buy with the
-        // configurable price factor.
+        // sell is higher than buy with the configurable price factor.
         let (sell_native, buy_native) = match (
             order.data.sell_amount.checked_mul(sell_price),
             order.data.buy_amount.checked_mul(buy_price),
@@ -1014,38 +1017,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
-    }
-
-    #[test]
-    fn filters_limit_orders_with_too_high_fees() {
-        let order = |sell_amount: u8, surplus_fee: u8| Order {
-            data: OrderData {
-                buy_amount: 1u8.into(),
-                sell_amount: sell_amount.into(),
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(surplus_fee.into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let orders = vec![
-            // Enough sell amout for the surplus fee.
-            order(100, 10),
-            // Surplus fee effectively turns order into a 0 sell amount order
-            order(100, 100),
-            // Surplus fee is higher than the sell amount.
-            order(100, 101),
-        ];
-
-        assert_eq!(
-            filter_fok_limit_orders_with_insufficient_sell_amount(orders),
-            [order(100, 10)]
-        );
     }
 
     #[test]
