@@ -8,6 +8,7 @@ use {
 #[derive(Debug)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
+    pub document: String,
     pub backend: BackendAppData,
 }
 
@@ -34,6 +35,10 @@ impl Validator {
         Self { size_limit }
     }
 
+    pub fn size_limit(&self) -> usize {
+        self.size_limit
+    }
+
     pub fn validate(&self, full_app_data: &[u8]) -> Result<ValidatedAppData> {
         if full_app_data.len() > self.size_limit {
             return Err(anyhow!(
@@ -43,7 +48,8 @@ impl Validator {
             ));
         }
 
-        let mut json: Value = serde_json::from_slice(full_app_data).context("invalid json")?;
+        let document = String::from_utf8(full_app_data.to_vec())?;
+        let mut json: Value = serde_json::from_str(&document).context("invalid json")?;
         let json = json.as_object_mut().context("top level isn't object")?;
         let backend: BackendAppData = json
             .remove("backend")
@@ -57,6 +63,7 @@ impl Validator {
 
         Ok(ValidatedAppData {
             hash: AppDataHash(app_data_hash::hash_full_app_data(full_app_data)),
+            document,
             backend,
         })
     }

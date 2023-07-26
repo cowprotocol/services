@@ -1,3 +1,14 @@
+use {
+    crate::{app_data, database::Postgres, orderbook::Orderbook},
+    shared::{
+        api::{box_filter, error, finalize_router, ApiReply},
+        order_quoting::QuoteHandler,
+        price_estimation::native::NativePriceEstimating,
+    },
+    std::sync::Arc,
+    warp::{Filter, Rejection, Reply},
+};
+
 mod cancel_order;
 mod cancel_orders;
 mod get_app_data;
@@ -12,24 +23,15 @@ mod get_user_orders;
 mod post_order;
 mod post_quote;
 mod post_solver_competition;
+mod put_app_data;
 mod replace_order;
 mod version;
-
-use {
-    crate::{database::Postgres, orderbook::Orderbook},
-    shared::{
-        api::{box_filter, error, finalize_router, ApiReply},
-        order_quoting::QuoteHandler,
-        price_estimation::native::NativePriceEstimating,
-    },
-    std::sync::Arc,
-    warp::{Filter, Rejection, Reply},
-};
 
 pub fn handle_all_routes(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
+    app_data: Arc<app_data::Registry>,
     solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -94,6 +96,10 @@ pub fn handle_all_routes(
         (
             "v1/get_app_data",
             get_app_data::get(database.clone()).boxed(),
+        ),
+        (
+            "v1/put_app_data",
+            box_filter(put_app_data::filter(app_data)),
         ),
         (
             "v1/get_total_surplus",

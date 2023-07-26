@@ -163,13 +163,12 @@ const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 pub fn extract_payload<T: DeserializeOwned + Send>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
     // (rejecting huge payloads)...
-    warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
+    extract_payload_with_max_size(MAX_JSON_BODY_PAYLOAD)
 }
 
 pub fn extract_payload_with_max_size<T: DeserializeOwned + Send>(
     max_size: u64,
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
-    // (rejecting huge payloads)...
     warp::body::content_length_limit(max_size).and(warp::body::json())
 }
 

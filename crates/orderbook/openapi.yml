@@ -402,6 +402,34 @@ paths:
             application/json: {}
         404:
           description: No full `appData` stored for this hash.
+    put:
+      summary: Registers a full `appData` so it can be referenced by `appDataHash`.
+      description: |
+        Uploads a full `appData` to orderbook so that orders created with the
+        corresponding `appDataHash` can be linked to the original full `appData`.
+      parameters:
+        - in: path
+          name: hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      responses:
+        200:
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        201:
+          description: The full `appData` was succesfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        400:
+          description: Error validating full `appData`
+        500:
+          description: Error storing the full `appData`
   /api/v1/users/{address}/total_surplus:
     get:
       summary: Get the total surplus earned by the user. [UNSTABLE]
