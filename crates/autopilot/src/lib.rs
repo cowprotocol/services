@@ -398,13 +398,13 @@ pub async fn main(args: arguments::Arguments) {
 
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &args.order_quoting.price_estimators,
+            args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
-            &args.native_price_estimators,
+            args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();

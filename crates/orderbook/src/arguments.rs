@@ -5,7 +5,7 @@ use {
         arguments::{display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimator},
+        price_estimation::{self, PriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
@@ -90,14 +90,8 @@ pub struct Arguments {
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
-    #[clap(
-        long,
-        env,
-        value_enum,
-        use_value_delimiter = true,
-        default_value = "Baseline"
-    )]
-    pub native_price_estimators: Vec<PriceEstimator>,
+    #[clap(long, env, default_value_t)]
+    pub native_price_estimators: PriceEstimators,
 
     /// How many successful price estimates for each order will cause a fast
     /// price estimation to return its result early.
@@ -227,7 +221,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_estimators: {:?}",
+            "native_price_estimators: {}",
             self.native_price_estimators
         )?;
         writeln!(
