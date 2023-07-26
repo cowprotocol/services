@@ -5,7 +5,7 @@ use {
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation,
+        price_estimation::{self, PriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
     url::Url,
@@ -82,14 +82,8 @@ pub struct Arguments {
 
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
-    #[clap(
-        long,
-        env,
-        value_enum,
-        use_value_delimiter = true,
-        default_value = "Baseline"
-    )]
-    pub native_price_estimators: Vec<shared::price_estimation::PriceEstimator>,
+    #[clap(long, env, default_value_t)]
+    pub native_price_estimators: PriceEstimators,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
@@ -221,7 +215,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
         writeln!(
             f,
-            "native_price_estimators: {:?}",
+            "native_price_estimators: {}",
             self.native_price_estimators
         )?;
         writeln!(
