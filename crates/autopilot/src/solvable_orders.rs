@@ -1032,7 +1032,7 @@ mod tests {
         };
         let price_factor = "0.95".parse().unwrap();
 
-        let order = |sell_amount: u8, buy_amount: u8, surplus_fee: u8| Order {
+        let order = |sell_amount: u8, buy_amount: u8| Order {
             data: OrderData {
                 sell_token,
                 sell_amount: sell_amount.into(),
@@ -1042,7 +1042,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(surplus_fee.into()),
+                    surplus_fee: None,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1052,25 +1052,18 @@ mod tests {
 
         let valid_orders = vec![
             // Reasonably priced order, doesn't get filtered.
-            order(101, 200, 1),
+            order(100, 200),
             // Slightly out of price order, doesn't get filtered.
-            order(10, 21, 0),
+            order(10, 21),
         ];
 
         let invalid_orders = vec![
             // Out of price order gets filtered out.
-            order(10, 100, 0),
-            // Reasonably priced order becomes out of price after fees and gets
-            // filtered out
-            order(10, 18, 5),
-            // Zero sell amount after fees gets filtered.
-            order(1, 1, 1),
-            // Overflow sell amount after fees gets filtered.
-            order(1, 1, 100),
+            order(10, 100),
             // Overflow sell value gets filtered.
-            order(255, 1, 1),
+            order(255, 1),
             // Overflow buy value gets filtered.
-            order(100, 255, 1),
+            order(100, 255),
         ];
 
         let orders = [valid_orders.clone(), invalid_orders].concat();
@@ -1079,7 +1072,7 @@ mod tests {
             valid_orders,
         );
 
-        let mut order = order(10, 21, 0);
+        let mut order = order(10, 21);
         order.data.partially_fillable = true;
         let orders = vec![order];
         assert_eq!(
