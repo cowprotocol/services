@@ -2480,6 +2480,7 @@ mod tests {
             vec![OrderExecution {
                 executed_solver_fee: Some(bigdecimal(42)),
                 kind: OrderKind::Sell,
+                class: OrderClass::Limit,
                 sell_amount: bigdecimal(1),
                 buy_amount: bigdecimal(1),
                 executed_amount: bigdecimal(1),
