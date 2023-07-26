@@ -265,7 +265,7 @@ mod tests {
         ethcontract::{Account, PrivateKey},
         maplit::hashmap,
         model::{order::Order, TokenPair},
-        num::{rational::Ratio, BigRational},
+        num::rational::Ratio,
         serde_json::json,
         shared::{
             ethrpc::create_env_test_transport,
@@ -517,7 +517,7 @@ mod tests {
                                         scaling_exponent: 6
                                     },
             },
-            fee: BigRational::new(1.into(), 1000.into()),
+            fee: "0.001".parse().unwrap(),
             amplification_parameter: AmplificationParameter::new(1573.into(), 1.into()).unwrap(),
             settlement_handling: Arc::new(SettlementHandler::new(
                 "0x06df3b2bbb68adc8b0e302443692037ed9f91b42000000000000000000000063"

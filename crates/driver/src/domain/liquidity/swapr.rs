@@ -1,4 +1,3 @@
-pub use crate::domain::liquidity::uniswap::v2::InvalidSwap;
 use crate::domain::{
     eth,
     liquidity::{self, uniswap},
@@ -27,7 +26,7 @@ impl Pool {
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
         receiver: &eth::Address,
-    ) -> Result<eth::Interaction, InvalidSwap> {
+    ) -> Result<eth::Interaction, liquidity::InvalidSwap> {
         // Note that swap interactions are identical in Swapr and Uniswap V2
         // pools. The only difference is the input/output computation uses
         // different fees.

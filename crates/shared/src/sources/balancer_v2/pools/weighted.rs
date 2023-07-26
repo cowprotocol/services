@@ -10,12 +10,7 @@ use {
         },
     },
     anyhow::{anyhow, Result},
-    contracts::{
-        BalancerV2WeightedPool,
-        BalancerV2WeightedPoolFactory,
-        BalancerV2WeightedPoolFactoryV3,
-        BalancerV2WeightedPoolFactoryV4,
-    },
+    contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory},
     ethcontract::{BlockId, H160},
     futures::{future::BoxFuture, FutureExt as _},
     std::collections::BTreeMap,
@@ -103,50 +98,6 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
             Ok(Some(PoolState { tokens, swap_fee }))
         }
         .boxed()
-    }
-}
-
-#[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
-    type PoolInfo = PoolInfo;
-    type PoolState = PoolState;
-
-    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
-        let v1 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
-        v1.specialize_pool_info(pool).await
-    }
-
-    fn fetch_pool_state(
-        &self,
-        pool_info: &Self::PoolInfo,
-        common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let v1 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
-        v1.fetch_pool_state(pool_info, common_pool_state, batch, block)
-    }
-}
-
-#[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2WeightedPoolFactoryV4 {
-    type PoolInfo = PoolInfo;
-    type PoolState = PoolState;
-
-    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
-        let v1 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
-        v1.specialize_pool_info(pool).await
-    }
-
-    fn fetch_pool_state(
-        &self,
-        pool_info: &Self::PoolInfo,
-        common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let v1 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
-        v1.fetch_pool_state(pool_info, common_pool_state, batch, block)
     }
 }
 

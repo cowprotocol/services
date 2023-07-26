@@ -31,9 +31,9 @@ impl Pool {
         input: &liquidity::MaxInput,
         output: &liquidity::ExactOutput,
         receiver: &eth::Address,
-    ) -> Result<eth::Interaction, InvalidSwap> {
+    ) -> Result<eth::Interaction, liquidity::InvalidSwap> {
         if !self.reserves.has_tokens(&input.0.token, &output.0.token) {
-            return Err(InvalidSwap);
+            return Err(liquidity::InvalidSwap);
         }
 
         Ok(boundary::liquidity::uniswap::v2::to_interaction(
@@ -41,10 +41,6 @@ impl Pool {
         ))
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("swap parameters do not match pool")]
-pub struct InvalidSwap;
 
 /// The reserves of a Uniswap V2 pool. These reserves are ordered by token
 /// address and are guaranteed to be for distinct tokens.

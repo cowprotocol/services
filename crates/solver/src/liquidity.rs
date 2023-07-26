@@ -16,7 +16,7 @@ use {
         order::{OrderKind, OrderUid},
         TokenPair,
     },
-    num::{rational::Ratio, BigRational},
+    num::rational::Ratio,
     primitive_types::{H160, U256},
     shared::{
         http_solver::model::TokenAmount,
@@ -336,7 +336,7 @@ impl std::fmt::Debug for WeightedProductOrder {
 pub struct StablePoolOrder {
     pub address: H160,
     pub reserves: HashMap<H160, TokenState>,
-    pub fee: BigRational,
+    pub fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
@@ -458,7 +458,7 @@ impl Default for StablePoolOrder {
         StablePoolOrder {
             address: Default::default(),
             reserves: Default::default(),
-            fee: num::Zero::zero(),
+            fee: Default::default(),
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
         }

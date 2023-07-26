@@ -196,7 +196,7 @@ impl BalancerFactoryKind {
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
     pub vault: BalancerV2Vault,
-    pub factories: HashMap<BalancerFactoryKind, DynInstance>,
+    pub factories: Vec<(BalancerFactoryKind, DynInstance)>,
 }
 
 impl BalancerContracts {
@@ -240,7 +240,10 @@ impl BalancerContracts {
             factories.insert(kind, instance);
         }
 
-        Ok(Self { vault, factories })
+        Ok(Self {
+            vault,
+            factories: factories.into_iter().collect(),
+        })
     }
 }
 
@@ -377,22 +380,18 @@ async fn create_aggregate_pool_fetcher(
     let mut fetchers = Vec::new();
     for (kind, instance) in &contracts.factories {
         let registry = match kind {
-            BalancerFactoryKind::Weighted => registry!(BalancerV2WeightedPoolFactory, instance),
-            BalancerFactoryKind::WeightedV3 => registry!(BalancerV2WeightedPoolFactoryV3, instance),
-            BalancerFactoryKind::WeightedV4 => registry!(BalancerV2WeightedPoolFactoryV4, instance),
-            BalancerFactoryKind::Weighted2Token => {
-                registry!(BalancerV2WeightedPool2TokensFactory, instance)
+            BalancerFactoryKind::Weighted
+            | BalancerFactoryKind::WeightedV3
+            | BalancerFactoryKind::WeightedV4
+            | BalancerFactoryKind::Weighted2Token => {
+                registry!(BalancerV2WeightedPoolFactory, instance)
             }
-            BalancerFactoryKind::Stable => registry!(BalancerV2StablePoolFactory, instance),
-            BalancerFactoryKind::StableV2 => registry!(BalancerV2StablePoolFactoryV2, instance),
-            BalancerFactoryKind::LiquidityBootstrapping => {
+            BalancerFactoryKind::Stable | BalancerFactoryKind::StableV2 => {
+                registry!(BalancerV2StablePoolFactory, instance)
+            }
+            BalancerFactoryKind::LiquidityBootstrapping
+            | BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
                 registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
-            }
-            BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
-                registry!(
-                    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
-                    instance
-                )
             }
         };
         fetchers.push(registry);

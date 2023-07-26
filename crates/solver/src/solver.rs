@@ -618,11 +618,11 @@ struct DummySolver;
 #[async_trait::async_trait]
 impl Solver for DummySolver {
     async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
-        todo!()
+        unimplemented!()
     }
 
     fn account(&self) -> &ethcontract::Account {
-        todo!()
+        unimplemented!()
     }
 
     fn notify_auction_result(&self, _auction_id: AuctionId, _result: AuctionResult) {}
@@ -631,6 +631,7 @@ impl Solver for DummySolver {
         "DummySolver"
     }
 }
+
 #[cfg(test)]
 pub fn dummy_arc_solver() -> Arc<dyn Solver> {
     Arc::new(DummySolver)
