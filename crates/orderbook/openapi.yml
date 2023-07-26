@@ -508,9 +508,9 @@ components:
       description: |
         How good should the price estimate be?
 
-        **NOTE**: Orders are supposed to be created from `optimal` price estimates.
+        **NOTE**: Orders are supposed to be created from `verified` price estimates.
       type: string
-      enum: [fast, optimal]
+      enum: [fast, optimal, verified]
     OrderStatus:
       description: The current order status.
       type: string
@@ -1196,7 +1196,7 @@ components:
             priceQuality:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
-              default: "optimal"
+              default: "verified"
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"
