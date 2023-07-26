@@ -96,10 +96,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Kind::Liquidity => "liquidity",
                 order::Kind::Limit { .. } => "limit",
             },
-            "surplusFee": match quote.order.kind {
-                order::Kind::Limit { surplus_fee } => Some(surplus_fee.0.to_string()),
-                _ => None,
-            },
+            "surplusFee": "0",
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain)))
