@@ -1,7 +1,7 @@
 use {
     crate::{
         database::orders::{InsertionError, OrderStoring},
-        ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
     chrono::Utc,
@@ -179,7 +179,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    ipfs: Option<Ipfs>,
+    ipfs: Option<IpfsAppData>,
 }
 
 impl Orderbook {
@@ -189,7 +189,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        ipfs: Option<Ipfs>,
+        ipfs: Option<IpfsAppData>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -205,18 +205,24 @@ impl Orderbook {
     /// hash.
     ///
     /// The full app data can be located in the database or on IPFS.
-    pub async fn find_full_app_data(&self, contract_app_data: &AppDataHash) -> Option<String> {
-        match self.database.get_full_app_data(contract_app_data).await {
-            Ok(Some(app_data)) => {
-                tracing::debug!("found full app data for {contract_app_data:?} in database");
-                return Some(app_data);
-            }
-            Ok(None) => (),
-            Err(_) => (),
+    pub async fn find_full_app_data(
+        &self,
+        contract_app_data: &AppDataHash,
+    ) -> Result<Option<String>> {
+        if let Some(app_data) = self
+            .database
+            .get_full_app_data(contract_app_data)
+            .await
+            .context("from database")?
+        {
+            tracing::debug!(?contract_app_data, "full app data in database");
+            return Ok(Some(app_data));
         }
 
-        let Some(ipfs) = &self.ipfs else { return None };
-        crate::ipfs::full_app_data_from_ipfs(ipfs, contract_app_data).await
+        let Some(ipfs) = &self.ipfs else {
+            return Ok(None);
+        };
+        ipfs.fetch(contract_app_data).await.context("from ipfs")
     }
 
     pub async fn add_order(
@@ -224,7 +230,7 @@ impl Orderbook {
         payload: OrderCreation,
     ) -> Result<(OrderUid, Option<QuoteId>), AddOrderError> {
         let full_app_data_override = match payload.app_data {
-            OrderCreationAppData::Hash { hash } => self.find_full_app_data(&hash).await,
+            OrderCreationAppData::Hash { hash } => self.find_full_app_data(&hash).await?,
             _ => None,
         };
 
