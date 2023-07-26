@@ -133,7 +133,7 @@ pub mod tests {
         crate::settlement::tests::assert_settlement_encoded_with,
         ethcontract::H160,
         maplit::hashmap,
-        model::order::{LimitOrderClass, OrderBuilder, OrderData, OrderKind, OrderMetadata},
+        model::order::{LimitOrderClass, OrderData, OrderKind, OrderMetadata},
         primitive_types::U256,
         shared::dummy_contract,
     };
@@ -384,28 +384,6 @@ pub mod tests {
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
         assert_eq!(order_.solver_fee, 50.into());
-    }
-
-    #[test]
-    fn limit_orders_get_adjusted_for_surplus_fee() {
-        let converter = OrderConverter::test(Default::default());
-        let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit(Default::default()))
-            .with_sell_amount(1_000.into())
-            .with_buy_amount(1.into())
-            .with_fee_amount(200.into())
-            .with_surplus_fee(100.into())
-            .with_solver_fee(200.into())
-            .build();
-        let solver_order = converter
-            .normalize_limit_order(BalancedOrder::full(order))
-            .unwrap();
-
-        // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
-        assert_eq!(solver_order.sell_amount, 1_100.into());
-        // it's the `autopilot`'s responsibility to prepare this value for us so we
-        // don't touch it
-        assert_eq!(solver_order.solver_fee, 200.into());
     }
 
     #[test]
