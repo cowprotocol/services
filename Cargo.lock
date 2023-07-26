@@ -4592,7 +4592,7 @@ dependencies = [
 [[package]]
 name = "warp"
 version = "0.3.1"
-source = "git+https://github.com/vkgnosis/warp.git?rev=87a91e2#87a91e24311b0ca6ed67408d2d302c569331dfec"
+source = "git+https://github.com/cowprotocol/warp.git?rev=87a91e2#87a91e24311b0ca6ed67408d2d302c569331dfec"
 dependencies = [
  "bytes",
  "futures",
