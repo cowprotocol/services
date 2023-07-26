@@ -550,6 +550,7 @@ impl OrderValidating for OrderValidator {
 
                 ValidatedAppData {
                     hash: *hash,
+                    document: String::new(),
                     backend,
                 }
             }

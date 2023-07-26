@@ -1,11 +1,3 @@
-pub mod api;
-pub mod arguments;
-pub mod database;
-mod ipfs;
-pub mod orderbook;
-pub mod run;
-pub mod solver_competition;
-
 use {
     crate::{database::Postgres, orderbook::Orderbook},
     anyhow::{anyhow, Context as _, Result},
@@ -18,11 +10,21 @@ use {
     warp::Filter,
 };
 
+pub mod api;
+pub mod app_data;
+pub mod arguments;
+pub mod database;
+mod ipfs;
+pub mod orderbook;
+pub mod run;
+pub mod solver_competition;
+
 #[allow(clippy::too_many_arguments)]
 pub fn serve_api(
     database: Postgres,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
+    app_data: Arc<app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition_auth: Option<String>,
@@ -32,6 +34,7 @@ pub fn serve_api(
         database,
         orderbook,
         quotes,
+        app_data,
         solver_competition_auth,
         native_price_estimator,
     )

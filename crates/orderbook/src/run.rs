@@ -1,5 +1,6 @@
 use {
     crate::{
+        app_data,
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
@@ -455,6 +456,7 @@ pub async fn run(args: Arguments) {
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
+    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
@@ -474,7 +476,7 @@ pub async fn run(args: Arguments) {
             Arc::new(postgres.clone()),
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
-            shared::app_data::Validator::new(args.app_data_size_limit),
+            app_data_validator.clone(),
         )
         .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
         .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
@@ -513,11 +515,17 @@ pub async fn run(args: Arguments) {
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
+    let app_data = Arc::new(app_data::Registry::new(
+        app_data_validator,
+        postgres.clone(),
+    ));
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres,
         orderbook.clone(),
         quotes,
+        app_data,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;
