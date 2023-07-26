@@ -196,7 +196,7 @@ impl BalancerFactoryKind {
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
     pub vault: BalancerV2Vault,
-    pub factories: HashMap<BalancerFactoryKind, DynInstance>,
+    pub factories: Vec<(BalancerFactoryKind, DynInstance)>,
 }
 
 impl BalancerContracts {
@@ -240,7 +240,10 @@ impl BalancerContracts {
             factories.insert(kind, instance);
         }
 
-        Ok(Self { vault, factories })
+        Ok(Self {
+            vault,
+            factories: factories.into_iter().collect(),
+        })
     }
 }
 

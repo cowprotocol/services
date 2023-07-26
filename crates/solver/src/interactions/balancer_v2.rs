@@ -31,8 +31,8 @@ lazy_static::lazy_static! {
     pub static ref NEVER: U256 = U256::from(1) << 255;
 }
 
-impl Interaction for BalancerSwapGivenOutInteraction {
-    fn encode(&self) -> Vec<EncodedInteraction> {
+impl BalancerSwapGivenOutInteraction {
+    pub fn encode_swap(&self) -> EncodedInteraction {
         let method = self.vault.swap(
             (
                 Bytes(self.pool_id.0),
@@ -52,7 +52,13 @@ impl Interaction for BalancerSwapGivenOutInteraction {
             *NEVER,
         );
         let calldata = method.tx.data.expect("no calldata").0;
-        vec![(self.vault.address(), 0.into(), Bytes(calldata))]
+        (self.vault.address(), 0.into(), Bytes(calldata))
+    }
+}
+
+impl Interaction for BalancerSwapGivenOutInteraction {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![self.encode_swap()]
     }
 }
 

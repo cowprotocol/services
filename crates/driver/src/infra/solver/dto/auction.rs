@@ -3,10 +3,11 @@ use {
         domain::{competition, competition::order, eth, liquidity},
         util::serialize,
     },
-    number_conversions::rational_to_big_decimal,
+    indexmap::IndexMap,
+    number_conversions::{rational_to_big_decimal, u256_to_big_int},
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::HashMap,
+    std::collections::{BTreeMap, HashMap},
 };
 
 impl Auction {
@@ -32,6 +33,24 @@ impl Auction {
                 )
             })
             .collect();
+
+        // Make sure that we have at least empty entries for all tokens for
+        // which we are providing liquidity.
+        for token in liquidity
+            .iter()
+            .flat_map(|liquidity| match &liquidity.kind {
+                liquidity::Kind::UniswapV2(pool) => pool.reserves.iter().map(|r| r.token).collect(),
+                liquidity::Kind::UniswapV3(pool) => vec![pool.tokens.get().0, pool.tokens.get().1],
+                liquidity::Kind::BalancerV2Stable(_) => todo!(),
+                liquidity::Kind::BalancerV2Weighted(pool) => pool.reserves.tokens().collect(),
+                liquidity::Kind::Swapr(pool) => {
+                    pool.base.reserves.iter().map(|r| r.token).collect()
+                }
+                liquidity::Kind::ZeroEx(_) => todo!(),
+            })
+        {
+            tokens.entry(token.into()).or_insert_with(Default::default);
+        }
 
         Self {
             id: auction.id().as_ref().map(ToString::to_string),
@@ -61,10 +80,6 @@ impl Auction {
                 .iter()
                 .map(|liquidity| match &liquidity.kind {
                     liquidity::Kind::UniswapV2(pool) => {
-                        for token in pool.reserves.iter().map(|r| r.token) {
-                            tokens.entry(token.into()).or_insert_with(Default::default);
-                        }
-
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.address.into(),
@@ -85,10 +100,6 @@ impl Auction {
                         })
                     }
                     liquidity::Kind::UniswapV3(pool) => {
-                        for token in [pool.tokens.get().0, pool.tokens.get().1] {
-                            tokens.entry(token.into()).or_insert_with(Default::default);
-                        }
-
                         Liquidity::ConcentratedLiquidity(ConcentratedLiquidityPool {
                             id: liquidity.id.into(),
                             address: pool.address.0,
@@ -106,12 +117,32 @@ impl Auction {
                         })
                     }
                     liquidity::Kind::BalancerV2Stable(_) => todo!(),
-                    liquidity::Kind::BalancerV2Weighted(_) => todo!(),
+                    liquidity::Kind::BalancerV2Weighted(pool) => {
+                        Liquidity::WeightedProduct(WeightedProductPool {
+                            id: liquidity.id.into(),
+                            address: pool.id.address().into(),
+                            gas_estimate: liquidity.gas.into(),
+                            tokens: pool
+                                .reserves
+                                .iter()
+                                .map(|r| {
+                                    (
+                                        r.asset.token.into(),
+                                        WeightedProductReserve {
+                                            balance: r.asset.amount.into(),
+                                            scaling_factor: r.scale.factor(),
+                                            weight: bigdecimal::BigDecimal::new(
+                                                u256_to_big_int(&r.weight.into()),
+                                                18,
+                                            ),
+                                        },
+                                    )
+                                })
+                                .collect(),
+                            fee: bigdecimal::BigDecimal::new(u256_to_big_int(&pool.fee.into()), 18),
+                        })
+                    }
                     liquidity::Kind::Swapr(pool) => {
-                        for token in pool.base.reserves.iter().map(|r| r.token) {
-                            tokens.entry(token.into()).or_insert_with(Default::default);
-                        }
-
                         Liquidity::ConstantProduct(ConstantProductPool {
                             id: liquidity.id.into(),
                             address: pool.base.address.into(),
@@ -223,7 +254,7 @@ struct ConstantProductPool {
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
-    tokens: HashMap<eth::H160, ConstantProductReserve>,
+    tokens: BTreeMap<eth::H160, ConstantProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }
@@ -244,16 +275,19 @@ struct WeightedProductPool {
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
-    tokens: HashMap<eth::H160, WeightedProductReserve>,
+    tokens: IndexMap<eth::H160, WeightedProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    scaling_factor: eth::U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     weight: bigdecimal::BigDecimal,
 }
@@ -267,7 +301,7 @@ struct StablePool {
     address: eth::H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: eth::U256,
-    tokens: HashMap<eth::H160, StableReserve>,
+    tokens: IndexMap<eth::H160, StableReserve>,
     amplification_parameter: f64,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
@@ -298,8 +332,8 @@ struct ConcentratedLiquidityPool {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     liquidity: u128,
     tick: i32,
-    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
-    liquidity_net: HashMap<i32, i128>,
+    #[serde_as(as = "BTreeMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
+    liquidity_net: BTreeMap<i32, i128>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
 }

@@ -22,6 +22,7 @@ use {
     model::TokenPair,
     shared::{
         ethrpc::Web3,
+        http_solver::model::TokenAmount,
         recent_block_cache::Block,
         sources::balancer_v2::pool_fetching::BalancerPoolFetching,
     },
@@ -128,7 +129,6 @@ pub struct SettlementHandler {
     allowances: Arc<Allowances>,
 }
 
-#[cfg(test)]
 impl SettlementHandler {
     pub fn new(
         pool_id: H256,
@@ -141,6 +141,32 @@ impl SettlementHandler {
             settlement,
             vault,
             allowances,
+        }
+    }
+
+    pub fn vault(&self) -> &BalancerV2Vault {
+        &self.vault
+    }
+
+    pub fn pool_id(&self) -> H256 {
+        self.pool_id
+    }
+
+    pub fn swap(
+        &self,
+        input_max: TokenAmount,
+        output: TokenAmount,
+    ) -> BalancerSwapGivenOutInteraction {
+        BalancerSwapGivenOutInteraction {
+            settlement: self.settlement.clone(),
+            vault: self.vault.clone(),
+            pool_id: self.pool_id,
+            asset_in_max: input_max,
+            asset_out: output,
+            // Balancer pools allow passing additional user data in order to
+            // control pool behaviour for swaps. That being said, weighted pools
+            // do not seem to make use of this at the moment so leave it empty.
+            user_data: Default::default(),
         }
     }
 }
@@ -178,17 +204,7 @@ impl SettlementHandler {
             );
         }
         encoder.append_to_execution_plan_internalizable(
-            Arc::new(BalancerSwapGivenOutInteraction {
-                settlement: self.settlement.clone(),
-                vault: self.vault.clone(),
-                pool_id: self.pool_id,
-                asset_in_max: execution.input_max,
-                asset_out: execution.output,
-                // Balancer pools allow passing additional user data in order to
-                // control pool behaviour for swaps. That being said, weighted pools
-                // do not seem to make use of this at the moment so leave it empty.
-                user_data: Default::default(),
-            }),
+            Arc::new(self.swap(execution.input_max, execution.output)),
             execution.internalizable,
         );
 
