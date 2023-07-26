@@ -73,7 +73,7 @@ impl Display for PriceEstimators {
             }
             Ok(())
         } else {
-            return f.write_str("None");
+            f.write_str("None")
         }
     }
 }
