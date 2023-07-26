@@ -24,34 +24,53 @@ impl Registry {
         self.validator.size_limit()
     }
 
-    /// Saves an app-data document matching the specified app-data hash to the
-    /// database.
-    pub async fn save(&self, hash: AppDataHash, document: &[u8]) -> Result<(), SaveError> {
+    /// Registers an app-data document matching the specified app-data hash to
+    /// the registry, ensuring that there exists an entry linking the specified
+    /// app data hash with the document.
+    ///
+    /// Returns `New` if the app data was newly added or `AlreadyExisted` if an
+    /// exactly matching entry already existed.
+    pub async fn register(
+        &self,
+        hash: AppDataHash,
+        document: &[u8],
+    ) -> Result<Registered, RegisterError> {
         let validated = self
             .validator
             .validate(document)
-            .map_err(SaveError::Invalid)?;
+            .map_err(RegisterError::Invalid)?;
         if hash != validated.hash {
-            return Err(SaveError::HashMismatch {
+            return Err(RegisterError::HashMismatch {
                 expected: hash,
                 computed: validated.hash,
             });
         }
 
-        self.database
+        match self
+            .database
             .insert_full_app_data(&validated.hash, &validated.document)
-            .await?;
-
-        Ok(())
+            .await
+        {
+            Ok(()) => Ok(Registered::New),
+            Err(InsertError::Duplicate) => Ok(Registered::AlreadyExisted),
+            Err(InsertError::Mismatch(existing)) => Err(RegisterError::DataMismatch { existing }),
+            Err(InsertError::Other(err)) => Err(RegisterError::Other(err)),
+        }
     }
 }
 
+#[derive(Debug)]
+pub enum Registered {
+    /// The app data was newly added to the registry.
+    New,
+    /// An identical app data was already registered.
+    AlreadyExisted,
+}
+
 #[derive(Debug, thiserror::Error)]
-pub enum SaveError {
+pub enum RegisterError {
     #[error("app data is invalid: {0}")]
     Invalid(anyhow::Error),
-    #[error("app data already exists")]
-    Duplicate,
     #[error("computed app data hash {computed:?} doesn't match expected {expected:?}")]
     HashMismatch {
         expected: AppDataHash,
@@ -61,14 +80,4 @@ pub enum SaveError {
     DataMismatch { existing: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-}
-
-impl From<InsertError> for SaveError {
-    fn from(value: InsertError) -> Self {
-        match value {
-            InsertError::Duplicate => SaveError::Duplicate,
-            InsertError::Mismatch(existing) => SaveError::DataMismatch { existing },
-            InsertError::Other(err) => SaveError::Other(err),
-        }
-    }
 }

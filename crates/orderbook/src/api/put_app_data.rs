@@ -17,9 +17,18 @@ fn request(
         .and(warp::body::bytes())
 }
 
-fn response(result: Result<(), app_data::SaveError>) -> super::ApiReply {
+fn response(
+    hash: AppDataHash,
+    result: Result<app_data::Registered, app_data::RegisterError>,
+) -> super::ApiReply {
     match result {
-        Ok(response) => reply::with_status(reply::json(&response), StatusCode::CREATED),
+        Ok(registered) => {
+            let status = match registered {
+                app_data::Registered::New => StatusCode::CREATED,
+                app_data::Registered::AlreadyExisted => StatusCode::OK,
+            };
+            reply::with_status(reply::json(&hash), status)
+        }
         Err(err) => err.into_warp_reply(),
     }
 }
@@ -30,20 +39,19 @@ pub fn filter(
     request(registry.size_limit()).and_then(move |hash, document: Bytes| {
         let registry = registry.clone();
         async move {
-            let result = registry.save(hash, &document).await;
-            Result::<_, Infallible>::Ok(response(result))
+            let result = registry.register(hash, &document).await;
+            Result::<_, Infallible>::Ok(response(hash, result))
         }
     })
 }
 
-impl IntoWarpReply for app_data::SaveError {
+impl IntoWarpReply for app_data::RegisterError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::Invalid(err) => reply::with_status(
                 super::error("AppDataInvalid", err.to_string()),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::Duplicate => reply::with_status(reply::json(&()), StatusCode::OK),
             err @ Self::HashMismatch { .. } => reply::with_status(
                 super::error("AppDataHashMismatch", err.to_string()),
                 StatusCode::BAD_REQUEST,
