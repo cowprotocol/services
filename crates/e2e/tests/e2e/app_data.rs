@@ -105,5 +105,60 @@ async fn app_data(web3: Web3) {
     let order3_ = services.get_order(&uid).await.unwrap();
     assert_eq!(order3_.data.app_data, app_data_hash);
     // Contrast this with order0, which doesn't have full app data.
-    assert_eq!(order3_.metadata.full_app_data, Some(app_data.to_string()));
+    assert_eq!(order3_.metadata.full_app_data.as_deref(), Some(app_data));
+
+    // invalid app data
+    let invalid_app_data = r#"{"backend":"invalid"}"#;
+    let order4 = create_order(OrderCreationAppData::Full {
+        full: invalid_app_data.to_string(),
+    });
+    let err = services.create_order(&order4).await.unwrap_err();
+    dbg!(err);
+
+    // pre-register some app-data with the API.
+    let pre_app_data = r#"{"pre":"registered"}"#;
+    let pre_app_data_hash = AppDataHash(app_data_hash::hash_full_app_data(pre_app_data.as_bytes()));
+    let err = services.get_app_data(pre_app_data_hash).await.unwrap_err();
+    dbg!(err);
+    services
+        .put_app_data(pre_app_data_hash, pre_app_data)
+        .await
+        .unwrap();
+    assert_eq!(
+        services.get_app_data(pre_app_data_hash).await.unwrap(),
+        pre_app_data
+    );
+
+    // creating an order with the pre-registed app-data works.
+    let order5 = create_order(OrderCreationAppData::Hash {
+        hash: pre_app_data_hash,
+    });
+    let uid = services.create_order(&order5).await.unwrap();
+    let order5_ = services.get_order(&uid).await.unwrap();
+    assert_eq!(
+        order5_.metadata.full_app_data.as_deref(),
+        Some(pre_app_data)
+    );
+
+    // pre-registering is idempotent.
+    services
+        .put_app_data(pre_app_data_hash, pre_app_data)
+        .await
+        .unwrap();
+    assert_eq!(
+        services.get_app_data(pre_app_data_hash).await.unwrap(),
+        pre_app_data
+    );
+
+    // pre-registering invalid app-data fails.
+    let err = services
+        .put_app_data(
+            AppDataHash(app_data_hash::hash_full_app_data(
+                invalid_app_data.as_bytes(),
+            )),
+            invalid_app_data,
+        )
+        .await
+        .unwrap_err();
+    dbg!(err);
 }

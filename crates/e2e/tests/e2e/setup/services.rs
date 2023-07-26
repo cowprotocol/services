@@ -293,6 +293,29 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub async fn put_app_data(
+        &self,
+        app_data: AppDataHash,
+        full_app_data: &str,
+    ) -> Result<(), (StatusCode, String)> {
+        let response = self
+            .http
+            .put(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
+            .body(full_app_data.to_owned())
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        if status.is_success() {
+            Ok(())
+        } else {
+            Err((status, body))
+        }
+    }
+
     pub fn client(&self) -> &Client {
         &self.http
     }
