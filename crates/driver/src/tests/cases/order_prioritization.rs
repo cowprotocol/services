@@ -1,10 +1,4 @@
-use crate::{
-    domain::{competition::order, eth},
-    tests::{
-        cases::AB_ORDER_AMOUNT,
-        setup::{ab_order, ab_pool, ab_solution, setup, Order},
-    },
-};
+use crate::tests::setup::{ab_order, ab_pool, ab_solution, setup, Order};
 
 /// Test that orders are sorted correctly before being sent to the solver:
 /// market orders come before limit orders, and orders that are more likely to

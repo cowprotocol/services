@@ -5,7 +5,11 @@ use {
             competition::{self, solution},
             eth::{self, TokenAmount},
         },
-        infra::{blockchain, Ethereum},
+        infra::{
+            blockchain,
+            observe::failed_to_fetch_balance_during_auction_order_prioritizing,
+            Ethereum,
+        },
     },
     futures::future::join_all,
     itertools::Itertools,
@@ -106,7 +110,9 @@ impl Auction {
                     let balance = match eth.balance_of(trader.into(), token).await {
                         Ok(balance) => balance,
                         Err(err) => {
-                            tracing::warn!(?trader, ?token, ?err, "failed to fetch balance");
+                            failed_to_fetch_balance_during_auction_order_prioritizing(
+                                trader, token, err,
+                            );
                             return None;
                         }
                     };
@@ -126,6 +132,7 @@ impl Auction {
             else {
                 return false;
             };
+
             let Some(mut needed_balance) = order.sell.amount.0.checked_add(order.fee.user.0) else {
                 return false;
             };

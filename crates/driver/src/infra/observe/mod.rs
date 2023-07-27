@@ -11,12 +11,13 @@ use {
             competition::{
                 self,
                 auction,
+                order::Trader,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
                 Solved,
             },
-            eth,
+            eth::{self, TokenAddress},
             quote::{self, Quote},
             Liquidity,
         },
@@ -306,4 +307,12 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
     }
+}
+
+pub fn failed_to_fetch_balance_during_auction_order_prioritizing(
+    trader: Trader,
+    token: TokenAddress,
+    err: crate::infra::blockchain::Error,
+) {
+    tracing::warn!(?trader, ?token, ?err, "failed to fetch balance");
 }
