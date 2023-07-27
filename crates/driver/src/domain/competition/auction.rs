@@ -3,16 +3,17 @@ use {
     crate::{
         domain::{
             competition::{self, solution},
-            eth::{self, TokenAmount},
+            eth::{self},
         },
         infra::{
             blockchain,
-            observe::failed_to_fetch_balance_during_auction_order_prioritizing,
+            observe::{self},
             Ethereum,
         },
     },
     futures::future::join_all,
     itertools::Itertools,
+    primitive_types::U256,
     std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
@@ -103,25 +104,19 @@ impl Auction {
             .map(|order| (order.trader(), order.sell.token))
             .unique()
             .collect::<HashSet<_>>();
-        let mut balances: HashMap<(order::Trader, eth::TokenAddress), eth::TokenAmount> = join_all(
+        let mut balances: HashMap<
+            (order::Trader, eth::TokenAddress),
+            Result<eth::TokenAmount, crate::infra::blockchain::Error>,
+        > = join_all(
             tokens_by_trader
                 .into_iter()
                 .map(|(trader, token)| async move {
-                    let balance = match eth.balance_of(trader.into(), token).await {
-                        Ok(balance) => balance,
-                        Err(err) => {
-                            failed_to_fetch_balance_during_auction_order_prioritizing(
-                                trader, token, err,
-                            );
-                            return None;
-                        }
-                    };
-                    Some(((trader, token), balance))
+                    let balance = eth.balance_of(trader.into(), token).await;
+                    ((trader, token), balance)
                 }),
         )
         .await
         .into_iter()
-        .flatten()
         .collect();
 
         self.orders.retain(|order| {
@@ -132,30 +127,78 @@ impl Auction {
                 return true;
             }
 
-            let Some(TokenAmount(remaining_balance)) =
-                balances.get_mut(&(order.trader(), order.sell.token))
-            else {
-                return false;
+            let remaining_balance = match balances
+                .get_mut(&(order.trader(), order.sell.token))
+                .unwrap()
+            {
+                Ok(balance) => &mut balance.0,
+                Err(err) => {
+                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance(err);
+                    observe::order_excluded_from_auction(order, reason);
+                    return false;
+                }
             };
 
-            let Some(mut needed_balance) = order.sell.amount.0.checked_add(order.fee.user.0) else {
-                return false;
+            fn max_fill(order: &competition::Order) -> anyhow::Result<U256> {
+                use {
+                    anyhow::Context,
+                    shared::remaining_amounts::{Order as RemainingOrder, Remaining},
+                };
+
+                let remaining = Remaining::from_order(&RemainingOrder {
+                    kind: match order.side {
+                        order::Side::Buy => model::order::OrderKind::Buy,
+                        order::Side::Sell => model::order::OrderKind::Sell,
+                    },
+                    buy_amount: order.buy.amount.0,
+                    sell_amount: order.sell.amount.0,
+                    fee_amount: order.fee.user.0,
+                    executed_amount: match order.partial {
+                        order::Partial::Yes { executed } => executed.0,
+                        order::Partial::No => 0.into(),
+                    },
+                    partially_fillable: match order.partial {
+                        order::Partial::Yes { .. } => true,
+                        order::Partial::No => false,
+                    },
+                })
+                .context("Remaining::from_order")?;
+                let sell = remaining
+                    .remaining(order.sell.amount.0)
+                    .context("remaining_sell")?;
+                let fee = remaining
+                    .remaining(order.fee.user.0)
+                    .context("remaining_fee")?;
+                sell.checked_add(fee).context("add sell and fee")
+            }
+
+            let max_fill = match max_fill(order) {
+                Ok(balance) => balance,
+                Err(err) => {
+                    let reason =
+                        observe::OrderExcludedFromAuctionReason::CouldNotCalculateRemainingAmount(
+                            &err,
+                        );
+                    observe::order_excluded_from_auction(order, reason);
+                    return false;
+                }
             };
-            match order.is_partial() {
+
+            let used_balance = match order.is_partial() {
                 true => {
                     if *remaining_balance == 0.into() {
                         return false;
                     }
-                    // TODO: Take previous partial fill into account. This reduces needed balance.
-                    needed_balance = needed_balance.min(*remaining_balance);
+                    max_fill.min(*remaining_balance)
                 }
                 false => {
-                    if *remaining_balance < needed_balance {
+                    if *remaining_balance < max_fill {
                         return false;
                     }
+                    max_fill
                 }
-            }
-            *remaining_balance -= needed_balance;
+            };
+            *remaining_balance -= used_balance;
             true
         });
 

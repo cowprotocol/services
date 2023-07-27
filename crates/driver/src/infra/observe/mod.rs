@@ -11,13 +11,12 @@ use {
             competition::{
                 self,
                 auction,
-                order::Trader,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
                 Solved,
             },
-            eth::{self, TokenAddress},
+            eth::{self},
             quote::{self, Quote},
             Liquidity,
         },
@@ -309,10 +308,15 @@ fn competition_error(err: &competition::Error) -> &'static str {
     }
 }
 
-pub fn failed_to_fetch_balance_during_auction_order_prioritizing(
-    trader: Trader,
-    token: TokenAddress,
-    err: crate::infra::blockchain::Error,
+#[derive(Debug)]
+pub enum OrderExcludedFromAuctionReason<'a> {
+    CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
+    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+}
+
+pub fn order_excluded_from_auction(
+    order: &competition::Order,
+    reason: OrderExcludedFromAuctionReason,
 ) {
-    tracing::warn!(?trader, ?token, ?err, "failed to fetch balance");
+    tracing::trace!(uid=?order.uid, ?reason,"order excluded from auction");
 }
