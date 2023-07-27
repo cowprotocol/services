@@ -4,6 +4,7 @@ use {
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
         serve_api,
         verify_deployed_contract_constants,
@@ -484,18 +485,17 @@ pub async fn run(args: Arguments) {
         .with_custom_interactions(args.enable_custom_interactions)
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
-    let ipfs = args.ipfs_gateway.map(|url| {
-        Ipfs::new(
-            http_factory
-                .builder()
-                .timeout(Duration::from_secs(5))
-                .build()
-                .unwrap(),
-            url,
-            args.ipfs_pinata_auth
-                .map(|auth| format!("pinataGatewayToken={auth}")),
-        )
-    });
+    let ipfs = args
+        .ipfs_gateway
+        .map(|url| {
+            Ipfs::new(
+                http_factory.builder(),
+                url,
+                args.ipfs_pinata_auth
+                    .map(|auth| format!("pinataGatewayToken={auth}")),
+            )
+        })
+        .map(IpfsAppData::new);
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
