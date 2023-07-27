@@ -155,7 +155,7 @@ fn sort_orders_for_balance_priority(orders: &mut [Order], external_prices: &Exte
 ///
 /// Returns `Err` on overflow.
 fn max_transfer_out_amount(order: &Order) -> Result<U256> {
-    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
+    let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let sell = remaining.remaining(order.data.sell_amount)?;
     let fee = remaining.remaining(order.data.fee_amount)?;
     sell.checked_add(fee).context("add")

@@ -1,6 +1,6 @@
 use {
     anyhow::{Context, Result},
-    model::order::{Order, OrderKind},
+    model::order::{Order as ModelOrder, OrderKind},
     num::rational::Ratio,
     primitive_types::U256,
 };
@@ -36,6 +36,44 @@ pub struct Remaining {
     balance: Ratio<U256>,
 }
 
+pub struct Order {
+    pub kind: OrderKind,
+    pub buy_amount: U256,
+    pub sell_amount: U256,
+    pub fee_amount: U256,
+    // For a buy order this is in the buy token and for a sell order in the sell token and
+    // excluding the fee amount.
+    pub executed_amount: U256,
+    pub partially_fillable: bool,
+}
+
+impl From<&ModelOrder> for Order {
+    fn from(o: &ModelOrder) -> Self {
+        Self {
+            kind: o.data.kind,
+            buy_amount: o.data.buy_amount,
+            sell_amount: o.data.sell_amount,
+            fee_amount: o.data.fee_amount,
+            executed_amount: match o.data.kind {
+                // A real buy order cannot execute more than U256::MAX so in order to make this
+                // function infallible we treat a larger amount as a full execution.
+                OrderKind::Buy => {
+                    number_conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
+                        .unwrap_or(o.data.buy_amount)
+                }
+                OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,
+            },
+            partially_fillable: o.data.partially_fillable,
+        }
+    }
+}
+
+impl From<ModelOrder> for Order {
+    fn from(o: ModelOrder) -> Self {
+        (&o).into()
+    }
+}
+
 impl Remaining {
     /// Returns a ratio of an order assuming it has sufficient balance.
     pub fn from_order(order: &Order) -> Result<Self> {
@@ -44,29 +82,22 @@ impl Remaining {
 
     /// Returns a ratio of an order with the specified available balance.
     pub fn from_order_with_balance(order: &Order, sell_balance: U256) -> Result<Self> {
-        let (total, executed) = match order.data.kind {
-            OrderKind::Buy => (
-                order.data.buy_amount,
-                number_conversions::big_uint_to_u256(&order.metadata.executed_buy_amount)
-                    .context("buy order executed amount overflows a u256")?,
-            ),
-            OrderKind::Sell => (
-                order.data.sell_amount,
-                order.metadata.executed_sell_amount_before_fees,
-            ),
+        let total = match order.kind {
+            OrderKind::Buy => order.buy_amount,
+            OrderKind::Sell => order.sell_amount,
         };
 
-        if order.data.partially_fillable {
+        if order.partially_fillable {
             let execution = Ratio::new_raw(
                 total
-                    .checked_sub(executed)
+                    .checked_sub(order.executed_amount)
                     .context("executed larger than total")?,
                 total,
             );
 
-            let sell_amount = ratio::scalar_mul(&execution, order.data.sell_amount)
+            let sell_amount = ratio::scalar_mul(&execution, order.sell_amount)
                 .context("overflow scaling sell amount for execution")?;
-            let fee_amount = ratio::scalar_mul(&execution, order.data.fee_amount)
+            let fee_amount = ratio::scalar_mul(&execution, order.fee_amount)
                 .context("overflow scaling fee amount for execution")?;
 
             let need = sell_amount
@@ -82,12 +113,11 @@ impl Remaining {
             Ok(Self { execution, balance })
         } else {
             let sell = order
-                .data
                 .sell_amount
-                .checked_add(order.data.fee_amount)
+                .checked_add(order.fee_amount)
                 .context("overflow sell + fee amount")?;
 
-            let execution = if executed.is_zero() {
+            let execution = if order.executed_amount.is_zero() {
                 ratio::one()
             } else {
                 ratio::zero()
@@ -157,7 +187,7 @@ mod tests {
     fn computes_remaining_order_amounts() {
         // For fill-or-kill orders, we don't overflow even for very large buy
         // orders (where `{sell,fee}_amount * buy_amount` would overflow).
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 1000.into(),
                 buy_amount: U256::MAX,
@@ -171,14 +201,15 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         let remaining = Remaining::from_order(&order).unwrap();
         assert_eq!(remaining.remaining(1000.into()).unwrap(), 1000.into());
         assert_eq!(remaining.remaining(U256::MAX).unwrap(), U256::MAX);
 
         // For partially fillable orders that are untouched, returns the full
         // order amounts.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 10.into(),
                 buy_amount: 11.into(),
@@ -193,14 +224,15 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         let remaining = Remaining::from_order(&order).unwrap();
         assert_eq!(remaining.remaining(10.into()).unwrap(), 10.into());
         assert_eq!(remaining.remaining(13.into()).unwrap(), 13.into());
 
         // Scales amounts by how much has been executed. Rounds down like the
         // settlement contract.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 100.into(),
@@ -215,13 +247,14 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         let remaining = Remaining::from_order(&order).unwrap();
         assert_eq!(remaining.remaining(100.into()).unwrap(), 10.into());
         assert_eq!(remaining.remaining(101.into()).unwrap(), 10.into());
         assert_eq!(remaining.remaining(200.into()).unwrap(), 20.into());
 
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 10.into(),
@@ -236,7 +269,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         let remaining = Remaining::from_order(&order).unwrap();
         assert_eq!(remaining.remaining(100.into()).unwrap(), 10.into());
         assert_eq!(remaining.remaining(10.into()).unwrap(), 1.into());
@@ -247,7 +281,7 @@ mod tests {
     #[test]
     fn remaining_amount_errors() {
         // Partially fillable order overflow when computing fill ratio.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 1000.into(),
                 fee_amount: 337.into(),
@@ -257,11 +291,12 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         assert!(Remaining::from_order(&order).is_err());
 
         // Partially filled order overflowing executed amount.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 buy_amount: U256::MAX,
                 kind: OrderKind::Buy,
@@ -273,11 +308,12 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        assert!(Remaining::from_order(&order).is_err());
+        }
+        .into();
+        assert!(Remaining::from_order(&order).is_ok());
 
         // Partially filled order that has executed more than its maximum.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 1.into(),
                 kind: OrderKind::Sell,
@@ -289,11 +325,12 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         assert!(Remaining::from_order(&order).is_err());
 
         // Partially fillable order with zero amount.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 0.into(),
                 kind: OrderKind::Sell,
@@ -301,7 +338,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         assert!(Remaining::from_order(&order).is_err());
     }
 
@@ -309,7 +347,7 @@ mod tests {
     fn scale_order_by_available_balance() {
         // Fill-or-kill orders without balance scale to 0 if there is
         // insufficient balance.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 1000.into(),
                 buy_amount: 2000.into(),
@@ -319,14 +357,14 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        let remaining =
-            Remaining::from_order_with_balance(&order, order.data.sell_amount - 1).unwrap();
+        }
+        .into();
+        let remaining = Remaining::from_order_with_balance(&order, order.sell_amount - 1).unwrap();
         assert_eq!(remaining.remaining(1000.into()).unwrap(), 0.into());
 
         // A partially fillable order that has not been executed at all scales
         // to the available balance.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 800.into(),
                 buy_amount: 2000.into(),
@@ -336,7 +374,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         {
             // More than enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
@@ -350,7 +389,7 @@ mod tests {
 
         // A partially fillable order that has has been partially executed scales
         // to the remaining execution and available balance.
-        let order = Order {
+        let order = ModelOrder {
             data: OrderData {
                 sell_amount: 800.into(),
                 buy_amount: 2000.into(),
@@ -364,7 +403,8 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
+        }
+        .into();
         {
             // More than enough balance for the full order.
             let remaining = Remaining::from_order_with_balance(&order, 5000.into()).unwrap();
@@ -379,7 +419,7 @@ mod tests {
 
     #[test]
     fn support_scaling_for_large_orders_with_partial_balance() {
-        let order = Order {
+        let order: Order = ModelOrder {
             data: OrderData {
                 sell_amount: U256::exp10(30),
                 buy_amount: 1.into(),
@@ -388,12 +428,13 @@ mod tests {
                 ..Default::default()
             },
             ..Default::default()
-        };
-        let balance = order.data.sell_amount - 1;
+        }
+        .into();
+        let balance = order.sell_amount - 1;
 
         // Note that we need to scale because of remaining balance, and that
         // we would overflow with these numbers:
-        assert!((order.data.sell_amount * order.data.sell_amount)
+        assert!((order.sell_amount * order.sell_amount)
             .checked_mul(balance)
             .is_none());
 
@@ -401,9 +442,6 @@ mod tests {
         // balances as scaling for remaining execution and available balance are
         // done separately.
         let remaining = Remaining::from_order_with_balance(&order, balance).unwrap();
-        assert_eq!(
-            remaining.remaining(order.data.sell_amount).unwrap(),
-            balance
-        );
+        assert_eq!(remaining.remaining(order.sell_amount).unwrap(), balance);
     }
 }

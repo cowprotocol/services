@@ -740,7 +740,7 @@ impl PricedTrade<'_> {
 }
 
 pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
-    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
+    let remaining = shared::remaining_amounts::Remaining::from_order(&order.into())?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
         (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
         (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,

@@ -51,7 +51,7 @@ impl OrderConverter {
         };
 
         let remaining = shared::remaining_amounts::Remaining::from_order_with_balance(
-            &order,
+            &(&order).into(),
             available_sell_token_balance,
         )?;
 
