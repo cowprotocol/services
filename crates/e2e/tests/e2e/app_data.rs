@@ -108,7 +108,7 @@ async fn app_data(web3: Web3) {
     assert_eq!(order3_.metadata.full_app_data.as_deref(), Some(app_data));
 
     // invalid app data
-    let invalid_app_data = r#"{"backend":"invalid"}"#;
+    let invalid_app_data = r#"{"metadata":"invalid"}"#;
     let order4 = create_order(OrderCreationAppData::Full {
         full: invalid_app_data.to_string(),
     });

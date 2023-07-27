@@ -76,7 +76,7 @@ async fn test(web3: Web3) {
         .submit_quote(&OrderQuoteRequest {
             app_data: OrderCreationAppData::Full {
                 full: serde_json::to_string(&json!({
-                    "backend": {
+                    "metadata": {
                         "hooks": {
                             "pre": [
                                 {
@@ -110,7 +110,7 @@ async fn test(web3: Web3) {
             },
             app_data: OrderCreationAppData::Full {
                 full: serde_json::to_string(&json!({
-                    "backend": {
+                    "metadata": {
                         "hooks": {
                             "pre": [
                                 {

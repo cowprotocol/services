@@ -100,7 +100,7 @@ impl QuoteHandler {
                 side: request.side,
                 verification,
                 signing_scheme: request.signing_scheme,
-                additional_gas: app_data.inner.backend.hooks.gas_limit(),
+                additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             }
         };
 

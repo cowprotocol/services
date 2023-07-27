@@ -2,18 +2,22 @@ use {
     anyhow::{anyhow, Context, Result},
     model::{app_id::AppDataHash, order::Hooks},
     serde::Deserialize,
-    serde_json::Value,
 };
+
+mod compat;
+
+/// The minimum valid empty app data JSON string.
+pub const EMPTY: &str = "{}";
 
 #[derive(Debug)]
 pub struct ValidatedAppData {
     pub hash: AppDataHash,
     pub document: String,
-    pub backend: BackendAppData,
+    pub protocol: ProtocolAppData,
 }
 
-#[derive(Debug, Default, Deserialize)]
-pub struct BackendAppData {
+#[derive(Debug, Default, Deserialize, Eq, PartialEq)]
+pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
 }
@@ -49,33 +53,259 @@ impl Validator {
         }
 
         let document = String::from_utf8(full_app_data.to_vec())?;
-        let mut json: Value = serde_json::from_str(&document).context("invalid json")?;
-        let json = json.as_object_mut().context("top level isn't object")?;
-        let backend: BackendAppData = json
-            .remove("backend")
-            .map(serde_json::from_value)
-            .transpose()
-            .context("top level `backend` value doesn't match schema")?
-            // If the key doesn't exist, default. Makes life easier for API consumers, who don't care about backend app data.
+        let root = serde_json::from_str::<Root>(&document).context("invalid app data json")?;
+        let protocol = root
+            .metadata
+            .or_else(|| root.backend.map(ProtocolAppData::from))
+            // If the key doesn't exist, default. Makes life easier for API
+            // consumers, who don't care about protocol app data.
             .unwrap_or_default();
-
-        // Perform potentially more backend app data validation here.
 
         Ok(ValidatedAppData {
             hash: AppDataHash(app_data_hash::hash_full_app_data(full_app_data)),
             document,
-            backend,
+            protocol,
         })
     }
 }
 
+/// The root app data JSON object.
+///
+/// App data JSON is organised in an object of the form
+///
+/// ```text
+/// {
+///     "metadata": {}
+/// }
+/// ```
+///
+/// Where the protocol-relevant app-data fields appear in the `metadata` object
+/// along side other valid metadata fields. For example:
+///
+/// ```text
+/// {
+///     "version": "0.9.0",
+///     "appCode": "CoW Swap",
+///     "environment": "barn",
+///     "metadata": {
+///         "quote": {
+///             "slippageBps": "50"
+///         },
+///         "hooks": {
+///             "pre": [
+///                 {
+///                     "target": "0x0000000000000000000000000000000000000000",
+///                     "callData": "0x",
+///                     "gasLimit": "21000"
+///                 }
+///             ]
+///         }
+///     }
+/// }
+/// ```
+///
+/// For more detailed information on the schema, see:
+/// <https://github.com/cowprotocol/app-data>.
+#[derive(Deserialize)]
+struct Root {
+    metadata: Option<ProtocolAppData>,
+    /// DEPRECATED. The `backend` field was originally specified to contain all
+    /// protocol-specific app data (such as hooks). However, after releasing
+    /// hooks, we decided to move the fields to the existing `metadata` field.
+    /// However, in order to not break existing integrations, we allow using the
+    /// `backend` field for specifying hooks.
+    backend: Option<compat::BackendAppData>,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, ethcontract::H160, model::order::Hook};
+
+    macro_rules! assert_app_data {
+        ($s:expr, $e:expr $(,)?) => {{
+            let s = $s;
+            let a = Validator::default().validate(s.as_ref()).unwrap();
+            assert_eq!(a.protocol, $e);
+        }};
+    }
 
     #[test]
-    fn foo() {
-        let mut validator = Validator { size_limit: 100 };
+    fn empty_is_valid() {
+        assert_app_data!(EMPTY, ProtocolAppData::default());
+    }
+
+    #[test]
+    fn examples() {
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData::default(),
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        }
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData::default(),
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "quote": {
+                            "slippageBips": "50"
+                        },
+                        "orderClass": {
+                            "orderClass": "market"
+                        },
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "0"
+                                }
+                            ],
+                            "post": [
+                                {
+                                    "target": "0x0101010101010101010101010101010101010101",
+                                    "callData": "0x01",
+                                    "gasLimit": "1"
+                                },
+                                {
+                                    "target": "0x0202020202020202020202020202020202020202",
+                                    "callData": "0x0202",
+                                    "gasLimit": "2"
+                                }
+                            ]
+                        }
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                hooks: Hooks {
+                    pre: vec![Hook {
+                        target: H160([0; 20]),
+                        call_data: vec![],
+                        gas_limit: 0,
+                    }],
+                    post: vec![
+                        Hook {
+                            target: H160([1; 20]),
+                            call_data: vec![1],
+                            gas_limit: 1
+                        },
+                        Hook {
+                            target: H160([2; 20]),
+                            call_data: vec![2, 2],
+                            gas_limit: 2,
+                        },
+                    ],
+                },
+            },
+        );
+    }
+
+    #[test]
+    fn legacy() {
+        assert_app_data!(
+            r#"
+                {
+                    "backend": {
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "0"
+                                }
+                            ],
+                            "post": [
+                                {
+                                    "target": "0x0101010101010101010101010101010101010101",
+                                    "callData": "0x01",
+                                    "gasLimit": "1"
+                                },
+                                {
+                                    "target": "0x0202020202020202020202020202020202020202",
+                                    "callData": "0x0202",
+                                    "gasLimit": "2"
+                                }
+                            ]
+                        }
+                    }
+                }
+            "#,
+            ProtocolAppData {
+                hooks: Hooks {
+                    pre: vec![Hook {
+                        target: H160([0; 20]),
+                        call_data: vec![],
+                        gas_limit: 0,
+                    }],
+                    post: vec![
+                        Hook {
+                            target: H160([1; 20]),
+                            call_data: vec![1],
+                            gas_limit: 1
+                        },
+                        Hook {
+                            target: H160([2; 20]),
+                            call_data: vec![2, 2],
+                            gas_limit: 2,
+                        },
+                    ],
+                },
+            },
+        );
+
+        // Note that if `metadata` is specified, then the `backend` field is
+        // ignored.
+        assert_app_data!(
+            r#"
+                {
+                    "metadata": {},
+                    "backend": {
+                        "hooks": {
+                            "pre": [
+                                {
+                                    "target": "0x0000000000000000000000000000000000000000",
+                                    "callData": "0x",
+                                    "gasLimit": "0"
+                                }
+                            ]
+                        }
+                    }
+                }
+            "#,
+            ProtocolAppData::default(),
+        );
+    }
+
+    #[test]
+    fn misc() {
+        let mut validator = Validator::default();
 
         let not_json = "hello world".as_bytes();
         let err = validator.validate(not_json).unwrap_err();
@@ -89,15 +319,15 @@ mod tests {
         let validated = validator.validate(object).unwrap();
         dbg!(validated.hash);
 
-        let ok_no_backend = r#"{"hello":"world"}"#.as_bytes();
-        validator.validate(ok_no_backend).unwrap();
+        let ok_no_metadata = r#"{"hello":"world"}"#.as_bytes();
+        validator.validate(ok_no_metadata).unwrap();
 
-        let bad_backend = r#"{"hello":"world","backend":[1]}"#.as_bytes();
-        let err = validator.validate(bad_backend).unwrap_err();
+        let bad_metadata = r#"{"hello":"world","metadata":[1]}"#.as_bytes();
+        let err = validator.validate(bad_metadata).unwrap_err();
         dbg!(err);
 
-        let ok_backend = r#"{"hello":"world","backend":{}}"#.as_bytes();
-        validator.validate(ok_backend).unwrap();
+        let ok_metadata = r#"{"hello":"world","metadata":{}}"#.as_bytes();
+        validator.validate(ok_metadata).unwrap();
 
         validator.size_limit = 1;
         let size_limit = r#"{"hello":"world"}"#.as_bytes();
