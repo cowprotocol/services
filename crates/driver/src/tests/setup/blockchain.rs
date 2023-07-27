@@ -1,7 +1,10 @@
 use {
     super::{Asset, Order},
     crate::{
-        domain::{competition::order, eth},
+        domain::{
+            competition::order,
+            eth::{self, ContractAddress},
+        },
         infra::time,
         tests::{self, boundary},
     },
@@ -38,6 +41,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
@@ -472,6 +476,7 @@ impl Blockchain {
             settlement,
             domain_separator,
             weth,
+            ethflow: None,
             web3,
             web3_url: geth.url(),
             geth,

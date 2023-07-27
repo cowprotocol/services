@@ -178,6 +178,11 @@ pub struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     pub weth: Option<eth::H160>,
+
+    /// Sets the Ethflow contract address. Without this we cannot detect Ethflow
+    /// orders, which leads to such orders not being solved because it appears
+    /// that the user doesn't have enough sell token balance.
+    pub ethflow: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]

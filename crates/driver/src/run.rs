@@ -111,6 +111,7 @@ async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {
         blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
+            ethflow: config.contracts.ethflow.map(Into::into),
         },
     )
     .await

@@ -125,7 +125,12 @@ impl Auction {
         .collect();
 
         self.orders.retain(|order| {
-            // TODO: Ethflow
+            // TODO: We should use balance fetching that takes interactions into account
+            // from `crates/shared/src/account_balances/simulation.rs` instead of hardcoding
+            // an Ethflow exception. https://github.com/cowprotocol/services/issues/1595
+            if Some(order.signature.signer.0) == eth.contracts().ethflow_address().map(|a| a.0) {
+                return true;
+            }
 
             let Some(TokenAmount(remaining_balance)) =
                 balances.get_mut(&(order.trader(), order.sell.token))
