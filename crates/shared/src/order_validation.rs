@@ -1,7 +1,7 @@
 use {
     crate::{
         account_balances::{self, BalanceFetching, TransferSimulationError},
-        app_data::{BackendAppData, ValidatedAppData},
+        app_data::{ProtocolAppData, ValidatedAppData},
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
@@ -68,7 +68,7 @@ pub trait OrderValidating: Send + Sync {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
     /// This validates an order's app-data and returns the parsed
-    /// `BackendAppData` value along with the corresponding rendered
+    /// `ProtocolAppData` value along with the corresponding rendered
     /// interactions that were specified in the `app_data`.
     fn validate_app_data(
         &self,
@@ -542,23 +542,23 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Hash { hash } => {
                 // Eventually we're not going to accept orders that set only a
                 // hash and where we can't find full app data elsewhere.
-                let backend = if let Some(full) = full_app_data_override {
-                    validate(full)?.backend
+                let protocol = if let Some(full) = full_app_data_override {
+                    validate(full)?.protocol
                 } else {
-                    BackendAppData::default()
+                    ProtocolAppData::default()
                 };
 
                 ValidatedAppData {
                     hash: *hash,
                     document: String::new(),
-                    backend,
+                    protocol,
                 }
             }
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
         // convert the user-specified hooks into interactions.
-        if !app_data.backend.hooks.is_empty() {
+        if !app_data.protocol.hooks.is_empty() {
             // custom interactions are disabled
             if !self.enable_custom_interactions {
                 return Err(AppDataValidationError::UnsupportedCustomInteraction);
@@ -568,7 +568,7 @@ impl OrderValidating for OrderValidator {
                 return Err(AppDataValidationError::UnsupportedCustomInteraction);
             }
         }
-        let interactions = self.custom_interactions(&app_data.backend.hooks);
+        let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
             inner: app_data,
@@ -665,7 +665,7 @@ impl OrderValidating for OrderValidator {
                 true,
                 verification_gas_limit,
             )?,
-            additional_gas: app_data.inner.backend.hooks.gas_limit(),
+            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
         let quote = if class == OrderClass::Market {
@@ -1376,7 +1376,7 @@ mod tests {
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
                 full: json!({
-                    "backend": {
+                    "metadata": {
                         "hooks": {
                             "pre": [
                                 {

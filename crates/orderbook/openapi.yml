@@ -707,7 +707,7 @@ components:
 
                 The field must be the encoding of a valid JSON object. The JSON object can contain
                 arbitrary application specific data (JSON key values). The optional key `backend` is
-                special. It **MUST** conform to the schema documented in `BackendAppData`.
+                special. It **MUST** conform to the schema documented in `ProtocolAppData`.
 
                 The intended use of the other keys of the object is follow the standardized format
                 defined [here](https://github.com/cowprotocol/app-data). Example:
@@ -743,7 +743,7 @@ components:
         - partiallyFillable
         - signingScheme
         - signature
-    BackendAppData:
+    ProtocolAppData:
       type: object
     OrderMetaData:
       description: |

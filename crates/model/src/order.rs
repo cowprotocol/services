@@ -42,9 +42,11 @@ pub struct Interactions {
 
 /// Order hooks are user-specified Ethereum calls that get executed as part of
 /// a pre- or post- interaction.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Hooks {
+    #[serde(default)]
     pub pre: Vec<Hook>,
+    #[serde(default)]
     pub post: Vec<Hook>,
 }
 
@@ -63,7 +65,7 @@ impl Hooks {
 
 /// A user-specified hook.
 #[serde_as]
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hook {
     pub target: H160,

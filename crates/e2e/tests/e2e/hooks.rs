@@ -66,7 +66,7 @@ async fn test(web3: Web3) {
         kind: OrderKind::Sell,
         app_data: OrderCreationAppData::Full {
             full: json!({
-                "backend": {
+                "metadata": {
                     "hooks": {
                         "pre": [permit, steal_cow],
                         "post": [steal_weth],

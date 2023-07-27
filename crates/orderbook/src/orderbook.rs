@@ -24,6 +24,7 @@ use {
     },
     primitive_types::H160,
     shared::{
+        app_data,
         metrics::LivenessChecking,
         order_validation::{OrderValidating, ValidationError},
     },
@@ -209,6 +210,11 @@ impl Orderbook {
         &self,
         contract_app_data: &AppDataHash,
     ) -> Result<Option<String>> {
+        // we reserve the 0 app data to indicate empty app data.
+        if contract_app_data.is_zero() {
+            return Ok(Some(app_data::EMPTY.to_string()));
+        }
+
         if let Some(app_data) = self
             .database
             .get_full_app_data(contract_app_data)
