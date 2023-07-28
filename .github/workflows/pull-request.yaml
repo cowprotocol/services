@@ -93,7 +93,7 @@ jobs:
         with:
           file: docker-compose.yaml
           up-opts: -d dev-geth
-      - run: cargo test -p driver -- --ignored
+      - run: cargo test -p driver -- --ignored --test-threads 1 --nocapture
 
   openapi:
     timeout-minutes: 60

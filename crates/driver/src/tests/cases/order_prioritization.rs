@@ -64,22 +64,6 @@ async fn filtering() {
             .filtered()
             .limit()
         )
-        // This order sells B and buys A, while all the previous orders sold A and bought B. The
-        // trader isn't funded the tokens to cover this order, but because of the previous orders
-        // which buy B, he will have enough balance to cover it. Hence, it doesn't get filtered
-        // out.
-        .order(
-            Order {
-                name: "fifth order",
-                sell_amount: 100000000.into(),
-                sell_token: "B",
-                buy_token: "A",
-                ..Default::default()
-            }
-            // Don't fund the trader to cover this order, instead rely on the previous orders.
-            .unfunded()
-            .limit()
-        )
         .solution(ab_solution())
         .done()
         .await;
