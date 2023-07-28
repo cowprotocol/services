@@ -247,6 +247,19 @@ impl<'a> PriceEstimatorFactory<'a> {
             PriceEstimatorKind::BalancerSor => {
                 self.create_estimator_entry::<BalancerSor>(&name, estimator.address)
             }
+            PriceEstimatorKind::Raven => self.create_estimator_entry::<HttpPriceEstimator>(
+                &name,
+                HttpPriceEstimatorParams {
+                    base: self
+                        .args
+                        .raven_solver_url
+                        .clone()
+                        .context("raven solver url not specified")?,
+                    solve_path: self.args.raven_solver_path.clone(),
+                    use_liquidity: false,
+                    solver: estimator.address,
+                },
+            ),
         }
     }
 
