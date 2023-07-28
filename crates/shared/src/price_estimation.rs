@@ -219,7 +219,7 @@ pub struct Arguments {
     /// The API endpoint to call the Raven solver for price estimation
     #[clap(long, env)]
     pub raven_solver_url: Option<Url>,
-   
+
     /// The API path to use for solving.
     #[clap(long, env, default_value = "solve")]
     pub raven_solver_path: String,
