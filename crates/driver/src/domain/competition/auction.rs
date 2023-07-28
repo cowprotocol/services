@@ -14,7 +14,7 @@ use {
     futures::future::join_all,
     itertools::Itertools,
     primitive_types::U256,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashMap,
     thiserror::Error,
 };
 
@@ -98,23 +98,18 @@ impl Auction {
         });
 
         // Fetch balances of each token for each trader.
-        let tokens_by_trader = self
-            .orders
-            .iter()
-            .map(|order| (order.trader(), order.sell.token))
-            .unique()
-            .collect::<HashSet<_>>();
+        // Has to be separate closure due to compiler bug.
+        let f = |order: &competition::Order| -> (order::Trader, eth::TokenAddress) {
+            (order.trader(), order.sell.token)
+        };
+        let tokens_by_trader = self.orders.iter().map(f).unique();
         let mut balances: HashMap<
             (order::Trader, eth::TokenAddress),
             Result<eth::TokenAmount, crate::infra::blockchain::Error>,
-        > = join_all(
-            tokens_by_trader
-                .into_iter()
-                .map(|(trader, token)| async move {
-                    let balance = eth.balance_of(trader.into(), token).await;
-                    ((trader, token), balance)
-                }),
-        )
+        > = join_all(tokens_by_trader.map(|(trader, token)| async move {
+            let balance = eth.balance_of(trader.into(), token).await;
+            ((trader, token), balance)
+        }))
         .await
         .into_iter()
         .collect();
