@@ -73,10 +73,7 @@ impl super::Postgres {
                     &mut ex,
                     &ByteArray(order_execution.0 .0), // order uid
                     auction_data.auction_id,
-                    Some(order_execution.1) // order fee
-                        .as_ref()
-                        .map(u256_to_big_decimal)
-                        .as_ref(),
+                    &u256_to_big_decimal(&order_execution.1), // order fee
                 )
                 .await
                 .context("insert_missing_order_executions")?;

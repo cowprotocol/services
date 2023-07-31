@@ -15,9 +15,21 @@ use {
 
 #[derive(Clone, Debug)]
 pub enum ExecutedFee {
+    /// Fee is calculated by the solver and known upfront (before the settlement
+    /// is finalized).
     Solver(U256),
-    /// Fee for limit orders.
-    Surplus(Option<U256>),
+    /// Fee is unknown before the settlement is finalized and is calculated in
+    /// the postprocessing. Currently only used for limit orders.
+    Surplus,
+}
+
+impl ExecutedFee {
+    pub fn fee(&self) -> Option<&U256> {
+        match self {
+            ExecutedFee::Solver(fee) => Some(fee),
+            ExecutedFee::Surplus => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -53,16 +65,16 @@ impl super::Postgres {
         let mut ex = self.0.begin().await.context("begin")?;
 
         for order_execution in &competition.order_executions {
-            let (solver_fee, surplus_fee) = match order_execution.executed_fee {
-                ExecutedFee::Solver(solver_fee) => (solver_fee, None),
-                ExecutedFee::Surplus(surplus_fee) => (Default::default(), surplus_fee),
-            };
-            let surplus_fee = surplus_fee.as_ref().map(u256_to_big_decimal);
+            let solver_fee = order_execution
+                .executed_fee
+                .fee()
+                .cloned()
+                .unwrap_or_default();
             database::order_execution::save(
                 &mut ex,
                 &ByteArray(order_execution.order_id.0),
                 competition.auction_id,
-                surplus_fee.as_ref(),
+                None,
                 &u256_to_big_decimal(&solver_fee),
             )
             .await

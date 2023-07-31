@@ -129,7 +129,7 @@ impl RunLoop {
                         let executed_fee = match auction_order.solver_determines_fee() {
                             // we don't know the surplus fee in advance. will be populated
                             // after the transaction containing the order is mined
-                            true => ExecutedFee::Surplus(None),
+                            true => ExecutedFee::Surplus,
                             false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
