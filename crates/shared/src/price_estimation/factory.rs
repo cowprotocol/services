@@ -19,7 +19,7 @@ use {
         PriceEstimatorKind,
     },
     crate::{
-        arguments::{self, CodeSimulatorKind, Driver},
+        arguments::{self, CodeSimulatorKind, ExternalSolver, LegacySolver},
         bad_token::BadTokenDetecting,
         balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
@@ -53,8 +53,7 @@ pub struct PriceEstimatorFactory<'a> {
     network: Network,
     components: Components,
     trade_verifier: Option<TradeVerifier>,
-    estimators: HashMap<PriceEstimatorKind, EstimatorEntry>,
-    external_estimators: HashMap<String, EstimatorEntry>,
+    estimators: HashMap<String, EstimatorEntry>,
 }
 
 #[derive(Clone)]
@@ -87,6 +86,27 @@ pub struct Components {
     pub gas_price: Arc<dyn GasPriceEstimating>,
     pub zeroex: Arc<dyn ZeroExApi>,
     pub oneinch: Option<Arc<dyn OneInchClient>>,
+}
+
+/// The source of the price estimator.
+pub enum PriceEstimatorSource {
+    Builtin(PriceEstimator),
+    External(ExternalSolver),
+    Legacy(LegacySolver),
+}
+
+impl PriceEstimatorSource {
+    pub fn for_args(
+        builtin: &[PriceEstimator],
+        external: &[ExternalSolver],
+        legacy: &[LegacySolver],
+    ) -> Vec<Self> {
+        std::iter::empty()
+            .chain(builtin.iter().copied().map(PriceEstimatorSource::Builtin))
+            .chain(external.iter().cloned().map(PriceEstimatorSource::External))
+            .chain(legacy.iter().cloned().map(PriceEstimatorSource::Legacy))
+            .collect()
+    }
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
@@ -147,7 +167,6 @@ impl<'a> PriceEstimatorFactory<'a> {
             components,
             trade_verifier,
             estimators: HashMap::new(),
-            external_estimators: Default::default(),
         })
     }
 
@@ -263,57 +282,36 @@ impl<'a> PriceEstimatorFactory<'a> {
         }
     }
 
-    fn get_estimator(&mut self, estimator: PriceEstimator) -> Result<&EstimatorEntry> {
-        #[allow(clippy::map_entry)]
-        if !self.estimators.contains_key(&estimator.kind) {
-            self.estimators
-                .insert(estimator.kind, self.create_estimator(estimator)?);
-        }
-        Ok(&self.estimators[&estimator.kind])
-    }
+    fn get_estimator(&mut self, source: &PriceEstimatorSource) -> Result<&EstimatorEntry> {
+        let name = source.name();
 
-    fn get_external_estimator(&mut self, driver: &Driver) -> Result<&EstimatorEntry> {
         #[allow(clippy::map_entry)]
-        if !self.external_estimators.contains_key(&driver.name) {
-            self.external_estimators.insert(
-                driver.name.clone(),
-                self.create_estimator_entry::<ExternalPriceEstimator>(
-                    &driver.name,
-                    ExternalEstimatorParams {
-                        driver: driver.url.clone(),
-                    },
-                )?,
-            );
+        if !self.estimators.contains_key(&name) {
+            let estimator = match source {
+                PriceEstimatorSource::Builtin(builtin) => self.create_estimator(*builtin)?,
+                PriceEstimatorSource::External(driver) => self
+                    .create_estimator_entry::<ExternalPriceEstimator>(
+                        &driver.name,
+                        driver.into(),
+                    )?,
+                PriceEstimatorSource::Legacy(solver) => {
+                    self.create_estimator_entry::<HttpPriceEstimator>(&solver.name, solver.into())?
+                }
+            };
+            self.estimators.insert(name.clone(), estimator);
         }
-        Ok(&self.external_estimators[&driver.name])
+
+        Ok(&self.estimators[&name])
     }
 
     fn get_estimators(
         &mut self,
-        kinds: &[PriceEstimator],
+        sources: &[PriceEstimatorSource],
         select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
-        kinds
+        sources
             .iter()
-            .copied()
-            .map(|kind| Ok((kind.name(), select(self.get_estimator(kind)?).clone())))
-            .collect()
-    }
-
-    fn get_external_estimators(
-        &mut self,
-        drivers: &[Driver],
-        select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
-    ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
-        drivers
-            .iter()
-            .cloned()
-            .map(|driver| {
-                Ok((
-                    driver.name.clone(),
-                    select(self.get_external_estimator(&driver)?).clone(),
-                ))
-            })
+            .map(|source| Ok((source.name(), select(self.get_estimator(source)?).clone())))
             .collect()
     }
 
@@ -327,11 +325,9 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn price_estimator(
         &mut self,
-        kinds: &[PriceEstimator],
-        drivers: &[Driver],
+        sources: &[PriceEstimatorSource],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.optimal)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.optimal)?);
+        let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         Ok(Arc::new(self.sanitized(
             match self.args.enable_quote_predictions {
@@ -345,12 +341,10 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn fast_price_estimator(
         &mut self,
-        kinds: &[PriceEstimator],
+        sources: &[PriceEstimatorSource],
         fast_price_estimation_results_required: NonZeroUsize,
-        drivers: &[Driver],
     ) -> Result<Arc<dyn PriceEstimating>> {
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.fast)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.fast)?);
+        let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
         Ok(Arc::new(self.sanitized(
             RacingCompetitionPriceEstimator::new(
                 estimators,
@@ -361,15 +355,13 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn native_price_estimator(
         &mut self,
-        kinds: &[PriceEstimator],
-        drivers: &[Driver],
+        sources: &[PriceEstimatorSource],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
             "price cache prefetch time needs to be less than price cache max age"
         );
-        let mut estimators = self.get_estimators(kinds, |entry| &entry.native)?;
-        estimators.append(&mut self.get_external_estimators(drivers, |entry| &entry.native)?);
+        let estimators = self.get_estimators(sources, |entry| &entry.native)?;
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
@@ -390,6 +382,16 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)
+    }
+}
+
+impl PriceEstimatorSource {
+    fn name(&self) -> String {
+        match self {
+            Self::Builtin(builtin) => builtin.name(),
+            Self::External(solver) => solver.name.clone(),
+            Self::Legacy(solver) => solver.name.clone(),
+        }
     }
 }
 
@@ -548,6 +550,23 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
     }
 }
 
+impl From<&LegacySolver> for HttpPriceEstimatorParams {
+    fn from(solver: &LegacySolver) -> Self {
+        let base = {
+            let mut url = solver.url.clone();
+            url.set_path("");
+            url
+        };
+        let solve_path = solver.url.path().to_owned();
+        Self {
+            base,
+            solve_path,
+            use_liquidity: solver.use_liquidity,
+            solver: solver.address,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ExternalEstimatorParams {
     driver: Url,
@@ -566,6 +585,14 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
 
     fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
         Some(self.verified(verifier.clone()))
+    }
+}
+
+impl From<&ExternalSolver> for ExternalEstimatorParams {
+    fn from(solver: &ExternalSolver) -> Self {
+        Self {
+            driver: solver.url.clone(),
+        }
     }
 }
 

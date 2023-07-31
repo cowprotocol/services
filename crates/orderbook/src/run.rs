@@ -46,7 +46,7 @@ use {
         order_quoting::{OrderQuoter, QuoteHandler},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
-            factory::{self, PriceEstimatorFactory},
+            factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
@@ -369,23 +369,28 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(
+        .price_estimator(&PriceEstimatorSource::for_args(
             args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            args.order_quoting.price_estimators.as_slice(),
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
             args.fast_price_estimation_results_required,
-            &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
+        .native_price_estimator(&PriceEstimatorSource::for_args(
             args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
 
     let cow_token = match CowProtocolToken::deployed(&web3).await {
