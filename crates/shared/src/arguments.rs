@@ -622,4 +622,55 @@ mod test {
             ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
         );
     }
+
+    #[test]
+    fn parse_legacy_solver_price_estimators() {
+        // ok
+        assert_eq!(
+            LegacySolver::from_str("name|http://localhost:8080").unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160::zero(),
+                use_liquidity: false,
+            }
+        );
+        assert_eq!(
+            LegacySolver::from_str(
+                "name|http://localhost:8080|0x0101010101010101010101010101010101010101"
+            )
+            .unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160([1; 20]),
+                use_liquidity: false,
+            }
+        );
+        assert_eq!(
+            LegacySolver::from_str(
+                "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true"
+            )
+            .unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160([1; 20]),
+                use_liquidity: true,
+            }
+        );
+
+        // too few arguments
+        assert!(LegacySolver::from_str("").is_err());
+        assert!(LegacySolver::from_str("name").is_err());
+
+        // broken URL
+        assert!(LegacySolver::from_str("name1|sdfsdfds").is_err());
+
+        // too many arguments
+        assert!(LegacySolver::from_str(
+            "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
+        )
+        .is_err());
+    }
 }
