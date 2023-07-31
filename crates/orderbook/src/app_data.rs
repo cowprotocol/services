@@ -69,14 +69,14 @@ pub enum Registered {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegisterError {
-    #[error("app data is invalid: {0}")]
+    #[error("appData is invalid: {0}")]
     Invalid(anyhow::Error),
-    #[error("computed app data hash {computed:?} doesn't match expected {expected:?}")]
+    #[error("computed appDataHash {computed:?} doesn't match expected {expected:?}")]
     HashMismatch {
         expected: AppDataHash,
         computed: AppDataHash,
     },
-    #[error("stored app data {existing:?} is different than the specified data")]
+    #[error("stored appData {existing:?} is different than the specified data")]
     DataMismatch { existing: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
