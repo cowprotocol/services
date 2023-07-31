@@ -1,14 +1,3 @@
-pub mod arguments;
-pub mod database;
-pub mod decoded_settlement;
-pub mod driver_api;
-pub mod driver_model;
-pub mod event_updater;
-pub mod fok_limit_orders;
-pub mod on_settlement_event_updater;
-pub mod run_loop;
-pub mod solvable_orders;
-
 use {
     crate::{
         database::{
@@ -57,7 +46,7 @@ use {
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
         order_quoting::OrderQuoter,
-        price_estimation::factory::{self, PriceEstimatorFactory},
+        price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator::Web3SignatureValidator,
         sources::{
@@ -78,6 +67,17 @@ use {
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
 };
+
+pub mod arguments;
+pub mod database;
+pub mod decoded_settlement;
+pub mod driver_api;
+pub mod driver_model;
+pub mod event_updater;
+pub mod fok_limit_orders;
+pub mod on_settlement_event_updater;
+pub mod run_loop;
+pub mod solvable_orders;
 
 /// To never get to the state where a limit order can not be considered usable
 /// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
@@ -397,16 +397,18 @@ pub async fn main(args: arguments::Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(
+        .price_estimator(&PriceEstimatorSource::for_args(
             args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
+        .native_price_estimator(&PriceEstimatorSource::for_args(
             args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
 
     let skip_event_sync_start = if args.skip_event_sync {

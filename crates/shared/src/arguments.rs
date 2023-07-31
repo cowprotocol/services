@@ -45,9 +45,17 @@ macro_rules! logging_args_with_default_filter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Driver {
+pub struct ExternalSolver {
     pub name: String,
     pub url: Url,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacySolver {
+    pub name: String,
+    pub url: Url,
+    pub address: H160,
+    pub use_liquidity: bool,
 }
 
 // The following arguments are used to configure the order creation process
@@ -61,7 +69,16 @@ pub struct OrderQuotingArguments {
     /// A list of external drivers used for price estimation in the following
     /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
-    pub price_estimation_drivers: Vec<Driver>,
+    pub price_estimation_drivers: Vec<ExternalSolver>,
+
+    /// A list of legacy solvers to be used for price estimation in the
+    /// following format: `<NAME>|<URL>[|<ADDRESS>[|<USE_LIQUIITY>]]`.
+    ///
+    /// These solvers are used as an intermediary "transition-period" for
+    /// CIP-27 for solvers that don't provide calldata and while not all
+    /// quotes are verified.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub price_estimation_legacy_solvers: Vec<LegacySolver>,
 
     /// The configured addresses whose orders should be considered liquidity and
     /// not regular user orders.
@@ -375,6 +392,11 @@ impl Display for OrderQuotingArguments {
             "price_estimation_drivers",
             &self.price_estimation_drivers,
         )?;
+        display_list(
+            f,
+            "price_estimation_legacy_solvers",
+            &self.price_estimation_legacy_solvers,
+        )?;
         writeln!(
             f,
             "liquidity_order_owners: {:?}",
@@ -476,9 +498,15 @@ impl Display for Arguments {
     }
 }
 
-impl Display for Driver {
+impl Display for ExternalSolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}({})", self.name, self.url)
+    }
+}
+
+impl Display for LegacySolver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({}, {:?})", self.name, self.url, self.address)
     }
 }
 
@@ -509,17 +537,37 @@ pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     Ok(in_gwei * 1e9)
 }
 
-impl FromStr for Driver {
+impl FromStr for ExternalSolver {
     type Err = anyhow::Error;
 
-    fn from_str(driver: &str) -> Result<Self> {
-        let (name, url) = driver
+    fn from_str(solver: &str) -> Result<Self> {
+        let (name, url) = solver
             .split_once('|')
-            .context("not enough arguments for driver")?;
+            .context("not enough arguments for external solver")?;
         let url: Url = url.parse()?;
-        Ok(Driver {
+        Ok(Self {
             name: name.to_owned(),
             url,
+        })
+    }
+}
+
+impl FromStr for LegacySolver {
+    type Err = anyhow::Error;
+
+    fn from_str(solver: &str) -> Result<Self> {
+        let mut parts = solver.splitn(4, '|');
+        let name = parts.next().context("missing name for legacy solver")?;
+        let url = parts.next().context("missing url for legacy solver")?;
+        let address = parts
+            .next()
+            .unwrap_or("0x0000000000000000000000000000000000000000");
+        let use_liquidity = parts.next().unwrap_or("false");
+        Ok(Self {
+            name: name.to_owned(),
+            url: url.parse()?,
+            address: address.parse()?,
+            use_liquidity: use_liquidity.parse()?,
         })
     }
 }
@@ -552,8 +600,8 @@ mod test {
     #[test]
     fn parse_driver() {
         let argument = "name1|http://localhost:8080";
-        let driver = Driver::from_str(argument).unwrap();
-        let expected = Driver {
+        let driver = ExternalSolver::from_str(argument).unwrap();
+        let expected = ExternalSolver {
             name: "name1".into(),
             url: Url::parse("http://localhost:8080").unwrap(),
         };
@@ -563,13 +611,66 @@ mod test {
     #[test]
     fn parse_drivers_wrong_arguments() {
         // too few arguments
-        assert!(Driver::from_str("").is_err());
-        assert!(Driver::from_str("name").is_err());
+        assert!(ExternalSolver::from_str("").is_err());
+        assert!(ExternalSolver::from_str("name").is_err());
 
         // broken URL
-        assert!(Driver::from_str("name1|sdfsdfds").is_err());
+        assert!(ExternalSolver::from_str("name1|sdfsdfds").is_err());
 
         // too many arguments
-        assert!(Driver::from_str("name1|http://localhost:8080|additional_argument").is_err());
+        assert!(
+            ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
+        );
+    }
+
+    #[test]
+    fn parse_legacy_solver_price_estimators() {
+        // ok
+        assert_eq!(
+            LegacySolver::from_str("name|http://localhost:8080").unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160::zero(),
+                use_liquidity: false,
+            }
+        );
+        assert_eq!(
+            LegacySolver::from_str(
+                "name|http://localhost:8080|0x0101010101010101010101010101010101010101"
+            )
+            .unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160([1; 20]),
+                use_liquidity: false,
+            }
+        );
+        assert_eq!(
+            LegacySolver::from_str(
+                "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true"
+            )
+            .unwrap(),
+            LegacySolver {
+                name: "name".to_string(),
+                url: "http://localhost:8080".parse().unwrap(),
+                address: H160([1; 20]),
+                use_liquidity: true,
+            }
+        );
+
+        // too few arguments
+        assert!(LegacySolver::from_str("").is_err());
+        assert!(LegacySolver::from_str("name").is_err());
+
+        // broken URL
+        assert!(LegacySolver::from_str("name1|sdfsdfds").is_err());
+
+        // too many arguments
+        assert!(LegacySolver::from_str(
+            "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
+        )
+        .is_err());
     }
 }
