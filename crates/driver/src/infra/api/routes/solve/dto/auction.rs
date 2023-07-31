@@ -205,8 +205,6 @@ struct Order {
     #[serde(default)]
     buy_token_balance: BuyTokenBalance,
     class: Class,
-    //#[serde_as(as = "Option<serialize::U256>")] todo cleanup
-    //surplus_fee: Option<eth::U256>,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; order::APP_DATA_LEN],
     signing_scheme: SigningScheme,
