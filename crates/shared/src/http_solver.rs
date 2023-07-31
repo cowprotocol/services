@@ -183,7 +183,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             request = request.body(body);
         };
         // temporary log, not needed once the code is stable for colocation
-        tracing::debug!(
+        tracing::trace!(
             "http request url: {}, timeout: {:?}, body: {:?}",
             query,
             timeout,
@@ -196,7 +196,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .await
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
-        tracing::debug!(body = %text, "http response");
+        tracing::trace!(body = %text, "http response");
         let context = || format!("request query {query}, response body {text}");
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::RateLimited);
