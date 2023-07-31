@@ -9,15 +9,32 @@ use {
 pub struct IpfsAppData {
     ipfs: Ipfs,
     cache: Mutex<TimedSizedCache<AppDataHash, Option<String>>>,
+    metrics: &'static Metrics,
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "api")]
+struct Metrics {
+    /// Number of completed IPFS app data fetches.
+    #[metric(labels("outcome", "source"))]
+    ipfs_app_data: prometheus::IntCounterVec,
 }
 
 impl IpfsAppData {
     pub fn new(ipfs: Ipfs) -> Self {
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        // Initialize metrics.
+        for outcome in &["error", "found", "missing"] {
+            for source in &["cache", "node"] {
+                metrics.ipfs_app_data.with_label_values(&[outcome, source]);
+            }
+        }
         Self {
             ipfs,
             cache: Mutex::new(TimedSizedCache::with_size_and_lifespan_and_refresh(
                 1000, 600, false,
             )),
+            metrics,
         }
     }
 
@@ -65,6 +82,7 @@ impl IpfsAppData {
     }
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
+        let metric = &self.metrics.ipfs_app_data;
         if let Some(cached) = self
             .cache
             .lock()
@@ -72,13 +90,25 @@ impl IpfsAppData {
             .cache_get(contract_app_data)
             .cloned()
         {
+            metric
+                .with_label_values(&[if cached.is_some() { "found" } else { "missing" }, "cache"])
+                .inc();
             return Ok(cached);
         }
-        let result = self.fetch_raw(contract_app_data).await?;
+        let result = match self.fetch_raw(contract_app_data).await {
+            Ok(result) => result,
+            Err(err) => {
+                metric.with_label_values(&["error", "node"]).inc();
+                return Err(err);
+            }
+        };
         self.cache
             .lock()
             .unwrap()
             .cache_set(*contract_app_data, result.clone());
+        metric
+            .with_label_values(&[if result.is_some() { "found" } else { "missing" }, "node"])
+            .inc();
         Ok(result)
     }
 }
@@ -116,5 +146,20 @@ mod tests {
         ));
         let cid = old_app_data_cid(&hash);
         println!("{cid}");
+    }
+
+    #[ignore]
+    #[tokio::test]
+    async fn fetch() {
+        let ipfs = Ipfs::new(Default::default(), "https://ipfs.io".parse().unwrap(), None);
+        let ipfs = IpfsAppData::new(ipfs);
+        let hash = AppDataHash::default();
+        let result = ipfs.fetch(&hash).await;
+        let _ = dbg!(result);
+        let hash = AppDataHash(hex_literal::hex!(
+            "8af4e8c9973577b08ac21d17d331aade86c11ebcc5124744d621ca8365ec9424"
+        ));
+        let result = ipfs.fetch(&hash).await;
+        let _ = dbg!(result);
     }
 }
