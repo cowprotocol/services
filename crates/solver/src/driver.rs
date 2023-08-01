@@ -508,7 +508,7 @@ impl Driver {
                     winning_solver.notify_auction_result(
                         auction_id,
                         AuctionResult::SubmittedOnchain(SubmissionResult::Success(
-                            receipt.block_hash.unwrap_or_default(),
+                            receipt.transaction_hash,
                         )),
                     );
                     Some(receipt.transaction_hash)
