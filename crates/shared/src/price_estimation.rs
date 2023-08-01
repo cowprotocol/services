@@ -99,11 +99,8 @@ pub enum PriceEstimatorKind {
     Baseline,
     Paraswap,
     ZeroEx,
-    Quasimodo,
     OneInch,
-    Yearn,
     BalancerSor,
-    Raven,
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -131,11 +128,8 @@ impl FromStr for PriceEstimator {
             "Baseline" => PriceEstimatorKind::Baseline,
             "Paraswap" => PriceEstimatorKind::Paraswap,
             "ZeroEx" => PriceEstimatorKind::ZeroEx,
-            "Quasimodo" => PriceEstimatorKind::Quasimodo,
             "OneInch" => PriceEstimatorKind::OneInch,
-            "Yearn" => PriceEstimatorKind::Yearn,
             "BalancerSor" => PriceEstimatorKind::BalancerSor,
-            "Raven" => PriceEstimatorKind::Raven,
             estimator => {
                 anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
             }
@@ -624,24 +618,12 @@ mod tests {
             estimator(PriceEstimatorKind::ZeroEx, address(1))
         );
         assert_eq!(
-            parsed("Quasimodo|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Quasimodo, address(1))
-        );
-        assert_eq!(
             parsed("OneInch|0x0000000000000000000000000000000000000001"),
             estimator(PriceEstimatorKind::OneInch, address(1))
         );
         assert_eq!(
-            parsed("Yearn|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Yearn, address(1))
-        );
-        assert_eq!(
             parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
             estimator(PriceEstimatorKind::BalancerSor, address(1))
-        );
-        assert_eq!(
-            parsed("Raven|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Raven, address(1))
         );
     }
 }
