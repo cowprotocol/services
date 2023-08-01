@@ -46,12 +46,12 @@ pub struct Cip20Data {
 /// Returns `Some(data)` if the all the expected CIP-20 data has been indexed
 /// for the most recent `auction_transaction`.
 pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
-    let mut db = db.begin().await.unwrap();
+    let mut db = db.acquire().await.unwrap();
 
     const LAST_AUCTION_ID: &str =
         "SELECT auction_id FROM auction_transaction ORDER BY auction_id DESC LIMIT 1";
     let auction_id: i64 = sqlx::query_scalar(LAST_AUCTION_ID)
-        .fetch_optional(&mut db)
+        .fetch_optional(db.deref_mut())
         .await
         .unwrap()?;
 
@@ -63,7 +63,7 @@ WHERE at.auction_id = $1
     ";
     let tx: AuctionTransaction = sqlx::query_as(TX_QUERY)
         .bind(auction_id)
-        .fetch_optional(&mut db)
+        .fetch_optional(db.deref_mut())
         .await
         .unwrap()?;
 

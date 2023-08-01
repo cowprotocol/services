@@ -1,4 +1,4 @@
-use {crate::TransactionHash, bigdecimal::BigDecimal, sqlx::PgConnection, std::ops::DerefMut};
+use {crate::TransactionHash, bigdecimal::BigDecimal, sqlx::PgConnection};
 
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct Observation {
@@ -10,10 +10,7 @@ pub struct Observation {
     pub log_index: i64,
 }
 
-pub async fn insert(
-    mut ex: &mut PgConnection,
-    observation: Observation,
-) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO settlement_observations (gas_used, effective_gas_price, surplus, fee, block_number, log_index)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -25,7 +22,7 @@ VALUES ($1, $2, $3, $4, $5, $6)
         .bind(observation.fee)
         .bind(observation.block_number)
         .bind(observation.log_index)
-        .execute(ex.deref_mut())
+        .execute(ex)
         .await?;
     Ok(())
 }
