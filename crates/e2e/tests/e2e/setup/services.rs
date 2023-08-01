@@ -297,7 +297,7 @@ impl<'a> Services<'a> {
         &self,
         app_data: AppDataHash,
     ) -> Result<String, (StatusCode, String)> {
-        Ok(self.get_app_data_document(app_data).await?.app_data)
+        Ok(self.get_app_data_document(app_data).await?.full_app_data)
     }
 
     pub async fn put_app_data_document(
@@ -331,7 +331,7 @@ impl<'a> Services<'a> {
         self.put_app_data_document(
             app_data,
             AppDataDocument {
-                app_data: full_app_data.to_owned(),
+                full_app_data: full_app_data.to_owned(),
             },
         )
         .await

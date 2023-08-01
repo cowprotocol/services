@@ -477,7 +477,7 @@ components:
       description: An `appData` document that is registered with the API.
       type: object
       properties:
-        appData:
+        fullAppData:
           description: |
             The string encoding of a JSON object representing some `appData`. The
             format of the JSON expected in the `appData` field is defined

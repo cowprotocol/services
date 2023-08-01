@@ -39,7 +39,9 @@ pub fn filter(
     request(registry.size_limit()).and_then(move |hash, document: AppDataDocument| {
         let registry = registry.clone();
         async move {
-            let result = registry.register(hash, document.app_data.as_bytes()).await;
+            let result = registry
+                .register(hash, document.full_app_data.as_bytes())
+                .await;
             Result::<_, Infallible>::Ok(response(hash, result))
         }
     })

@@ -21,7 +21,9 @@ pub fn get(
             Result::<_, Infallible>::Ok(match result {
                 Ok(Some(response)) => {
                     let response = reply::with_status(
-                        reply::json(&AppDataDocument { app_data: response }),
+                        reply::json(&AppDataDocument {
+                            full_app_data: response,
+                        }),
                         StatusCode::OK,
                     );
                     Box::new(response) as Box<dyn Reply>

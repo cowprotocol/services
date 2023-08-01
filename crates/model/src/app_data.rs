@@ -13,7 +13,7 @@ use {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppDataDocument {
-    pub app_data: String,
+    pub full_app_data: String,
 }
 
 /// On the contract level orders have 32 bytes of generic data that are freely
