@@ -234,51 +234,12 @@ impl<'a> PriceEstimatorFactory<'a> {
             PriceEstimatorKind::ZeroEx => {
                 self.create_estimator_entry::<ZeroExPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorKind::Quasimodo => self.create_estimator_entry::<HttpPriceEstimator>(
-                &name,
-                HttpPriceEstimatorParams {
-                    base: self
-                        .args
-                        .quasimodo_solver_url
-                        .clone()
-                        .context("quasimodo solver url not specified")?,
-                    solve_path: "solve".to_owned(),
-                    use_liquidity: true,
-                    solver: estimator.address,
-                },
-            ),
             PriceEstimatorKind::OneInch => {
                 self.create_estimator_entry::<OneInchPriceEstimator>(&name, estimator.address)
             }
-            PriceEstimatorKind::Yearn => self.create_estimator_entry::<HttpPriceEstimator>(
-                &name,
-                HttpPriceEstimatorParams {
-                    base: self
-                        .args
-                        .yearn_solver_url
-                        .clone()
-                        .context("yearn solver url not specified")?,
-                    solve_path: self.args.yearn_solver_path.clone(),
-                    use_liquidity: false,
-                    solver: estimator.address,
-                },
-            ),
             PriceEstimatorKind::BalancerSor => {
                 self.create_estimator_entry::<BalancerSor>(&name, estimator.address)
             }
-            PriceEstimatorKind::Raven => self.create_estimator_entry::<HttpPriceEstimator>(
-                &name,
-                HttpPriceEstimatorParams {
-                    base: self
-                        .args
-                        .raven_solver_url
-                        .clone()
-                        .context("raven solver url not specified")?,
-                    solve_path: self.args.raven_solver_path.clone(),
-                    use_liquidity: false,
-                    solver: estimator.address,
-                },
-            ),
         }
     }
 
