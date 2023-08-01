@@ -9,10 +9,8 @@
 
 pub mod common;
 pub mod liquidity_bootstrapping;
-pub mod no_protocol_fee_liquidity_bootstrapping;
 pub mod stable;
 pub mod weighted;
-pub mod weighted_2token;
 
 use {
     super::graph_api::PoolData,

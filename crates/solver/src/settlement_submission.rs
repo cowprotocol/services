@@ -308,7 +308,7 @@ impl SolutionSubmitter {
     ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
-                if !matches!(account, Account::Offline(..)) {
+                if !matches!(account, Account::Offline(..) | Account::Kms(..)) {
                     return Err(SubmissionError::from(anyhow!(
                         "Submission to private network requires offline account for signing"
                     )));

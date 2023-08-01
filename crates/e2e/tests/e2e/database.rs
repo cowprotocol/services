@@ -6,6 +6,7 @@ use {
     database::{byte_array::ByteArray, order_events, Address, TransactionHash},
     futures::TryStreamExt,
     model::order::OrderUid,
+    std::ops::DerefMut,
 };
 
 /// Returns all events of that order in the order they happend (old to new).
@@ -14,7 +15,7 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
     let mut db = db.acquire().await.unwrap();
     sqlx::query_as(QUERY)
         .bind(ByteArray(uid.0))
-        .fetch_all(&mut db)
+        .fetch_all(db.deref_mut())
         .await
         .unwrap()
 }

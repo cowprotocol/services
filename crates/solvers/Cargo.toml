@@ -17,21 +17,21 @@ axum = "0.6"
 bigdecimal = { version = "0.3", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"], default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
-ethereum-types = "0.12"
+ethereum-types = "0.14"
 futures = "0.3"
 hex = "0.4"
 hyper = "0.14"
-itertools = "0.10"
+itertools = "0.11"
 num = "0.4"
 reqwest = "0.11"
 serde = "1"
 serde_json = "1"
-serde_with = "2"
+serde_with = "3"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = "0.7"
 tower = "0.4"
-tower-http = { version = "0.3", features = ["trace"] }
+tower-http = { version = "0.4", features = ["trace"] }
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.

@@ -18,7 +18,6 @@ use {
     hex_literal::hex,
     num::BigUint,
     primitive_types::{H160, H256, U256},
-    secp256k1::ONE_KEY,
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::{serde_as, DisplayFromStr},
     std::{
@@ -43,9 +42,11 @@ pub struct Interactions {
 
 /// Order hooks are user-specified Ethereum calls that get executed as part of
 /// a pre- or post- interaction.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Hooks {
+    #[serde(default)]
     pub pre: Vec<Hook>,
+    #[serde(default)]
     pub post: Vec<Hook>,
 }
 
@@ -64,7 +65,7 @@ impl Hooks {
 
 /// A user-specified hook.
 #[serde_as]
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Hook {
     pub target: H160,
@@ -564,7 +565,12 @@ impl Default for OrderCancellation {
         Self::for_order(
             OrderUid::default(),
             &DomainSeparator::default(),
-            SecretKeyRef::new(&ONE_KEY),
+            SecretKeyRef::new(
+                &secp256k1::SecretKey::from_str(
+                    "0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+            ),
         )
     }
 }

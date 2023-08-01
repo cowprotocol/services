@@ -88,7 +88,7 @@ impl CowSubsidy {
         )
         .await?;
         let combined = balance.saturating_add(vbalance);
-        let tier = self.subsidy_tiers.0.range(..=combined).rev().next();
+        let tier = self.subsidy_tiers.0.range(..=combined).next_back();
         let factor = tier.map(|tier| *tier.1).unwrap_or(1.0);
         tracing::debug!(?user, ?balance, ?vbalance, ?combined, ?factor);
         Ok(factor)

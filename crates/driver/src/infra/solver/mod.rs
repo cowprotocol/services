@@ -138,16 +138,12 @@ impl Solver {
             .body(body)
             .timeout(timeout.duration().to_std().unwrap());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        observe::solver_response(
-            self.name(),
-            &self.config.endpoint,
-            res.as_ref().map(String::as_str),
-        );
+        observe::solver_response(self.name(), &self.config.endpoint, res.as_deref());
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
         // Ensure that solution IDs are unique.
-        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id).collect();
+        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id()).collect();
         if ids.len() != solutions.len() {
             return Err(Error::RepeatedSolutionIds);
         }

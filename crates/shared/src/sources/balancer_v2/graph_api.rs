@@ -22,7 +22,7 @@ use {
 
 /// The page size when querying pools.
 #[cfg(not(test))]
-const QUERY_PAGE_SIZE: usize = 1000;
+const QUERY_PAGE_SIZE: usize = 100;
 #[cfg(test)]
 const QUERY_PAGE_SIZE: usize = 10;
 

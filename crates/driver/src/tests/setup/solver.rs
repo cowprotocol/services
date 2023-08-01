@@ -25,7 +25,7 @@ pub struct Config<'a> {
     pub blockchain: &'a Blockchain,
     pub solutions: &'a [blockchain::Solution],
     pub trusted: &'a HashSet<&'static str>,
-    pub quotes: &'a [super::blockchain::Quote],
+    pub quoted_orders: &'a [super::blockchain::QuotedOrder],
     pub deadline: chrono::DateTime<chrono::Utc>,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
@@ -36,7 +36,7 @@ impl Solver {
     pub async fn new(config: Config<'_>) -> Self {
         let mut solutions_json = Vec::new();
         let mut orders_json = Vec::new();
-        for quote in config.quotes {
+        for quote in config.quoted_orders {
             // ETH orders get unwrapped into WETH by the driver before being passed to the
             // solver.
             let sell_token = if quote.order.sell_token == "ETH" {
@@ -105,25 +105,26 @@ impl Solver {
                 prices_json.insert(
                     config
                         .blockchain
-                        .get_token_wrapped(fulfillment.quote.order.sell_token),
-                    fulfillment.quote.buy.to_string(),
+                        .get_token_wrapped(fulfillment.quoted_order.order.sell_token),
+                    fulfillment.quoted_order.buy.to_string(),
                 );
                 prices_json.insert(
                     config
                         .blockchain
-                        .get_token_wrapped(fulfillment.quote.order.buy_token),
-                    (fulfillment.quote.sell - fulfillment.quote.order.surplus_fee()).to_string(),
+                        .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
+                    (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.surplus_fee())
+                        .to_string(),
                 );
                 trades_json.push(json!({
                     "kind": "fulfillment",
-                    "order": if config.quote { Default::default() } else { fulfillment.quote.order_uid(config.blockchain) },
+                    "order": if config.quote { Default::default() } else { fulfillment.quoted_order.order_uid(config.blockchain) },
                     "executedAmount":
-                        match fulfillment.quote.order.executed {
+                        match fulfillment.quoted_order.order.executed {
                             Some(executed) => executed.to_string(),
-                            None => match fulfillment.quote.order.side {
+                            None => match fulfillment.quoted_order.order.side {
                                 order::Side::Sell =>
-                                    (fulfillment.quote.sell_amount() - fulfillment.quote.order.surplus_fee()).to_string(),
-                                order::Side::Buy => fulfillment.quote.buy_amount().to_string(),
+                                    (fulfillment.quoted_order.sell_amount() - fulfillment.quoted_order.order.surplus_fee()).to_string(),
+                                order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
                             },
                         }
                 }))
@@ -136,42 +137,39 @@ impl Solver {
                 "risk": solution.risk.to_string(),
             }));
         }
-        let tokens_json = if config.quote {
-            Default::default()
-        } else {
-            config
-                .solutions
-                .iter()
-                .flat_map(|s| s.fulfillments.iter())
-                .flat_map(|f| {
-                    let quote = &f.quote;
-                    [
-                        (
-                            hex_address(
-                                config.blockchain.get_token_wrapped(quote.order.sell_token),
-                            ),
-                            json!({
-                                "decimals": null,
-                                "symbol": null,
-                                "referencePrice": "1000000000000000000",
-                                "availableBalance": "0",
-                                "trusted": config.trusted.contains(quote.order.sell_token),
-                            }),
+
+        let tokens_json = config
+            .solutions
+            .iter()
+            .flat_map(|s| s.fulfillments.iter())
+            .flat_map(|f| {
+                let quote = &f.quoted_order;
+                [
+                    (
+                        hex_address(
+                            config.blockchain.get_token_wrapped(quote.order.sell_token),
                         ),
-                        (
-                            hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
-                            json!({
-                                "decimals": null,
-                                "symbol": null,
-                                "referencePrice": "1000000000000000000",
-                                "availableBalance": "0",
-                                "trusted": config.trusted.contains(quote.order.buy_token),
-                            }),
-                        ),
-                    ]
-                })
-                .collect::<HashMap<_, _>>()
-        };
+                        json!({
+                            "decimals": null,
+                            "symbol": null,
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            "availableBalance": "0",
+                            "trusted": config.trusted.contains(quote.order.sell_token),
+                        }),
+                    ),
+                    (
+                        hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
+                        json!({
+                            "decimals": null,
+                            "symbol": null,
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            "availableBalance": "0",
+                            "trusted": config.trusted.contains(quote.order.buy_token),
+                        }),
+                    ),
+                ]
+            })
+            .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
         let eth = Ethereum::ethrpc(

@@ -55,8 +55,8 @@ pub struct ExactOutput(pub eth::Asset);
 pub enum Kind {
     UniswapV2(uniswap::v2::Pool),
     UniswapV3(uniswap::v3::Pool),
-    BalancerV2Stable(balancer::stable::Pool),
-    BalancerV2Weighted(balancer::weighted::Pool),
+    BalancerV2Stable(balancer::v2::stable::Pool),
+    BalancerV2Weighted(balancer::v2::weighted::Pool),
     Swapr(swapr::Pool),
     ZeroEx(zeroex::LimitOrder),
 }
@@ -66,13 +66,13 @@ pub enum Kind {
 pub struct TokenPair(eth::TokenAddress, eth::TokenAddress);
 
 impl TokenPair {
-    /// Returns a token pair for the given tokens, or `None` if `a` and `b` are
+    /// Returns a token pair for the given tokens, or `Err` if `a` and `b` are
     /// equal.
-    pub fn new(a: eth::TokenAddress, b: eth::TokenAddress) -> Option<Self> {
+    pub fn new(a: eth::TokenAddress, b: eth::TokenAddress) -> Result<Self, InvalidTokenPair> {
         match a.cmp(&b) {
-            Ordering::Less => Some(Self(a, b)),
-            Ordering::Equal => None,
-            Ordering::Greater => Some(Self(b, a)),
+            Ordering::Less => Ok(Self(a, b)),
+            Ordering::Equal => Err(InvalidTokenPair),
+            Ordering::Greater => Ok(Self(b, a)),
         }
     }
 
@@ -81,3 +81,11 @@ impl TokenPair {
         (self.0, self.1)
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("token pair must have distict token addresses")]
+pub struct InvalidTokenPair;
+
+#[derive(Debug, thiserror::Error)]
+#[error("swap parameters do not match pool")]
+pub struct InvalidSwap;

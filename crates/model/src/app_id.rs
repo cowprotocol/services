@@ -15,6 +15,12 @@ use {
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
 pub struct AppDataHash(pub [u8; 32]);
 
+impl AppDataHash {
+    pub fn is_zero(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 impl Debug for AppDataHash {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "0x{}", hex::encode(self.0))

@@ -1,19 +1,3 @@
-pub mod balancer_sor;
-pub mod baseline;
-pub mod competition;
-pub mod external;
-pub mod factory;
-pub mod gas;
-pub mod http;
-pub mod instrumented;
-pub mod native;
-pub mod native_price_cache;
-pub mod oneinch;
-pub mod paraswap;
-pub mod sanitized;
-pub mod trade_finder;
-pub mod zeroex;
-
 use {
     crate::{
         arguments::{display_option, CodeSimulatorKind},
@@ -34,11 +18,81 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
+        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
     thiserror::Error,
 };
+
+pub mod balancer_sor;
+pub mod baseline;
+pub mod competition;
+pub mod external;
+pub mod factory;
+pub mod gas;
+pub mod http;
+pub mod instrumented;
+pub mod native;
+pub mod native_price_cache;
+pub mod oneinch;
+pub mod paraswap;
+pub mod sanitized;
+pub mod trade_finder;
+pub mod zeroex;
+
+#[derive(Clone, Debug)]
+pub struct PriceEstimators(Vec<PriceEstimator>);
+
+impl PriceEstimators {
+    fn none() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn as_slice(&self) -> &[PriceEstimator] {
+        &self.0
+    }
+}
+
+impl Default for PriceEstimators {
+    fn default() -> Self {
+        Self(vec![PriceEstimator {
+            kind: PriceEstimatorKind::Baseline,
+            address: H160::zero(),
+        }])
+    }
+}
+
+impl Display for PriceEstimators {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut it = self.as_slice().iter();
+        if let Some(PriceEstimator { kind, address }) = it.next() {
+            write!(f, "{kind:?}|{address:?}")?;
+            for PriceEstimator { kind, address } in it {
+                write!(f, ",{kind:?}|{address:?}")?;
+            }
+            Ok(())
+        } else {
+            f.write_str("None")
+        }
+    }
+}
+
+impl FromStr for PriceEstimators {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "None" {
+            return Ok(Self::none());
+        }
+
+        Ok(Self(
+            s.split(',')
+                .map(PriceEstimator::from_str)
+                .collect::<Result<_>>()?,
+        ))
+    }
+}
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum PriceEstimatorKind {
@@ -49,6 +103,7 @@ pub enum PriceEstimatorKind {
     OneInch,
     Yearn,
     BalancerSor,
+    Raven,
 }
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -64,7 +119,7 @@ impl PriceEstimator {
     }
 }
 
-impl std::str::FromStr for PriceEstimator {
+impl FromStr for PriceEstimator {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -80,6 +135,7 @@ impl std::str::FromStr for PriceEstimator {
             "OneInch" => PriceEstimatorKind::OneInch,
             "Yearn" => PriceEstimatorKind::Yearn,
             "BalancerSor" => PriceEstimatorKind::BalancerSor,
+            "Raven" => PriceEstimatorKind::Raven,
             estimator => {
                 anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
             }
@@ -160,6 +216,14 @@ pub struct Arguments {
     #[clap(long, env, default_value = "solve")]
     pub yearn_solver_path: String,
 
+    /// The API endpoint to call the Raven solver for price estimation
+    #[clap(long, env)]
+    pub raven_solver_url: Option<Url>,
+
+    /// The API path to use for solving.
+    #[clap(long, env, default_value = "solve")]
+    pub raven_solver_path: String,
+
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
@@ -238,6 +302,8 @@ impl Display for Arguments {
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(f, "yearn_solver_path: {}", self.yearn_solver_path)?;
+        display_option(f, "raven_solver_url", &self.raven_solver_url)?;
+        writeln!(f, "raven_solver_path: {}", self.raven_solver_path)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,
@@ -572,6 +638,10 @@ mod tests {
         assert_eq!(
             parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
             estimator(PriceEstimatorKind::BalancerSor, address(1))
+        );
+        assert_eq!(
+            parsed("Raven|0x0000000000000000000000000000000000000001"),
+            estimator(PriceEstimatorKind::Raven, address(1))
         );
     }
 }

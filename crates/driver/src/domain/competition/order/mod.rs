@@ -1,12 +1,13 @@
 use crate::{
     domain::eth,
     infra::{blockchain, Ethereum},
-    util::{self, Bytes},
+    util::{self, conv, Bytes},
 };
 
 pub mod signature;
 
 pub use signature::Signature;
+use {super::auction, bigdecimal::Zero, num::CheckedDiv};
 
 /// An order in the auction.
 #[derive(Debug, Clone)]
@@ -70,6 +71,18 @@ impl From<TargetAmount> for eth::U256 {
     }
 }
 
+impl From<eth::TokenAmount> for TargetAmount {
+    fn from(value: eth::TokenAmount) -> Self {
+        Self(value.0)
+    }
+}
+
+impl From<TargetAmount> for eth::TokenAmount {
+    fn from(value: TargetAmount) -> Self {
+        Self(value.0)
+    }
+}
+
 /// Order fee denominated in the sell token.
 #[derive(Debug, Default, Clone)]
 pub struct Fee {
@@ -129,7 +142,7 @@ impl Order {
     pub fn solver_sell(&self) -> eth::Asset {
         if let Kind::Limit { surplus_fee } = self.kind {
             eth::Asset {
-                amount: self.sell.amount - surplus_fee.0,
+                amount: (self.sell.amount.0 - surplus_fee.0).into(),
                 token: self.sell.token,
             }
         } else {
@@ -158,6 +171,25 @@ impl Order {
     /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
         self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+    }
+
+    /// The likelihood that this order will be fulfilled, based on token prices.
+    /// A larger value means that the order is more likely to be fulfilled.
+    /// This is used to prioritize orders when solving.
+    pub fn likelihood(&self, tokens: &auction::Tokens) -> num::BigRational {
+        match (
+            tokens.get(self.buy.token).price,
+            tokens.get(self.sell.token).price,
+        ) {
+            (Some(buy_price), Some(sell_price)) => {
+                let buy = buy_price.apply(self.buy.amount);
+                let sell = sell_price.apply(self.sell.amount);
+                conv::u256::to_big_rational(buy.0)
+                    .checked_div(&conv::u256::to_big_rational(sell.0))
+                    .unwrap_or_else(num::BigRational::zero)
+            }
+            _ => num::BigRational::zero(),
+        }
     }
 }
 

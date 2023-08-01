@@ -1,4 +1,5 @@
 use {
+    super::competition::auction,
     crate::{
         boundary,
         domain::{
@@ -29,10 +30,10 @@ pub struct Quote {
 impl Quote {
     fn new(eth: &Ethereum, order: &Order, solution: competition::Solution) -> Result<Self, Error> {
         let sell_price = solution
-            .price(order.tokens.sell)
+            .clearing_price(order.tokens.sell)
             .ok_or(QuotingFailed::ClearingSellMissing)?;
         let buy_price = solution
-            .price(order.tokens.buy)
+            .clearing_price(order.tokens.buy)
             .ok_or(QuotingFailed::ClearingBuyMissing)?;
         let amount = match order.side {
             order::Side::Sell => conv::u256::from_big_rational(
@@ -48,8 +49,8 @@ impl Quote {
         };
         Ok(Self {
             amount,
-            interactions: boundary::quote::encode_interactions(eth, &solution.interactions)?,
-            solver: solution.solver.address(),
+            interactions: boundary::quote::encode_interactions(eth, solution.interactions())?,
+            solver: solution.solver().address(),
         })
     }
 }
@@ -78,7 +79,11 @@ impl Order {
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
-            .solve(&self.fake_auction(gas_price), &liquidity, timeout)
+            .solve(
+                &self.fake_auction(gas_price, eth.contracts().weth_address()),
+                &liquidity,
+                timeout,
+            )
             .await?;
         Quote::new(
             eth,
@@ -92,11 +97,14 @@ impl Order {
         )
     }
 
-    fn fake_auction(&self, gas_price: eth::GasPrice) -> competition::Auction {
-        competition::Auction {
-            id: None,
-            tokens: Default::default(),
-            orders: vec![competition::Order {
+    fn fake_auction(
+        &self,
+        gas_price: eth::GasPrice,
+        weth: eth::WethAddress,
+    ) -> competition::Auction {
+        competition::Auction::new(
+            None,
+            vec![competition::Order {
                 uid: Default::default(),
                 receiver: None,
                 valid_to: util::Timestamp::MAX,
@@ -107,7 +115,6 @@ impl Order {
                 kind: competition::order::Kind::Market,
                 app_data: Default::default(),
                 partial: competition::order::Partial::No,
-                // TODO add actual pre- and post-interactions (#1491)
                 pre_interactions: Default::default(),
                 post_interactions: Default::default(),
                 sell_token_balance: competition::order::SellTokenBalance::Erc20,
@@ -118,9 +125,30 @@ impl Order {
                     signer: Default::default(),
                 },
             }],
-            gas_price: gas_price.effective().into(),
-            deadline: Default::default(),
-        }
+            [
+                auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: self.tokens.sell,
+                    price: None,
+                    available_balance: Default::default(),
+                    trusted: false,
+                },
+                auction::Token {
+                    decimals: None,
+                    symbol: None,
+                    address: self.tokens.buy,
+                    price: None,
+                    available_balance: Default::default(),
+                    trusted: false,
+                },
+            ]
+            .into_iter(),
+            gas_price.effective().into(),
+            Default::default(),
+            weth,
+        )
+        .unwrap()
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to
@@ -128,7 +156,7 @@ impl Order {
     fn buy(&self) -> eth::Asset {
         match self.side {
             order::Side::Sell => eth::Asset {
-                amount: eth::U256::one(),
+                amount: eth::U256::one().into(),
                 token: self.tokens.buy,
             },
             order::Side::Buy => eth::Asset {
@@ -151,7 +179,7 @@ impl Order {
             // contract, so buy orders requiring excessively large sell amounts
             // would not work anyway.
             order::Side::Buy => eth::Asset {
-                amount: eth::U256::one() << 192,
+                amount: (eth::U256::one() << 192).into(),
                 token: self.tokens.sell,
             },
         }

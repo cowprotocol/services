@@ -160,10 +160,6 @@ fn run() -> Result<()> {
             "Manually vendored ABI for ERC-1271 signature validation",
         )
         .npm(
-            "IUniswapLikeFactory",
-            "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Factory.json",
-        )?
-        .npm(
             "IUniswapLikePair",
             "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Pair.json",
         )?

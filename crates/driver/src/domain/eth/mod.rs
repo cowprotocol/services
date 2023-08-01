@@ -36,6 +36,12 @@ impl From<U256> for ChainId {
     }
 }
 
+impl From<ChainId> for u64 {
+    fn from(value: ChainId) -> Self {
+        value.0.as_u64()
+    }
+}
+
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
@@ -159,12 +165,6 @@ impl From<ContractAddress> for H160 {
     }
 }
 
-impl From<ContractAddress> for ethereum_types::H160 {
-    fn from(value: ContractAddress) -> Self {
-        value.0 .0.into()
-    }
-}
-
 impl From<ContractAddress> for Address {
     fn from(value: ContractAddress) -> Self {
         value.0.into()
@@ -185,6 +185,36 @@ impl TokenAddress {
         } else {
             self
         }
+    }
+}
+
+/// An ERC20 token amount.
+///
+/// https://eips.ethereum.org/EIPS/eip-20
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TokenAmount(pub U256);
+
+impl From<U256> for TokenAmount {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<TokenAmount> for U256 {
+    fn from(value: TokenAmount) -> Self {
+        value.0
+    }
+}
+
+impl From<u128> for TokenAmount {
+    fn from(value: u128) -> Self {
+        Self(value.into())
+    }
+}
+
+impl std::fmt::Display for TokenAmount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -226,7 +256,7 @@ impl From<TokenAddress> for ContractAddress {
 /// particular token.
 #[derive(Debug, Clone, Copy)]
 pub struct Asset {
-    pub amount: U256,
+    pub amount: TokenAmount,
     pub token: TokenAddress,
 }
 
@@ -317,6 +347,12 @@ impl From<H256> for CodeDigest {
 impl From<CodeDigest> for H256 {
     fn from(value: CodeDigest) -> Self {
         value.0
+    }
+}
+
+impl From<[u8; 32]> for CodeDigest {
+    fn from(value: [u8; 32]) -> Self {
+        Self(H256(value))
     }
 }
 

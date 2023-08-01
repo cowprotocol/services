@@ -436,7 +436,8 @@ fn filter_dust_orders(
             return false;
         };
 
-        let Ok(remaining) = remaining_amounts::Remaining::from_order_with_balance(order, balance)
+        let Ok(remaining) =
+            remaining_amounts::Remaining::from_order_with_balance(&order.into(), balance)
         else {
             return false;
         };

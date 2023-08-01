@@ -1,7 +1,8 @@
 use {
     anyhow::{Context, Result},
-    aws_sdk_s3::{types::ByteStream, Client, Credentials, Region},
-    aws_types::credentials::SharedCredentialsProvider,
+    aws_credential_types::{provider::SharedCredentialsProvider, Credentials},
+    aws_sdk_s3::{primitives::ByteStream, Client},
+    aws_types::region::Region,
     flate2::{bufread::GzEncoder, Compression},
     model::auction::AuctionId,
     std::io::Read,

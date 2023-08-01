@@ -11,6 +11,7 @@ use {
     shared::{
         baseline_solver::BaseTokens,
         current_block::{self, BlockRetrieverStrategy, CurrentBlockStream},
+        http_client::HttpClientFactory,
         recent_block_cache::{self, CacheConfig},
     },
     solver::{
@@ -25,6 +26,8 @@ use {
     },
 };
 
+pub mod balancer;
+pub mod swapr;
 pub mod uniswap;
 
 /// The default poll interval for the block stream updating task.
@@ -41,9 +44,16 @@ fn cache_config() -> CacheConfig {
     }
 }
 
+/// The default HTTP client to use for liquidity fetching.
+fn http_client() -> reqwest::Client {
+    // TODO: Should we allow `reqwest::Client` configuration here?
+    HttpClientFactory::default().create()
+}
+
 pub struct Fetcher {
     blocks: CurrentBlockStream,
     inner: LiquidityCollector,
+    swapr_routers: HashSet<eth::ContractAddress>,
 }
 
 impl Fetcher {
@@ -51,21 +61,11 @@ impl Fetcher {
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
-            block_stream_retriever_strategy: BlockRetrieverStrategy::EthCall,
+            block_stream_retriever_strategy: BlockRetrieverStrategy::default(),
         };
 
         let block_stream = blocks.stream(boundary::web3(eth)).await?;
         let block_retriever = blocks.retriever(boundary::web3(eth));
-
-        let uni_v3: Vec<_> = future::join_all(
-            config
-                .uniswap_v3
-                .iter()
-                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
-        )
-        .await
-        .into_iter()
-        .collect();
 
         let uni_v2: Vec<_> = future::join_all(
             config
@@ -76,6 +76,34 @@ impl Fetcher {
         .await
         .into_iter()
         .try_collect()?;
+
+        let swapr_routers = config.swapr.iter().map(|config| config.router).collect();
+        let swapr: Vec<_> = future::join_all(
+            config
+                .swapr
+                .iter()
+                .map(|config| swapr::collector(eth, &block_stream, config)),
+        )
+        .await
+        .into_iter()
+        .try_collect()?;
+
+        let bal_v2: Vec<_> = future::join_all(config.balancer_v2.iter().map(|config| {
+            balancer::v2::collector(eth, &block_stream, block_retriever.clone(), config)
+        }))
+        .await
+        .into_iter()
+        .collect();
+
+        let uni_v3: Vec<_> = future::join_all(
+            config
+                .uniswap_v3
+                .iter()
+                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
+        )
+        .await
+        .into_iter()
+        .collect();
 
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),
@@ -90,9 +118,13 @@ impl Fetcher {
         Ok(Self {
             blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources: [uni_v2, uni_v3].into_iter().flatten().collect(),
+                liquidity_sources: [uni_v2, swapr, bal_v2, uni_v3]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
                 base_tokens: Arc::new(base_tokens),
             },
+            swapr_routers,
         })
     }
 
@@ -121,12 +153,21 @@ impl Fetcher {
             .filter_map(|(index, liquidity)| {
                 let id = liquidity::Id(index);
                 match liquidity {
-                    Liquidity::ConstantProduct(pool) => uniswap::v2::to_domain(id, pool),
-                    Liquidity::BalancerWeighted(_) => unreachable!(),
-                    Liquidity::BalancerStable(_) => unreachable!(),
+                    Liquidity::ConstantProduct(pool) => {
+                        if self.swapr_routers.contains(&uniswap::v2::router(&pool)) {
+                            swapr::to_domain(id, pool)
+                        } else {
+                            uniswap::v2::to_domain(id, pool)
+                        }
+                    }
+                    Liquidity::BalancerWeighted(pool) => balancer::v2::weighted::to_domain(id, pool),
+                    Liquidity::BalancerStable(pool) => balancer::v2::stable::to_domain(id, pool),
                     Liquidity::LimitOrder(_) => unreachable!(),
                     Liquidity::Concentrated(pool) => uniswap::v3::to_domain(id, pool),
                 }
+                // Ignore "bad" liquidity - this allows the driver to continue
+                // solving with the other good stuff.
+                .ok()
             })
             .collect();
         Ok(liquidity)

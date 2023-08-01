@@ -1,8 +1,10 @@
 use {
     crate::{
+        app_data,
         arguments::Arguments,
         database::Postgres,
         ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
         serve_api,
         verify_deployed_contract_constants,
@@ -44,7 +46,7 @@ use {
         order_quoting::{OrderQuoter, QuoteHandler},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
-            factory::{self, PriceEstimatorFactory},
+            factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
@@ -367,23 +369,28 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(
-            &args.order_quoting.price_estimators,
+        .price_estimator(&PriceEstimatorSource::for_args(
+            args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            &args.order_quoting.price_estimators,
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
             args.fast_price_estimation_results_required,
-            &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
-            &args.native_price_estimators,
+        .native_price_estimator(&PriceEstimatorSource::for_args(
+            args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
 
     let cow_token = match CowProtocolToken::deployed(&web3).await {
@@ -455,6 +462,7 @@ pub async fn run(args: Arguments) {
     let optimal_quoter = create_quoter(price_estimator.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone());
 
+    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
     let order_validator = Arc::new(
         OrderValidator::new(
             native_token.clone(),
@@ -474,7 +482,7 @@ pub async fn run(args: Arguments) {
             Arc::new(postgres.clone()),
             args.max_limit_orders_per_user,
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
-            shared::app_data::Validator::new(args.app_data_size_limit),
+            app_data_validator.clone(),
         )
         .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
         .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
@@ -482,14 +490,17 @@ pub async fn run(args: Arguments) {
         .with_custom_interactions(args.enable_custom_interactions)
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
-    let ipfs = args.ipfs_gateway.map(|url| {
-        Ipfs::new(
-            http_factory.create(),
-            url,
-            args.ipfs_pinata_auth
-                .map(|auth| format!("pinataGatewayToken={auth}")),
-        )
-    });
+    let ipfs = args
+        .ipfs_gateway
+        .map(|url| {
+            Ipfs::new(
+                http_factory.builder(),
+                url,
+                args.ipfs_pinata_auth
+                    .map(|auth| format!("pinataGatewayToken={auth}")),
+            )
+        })
+        .map(IpfsAppData::new);
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
@@ -509,11 +520,17 @@ pub async fn run(args: Arguments) {
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
+    let app_data = Arc::new(app_data::Registry::new(
+        app_data_validator,
+        postgres.clone(),
+    ));
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres,
         orderbook.clone(),
         quotes,
+        app_data,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;

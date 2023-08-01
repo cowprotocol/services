@@ -44,11 +44,11 @@ struct CalldataInner {
 }
 
 impl Calldata {
-    pub fn new(calldata: competition::Calldata) -> Self {
+    pub fn new(calldata: competition::Settled) -> Self {
         Self {
             calldata: CalldataInner {
-                internalized: calldata.internalized.into(),
-                uninternalized: calldata.uninternalized.into(),
+                internalized: calldata.internalized_calldata.into(),
+                uninternalized: calldata.uninternalized_calldata.into(),
             },
         }
     }
