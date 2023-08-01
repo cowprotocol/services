@@ -1,6 +1,6 @@
 use {
     crate::database::{app_data::InsertError, Postgres},
-    model::app_id::AppDataHash,
+    model::app_data::AppDataHash,
     shared::app_data,
 };
 

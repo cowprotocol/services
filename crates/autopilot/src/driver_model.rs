@@ -48,7 +48,7 @@ pub mod solve {
     use {
         chrono::{DateTime, Utc},
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             bytes_hex::BytesHex,
             order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,

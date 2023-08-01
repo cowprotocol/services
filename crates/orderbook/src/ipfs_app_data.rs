@@ -2,7 +2,7 @@ use {
     crate::ipfs::Ipfs,
     anyhow::Result,
     cached::{Cached, TimedSizedCache},
-    model::app_id::AppDataHash,
+    model::app_data::AppDataHash,
     std::sync::Mutex,
 };
 
