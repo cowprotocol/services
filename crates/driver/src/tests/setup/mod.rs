@@ -149,9 +149,9 @@ impl Order {
     }
 
     /// Set the solver fee.
-    pub fn solver_fee(self, fee: eth::U256) -> Self {
+    pub fn solver_fee(self, fee: Option<eth::U256>) -> Self {
         Self {
-            solver_fee: Some(fee),
+            solver_fee: fee,
             ..self
         }
     }

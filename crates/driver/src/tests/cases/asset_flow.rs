@@ -23,10 +23,21 @@ async fn matrix() {
                     surplus_fee: order::SellAmount(DEFAULT_SURPLUS_FEE.into()),
                 },
             ] {
+                let solver_fee = match kind {
+                    order::Kind::Market => None,
+                    order::Kind::Limit { .. } => Some(0.into()),
+                    order::Kind::Liquidity => None,
+                };
                 let test = tests::setup()
                     .name(format!("{side:?} {kind:?}\n{diff:?}"))
                     .pool(ab_pool())
-                    .order(ab_order().side(side).kind(kind).execution_diff(diff))
+                    .order(
+                        ab_order()
+                            .side(side)
+                            .kind(kind)
+                            .execution_diff(diff)
+                            .solver_fee(solver_fee),
+                    )
                     .solution(ab_solution())
                     .done()
                     .await;
@@ -165,7 +176,7 @@ async fn mix() {
                     increase_buy: 30.into(),
                     ..Default::default()
                 })
-                .solver_fee(0.into())
+                .solver_fee(Some(0.into()))
                 // Change the order UID by increasing valid_to. Otherwise, this order UID would be
                 // the same as the one above.
                 .increase_valid_to(),

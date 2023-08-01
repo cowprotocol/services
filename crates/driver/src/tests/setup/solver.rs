@@ -117,16 +117,25 @@ impl Solver {
                 );
                 {
                     // trades have optional field `fee`
-                    let order = if config.quote { Default::default() } else { fulfillment.quoted_order.order_uid(config.blockchain) };
+                    let order = if config.quote {
+                        Default::default()
+                    } else {
+                        fulfillment.quoted_order.order_uid(config.blockchain)
+                    };
                     let executed_amount = match fulfillment.quoted_order.order.executed {
                         Some(executed) => executed.to_string(),
                         None => match fulfillment.quoted_order.order.side {
-                            order::Side::Sell =>
-                                (fulfillment.quoted_order.sell_amount() - fulfillment.quoted_order.order.surplus_fee()).to_string(),
+                            order::Side::Sell => (fulfillment.quoted_order.sell_amount()
+                                - fulfillment.quoted_order.order.surplus_fee())
+                            .to_string(),
                             order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
                         },
                     };
-                    let fee = fulfillment.quoted_order.order.solver_fee.map(|fee| fee.to_string());
+                    let fee = fulfillment
+                        .quoted_order
+                        .order
+                        .solver_fee
+                        .map(|fee| fee.to_string());
                     match fee {
                         Some(fee) => trades_json.push(json!({
                             "kind": "fulfillment",
