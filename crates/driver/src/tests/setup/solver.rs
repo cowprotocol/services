@@ -115,19 +115,32 @@ impl Solver {
                     (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.surplus_fee())
                         .to_string(),
                 );
-                trades_json.push(json!({
-                    "kind": "fulfillment",
-                    "order": if config.quote { Default::default() } else { fulfillment.quoted_order.order_uid(config.blockchain) },
-                    "executedAmount":
-                        match fulfillment.quoted_order.order.executed {
-                            Some(executed) => executed.to_string(),
-                            None => match fulfillment.quoted_order.order.side {
-                                order::Side::Sell =>
-                                    (fulfillment.quoted_order.sell_amount() - fulfillment.quoted_order.order.surplus_fee()).to_string(),
-                                order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
-                            },
-                        }
-                }))
+                {
+                    // trades have optional field `fee`
+                    let order = if config.quote { Default::default() } else { fulfillment.quoted_order.order_uid(config.blockchain) };
+                    let executed_amount = match fulfillment.quoted_order.order.executed {
+                        Some(executed) => executed.to_string(),
+                        None => match fulfillment.quoted_order.order.side {
+                            order::Side::Sell =>
+                                (fulfillment.quoted_order.sell_amount() - fulfillment.quoted_order.order.surplus_fee()).to_string(),
+                            order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
+                        },
+                    };
+                    let fee = fulfillment.quoted_order.order.solver_fee.map(|fee| fee.to_string());
+                    match fee {
+                        Some(fee) => trades_json.push(json!({
+                            "kind": "fulfillment",
+                            "order": order,
+                            "executedAmount": executed_amount,
+                            "fee": fee,
+                        })),
+                        None => trades_json.push(json!({
+                            "kind": "fulfillment",
+                            "order": order,
+                            "executedAmount": executed_amount,
+                        })),
+                    }
+                }
             }
             solutions_json.push(json!({
                 "id": i,

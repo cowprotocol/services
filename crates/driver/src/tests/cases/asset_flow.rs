@@ -165,6 +165,7 @@ async fn mix() {
                     increase_buy: 30.into(),
                     ..Default::default()
                 })
+                .solver_fee(0.into())
                 // Change the order UID by increasing valid_to. Otherwise, this order UID would be
                 // the same as the one above.
                 .increase_valid_to(),

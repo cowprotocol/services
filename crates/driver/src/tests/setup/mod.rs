@@ -94,7 +94,7 @@ pub struct Order {
     // TODO For now I'll always set these to zero. But I think they should be tested as well.
     // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
-    pub solver_fee: eth::U256,
+    pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
     /// the order gets placed and thereby generate surplus. Whether the sell or
@@ -146,6 +146,14 @@ impl Order {
     /// Set the order side.
     pub fn side(self, side: order::Side) -> Self {
         Self { side, ..self }
+    }
+
+    /// Set the solver fee.
+    pub fn solver_fee(self, fee: eth::U256) -> Self {
+        Self {
+            solver_fee: Some(fee),
+            ..self
+        }
     }
 
     /// Make this a limit order.
