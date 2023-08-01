@@ -7,7 +7,7 @@ use {
     chrono::Utc,
     ethcontract::H256,
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         auction::AuctionWithId,
         order::{
             Order,
@@ -441,7 +441,7 @@ mod tests {
         ethcontract::H160,
         mockall::predicate::eq,
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             order::{OrderData, OrderMetadata},
             signature::Signature,
         },

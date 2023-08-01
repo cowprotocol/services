@@ -80,7 +80,7 @@ mod tests {
         chrono::{TimeZone, Utc},
         ethcontract::{H160, U256},
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
                 OrderQuote,
