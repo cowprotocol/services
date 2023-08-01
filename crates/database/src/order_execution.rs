@@ -30,7 +30,7 @@ VALUES ($1, $2, $3, $4, $5)
 // update already existing order_execution record with surplus_fee for partial
 // limit orders
 pub async fn update_surplus_fee(
-    ex: &mut PgConnection,
+    mut ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
     surplus_fee: Option<&BigDecimal>,
