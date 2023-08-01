@@ -24,7 +24,7 @@ use {
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::SigningScheme,
         DomainSeparator,
@@ -730,7 +730,7 @@ mod test {
         maplit::hashset,
         mockall::predicate::{always, eq},
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
             signature::SigningScheme,
             DomainSeparator,

@@ -11,7 +11,7 @@ use {
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         order::{
             EthflowData,
             Interactions,
