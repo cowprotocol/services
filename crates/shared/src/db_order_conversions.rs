@@ -14,7 +14,7 @@ use {
     },
     ethcontract::{H160, H256},
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,

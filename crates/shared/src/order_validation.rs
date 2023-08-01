@@ -22,7 +22,7 @@ use {
     database::onchain_broadcasted_orders::OnchainOrderPlacementError,
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,

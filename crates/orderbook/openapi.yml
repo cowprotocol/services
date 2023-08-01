@@ -399,7 +399,9 @@ paths:
         200:
           description: Full `appData`.
           content:
-            application/json: {}
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataDocument"
         404:
           description: No full `appData` stored for this hash.
     put:
@@ -413,6 +415,13 @@ paths:
           schema:
             $ref: "#/components/schemas/AppDataHash"
           required: true
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataDocument"
       responses:
         200:
           description: The full `appData` already exists.
@@ -464,6 +473,18 @@ components:
       description: 32 bytes encoded as hex with `0x` prefix.
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+    AppDataDocument:
+      description: An `appData` document that is registered with the API.
+      type: object
+      properties:
+        fullAppData:
+          description: |
+            The string encoding of a JSON object representing some `appData`. The
+            format of the JSON expected in the `appData` field is defined
+            [here](https://github.com/cowprotocol/app-data).
+          type: string
+      required:
+        - appData
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string

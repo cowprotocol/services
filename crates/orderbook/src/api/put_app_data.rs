@@ -1,20 +1,20 @@
 use {
     crate::app_data,
     anyhow::Result,
-    model::app_id::AppDataHash,
+    model::app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     shared::api::{internal_error_reply, IntoWarpReply},
     std::{convert::Infallible, sync::Arc},
-    warp::{hyper::body::Bytes, reply, Filter, Rejection},
+    warp::{body, reply, Filter, Rejection},
 };
 
 fn request(
     max_size: usize,
-) -> impl Filter<Extract = (AppDataHash, Bytes), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (AppDataHash, AppDataDocument), Error = Rejection> + Clone {
     warp::path!("v1" / "app_data" / AppDataHash)
         .and(warp::put())
-        .and(warp::body::content_length_limit(max_size as _))
-        .and(warp::body::bytes())
+        .and(body::content_length_limit(max_size as _))
+        .and(body::json())
 }
 
 fn response(
@@ -36,10 +36,12 @@ fn response(
 pub fn filter(
     registry: Arc<app_data::Registry>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    request(registry.size_limit()).and_then(move |hash, document: Bytes| {
+    request(registry.size_limit()).and_then(move |hash, document: AppDataDocument| {
         let registry = registry.clone();
         async move {
-            let result = registry.register(hash, &document).await;
+            let result = registry
+                .register(hash, document.full_app_data.as_bytes())
+                .await;
             Result::<_, Infallible>::Ok(response(hash, result))
         }
     })

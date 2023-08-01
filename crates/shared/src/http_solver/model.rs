@@ -486,7 +486,7 @@ mod tests {
         ethcontract::H256,
         maplit::btreemap,
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             order::{OrderKind, SellTokenSource},
         },
         serde_json::json,
