@@ -579,7 +579,6 @@ pub async fn run(args: Arguments) {
             .tenderly
             .get_api_instance(&http_factory, "driver".to_owned())
             .expect("failed to create Tenderly API"),
-        args.solution_comparison_decimal_cutoff,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
         settlement_rater,
