@@ -107,7 +107,6 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
-        solution_comparison_decimal_cutoff: u16,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
         settlement_rater: Arc<dyn SettlementRating>,
@@ -121,7 +120,6 @@ impl Driver {
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
             settlement_rater,
-            decimal_cutoff: solution_comparison_decimal_cutoff,
             skip_non_positive_score_settlements,
         };
 
