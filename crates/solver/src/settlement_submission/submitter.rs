@@ -497,6 +497,12 @@ impl<'a> Submitter<'a> {
                 if gas_price.max_priority_fee_per_gas < replacement_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
+                    tracing::debug!(
+                        ?gas_price,
+                        ?replacement_price,
+                        sleep = ?params.retry_interval,
+                        "keep waiting for gas price to increase enough"
+                    );
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
