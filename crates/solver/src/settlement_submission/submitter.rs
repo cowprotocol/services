@@ -295,6 +295,15 @@ impl<'a> Submitter<'a> {
                                 // simply "forget" the submitted tx by clearing `transactions`.
                                 tracing::debug!("clear list of pending tx hashes due to soft cancellation");
                                 transactions.clear();
+                                // The regular logic only updates the `submitted_transactions` if
+                                // `!transactions.is_empty()`. Since we just cleared the vector we
+                                // have to forcefully update the `submitted_transactions` here to
+                                // really discard the known tx for the next submission loop.
+                                self.submitted_transactions.update(
+                                    self.account.address(),
+                                    self.nonce,
+                                    vec![]
+                                );
                             } else {
                                 transactions.push((handle, gas_price));
                             }
@@ -497,6 +506,12 @@ impl<'a> Submitter<'a> {
                 if gas_price.max_priority_fee_per_gas < replacement_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
+                    tracing::debug!(
+                        ?gas_price,
+                        ?replacement_price,
+                        sleep = ?params.retry_interval,
+                        "keep waiting for gas price to increase enough"
+                    );
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
