@@ -68,7 +68,7 @@ impl super::Postgres {
             let solver_fee = order_execution
                 .executed_fee
                 .fee()
-                .cloned()
+                .copied()
                 .unwrap_or_default();
             database::order_execution::save(
                 &mut ex,
