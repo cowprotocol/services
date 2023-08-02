@@ -16,7 +16,7 @@ VALUES ($1, $2)
     Ok(())
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct LoadById {
     pub json: JsonValue,
     pub tx_hash: Option<TransactionHash>,

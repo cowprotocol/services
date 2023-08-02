@@ -26,6 +26,33 @@ SET auction_id = EXCLUDED.auction_id
     Ok(())
 }
 
+/// Inserts a row **iff** we don't have an entry for the given `auction_id` yet.
+/// This is useful to associate a settlement transaction coming from a colocated
+/// driver with an auction.
+/// In that case anybody could claim to settle the given auction but we only
+/// ever want to store the first claim.
+pub async fn try_insert_auction_transaction(
+    ex: &mut PgConnection,
+    auction_id: AuctionId,
+    tx_from: &Address,
+    tx_nonce: i64,
+) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"
+        INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (auction_id) DO NOTHING
+    "#;
+
+    let result = sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(tx_from)
+        .bind(tx_nonce)
+        .execute(ex)
+        .await?;
+
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn insert_settlement_tx_info(
     ex: &mut PgConnection,
     block_number: i64,
@@ -83,6 +110,15 @@ pub async fn get_auction_id(
         .fetch_optional(ex)
         .await?;
     Ok(auction)
+}
+
+pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"SELECT COUNT(*) FROM auction_transaction WHERE auction_id = $1;"#;
+    let count: i64 = sqlx::query_scalar(QUERY)
+        .bind(&auction_id)
+        .fetch_one(ex)
+        .await?;
+    Ok(count >= 1)
 }
 
 #[cfg(test)]
@@ -260,5 +296,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(auction_id, 5);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn try_insert_auction_transaction_test() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+            .await
+            .unwrap();
+        assert!(inserted);
+
+        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+            .await
+            .unwrap();
+        assert!(!inserted);
     }
 }

@@ -40,16 +40,20 @@ type DecodedSettlementTokenized = (
     [Vec<(Address, U256, Bytes<Vec<u8>>)>; 3],
 );
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<DecodedTrade>,
     pub interactions: [Vec<DecodedInteraction>; 3],
+    /// Data that was appended to the regular call data of the `settle()` call
+    /// as a form of on-chain meta data. This gets used to associated a
+    /// settlement with an auction.
+    pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedTrade {
     pub sell_token_index: U256,
     pub buy_token_index: U256,
@@ -81,7 +85,7 @@ impl DecodedTrade {
 /// Trade flags are encoded in a 256-bit integer field. For more information on
 /// how flags are encoded see:
 /// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TradeFlags(pub U256);
 
 impl TradeFlags {
@@ -108,7 +112,7 @@ impl From<U256> for TradeFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedInteraction {
     pub target: Address,
     pub value: U256,
@@ -121,32 +125,6 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for DecodedInteraction {
             target,
             value,
             call_data,
-        }
-    }
-}
-
-impl From<DecodedSettlementTokenized> for DecodedSettlement {
-    fn from((tokens, clearing_prices, trades, interactions): DecodedSettlementTokenized) -> Self {
-        DecodedSettlement {
-            tokens,
-            clearing_prices,
-            trades: trades
-                .into_iter()
-                .map(|trade| DecodedTrade {
-                    sell_token_index: trade.0,
-                    buy_token_index: trade.1,
-                    receiver: trade.2,
-                    sell_amount: trade.3,
-                    buy_amount: trade.4,
-                    valid_to: trade.5,
-                    app_data: trade.6,
-                    fee_amount: trade.7,
-                    flags: trade.8.into(),
-                    executed_amount: trade.9,
-                    signature: trade.10,
-                })
-                .collect(),
-            interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
         }
     }
 }
@@ -197,16 +175,68 @@ impl TryFrom<database::orders::OrderExecution> for OrderExecution {
 }
 
 impl DecodedSettlement {
+    /// Number of bytes that may be appended to the calldata to store an auction
+    /// id.
+    pub const META_DATA_LEN: usize = 8;
+
     pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
             .abi
             .function("settle")
             .unwrap();
-        let decoded_input = decode_function_input(function, input)?;
-        <DecodedSettlementTokenized>::from_token(Token::Tuple(decoded_input))
-            .map(Into::into)
-            .context("failed to decode settlement")
-            .map_err(From::from)
+        let without_selector = input
+            .strip_prefix(&function.selector())
+            .ok_or(DecodingError::InvalidSelector)?;
+
+        // Decoding calldata without expecting metadata can succeed even if metadata
+        // was appended. The other way around would not work so we do that first.
+        if let Ok(decoded) = Self::try_new(without_selector, function, true) {
+            return Ok(decoded);
+        }
+        Self::try_new(without_selector, function, false).map_err(Into::into)
+    }
+
+    fn try_new(data: &[u8], function: &Function, with_metadata: bool) -> Result<Self> {
+        let metadata_len = if with_metadata {
+            anyhow::ensure!(
+                data.len() % 32 == Self::META_DATA_LEN,
+                "calldata does not contain the expected number of bytes to include metadata"
+            );
+            Self::META_DATA_LEN
+        } else {
+            0
+        };
+
+        let (calldata, metadata) = data.split_at(data.len() - metadata_len);
+        let tokenized = function
+            .decode_input(calldata)
+            .context("tokenizing settlement calldata failed")?;
+        let decoded = <DecodedSettlementTokenized>::from_token(Token::Tuple(tokenized))
+            .context("decoding tokenized settlement calldata failed")?;
+
+        let (tokens, clearing_prices, trades, interactions) = decoded;
+        Ok(Self {
+            tokens,
+            clearing_prices,
+            trades: trades
+                .into_iter()
+                .map(|trade| DecodedTrade {
+                    sell_token_index: trade.0,
+                    buy_token_index: trade.1,
+                    receiver: trade.2,
+                    sell_amount: trade.3,
+                    buy_amount: trade.4,
+                    valid_to: trade.5,
+                    app_data: trade.6,
+                    fee_amount: trade.7,
+                    flags: trade.8.into(),
+                    executed_amount: trade.9,
+                    signature: trade.10,
+                })
+                .collect(),
+            interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
+            metadata: metadata.try_into().ok().map(Bytes),
+        })
     }
 
     /// Returns the total surplus denominated in the native asset for the
@@ -592,7 +622,7 @@ mod tests {
             000000000000000000000000000000044a9059cbb00000000000000000000000005e3734ff2b3127e01070eb225afe910525959ad00000000000000000000000000000000000000000000000000000001cf862866000000000000000000000000000000000000000000000000000000000000000000000000000000001d94bedcb3641ba
             060091ed090d28bbdccdb7f1d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000006420cf38cc000000000000000000000000000000000000000
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-            000000000"
+            000000000123432"
         );
         let settlement = DecodedSettlement::new(&call_data).unwrap();
 
@@ -905,5 +935,100 @@ mod tests {
             .total_fees(&external_prices, orders)
             .to_f64_lossy();
         assert_eq!(fees, 13630555109200196.);
+    }
+
+    #[test]
+    fn decodes_metadata() {
+        let call_data = hex_literal::hex!(
+            "13d79a0b
+             0000000000000000000000000000000000000000000000000000000000000080
+             00000000000000000000000000000000000000000000000000000000000000e0
+             0000000000000000000000000000000000000000000000000000000000000140
+             0000000000000000000000000000000000000000000000000000000000000360
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+             000000000000000000000000f88baf18fab7e330fa0c4f83949e23f52fececce
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000000000000000000000000000000132e67578cc3f
+             00000000000000000000000000000000000000000000000000000002540be400
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000020
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000b70cd1ebd3b24aeeaf90c6041446630338536e7f
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             000000000000000000000000000000000000000000000000013d0a4d504284e9
+             00000000000000000000000000000000000000000000000000000000643d6a39
+             e9f29ae547955463ed535162aefee525d8d309571a2b18bc26086c8c35d781eb
+             00000000000000000000000000000000000000000000002557f7974fde5c0000
+             0000000000000000000000000000000000000000000000000000000000000008
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             0000000000000000000000000000000000000000000000000000000000000160
+             0000000000000000000000000000000000000000000000000000000000000041
+             4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a6091
+             2fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a7600
+             1c00000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000080
+             0000000000000000000000000000000000000000000000000000000000000420
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000040
+             00000000000000000000000000000000000000000000000000000000000002c0
+             000000000000000000000000ba12222222228d8ba445958a75a0704d566bf2c8
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000001e4
+             52bbbe2900000000000000000000000000000000000000000000000000000000
+             000000e00000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000000000000000000000000000a566558000
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000067f117350eab45983374f4f83d275d8a5d62b1bf0001000000000000
+             000004f200000000000000000000000000000000000000000000000000000000
+             00000001000000000000000000000000f88baf18fab7e330fa0c4f83949e23f5
+             2fececce000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead908
+             3c756cc2000000000000000000000000000000000000000000000000013eae86
+             d49c295900000000000000000000000000000000000000000000000000000000
+             000000c000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000024
+             2e1a7d4d000000000000000000000000000000000000000000000000013eae86
+             d49c29bf00000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        )
+        .to_vec();
+
+        let original = DecodedSettlement::new(&call_data).unwrap();
+
+        // If not enough call data got appended we parse it like it didn't have any
+        // Not enough metadata appended to the calldata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN - 1];
+        let with_metadata = [call_data.clone(), metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+
+        // Same if too much metadata gets added.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data.clone(), vec![100], metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+
+        // If we add exactly the expected number of bytes we can parse the metadata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data, metadata.to_vec()].concat();
+        let with_metadata = DecodedSettlement::new(&with_metadata).unwrap();
+        assert_eq!(with_metadata.metadata, Some(Bytes(metadata)));
+
+        // Content of the remaining fields is identical to the original
+        let metadata_removed_again = DecodedSettlement {
+            metadata: None,
+            ..with_metadata
+        };
+        assert_eq!(original, metadata_removed_again);
     }
 }

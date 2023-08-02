@@ -13,6 +13,7 @@ use {
     number_conversions::u256_to_big_decimal,
     primitive_types::H160,
     shared::fee_subsidy::FeeParameters,
+    sqlx::PgConnection,
 };
 
 /// New fee data to update a limit order with.
@@ -171,7 +172,7 @@ impl Postgres {
     }
 
     pub async fn order_executions_for_tx(
-        &self,
+        ex: &mut PgConnection,
         tx_hash: &H256,
         auction_id: AuctionId,
     ) -> Result<Vec<OrderExecution>> {
@@ -180,8 +181,7 @@ impl Postgres {
             .with_label_values(&["orders_for_tx"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await?;
-        database::orders::order_executions_in_tx(&mut ex, &ByteArray(tx_hash.0), auction_id)
+        database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
             .map(|result| match result {
                 Ok(execution) => execution.try_into().map_err(Into::into),
                 Err(err) => Err(anyhow::Error::from(err)),

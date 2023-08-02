@@ -33,13 +33,14 @@
 use {
     crate::{
         database::{
-            on_settlement_event_updater::{AuctionData, SettlementUpdate},
+            on_settlement_event_updater::{AuctionData, AuctionId, SettlementUpdate},
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
     },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
+    database::byte_array::ByteArray,
     primitive_types::{H160, H256},
     shared::{
         current_block::CurrentBlockStream,
@@ -47,8 +48,9 @@ use {
         event_handling::MAX_REORG_BLOCK_COUNT,
         external_prices::ExternalPrices,
     },
+    sqlx::PgConnection,
     std::time::Duration,
-    web3::types::TransactionId,
+    web3::types::{Transaction, TransactionId},
 };
 
 pub struct OnSettlementEventUpdater {
@@ -84,11 +86,13 @@ impl OnSettlementEventUpdater {
             .try_into()
             .context("convert block")?;
 
-        let event = match self
-            .db
-            .get_settlement_event_without_tx_info(reorg_safe_block)
-            .await
-            .context("get_settlement_event_without_tx_info")?
+        let mut ex = self.db.0.begin().await.context("acquire DB connection")?;
+        let event = match database::auction_transaction::get_settlement_event_without_tx_info(
+            &mut ex,
+            reorg_safe_block,
+        )
+        .await
+        .context("get_settlement_event_without_tx_info")?
         {
             Some(event) => event,
             None => return Ok(false),
@@ -113,7 +117,19 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let auction_id = self.db.get_auction_id(tx_from, tx_nonce).await?;
+        let mut auction_id =
+            database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
+                .await?
+                .map(AuctionId::Centralized);
+        if auction_id.is_none() {
+            // This settlement either belongs to the other environment (staging, prod) or it
+            // was issued using solver-driver colocation. In that case solvers
+            // are supposed to append the `auction_id` to the calldata.
+            auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
+                .await?
+                .map(AuctionId::Colocated);
+        }
+
         let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
@@ -141,14 +157,15 @@ impl OnSettlementEventUpdater {
             let effective_gas_price = receipt
                 .effective_gas_price
                 .with_context(|| format!("no effective gas price {hash:?}"))?;
-            let auction_external_prices = self
-                .db
-                .get_auction_prices(auction_id)
-                .await
-                .with_context(|| {
-                    format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-                })?;
-            let orders = self.db.order_executions_for_tx(&hash, auction_id).await?;
+            let auction_external_prices =
+                Postgres::get_auction_prices(&mut ex, auction_id.assume_verified())
+                    .await
+                    .with_context(|| {
+                        format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+                    })?;
+            let orders =
+                Postgres::order_executions_for_tx(&mut ex, &hash, auction_id.assume_verified())
+                    .await?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),
@@ -195,12 +212,71 @@ impl OnSettlementEventUpdater {
 
         tracing::debug!(?hash, ?update, "updating settlement details for tx");
 
-        self.db
-            .update_settlement_details(update.clone())
+        Postgres::update_settlement_details(&mut ex, update.clone())
             .await
             .with_context(|| format!("insert_settlement_details: {update:?}"))?;
-
+        ex.commit().await?;
         Ok(true)
+    }
+
+    /// With solver driver colocation solvers are supposed to append the
+    /// `auction_id` to the settlement calldata. This function tries to
+    /// recover that `auction_id`. This function only returns an error if
+    /// retrying the operation makes sense. If all went well and there
+    /// simply is no sensible `auction_id` `Ok(None)` will be returned.
+    async fn recover_auction_id_from_calldata(
+        ex: &mut PgConnection,
+        tx: &Transaction,
+    ) -> Result<Option<i64>> {
+        let tx_from = tx.from.context("tx is missing sender")?;
+        let metadata = match DecodedSettlement::new(&tx.input.0) {
+            Ok(settlement) => settlement.metadata,
+            Err(err) => {
+                tracing::warn!(
+                    ?tx,
+                    ?err,
+                    "could not decode settlement tx, unclear which auction it belongs to"
+                );
+                return Ok(None);
+            }
+        };
+        let auction_id = match metadata {
+            Some(bytes) => i64::from_be_bytes(bytes.0),
+            None => {
+                tracing::warn!(?tx, "could not recover the auction_id from the calldata");
+                return Ok(None);
+            }
+        };
+
+        let score = database::settlement_scores::fetch(ex, auction_id).await?;
+        let data_already_recorded =
+            database::auction_transaction::data_exists(ex, auction_id).await?;
+        match (score, data_already_recorded) {
+            (None, _) => {
+                tracing::debug!(
+                    auction_id,
+                    "calldata claims to settle auction that has no competition"
+                );
+                Ok(None)
+            }
+            (Some(score), _) if score.winner.0 != tx_from.0 => {
+                tracing::warn!(
+                    auction_id,
+                    ?tx_from,
+                    winner = ?score.winner,
+                    "solution submitted by solver other than the winner"
+                );
+                Ok(None)
+            }
+            (Some(_), true) => {
+                tracing::warn!(
+                    auction_id,
+                    "settlement data already recorded for this auction"
+                );
+                Ok(None)
+            }
+            (Some(_), false) => Ok(Some(auction_id)),
+        }
     }
 }
 
