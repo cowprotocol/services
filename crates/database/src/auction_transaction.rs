@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[tokio::test]
-    //#[ignore]
+    #[ignore]
     async fn try_insert_auction_transaction_test() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
