@@ -1,15 +1,10 @@
 use {
     crate::database::Postgres,
     anyhow::Result,
-    model::app_id::AppDataHash,
+    model::app_data::{AppDataDocument, AppDataHash},
     reqwest::StatusCode,
     std::convert::Infallible,
-    warp::{
-        reply::{with_header, with_status},
-        Filter,
-        Rejection,
-        Reply,
-    },
+    warp::{reply, Filter, Rejection, Reply},
 };
 
 pub fn request() -> impl Filter<Extract = (AppDataHash,), Error = Rejection> + Clone {
@@ -25,11 +20,15 @@ pub fn get(
             let result = database.get_full_app_data(&contract_app_data).await;
             Result::<_, Infallible>::Ok(match result {
                 Ok(Some(response)) => {
-                    let response = with_status(response, StatusCode::OK);
-                    let response = with_header(response, "Content-Type", "application/json");
+                    let response = reply::with_status(
+                        reply::json(&AppDataDocument {
+                            full_app_data: response,
+                        }),
+                        StatusCode::OK,
+                    );
                     Box::new(response) as Box<dyn Reply>
                 }
-                Ok(None) => Box::new(with_status(
+                Ok(None) => Box::new(reply::with_status(
                     "full app data not found",
                     StatusCode::NOT_FOUND,
                 )),
