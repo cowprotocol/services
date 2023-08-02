@@ -38,22 +38,19 @@ pub async fn try_insert_auction_transaction(
     tx_nonce: i64,
 ) -> Result<bool, sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
-VALUES ($1, $2, $3)
-ON CONFLICT (auction_id) DO NOTHING
-RETURNING (
-    CASE auction_id
-    WHEN NULL THEN FALSE
-    ELSE TRUE
-    END
-) as update_happened
-    ;"#;
-    sqlx::query_scalar(QUERY)
+        INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (auction_id) DO NOTHING
+    "#;
+
+    let result = sqlx::query(QUERY)
         .bind(auction_id)
         .bind(tx_from)
         .bind(tx_nonce)
-        .fetch_one(ex)
-        .await
+        .execute(ex)
+        .await?;
+
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn insert_settlement_tx_info(
@@ -299,5 +296,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(auction_id, 5);
+    }
+
+    #[tokio::test]
+    //#[ignore]
+    async fn try_insert_auction_transaction_test() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+            .await
+            .unwrap();
+        assert!(inserted);
+
+        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+            .await
+            .unwrap();
+        assert!(!inserted);
     }
 }
