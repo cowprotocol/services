@@ -1,7 +1,13 @@
 //! Global block stream arguments.
 
 use {
-    super::{current_block_stream, eth_call, BlockRetrieving, CurrentBlockStream},
+    super::{
+        current_block_stream,
+        eth_call,
+        get_block_and_call,
+        BlockRetrieving,
+        CurrentBlockStream,
+    },
     crate::{arguments::duration_from_seconds, ethrpc::Web3},
     anyhow::Result,
     clap::{Parser, ValueEnum},
@@ -37,6 +43,7 @@ pub struct Arguments {
 pub enum BlockRetrieverStrategy {
     #[default]
     GetBlock,
+    GetBlockAndCall,
     EthCall,
 }
 
@@ -44,6 +51,9 @@ impl Arguments {
     pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
         match self.block_stream_retriever_strategy {
             BlockRetrieverStrategy::GetBlock => Arc::new(web3),
+            BlockRetrieverStrategy::GetBlockAndCall => {
+                Arc::new(get_block_and_call::BlockRetriever(web3))
+            }
             BlockRetrieverStrategy::EthCall => Arc::new(eth_call::BlockRetriever(web3)),
         }
     }
