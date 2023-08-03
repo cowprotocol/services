@@ -1157,8 +1157,8 @@ components:
           description: Quote a sell order given the final total `sellAmount` including fees.
           properties:
             kind:
-              type: string
-              enum: [sell]
+              allOf:
+                - $ref: "#/components/schemas/OrderQuoteSideKindSell"
             sellAmountBeforeFee:
               description: |
                 The total amount that is available for the order. From this value, the fee
@@ -1172,8 +1172,8 @@ components:
           description: Quote a sell order given the `sellAmount`.
           properties:
             kind:
-              type: string
-              enum: [sell]
+              allOf:
+                - $ref: "#/components/schemas/OrderQuoteSideKindSell"
             sellAmountAfterFee:
               description: The `sellAmount` for the order.
               allOf:
@@ -1185,8 +1185,8 @@ components:
           description: Quote a buy order given an exact `buyAmount`.
           properties:
             kind:
-              type: string
-              enum: [buy]
+              allOf:
+                - $ref: "#/components/schemas/OrderQuoteSideKindBuy"
             buyAmountAfterFee:
               description: The `buyAmount` for the order.
               allOf:
@@ -1194,6 +1194,12 @@ components:
           required:
             - kind
             - buyAmountAfterFee
+    OrderQuoteSideKindSell:
+      type: string
+      enum: [sell]
+    OrderQuoteSideKindBuy:
+      type: string
+      enum: [buy]
     OrderQuoteValidity:
       description: The validity for the order.
       oneOf:
