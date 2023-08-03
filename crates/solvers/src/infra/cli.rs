@@ -37,7 +37,7 @@ pub enum Command {
     },
     /// optimistically batch similar orders and get difference from AMMs
     Naive,
-    /// wrapper for solvers implementing the legacy HTTP interface
+    /// forward auction to solver implementing the legacy HTTP interface
     Legacy {
         #[clap(long, env)]
         config: PathBuf,
