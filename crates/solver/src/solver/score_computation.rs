@@ -54,12 +54,12 @@ impl ScoreCalculator {
         let obj = surplus + fees - gas_amount * gas_price;
         let score: f64;
         if success_probability * obj <= 0.01 && (1.0 - success_probability) * obj <= 0.01 {
-            let score = success_probability * obj;
+            score = success_probability * obj;
         } else {
             if success_probability * obj > 0.01 && success_probability >= 0.5 {
-                let score = obj - 0.01 * (1.0 - success_probability) / success_probability;
+                score = obj - 0.01 * (1.0 - success_probability) / success_probability;
             } else {
-                let score = 0.01 * success_probability / (1.0 - success_probability);
+                score = 0.01 * success_probability / (1.0 - success_probability);
             }
         }
         tracing::trace!(
