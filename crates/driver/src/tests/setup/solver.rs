@@ -55,7 +55,7 @@ impl Solver {
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": match quote.order.side {
                     order::Side::Buy if config.quote => "6277101735386680763835789423207666416102355444464034512896".to_owned(),
-                    _ => (quote.sell_amount() - quote.order.surplus_fee()).to_string(),
+                    _ => quote.sell_amount().to_string(),
                 },
                 "buyAmount": match quote.order.side {
                     order::Side::Sell if config.quote => "1".to_owned(),
