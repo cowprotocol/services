@@ -52,7 +52,7 @@ impl ScoreCalculator {
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
         let obj = surplus + fees - gas_amount * gas_price;
-
+        let score: f64;
         if success_probability * obj <= 0.01 && (1.0 - success_probability) * obj <= 0.01 {
             let score = success_probability * obj;
         } else {
