@@ -42,7 +42,6 @@ pub struct SettlementRanker {
     // for everyone.
     pub max_settlement_price_deviation: Option<Ratio<BigInt>>,
     pub token_list_restriction_for_price_checks: PriceCheckTokens,
-    pub decimal_cutoff: u16,
     pub skip_non_positive_score_settlements: bool,
 }
 
