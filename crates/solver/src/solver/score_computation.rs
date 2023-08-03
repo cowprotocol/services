@@ -51,7 +51,17 @@ impl ScoreCalculator {
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
-        let score = success_probability * (surplus + fees - gas_amount * gas_price);
+        let obj = surplus + fees - gas_amount * gas_price;
+
+        if success_probability * obj <= 0.01 && (1.0 - success_probability) * obj <= 0.01 {
+            let score = success_probability * obj;
+        } else {
+            if success_probability * obj > 0.01 && success_probability >= 0.5 {
+                let score = obj - 0.01 * (1.0 - success_probability) / success_probability;
+            } else {
+                let score = 0.01 * success_probability / (1.0 - success_probability);
+            }
+        }
         tracing::trace!(
             ?surplus,
             ?fees,
