@@ -301,10 +301,7 @@ impl Driver {
         let balances =
             order_balance_filter::fetch_balances(self.balance_fetcher.as_ref(), &auction.orders)
                 .await;
-        tracing::debug!(
-            "fetching order balances took {}s",
-            balance_start.elapsed().as_secs_f32()
-        );
+        tracing::debug!("fetching order balances took {:?}", balance_start.elapsed());
 
         tracing::info!(count =% auction.orders.len(), "got orders");
         self.metrics.orders_fetched(&auction.orders);
@@ -332,10 +329,12 @@ impl Driver {
             .filter(|o| !o.metadata.is_liquidity_order)
             .flat_map(|o| TokenPair::new(o.data.buy_token, o.data.sell_token))
             .collect();
+        let liquidity_start = Instant::now();
         let liquidity = self
             .liquidity_collector
             .get_liquidity(pairs, Block::Number(current_block_during_liquidity_fetch))
             .await?;
+        tracing::debug!("collecting liquidity took {:?}", liquidity_start.elapsed());
         self.metrics.liquidity_fetched(&liquidity);
 
         let auction = Auction {
