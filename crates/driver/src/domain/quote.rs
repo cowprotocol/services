@@ -179,7 +179,7 @@ impl Order {
             // contract, so buy orders requiring excessively large sell amounts
             // would not work anyway.
             order::Side::Buy => eth::Asset {
-                amount: (eth::U256::one() << 192).into(),
+                amount: (eth::U256::one() << 144).into(),
                 token: self.tokens.sell,
             },
         }
