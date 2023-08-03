@@ -111,10 +111,10 @@ impl super::Postgres {
             .context("insert_settlement_observations")?;
 
             if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
-            // update order executions for orders with solver computed fees (limit orders)
-            // for limit orders, fee is called surplus_fee and is determined by the solver
-            // therefore, when transaction is settled onchain we calculate the fee and save
-            // it to DB
+                // update order executions for orders with solver computed fees (limit orders)
+                // for limit orders, fee is called surplus_fee and is determined by the solver
+                // therefore, when transaction is settled onchain we calculate the fee and save
+                // it to DB
                 for order_execution in auction_data.order_executions {
                     database::order_execution::update_surplus_fee(
                         ex,
