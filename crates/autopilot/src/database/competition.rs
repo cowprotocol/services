@@ -5,6 +5,7 @@ use {
         auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
+        settlement_call_data::SettlementCallData,
         settlement_scores::Score,
     },
     model::order::OrderUid,
@@ -42,6 +43,11 @@ pub struct Competition {
     /// chain before this block height.
     pub block_deadline: u64,
     pub order_executions: Vec<OrderExecution>,
+    pub competition_simulation_block: u64,
+    /// Winner settlement call data
+    pub call_data: Vec<u8>,
+    /// Uninternalized winner settlement call data
+    pub uninternalized_call_data: Vec<u8>,
 }
 
 impl super::Postgres {
@@ -81,6 +87,10 @@ impl super::Postgres {
                     .block_deadline
                     .try_into()
                     .context("convert block deadline")?,
+                simulation_block: competition
+                    .competition_simulation_block
+                    .try_into()
+                    .context("convert simulation block")?,
             },
         )
         .await
@@ -116,6 +126,17 @@ impl super::Postgres {
         )
         .await
         .context("auction_prices::insert")?;
+
+        database::settlement_call_data::insert(
+            &mut ex,
+            SettlementCallData {
+                auction_id: competition.auction_id,
+                call_data: competition.call_data.clone(),
+                uninternalized_call_data: competition.uninternalized_call_data.clone(),
+            },
+        )
+        .await
+        .context("settlement_call_data::insert")?;
 
         ex.commit().await.context("commit")
     }
