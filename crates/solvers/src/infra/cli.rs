@@ -10,7 +10,11 @@ use {
 #[command(version)]
 pub struct Args {
     /// The log filter.
-    #[arg(long, env, default_value = "debug")]
+    #[arg(
+        long,
+        env,
+        default_value = "warn,solvers=debug,shared=debug,model=debug,solver=debug"
+    )]
     pub log: String,
 
     /// The socket address to bind to.
