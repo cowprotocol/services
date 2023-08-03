@@ -42,7 +42,7 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// solve individual orders using balancer API
+    /// solve individual orders using Balancer API
     Balancer {
         #[clap(long, env)]
         config: PathBuf,
