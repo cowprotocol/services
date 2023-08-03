@@ -2,7 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::DEFAULT_SURPLUS_FEE,
+        cases::{DEFAULT_SOLVER_FEE, DEFAULT_SURPLUS_FEE},
         setup::{ab_order, ab_pool, ab_solution},
     },
 };
@@ -21,7 +21,7 @@ async fn matrix() {
         ] {
             let solver_fee = match kind {
                 order::Kind::Market => None,
-                order::Kind::Limit { .. } => Some(0.into()),
+                order::Kind::Limit { .. } => Some(DEFAULT_SOLVER_FEE.into()),
                 order::Kind::Liquidity => None,
             };
             let test = tests::setup()
