@@ -143,6 +143,14 @@
       "created_at": "2023-07-05T15:33:06Z",
       "repoId": 477694383,
       "pullRequestNo": 1647
+    },
+    {
+      "name": "alfetopito",
+      "id": 43217,
+      "comment_id": 1664213794,
+      "created_at": "2023-08-03T15:38:40Z",
+      "repoId": 477694383,
+      "pullRequestNo": 1732
     }
   ]
 }
