@@ -53,7 +53,8 @@ impl ScoreCalculator {
         let success_probability = 1. / (1. + exponent.exp());
         let obj = surplus + fees - gas_amount * gas_price;
         let cap = 10000000000000000.0;
-        let score = if success_probability * obj <= cap && (1.0 - success_probability) * obj <= cap {
+        let score = if success_probability * obj <= cap && (1.0 - success_probability) * obj <= cap
+        {
             success_probability * obj
         } else if success_probability * obj > cap && success_probability >= 0.5 {
             obj - cap * (1.0 - success_probability) / success_probability
