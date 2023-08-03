@@ -150,10 +150,7 @@ impl Order {
 
     /// Set the solver fee.
     pub fn solver_fee(self, solver_fee: Option<eth::U256>) -> Self {
-        Self {
-            solver_fee,
-            ..self
-        }
+        Self { solver_fee, ..self }
     }
 
     /// Make this a limit order.
@@ -187,13 +184,9 @@ impl Order {
 
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
-            order::Kind::Limit { surplus_fee } => surplus_fee.0,
+            order::Kind::Limit { surplus_fee: _ } => self.solver_fee.unwrap_or_default(),
             _ => 0.into(),
         }
-    }
-
-    fn get_solver_fee(&self) -> eth::U256 {
-        self.solver_fee.unwrap_or_default()
     }
 }
 

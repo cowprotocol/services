@@ -112,7 +112,7 @@ impl Solver {
                     config
                         .blockchain
                         .get_token_wrapped(fulfillment.quoted_order.order.buy_token),
-                    (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.get_solver_fee())
+                    (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.surplus_fee())
                         .to_string(),
                 );
                 {
@@ -126,7 +126,7 @@ impl Solver {
                         Some(executed) => executed.to_string(),
                         None => match fulfillment.quoted_order.order.side {
                             order::Side::Sell => (fulfillment.quoted_order.sell_amount()
-                                - fulfillment.quoted_order.order.get_solver_fee())
+                                - fulfillment.quoted_order.order.surplus_fee())
                             .to_string(),
                             order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
                         },
