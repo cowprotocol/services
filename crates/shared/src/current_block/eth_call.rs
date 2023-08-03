@@ -1,7 +1,7 @@
 use {
     super::{BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive},
     crate::ethrpc::Web3,
-    anyhow::{ensure, Context as _, Result},
+    anyhow::{Context as _, Result},
     contracts::support::FetchBlock,
     web3::types::{BlockNumber, CallRequest, H256, U256},
 };
@@ -32,21 +32,12 @@ impl BlockRetrieving for BlockRetriever {
             .context("failed to execute block fetch call")?
             .0;
 
-        ensure!(
-            return_data.len() == 96,
-            "failed to decode block fetch result"
-        );
-        let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
-            .ok()
-            .context("block number overflows u64")?;
-        let hash = H256::from_slice(&return_data[32..64]);
-        let parent_hash = H256::from_slice(&return_data[64..96]);
-
-        Ok(BlockInfo {
-            number,
-            hash,
-            parent_hash,
-        })
+        decode(
+            return_data
+                .as_slice()
+                .try_into()
+                .context("unexpected block fetch return length")?,
+        )
     }
 
     async fn block(&self, number: u64) -> Result<BlockNumberHash> {
@@ -56,6 +47,21 @@ impl BlockRetrieving for BlockRetriever {
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         self.0.blocks(range).await
     }
+}
+
+/// Decodes the return data from the `FetchBlock` contract.
+pub fn decode(return_data: [u8; 96]) -> Result<BlockInfo> {
+    let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
+        .ok()
+        .context("block number overflows u64")?;
+    let hash = H256::from_slice(&return_data[32..64]);
+    let parent_hash = H256::from_slice(&return_data[64..96]);
+
+    Ok(BlockInfo {
+        number,
+        hash,
+        parent_hash,
+    })
 }
 
 #[cfg(test)]

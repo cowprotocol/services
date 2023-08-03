@@ -6,7 +6,7 @@ use {
     clap::Parser,
     ethcontract::H256,
     model::{
-        app_id::AppDataHash,
+        app_data::{AppDataDocument, AppDataHash},
         auction::AuctionWithId,
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
@@ -273,10 +273,10 @@ impl<'a> Services<'a> {
         }
     }
 
-    pub async fn get_app_data(
+    pub async fn get_app_data_document(
         &self,
         app_data: AppDataHash,
-    ) -> Result<String, (StatusCode, String)> {
+    ) -> Result<AppDataDocument, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
@@ -288,9 +288,53 @@ impl<'a> Services<'a> {
         let body = response.text().await.unwrap();
 
         match status {
-            StatusCode::OK => Ok(body),
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
+    }
+
+    pub async fn get_app_data(
+        &self,
+        app_data: AppDataHash,
+    ) -> Result<String, (StatusCode, String)> {
+        Ok(self.get_app_data_document(app_data).await?.full_app_data)
+    }
+
+    pub async fn put_app_data_document(
+        &self,
+        app_data: AppDataHash,
+        document: AppDataDocument,
+    ) -> Result<(), (StatusCode, String)> {
+        let response = self
+            .http
+            .put(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
+            .json(&document)
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        if status.is_success() {
+            Ok(())
+        } else {
+            Err((status, body))
+        }
+    }
+
+    pub async fn put_app_data(
+        &self,
+        app_data: AppDataHash,
+        full_app_data: &str,
+    ) -> Result<(), (StatusCode, String)> {
+        self.put_app_data_document(
+            app_data,
+            AppDataDocument {
+                full_app_data: full_app_data.to_owned(),
+            },
+        )
+        .await
     }
 
     pub fn client(&self) -> &Client {

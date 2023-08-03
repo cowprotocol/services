@@ -195,15 +195,15 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
                 config::file::UniswapV3Config::Preset {
                     preset,
                     max_pools_to_initialize,
-                } => match preset {
-                    config::file::UniswapV3Preset::UniswapV3 => {
-                        liquidity::config::UniswapV3::uniswap_v3(
-                            eth.network_id(),
-                            max_pools_to_initialize,
-                        )
+                } => liquidity::config::UniswapV3 {
+                    max_pools_to_initialize,
+                    ..match preset {
+                        config::file::UniswapV3Preset::UniswapV3 => {
+                            liquidity::config::UniswapV3::uniswap_v3(eth.network_id())
+                        }
                     }
-                }
-                .expect("no Uniswap V3 preset for current network"),
+                    .expect("no Uniswap V3 preset for current network")
+                },
                 config::file::UniswapV3Config::Manual {
                     router,
                     max_pools_to_initialize,
@@ -219,17 +219,24 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
             .iter()
             .cloned()
             .map(|config| match config {
-                config::file::BalancerV2Config::Preset { preset } => match preset {
-                    config::file::BalancerV2Preset::BalancerV2 => {
-                        liquidity::config::BalancerV2::balancer_v2(eth.network_id())
+                config::file::BalancerV2Config::Preset {
+                    preset,
+                    pool_deny_list,
+                } => liquidity::config::BalancerV2 {
+                    pool_deny_list: pool_deny_list.clone(),
+                    ..match preset {
+                        config::file::BalancerV2Preset::BalancerV2 => {
+                            liquidity::config::BalancerV2::balancer_v2(eth.network_id())
+                        }
                     }
-                }
-                .expect("no Balancer V2 preset for current network"),
+                    .expect("no Balancer V2 preset for current network")
+                },
                 config::file::BalancerV2Config::Manual {
                     vault,
                     weighted,
                     stable,
                     liquidity_bootstrapping,
+                    pool_deny_list,
                 } => liquidity::config::BalancerV2 {
                     vault: vault.into(),
                     weighted: weighted
@@ -241,6 +248,7 @@ async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetche
                         .into_iter()
                         .map(eth::ContractAddress::from)
                         .collect(),
+                    pool_deny_list: pool_deny_list.clone(),
                 },
             })
             .collect(),

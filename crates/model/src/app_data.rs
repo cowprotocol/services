@@ -8,12 +8,26 @@ use {
     },
 };
 
+/// A JSON object used to represent app data documents for uploading and
+/// retrieving from the API services.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppDataDocument {
+    pub full_app_data: String,
+}
+
 /// On the contract level orders have 32 bytes of generic data that are freely
 /// choosable by the user. On the services level this is a hash of an app data
 /// json document, which associates arbitrary information with an order while
 /// being signed by the user.
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
 pub struct AppDataHash(pub [u8; 32]);
+
+impl AppDataHash {
+    pub fn is_zero(&self) -> bool {
+        *self == Self::default()
+    }
+}
 
 impl Debug for AppDataHash {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

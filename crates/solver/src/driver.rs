@@ -1,13 +1,4 @@
 use {
-    crate::settlement_rater::SettlementRating,
-    shared::http_solver::model::{AuctionResult, SubmissionResult},
-    tracing::info_span,
-};
-
-pub mod gas;
-pub mod solver_settlements;
-
-use {
     crate::{
         auction_preprocessing,
         driver_logger::DriverLogger,
@@ -18,6 +9,7 @@ use {
         orderbook::OrderBookApi,
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
+        settlement_rater::SettlementRating,
         settlement_simulation,
         settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
@@ -29,7 +21,7 @@ use {
     gas_estimation::GasPriceEstimating,
     model::{
         auction::{AuctionId, AuctionWithId},
-        order::OrderUid,
+        order::{Order, OrderUid},
         solver_competition::{
             self,
             CompetitionAuction,
@@ -47,18 +39,27 @@ use {
         current_block::CurrentBlockStream,
         ethrpc::Web3,
         external_prices::ExternalPrices,
-        http_solver::model::{InternalizationStrategy, SolverRunError},
+        http_solver::model::{
+            AuctionResult,
+            InternalizationStrategy,
+            SolverRunError,
+            SubmissionResult,
+        },
         recent_block_cache::Block,
         tenderly_api::TenderlyApi,
     },
     std::{
         collections::HashSet,
+        fmt::Write,
         sync::Arc,
         time::{Duration, Instant},
     },
-    tracing::Instrument as _,
+    tracing::{info_span, Instrument as _},
     web3::types::TransactionReceipt,
 };
+
+pub mod gas;
+pub mod solver_settlements;
 
 pub struct Driver {
     liquidity_collector: LiquidityCollector,
@@ -82,6 +83,7 @@ pub struct Driver {
     process_partially_fillable_liquidity_orders: bool,
     process_partially_fillable_limit_orders: bool,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    previous_auction_orders: HashSet<OrderUid>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -107,7 +109,6 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<Arc<dyn TenderlyApi>>,
-        solution_comparison_decimal_cutoff: u16,
         process_partially_fillable_liquidity_orders: bool,
         process_partially_fillable_limit_orders: bool,
         settlement_rater: Arc<dyn SettlementRating>,
@@ -121,7 +122,6 @@ impl Driver {
             token_list_restriction_for_price_checks,
             metrics: metrics.clone(),
             settlement_rater,
-            decimal_cutoff: solution_comparison_decimal_cutoff,
             skip_non_positive_score_settlements,
         };
 
@@ -156,6 +156,7 @@ impl Driver {
             process_partially_fillable_liquidity_orders,
             process_partially_fillable_limit_orders,
             balance_fetcher,
+            previous_auction_orders: Default::default(),
         }
     }
 
@@ -235,6 +236,21 @@ impl Driver {
         Ok(())
     }
 
+    fn observe_auction_orders(&mut self, orders: &[Order]) {
+        let orders: HashSet<OrderUid> = orders.iter().map(|order| order.metadata.uid).collect();
+        let mut msg = String::new();
+        for order in orders.difference(&self.previous_auction_orders) {
+            writeln!(&mut msg, "{order}").unwrap();
+        }
+        tracing::debug!("orders that started showing up in this auction:\n{msg}");
+        msg.clear();
+        for order in self.previous_auction_orders.difference(&orders) {
+            writeln!(&mut msg, "{order}").unwrap();
+        }
+        tracing::debug!("orders that stopped showing up in this auction:\n{msg}");
+        self.previous_auction_orders = orders;
+    }
+
     /// Returns whether a settlement transaction was attempted.
     async fn single_auction(&mut self, auction: AuctionWithId, run_id: u64) -> Result<bool> {
         let start = Instant::now();
@@ -242,6 +258,8 @@ impl Driver {
 
         let auction_id = auction.id;
         let mut auction = auction.auction;
+
+        self.observe_auction_orders(&auction.orders);
 
         let current_block_during_liquidity_fetch = self.block_stream.borrow().number;
 
@@ -283,10 +301,7 @@ impl Driver {
         let balances =
             order_balance_filter::fetch_balances(self.balance_fetcher.as_ref(), &auction.orders)
                 .await;
-        tracing::debug!(
-            "fetching order balances took {}s",
-            balance_start.elapsed().as_secs_f32()
-        );
+        tracing::debug!("fetching order balances took {:?}", balance_start.elapsed());
 
         tracing::info!(count =% auction.orders.len(), "got orders");
         self.metrics.orders_fetched(&auction.orders);
@@ -314,10 +329,12 @@ impl Driver {
             .filter(|o| !o.metadata.is_liquidity_order)
             .flat_map(|o| TokenPair::new(o.data.buy_token, o.data.sell_token))
             .collect();
+        let liquidity_start = Instant::now();
         let liquidity = self
             .liquidity_collector
             .get_liquidity(pairs, Block::Number(current_block_during_liquidity_fetch))
             .await?;
+        tracing::debug!("collecting liquidity took {:?}", liquidity_start.elapsed());
         self.metrics.liquidity_fetched(&liquidity);
 
         let auction = Auction {
@@ -508,7 +525,7 @@ impl Driver {
                     winning_solver.notify_auction_result(
                         auction_id,
                         AuctionResult::SubmittedOnchain(SubmissionResult::Success(
-                            receipt.block_hash.unwrap_or_default(),
+                            receipt.transaction_hash,
                         )),
                     );
                     Some(receipt.transaction_hash)

@@ -17,7 +17,7 @@ jobs:
           # Without this the fetch depth defaults to 1, which only includes the most recent commit. We want to know the full history so that `git describe` can give more information when it is invoked in the orderbook's crate build script.
           fetch-depth: '0'
 
-      - uses: docker/login-action@v1
+      - uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -25,13 +25,13 @@ jobs:
 
       - name: Services image metadata
         id: meta_services
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: ghcr.io/${{ github.repository }}
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
       - name: Services image build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: docker/Dockerfile.binary
@@ -41,13 +41,13 @@ jobs:
 
       - name: Migration image metadata
         id: meta_migration
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v4
         with:
           images: ghcr.io/${{ github.repository }}-migration
           labels: |
             org.opencontainers.image.licenses=GPL-3.0-or-later
       - name: Migration image build
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         with:
           context: .
           file: docker/Dockerfile.migration
@@ -58,23 +58,22 @@ jobs:
       - uses: cowprotocol/autodeploy-action@v1
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
-          pods:
-                "goerli-api-staging,\
-                goerli-autopilot-staging,\
-                goerli-baseline-staging,\
-                goerli-driver-staging,\
-                goerli-naive-staging,\
-                goerli-quasimodo-staging,\
-                goerli-refunder-staging,\
-                mainnet-api-staging,\
-                mainnet-autopilot-staging,\
-                mainnet-refunder-staging,\
-                mainnet-solver-staging,\
-                shadow-solver,\
-                xdai-api-staging,\
-                xdai-autopilot-staging,\
-                xdai-refunder-staging,\
-                xdai-solver-staging"
+          pods: "goerli-api-staging,\
+                 goerli-autopilot-staging,\
+                 goerli-baseline-staging,\
+                 goerli-driver-staging,\
+                 goerli-naive-staging,\
+                 goerli-quasimodo-staging,\
+                 goerli-refunder-staging,\
+                 mainnet-api-staging,\
+                 mainnet-autopilot-staging,\
+                 mainnet-refunder-staging,\
+                 mainnet-solver-staging,\
+                 shadow-solver,\
+                 xdai-api-staging,\
+                 xdai-autopilot-staging,\
+                 xdai-refunder-staging,\
+                 xdai-solver-staging"
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}

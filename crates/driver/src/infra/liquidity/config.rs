@@ -121,10 +121,10 @@ pub struct UniswapV3 {
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(network: &eth::NetworkId, max_pools_to_initialize: u64) -> Option<Self> {
+    pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
-            max_pools_to_initialize,
+            max_pools_to_initialize: 50,
         })
     }
 }
@@ -143,6 +143,13 @@ pub struct BalancerV2 {
 
     /// Liquidity bootstrapping pool factory addresses.
     pub liquidity_bootstrapping: Vec<eth::ContractAddress>,
+
+    /// Deny listed Balancer V2 pools.
+    ///
+    /// Since pools allow for custom controllers and logic, it is possible for
+    /// pools to get "bricked". This configuration allows those pools to be
+    /// ignored.
+    pub pool_deny_list: Vec<eth::H256>,
 }
 
 impl BalancerV2 {
@@ -174,6 +181,7 @@ impl BalancerV2 {
                 contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
                 contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
             ]),
+            pool_deny_list: Vec::new(),
         })
     }
 }

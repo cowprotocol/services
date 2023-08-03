@@ -68,6 +68,14 @@ impl AmplificationParameter {
         debug_assert!(!self.precision.is_zero());
         BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
     }
+
+    pub fn factor(&self) -> U256 {
+        self.factor
+    }
+
+    pub fn precision(&self) -> U256 {
+        self.precision
+    }
 }
 
 #[async_trait::async_trait]

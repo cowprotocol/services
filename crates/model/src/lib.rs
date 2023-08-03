@@ -3,7 +3,7 @@
 
 //! Contains models that are shared between the orderbook and the solver.
 
-pub mod app_id;
+pub mod app_data;
 pub mod auction;
 pub mod bytes_hex;
 pub mod interaction;

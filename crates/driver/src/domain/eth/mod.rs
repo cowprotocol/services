@@ -36,6 +36,12 @@ impl From<U256> for ChainId {
     }
 }
 
+impl From<ChainId> for u64 {
+    fn from(value: ChainId) -> Self {
+        value.0.as_u64()
+    }
+}
+
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155

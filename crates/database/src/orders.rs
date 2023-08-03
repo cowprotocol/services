@@ -592,7 +592,7 @@ WHERE
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
 
-#[derive(Debug, Default, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
     pub order_uid: OrderUid,
     /// The `solver_fee` that got executed for this specific fill.

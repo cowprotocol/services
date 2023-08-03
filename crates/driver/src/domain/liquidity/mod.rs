@@ -55,8 +55,8 @@ pub struct ExactOutput(pub eth::Asset);
 pub enum Kind {
     UniswapV2(uniswap::v2::Pool),
     UniswapV3(uniswap::v3::Pool),
-    BalancerV2Stable(balancer::stable::Pool),
-    BalancerV2Weighted(balancer::weighted::Pool),
+    BalancerV2Stable(balancer::v2::stable::Pool),
+    BalancerV2Weighted(balancer::v2::weighted::Pool),
     Swapr(swapr::Pool),
     ZeroEx(zeroex::LimitOrder),
 }
@@ -85,3 +85,7 @@ impl TokenPair {
 #[derive(Debug, thiserror::Error)]
 #[error("token pair must have distict token addresses")]
 pub struct InvalidTokenPair;
+
+#[derive(Debug, thiserror::Error)]
+#[error("swap parameters do not match pool")]
+pub struct InvalidSwap;

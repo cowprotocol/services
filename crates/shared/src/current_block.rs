@@ -1,5 +1,6 @@
 mod arguments;
 mod eth_call;
+mod get_block_and_call;
 
 use {
     crate::ethrpc::Web3,
@@ -11,7 +12,7 @@ use {
     tracing::Instrument,
     web3::{
         helpers,
-        types::{BlockId, BlockNumber, U64},
+        types::{Block, BlockId, BlockNumber, U64},
         BatchTransport,
         Transport,
     },
@@ -52,6 +53,18 @@ pub struct BlockInfo {
     pub number: u64,
     pub hash: H256,
     pub parent_hash: H256,
+}
+
+impl TryFrom<Block<H256>> for BlockInfo {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Block<H256>) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            number: value.number.context("block missing number")?.as_u64(),
+            hash: value.hash.context("block missing hash")?,
+            parent_hash: value.parent_hash,
+        })
+    }
 }
 
 /// Creates a cloneable stream that yields the current block whenever it
@@ -190,18 +203,12 @@ impl BlockRetrieving for Web3 {
 }
 
 async fn get_block_info_at_id(web3: &Web3, id: BlockId) -> Result<BlockInfo> {
-    let block = web3
-        .eth()
+    web3.eth()
         .block(id)
         .await
         .with_context(|| format!("failed to get block for {id:?}"))?
-        .with_context(|| format!("no block for {id:?}"))?;
-
-    Ok(BlockInfo {
-        number: block.number.context("block missing number")?.as_u64(),
-        hash: block.hash.context("block missing hash")?,
-        parent_hash: block.parent_hash,
-    })
+        .with_context(|| format!("no block for {id:?}"))?
+        .try_into()
 }
 
 pub async fn timestamp_of_block_in_seconds(web3: &Web3, block_number: BlockNumber) -> Result<u32> {

@@ -11,7 +11,7 @@ use {
     ethcontract::H256,
     futures::{stream::TryStreamExt, FutureExt, StreamExt},
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         order::{
             EthflowData,
             Interactions,
@@ -251,10 +251,12 @@ impl OrderStoring for Postgres {
         if let Some(full_app_data) = order.metadata.full_app_data {
             let contract_app_data = &ByteArray(order.data.app_data.0);
             let full_app_data = full_app_data.as_bytes();
-            let existing =
-                database::app_data::insert(&mut ex, contract_app_data, full_app_data).await?;
-            if full_app_data != existing {
-                return Err(InsertionError::AppDataMismatch(existing));
+            if let Some(existing) =
+                database::app_data::insert(&mut ex, contract_app_data, full_app_data).await?
+            {
+                if full_app_data != existing {
+                    return Err(InsertionError::AppDataMismatch(existing));
+                }
             }
         }
 
