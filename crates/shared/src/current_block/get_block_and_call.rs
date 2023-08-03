@@ -15,7 +15,7 @@ use {
 /// for nodes where `eth_getBlockBy*` and `eth_blockNumber` calls return the
 /// latest block for which a header is available even if the state isn't.
 ///
-/// However, some nodes (notably Nethermind) to **not** support `eth_call` on
+/// However, some nodes (notably Nethermind) do **not** support `eth_call` on
 /// the pending block, which is required for the `eth_call` based fetcher to
 /// work. As a work-around, we issue simultaneous `eth_call` and `eth_getBlock`
 /// requests to fetch the full block header (which includes the hash) and
