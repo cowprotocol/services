@@ -1,9 +1,9 @@
 use {
-    crate::{
-        eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    e2e::{
         local_node::TestNodeApi,
         setup::*,
     },
+    crate::eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     chrono::{TimeZone, Utc},
     ethcontract::{H160, U256},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},

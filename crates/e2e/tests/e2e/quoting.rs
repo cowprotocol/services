@@ -1,5 +1,7 @@
 use {
-    crate::setup::*,
+    e2e::setup::*,
+    e2e::tx,
+    e2e::tx_value,
     ethcontract::prelude::U256,
     model::{
         order::OrderCreationAppData,

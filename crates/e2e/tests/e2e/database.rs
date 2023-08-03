@@ -2,7 +2,7 @@
 //! during a test.
 
 use {
-    crate::setup::Db,
+    e2e::setup::Db,
     database::{byte_array::ByteArray, order_events, Address, TransactionHash},
     futures::TryStreamExt,
     model::order::OrderUid,

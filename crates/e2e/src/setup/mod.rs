@@ -1,7 +1,7 @@
 pub mod colocation;
 mod deploy;
 #[macro_use]
-mod onchain_components;
+pub mod onchain_components;
 mod services;
 
 use {
@@ -70,6 +70,14 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
+    run_test_with_filters(f, vec![]).await
+}
+
+pub async fn run_test_with_filters<F, Fut>(f: F, extra_filters: Vec<String>)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
     let filters = [
         "warn",
         "autopilot=debug",
@@ -81,6 +89,11 @@ where
         "solvers=debug",
         "orderbook::api::request_summary=off",
     ]
+    .map(|s| s.to_string())
+    .into_iter()
+    .chain(extra_filters.into_iter())
+    .collect::<Vec<_>>()
+    .as_slice()
     .join(",");
 
     shared::tracing::initialize_reentrant(&filters);

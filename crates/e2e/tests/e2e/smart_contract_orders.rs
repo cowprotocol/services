@@ -1,5 +1,6 @@
 use {
-    crate::setup::*,
+    e2e::setup::*,
+    e2e::tx_safe,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
