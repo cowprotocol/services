@@ -21,8 +21,8 @@ contract Trader {
     address constant private TRADER_IMPL = address(0x10000);
 
     /// @dev Flag that ensures that `prepareSwap` gets called exactly once to
-    /// prevent custom interaction from calling it.
-    bool private _alreadyCalled = false;
+    /// prevent custom interactions from calling it.
+    address private _prepareSwapMarker;
 
     // The `Trader` contract gets deployed on the `from` address of the quote.
     // Since the `from` address might be a safe or other smart contract we still
@@ -52,8 +52,16 @@ contract Trader {
         address nativeToken,
         address payable receiver
     ) external {
-        require(!_alreadyCalled, "prepareSwap can only be called once");
-        _alreadyCalled = true;
+        // Intuitively one would store a flag whether or not `prepareSwap()` has
+        // been called before inside a bool. However, this bool can not be reliably
+        // initialized as this would require running a constructor which would be
+        // annoying to do as that would require a multi trace call.
+        // Instead we use a type that can store many different states and use this
+        // contract's address as a sentinel value. That way it basically doesn't
+        // matter how exactly the node decides to initialize this state because
+        // the chance that it uses exactly our address is practically 0.
+        require(_prepareSwapMarker != address(this), "prepareSwap can only be called once");
+        _prepareSwapMarker = address(this);
 
         if (sellToken == nativeToken) {
             uint256 availableBalance = IERC20(sellToken).balanceOf(address(this));
