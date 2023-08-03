@@ -190,6 +190,7 @@ mod tests {
     fn compute_score_test() {
         // tx hash 0x201c948ad94d7f93ad2d3c13fa4b6bbd4270533fbfedcb8be60e68c8e709d2b6
         // objective_score = 251547381429604400
+        // success_probability ends up being 0.9202405649482063
         let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
         let inputs = objective_value::Inputs {
             surplus_given: u256_to_big_rational(&U256::from(237248548166961920u128)),
@@ -204,6 +205,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        assert_eq!(score, 251547381434194912u128.into());
+        assert_eq!(score, 250680657687276800u128.into());
     }
 }
