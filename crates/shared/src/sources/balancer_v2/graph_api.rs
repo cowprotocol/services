@@ -22,7 +22,7 @@ use {
 
 /// The page size when querying pools.
 #[cfg(not(test))]
-const QUERY_PAGE_SIZE: usize = 100;
+const QUERY_PAGE_SIZE: usize = 1000;
 #[cfg(test)]
 const QUERY_PAGE_SIZE: usize = 10;
 
@@ -61,6 +61,7 @@ impl BalancerSubgraphClient {
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/graphql-api#pagination>
         loop {
+            tracing::error!("fetch ");
             let page = self
                 .0
                 .query::<Data>(
