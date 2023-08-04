@@ -141,7 +141,6 @@ impl Signature {
         })
     }
 
-    #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
