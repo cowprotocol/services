@@ -22,6 +22,8 @@ const ALL_POOLS_QUERY: &str = r#"
         pools(
             block: { number: $block }
             first: $pageSize
+            orderBy: totalValueLockedETH
+            orderDirection: desc
             where: {
                 id_gt: $lastId
                 tick_not: null
@@ -115,10 +117,15 @@ impl UniV3SubgraphClient {
         Ok(Self(SubgraphClient::new("uniswap", subgraph_name, client)?))
     }
 
-    async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {
+    async fn get_pools(
+        &self,
+        query: &str,
+        variables: Map<String, Value>,
+        max_size: Option<usize>,
+    ) -> Result<Vec<PoolData>> {
         Ok(self
             .0
-            .paginated_query(query, variables)
+            .paginated_query(query, variables, max_size)
             .await?
             .into_iter()
             .filter(|pool: &PoolData| pool.total_value_locked_eth.is_normal())
@@ -126,12 +133,12 @@ impl UniV3SubgraphClient {
     }
 
     /// Retrieves the pool data for all existing pools from the subgraph.
-    pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
+    pub async fn get_registered_pools(&self, max_size: Option<usize>) -> Result<RegisteredPools> {
         let block_number = self.get_safe_block().await?;
         let variables = json_map! {
             "block" => block_number,
         };
-        let pools = self.get_pools(ALL_POOLS_QUERY, variables).await?;
+        let pools = self.get_pools(ALL_POOLS_QUERY, variables, max_size).await?;
         Ok(RegisteredPools {
             fetched_block_number: block_number,
             pools,
@@ -148,7 +155,7 @@ impl UniV3SubgraphClient {
             "block" => block_number,
             "pool_ids" => json!(pool_ids)
         };
-        let pools = self.get_pools(POOLS_BY_IDS_QUERY, variables).await?;
+        let pools = self.get_pools(POOLS_BY_IDS_QUERY, variables, None).await?;
         Ok(pools)
     }
 
@@ -164,7 +171,7 @@ impl UniV3SubgraphClient {
         };
         let result = self
             .0
-            .paginated_query(TICKS_BY_POOL_IDS_QUERY, variables)
+            .paginated_query(TICKS_BY_POOL_IDS_QUERY, variables, None)
             .await?;
         Ok(result)
     }
@@ -473,7 +480,7 @@ mod tests {
     #[ignore]
     async fn get_registered_pools_test() {
         let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
-        let result = client.get_registered_pools().await.unwrap();
+        let result = client.get_registered_pools(None).await.unwrap();
         println!(
             "Retrieved {} total pools at block {}",
             result.pools.len(),
@@ -485,7 +492,7 @@ mod tests {
     #[ignore]
     async fn get_pools_by_pool_ids_test() {
         let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
-        let registered_pools = client.get_registered_pools().await.unwrap();
+        let registered_pools = client.get_registered_pools(None).await.unwrap();
         let pool_ids = registered_pools
             .pools
             .into_iter()
