@@ -1,8 +1,4 @@
-use {
-    crate::{auction::AuctionId, PgTransaction},
-    sqlx::PgConnection,
-    std::ops::DerefMut,
-};
+use {crate::auction::AuctionId, sqlx::PgConnection};
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct SettlementCallData {
@@ -11,16 +7,13 @@ pub struct SettlementCallData {
     pub uninternalized_call_data: Vec<u8>,
 }
 
-pub async fn insert(
-    ex: &mut PgTransaction<'_>,
-    row: SettlementCallData,
-) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgConnection, row: SettlementCallData) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"INSERT INTO settlement_call_data (auction_id, call_data, uninternalized_call_data) VALUES ($1, $2, $3);"#;
     sqlx::query(QUERY)
         .bind(row.auction_id)
         .bind(row.call_data.as_slice())
         .bind(row.uninternalized_call_data.as_slice())
-        .execute(ex.deref_mut())
+        .execute(ex)
         .await?;
     Ok(())
 }

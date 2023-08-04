@@ -180,7 +180,7 @@ impl RunLoop {
                 order_executions,
                 competition_simulation_block,
                 call_data,
-                uninternalized_call_data
+                uninternalized_call_data,
             };
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {
