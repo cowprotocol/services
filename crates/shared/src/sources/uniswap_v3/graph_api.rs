@@ -121,10 +121,7 @@ impl UniV3SubgraphClient {
         variables: Map<String, Value>,
         max_size: Option<usize>,
     ) -> Result<Vec<PoolData>> {
-        self
-            .0
-            .paginated_query(query, variables, max_size)
-            .await
+        self.0.paginated_query(query, variables, max_size).await
     }
 
     /// Retrieves the pool data for all existing pools from the subgraph.
