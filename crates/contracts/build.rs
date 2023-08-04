@@ -378,12 +378,6 @@ fn main() {
             .add_network_str(GOERLI, "0x91056D4A53E1faa1A84306D4deAEc71085394bC8")
             .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
     });
-    generate_contract_with_config("CowProtocolVirtualToken", |builder| {
-        builder
-            .add_network_str(MAINNET, "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
-            .add_network_str(GOERLI, "0x7B878668Cd1a3adF89764D3a331E0A7BB832192D")
-            .add_network_str(GNOSIS, "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
-    });
     generate_contract_with_config("SolverTrampoline", |builder| {
         builder.add_network_str("5", "0xd29ae121Ad58479c9Eb8C4F235c618fcF42eCba0")
     });
