@@ -171,9 +171,27 @@ impl Competition {
             .ok_or(Error::SolutionNotFound)?;
 
         let orders = settlement.orders();
+        let internalized_calldata = settlement
+            .calldata(
+                self.eth.contracts().settlement(),
+                settlement::Internalization::Enable,
+            )
+            .into();
+        let uninternalized_calldata = settlement
+            .calldata(
+                self.eth.contracts().settlement(),
+                settlement::Internalization::Disable,
+            )
+            .into();
+
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Solved { score, orders })
+        Ok(Solved {
+            score,
+            orders,
+            internalized_calldata,
+            uninternalized_calldata,
+        })
     }
 
     /// Execute the solution generated as part of this competition. Use
@@ -213,13 +231,22 @@ impl Competition {
 }
 
 /// Solution information revealed to the protocol by the driver before the
-/// settlement happens. Note that the calldata is only revealed once the
-/// protocol instructs the driver to settle, and not before.
+/// settlement happens.
+/// Initially the calldata was planned to be revealed to the protocol after
+/// the \settle is called, but this would require protocol to wait for the
+/// settlement to be settled onchain before saving the solver competition data.
+/// This is unacceptable because saving the solver competition data could fail
+/// and the protocol would have inconsistent db state.
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
+    pub internalized_calldata: Bytes<Vec<u8>>,
+    /// The uninternalized calldata must be known so that the CoW solver team
+    /// can manually enforce certain rules which can not be enforced
+    /// automatically.
+    pub uninternalized_calldata: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug)]
