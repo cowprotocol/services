@@ -6,5 +6,5 @@ ALTER TABLE settlement_scores ALTER COLUMN simulation_block DROP DEFAULT;
 CREATE TABLE settlement_call_data (
   auction_id bigint PRIMARY KEY,
   call_data bytea NOT NULL,
-  uninternalized_call_data bytea NOT NULL,
+  uninternalized_call_data bytea NOT NULL
 );
