@@ -9,7 +9,7 @@ use {
     thiserror::Error,
 };
 
-pub const QUERY_PAGE_SIZE: usize = 100;
+pub const QUERY_PAGE_SIZE: usize = 1000;
 const MAX_NUMBER_OF_RETRIES: usize = 10;
 
 /// A general client for querying subgraphs.
