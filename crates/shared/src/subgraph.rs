@@ -124,6 +124,10 @@ impl SubgraphClient {
             }
         }
 
+        if let Some(max_size) = max_results {
+            result.truncate(max_size);
+        }
+
         Ok(result)
     }
 }
