@@ -8,6 +8,7 @@ use {
         settlement_call_data::SettlementCallData,
         settlement_scores::Score,
     },
+    derivative::Derivative,
     model::order::OrderUid,
     number_conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
@@ -28,7 +29,8 @@ pub struct OrderExecution {
     pub executed_fee: ExecutedFee,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default, Derivative)]
+#[derivative(Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
     pub winner: H160,
@@ -45,8 +47,10 @@ pub struct Competition {
     pub order_executions: Vec<OrderExecution>,
     pub competition_simulation_block: u64,
     /// Winner settlement call data
+    #[derivative(Debug(format_with = "shared::debug_bytes"))]
     pub call_data: Vec<u8>,
     /// Uninternalized winner settlement call data
+    #[derivative(Debug(format_with = "shared::debug_bytes"))]
     pub uninternalized_call_data: Vec<u8>,
 }
 
