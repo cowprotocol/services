@@ -342,7 +342,7 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error initializing Uniswap V3 pool fetcher"),
+            .expect("error innitializing Uniswap V3 pool fetcher"),
         ))
     } else {
         None
