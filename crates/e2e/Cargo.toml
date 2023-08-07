@@ -6,29 +6,29 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-autopilot = { path = "../autopilot" }
 anyhow = { workspace = true }
+autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
+clap = { workspace = true }
+contracts = { path = "../contracts" }
+database = { path = "../database" }
+driver = { path = "../driver" }
 ethcontract = { workspace = true }
-web3 = { workspace = true }
+hex = { workspace = true }
+hex-literal = { workspace = true }
+model = { path = "../model" }
+orderbook = { path = "../orderbook" }
+reqwest = { workspace = true, features = ["blocking"] }
+secp256k1 = { workspace = true }
 serde_json = { workspace = true }
 shared = { path = "../shared" }
-reqwest = { workspace = true, features = ["blocking"] }
-tokio = { workspace = true, features = ["macros"] }
-solvers = { path = "../solvers" }
-hex = { workspace = true }
-driver = { path = "../driver" }
-contracts = { path = "../contracts" }
-model = { path = "../model" }
-tempfile = "3.3.0"
-sqlx = { workspace = true }
-secp256k1 = { workspace = true }
-hex-literal = { workspace = true }
-tracing = { workspace = true }
-clap = { workspace = true }
 solver = { path = "../solver" }
-orderbook = { path = "../orderbook" }
-database = { path = "../database" }
+solvers = { path = "../solvers" }
+sqlx = { workspace = true }
+tempfile = "3.3.0"
+tokio = { workspace = true, features = ["macros"] }
+tracing = { workspace = true }
+web3 = { workspace = true }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }
