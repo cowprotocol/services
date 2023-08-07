@@ -1,7 +1,5 @@
-// <crate>/tests signals to Cargo that files inside of it are integration tests.
-// Integration tests are compiled into separate binaries which is slow. To avoid
-// this we create one integration test here and in this test we include all the
-// tests we want to run.
+// We export all the modules in this file so that we can use them in the tests
+// and so that other crates can use them as well.
 
 #[macro_use]
 pub mod setup;
