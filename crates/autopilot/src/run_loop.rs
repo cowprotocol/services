@@ -16,6 +16,13 @@ use {
         auction::{Auction, AuctionId},
         interaction::InteractionData,
         order::{LimitOrderClass, OrderClass},
+        solver_competition::{
+            CompetitionAuction,
+            Order,
+            Score,
+            SolverCompetitionDB,
+            SolverSettlement,
+        },
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
@@ -93,7 +100,7 @@ impl RunLoop {
             .collect();
 
         // TODO: Keep going with other solutions until some deadline.
-        if let Some((index, solution)) = solutions.pop() {
+        if let Some((index, solution)) = solutions.last() {
             // The winner has score 0 so all solutions are empty.
             if solution.score == 0.into() {
                 return;
@@ -103,15 +110,17 @@ impl RunLoop {
             let auction_id = id;
             let winner = solution.submission_address;
             let winning_score = solution.score;
-            let reference_score = solutions
-                .last()
-                .map(|(_, response)| response.score)
-                .unwrap_or_default();
-            let mut participants = solutions
+            let reference_score = match solutions.len() > 1 {
+                true => solutions
+                    .get(solutions.len() - 2)
+                    .map(|(_, response)| response.score)
+                    .unwrap_or_default(),
+                false => 0.into(),
+            };
+            let participants = solutions
                 .iter()
                 .map(|(_, response)| response.submission_address)
                 .collect::<HashSet<_>>();
-            participants.insert(solution.submission_address); // add winner as participant
 
             let mut prices = BTreeMap::new();
             let block_deadline = competition_simulation_block
@@ -169,6 +178,37 @@ impl RunLoop {
                     }
                 }
             }
+            let competition_table = SolverCompetitionDB {
+                competition_simulation_block,
+                auction: CompetitionAuction {
+                    orders: auction
+                        .orders
+                        .iter()
+                        .map(|order| order.metadata.uid)
+                        .collect(),
+                    prices: auction.prices.clone(),
+                },
+                solutions: solutions
+                    .iter()
+                    .map(|(index, response)| SolverSettlement {
+                        solver_address: response.submission_address,
+                        score: Some(Score::Solver(response.score)),
+                        ranking: Some(solutions.len() - index),
+                        orders: response
+                            .orders
+                            .iter()
+                            .map(|o| Order {
+                                id: *o,
+                                ..Default::default()
+                            })
+                            .collect(),
+                        call_data: response.calldata.internalized.clone(),
+                        uninternalized_call_data: Some(response.calldata.uninternalized.clone()),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            };
             let competition = Competition {
                 auction_id,
                 winner,
@@ -181,6 +221,7 @@ impl RunLoop {
                 competition_simulation_block,
                 call_data,
                 uninternalized_call_data,
+                competition_table,
             };
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {
@@ -188,8 +229,8 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!(url = %self.drivers[index].url, "settling with solver");
-            match self.settle(id, &self.drivers[index], &solution).await {
+            tracing::info!(url = %self.drivers[*index].url, "settling with solver");
+            match self.settle(id, &self.drivers[*index], solution).await {
                 Ok(()) => (),
                 Err(err) => {
                     tracing::error!(?err, "solver {index} failed to settle");

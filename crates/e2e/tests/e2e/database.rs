@@ -40,8 +40,7 @@ pub struct Cip20Data {
     pub score: database::settlement_scores::Score,
     pub trades: Vec<database::orders::OrderExecution>,
     pub call_data: database::settlement_call_data::SettlementCallData,
-    // TODO add this when we eventually store the competition data
-    // pub competition: serde_json::Value,
+    pub competition: serde_json::Value,
 }
 
 /// Returns `Some(data)` if the all the expected CIP-20 data has been indexed
@@ -87,12 +86,10 @@ WHERE at.auction_id = $1
     let call_data = database::settlement_call_data::fetch(&mut db, auction_id)
         .await
         .unwrap()?;
-
-    // TODO add this when we eventually store the competition data
-    // let competition = database::solver_competition::load_by_id(&mut db,
-    // auction_id)     .await
-    //     .unwrap()?
-    //     .json;
+    let competition = database::solver_competition::load_by_id(&mut db, auction_id)
+        .await
+        .unwrap()?
+        .json;
 
     Some(Cip20Data {
         observation,
@@ -102,6 +99,6 @@ WHERE at.auction_id = $1
         score,
         trades,
         call_data,
-        // competition,
+        competition,
     })
 }
