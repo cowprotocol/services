@@ -9,14 +9,7 @@ use {
         serve_api,
         verify_deployed_contract_constants,
     },
-    contracts::{
-        BalancerV2Vault,
-        CowProtocolToken,
-        CowProtocolVirtualToken,
-        HooksTrampoline,
-        IUniswapV3Factory,
-        WETH9,
-    },
+    contracts::{BalancerV2Vault, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
     futures::StreamExt,
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
@@ -31,12 +24,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        fee_subsidy::{
-            config::FeeSubsidyConfiguration,
-            cow_token::CowSubsidy,
-            FeeSubsidies,
-            FeeSubsidizing,
-        },
+        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -393,29 +381,7 @@ pub async fn run(args: Arguments) {
         ))
         .unwrap();
 
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_tokens = match (cow_token, cow_vtoken) {
-        (None, None) => None,
-        (Some(token), Some(vtoken)) => Some((token, vtoken)),
-        _ => panic!("should either have both cow token contracts or none"),
-    };
-    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-        tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(
-            token,
-            vtoken,
-            args.order_quoting.cow_fee_factors.unwrap_or_default(),
-        )
-    });
-
-    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
@@ -426,14 +392,6 @@ pub async fn run(args: Arguments) {
             .copied()
             .collect(),
     }) as Arc<dyn FeeSubsidizing>;
-
-    let fee_subsidy = match cow_subsidy {
-        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-            fee_subsidy_config,
-            Arc::new(cow_subsidy),
-        ])),
-        None => fee_subsidy_config,
-    };
 
     let validity_configuration = OrderValidPeriodConfiguration {
         min: args.min_order_validity_period,

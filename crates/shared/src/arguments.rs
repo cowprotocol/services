@@ -6,7 +6,6 @@ use {
         account_balances,
         current_block,
         ethrpc,
-        fee_subsidy::cow_token::SubsidyTiers,
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
@@ -130,16 +129,6 @@ pub struct OrderQuotingArguments {
     /// what we estimate we pay for gas.
     #[clap(long, env, default_value = "1", value_parser = parse_unbounded_factor)]
     pub fee_factor: f64,
-
-    /// Used to configure how much of the regular fee a user should pay based on
-    /// their COW + VCOW balance in base units on the current network.
-    ///
-    /// The expected format is "10:0.75,150:0.5" for 2 subsidy tiers.
-    /// A balance of [10,150) COW will cause you to pay 75% of the regular fee
-    /// and a balance of [150, inf) COW will cause you to pay 50% of the
-    /// regular fee.
-    #[clap(long, env)]
-    pub cow_fee_factors: Option<SubsidyTiers>,
 }
 
 logging_args_with_default_filter!(
@@ -385,7 +374,6 @@ impl Display for OrderQuotingArguments {
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
         writeln!(f, "price_estimators: {}", self.price_estimators)?;
         display_list(
             f,
