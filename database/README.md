@@ -317,6 +317,20 @@ Stores the best and second best solution quality (score) of every auction promis
  winning\_score   | numeric  | not null | highest submitted score (submitted by `winner`). This is the quality the auction observed on-chain should achieve to not result in slashing of the solver.
  reference\_score | numeric  | not null | score of the runner up solver. If only 1 solver submitted a valid solution this value is 0.
  block\_deadline  | bigint   | not null | block at which the solver should have executed the solution at the latest before getting slashed for executing too slowly
+ simulated_block  | bigint   | not null | block at which the simulation of the competing solutions is done
+
+Indexes:
+- PRIMARY KEY: btree(`auction_id`)
+
+### settlement\_call\_data
+
+Stores the final calldata and uninternalized calldata of the winning solution for each auction
+
+ Column                       | Type     | Nullable | Details
+------------------------------|----------|----------|--------
+ auction\_id                  | bigint   | not null | id of the auction the winning transaction calldata belongs to
+ call_data                    | bytea    | not null | final calldata as it appears on the blockchain
+ uninternalized\_call\_data   | numeric  | not null | uninternalized calldata, different from final calldata if solution contains interactions that can be internalized against gpv2 settlement contract internal buffers.
 
 Indexes:
 - PRIMARY KEY: btree(`auction_id`)

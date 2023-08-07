@@ -57,8 +57,8 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
-        .bind(&quote.sell_token)
-        .bind(&quote.buy_token)
+        .bind(quote.sell_token)
+        .bind(quote.buy_token)
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
         .bind(quote.gas_amount)
@@ -67,7 +67,7 @@ RETURNING id
         .bind(quote.order_kind)
         .bind(quote.expiration_timestamp)
         .bind(&quote.quote_kind)
-        .bind(&quote.solver)
+        .bind(quote.solver)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -117,8 +117,8 @@ ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
     sqlx::query_as(QUERY)
-        .bind(&params.sell_token)
-        .bind(&params.buy_token)
+        .bind(params.sell_token)
+        .bind(params.buy_token)
         .bind(&params.sell_amount_0)
         .bind(&params.sell_amount_1)
         .bind(&params.buy_amount)

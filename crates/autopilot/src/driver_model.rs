@@ -46,6 +46,7 @@ pub mod quote {
 
 pub mod solve {
     use {
+        super::settle::Calldata,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
@@ -142,6 +143,7 @@ pub mod solve {
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
         pub orders: Vec<OrderUid>,
+        pub calldata: Calldata,
     }
 }
 

@@ -85,6 +85,7 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
         solutions.sort_unstable_by_key(|solution| solution.1.score);
+        let competition_simulation_block = self.current_block.borrow().number;
 
         let events: Vec<_> = solutions
             .iter()
@@ -113,9 +114,11 @@ impl RunLoop {
             participants.insert(solution.submission_address); // add winner as participant
 
             let mut prices = BTreeMap::new();
-            let block_deadline = self.current_block.borrow().number
+            let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
+            let call_data = solution.calldata.internalized.clone();
+            let uninternalized_call_data = solution.calldata.uninternalized.clone();
             // Save order executions for all orders in the solution. Surplus fees for
             // partial limit orders will be saved after settling the order
             // onchain.
@@ -175,6 +178,9 @@ impl RunLoop {
                 prices,
                 block_deadline,
                 order_executions,
+                competition_simulation_block,
+                call_data,
+                uninternalized_call_data,
             };
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {

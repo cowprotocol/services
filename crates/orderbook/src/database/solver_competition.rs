@@ -64,6 +64,11 @@ impl SolverCompetitionStoring for Postgres {
                     .block_deadline
                     .try_into()
                     .context("convert block deadline")?,
+                simulation_block: request
+                    .competition
+                    .competition_simulation_block
+                    .try_into()
+                    .context("convert simulation block")?,
             },
         )
         .await
