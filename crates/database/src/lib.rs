@@ -1,6 +1,3 @@
-// https://github.com/rust-lang/rust-clippy/issues/9782
-#![allow(clippy::needless_borrow)]
-
 pub mod app_data;
 pub mod auction;
 pub mod auction_participants;

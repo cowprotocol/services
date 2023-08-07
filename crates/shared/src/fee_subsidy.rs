@@ -26,7 +26,6 @@
 //! `Box<dyn Fn(f64) -> f64>` to allow for arbitrary subsidy functions.
 
 pub mod config;
-pub mod cow_token;
 
 use {
     anyhow::Result,
