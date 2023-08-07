@@ -59,9 +59,9 @@ INSERT INTO order_events (
 VALUES ($1, $2, $3)
 "#;
     sqlx::query(QUERY)
-        .bind(&event.order_uid)
-        .bind(&event.timestamp)
-        .bind(&event.label)
+        .bind(event.order_uid)
+        .bind(event.timestamp)
+        .bind(event.label)
         .execute(ex)
         .await
         .map(|_| ())
