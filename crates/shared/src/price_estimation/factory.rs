@@ -246,7 +246,6 @@ impl<'a> PriceEstimatorFactory<'a> {
     fn get_estimator(&mut self, source: &PriceEstimatorSource) -> Result<&EstimatorEntry> {
         let name = source.name();
 
-        #[allow(clippy::map_entry)]
         if !self.estimators.contains_key(&name) {
             let estimator = match source {
                 PriceEstimatorSource::Builtin(builtin) => self.create_estimator(*builtin)?,

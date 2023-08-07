@@ -40,7 +40,6 @@ impl Inputs {
 mod tests {
     use super::*;
 
-    #[allow(clippy::redundant_clone)]
     #[test]
     fn compute_objective_value() {
         // Surplus1 is 1.003 ETH

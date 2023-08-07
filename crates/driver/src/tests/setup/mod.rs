@@ -741,7 +741,7 @@ impl SolveOk<'_> {
     pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 3);
+        assert_eq!(result.as_object().unwrap().len(), 4);
         assert!(result.get("score").is_some());
         let score = result.get("score").unwrap().as_str().unwrap();
         let score = eth::U256::from_dec_str(score).unwrap();
@@ -777,7 +777,7 @@ impl SolveOk<'_> {
             .collect_vec();
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 3);
+        assert_eq!(result.as_object().unwrap().len(), 4);
         assert!(result.get("orders").is_some());
         let order_uids = result
             .get("orders")

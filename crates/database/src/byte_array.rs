@@ -63,7 +63,7 @@ impl<const N: usize> Decode<'_, Postgres> for ByteArray<N> {
 
 impl<const N: usize> Encode<'_, Postgres> for ByteArray<N> {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
-        <&[u8] as Encode<Postgres>>::encode(&self.0, buf)
+        self.0.encode(buf)
     }
 }
 
@@ -88,7 +88,7 @@ mod tests {
 
         let data: ByteArray<3> = ByteArray([1, 2, 3]);
         sqlx::query(&format!("INSERT INTO {TABLE} (bytes) VALUES ($1);"))
-            .bind(&data)
+            .bind(data)
             .execute(&db)
             .await
             .unwrap();

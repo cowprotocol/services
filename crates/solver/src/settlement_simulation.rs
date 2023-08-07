@@ -55,7 +55,6 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     Ok(results)
 }
 
-#[allow(clippy::needless_collect)]
 pub async fn simulate_and_error_with_tenderly_link(
     settlements: impl Iterator<Item = (Account, EncodedSettlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
