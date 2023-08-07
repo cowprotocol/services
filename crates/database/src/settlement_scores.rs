@@ -12,16 +12,18 @@ pub struct Score {
     pub winning_score: BigDecimal,
     pub reference_score: BigDecimal,
     pub block_deadline: i64,
+    pub simulation_block: i64,
 }
 
 pub async fn insert(ex: &mut PgTransaction<'_>, score: Score) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"INSERT INTO settlement_scores (auction_id, winner, winning_score, reference_score, block_deadline) VALUES ($1, $2, $3, $4, $5);"#;
+    const QUERY: &str = r#"INSERT INTO settlement_scores (auction_id, winner, winning_score, reference_score, block_deadline, simulation_block) VALUES ($1, $2, $3, $4, $5, $6);"#;
     sqlx::query(QUERY)
         .bind(score.auction_id)
         .bind(score.winner)
         .bind(score.winning_score)
         .bind(score.reference_score)
         .bind(score.block_deadline)
+        .bind(score.simulation_block)
         .execute(ex.deref_mut())
         .await?;
     Ok(())
@@ -55,6 +57,7 @@ mod tests {
             winning_score: 10.into(),
             reference_score: 9.into(),
             block_deadline: 1000,
+            simulation_block: 2000,
         };
         insert(&mut db, input.clone()).await.unwrap();
 

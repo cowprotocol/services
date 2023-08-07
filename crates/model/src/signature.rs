@@ -141,7 +141,6 @@ impl Signature {
         })
     }
 
-    #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),
@@ -352,7 +351,7 @@ impl Serialize for EcdsaSignature {
         let mut bytes = [0u8; 2 + 65 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice(&self.to_bytes(), &mut bytes[2..]).unwrap();
+        hex::encode_to_slice(self.to_bytes(), &mut bytes[2..]).unwrap();
         // Hex encoding is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(str)

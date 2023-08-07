@@ -109,7 +109,7 @@ pub async fn insert_onchain_order(
     "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
-        .bind(&event.sender)
+        .bind(event.sender)
         .bind(&event.placement_error)
         .bind(index.block_number)
         .bind(index.log_index)

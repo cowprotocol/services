@@ -39,6 +39,7 @@ pub struct Cip20Data {
     pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub score: database::settlement_scores::Score,
     pub trades: Vec<database::orders::OrderExecution>,
+    pub call_data: database::settlement_call_data::SettlementCallData,
     // TODO add this when we eventually store the competition data
     // pub competition: serde_json::Value,
 }
@@ -83,6 +84,10 @@ WHERE at.auction_id = $1
         .try_collect()
         .await
         .ok()?;
+    let call_data = database::settlement_call_data::fetch(&mut db, auction_id)
+        .await
+        .unwrap()?;
+
     // TODO add this when we eventually store the competition data
     // let competition = database::solver_competition::load_by_id(&mut db,
     // auction_id)     .await
@@ -96,6 +101,7 @@ WHERE at.auction_id = $1
         prices,
         score,
         trades,
+        call_data,
         // competition,
     })
 }

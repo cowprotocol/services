@@ -265,7 +265,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::excessive_precision)]
     fn deserialize_quote() {
         assert_eq!(
             serde_json::from_value::<Quote>(json!({
@@ -328,7 +327,7 @@ mod tests {
                 return_amount_considering_fees: 15_517_420_194_930_649_326_u128.into(),
                 token_in: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 token_out: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
-                market_sp: 0.0644318002071386807508916699095248,
+                market_sp: 0.06443180020713868,
             },
         );
     }
