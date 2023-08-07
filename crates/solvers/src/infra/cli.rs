@@ -10,7 +10,11 @@ use {
 #[command(version)]
 pub struct Args {
     /// The log filter.
-    #[arg(long, env, default_value = "debug")]
+    #[arg(
+        long,
+        env,
+        default_value = "warn,solvers=debug,shared=debug,model=debug,solver=debug"
+    )]
     pub log: String,
 
     /// The socket address to bind to.
@@ -26,34 +30,34 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 #[clap(rename_all = "lowercase")]
 pub enum Command {
-    /// Baseline solver.
+    /// solve individual orders exclusively via provided onchain liquidity
     Baseline {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// Naive solver.
+    /// optimistically batch similar orders and get difference from AMMs
     Naive,
-    /// Wrapper for solvers implementing the legacy HTTP interface.
+    /// forward auction to solver implementing the legacy HTTP interface
     Legacy {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// Balancer SOR solver.
+    /// solve individual orders using Balancer API
     Balancer {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// 0x solver.
+    /// solve individual orders using 0x API
     ZeroEx {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// 1inch solver.
+    /// solve individual orders using 1Inch API
     OneInch {
         #[clap(long, env)]
         config: PathBuf,
     },
-    // ParaSwap solver.
+    /// solve individual orders using Paraswap API
     ParaSwap {
         #[clap(long, env)]
         config: PathBuf,

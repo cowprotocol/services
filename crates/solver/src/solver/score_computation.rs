@@ -51,7 +51,16 @@ impl ScoreCalculator {
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
-        let score = success_probability * (surplus + fees - gas_amount * gas_price);
+        let obj = surplus + fees - gas_amount * gas_price;
+        let cap = 10000000000000000.0;
+        let score = if success_probability * obj <= cap && (1.0 - success_probability) * obj <= cap
+        {
+            success_probability * obj
+        } else if success_probability * obj > cap && success_probability >= 0.5 {
+            obj - cap * (1.0 - success_probability) / success_probability
+        } else {
+            cap * success_probability / (1.0 - success_probability)
+        };
         tracing::trace!(
             ?surplus,
             ?fees,
@@ -181,6 +190,7 @@ mod tests {
     fn compute_score_test() {
         // tx hash 0x201c948ad94d7f93ad2d3c13fa4b6bbd4270533fbfedcb8be60e68c8e709d2b6
         // objective_score = 251547381429604400
+        // success_probability ends up being 0.9202405649482063
         let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
         let inputs = objective_value::Inputs {
             surplus_given: u256_to_big_rational(&U256::from(237248548166961920u128)),
@@ -195,6 +205,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        assert_eq!(score, 231484104402245472u128.into());
+        assert_eq!(score, 250680657687276800u128.into());
     }
 }

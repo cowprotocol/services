@@ -177,9 +177,14 @@ impl Order {
             // Note that we intentionally do not use [`eth::U256::max_value()`]
             // as an order with this would cause overflows with the smart
             // contract, so buy orders requiring excessively large sell amounts
-            // would not work anyway.
+            // would not work anyway. Instead we use `2 ** 144`, the rationale
+            // being that Uniswap V2 pool reserves are 112-bit integers. Noting
+            // that `256 - 112 = 144`, this means that we can us to trade a full
+            // `type(uint112).max` without overflowing a `uint256` on the smart
+            // contract level. Requiring to trade more than `type(uint112).max`
+            // is unlikely and would not work with Uniswap V2 anyway.
             order::Side::Buy => eth::Asset {
-                amount: (eth::U256::one() << 192).into(),
+                amount: (eth::U256::one() << 144).into(),
                 token: self.tokens.sell,
             },
         }
