@@ -131,14 +131,14 @@ impl Solver {
             weth,
         ))
         .unwrap();
-        observe::solver_request(self.name(), &self.config.endpoint, &body);
+        observe::solver_request(&self.config.endpoint, &body);
         let req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
             .timeout(timeout.duration().to_std().unwrap());
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        observe::solver_response(self.name(), &self.config.endpoint, res.as_deref());
+        observe::solver_response(&self.config.endpoint, res.as_deref());
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
@@ -148,7 +148,7 @@ impl Solver {
             return Err(Error::RepeatedSolutionIds);
         }
 
-        observe::solutions(self.name(), &solutions);
+        observe::solutions(&solutions);
         Ok(solutions)
     }
 }
