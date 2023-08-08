@@ -23,6 +23,7 @@ use {
         infra::solver,
         util::http,
     },
+    std::collections::HashMap,
     url::Url,
 };
 
@@ -47,7 +48,11 @@ pub fn fetching_liquidity() {
 
 /// Observe the fetched liquidity.
 pub fn fetched_liquidity(liquidity: &[Liquidity]) {
-    tracing::info!(?liquidity, "fetched liquidity");
+    let mut grouped: HashMap<&'static str, usize> = Default::default();
+    for liquidity in liquidity {
+        *grouped.entry((&liquidity.kind).into()).or_default() += 1;
+    }
+    tracing::info!(liqudiity = ?grouped, "fetched liquidity sources");
 }
 
 /// Observe that fetching liquidity failed.
