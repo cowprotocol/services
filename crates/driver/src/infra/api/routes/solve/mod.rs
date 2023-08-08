@@ -18,6 +18,7 @@ async fn route(
     state: axum::extract::State<State>,
     auction: axum::Json<dto::Auction>,
 ) -> Result<axum::Json<dto::Solution>, (hyper::StatusCode, axum::Json<Error>)> {
+    let auction_id = auction.id();
     let handle_request = async {
         let auction = auction.0.into_domain(state.eth()).await.tap_err(|err| {
             observe::invalid_dto(err, "auction");
@@ -25,10 +26,11 @@ async fn route(
         observe::auction(&auction);
         let competition = state.competition();
         let result = competition.solve(&auction).await;
-        observe::solved(state.solver().name(), &auction, &result);
+        observe::solved(state.solver().name(), &result);
         Ok(axum::Json(dto::Solution::new(result?, &competition.solver)))
     };
 
     handle_request
-            .instrument(tracing::info_span!("/solve", solver = %state.solver().name())).await
+        .instrument(tracing::info_span!("/solve", solver = %state.solver().name(), auction_id))
+        .await
 }

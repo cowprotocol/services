@@ -151,9 +151,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
-                        observe::scoring_failed(self.solver.name(), settlement.auction_id, err)
-                    })
+                    .tap_err(|err| observe::scoring_failed(self.solver.name(), err))
                     .ok()
                     .map(|score| (score, settlement))
             })

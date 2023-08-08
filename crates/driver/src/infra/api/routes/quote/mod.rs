@@ -6,8 +6,7 @@ use crate::infra::{
 mod dto;
 
 pub use dto::OrderError;
-use tap::TapFallible;
-use tracing::Instrument;
+use {tap::TapFallible, tracing::Instrument};
 
 pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/quote", axum::routing::post(route))
@@ -30,5 +29,6 @@ async fn route(
     };
 
     handle_request
-            .instrument(tracing::info_span!("/quote", solver = %state.solver().name())).await
+        .instrument(tracing::info_span!("/quote", solver = %state.solver().name()))
+        .await
 }
