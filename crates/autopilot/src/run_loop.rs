@@ -110,18 +110,15 @@ impl RunLoop {
             let auction_id = id;
             let winner = solution.submission_address;
             let winning_score = solution.score;
-            let reference_score = match solutions.len() > 1 {
-                true => solutions
-                    .get(solutions.len() - 2)
-                    .map(|(_, response)| response.score)
-                    .unwrap_or_default(),
-                false => 0.into(),
-            };
+            let reference_score = solutions
+                .iter()
+                .nth_back(1)
+                .map(|(_, response)| response.score)
+                .unwrap_or_default();
             let participants = solutions
                 .iter()
                 .map(|(_, response)| response.submission_address)
                 .collect::<HashSet<_>>();
-
             let mut prices = BTreeMap::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
