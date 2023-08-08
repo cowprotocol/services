@@ -13,13 +13,7 @@ use {
         fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
-    contracts::{
-        BalancerV2Vault,
-        CowProtocolToken,
-        CowProtocolVirtualToken,
-        IUniswapV3Factory,
-        WETH9,
-    },
+    contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
@@ -34,12 +28,7 @@ use {
         },
         baseline_solver::BaseTokens,
         current_block::block_number_to_block_number_hash,
-        fee_subsidy::{
-            config::FeeSubsidyConfiguration,
-            cow_token::CowSubsidy,
-            FeeSubsidies,
-            FeeSubsidizing,
-        },
+        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -436,47 +425,19 @@ pub async fn main(args: arguments::Arguments) {
         .await
         .expect("failed to create gas price estimator"),
     ));
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_tokens = match (cow_token, cow_vtoken) {
-        (None, None) => None,
-        (Some(token), Some(vtoken)) => Some((token, vtoken)),
-        _ => panic!("should either have both cow token contracts or none"),
-    };
-    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-        tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(
-            token,
-            vtoken,
-            args.order_quoting.cow_fee_factors.unwrap_or_default(),
-        )
-    });
     let liquidity_order_owners: HashSet<_> = args
         .order_quoting
         .liquidity_order_owners
         .iter()
         .copied()
         .collect();
-    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
         liquidity_order_owners: liquidity_order_owners.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
-    let fee_subsidy = match cow_subsidy {
-        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-            fee_subsidy_config,
-            Arc::new(cow_subsidy),
-        ])),
-        None => fee_subsidy_config,
-    };
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
