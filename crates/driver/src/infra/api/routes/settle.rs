@@ -30,7 +30,7 @@ async fn route(
     };
 
     handle_request
-        .instrument(tracing::info_span!("/solve", solver = %state.solver().name(), auction_id))
+        .instrument(tracing::info_span!("/settle", solver = %state.solver().name(), auction_id))
         .await
 }
 
