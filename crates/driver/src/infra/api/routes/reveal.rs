@@ -22,8 +22,8 @@ async fn route(
     observe::revealing(state.solver().name(), competition.auction_id());
     let result = competition.reveal().await;
     observe::revealed(state.solver().name(), competition.auction_id(), &result);
-    let calldata = result?;
-    Ok(axum::Json(Solution::new(calldata)))
+    let result = result?;
+    Ok(axum::Json(Solution::new(result)))
 }
 
 impl Solution {

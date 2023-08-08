@@ -180,8 +180,9 @@ impl Competition {
             .settlement
             .lock()
             .unwrap()
-            .take()
-            .ok_or(Error::SolutionNotFound)?;
+            .as_ref()
+            .cloned()
+            .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
             orders: settlement.orders(),
             internalized_calldata: settlement

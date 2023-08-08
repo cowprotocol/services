@@ -108,7 +108,7 @@ impl RunLoop {
             let revealed = match self.reveal(id, &self.drivers[*index]).await {
                 Ok(result) => result,
                 Err(err) => {
-                    tracing::error!(?err, "solver {index} failed to settle");
+                    tracing::error!(?err, "solver {index} failed to reveal");
                     return;
                 }
             };
@@ -119,7 +119,6 @@ impl RunLoop {
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
             self.database.store_order_events(&events).await;
-
             let auction_id = id;
             let winner = solution.submission_address;
             let winning_score = solution.score;
