@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
 clap = { workspace = true }

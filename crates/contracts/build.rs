@@ -25,7 +25,16 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
-        builder.contract_mod_override("cowswap_eth_flow")
+        builder
+            .contract_mod_override("cowswap_eth_flow")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
+                    // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16169866)),
+                },
+            )
     });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
@@ -258,7 +267,18 @@ fn main() {
     });
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
-    generate_contract("GPv2AllowListAuthentication");
+    generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
+        builder
+            .contract_mod_override("gpv2_allow_list_authentication")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12593263)),
+                },
+            )
+    });
     generate_contract_with_config("GPv2Settlement", |builder| {
         builder
             .contract_mod_override("gpv2_settlement")

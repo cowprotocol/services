@@ -3,4 +3,4 @@
 
 #[macro_use]
 pub mod setup;
-pub mod local_node;
+pub mod nodes;

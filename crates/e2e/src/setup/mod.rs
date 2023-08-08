@@ -5,9 +5,9 @@ pub mod onchain_components;
 mod services;
 
 use {
-    crate::local_node::{Resetter, NODE_HOST},
+    crate::nodes::{forked_node::Forker, local_node::Resetter, TestNode, NODE_HOST},
     anyhow::{anyhow, Result},
-    ethcontract::futures::FutureExt,
+    ethcontract::{futures::FutureExt, H160},
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
@@ -57,6 +57,18 @@ where
 
 static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
+const DEFAULT_FILTERS: [&str; 9] = [
+    "warn",
+    "autopilot=debug",
+    "driver=debug",
+    "e2e=debug",
+    "orderbook=debug",
+    "shared=debug",
+    "solver=debug",
+    "solvers=debug",
+    "orderbook::api::request_summary=off",
+];
+
 /// *Testing* function that takes a closure and runs it on a local testing node
 /// and database. Before each test, it creates a snapshot of the current state
 /// of the chain. The saved state is restored at the end of the test.
@@ -70,33 +82,69 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run_test_with_filters(f, vec![]).await
+    let filters = DEFAULT_FILTERS
+        .map(|s| s.to_string())
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    run(f, filters, None, None).await
 }
 
-pub async fn run_test_with_filters<F, Fut>(f: F, extra_filters: Vec<String>)
+pub async fn run_test_with_extra_filters<F, Fut>(f: F, extra_filters: Vec<String>)
 where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let filters = [
-        "warn",
-        "autopilot=debug",
-        "driver=debug",
-        "e2e=debug",
-        "orderbook=debug",
-        "shared=debug",
-        "solver=debug",
-        "solvers=debug",
-        "orderbook::api::request_summary=off",
-    ]
-    .map(|s| s.to_string())
-    .into_iter()
-    .chain(extra_filters.into_iter())
-    .collect::<Vec<_>>()
-    .as_slice()
-    .join(",");
+    let filters = DEFAULT_FILTERS
+        .map(|s| s.to_string())
+        .into_iter()
+        .chain(extra_filters.into_iter())
+        .collect::<Vec<_>>();
 
-    shared::tracing::initialize_reentrant(&filters);
+    run(f, filters, None, None).await
+}
+
+pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let filters = DEFAULT_FILTERS
+        .map(|s| s.to_string())
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    run(f, filters, Some(solver_address), Some(fork_url)).await
+}
+
+pub async fn run_forked_test_with_extra_filters<F, Fut>(
+    f: F,
+    solver_address: H160,
+    fork_url: String,
+    extra_filters: Vec<String>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let filters = DEFAULT_FILTERS
+        .map(|s| s.to_string())
+        .into_iter()
+        .chain(extra_filters.into_iter())
+        .collect::<Vec<_>>();
+
+    run(f, filters, Some(solver_address), Some(fork_url)).await
+}
+
+async fn run<F, Fut>(
+    f: F,
+    filters: Vec<String>,
+    solver_address: Option<H160>,
+    fork_url: Option<String>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    shared::tracing::initialize_reentrant(&filters.join(","));
     shared::exit_process_on_panic::set_panic_hook();
 
     // The mutex guarantees that no more than a test at a time is running on
@@ -108,7 +156,14 @@ where
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-    let resetter = Resetter::new(&web3).await;
+
+    let test_node: Box<dyn TestNode> =
+        if let (Some(fork_url), Some(solver_address)) = (fork_url, solver_address) {
+            Box::new(Forker::new(&web3, solver_address, fork_url).await)
+        } else {
+            Box::new(Resetter::new(&web3).await)
+        };
+
     services::clear_database().await;
 
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
@@ -117,7 +172,7 @@ where
     // is supposed to be used in a test environment.
     let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
 
-    resetter.reset().await;
+    test_node.reset().await;
     services::clear_database().await;
 
     if let Err(err) = result {

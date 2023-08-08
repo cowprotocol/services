@@ -1,5 +1,5 @@
 use {
-    e2e::{local_node::TestNodeApi, setup::*},
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
     e2e::tx,
     e2e::tx_value,
     anyhow::bail,

@@ -69,7 +69,7 @@ The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
 
 ### E2E Tests
 
-`cargo test -p e2e`.
+`cargo test -p e2e -- --ignored`.
 
 **Note:** Requires postgres database and local test network with smart contracts deployed (see below).
 

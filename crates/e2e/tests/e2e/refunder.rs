@@ -1,6 +1,6 @@
 use {
     e2e::{
-        local_node::TestNodeApi,
+        nodes::local_node::TestNodeApi,
         setup::*,
     },
     crate::eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
