@@ -287,13 +287,8 @@ pub fn mempool_executed(
 }
 
 /// Observe that an invalid DTO was received.
-pub fn invalid_dto(
-    solver: &solver::Name,
-    err: &impl std::error::Error,
-    endpoint: &str,
-    what: &str,
-) {
-    tracing::warn!(%solver, ?err, "invalid {what} dto received in {endpoint}");
+pub fn invalid_dto(solver: &solver::Name, err: &impl std::error::Error, endpoint: &str, dto: &str) {
+    tracing::warn!(%solver, ?err, %endpoint, ?dto, "received invalid dto");
 }
 
 /// Observe that the quoting process is about to start.
