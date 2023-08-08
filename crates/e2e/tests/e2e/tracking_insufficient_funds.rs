@@ -1,8 +1,6 @@
 use {
-    e2e::setup::*,
-    e2e::tx,
-    e2e::tx_value,
     database::order_events::OrderEventLabel,
+    e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},

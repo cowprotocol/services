@@ -1,7 +1,6 @@
 use {
-    e2e::setup::*,
-    e2e::tx,
     database::order_events::OrderEventLabel,
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         app_data::AppDataHash,

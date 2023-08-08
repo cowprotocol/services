@@ -1,7 +1,5 @@
 use {
-    e2e::setup::*,
-    e2e::tx,
-    e2e::tx_value,
+    e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},

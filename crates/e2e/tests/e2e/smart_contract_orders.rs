@@ -1,7 +1,6 @@
 use {
-    e2e::setup::*,
-    e2e::tx_safe,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
+    e2e::{setup::*, tx_safe},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
         app_data::AppDataHash,
