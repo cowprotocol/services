@@ -344,7 +344,6 @@ pub async fn run(args: Arguments) {
         solvers,
         base_tokens.clone(),
         native_token.clone(),
-        args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         args.balancer_sor_url,
         &settlement_contract,
