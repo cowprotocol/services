@@ -611,6 +611,27 @@ impl Test {
         Solve {
             status,
             body,
+        }
+    }
+
+    /// Call the /reveal endpoint.
+    pub async fn reveal(&self) -> Reveal {
+        let res = self
+            .client
+            .post(format!(
+                "http://{}/{}/reveal",
+                self.driver.addr,
+                solver::NAME
+            ))
+            .send()
+            .await
+            .unwrap();
+        let status = res.status();
+        let body = res.text().await.unwrap();
+        tracing::debug!(?status, ?body, "got a response from /reveal");
+        Reveal {
+            status,
+            body,
             fulfillments: &self.fulfillments,
             blockchain: &self.blockchain,
         }
@@ -702,21 +723,17 @@ impl Test {
 }
 
 /// A /solve response.
-pub struct Solve<'a> {
+pub struct Solve {
     status: StatusCode,
     body: String,
-    fulfillments: &'a [Fulfillment],
-    blockchain: &'a Blockchain,
 }
 
-impl<'a> Solve<'a> {
+impl Solve {
     /// Expect the /solve endpoint to have returned a 200 OK response.
-    pub fn ok(self) -> SolveOk<'a> {
+    pub fn ok(self) -> SolveOk {
         assert_eq!(self.status, hyper::StatusCode::OK);
         SolveOk {
             body: self.body,
-            fulfillments: self.fulfillments,
-            blockchain: self.blockchain,
         }
     }
 
@@ -727,13 +744,11 @@ impl<'a> Solve<'a> {
     }
 }
 
-pub struct SolveOk<'a> {
+pub struct SolveOk {
     body: String,
-    fulfillments: &'a [Fulfillment],
-    blockchain: &'a Blockchain,
 }
 
-impl SolveOk<'_> {
+impl SolveOk {
     /// Ensure that the score in the response is within a certain range. The
     /// reason why this is a range is because small timing differences in
     /// the test can lead to the settlement using slightly different amounts
@@ -754,7 +769,52 @@ impl SolveOk<'_> {
     pub fn default_score(self) -> Self {
         self.score(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
     }
+}
 
+pub struct SolveErr {
+    body: String,
+}
+
+impl SolveErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
+    }
+}
+
+/// A /reveal response.
+pub struct Reveal<'a> {
+    status: StatusCode,
+    body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
+}
+
+impl<'a> Reveal<'a> {
+    /// Expect the /reveal endpoint to have returned a 200 OK response.
+    pub fn ok(self) -> RevealOk<'a> {
+        assert_eq!(self.status, hyper::StatusCode::OK);
+        RevealOk {
+            body: self.body,
+            fulfillments: self.fulfillments,
+            blockchain: self.blockchain,
+        }
+    }
+}
+
+pub struct RevealOk<'a> {
+    body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
+}
+
+impl RevealOk<'_> {
     /// Check that the solution contains the expected orders.
     pub fn orders(self, order_names: &[&str]) -> Self {
         let expected_order_uids = order_names
@@ -790,23 +850,6 @@ impl SolveOk<'_> {
             .collect_vec();
         assert_eq!(order_uids, expected_order_uids);
         self
-    }
-}
-
-pub struct SolveErr {
-    body: String,
-}
-
-impl SolveErr {
-    /// Check the kind field in the error response.
-    pub fn kind(self, expected_kind: &str) {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("kind").is_some());
-        assert!(result.get("description").is_some());
-        let kind = result.get("kind").unwrap().as_str().unwrap();
-        assert_eq!(kind, expected_kind);
     }
 }
 
