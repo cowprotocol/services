@@ -608,10 +608,7 @@ impl Test {
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /solve");
-        Solve {
-            status,
-            body,
-        }
+        Solve { status, body }
     }
 
     /// Call the /reveal endpoint.
@@ -732,9 +729,7 @@ impl Solve {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk {
         assert_eq!(self.status, hyper::StatusCode::OK);
-        SolveOk {
-            body: self.body,
-        }
+        SolveOk { body: self.body }
     }
 
     /// Expect the /solve endpoint to return a 400 BAD REQUEST response.
