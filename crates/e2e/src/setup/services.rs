@@ -143,7 +143,10 @@ impl<'a> Services<'a> {
     pub fn start_old_driver_custom_solver(&self, solver_account: H160, extra_args: Vec<String>) {
         let args = [
             "solver".to_string(),
-            "--solvers=CowDexAg".to_string(),
+            format!(
+                "--external-solvers=Custom|http://localhost:8000|{:#x}|false",
+                solver_account
+            ),
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
