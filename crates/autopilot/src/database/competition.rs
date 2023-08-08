@@ -9,7 +9,7 @@ use {
         settlement_scores::Score,
     },
     derivative::Derivative,
-    model::order::OrderUid,
+    model::{order::OrderUid, solver_competition::SolverCompetitionDB},
     number_conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
@@ -52,6 +52,7 @@ pub struct Competition {
     /// Uninternalized winner settlement call data
     #[derivative(Debug(format_with = "shared::debug_bytes"))]
     pub uninternalized_call_data: Vec<u8>,
+    pub competition_table: SolverCompetitionDB,
 }
 
 impl super::Postgres {
@@ -61,7 +62,13 @@ impl super::Postgres {
             .with_label_values(&["save_competition"])
             .start_timer();
 
+        let json = &serde_json::to_value(&competition.competition_table)?;
+
         let mut ex = self.0.begin().await.context("begin")?;
+
+        database::solver_competition::save(&mut ex, competition.auction_id, json)
+            .await
+            .context("solver_competition::save")?;
 
         for order_execution in &competition.order_executions {
             let (solver_fee, surplus_fee) = match order_execution.executed_fee {
