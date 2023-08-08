@@ -196,14 +196,21 @@ impl RunLoop {
                             .iter()
                             .map(|o| Order {
                                 id: *o,
+                                // TODO: revisit once colocation is enabled (remove not populated
+                                // fields) Not all fields can be
+                                // populated in the colocated world
                                 ..Default::default()
                             })
                             .collect(),
                         call_data: response.calldata.internalized.clone(),
                         uninternalized_call_data: Some(response.calldata.uninternalized.clone()),
+                        // TODO: revisit once colocation is enabled (remove not populated fields)
+                        // Not all fields can be populated in the colocated world
                         ..Default::default()
                     })
                     .collect(),
+                // TODO: revisit once colocation is enabled (remove not populated fields)
+                // Not all fields can be populated in the colocated world
                 ..Default::default()
             };
             let competition = Competition {
