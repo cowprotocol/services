@@ -1,5 +1,3 @@
-use std::iter::empty;
-
 pub mod colocation;
 mod deploy;
 #[macro_use]
@@ -14,6 +12,7 @@ use {
     std::{
         future::Future,
         io::Write,
+        iter::empty,
         panic::{self, AssertUnwindSafe},
         sync::Mutex,
         time::Duration,
