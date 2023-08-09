@@ -1,6 +1,6 @@
 use {
     anyhow::{Context, Result},
-    aws_credential_types::{provider::SharedCredentialsProvider, Credentials},
+    aws_credential_types::{provider::SharedCredentialsProvider, Credentials as AwsCredentials},
     aws_sdk_s3::{primitives::ByteStream, Client},
     aws_types::region::Region,
     flate2::{bufread::GzEncoder, Compression},
@@ -10,14 +10,18 @@ use {
 
 #[derive(Default)]
 pub struct Config {
-    pub region: String,
     pub bucket: String,
-    pub access_key_id: String,
-    pub secret_access_key: String,
     /// Prepended to the auction id to form the final filename. Something like
     /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a
     /// folder.
     pub filename_prefix: String,
+}
+
+#[derive(Default)]
+pub struct Credentials {
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub region: String,
 }
 
 pub struct S3InstanceUploader {
@@ -27,19 +31,27 @@ pub struct S3InstanceUploader {
 }
 
 impl S3InstanceUploader {
-    pub fn new(config: Config) -> Self {
-        let aws_config = aws_types::sdk_config::Builder::default()
-            .region(Region::new(config.region))
-            .credentials_provider(SharedCredentialsProvider::new(Credentials::from_keys(
-                config.access_key_id,
-                config.secret_access_key,
-                None,
-            )))
-            .build();
+    pub async fn aws_credentials_from_cli_or_env(cli: Option<Credentials>) -> aws_types::SdkConfig {
+        match cli {
+            Some(args) => {
+                aws_types::sdk_config::Builder::default()
+                    .region(Region::new(args.region))
+                    .credentials_provider(SharedCredentialsProvider::new(
+                        AwsCredentials::from_keys(args.access_key_id, args.secret_access_key, None),
+                    ))
+                    .build()
+            }
+            // According to the AWS docs this is the recommended way to use the SDK. Unfortunately
+            // we don't have a way to detect errors when loading from the environment.
+            None => aws_config::load_from_env().await,
+        }
+    }
+
+    pub fn new(config: Config, credentials: aws_types::SdkConfig) -> Self {
         Self {
             bucket: config.bucket,
             filename_prefix: config.filename_prefix,
-            client: Client::new(&aws_config),
+            client: Client::new(&credentials),
         }
     }
 
@@ -83,13 +95,17 @@ impl S3InstanceUploader {
 mod tests {
     use {super::*, flate2::read::GzDecoder, serde_json::json};
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn print_filename() {
-        let uploader = S3InstanceUploader::new(Config {
-            filename_prefix: "test/".to_string(),
-            ..Default::default()
-        });
+    async fn print_filename() {
+        let credentials = S3InstanceUploader::aws_credentials_from_cli_or_env(None).await;
+        let uploader = S3InstanceUploader::new(
+            Config {
+                filename_prefix: "test/".to_string(),
+                ..Default::default()
+            },
+            credentials,
+        );
         let key = uploader.filename(11);
         println!("{key}");
     }
@@ -98,10 +114,7 @@ mod tests {
     #[ignore]
     async fn real_upload() {
         let config = Config {
-            region: "eu-central-1".to_string(),
             bucket: std::env::var("bucket").unwrap(),
-            access_key_id: std::env::var("access_key_id").unwrap(),
-            secret_access_key: std::env::var("secret_access_key").unwrap(),
             filename_prefix: "".to_string(),
         };
 
@@ -114,7 +127,8 @@ mod tests {
         }))
         .unwrap();
 
-        let uploader = S3InstanceUploader::new(config);
+        let credentials = S3InstanceUploader::aws_credentials_from_cli_or_env(None).await;
+        let uploader = S3InstanceUploader::new(config, credentials);
         uploader
             .upload(key.clone(), value.as_bytes())
             .await

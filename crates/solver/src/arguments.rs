@@ -1,7 +1,7 @@
 use {
     crate::{
         liquidity::slippage,
-        s3_instance_upload_arguments::S3UploadArguments,
+        s3_instance_upload_arguments::{S3CredentialArguments, S3UploadArguments},
         settlement_access_list::AccessListEstimatorType,
         solver::{
             score_computation,
@@ -317,6 +317,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub s3_upload: S3UploadArguments,
+
+    #[clap(flatten)]
+    pub s3_credentials: S3CredentialArguments,
 
     /// Additional time to wait for a transaction to appear onchain before
     /// considering the solution invalid and setting the reward to 0.
