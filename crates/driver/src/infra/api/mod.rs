@@ -6,7 +6,6 @@ use {
     },
     error::Error,
     futures::Future,
-    hyper::service::Service,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -75,19 +74,7 @@ impl Api {
             app = app.nest(&path, router);
         }
 
-        let make_svc = hyper::service::make_service_fn(move |_| {
-            let warp_svc = app.clone();
-            async move {
-                let svc = hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
-                    let mut warp_svc = warp_svc.clone();
-                    shared::tracing::REQUEST_ID.scope(Default::default(), async move {
-                        // Not sure why but we have to have this async block to avoid panics
-                        warp_svc.call(req).await
-                    })
-                });
-                Ok::<_, std::convert::Infallible>(svc)
-            }
-        });
+        let make_svc = shared::make_service_with_task_local_storage!(app);
 
         // Start the server.
         let server = axum::Server::bind(&self.addr).serve(make_svc);

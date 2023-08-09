@@ -21,7 +21,7 @@ async fn route(
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let id = order.log_id();
     if let Some(id) = &id {
-        shared::tracing::set_task_local_storage(id.clone());
+        shared::request_id::set_task_local_storage(id.clone());
     }
     let handle_request = async {
         let order = order.0.into_domain().tap_err(|err| {

@@ -240,7 +240,7 @@ pub fn finalize_router(
         } else {
             format!("{}", internal_request_id.fetch_add(1, Ordering::SeqCst))
         };
-        crate::tracing::set_task_local_storage(id.clone());
+        crate::request_id::set_task_local_storage(id.clone());
         tracing::info_span!("request", id)
     });
 

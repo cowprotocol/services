@@ -3,10 +3,9 @@ use {
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
     futures::{Future, FutureExt},
-    hyper::service::Service,
     model::DomainSeparator,
     shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating},
-    std::{convert::Infallible, net::SocketAddr, sync::Arc},
+    std::{net::SocketAddr, sync::Arc},
     tokio::{task, task::JoinHandle},
     warp::Filter,
 };
@@ -43,21 +42,9 @@ pub fn serve_api(
     .boxed();
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
-    let make_svc = hyper::service::make_service_fn(move |_| {
-        let warp_svc = warp_svc.clone();
-        async move {
-            let svc = hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
-                let mut warp_svc = warp_svc.clone();
-                shared::tracing::REQUEST_ID.scope(Default::default(), async move {
-                    // Not sure why but we have to have this async block to avoid panics
-                    warp_svc.call(req).await
-                })
-            });
-            Ok::<_, Infallible>(svc)
-        }
-    });
+    let warp_svc = shared::make_service_with_task_local_storage!(warp_svc);
     let server = hyper::Server::bind(&address)
-        .serve(make_svc)
+        .serve(warp_svc)
         .with_graceful_shutdown(shutdown_receiver)
         .map(|_| ());
     task::spawn(server)

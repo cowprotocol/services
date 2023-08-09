@@ -27,7 +27,9 @@ impl Api {
             )
             .with_state(Arc::new(self.solver));
 
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        let make_svc = shared::make_service_with_task_local_storage!(app);
+
+        let server = axum::Server::bind(&self.addr).serve(make_svc);
         if let Some(bind) = bind {
             let _ = bind.send(server.local_addr());
         }

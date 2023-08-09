@@ -54,22 +54,3 @@ fn tracing_panic_hook(panic: &PanicInfo) {
     let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
 }
-
-tokio::task_local! {
-    pub static REQUEST_ID: std::cell::RefCell<String>;
-}
-
-pub fn get_task_local_storage() -> Option<String> {
-    let mut id = None;
-    let _ = crate::tracing::REQUEST_ID.try_with(|cell| {
-        id = Some(cell.borrow().clone());
-    });
-    id
-}
-
-/// Panics if called in a task that was not created with `REQUEST_ID.sync()`.
-pub fn set_task_local_storage(value: String) {
-    crate::tracing::REQUEST_ID.with(|storage| {
-        *storage.borrow_mut() = value;
-    });
-}
