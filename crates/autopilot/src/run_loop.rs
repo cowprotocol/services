@@ -104,11 +104,11 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!(url = %self.drivers[*index].url, "revealing with solver");
+            tracing::info!(url = %self.drivers[*index].url, "revealing with driver");
             let revealed = match self.reveal(id, &self.drivers[*index]).await {
                 Ok(result) => result,
                 Err(err) => {
-                    tracing::error!(?err, "solver {index} failed to reveal");
+                    tracing::warn!(?err, "driver {} failed to reveal", self.drivers[*index].url);
                     return;
                 }
             };
@@ -200,40 +200,32 @@ impl RunLoop {
                 solutions: solutions
                     .iter()
                     .map(|(index, response)| {
-                        let (orders, call_data, uninternalized_call_data) =
-                            if solutions.len() - index == 1 {
-                                // populate only for winning solution
-                                (
-                                    revealed
-                                        .orders
-                                        .iter()
-                                        .map(|o| Order {
-                                            id: *o,
-                                            // TODO: revisit once colocation is enabled (remove not
-                                            // populated
-                                            // fields) Not all fields can be
-                                            // populated in the colocated world
-                                            ..Default::default()
-                                        })
-                                        .collect(),
-                                    revealed.calldata.internalized.clone(),
-                                    Some(revealed.calldata.uninternalized.clone()),
-                                )
-                            } else {
-                                (vec![], vec![], None)
-                            };
-                        SolverSettlement {
+                        let is_winner = solutions.len() - index == 1;
+                        let mut settlement = SolverSettlement {
                             solver_address: response.submission_address,
                             score: Some(Score::Solver(response.score)),
                             ranking: Some(solutions.len() - index),
-                            orders,
-                            call_data,
-                            uninternalized_call_data,
                             // TODO: revisit once colocation is enabled (remove not populated
-                            // fields) Not all fields can be populated
-                            // in the colocated world
+                            // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
+                        };
+                        if is_winner {
+                            settlement.orders = revealed
+                                .orders
+                                .iter()
+                                .map(|o| Order {
+                                    id: *o,
+                                    // TODO: revisit once colocation is enabled (remove not
+                                    // populated fields) Not all
+                                    // fields can be populated in the colocated world
+                                    ..Default::default()
+                                })
+                                .collect();
+                            settlement.call_data = revealed.calldata.internalized.clone();
+                            settlement.uninternalized_call_data =
+                                Some(revealed.calldata.uninternalized.clone());
                         }
+                        settlement
                     })
                     .collect(),
                 // TODO: revisit once colocation is enabled (remove not populated fields)
