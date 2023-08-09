@@ -250,6 +250,7 @@ pub struct Solved {
 pub struct Revealed {
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
+    /// The internalized calldata is the final calldata that appears onchain.
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
