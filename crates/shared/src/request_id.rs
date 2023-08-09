@@ -20,7 +20,7 @@ tokio::task_local! {
     pub static REQUEST_ID: std::cell::RefCell<String>;
 }
 
-/// Reads the `request_id` from this tasks storage.
+/// Tries to read the `request_id` from this task's storage.
 /// Returns `None` if task local storage was not initialized or is empty.
 pub fn get_task_local_storage() -> Option<String> {
     let mut id = None;
@@ -30,10 +30,10 @@ pub fn get_task_local_storage() -> Option<String> {
     id
 }
 
-/// Writes the `request_id` to the task local storage.
-/// Panics if called in a task that was not created with `REQUEST_ID.sync()`.
+/// Tries to write the `request_id` to the task local storage.
+/// Fails if this task has no task local storage.
 pub fn set_task_local_storage(request_id: String) {
-    REQUEST_ID.with(|storage| {
+    let _ = REQUEST_ID.try_with(|storage| {
         *storage.borrow_mut() = request_id;
     });
 }
