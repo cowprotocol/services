@@ -46,7 +46,6 @@ pub mod quote {
 
 pub mod solve {
     use {
-        super::settle::Calldata,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
@@ -142,6 +141,29 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+    }
+}
+
+pub mod reveal {
+    use {
+        model::{bytes_hex, order::OrderUid},
+        serde::Deserialize,
+        serde_with::serde_as,
+    };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Calldata {
+        #[serde(with = "bytes_hex")]
+        pub internalized: Vec<u8>,
+        #[serde(with = "bytes_hex")]
+        pub uninternalized: Vec<u8>,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Response {
         pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
     }

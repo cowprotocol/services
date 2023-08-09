@@ -170,27 +170,33 @@ impl Competition {
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let orders = settlement.orders();
-        let internalized_calldata = settlement
-            .calldata(
-                self.eth.contracts().settlement(),
-                settlement::Internalization::Enable,
-            )
-            .into();
-        let uninternalized_calldata = settlement
-            .calldata(
-                self.eth.contracts().settlement(),
-                settlement::Internalization::Disable,
-            )
-            .into();
-
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Solved {
-            score,
-            orders,
-            internalized_calldata,
-            uninternalized_calldata,
+        Ok(Solved { score })
+    }
+
+    pub async fn reveal(&self) -> Result<Revealed, Error> {
+        let settlement = self
+            .settlement
+            .lock()
+            .unwrap()
+            .as_ref()
+            .cloned()
+            .ok_or(Error::SolutionNotAvailable)?;
+        Ok(Revealed {
+            orders: settlement.orders(),
+            internalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )
+                .into(),
+            uninternalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Disable,
+                )
+                .into(),
         })
     }
 
@@ -230,18 +236,21 @@ impl Competition {
     }
 }
 
-/// Solution information revealed to the protocol by the driver before the
-/// settlement happens.
-/// Initially the calldata was planned to be revealed to the protocol after
-/// the \settle is called, but this would require protocol to wait for the
-/// settlement to be settled onchain before saving the solver competition data.
-/// This is unacceptable because saving the solver competition data could fail
-/// and the protocol would have inconsistent db state.
+/// Solution information sent to the protocol by the driver before the solution
+/// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
+}
+
+/// Winning solution information revealed to the protocol by the driver before
+/// the onchain settlement happens. Calldata is first time revealed at this
+/// point.
+#[derive(Debug)]
+pub struct Revealed {
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
+    /// The internalized calldata is the final calldata that appears onchain.
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced

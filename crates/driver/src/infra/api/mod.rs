@@ -54,6 +54,7 @@ impl Api {
             let router = routes::info(router);
             let router = routes::quote(router);
             let router = routes::solve(router);
+            let router = routes::reveal(router);
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),

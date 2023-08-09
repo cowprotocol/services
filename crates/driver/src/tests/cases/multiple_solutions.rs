@@ -16,9 +16,8 @@ async fn valid() {
         .done()
         .await;
 
-    let solve = test.solve().await;
-
-    solve.ok().orders(&[ab_order().name]).default_score();
+    test.solve().await.ok().default_score();
+    test.reveal().await.ok().orders(&[ab_order().name]);
 }
 
 /// Test that the invalid solution is discarded when the /solve endpoint
@@ -34,7 +33,6 @@ async fn invalid() {
         .done()
         .await;
 
-    let solve = test.solve().await;
-
-    solve.ok().orders(&[ab_order().name]).default_score();
+    test.solve().await.ok().default_score();
+    test.reveal().await.ok().orders(&[ab_order().name]);
 }
