@@ -2738,6 +2738,7 @@ dependencies = [
  "global-metrics",
  "hex",
  "hex-literal",
+ "hyper",
  "maplit",
  "mockall",
  "model",

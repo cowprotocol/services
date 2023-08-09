@@ -235,13 +235,13 @@ pub fn finalize_router(
     // internal counter.
     let internal_request_id = Arc::new(AtomicUsize::new(0));
     let tracing_span = warp::trace(move |info| {
-        if let Some(header) = info.request_headers().get("X-Request-ID") {
-            let request_id = String::from_utf8_lossy(header.as_bytes());
-            tracing::info_span!("request", id = &*request_id)
+        let id = if let Some(header) = info.request_headers().get("X-Request-ID") {
+            String::from_utf8_lossy(header.as_bytes()).to_string()
         } else {
-            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
-            tracing::info_span!("request", id = request_id)
-        }
+            format!("{}", internal_request_id.fetch_add(1, Ordering::SeqCst))
+        };
+        crate::tracing::set_task_local_storage(id.clone());
+        tracing::info_span!("request", id)
     });
 
     warp::path!("api" / ..)
