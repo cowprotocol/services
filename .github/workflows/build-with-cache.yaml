@@ -1,0 +1,49 @@
+name: build with cache
+on:
+  push:
+    branches: [main]
+    tags: [v*]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          # Without this the fetch depth defaults to 1, which only includes the most recent commit. We want to know the full history so that `git describe` can give more information when it is invoked in the orderbook's crate build script.
+          fetch-depth: '0'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2.0.0
+
+      - uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Services image metadata
+        id: meta_services
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository }}
+          labels: |
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+          # Add suffix to not override the main build
+          flavor: |
+            suffix=-cache,onlatest=true
+
+      - name: Services image build
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: docker/Dockerfile-cache.binary
+          push: true
+          tags: ${{ steps.meta_services.outputs.tags }}
+          labels: ${{ steps.meta_services.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

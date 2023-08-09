@@ -1,0 +1,30 @@
+FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder 
+COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies - this is the caching Docker layer!
+RUN cargo chef cook --release --recipe-path recipe.json
+# Build application
+COPY . .
+RUN cargo build --release
+
+FROM debian:bullseye-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y ca-certificates tini && apt-get clean
+
+COPY --from=builder /app/target/release/alerter /usr/local/bin/alerter
+COPY --from=builder /app/target/release/autopilot /usr/local/bin/autopilot
+COPY --from=builder /app/target/release/driver /usr/local/bin/driver
+COPY --from=builder /app/target/release/orderbook /usr/local/bin/orderbook
+COPY --from=builder /app/target/release/refunder /usr/local/bin/refunder
+COPY --from=builder /app/target/release/solver /usr/local/bin/solver
+COPY --from=builder /app/target/release/solvers /usr/local/bin/solvers
+
+CMD echo "Specify binary..."
+ENTRYPOINT ["/usr/bin/tini", "--"]
