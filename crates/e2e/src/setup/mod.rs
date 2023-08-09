@@ -1,3 +1,5 @@
+use std::iter::empty;
+
 pub mod colocation;
 mod deploy;
 #[macro_use]
@@ -92,7 +94,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, std::iter::empty::<&str>(), None, None).await
+    run(f, empty::<&str>(), None, None).await
 }
 
 pub async fn run_test_with_extra_filters<F, Fut, T>(
@@ -111,7 +113,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, std::iter::empty::<&str>(), Some(solver_address), Some(fork_url)).await
+    run(f, empty::<&str>(), Some(solver_address), Some(fork_url)).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
