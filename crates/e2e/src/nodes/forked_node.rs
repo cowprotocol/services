@@ -1,6 +1,7 @@
 use {
     super::TestNode,
     ethcontract::H160,
+    reqwest::{IntoUrl, Url},
     serde_json::json,
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
@@ -8,11 +9,13 @@ use {
 
 pub struct Forker<T> {
     forked_node_api: ForkedNodeApi<T>,
-    fork_url: String,
+    fork_url: Url,
 }
 
 impl<T: Transport> Forker<T> {
-    pub async fn new(web3: &web3::Web3<T>, solver_address: H160, fork_url: String) -> Self {
+    pub async fn new(web3: &web3::Web3<T>, solver_address: H160, fork_url: impl IntoUrl) -> Self {
+        let fork_url = fork_url.into_url().expect("Invalid fork URL");
+
         let forked_node_api = web3.api::<ForkedNodeApi<_>>();
         forked_node_api
             .fork(&fork_url)
@@ -64,10 +67,10 @@ impl<T: Transport> Namespace<T> for ForkedNodeApi<T> {
 /// Relevant RPC calls for the Hardhat forked network can be found at:
 /// https://hardhat.org/hardhat-network/docs/reference#hardhat-network-methods
 impl<T: Transport> ForkedNodeApi<T> {
-    pub fn fork(&self, fork_url: &String) -> CallFuture<bool, T::Out> {
+    pub fn fork(&self, fork_url: &Url) -> CallFuture<bool, T::Out> {
         CallFuture::new(self.transport.execute(
             "hardhat_reset",
-            vec![json!({ "forking": {"jsonRpcUrl": fork_url} })],
+            vec![json!({ "forking": {"jsonRpcUrl": fork_url.to_string()} })],
         ))
     }
 

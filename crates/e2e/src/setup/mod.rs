@@ -69,6 +69,18 @@ const DEFAULT_FILTERS: [&str; 9] = [
     "orderbook::api::request_summary=off",
 ];
 
+fn take_filters<T>(custom_filters: Option<impl IntoIterator<Item = T>>) -> Vec<String>
+where
+    T: AsRef<str>,
+{
+    let mut default_filters: Vec<_> = DEFAULT_FILTERS.into_iter().map(String::from).collect();
+    if let Some(custom_filters) = custom_filters {
+        default_filters.extend(custom_filters.into_iter().map(|f| f.as_ref().to_owned()));
+    }
+
+    default_filters
+}
+
 /// *Testing* function that takes a closure and runs it on a local testing node
 /// and database. Before each test, it creates a snapshot of the current state
 /// of the chain. The saved state is restored at the end of the test.
@@ -82,26 +94,18 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let filters = DEFAULT_FILTERS
-        .map(|s| s.to_string())
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    run(f, filters, None, None).await
+    run(f, None::<Vec<String>>, None, None).await
 }
 
-pub async fn run_test_with_extra_filters<F, Fut>(f: F, extra_filters: Vec<String>)
-where
+pub async fn run_test_with_extra_filters<F, Fut, T>(
+    f: F,
+    extra_filters: impl IntoIterator<Item = T>,
+) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
+    T: AsRef<str>,
 {
-    let filters = DEFAULT_FILTERS
-        .map(|s| s.to_string())
-        .into_iter()
-        .chain(extra_filters.into_iter())
-        .collect::<Vec<_>>();
-
-    run(f, filters, None, None).await
+    run(f, Some(extra_filters), None, None).await
 }
 
 pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
@@ -109,42 +113,33 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let filters = DEFAULT_FILTERS
-        .map(|s| s.to_string())
-        .into_iter()
-        .collect::<Vec<_>>();
-
-    run(f, filters, Some(solver_address), Some(fork_url)).await
+    run(f, None::<Vec<String>>, Some(solver_address), Some(fork_url)).await
 }
 
-pub async fn run_forked_test_with_extra_filters<F, Fut>(
+pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     f: F,
     solver_address: H160,
     fork_url: String,
-    extra_filters: Vec<String>,
+    extra_filters: impl IntoIterator<Item = T>,
 ) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
+    T: AsRef<str>,
 {
-    let filters = DEFAULT_FILTERS
-        .map(|s| s.to_string())
-        .into_iter()
-        .chain(extra_filters.into_iter())
-        .collect::<Vec<_>>();
-
-    run(f, filters, Some(solver_address), Some(fork_url)).await
+    run(f, Some(extra_filters), Some(solver_address), Some(fork_url)).await
 }
 
-async fn run<F, Fut>(
+async fn run<F, Fut, T>(
     f: F,
-    filters: Vec<String>,
+    filters: Option<impl IntoIterator<Item = T>>,
     solver_address: Option<H160>,
     fork_url: Option<String>,
 ) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
+    T: AsRef<str>,
 {
-    shared::tracing::initialize_reentrant(&filters.join(","));
+    shared::tracing::initialize_reentrant(&take_filters(filters).join(","));
     shared::exit_process_on_panic::set_panic_hook();
 
     // The mutex guarantees that no more than a test at a time is running on

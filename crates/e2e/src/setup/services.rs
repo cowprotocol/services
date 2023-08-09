@@ -13,7 +13,7 @@ use {
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    reqwest::{Client, StatusCode},
+    reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
     std::time::Duration,
 };
@@ -140,11 +140,19 @@ impl<'a> Services<'a> {
     }
 
     /// Start the solver service in a background task with a custom http solver.
-    pub fn start_old_driver_custom_solver(&self, solver_account: H160, extra_args: Vec<String>) {
+    pub fn start_old_driver_custom_solver(
+        &self,
+        solver_url: Option<Url>,
+        solver_account: H160,
+        extra_args: Vec<String>,
+    ) {
         let args = [
             "solver".to_string(),
             format!(
-                "--external-solvers=Custom|http://localhost:8000|{:#x}|false",
+                "--external-solvers=Custom|{}|{:#x}|false",
+                solver_url
+                    .unwrap_or("http://localhost:8000".parse().unwrap())
+                    .as_str(),
                 solver_account
             ),
             format!("--solver-account={:#x}", solver_account),
