@@ -3,12 +3,12 @@ use {
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
     futures::{Future, FutureExt},
+    hyper::service::Service,
     model::DomainSeparator,
     shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating},
     std::{convert::Infallible, net::SocketAddr, sync::Arc},
     tokio::{task, task::JoinHandle},
     warp::Filter,
-    hyper::service::Service,
 };
 
 pub mod api;

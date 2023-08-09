@@ -1,12 +1,15 @@
-use crate::infra::{
-    api::{Error, State},
-    observe,
+use {
+    crate::infra::{
+        api::{Error, State},
+        observe,
+    },
+    tap::TapFallible,
+    tracing::Instrument,
 };
 
 mod dto;
 
 pub use dto::OrderError;
-use {tap::TapFallible, tracing::Instrument};
 
 pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/quote", axum::routing::post(route))

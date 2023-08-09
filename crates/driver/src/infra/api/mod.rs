@@ -6,9 +6,9 @@ use {
     },
     error::Error,
     futures::Future,
+    hyper::service::Service,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
-    hyper::service::Service,
 };
 
 mod error;
