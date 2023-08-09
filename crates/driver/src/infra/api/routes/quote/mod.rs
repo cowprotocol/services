@@ -16,6 +16,10 @@ async fn route(
     state: axum::extract::State<State>,
     order: axum::Json<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
+    let id = order.log_id();
+    if let Some(id) = &id {
+        shared::tracing::set_task_local_storage(id.clone());
+    }
     let handle_request = async {
         let order = order.0.into_domain().tap_err(|err| {
             observe::invalid_dto(err, "order");
@@ -29,6 +33,6 @@ async fn route(
     };
 
     handle_request
-        .instrument(tracing::info_span!("/quote", solver = %state.solver().name()))
+        .instrument(tracing::info_span!("/quote", solver = %state.solver().name(), id))
         .await
 }

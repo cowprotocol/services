@@ -78,6 +78,14 @@ impl Auction {
             deadline: self.deadline,
         })
     }
+
+    pub fn log_id(&self) -> Option<String> {
+        match (&self.log_id, &self.id) {
+            (Some(log_id), _) => Some(log_id.clone()),
+            (_, Some(auction_id)) => Some(format!("{auction_id}")),
+            _ => None,
+        }
+    }
 }
 
 #[serde_as]
@@ -92,6 +100,7 @@ pub struct Auction {
     #[serde_as(as = "serialize::U256")]
     effective_gas_price: U256,
     deadline: chrono::DateTime<chrono::Utc>,
+    log_id: Option<String>,
 }
 
 #[serde_as]

@@ -45,6 +45,7 @@ impl ExternalTradeFinder {
             amount: query.in_amount,
             kind: query.kind,
             deadline,
+            log_id: crate::tracing::get_task_local_storage()
         };
 
         let body = serde_json::to_string(&order).context("failed to encode body")?;
@@ -158,6 +159,7 @@ mod dto {
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
+        pub log_id: Option<String>,
     }
 
     #[serde_as]
