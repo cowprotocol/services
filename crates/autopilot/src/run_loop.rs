@@ -5,10 +5,13 @@ use {
             Postgres,
         },
         driver_api::Driver,
-        driver_model::solve::{self, Class},
+        driver_model::{
+            reveal,
+            solve::{self, Class},
+        },
         solvable_orders::SolvableOrdersCache,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{anyhow, ensure, Context, Result},
     chrono::Utc,
     database::order_events::OrderEventLabel,
     itertools::Itertools,
@@ -94,11 +97,6 @@ impl RunLoop {
         solutions.sort_unstable_by_key(|solution| solution.1.score);
         let competition_simulation_block = self.current_block.borrow().number;
 
-        let events: Vec<_> = solutions
-            .iter()
-            .flat_map(|(_, s)| s.orders.iter().map(|o| (*o, OrderEventLabel::Considered)))
-            .collect();
-
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.last() {
             // The winner has score 0 so all solutions are empty.
@@ -106,6 +104,20 @@ impl RunLoop {
                 return;
             }
 
+            tracing::info!(url = %self.drivers[*index].url, "revealing with driver");
+            let revealed = match self.reveal(id, &self.drivers[*index]).await {
+                Ok(result) => result,
+                Err(err) => {
+                    tracing::warn!(?err, "driver {} failed to reveal", self.drivers[*index].url);
+                    return;
+                }
+            };
+
+            let events = revealed
+                .orders
+                .iter()
+                .map(|o| (*o, OrderEventLabel::Considered))
+                .collect::<Vec<_>>();
             self.database.store_order_events(&events).await;
             let auction_id = id;
             let winner = solution.submission_address;
@@ -123,13 +135,13 @@ impl RunLoop {
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
-            let call_data = solution.calldata.internalized.clone();
-            let uninternalized_call_data = solution.calldata.uninternalized.clone();
+            let call_data = revealed.calldata.internalized.clone();
+            let uninternalized_call_data = revealed.calldata.uninternalized.clone();
             // Save order executions for all orders in the solution. Surplus fees for
             // partial limit orders will be saved after settling the order
             // onchain.
             let mut order_executions = vec![];
-            for order_id in &solution.orders {
+            for order_id in &revealed.orders {
                 let auction_order = auction
                     .orders
                     .iter()
@@ -187,26 +199,33 @@ impl RunLoop {
                 },
                 solutions: solutions
                     .iter()
-                    .map(|(index, response)| SolverSettlement {
-                        solver_address: response.submission_address,
-                        score: Some(Score::Solver(response.score)),
-                        ranking: Some(solutions.len() - index),
-                        orders: response
-                            .orders
-                            .iter()
-                            .map(|o| Order {
-                                id: *o,
-                                // TODO: revisit once colocation is enabled (remove not populated
-                                // fields) Not all fields can be
-                                // populated in the colocated world
-                                ..Default::default()
-                            })
-                            .collect(),
-                        call_data: response.calldata.internalized.clone(),
-                        uninternalized_call_data: Some(response.calldata.uninternalized.clone()),
-                        // TODO: revisit once colocation is enabled (remove not populated fields)
-                        // Not all fields can be populated in the colocated world
-                        ..Default::default()
+                    .map(|(index, response)| {
+                        let is_winner = solutions.len() - index == 1;
+                        let mut settlement = SolverSettlement {
+                            solver_address: response.submission_address,
+                            score: Some(Score::Solver(response.score)),
+                            ranking: Some(solutions.len() - index),
+                            // TODO: revisit once colocation is enabled (remove not populated
+                            // fields) Not all fields can be populated in the colocated world
+                            ..Default::default()
+                        };
+                        if is_winner {
+                            settlement.orders = revealed
+                                .orders
+                                .iter()
+                                .map(|o| Order {
+                                    id: *o,
+                                    // TODO: revisit once colocation is enabled (remove not
+                                    // populated fields) Not all
+                                    // fields can be populated in the colocated world
+                                    ..Default::default()
+                                })
+                                .collect();
+                            settlement.call_data = revealed.calldata.internalized.clone();
+                            settlement.uninternalized_call_data =
+                                Some(revealed.calldata.uninternalized.clone());
+                        }
+                        settlement
                     })
                     .collect(),
                 // TODO: revisit once colocation is enabled (remove not populated fields)
@@ -234,7 +253,10 @@ impl RunLoop {
             }
 
             tracing::info!(url = %self.drivers[*index].url, "settling with solver");
-            match self.settle(id, &self.drivers[*index], solution).await {
+            match self
+                .settle(id, &self.drivers[*index], solution, &revealed)
+                .await
+            {
                 Ok(()) => (),
                 Err(err) => {
                     tracing::error!(?err, "solver {index} failed to settle");
@@ -386,15 +408,26 @@ impl RunLoop {
             .collect()
     }
 
+    /// Ask the winning solver to reveal their solution.
+    async fn reveal(&self, id: AuctionId, driver: &Driver) -> Result<reveal::Response> {
+        let response = driver.reveal().await.context("reveal")?;
+        ensure!(
+            response.calldata.internalized.ends_with(&id.to_be_bytes()),
+            "reveal auction id missmatch"
+        );
+        Ok(response)
+    }
+
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
     async fn settle(
         &self,
         id: AuctionId,
         driver: &Driver,
-        solution: &solve::Response,
+        solve: &solve::Response,
+        reveal: &reveal::Response,
     ) -> Result<()> {
-        let events = solution
+        let events = reveal
             .orders
             .iter()
             .map(|uid| (*uid, OrderEventLabel::Executing))
@@ -404,11 +437,11 @@ impl RunLoop {
         driver.settle().await.context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
-            .wait_for_settlement_transaction(id, solution.submission_address)
+            .wait_for_settlement_transaction(id, solve.submission_address)
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
-            let events = solution
+            let events = reveal
                 .orders
                 .iter()
                 .map(|uid| (*uid, OrderEventLabel::Traded))

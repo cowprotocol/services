@@ -7,6 +7,9 @@ pub struct Metrics {
     /// The results of the solving process.
     #[metric(labels("solver", "result"))]
     pub solutions: prometheus::IntCounterVec,
+    /// The results of the reveal process.
+    #[metric(labels("solver", "result"))]
+    pub reveals: prometheus::IntCounterVec,
     /// The results of the settlement process.
     #[metric(labels("solver", "result"))]
     pub settlements: prometheus::IntCounterVec,

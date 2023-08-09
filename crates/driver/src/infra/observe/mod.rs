@@ -132,6 +132,33 @@ pub fn score(settlement: &Settlement, score: &solution::Score) {
     );
 }
 
+pub fn revealing(solver: &solver::Name, auction_id: Option<auction::Id>) {
+    tracing::trace!(%solver, ?auction_id, "revealing");
+}
+
+pub fn revealed(
+    solver: &solver::Name,
+    auction_id: Option<auction::Id>,
+    result: &Result<competition::Revealed, competition::Error>,
+) {
+    match result {
+        Ok(calldata) => {
+            tracing::info!(%solver, ?calldata, ?auction_id, "revealed");
+            metrics::get()
+                .reveals
+                .with_label_values(&[solver.as_str(), "Success"])
+                .inc();
+        }
+        Err(err) => {
+            tracing::warn!(%solver, ?auction_id, ?err, "failed to reveal");
+            metrics::get()
+                .reveals
+                .with_label_values(&[solver.as_str(), competition_error(err)])
+                .inc();
+        }
+    }
+}
+
 /// Observe that the settlement process is about to start.
 pub fn settling() {
     tracing::trace!("settling solution");
