@@ -9,6 +9,7 @@ use {
     },
     serde::Serialize,
     serde_with::serde_as,
+    tracing::Instrument,
 };
 
 pub(in crate::infra::api) fn reveal(router: axum::Router<State>) -> axum::Router<State> {
@@ -19,11 +20,18 @@ async fn route(
     state: axum::extract::State<State>,
 ) -> Result<axum::Json<Solution>, (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    observe::revealing(state.solver().name(), competition.auction_id());
-    let result = competition.reveal().await;
-    observe::revealed(state.solver().name(), competition.auction_id(), &result);
-    let result = result?;
-    Ok(axum::Json(Solution::new(result)))
+    let auction_id = competition.auction_id().map(|id| id.0);
+    let handle_request = async {
+        observe::revealing();
+        let result = competition.reveal().await;
+        observe::revealed(state.solver().name(), &result);
+        let result = result?;
+        Ok(axum::Json(Solution::new(result)))
+    };
+
+    handle_request
+        .instrument(tracing::info_span!("/reveal", solver = %state.solver().name(), auction_id))
+        .await
 }
 
 impl Solution {
