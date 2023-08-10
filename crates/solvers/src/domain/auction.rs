@@ -17,7 +17,7 @@ pub struct Auction {
 }
 
 /// Information about tokens used in the auction.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Tokens(pub HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
@@ -38,7 +38,7 @@ impl Tokens {
 #[derive(Clone, Debug)]
 pub struct Id(pub i64);
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Token {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,
