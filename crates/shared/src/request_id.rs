@@ -48,7 +48,7 @@ pub fn set_task_local_storage(request_id: String) {
 macro_rules! make_service_with_task_local_storage {
     ($service:expr) => {{
         {
-            let internal_request_id = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let internal_request_id = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             hyper::service::make_service_fn(move |_| {
                 let warp_svc = $service.clone();
                 let internal_request_id = internal_request_id.clone();
