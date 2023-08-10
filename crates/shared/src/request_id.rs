@@ -68,11 +68,7 @@ macro_rules! make_service_with_task_local_storage {
                             let span = tracing::info_span!("request", id);
                             let handle_request = shared::request_id::REQUEST_ID.scope(
                                 std::cell::RefCell::new(id),
-                                async move {
-                                    // Not sure why but we have to have this async block to avoid
-                                    // panics
-                                    hyper::service::Service::call(&mut warp_svc, req).await
-                                },
+                                hyper::service::Service::call(&mut warp_svc, req),
                             );
                             tracing::Instrument::instrument(handle_request, span)
                         });
