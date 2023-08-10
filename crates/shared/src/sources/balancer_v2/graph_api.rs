@@ -61,7 +61,6 @@ impl BalancerSubgraphClient {
         // suggested approach to paging best performance:
         // <https://thegraph.com/docs/graphql-api#pagination>
         loop {
-            tracing::error!("fetch ");
             let page = self
                 .0
                 .query::<Data>(
