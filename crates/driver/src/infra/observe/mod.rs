@@ -51,7 +51,7 @@ pub fn fetched_liquidity(liquidity: &[Liquidity]) {
     for liquidity in liquidity {
         *grouped.entry((&liquidity.kind).into()).or_default() += 1;
     }
-    tracing::info!(liqudiity = ?grouped, "fetched liquidity sources");
+    tracing::info!(liquidity = ?grouped, "fetched liquidity sources");
 }
 
 /// Observe that fetching liquidity failed.
