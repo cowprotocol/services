@@ -1,6 +1,3 @@
-// https://github.com/rust-lang/rust-clippy/issues/9782
-#![allow(clippy::needless_borrow)]
-
 //! Contains models that are shared between the orderbook and the solver.
 
 pub mod app_data;

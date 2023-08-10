@@ -170,10 +170,34 @@ impl Competition {
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Solved { score, orders })
+        Ok(Solved { score })
+    }
+
+    pub async fn reveal(&self) -> Result<Revealed, Error> {
+        let settlement = self
+            .settlement
+            .lock()
+            .unwrap()
+            .as_ref()
+            .cloned()
+            .ok_or(Error::SolutionNotAvailable)?;
+        Ok(Revealed {
+            orders: settlement.orders(),
+            internalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )
+                .into(),
+            uninternalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Disable,
+                )
+                .into(),
+        })
     }
 
     /// Execute the solution generated as part of this competition. Use
@@ -212,14 +236,26 @@ impl Competition {
     }
 }
 
-/// Solution information revealed to the protocol by the driver before the
-/// settlement happens. Note that the calldata is only revealed once the
-/// protocol instructs the driver to settle, and not before.
+/// Solution information sent to the protocol by the driver before the solution
+/// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
+}
+
+/// Winning solution information revealed to the protocol by the driver before
+/// the onchain settlement happens. Calldata is first time revealed at this
+/// point.
+#[derive(Debug)]
+pub struct Revealed {
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
+    /// The internalized calldata is the final calldata that appears onchain.
+    pub internalized_calldata: Bytes<Vec<u8>>,
+    /// The uninternalized calldata must be known so that the CoW solver team
+    /// can manually enforce certain rules which can not be enforced
+    /// automatically.
+    pub uninternalized_calldata: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug)]

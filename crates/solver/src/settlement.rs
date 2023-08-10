@@ -1104,7 +1104,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_buy_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to pay up to 60
         // to receive 50, but ended paying the price (1) we have a surplus of 10
@@ -1154,7 +1153,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_sell_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to receive as
         // little as 40, but ended paying the price (1) we have a surplus of 10
@@ -1204,7 +1202,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_surplus_ratio() {
         assert_eq!(
             surplus_ratio(&r(1), &r(1), &r(1), &r(1)),
