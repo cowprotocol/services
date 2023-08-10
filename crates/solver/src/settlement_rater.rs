@@ -1,3 +1,5 @@
+use num::{One, Zero};
+
 use {
     crate::{
         driver::solver_settlements::RatedSettlement,
@@ -234,15 +236,22 @@ impl SettlementRating for SettlementRater {
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
             Some(score) => match score {
-                shared::http_solver::model::Score::Score(score) => Score::Solver(*score),
+                shared::http_solver::model::Score::Solver(score) => Score::Solver(*score),
                 shared::http_solver::model::Score::Discount(discount) => Score::Discounted(
                     big_rational_to_u256(&objective_value)
                         .unwrap_or_default()
                         .saturating_sub(*discount),
                 ),
+                shared::http_solver::model::Score::CalculatedByProtocol(score) => Score::Solver(*score),
             },
             None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
         };
+
+        let success_probability = BigRational::from_float(settlement.success_probability.unwrap()).unwrap();
+        let cost_fail = BigRational::from_float(0.0).unwrap();
+        let cap = BigRational::from_float(0.5).unwrap();
+        let optimal_score = compute_optimal_bid(objective_value, success_probability, cost_fail, cap);
+        let score = big_rational_to_u256(&optimal_score).unwrap_or_default();
 
         let rated_settlement = RatedSettlement {
             id,
@@ -258,4 +267,44 @@ impl SettlementRating for SettlementRater {
         };
         Ok(Rating::Ok(rated_settlement))
     }
+}
+
+fn compute_optimal_bid(
+    objective: BigRational,
+    probability_success: BigRational,
+    cost_fail: BigRational,
+    cap: BigRational,
+) -> BigRational {
+    let probability_fail = BigRational::one() - probability_success;
+    let payoff_obj_minus_cap = payoff(
+        objective - cap,
+        objective,
+        probability_success,
+        cost_fail,
+        cap,
+    );
+    let payoff_cap = payoff(cap, objective, probability_success, cost_fail, cap);
+    if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap <= BigRational::zero() {
+        probability_success * objective - probability_fail * cost_fail
+    } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
+        objective - probability_fail / probability_success * (cap + cost_fail)
+    } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
+        probability_success / probability_fail * cap - cost_fail
+    } else {
+        panic!("No solution found.")
+    }
+}
+
+fn payoff(
+    score_reference: BigRational,
+    objective: BigRational,
+    probability_success: BigRational,
+    cost_fail: BigRational,
+    cap: BigRational,
+) -> BigRational {
+    let probability_fail = BigRational::one() - probability_success;
+    let payoff_success = objective - score_references;
+    let payoff_fail = -score_reference - cost_fail;
+    let payoff_expectation = probability_success * payoff_success + probability_fail * payoff_fail;
+    payoff_expectation
 }

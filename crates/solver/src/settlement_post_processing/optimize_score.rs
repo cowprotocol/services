@@ -45,7 +45,7 @@ pub async fn compute_score(
 
     let score = score_calculator
         .calculate(&inputs, nmb_orders)
-        .map(Score::Score);
+        .map(Score::CalculatedByProtocol);
 
     tracing::debug!(
         ?solver, ?score, objective_value = %inputs.objective_value(),

@@ -153,6 +153,7 @@ struct IntermediateSettlement<'a> {
     slippage: SlippageContext<'a>,
     submitter: SubmissionPreference,
     score: Option<Score>,
+    success_probability: Option<f64>,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
     enforce_correct_fees: bool,
 }
@@ -241,6 +242,10 @@ impl<'a> IntermediateSettlement<'a> {
         let submitter = settled.submitter;
         let score = settled.score;
 
+        // adjust the score according to the success probability
+        
+        let success_probability = settled.success_probability;
+
         if duplicate_coordinates(&executions) {
             return Err(ConversionError::InvalidExecutionPlans(anyhow!(
                 "Duplicate coordinates found."
@@ -254,6 +259,7 @@ impl<'a> IntermediateSettlement<'a> {
             slippage,
             submitter,
             score,
+            success_probability,
             enforce_correct_fees,
         })
     }
@@ -262,6 +268,7 @@ impl<'a> IntermediateSettlement<'a> {
         let mut settlement = Settlement::new(self.prices);
         settlement.submitter = self.submitter;
         settlement.score = self.score;
+        settlement.success_probability = self.success_probability;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically

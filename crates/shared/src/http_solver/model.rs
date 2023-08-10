@@ -188,9 +188,11 @@ impl Interaction for InteractionData {
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Score {
-    /// The score used for ranking.
+    /// The score value is provided as is from solver.
+    /// Success probability is not incorporated into this value.
     #[serde(with = "u256_decimal")]
-    Score(U256),
+    #[serde(rename = "score")]
+    Solver(U256),
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol.
     /// To have more flexibility, the protocol score can be tweaked by the
@@ -198,6 +200,10 @@ pub enum Score {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "scoreDiscount")]
     Discount(U256),
+    /// The score value is calculated by the protocol using the score calculator.
+    /// Currently the score calculator is used for internal solvers only.
+    /// Success probability is already incorporated.
+    CalculatedByProtocol(U256),
 }
 
 #[serde_as]
@@ -220,6 +226,7 @@ pub struct SettledBatchAuctionModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub score: Option<Score>,
+    pub success_probability: Option<f64>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -884,7 +891,7 @@ mod tests {
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(
             deserialized.score,
-            Some(Score::Score(20_000_000_000_000_000u128.into()))
+            Some(Score::Solver(20_000_000_000_000_000u128.into()))
         );
     }
 

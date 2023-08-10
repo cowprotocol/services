@@ -257,6 +257,7 @@ pub struct Settlement {
     pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
                                           * struct */
     pub score: Option<Score>,
+    pub success_probability: Option<f64>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -305,6 +306,7 @@ impl Settlement {
             encoder,
             submitter: self.submitter.clone(),
             score: self.score,
+            success_probability: self.success_probability,
         }
     }
 
@@ -495,6 +497,10 @@ impl Settlement {
                 (Some(Score::Score(left)), Some(Score::Score(right))) => {
                     Some(Score::Score(left + right))
                 }
+                _ => None,
+            },
+            success_probability: match (self.success_probability, other.success_probability) {
+                (Some(left), Some(right)) => Some(left * right),
                 _ => None,
             },
         })
