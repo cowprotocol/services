@@ -44,12 +44,16 @@ impl Dex {
             let order_uid = order.uid;
             let deadline = auction
                 .deadline
-                .signed_duration_since(chrono::Utc::now())
-                .to_std()
-                .unwrap_or_default();
+                .signed_duration_since(chrono::offset::Utc::now())
+                .to_std();
+
+            if deadline.is_err() || deadline.unwrap().is_zero() {
+                tracing::debug!(order = %order_uid, "skipping order due to deadline");
+                break;
+            }
 
             let result = tokio::time::timeout(
-                deadline,
+                deadline.unwrap(),
                 self.solve_order(order, &auction.tokens, auction.gas_price),
             )
             .instrument(span)
