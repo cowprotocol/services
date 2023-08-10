@@ -39,8 +39,7 @@ impl Dex {
 
         let futures = auction
             .orders
-            .iter()
-            .cloned()
+            .into_iter()
             .map(|order| {
                 let deadline = auction
                     .deadline
