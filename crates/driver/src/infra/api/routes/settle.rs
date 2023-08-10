@@ -9,6 +9,7 @@ use {
     },
     serde::Serialize,
     serde_with::serde_as,
+    tracing::Instrument,
 };
 
 pub(in crate::infra::api) fn settle(router: axum::Router<State>) -> axum::Router<State> {
@@ -19,11 +20,18 @@ async fn route(
     state: axum::extract::State<State>,
 ) -> Result<axum::Json<Calldata>, (hyper::StatusCode, axum::Json<Error>)> {
     let competition = state.competition();
-    observe::settling(state.solver().name(), competition.auction_id());
-    let result = competition.settle().await;
-    observe::settled(state.solver().name(), competition.auction_id(), &result);
-    let calldata = result?;
-    Ok(axum::Json(Calldata::new(calldata)))
+    let auction_id = competition.auction_id().map(|id| id.0);
+    let handle_request = async {
+        observe::settling();
+        let result = competition.settle().await;
+        observe::settled(state.solver().name(), &result);
+        let calldata = result?;
+        Ok(axum::Json(Calldata::new(calldata)))
+    };
+
+    handle_request
+        .instrument(tracing::info_span!("/settle", solver = %state.solver().name(), auction_id))
+        .await
 }
 
 #[serde_as]
