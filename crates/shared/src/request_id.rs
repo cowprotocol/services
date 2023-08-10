@@ -17,7 +17,7 @@
 //! current identifier specific to our task and send that along with the
 //! request.
 tokio::task_local! {
-    pub static REQUEST_ID: std::cell::RefCell<String>;
+    pub static REQUEST_ID: String;
 }
 
 /// Tries to read the `request_id` from this task's storage.
@@ -25,17 +25,9 @@ tokio::task_local! {
 pub fn get_task_local_storage() -> Option<String> {
     let mut id = None;
     let _ = REQUEST_ID.try_with(|cell| {
-        id = Some(cell.borrow().clone());
+        id = Some(cell.clone());
     });
     id
-}
-
-/// Tries to write the `request_id` to the task local storage.
-/// Fails if this task has no task local storage.
-pub fn set_task_local_storage(request_id: String) {
-    let _ = REQUEST_ID.try_with(|storage| {
-        *storage.borrow_mut() = request_id;
-    });
 }
 
 /// Takes a `tower::Service` and embeds it in a `make_service` function that
@@ -67,7 +59,7 @@ macro_rules! make_service_with_task_local_storage {
                             };
                             let span = tracing::info_span!("request", id);
                             let handle_request = shared::request_id::REQUEST_ID.scope(
-                                std::cell::RefCell::new(id),
+                                id,
                                 hyper::service::Service::call(&mut warp_svc, req),
                             );
                             tracing::Instrument::instrument(handle_request, span)
