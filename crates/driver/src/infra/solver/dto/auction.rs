@@ -16,7 +16,6 @@ impl Auction {
         liquidity: &[liquidity::Liquidity],
         timeout: competition::SolverTimeout,
         weth: eth::WethAddress,
-        log_id: Option<String>,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
             .tokens()
@@ -192,7 +191,6 @@ impl Auction {
             tokens,
             effective_gas_price: auction.gas_price().effective().into(),
             deadline: timeout.deadline(),
-            log_id,
         }
     }
 }
@@ -208,7 +206,6 @@ pub struct Auction {
     #[serde_as(as = "serialize::U256")]
     effective_gas_price: eth::U256,
     deadline: chrono::DateTime<chrono::Utc>,
-    log_id: Option<String>,
 }
 
 #[serde_as]

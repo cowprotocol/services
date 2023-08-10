@@ -40,23 +40,45 @@ pub fn set_task_local_storage(request_id: String) {
 
 /// Takes a `tower::Service` and embeds it in a `make_service` function that
 /// spawns one of these services per incoming request.
-/// But crucially before spawning that service some task local storage will
-/// also be initialized.
+/// But crucially before spawning that service task local storage will be
+/// initialized with some request id.
+/// Either that gets taken from the requests `X-REQUEST-ID` header of if that's
+/// missing a globally unique request number will be generated.
 #[macro_export]
 macro_rules! make_service_with_task_local_storage {
     ($service:expr) => {{
-        hyper::service::make_service_fn(move |_| {
-            let warp_svc = $service.clone();
-            async move {
-                let svc = hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
-                    let mut warp_svc = warp_svc.clone();
-                    shared::request_id::REQUEST_ID.scope(Default::default(), async move {
-                        // Not sure why but we have to have this async block to avoid panics
-                        hyper::service::Service::call(&mut warp_svc, req).await
-                    })
-                });
-                Ok::<_, std::convert::Infallible>(svc)
-            }
-        })
+        {
+            let internal_request_id = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            hyper::service::make_service_fn(move |_| {
+                let warp_svc = $service.clone();
+                let internal_request_id = internal_request_id.clone();
+                async move {
+                    let svc =
+                        hyper::service::service_fn(move |req: hyper::Request<hyper::Body>| {
+                            let mut warp_svc = warp_svc.clone();
+                            let id = if let Some(header) = req.headers().get("X-Request-ID") {
+                                String::from_utf8_lossy(header.as_bytes()).to_string()
+                            } else {
+                                format!(
+                                    "{}",
+                                    internal_request_id
+                                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                                )
+                            };
+                            let span = tracing::info_span!("request", id);
+                            let handle_request = shared::request_id::REQUEST_ID.scope(
+                                std::cell::RefCell::new(id),
+                                async move {
+                                    // Not sure why but we have to have this async block to avoid
+                                    // panics
+                                    hyper::service::Service::call(&mut warp_svc, req).await
+                                },
+                            );
+                            tracing::Instrument::instrument(handle_request, span)
+                        });
+                    Ok::<_, std::convert::Infallible>(svc)
+                }
+            })
+        }
     }};
 }

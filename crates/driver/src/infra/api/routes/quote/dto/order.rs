@@ -20,10 +20,6 @@ impl Order {
             deadline: self.deadline.into(),
         })
     }
-
-    pub fn log_id(&self) -> Option<String> {
-        self.log_id.clone()
-    }
 }
 
 #[serde_as]
@@ -36,7 +32,6 @@ pub struct Order {
     amount: eth::U256,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
-    log_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

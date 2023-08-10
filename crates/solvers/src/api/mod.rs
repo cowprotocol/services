@@ -45,8 +45,6 @@ async fn solve(
     axum::http::StatusCode,
     axum::response::Json<dto::Response<dto::Solutions>>,
 ) {
-    let id = auction.log_id();
-
     let handle_request = async {
         let auction = match auction.to_domain() {
             Ok(value) => value,
@@ -78,6 +76,6 @@ async fn solve(
     };
 
     handle_request
-        .instrument(tracing::info_span!("/solve", id))
+        .instrument(tracing::info_span!("/solve"))
         .await
 }

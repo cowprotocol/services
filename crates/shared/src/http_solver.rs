@@ -167,6 +167,9 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .timeout(timeout)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
+        if let Some(id) = crate::request_id::get_task_local_storage() {
+            request = request.header("X-REQUEST-ID", id);
+        }
         if let Some(api_key) = &self.config.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);

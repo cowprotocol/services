@@ -129,7 +129,6 @@ impl Solver {
             // HTTP timeout might happen before the solver times out its search algorithm.
             timeout.reduce(Self::http_time_buffer()),
             weth,
-            shared::request_id::get_task_local_storage(),
         ))
         .unwrap();
         observe::solver_request(&self.config.endpoint, &body);
