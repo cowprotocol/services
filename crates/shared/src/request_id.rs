@@ -58,10 +58,8 @@ macro_rules! make_service_with_task_local_storage {
                                 )
                             };
                             let span = tracing::info_span!("request", id);
-                            let handle_request = shared::request_id::REQUEST_ID.scope(
-                                id,
-                                hyper::service::Service::call(&mut warp_svc, req),
-                            );
+                            let handle_request = shared::request_id::REQUEST_ID
+                                .scope(id, hyper::service::Service::call(&mut warp_svc, req));
                             tracing::Instrument::instrument(handle_request, span)
                         });
                     Ok::<_, std::convert::Infallible>(svc)
