@@ -292,7 +292,7 @@ pub struct Arguments {
 
     /// The number of pools to initially populate the UniswapV3 cache
     #[clap(long, env, default_value = "100")]
-    pub max_pools_to_initialize_cache: u64,
+    pub max_pools_to_initialize_cache: usize,
 
     /// The time in seconds between new blocks on the network.
     #[clap(long, env, value_parser = duration_from_seconds)]
