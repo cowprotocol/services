@@ -181,8 +181,8 @@ impl Display for Arguments {
             "blockscout_http_timeout: {:?}",
             self.blockscout_http_timeout,
         )?;
-        display_option(f, "blockscout_api_url: {:?}", &self.blockscout_api_url)?;
-        display_secret_option(f, "ethplorer_api_url", &self.ethplorer_api_url)?;
+        display_option(f, "blockscout_api_url", &self.blockscout_api_url)?;
+        display_option(f, "ethplorer_api_url", &self.ethplorer_api_url)?;
         display_secret_option(f, "ethplorer_api_key", &self.ethplorer_api_key)?;
         display_option(
             f,
