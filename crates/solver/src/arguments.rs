@@ -333,6 +333,10 @@ pub struct Arguments {
     #[clap(flatten)]
     pub risk_params: risk_computation::Arguments,
 
+    /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
+    #[clap(long, env, default_value = "10000000000000000")]
+    pub score_cap: U256,
+
     /// Should we skip settlements with non-positive score for solver
     /// competition?
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
@@ -490,6 +494,7 @@ impl std::fmt::Display for Arguments {
             self.additional_mining_deadline
         )?;
         writeln!(f, "{}", self.risk_params)?;
+        writeln!(f, "{}", self.score_cap)?;
         writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
         writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
         writeln!(

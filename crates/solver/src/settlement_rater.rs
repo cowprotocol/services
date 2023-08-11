@@ -67,6 +67,7 @@ pub struct SettlementRater {
     pub code_fetcher: Arc<dyn CodeFetching>,
     pub settlement_contract: GPv2Settlement,
     pub web3: Web3,
+    pub score_calculator: ScoreCalculator,
 }
 
 impl SettlementRater {
@@ -247,7 +248,9 @@ impl SettlementRating for SettlementRater {
         // recalculate score if success probability is provided
         let score = match settlement.success_probability {
             Some(success_probability) => {
-                match compute_score_with_success_probability(&objective_value, success_probability)
+                match self
+                    .score_calculator
+                    .compute_score(&objective_value, success_probability)
                 {
                     Ok(score) => score,
                     Err(err) => {
@@ -275,91 +278,100 @@ impl SettlementRating for SettlementRater {
     }
 }
 
-fn compute_score_with_success_probability(
-    objective_value: &BigRational,
-    success_probability: f64,
-) -> Result<Score> {
-    ensure!(
-        (0.0..=1.0).contains(&success_probability),
-        "success probability must be between 0 and 1."
-    );
-    let success_probability =
-        BigRational::from_float(success_probability).context("Invalid success probability.")?;
-    let cost_fail = BigRational::from_float(0.0).unwrap();
-    let cap = BigRational::from_float(10_000_000_000_000_000.).unwrap();
-    let optimal_score =
-        compute_optimal_bid(objective_value.clone(), success_probability, cost_fail, cap)?;
-    let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
-    Ok(Score::Protocol(score))
+pub struct ScoreCalculator {
+    score_cap: BigRational,
 }
 
-fn compute_optimal_bid(
-    objective: BigRational,
-    probability_success: BigRational,
-    cost_fail: BigRational,
-    cap: BigRational,
-) -> Result<BigRational> {
-    tracing::trace!(
-        ?objective,
-        ?probability_success,
-        ?cost_fail,
-        ?cap,
-        "Computing optimal bid"
-    );
-    let probability_fail = BigRational::one() - probability_success.clone();
-    let payoff_obj_minus_cap = payoff(
-        objective.clone() - cap.clone(),
-        objective.clone(),
-        probability_success.clone(),
-        cost_fail.clone(),
-        cap.clone(),
-    );
-    tracing::trace!(?payoff_obj_minus_cap, "Payoff obj minus cap");
-    let payoff_cap = payoff(
-        cap.clone(),
-        objective.clone(),
-        probability_success.clone(),
-        cost_fail.clone(),
-        cap.clone(),
-    );
-    tracing::trace!(?payoff_cap, "Payoff cap");
-    let optimal_bid =
-        if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap <= BigRational::zero() {
+impl ScoreCalculator {
+    pub fn new(score_cap: BigRational) -> Self {
+        Self { score_cap }
+    }
+
+    pub fn compute_score(
+        &self,
+        objective_value: &BigRational,
+        success_probability: f64,
+    ) -> Result<Score> {
+        ensure!(
+            (0.0..=1.0).contains(&success_probability),
+            "success probability must be between 0 and 1."
+        );
+        let success_probability =
+            BigRational::from_float(success_probability).context("Invalid success probability.")?;
+        let cost_fail = BigRational::from_float(0.0).unwrap();
+        let optimal_score =
+            self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
+        let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
+        Ok(Score::Protocol(score))
+    }
+
+    fn compute_optimal_bid(
+        &self,
+        objective: BigRational,
+        probability_success: BigRational,
+        cost_fail: BigRational,
+    ) -> Result<BigRational> {
+        tracing::trace!(
+            ?objective,
+            ?probability_success,
+            ?cost_fail,
+            "Computing optimal bid"
+        );
+        let probability_fail = BigRational::one() - probability_success.clone();
+        let payoff_obj_minus_cap = self.payoff(
+            objective.clone() - self.score_cap.clone(),
+            objective.clone(),
+            probability_success.clone(),
+            cost_fail.clone(),
+        );
+        tracing::trace!(?payoff_obj_minus_cap, "Payoff obj minus cap");
+        let payoff_cap = self.payoff(
+            self.score_cap.clone(),
+            objective.clone(),
+            probability_success.clone(),
+            cost_fail.clone(),
+        );
+        tracing::trace!(?payoff_cap, "Payoff cap");
+        let optimal_bid = if payoff_obj_minus_cap >= BigRational::zero()
+            && payoff_cap <= BigRational::zero()
+        {
             Ok(probability_success * objective - probability_fail * cost_fail)
         } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-            Ok(objective - probability_fail / probability_success * (cap + cost_fail))
+            Ok(objective
+                - probability_fail / probability_success * (self.score_cap.clone() + cost_fail))
         } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-            Ok(probability_success / probability_fail * cap - cost_fail)
+            Ok(probability_success / probability_fail * self.score_cap.clone() - cost_fail)
         } else {
             Err(anyhow!("Invalid bid"))
         };
-    tracing::trace!(?optimal_bid, "Optimal bid");
-    optimal_bid
-}
+        tracing::trace!(?optimal_bid, "Optimal bid");
+        optimal_bid
+    }
 
-fn payoff(
-    score_reference: BigRational,
-    objective: BigRational,
-    probability_success: BigRational,
-    cost_fail: BigRational,
-    cap: BigRational,
-) -> BigRational {
-    tracing::trace!(
-        ?score_reference,
-        ?objective,
-        ?probability_success,
-        ?cost_fail,
-        ?cap,
-        "Computing payoff"
-    );
-    let probability_fail = BigRational::one() - probability_success.clone();
-    let payoff_success = min(objective - score_reference.clone(), cap.clone());
-    tracing::trace!(?payoff_success, "Payoff success");
-    let payoff_fail = -min(score_reference, cap) - cost_fail;
-    tracing::trace!(?payoff_fail, "Payoff fail");
-    let payoff_expectation = probability_success * payoff_success + probability_fail * payoff_fail;
-    tracing::trace!(?payoff_expectation, "Payoff expectation");
-    payoff_expectation
+    fn payoff(
+        &self,
+        score_reference: BigRational,
+        objective: BigRational,
+        probability_success: BigRational,
+        cost_fail: BigRational,
+    ) -> BigRational {
+        tracing::trace!(
+            ?score_reference,
+            ?objective,
+            ?probability_success,
+            ?cost_fail,
+            "Computing payoff"
+        );
+        let probability_fail = BigRational::one() - probability_success.clone();
+        let payoff_success = min(objective - score_reference.clone(), self.score_cap.clone());
+        tracing::trace!(?payoff_success, "Payoff success");
+        let payoff_fail = -min(score_reference, self.score_cap.clone()) - cost_fail;
+        tracing::trace!(?payoff_fail, "Payoff fail");
+        let payoff_expectation =
+            probability_success * payoff_success + probability_fail * payoff_fail;
+        tracing::trace!(?payoff_expectation, "Payoff expectation");
+        payoff_expectation
+    }
 }
 
 mod tests {
@@ -367,9 +379,11 @@ mod tests {
     fn compute_score_with_success_probability_test() {
         let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
         let success_probability = 0.9202405649482063;
-        let score =
-            super::compute_score_with_success_probability(&objective_value, success_probability)
-                .unwrap();
+        let score_cap = num::BigRational::from_float(10_000_000_000_000_000.).unwrap();
+        let score_calculator = super::ScoreCalculator::new(score_cap);
+        let score = score_calculator
+            .compute_score(&objective_value, success_probability)
+            .unwrap();
         assert_eq!(score.score(), 250680657682686317u128.into());
     }
 }
