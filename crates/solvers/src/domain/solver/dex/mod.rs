@@ -37,18 +37,27 @@ impl Dex {
         // * order prioritization
         // * skip liquidity orders
         // * concurrency
-        // * respecting auction deadline
 
         let mut solutions = Vec::new();
-        for order in auction.orders.iter().cloned() {
-            let span = tracing::info_span!("solve", order = %order.uid);
-            if let Some(solution) = self
-                .solve_order(order, &auction.tokens, auction.gas_price)
-                .instrument(span)
-                .await
-            {
-                solutions.push(solution);
+        let solve_orders = async {
+            for order in auction.orders.iter().cloned() {
+                let span = tracing::info_span!("solve", order = %order.uid);
+                if let Some(solution) = self
+                    .solve_order(order, &auction.tokens, auction.gas_price)
+                    .instrument(span)
+                    .await
+                {
+                    solutions.push(solution);
+                }
             }
+        };
+        let deadline = auction
+            .deadline
+            .signed_duration_since(chrono::offset::Utc::now())
+            .to_std()
+            .unwrap_or_default();
+        if tokio::time::timeout(deadline, solve_orders).await.is_err() {
+            tracing::debug!("reached deadline; stopping to solve");
         }
 
         self.fills.collect_garbage();
