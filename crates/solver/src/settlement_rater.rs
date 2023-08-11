@@ -379,15 +379,47 @@ impl ScoreCalculator {
 }
 
 mod tests {
+    use {num::BigRational, primitive_types::U256};
+
+    #[allow(dead_code)]
+    fn calculate_score(objective_value: BigRational, success_probability: f64) -> U256 {
+        let score_cap = BigRational::from_float(10_000_000_000_000_000.).unwrap();
+        let score_calculator = super::ScoreCalculator::new(score_cap);
+        score_calculator
+            .compute_score(&objective_value, success_probability)
+            .unwrap()
+            .score()
+    }
+
     #[test]
     fn compute_score_with_success_probability_test() {
         let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
         let success_probability = 0.9202405649482063;
-        let score_cap = num::BigRational::from_float(10_000_000_000_000_000.).unwrap();
-        let score_calculator = super::ScoreCalculator::new(score_cap);
-        let score = score_calculator
-            .compute_score(&objective_value, success_probability)
-            .unwrap();
-        assert_eq!(score.score(), 250680657682686317u128.into());
+        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        assert_eq!(score, 250680657682686317.);
+    }
+
+    #[test]
+    fn compute_score_with_success_probability_test2() {
+        let objective_value = num::BigRational::from_float(1e16).unwrap();
+        let success_probability = 0.9;
+        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        assert_eq!(score, 9e15);
+    }
+
+    #[test]
+    fn compute_score_with_success_probability_test3() {
+        let objective_value = num::BigRational::from_float(1e17).unwrap();
+        let success_probability = 2.0 / 3.0;
+        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        assert_eq!(score, 94999999999999999.);
+    }
+
+    #[test]
+    fn compute_score_with_success_probability_test4() {
+        let objective_value = num::BigRational::from_float(1e17).unwrap();
+        let success_probability = 1.0 / 3.0;
+        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        assert_eq!(score, 4999999999999999.);
     }
 }
