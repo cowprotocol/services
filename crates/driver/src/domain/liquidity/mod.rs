@@ -61,6 +61,19 @@ pub enum Kind {
     ZeroEx(zeroex::LimitOrder),
 }
 
+impl From<&Kind> for &'static str {
+    fn from(val: &Kind) -> &'static str {
+        match *val {
+            Kind::UniswapV2(_) => "UniswapV2",
+            Kind::UniswapV3(_) => "UniswapV3",
+            Kind::BalancerV2Stable(_) => "BalancerV2Stable",
+            Kind::BalancerV2Weighted(_) => "BalancerV2Weighted",
+            Kind::Swapr(_) => "Swapr",
+            Kind::ZeroEx(_) => "ZeroExLimitOrder",
+        }
+    }
+}
+
 /// An ordered token pair.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TokenPair(eth::TokenAddress, eth::TokenAddress);
