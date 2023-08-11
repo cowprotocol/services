@@ -16,7 +16,8 @@ async fn quote() {
                &time_limit=*\
                &max_nr_exec_orders=100\
                &use_internal_buffers=true\
-               &auction_id=1"
+               &auction_id=1\
+               &request_id=0"
         ),
         req: json!({
             "amms": {
@@ -216,7 +217,8 @@ async fn solve() {
                &time_limit=*\
                &max_nr_exec_orders=100\
                &use_internal_buffers=true\
-               &auction_id=1234",
+               &auction_id=1234\
+               &request_id=0",
         ),
         req: json!({
             "amms": {
