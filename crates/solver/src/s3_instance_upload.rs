@@ -23,11 +23,13 @@ pub struct S3InstanceUploader {
 
 impl S3InstanceUploader {
     pub async fn new(config: Config) -> Self {
-        Self {
+        let uploader = Self {
             bucket: config.bucket,
             filename_prefix: config.filename_prefix,
             client: Client::new(&aws_config::load_from_env().await),
-        }
+        };
+        uploader.assert_credentials_are_usable().await;
+        uploader
     }
 
     /// Upload the bytes (expected to represent a json encoded solver instance)
@@ -37,6 +39,25 @@ impl S3InstanceUploader {
     /// `{auction_id}.json.gzip`.
     pub async fn upload_instance(&self, auction: AuctionId, value: &[u8]) -> Result<()> {
         self.upload(self.filename(auction), value).await
+    }
+
+    /// Uploads a small test file to verify that the credentials loaded from the
+    /// environment allow uploads to S3.
+    async fn assert_credentials_are_usable(&self) {
+        const DOCS_URL: &str = "https://docs.rs/aws-config/latest/aws_config/default_provider/credentials/struct.DefaultCredentialsChain.html";
+        self.upload(
+            "test".into(),
+            "test file to verify uploading capabilities".as_bytes(),
+        )
+        .await
+        .unwrap_or_else(|err| {
+            panic!(
+                "Could not upload test file to S3.\n Either disable uploads to S3 by \
+                 removing the s3_instance_upload_* arguments.\n Or make sure your environment \
+                 variables are set up to contain the correct AWS credentials.\n See {DOCS_URL} \
+                 for more details on that. \n{err:?}"
+            )
+        })
     }
 
     /// Compresses the input bytes using Gzip.
