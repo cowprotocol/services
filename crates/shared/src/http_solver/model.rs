@@ -200,10 +200,6 @@ pub enum Score {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "scoreDiscount")]
     Discount(U256),
-    /// The score value is calculated by the protocol using the score calculator.
-    /// Currently the score calculator is used for internal solvers only.
-    /// Success probability is already incorporated.
-    CalculatedByProtocol(U256),
 }
 
 #[serde_as]
@@ -225,6 +221,8 @@ pub struct SettledBatchAuctionModel {
     pub submitter: SubmissionPreference,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
+    /// TODO remove this field once all solvers conform to sending the
+    /// success_probability
     pub score: Option<Score>,
     /// The probability of the settlement to be mined successfully.
     /// Expected values [0..1]

@@ -374,7 +374,7 @@ pub async fn run(args: Arguments) {
         post_processing_pipeline,
         &domain,
         s3_instance_uploader,
-        &args.score_params,
+        &args.risk_params,
         settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,

@@ -6,19 +6,18 @@ use {
     crate::{
         settlement::Settlement,
         settlement_simulation::simulate_and_estimate_gas_at_current_block,
-        solver::{http_solver::buffers::BufferRetriever, score_computation::ScoreCalculator},
+        solver::{http_solver::buffers::BufferRetriever, risk_computation::RiskCalculator},
     },
     anyhow::{Context, Result},
     contracts::{GPv2Settlement, WETH9},
     ethcontract::{Account, U256},
     gas_estimation::GasPrice1559,
     optimize_buffer_usage::optimize_buffer_usage,
-    optimize_score::compute_score,
+    optimize_score::compute_success_probability,
     optimize_unwrapping::optimize_unwrapping,
     primitive_types::H160,
     shared::{
         ethrpc::Web3,
-        external_prices::ExternalPrices,
         http_solver::model::InternalizationStrategy,
         token_list::AutoUpdatingTokenList,
     },
@@ -65,8 +64,7 @@ pub trait PostProcessing: Send + Sync + 'static {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
-        score_calculator: Option<&ScoreCalculator>,
-        prices: &ExternalPrices,
+        risk_calculator: Option<&RiskCalculator>,
     ) -> Settlement;
 }
 
@@ -106,8 +104,7 @@ impl PostProcessing for PostProcessingPipeline {
         settlement: Settlement,
         solver_account: Account,
         gas_price: GasPrice1559,
-        score_calculator: Option<&ScoreCalculator>,
-        prices: &ExternalPrices,
+        risk_calculator: Option<&RiskCalculator>,
     ) -> Settlement {
         let simulator = SettlementSimulator {
             settlement_contract: self.settlement_contract.clone(),
@@ -133,20 +130,19 @@ impl PostProcessing for PostProcessingPipeline {
         )
         .await;
 
-        match (optimized_solution.score, score_calculator) {
-            (None, Some(score_calculator)) => Settlement {
-                score: compute_score(
+        match (optimized_solution.success_probability, risk_calculator) {
+            (None, Some(risk_calculator)) => Settlement {
+                success_probability: compute_success_probability(
                     &optimized_solution,
                     &simulator,
-                    score_calculator,
+                    risk_calculator,
                     gas_price,
-                    prices,
                     &solver_account.address(),
                 )
                 .await
                 .map_or_else(
                     |err| {
-                        tracing::warn!(?err, "failed to compute score");
+                        tracing::warn!(?err, "failed to compute success probability");
                         None
                     },
                     Some,

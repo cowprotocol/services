@@ -241,9 +241,6 @@ impl<'a> IntermediateSettlement<'a> {
         );
         let submitter = settled.submitter;
         let score = settled.score;
-
-        // adjust the score according to the success probability
-        
         let success_probability = settled.success_probability;
 
         if duplicate_coordinates(&executions) {

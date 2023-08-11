@@ -1,5 +1,3 @@
-use num::{One, Zero};
-
 use {
     crate::{
         driver::solver_settlements::RatedSettlement,
@@ -13,12 +11,12 @@ use {
         settlement_submission::gas_limit_for_estimate,
         solver::{Simulation, SimulationError, SimulationWithError, SolverInfo},
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, ensure, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::{errors::ExecutionError, Account},
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
-    num::BigRational,
+    num::{BigRational, One, Zero},
     number_conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
@@ -27,7 +25,7 @@ use {
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
-    std::{borrow::Borrow, sync::Arc},
+    std::{borrow::Borrow, cmp::min, sync::Arc},
     web3::types::AccessList,
 };
 
@@ -242,16 +240,24 @@ impl SettlementRating for SettlementRater {
                         .unwrap_or_default()
                         .saturating_sub(*discount),
                 ),
-                shared::http_solver::model::Score::CalculatedByProtocol(score) => Score::Solver(*score),
             },
             None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
         };
 
-        let success_probability = BigRational::from_float(settlement.success_probability.unwrap()).unwrap();
-        let cost_fail = BigRational::from_float(0.0).unwrap();
-        let cap = BigRational::from_float(0.5).unwrap();
-        let optimal_score = compute_optimal_bid(objective_value, success_probability, cost_fail, cap);
-        let score = big_rational_to_u256(&optimal_score).unwrap_or_default();
+        // recalculate score if success probability is provided
+        let score = match settlement.success_probability {
+            Some(success_probability) => {
+                match compute_score_with_success_probability(&objective_value, success_probability)
+                {
+                    Ok(score) => score,
+                    Err(err) => {
+                        tracing::warn!(?err, "Failed to compute score with success probability");
+                        score
+                    }
+                }
+            }
+            None => score, // remove once success probability becomes mandatory
+        };
 
         let rated_settlement = RatedSettlement {
             id,
@@ -269,30 +275,66 @@ impl SettlementRating for SettlementRater {
     }
 }
 
+fn compute_score_with_success_probability(
+    objective_value: &BigRational,
+    success_probability: f64,
+) -> Result<Score> {
+    ensure!(
+        success_probability >= 0.0 && success_probability <= 1.0,
+        "success probability must be between 0 and 1."
+    );
+    let success_probability =
+        BigRational::from_float(success_probability).context("Invalid success probability.")?;
+    let cost_fail = BigRational::from_float(0.0).unwrap();
+    let cap = BigRational::from_float(0.5).unwrap();
+    let optimal_score =
+        compute_optimal_bid(objective_value.clone(), success_probability, cost_fail, cap)?;
+    let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
+    Ok(Score::Protocol(score))
+}
+
 fn compute_optimal_bid(
     objective: BigRational,
     probability_success: BigRational,
     cost_fail: BigRational,
     cap: BigRational,
-) -> BigRational {
-    let probability_fail = BigRational::one() - probability_success;
-    let payoff_obj_minus_cap = payoff(
-        objective - cap,
-        objective,
-        probability_success,
-        cost_fail,
-        cap,
+) -> Result<BigRational> {
+    tracing::trace!(
+        ?objective,
+        ?probability_success,
+        ?cost_fail,
+        ?cap,
+        "Computing optimal bid"
     );
-    let payoff_cap = payoff(cap, objective, probability_success, cost_fail, cap);
-    if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap <= BigRational::zero() {
-        probability_success * objective - probability_fail * cost_fail
-    } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-        objective - probability_fail / probability_success * (cap + cost_fail)
-    } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-        probability_success / probability_fail * cap - cost_fail
-    } else {
-        panic!("No solution found.")
-    }
+    let probability_fail = BigRational::one() - probability_success.clone();
+    let payoff_obj_minus_cap = payoff(
+        objective.clone() - cap.clone(),
+        objective.clone(),
+        probability_success.clone(),
+        cost_fail.clone(),
+        cap.clone(),
+    );
+    tracing::trace!(?payoff_obj_minus_cap, "Payoff obj minus cap");
+    let payoff_cap = payoff(
+        cap.clone(),
+        objective.clone(),
+        probability_success.clone(),
+        cost_fail.clone(),
+        cap.clone(),
+    );
+    tracing::trace!(?payoff_cap, "Payoff cap");
+    let optimal_bid =
+        if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap <= BigRational::zero() {
+            Ok(probability_success * objective - probability_fail * cost_fail)
+        } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
+            Ok(objective - probability_fail / probability_success * (cap + cost_fail))
+        } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
+            Ok(probability_success / probability_fail * cap - cost_fail)
+        } else {
+            Err(anyhow!("Invalid bid"))
+        };
+    tracing::trace!(?optimal_bid, "Optimal bid");
+    optimal_bid
 }
 
 fn payoff(
@@ -302,9 +344,20 @@ fn payoff(
     cost_fail: BigRational,
     cap: BigRational,
 ) -> BigRational {
-    let probability_fail = BigRational::one() - probability_success;
-    let payoff_success = objective - score_references;
-    let payoff_fail = -score_reference - cost_fail;
+    tracing::trace!(
+        ?score_reference,
+        ?objective,
+        ?probability_success,
+        ?cost_fail,
+        ?cap,
+        "Computing payoff"
+    );
+    let probability_fail = BigRational::one() - probability_success.clone();
+    let payoff_success = min(objective - score_reference.clone(), cap.clone());
+    tracing::trace!(?payoff_success, "Payoff success");
+    let payoff_fail = -min(score_reference, cap) - cost_fail;
+    tracing::trace!(?payoff_fail, "Payoff fail");
     let payoff_expectation = probability_success * payoff_success + probability_fail * payoff_fail;
+    tracing::trace!(?payoff_expectation, "Payoff expectation");
     payoff_expectation
 }

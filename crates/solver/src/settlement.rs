@@ -256,6 +256,8 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
                                           * struct */
+    /// TODO remove this field once all solvers conform to sending the
+    /// success_probability
     pub score: Option<Score>,
     pub success_probability: Option<f64>,
 }
@@ -494,8 +496,8 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(Score::Score(left)), Some(Score::Score(right))) => {
-                    Some(Score::Score(left + right))
+                (Some(Score::Solver(left)), Some(Score::Solver(right))) => {
+                    Some(Score::Solver(left + right))
                 }
                 _ => None,
             },
