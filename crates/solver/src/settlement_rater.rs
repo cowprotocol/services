@@ -343,7 +343,7 @@ impl ScoreCalculator {
         } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
             Ok(objective
                 - probability_fail / probability_success * (self.score_cap.clone() + cost_fail))
-        } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
+        } else if payoff_obj_minus_cap < BigRational::zero() && payoff_cap <= BigRational::zero() {
             Ok(probability_success / probability_fail * self.score_cap.clone() - cost_fail)
         } else {
             Err(anyhow!("Invalid bid"))
