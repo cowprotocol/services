@@ -313,12 +313,7 @@ pub async fn run(args: Arguments) {
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
 
     let s3_instance_uploader = match args.s3_upload.into_config().unwrap() {
-        Some(config) => {
-            let cli_credentials = args.s3_credentials.into_credentials().unwrap();
-            let credentials =
-                S3InstanceUploader::aws_credentials_from_cli_or_env(cli_credentials).await;
-            Some(Arc::new(S3InstanceUploader::new(config, credentials)))
-        }
+        Some(config) => Some(Arc::new(S3InstanceUploader::new(config).await)),
         None => None,
     };
 

@@ -1,8 +1,6 @@
 use {
     anyhow::{Context, Result},
-    aws_credential_types::{provider::SharedCredentialsProvider, Credentials as AwsCredentials},
     aws_sdk_s3::{primitives::ByteStream, Client},
-    aws_types::region::Region,
     flate2::{bufread::GzEncoder, Compression},
     model::auction::AuctionId,
     std::io::Read,
@@ -17,13 +15,6 @@ pub struct Config {
     pub filename_prefix: String,
 }
 
-#[derive(Default)]
-pub struct Credentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub region: String,
-}
-
 pub struct S3InstanceUploader {
     bucket: String,
     filename_prefix: String,
@@ -31,27 +22,11 @@ pub struct S3InstanceUploader {
 }
 
 impl S3InstanceUploader {
-    pub async fn aws_credentials_from_cli_or_env(cli: Option<Credentials>) -> aws_types::SdkConfig {
-        match cli {
-            Some(args) => {
-                aws_types::sdk_config::Builder::default()
-                    .region(Region::new(args.region))
-                    .credentials_provider(SharedCredentialsProvider::new(
-                        AwsCredentials::from_keys(args.access_key_id, args.secret_access_key, None),
-                    ))
-                    .build()
-            }
-            // According to the AWS docs this is the recommended way to use the SDK. Unfortunately
-            // we don't have a way to detect errors when loading from the environment.
-            None => aws_config::load_from_env().await,
-        }
-    }
-
-    pub fn new(config: Config, credentials: aws_types::SdkConfig) -> Self {
+    pub async fn new(config: Config) -> Self {
         Self {
             bucket: config.bucket,
             filename_prefix: config.filename_prefix,
-            client: Client::new(&credentials),
+            client: Client::new(&aws_config::load_from_env().await),
         }
     }
 
@@ -98,18 +73,19 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn print_filename() {
-        let credentials = S3InstanceUploader::aws_credentials_from_cli_or_env(None).await;
-        let uploader = S3InstanceUploader::new(
-            Config {
-                filename_prefix: "test/".to_string(),
-                ..Default::default()
-            },
-            credentials,
-        );
+        let uploader = S3InstanceUploader::new(Config {
+            filename_prefix: "test/".to_string(),
+            ..Default::default()
+        })
+        .await;
         let key = uploader.filename(11);
         println!("{key}");
     }
 
+    // This test requires AWS credentials to be set via env variables.
+    // See https://docs.rs/aws-config/latest/aws_config/default_provider/credentials/struct.DefaultCredentialsChain.html
+    // to know which arguments are expected and in what precedence they
+    // get loaded.
     #[tokio::test]
     #[ignore]
     async fn real_upload() {
@@ -127,8 +103,7 @@ mod tests {
         }))
         .unwrap();
 
-        let credentials = S3InstanceUploader::aws_credentials_from_cli_or_env(None).await;
-        let uploader = S3InstanceUploader::new(config, credentials);
+        let uploader = S3InstanceUploader::new(config).await;
         uploader
             .upload(key.clone(), value.as_bytes())
             .await
