@@ -81,7 +81,7 @@ impl Competition {
 
         // Encode the solutions into settlements.
         let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(self.solver.name(), solution.id());
+            observe::encoding(solution.id());
             (
                 solution.id(),
                 solution.encode(auction, &self.eth, &self.simulator).await,
@@ -120,11 +120,11 @@ impl Competition {
                     Ok(m) => {
                         *other = m;
                         merged = true;
-                        observe::merged(self.solver.name(), &settlement, other);
+                        observe::merged(&settlement, other);
                         break;
                     }
                     Err(err) => {
-                        observe::not_merged(self.solver.name(), &settlement, other, err);
+                        observe::not_merged(&settlement, other, err);
                     }
                 }
             }
@@ -141,7 +141,7 @@ impl Competition {
         let scores = settlements
             .into_iter()
             .map(|settlement| {
-                observe::scoring(self.solver.name(), &settlement);
+                observe::scoring(&settlement);
                 (settlement.score(&self.eth, auction), settlement)
             })
             .collect_vec();
@@ -151,9 +151,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
-                        observe::scoring_failed(self.solver.name(), settlement.auction_id, err)
-                    })
+                    .tap_err(|err| observe::scoring_failed(self.solver.name(), err))
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -161,7 +159,7 @@ impl Competition {
 
         // Observe the scores.
         for (score, settlement) in scores.iter() {
-            observe::score(self.solver.name(), settlement, score);
+            observe::score(settlement, score);
         }
 
         // Pick the best-scoring settlement.

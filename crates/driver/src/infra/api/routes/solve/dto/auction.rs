@@ -170,6 +170,12 @@ pub struct Auction {
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
+impl Auction {
+    pub fn id(&self) -> i64 {
+        self.id
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
