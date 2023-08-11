@@ -280,7 +280,7 @@ fn compute_score_with_success_probability(
     success_probability: f64,
 ) -> Result<Score> {
     ensure!(
-        success_probability >= 0.0 && success_probability <= 1.0,
+        (0.0..=1.0).contains(&success_probability),
         "success probability must be between 0 and 1."
     );
     let success_probability =
