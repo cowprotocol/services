@@ -4,6 +4,7 @@ use {
     crate::domain::solver::Solver,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
+    tracing::Instrument,
 };
 
 pub mod dto;
@@ -26,7 +27,9 @@ impl Api {
             )
             .with_state(Arc::new(self.solver));
 
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        let make_svc = shared::make_service_with_task_local_storage!(app);
+
+        let server = axum::Server::bind(&self.addr).serve(make_svc);
         if let Some(bind) = bind {
             let _ = bind.send(server.local_addr());
         }
@@ -42,31 +45,37 @@ async fn solve(
     axum::http::StatusCode,
     axum::response::Json<dto::Response<dto::Solutions>>,
 ) {
-    let auction = match auction.to_domain() {
-        Ok(value) => value,
-        Err(err) => {
-            tracing::warn!(?err, "invalid auction");
-            return (
-                axum::http::StatusCode::BAD_REQUEST,
-                axum::response::Json(dto::Response::Err(err)),
-            );
-        }
+    let handle_request = async {
+        let auction = match auction.to_domain() {
+            Ok(value) => value,
+            Err(err) => {
+                tracing::warn!(?err, "invalid auction");
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    axum::response::Json(dto::Response::Err(err)),
+                );
+            }
+        };
+
+        tracing::trace!(?auction);
+
+        let solutions = state
+            .solve(auction)
+            .await
+            .into_iter()
+            .next()
+            .map(|solution| dto::Solutions::from_domain(&[solution]))
+            .unwrap_or_default();
+
+        tracing::trace!(?solutions);
+
+        (
+            axum::http::StatusCode::OK,
+            axum::response::Json(dto::Response::Ok(solutions)),
+        )
     };
 
-    tracing::trace!(?auction);
-
-    let solutions = state
-        .solve(auction)
+    handle_request
+        .instrument(tracing::info_span!("/solve"))
         .await
-        .into_iter()
-        .next()
-        .map(|solution| dto::Solutions::from_domain(&[solution]))
-        .unwrap_or_default();
-
-    tracing::trace!(?solutions);
-
-    (
-        axum::http::StatusCode::OK,
-        axum::response::Json(dto::Response::Ok(solutions)),
-    )
 }

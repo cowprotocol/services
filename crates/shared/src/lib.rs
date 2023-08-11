@@ -39,6 +39,7 @@ pub mod price_estimation;
 pub mod rate_limiter;
 pub mod recent_block_cache;
 pub mod remaining_amounts;
+pub mod request_id;
 pub mod request_sharing;
 pub mod signature_validator;
 pub mod sources;

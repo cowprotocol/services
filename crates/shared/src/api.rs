@@ -2,15 +2,7 @@ use {
     crate::price_estimation::PriceEstimationError,
     anyhow::Result,
     serde::{de::DeserializeOwned, Serialize},
-    std::{
-        convert::Infallible,
-        fmt::Debug,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-        time::Instant,
-    },
+    std::{convert::Infallible, fmt::Debug, time::Instant},
     warp::{
         filters::BoxedFilter,
         hyper::StatusCode,
@@ -228,28 +220,11 @@ pub fn finalize_router(
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
 
-    // Give each request a unique tracing span.
-    // This allows us to match log statements across concurrent API requests. We
-    // first try to read the request ID from our reverse proxy (this way we can
-    // line up API request logs with Nginx requests) but fall back to an
-    // internal counter.
-    let internal_request_id = Arc::new(AtomicUsize::new(0));
-    let tracing_span = warp::trace(move |info| {
-        if let Some(header) = info.request_headers().get("X-Request-ID") {
-            let request_id = String::from_utf8_lossy(header.as_bytes());
-            tracing::info_span!("request", id = &*request_id)
-        } else {
-            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
-            tracing::info_span!("request", id = request_id)
-        }
-    });
-
     warp::path!("api" / ..)
         .and(instrumented)
         .recover(handle_rejection)
         .with(cors)
         .with(warp::log::log(log_prefix))
-        .with(tracing_span)
 }
 
 impl IntoWarpReply for PriceEstimationError {

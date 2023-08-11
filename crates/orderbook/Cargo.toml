@@ -31,6 +31,7 @@ gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
+hyper = "0.14"
 maplit = { workspace = true }
 model = { path = "../model" }
 multibase = "0.9"

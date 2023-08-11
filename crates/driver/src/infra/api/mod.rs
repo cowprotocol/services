@@ -74,8 +74,11 @@ impl Api {
             app = app.nest(&path, router);
         }
 
+        let make_svc = shared::make_service_with_task_local_storage!(app);
+
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        let server = axum::Server::bind(&self.addr).serve(make_svc);
+        tracing::info!(port = server.local_addr().port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
             addr_sender.send(server.local_addr()).unwrap();
         }
