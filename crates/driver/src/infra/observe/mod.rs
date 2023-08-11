@@ -10,7 +10,6 @@ use {
         domain::{
             competition::{
                 self,
-                auction,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
@@ -23,6 +22,7 @@ use {
         infra::solver,
         util::http,
     },
+    std::collections::HashMap,
     url::Url,
 };
 
@@ -36,8 +36,8 @@ pub fn init(log: &str) {
 }
 
 /// Observe a received auction.
-pub fn auction(solver: &solver::Name, auction: &Auction) {
-    tracing::info!(%solver, ?auction, "received auction");
+pub fn auction(auction: &Auction) {
+    tracing::info!(?auction, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
@@ -47,7 +47,11 @@ pub fn fetching_liquidity() {
 
 /// Observe the fetched liquidity.
 pub fn fetched_liquidity(liquidity: &[Liquidity]) {
-    tracing::info!(?liquidity, "fetched liquidity");
+    let mut grouped: HashMap<&'static str, usize> = Default::default();
+    for liquidity in liquidity {
+        *grouped.entry((&liquidity.kind).into()).or_default() += 1;
+    }
+    tracing::info!(liquidity = ?grouped, "fetched liquidity sources");
 }
 
 /// Observe that fetching liquidity failed.
@@ -56,13 +60,13 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
 }
 
 /// Observe the solutions returned by the solver.
-pub fn solutions(solver: &solver::Name, solutions: &[Solution]) {
-    tracing::info!(%solver, ?solutions, "solutions");
+pub fn solutions(solutions: &[Solution]) {
+    tracing::info!(?solutions, "computed solutions");
 }
 
 /// Observe that a solution was discarded because it is empty.
 pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
-    tracing::info!(%solver, ?id, "discarded solution: empty");
+    tracing::info!(?id, "discarded solution: empty");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "EmptySolution"])
@@ -70,13 +74,13 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
 }
 
 /// Observe that a solution is about to be encoded into a settlement.
-pub fn encoding(solver: &solver::Name, id: solution::Id) {
-    tracing::trace!(%solver, ?id, "encoding settlement");
+pub fn encoding(id: solution::Id) {
+    tracing::trace!(?id, "encoding settlement");
 }
 
 /// Observe that settlement encoding failed.
 pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
-    tracing::info!(%solver, ?id, ?err, "discarded solution: settlement encoding failed");
+    tracing::info!(?id, ?err, "discarded solution: settlement encoding failed");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "SettlementEncodingFailed"])
@@ -84,9 +88,8 @@ pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::
 }
 
 /// Observe that two solutions were merged.
-pub fn merged(solver: &solver::Name, settlement: &Settlement, other: &Settlement) {
+pub fn merged(settlement: &Settlement, other: &Settlement) {
     tracing::debug!(
-        %solver,
         settlement_1 = ?settlement.solutions(),
         settlement_2 = ?other.solutions(),
         "merged solutions"
@@ -94,14 +97,8 @@ pub fn merged(solver: &solver::Name, settlement: &Settlement, other: &Settlement
 }
 
 /// Observe that it was not possible to merge two solutions.
-pub fn not_merged(
-    solver: &solver::Name,
-    settlement: &Settlement,
-    other: &Settlement,
-    err: solution::Error,
-) {
+pub fn not_merged(settlement: &Settlement, other: &Settlement, err: solution::Error) {
     tracing::debug!(
-        %solver,
         ?err,
         settlement_1 = ?settlement.solutions(),
         settlement_2 = ?other.solutions(),
@@ -110,18 +107,16 @@ pub fn not_merged(
 }
 
 /// Observe that scoring is about to start.
-pub fn scoring(solver: &solver::Name, settlement: &Settlement) {
+pub fn scoring(settlement: &Settlement) {
     tracing::trace!(
-        %solver,
         solutions = ?settlement.solutions(),
-        auction_id = ?settlement.auction_id,
         "scoring settlement"
     );
 }
 
 /// Observe that scoring failed.
-pub fn scoring_failed(solver: &solver::Name, auction_id: auction::Id, err: &boundary::Error) {
-    tracing::info!(%solver, ?auction_id, ?err, "discarded solution: scoring failed");
+pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
+    tracing::info!(%solver, ?err, "discarded solution: scoring failed");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "ScoringFailed"])
@@ -129,35 +124,29 @@ pub fn scoring_failed(solver: &solver::Name, auction_id: auction::Id, err: &boun
 }
 
 /// Observe the settlement score.
-pub fn score(solver: &solver::Name, settlement: &Settlement, score: &solution::Score) {
+pub fn score(settlement: &Settlement, score: &solution::Score) {
     tracing::info!(
-        %solver,
         solutions = ?settlement.solutions(),
-        auction_id = ?settlement.auction_id,
         score = score.0.to_f64_lossy(),
-        "settlement scored"
+        "scored settlement"
     );
 }
 
-pub fn revealing(solver: &solver::Name, auction_id: Option<auction::Id>) {
-    tracing::trace!(%solver, ?auction_id, "revealing");
+pub fn revealing() {
+    tracing::trace!("revealing");
 }
 
-pub fn revealed(
-    solver: &solver::Name,
-    auction_id: Option<auction::Id>,
-    result: &Result<competition::Revealed, competition::Error>,
-) {
+pub fn revealed(solver: &solver::Name, result: &Result<competition::Revealed, competition::Error>) {
     match result {
         Ok(calldata) => {
-            tracing::info!(%solver, ?calldata, ?auction_id, "revealed");
+            tracing::info!(?calldata, "revealed");
             metrics::get()
                 .reveals
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?auction_id, ?err, "failed to reveal");
+            tracing::warn!(?err, "failed to reveal");
             metrics::get()
                 .reveals
                 .with_label_values(&[solver.as_str(), competition_error(err)])
@@ -167,26 +156,22 @@ pub fn revealed(
 }
 
 /// Observe that the settlement process is about to start.
-pub fn settling(solver: &solver::Name, auction_id: Option<auction::Id>) {
-    tracing::trace!(%solver, ?auction_id, "settling");
+pub fn settling() {
+    tracing::trace!("settling solution");
 }
 
 /// Observe the result of the settlement process.
-pub fn settled(
-    solver: &solver::Name,
-    auction_id: Option<auction::Id>,
-    result: &Result<competition::Settled, competition::Error>,
-) {
+pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, competition::Error>) {
     match result {
         Ok(calldata) => {
-            tracing::info!(%solver, ?calldata, ?auction_id, "settled");
+            tracing::info!(?calldata, "settled solution");
             metrics::get()
                 .settlements
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?err, ?auction_id, "failed to settle");
+            tracing::warn!(?err, "failed to settle");
             metrics::get()
                 .settlements
                 .with_label_values(&[solver.as_str(), competition_error(err)])
@@ -196,21 +181,17 @@ pub fn settled(
 }
 
 /// Observe the result of solving an auction.
-pub fn solved(
-    solver: &solver::Name,
-    auction: &Auction,
-    result: &Result<Solved, competition::Error>,
-) {
+pub fn solved(solver: &solver::Name, result: &Result<Solved, competition::Error>) {
     match result {
         Ok(reveal) => {
-            tracing::info!(%solver, ?auction, ?reveal, "solved auction");
+            tracing::info!(?reveal, "solved auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?auction, ?err, "failed to solve auction");
+            tracing::warn!(?err, "failed to solve auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), competition_error(err)])
@@ -223,14 +204,14 @@ pub fn solved(
 pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote, quote::Error>) {
     match result {
         Ok(quote) => {
-            tracing::info!(%solver, ?order, ?quote, "quoted order");
+            tracing::info!(?order, ?quote, "quoted order");
             metrics::get()
                 .quotes
                 .with_label_values(&[solver.as_str(), "Success"])
                 .inc();
         }
         Err(err) => {
-            tracing::warn!(%solver, ?order, ?err, "failed to quote order");
+            tracing::warn!(?order, ?err, "failed to quote order");
             metrics::get()
                 .quotes
                 .with_label_values(&[
@@ -269,25 +250,24 @@ pub fn mounting_solver(solver: &solver::Name, path: &str) {
 }
 
 /// Observe that a request is about to be sent to the solver.
-pub fn solver_request(solver: &solver::Name, endpoint: &Url, req: &str) {
-    tracing::trace!(%solver, %endpoint, %req, "sending request to solver");
+pub fn solver_request(endpoint: &Url, req: &str) {
+    tracing::trace!(%endpoint, %req, "sending request to solver");
 }
 
 /// Observe that a response was received from the solver.
-pub fn solver_response(solver: &solver::Name, endpoint: &Url, res: Result<&str, &http::Error>) {
+pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
     match res {
         Ok(res) => {
-            tracing::trace!(%solver, %endpoint, %res, "received response from solver")
+            tracing::trace!(%endpoint, %res, "received response from solver")
         }
         Err(err) => {
-            tracing::warn!(%solver, %endpoint, ?err, "failed to receive response from solver")
+            tracing::warn!(%endpoint, ?err, "failed to receive response from solver")
         }
     }
 }
 
 /// Observe the result of mempool transaction execution.
 pub fn mempool_executed(
-    solver: &solver::Name,
     mempool: &Mempool,
     settlement: &Settlement,
     res: &Result<eth::TxId, boundary::Error>,
@@ -295,13 +275,17 @@ pub fn mempool_executed(
     match res {
         Ok(txid) => {
             tracing::info!(
-                %solver, ?txid, ?mempool, ?settlement,
+                ?txid,
+                ?mempool,
+                ?settlement,
                 "sending transaction via mempool succeeded",
             );
         }
         Err(err) => {
             tracing::warn!(
-                %solver, ?err, ?mempool, ?settlement,
+                ?err,
+                ?mempool,
+                ?settlement,
                 "sending transaction via mempool failed",
             );
         }
@@ -309,18 +293,13 @@ pub fn mempool_executed(
 }
 
 /// Observe that an invalid DTO was received.
-pub fn invalid_dto(
-    solver: &solver::Name,
-    err: &impl std::error::Error,
-    endpoint: &str,
-    what: &str,
-) {
-    tracing::warn!(%solver, ?err, "invalid {what} dto received in {endpoint}");
+pub fn invalid_dto(err: &impl std::error::Error, dto: &str) {
+    tracing::warn!(?err, ?dto, "received invalid dto");
 }
 
 /// Observe that the quoting process is about to start.
-pub fn quoting(solver: &solver::Name, order: &quote::Order) {
-    tracing::trace!(%solver, ?order, "quoting");
+pub fn quoting(order: &quote::Order) {
+    tracing::trace!(?order, "quoting");
 }
 
 fn competition_error(err: &competition::Error) -> &'static str {
