@@ -1,8 +1,6 @@
 use {
     anyhow::{Context, Result},
-    aws_credential_types::{provider::SharedCredentialsProvider, Credentials},
     aws_sdk_s3::{primitives::ByteStream, Client},
-    aws_types::region::Region,
     flate2::{bufread::GzEncoder, Compression},
     model::auction::AuctionId,
     std::io::Read,
@@ -10,10 +8,7 @@ use {
 
 #[derive(Default)]
 pub struct Config {
-    pub region: String,
     pub bucket: String,
-    pub access_key_id: String,
-    pub secret_access_key: String,
     /// Prepended to the auction id to form the final filename. Something like
     /// "staging/mainnet/quasimodo/". Should end with `/` if intended to be a
     /// folder.
@@ -27,20 +22,14 @@ pub struct S3InstanceUploader {
 }
 
 impl S3InstanceUploader {
-    pub fn new(config: Config) -> Self {
-        let aws_config = aws_types::sdk_config::Builder::default()
-            .region(Region::new(config.region))
-            .credentials_provider(SharedCredentialsProvider::new(Credentials::from_keys(
-                config.access_key_id,
-                config.secret_access_key,
-                None,
-            )))
-            .build();
-        Self {
+    pub async fn new(config: Config) -> Self {
+        let uploader = Self {
             bucket: config.bucket,
             filename_prefix: config.filename_prefix,
-            client: Client::new(&aws_config),
-        }
+            client: Client::new(&aws_config::load_from_env().await),
+        };
+        uploader.assert_credentials_are_usable().await;
+        uploader
     }
 
     /// Upload the bytes (expected to represent a json encoded solver instance)
@@ -50,6 +39,25 @@ impl S3InstanceUploader {
     /// `{auction_id}.json.gzip`.
     pub async fn upload_instance(&self, auction: AuctionId, value: &[u8]) -> Result<()> {
         self.upload(self.filename(auction), value).await
+    }
+
+    /// Uploads a small test file to verify that the credentials loaded from the
+    /// environment allow uploads to S3.
+    async fn assert_credentials_are_usable(&self) {
+        const DOCS_URL: &str = "https://docs.rs/aws-config/latest/aws_config/default_provider/credentials/struct.DefaultCredentialsChain.html";
+        self.upload(
+            "test".into(),
+            "test file to verify uploading capabilities".as_bytes(),
+        )
+        .await
+        .unwrap_or_else(|err| {
+            panic!(
+                "Could not upload test file to S3.\n Either disable uploads to S3 by removing the \
+                 s3_instance_upload_* arguments.\n Or make sure your environment variables are \
+                 set up to contain the correct AWS credentials.\n See {DOCS_URL} for more details \
+                 on that. \n{err:?}"
+            )
+        })
     }
 
     /// Compresses the input bytes using Gzip.
@@ -83,25 +91,27 @@ impl S3InstanceUploader {
 mod tests {
     use {super::*, flate2::read::GzDecoder, serde_json::json};
 
-    #[test]
+    #[tokio::test]
     #[ignore]
-    fn print_filename() {
+    async fn print_filename() {
         let uploader = S3InstanceUploader::new(Config {
             filename_prefix: "test/".to_string(),
             ..Default::default()
-        });
+        })
+        .await;
         let key = uploader.filename(11);
         println!("{key}");
     }
 
+    // This test requires AWS credentials to be set via env variables.
+    // See https://docs.rs/aws-config/latest/aws_config/default_provider/credentials/struct.DefaultCredentialsChain.html
+    // to know which arguments are expected and in what precedence they
+    // get loaded.
     #[tokio::test]
     #[ignore]
     async fn real_upload() {
         let config = Config {
-            region: "eu-central-1".to_string(),
             bucket: std::env::var("bucket").unwrap(),
-            access_key_id: std::env::var("access_key_id").unwrap(),
-            secret_access_key: std::env::var("secret_access_key").unwrap(),
             filename_prefix: "".to_string(),
         };
 
@@ -114,7 +124,7 @@ mod tests {
         }))
         .unwrap();
 
-        let uploader = S3InstanceUploader::new(config);
+        let uploader = S3InstanceUploader::new(config).await;
         uploader
             .upload(key.clone(), value.as_bytes())
             .await
