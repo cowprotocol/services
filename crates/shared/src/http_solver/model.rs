@@ -226,6 +226,8 @@ pub struct SettledBatchAuctionModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
     pub score: Option<Score>,
+    /// The probability of the settlement to be mined successfully.
+    /// Expected values [0..1]
     pub success_probability: Option<f64>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
