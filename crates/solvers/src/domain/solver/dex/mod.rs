@@ -39,34 +39,25 @@ impl Dex {
         // * concurrency
 
         let mut solutions = Vec::new();
-        for order in auction.orders.iter().cloned() {
-            let span = tracing::info_span!("solve", order = %order.uid);
-            let order_uid = order.uid;
-            let deadline = auction
-                .deadline
-                .signed_duration_since(chrono::offset::Utc::now())
-                .to_std();
-
-            if deadline.is_err() || deadline.unwrap().is_zero() {
-                tracing::debug!(order = %order_uid, "skipping order due to deadline");
-                break;
+        let solve_orders = async {
+            for order in auction.orders.iter().cloned() {
+                let span = tracing::info_span!("solve", order = %order.uid);
+                if let Some(solution) = self
+                    .solve_order(order, &auction.tokens, auction.gas_price)
+                    .instrument(span)
+                    .await
+                {
+                    solutions.push(solution);
+                }
             }
-
-            let result = tokio::time::timeout(
-                deadline.unwrap(),
-                self.solve_order(order, &auction.tokens, auction.gas_price),
-            )
-            .instrument(span)
-            .await;
-
-            if result.is_err() {
-                tracing::debug!(order = %order_uid, "skipping order due to timeout");
-                break;
-            }
-
-            if let Some(solution) = result.unwrap() {
-                solutions.push(solution);
-            }
+        };
+        let deadline = auction
+            .deadline
+            .signed_duration_since(chrono::offset::Utc::now())
+            .to_std()
+            .unwrap_or_default();
+        if tokio::time::timeout(deadline, solve_orders).await.is_err() {
+            tracing::debug!("reached deadline; stopping to solve");
         }
 
         self.fills.collect_garbage();
