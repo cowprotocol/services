@@ -286,7 +286,7 @@ fn compute_score_with_success_probability(
     let success_probability =
         BigRational::from_float(success_probability).context("Invalid success probability.")?;
     let cost_fail = BigRational::from_float(0.0).unwrap();
-    let cap = BigRational::from_float(0.5).unwrap();
+    let cap = BigRational::from_float(10_000_000_000_000_000.).unwrap();
     let optimal_score =
         compute_optimal_bid(objective_value.clone(), success_probability, cost_fail, cap)?;
     let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
@@ -360,4 +360,18 @@ fn payoff(
     let payoff_expectation = probability_success * payoff_success + probability_fail * payoff_fail;
     tracing::trace!(?payoff_expectation, "Payoff expectation");
     payoff_expectation
+}
+
+mod tests {
+    #[test]
+    fn compute_score_with_success_probability_test() {
+        let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
+        let success_probability = 0.9202405649482063;
+        let score = super::compute_score_with_success_probability(
+            &objective_value.into(),
+            success_probability,
+        )
+        .unwrap();
+        assert_eq!(score.score(), 250680657682686317u128.into());
+    }
 }
