@@ -301,6 +301,10 @@ impl ScoreCalculator {
         let cost_fail = BigRational::from_float(0.0).unwrap();
         let optimal_score =
             self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
+        ensure!(
+            optimal_score <= *objective_value,
+            "Optimal score higher than objective value"
+        );
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
         Ok(Score::Protocol(score))
     }
