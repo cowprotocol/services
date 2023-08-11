@@ -52,10 +52,10 @@ impl S3InstanceUploader {
         .await
         .unwrap_or_else(|err| {
             panic!(
-                "Could not upload test file to S3.\n Either disable uploads to S3 by \
-                 removing the s3_instance_upload_* arguments.\n Or make sure your environment \
-                 variables are set up to contain the correct AWS credentials.\n See {DOCS_URL} \
-                 for more details on that. \n{err:?}"
+                "Could not upload test file to S3.\n Either disable uploads to S3 by removing the \
+                 s3_instance_upload_* arguments.\n Or make sure your environment variables are \
+                 set up to contain the correct AWS credentials.\n See {DOCS_URL} for more details \
+                 on that. \n{err:?}"
             )
         })
     }
