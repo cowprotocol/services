@@ -367,11 +367,9 @@ mod tests {
     fn compute_score_with_success_probability_test() {
         let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
         let success_probability = 0.9202405649482063;
-        let score = super::compute_score_with_success_probability(
-            &objective_value.into(),
-            success_probability,
-        )
-        .unwrap();
+        let score =
+            super::compute_score_with_success_probability(&objective_value, success_probability)
+                .unwrap();
         assert_eq!(score.score(), 250680657682686317u128.into());
     }
 }
