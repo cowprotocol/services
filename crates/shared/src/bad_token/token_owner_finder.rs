@@ -80,6 +80,14 @@ pub struct Arguments {
     #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
+    /// Override the default blockscout API url for this network
+    #[clap(long, env)]
+    pub blockscout_api_url: Option<Url>,
+
+    /// Override the default ethplorer API url
+    #[clap(long, env)]
+    pub ethplorer_api_url: Option<Url>,
+
     /// The Ethplorer token holder API key.
     #[clap(long, env)]
     pub ethplorer_api_key: Option<String>,
@@ -173,6 +181,8 @@ impl Display for Arguments {
             "blockscout_http_timeout: {:?}",
             self.blockscout_http_timeout,
         )?;
+        display_option(f, "blockscout_api_url", &self.blockscout_api_url)?;
+        display_option(f, "ethplorer_api_url", &self.ethplorer_api_url)?;
         display_secret_option(f, "ethplorer_api_key", &self.ethplorer_api_key)?;
         display_option(
             f,
@@ -245,6 +255,9 @@ pub async fn init(
             http_factory.configure(|builder| builder.timeout(args.blockscout_http_timeout)),
             chain_id,
         )?;
+        if let Some(base_url) = args.blockscout_api_url.clone() {
+            blockscout.with_base_url(base_url);
+        }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             blockscout.with_rate_limiter(strategy);
         }
@@ -257,6 +270,9 @@ pub async fn init(
             args.ethplorer_api_key.clone(),
             chain_id,
         )?;
+        if let Some(base_url) = args.ethplorer_api_url.clone() {
+            ethplorer.with_base_url(base_url);
+        }
         if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
             ethplorer.with_rate_limiter(strategy);
         }
