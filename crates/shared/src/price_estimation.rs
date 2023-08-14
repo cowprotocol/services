@@ -24,7 +24,6 @@ use {
     thiserror::Error,
 };
 
-pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
 pub mod external;
