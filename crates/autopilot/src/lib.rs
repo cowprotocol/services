@@ -64,6 +64,7 @@ pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
 pub mod fok_limit_orders;
+pub mod liquidity_pool_initializer;
 pub mod on_settlement_event_updater;
 pub mod run_loop;
 pub mod solvable_orders;
@@ -295,6 +296,23 @@ pub async fn main(args: arguments::Arguments) {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
+
+    // always create balancer pool updater, even if we don't use it
+    let balancer_pool_register = crate::liquidity_pool_initializer::RegisteredPoolsStoring {
+        graph: Arc::new(
+            shared::sources::balancer_v2::graph_api::BalancerSubgraphClient::for_chain(
+                chain_id,
+                http_factory.create(),
+            )
+            .unwrap(),
+        ),
+        db: db.clone(),
+    };
+    tokio::task::spawn(
+        balancer_pool_register
+            .run_forever()
+            .instrument(tracing::info_span!("balancer_pool_register")),
+    );
     let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
         let factories = args
             .shared
@@ -321,6 +339,22 @@ pub async fn main(args: arguments::Arguments) {
     } else {
         None
     };
+    // always create univ3 pool updater, even if we don't use it
+    let univ3_pool_register = crate::liquidity_pool_initializer::RegisteredPoolsStoring {
+        graph: Arc::new(
+            shared::sources::uniswap_v3::graph_api::UniV3SubgraphClient::for_chain(
+                chain_id,
+                http_factory.create(),
+            )
+            .unwrap(),
+        ),
+        db: db.clone(),
+    };
+    tokio::task::spawn(
+        univ3_pool_register
+            .run_forever()
+            .instrument(tracing::info_span!("univ3_pool_register")),
+    );
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         Some(Arc::new(
             UniswapV3PoolFetcher::new(

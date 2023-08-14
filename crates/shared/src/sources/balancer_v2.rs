@@ -38,13 +38,22 @@
 //! Once should think of `PoolStorage` as a type of Database for which one is
 //! not concerned with how it maintains itself.
 
-mod graph_api;
+pub mod graph_api;
 pub mod pool_fetching;
 mod pool_init;
 pub mod pools;
 pub mod swap;
 
-pub use self::{
-    pool_fetching::{BalancerFactoryKind, BalancerPoolFetcher, BalancerPoolFetching},
-    pools::{Pool, PoolKind},
+pub use {
+    self::{
+        pool_fetching::{BalancerFactoryKind, BalancerPoolFetcher, BalancerPoolFetching},
+        pools::{Pool, PoolKind},
+    },
+    anyhow::Result,
 };
+
+#[mockall::automock]
+#[async_trait::async_trait]
+pub trait GetRegisteredPools<T: Send + Sync>: Send + Sync {
+    async fn get_registered_pools(&self) -> Result<T>;
+}

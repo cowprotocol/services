@@ -8,8 +8,10 @@
 //! - ensure that we are using the latest up-to-date pool data by using events
 //!   from the node
 
+use serde::Serialize;
+
 use {
-    super::swap::fixed_point::Bfp,
+    super::{swap::fixed_point::Bfp, GetRegisteredPools},
     crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
     anyhow::{bail, Result},
     ethcontract::{H160, H256},
@@ -109,8 +111,15 @@ impl BalancerSubgraphClient {
     }
 }
 
+#[async_trait::async_trait]
+impl GetRegisteredPools<RegisteredPools> for BalancerSubgraphClient {
+    async fn get_registered_pools(&self) -> Result<RegisteredPools> {
+        self.get_registered_pools().await
+    }
+}
+
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq, Serialize)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched, and for which the registered
     /// weighted pools can be considered up to date.
@@ -149,7 +158,7 @@ impl RegisteredPools {
 }
 
 /// Pool data from the Balancer V2 subgraph.
-#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub pool_type: PoolType,
@@ -161,7 +170,7 @@ pub struct PoolData {
 }
 
 /// Supported pool kinds.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash, Serialize)]
 pub enum PoolType {
     Stable,
     Weighted,
@@ -170,13 +179,19 @@ pub enum PoolType {
 
 /// Token data for pools.
 #[serde_as]
-#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Token {
     pub address: H160,
     pub decimals: u8,
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     pub weight: Option<Bfp>,
+}
+
+impl std::fmt::Display for Bfp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!("implement")
+    }
 }
 
 mod pools_query {

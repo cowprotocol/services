@@ -4,6 +4,7 @@
 use {
     crate::{
         event_handling::MAX_REORG_BLOCK_COUNT,
+        sources::balancer_v2::GetRegisteredPools,
         subgraph::{ContainsId, SubgraphClient},
     },
     anyhow::{bail, Result},
@@ -217,8 +218,15 @@ impl UniV3SubgraphClient {
     }
 }
 
+#[async_trait::async_trait]
+impl GetRegisteredPools<RegisteredPools> for UniV3SubgraphClient {
+    async fn get_registered_pools(&self) -> Result<RegisteredPools> {
+        self.get_registered_pools(None).await
+    }
+}
+
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Serialize)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched
     pub fetched_block_number: u64,
@@ -228,7 +236,7 @@ pub struct RegisteredPools {
 
 /// Pool data from the Uniswap V3 subgraph.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub id: H160,
@@ -253,7 +261,7 @@ impl ContainsId for PoolData {
 
 /// Tick data from the Uniswap V3 subgraph.
 #[serde_as]
-#[derive(Debug, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
     pub id: String,
