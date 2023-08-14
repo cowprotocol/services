@@ -305,7 +305,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -326,11 +325,6 @@ pub async fn run(args: Arguments) {
         factory::Components {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
-            uniswap_v2_pools: pool_fetcher.clone(),
-            balancer_pools: balancer_pool_fetcher.clone().map(|a| a as _),
-            uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
-            tokens: token_info_fetcher.clone(),
-            gas_price: gas_price_estimator.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");

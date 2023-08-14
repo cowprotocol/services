@@ -191,17 +191,6 @@ pub async fn main(args: arguments::Arguments) {
         current_block_stream.clone(),
     );
 
-    let gas_price_estimator = Arc::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
-            &web3,
-            args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    );
-
     let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
         shared::sources::defaults_for_chain(chain_id)
             .expect("failed to get default baseline sources")
@@ -355,11 +344,6 @@ pub async fn main(args: arguments::Arguments) {
         factory::Components {
             http_factory: http_factory.clone(),
             bad_token_detector: bad_token_detector.clone(),
-            uniswap_v2_pools: pool_fetcher.clone(),
-            balancer_pools: balancer_pool_fetcher.clone().map(|a| a as _),
-            uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
-            tokens: token_info_fetcher.clone(),
-            gas_price: gas_price_estimator.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
