@@ -23,7 +23,6 @@ use {
     thiserror::Error,
 };
 
-pub mod baseline;
 pub mod competition;
 pub mod external;
 pub mod factory;
