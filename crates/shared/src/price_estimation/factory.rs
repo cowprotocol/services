@@ -1,35 +1,24 @@
 use {
     super::{
-        balancer_sor::BalancerSor,
-        baseline::BaselinePriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
         external::ExternalPriceEstimator,
-        http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimator},
         native_price_cache::CachingNativePriceEstimator,
-        oneinch::OneInchPriceEstimator,
-        paraswap::ParaswapPriceEstimator,
         sanitized::SanitizedPriceEstimator,
         trade_finder::TradeVerifier,
-        zeroex::ZeroExPriceEstimator,
         Arguments,
         PriceEstimating,
-        PriceEstimator,
-        PriceEstimatorKind,
     },
     crate::{
-        arguments::{self, CodeSimulatorKind, ExternalSolver, LegacySolver},
+        arguments::{self, CodeSimulatorKind, ExternalSolver},
         bad_token::BadTokenDetecting,
-        balancer_sor_api::DefaultBalancerSorApi,
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
-        http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
         oneinch_api::OneInchClient,
-        paraswap_api::DefaultParaswapApi,
         rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
@@ -49,7 +38,6 @@ use {
 /// A factory for initializing shared price estimators.
 pub struct PriceEstimatorFactory<'a> {
     args: &'a Arguments,
-    shared_args: &'a arguments::Arguments,
     network: Network,
     components: Components,
     trade_verifier: Option<TradeVerifier>,
@@ -86,27 +74,6 @@ pub struct Components {
     pub gas_price: Arc<dyn GasPriceEstimating>,
     pub zeroex: Arc<dyn ZeroExApi>,
     pub oneinch: Option<Arc<dyn OneInchClient>>,
-}
-
-/// The source of the price estimator.
-pub enum PriceEstimatorSource {
-    Builtin(PriceEstimator),
-    External(ExternalSolver),
-    Legacy(LegacySolver),
-}
-
-impl PriceEstimatorSource {
-    pub fn for_args(
-        builtin: &[PriceEstimator],
-        external: &[ExternalSolver],
-        legacy: &[LegacySolver],
-    ) -> Vec<Self> {
-        std::iter::empty()
-            .chain(builtin.iter().copied().map(PriceEstimatorSource::Builtin))
-            .chain(external.iter().cloned().map(PriceEstimatorSource::External))
-            .chain(legacy.iter().cloned().map(PriceEstimatorSource::Legacy))
-            .collect()
-    }
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
@@ -162,7 +129,6 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         Ok(Self {
             args,
-            shared_args,
             network,
             components,
             trade_verifier,
@@ -222,56 +188,31 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn create_estimator(&self, estimator: PriceEstimator) -> Result<EstimatorEntry> {
-        let name = estimator.name();
-        match estimator.kind {
-            PriceEstimatorKind::Baseline => {
-                self.create_estimator_entry::<BaselinePriceEstimator>(&name, estimator.address)
-            }
-            PriceEstimatorKind::Paraswap => {
-                self.create_estimator_entry::<ParaswapPriceEstimator>(&name, estimator.address)
-            }
-            PriceEstimatorKind::ZeroEx => {
-                self.create_estimator_entry::<ZeroExPriceEstimator>(&name, estimator.address)
-            }
-            PriceEstimatorKind::OneInch => {
-                self.create_estimator_entry::<OneInchPriceEstimator>(&name, estimator.address)
-            }
-            PriceEstimatorKind::BalancerSor => {
-                self.create_estimator_entry::<BalancerSor>(&name, estimator.address)
-            }
-        }
-    }
+    fn get_estimator(&mut self, solver: &ExternalSolver) -> Result<&EstimatorEntry> {
+        let name = &solver.name;
 
-    fn get_estimator(&mut self, source: &PriceEstimatorSource) -> Result<&EstimatorEntry> {
-        let name = source.name();
-
-        if !self.estimators.contains_key(&name) {
-            let estimator = match source {
-                PriceEstimatorSource::Builtin(builtin) => self.create_estimator(*builtin)?,
-                PriceEstimatorSource::External(driver) => self
-                    .create_estimator_entry::<ExternalPriceEstimator>(
-                        &driver.name,
-                        driver.into(),
-                    )?,
-                PriceEstimatorSource::Legacy(solver) => {
-                    self.create_estimator_entry::<HttpPriceEstimator>(&solver.name, solver.into())?
-                }
-            };
+        if !self.estimators.contains_key(name) {
+            let estimator =
+                self.create_estimator_entry::<ExternalPriceEstimator>(&solver.name, solver.into())?;
             self.estimators.insert(name.clone(), estimator);
         }
 
-        Ok(&self.estimators[&name])
+        Ok(&self.estimators[name])
     }
 
     fn get_estimators(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        sources: &[ExternalSolver],
         select: impl Fn(&EstimatorEntry) -> &Arc<dyn PriceEstimating>,
     ) -> Result<Vec<(String, Arc<dyn PriceEstimating>)>> {
         sources
             .iter()
-            .map(|source| Ok((source.name(), select(self.get_estimator(source)?).clone())))
+            .map(|source| {
+                Ok((
+                    source.name.clone(),
+                    select(self.get_estimator(source)?).clone(),
+                ))
+            })
             .collect()
     }
 
@@ -285,7 +226,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        sources: &[ExternalSolver],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
         let competition_estimator = CompetitionPriceEstimator::new(estimators);
@@ -301,7 +242,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn fast_price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        sources: &[ExternalSolver],
         fast_price_estimation_results_required: NonZeroUsize,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
@@ -315,7 +256,7 @@ impl<'a> PriceEstimatorFactory<'a> {
 
     pub fn native_price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        sources: &[ExternalSolver],
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
@@ -345,16 +286,6 @@ impl<'a> PriceEstimatorFactory<'a> {
     }
 }
 
-impl PriceEstimatorSource {
-    fn name(&self) -> String {
-        match self {
-            Self::Builtin(builtin) => builtin.name(),
-            Self::External(solver) => solver.name.clone(),
-            Self::Legacy(solver) => solver.name.clone(),
-        }
-    }
-}
-
 /// Trait for modelling the initialization of a Price estimator and its verified
 /// counter-part. This allows for generic price estimator creation, as well as
 /// per-type trade verification configuration.
@@ -365,165 +296,6 @@ trait PriceEstimatorCreating: Sized {
 
     fn verified(&self, _: &TradeVerifier) -> Option<Self> {
         None
-    }
-}
-
-impl PriceEstimatorCreating for BaselinePriceEstimator {
-    type Params = H160;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
-        Ok(BaselinePriceEstimator::new(
-            factory.components.uniswap_v2_pools.clone(),
-            factory.components.gas_price.clone(),
-            factory.network.base_tokens.clone(),
-            factory.network.native_token,
-            factory.native_token_price_estimation_amount()?,
-            factory.rate_limiter(name),
-            solver,
-        ))
-    }
-}
-impl PriceEstimatorCreating for ParaswapPriceEstimator {
-    type Params = H160;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
-        Ok(ParaswapPriceEstimator::new(
-            Arc::new(DefaultParaswapApi {
-                client: factory.components.http_factory.create(),
-                partner: factory
-                    .shared_args
-                    .paraswap_partner
-                    .clone()
-                    .unwrap_or_default(),
-            }),
-            factory.components.tokens.clone(),
-            factory.shared_args.disabled_paraswap_dexs.clone(),
-            factory.rate_limiter(name),
-            solver,
-        ))
-    }
-
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
-        Some(self.verified(verifier.clone()))
-    }
-}
-impl PriceEstimatorCreating for ZeroExPriceEstimator {
-    type Params = H160;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
-        Ok(ZeroExPriceEstimator::new(
-            factory.components.zeroex.clone(),
-            factory.shared_args.disabled_zeroex_sources.clone(),
-            factory.rate_limiter(name),
-            factory.args.zeroex_only_estimate_buy_queries,
-            solver,
-        ))
-    }
-
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
-        Some(self.verified(verifier.clone()))
-    }
-}
-
-impl PriceEstimatorCreating for OneInchPriceEstimator {
-    type Params = H160;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
-        Ok(OneInchPriceEstimator::new(
-            factory
-                .components
-                .oneinch
-                .clone()
-                .context("1Inch API not supported for network")?,
-            factory.shared_args.disabled_one_inch_protocols.clone(),
-            factory.rate_limiter(name),
-            factory.shared_args.one_inch_referrer_address,
-            solver,
-        ))
-    }
-
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
-        Some(self.verified(verifier.clone()))
-    }
-}
-
-impl PriceEstimatorCreating for BalancerSor {
-    type Params = H160;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
-        Ok(BalancerSor::new(
-            Arc::new(DefaultBalancerSorApi::new(
-                factory.components.http_factory.create(),
-                factory
-                    .args
-                    .balancer_sor_url
-                    .clone()
-                    .context("balancer SOR url not specified")?,
-                factory.network.chain_id,
-            )?),
-            factory.rate_limiter(name),
-            factory.components.gas_price.clone(),
-            solver,
-        ))
-    }
-}
-
-#[derive(Debug, Clone)]
-struct HttpPriceEstimatorParams {
-    base: Url,
-    solve_path: String,
-    use_liquidity: bool,
-    solver: H160,
-}
-
-impl PriceEstimatorCreating for HttpPriceEstimator {
-    type Params = HttpPriceEstimatorParams;
-
-    fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self> {
-        Ok(HttpPriceEstimator::new(
-            Arc::new(DefaultHttpSolverApi {
-                name: name.to_string(),
-                network_name: factory.network.name.clone(),
-                chain_id: factory.network.chain_id,
-                base: params.base,
-                solve_path: params.solve_path,
-                client: factory.components.http_factory.create(),
-                gzip_requests: false,
-                config: SolverConfig {
-                    use_internal_buffers: Some(factory.shared_args.use_internal_buffers),
-                    objective: Some(Objective::SurplusFeesCosts),
-                    ..Default::default()
-                },
-            }),
-            factory.components.uniswap_v2_pools.clone(),
-            factory.components.balancer_pools.clone(),
-            factory.components.uniswap_v3_pools.clone(),
-            factory.components.tokens.clone(),
-            factory.components.gas_price.clone(),
-            factory.network.native_token,
-            factory.network.base_tokens.clone(),
-            factory.network.name.clone(),
-            factory.rate_limiter(name),
-            params.use_liquidity,
-            params.solver,
-        ))
-    }
-}
-
-impl From<&LegacySolver> for HttpPriceEstimatorParams {
-    fn from(solver: &LegacySolver) -> Self {
-        let base = {
-            let mut url = solver.url.clone();
-            url.set_path("");
-            url
-        };
-        let solve_path = solver.url.path().to_owned();
-        Self {
-            base,
-            solve_path,
-            use_liquidity: solver.use_liquidity,
-            solver: solver.address,
-        }
     }
 }
 
