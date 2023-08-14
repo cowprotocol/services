@@ -5,7 +5,7 @@ use {
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimators},
+        price_estimation,
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
     url::Url,
@@ -79,11 +79,6 @@ pub struct Arguments {
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
-
-    /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token.
-    #[clap(long, env, default_value_t)]
-    pub native_price_estimators: PriceEstimators,
 
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
@@ -213,11 +208,6 @@ impl std::fmt::Display for Arguments {
             self.token_quality_cache_expiry
         )?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        writeln!(
-            f,
-            "native_price_estimators: {}",
-            self.native_price_estimators
-        )?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",

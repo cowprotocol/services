@@ -6,7 +6,7 @@ use {
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
-    anyhow::{Context, Result},
+    anyhow::Result,
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -18,7 +18,6 @@ use {
         fmt::{self, Display, Formatter},
         future::Future,
         hash::Hash,
-        str::FromStr,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -40,103 +39,6 @@ pub mod paraswap;
 pub mod sanitized;
 pub mod trade_finder;
 pub mod zeroex;
-
-#[derive(Clone, Debug)]
-pub struct PriceEstimators(Vec<PriceEstimator>);
-
-impl PriceEstimators {
-    fn none() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn as_slice(&self) -> &[PriceEstimator] {
-        &self.0
-    }
-}
-
-impl Default for PriceEstimators {
-    fn default() -> Self {
-        Self(vec![PriceEstimator {
-            kind: PriceEstimatorKind::Baseline,
-            address: H160::zero(),
-        }])
-    }
-}
-
-impl Display for PriceEstimators {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(PriceEstimator { kind, address }) = it.next() {
-            write!(f, "{kind:?}|{address:?}")?;
-            for PriceEstimator { kind, address } in it {
-                write!(f, ",{kind:?}|{address:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
-        }
-    }
-}
-
-impl FromStr for PriceEstimators {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "None" {
-            return Ok(Self::none());
-        }
-
-        Ok(Self(
-            s.split(',')
-                .map(PriceEstimator::from_str)
-                .collect::<Result<_>>()?,
-        ))
-    }
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub enum PriceEstimatorKind {
-    Baseline,
-    Paraswap,
-    ZeroEx,
-    OneInch,
-    BalancerSor,
-}
-
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-pub struct PriceEstimator {
-    pub kind: PriceEstimatorKind,
-    pub address: H160,
-}
-
-impl PriceEstimator {
-    /// Returns the name of this price estimator type.
-    pub fn name(&self) -> String {
-        format!("{:?}", self.kind)
-    }
-}
-
-impl FromStr for PriceEstimator {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (estimator, address) = s
-            .split_once('|')
-            .unwrap_or((s, "0x0000000000000000000000000000000000000000"));
-        let address = H160::from_str(address).context("failed to convert to H160: {address}")?;
-        let kind = match estimator {
-            "Baseline" => PriceEstimatorKind::Baseline,
-            "Paraswap" => PriceEstimatorKind::Paraswap,
-            "ZeroEx" => PriceEstimatorKind::ZeroEx,
-            "OneInch" => PriceEstimatorKind::OneInch,
-            "BalancerSor" => PriceEstimatorKind::BalancerSor,
-            estimator => {
-                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
-            }
-        };
-        Ok(PriceEstimator { kind, address })
-    }
-}
 
 /// Shared price estimation configuration arguments.
 #[derive(clap::Parser)]

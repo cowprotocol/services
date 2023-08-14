@@ -7,7 +7,6 @@ use {
         current_block,
         ethrpc,
         gas_price_estimation::GasEstimatorType,
-        price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
         sources::{
             balancer_v2::BalancerFactoryKind,
@@ -62,22 +61,10 @@ pub struct LegacySolver {
 // as both crates can create orders
 #[derive(clap::Parser)]
 pub struct OrderQuotingArguments {
-    #[clap(long, env, default_value_t)]
-    pub price_estimators: PriceEstimators,
-
     /// A list of external drivers used for price estimation in the following
     /// format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub price_estimation_drivers: Vec<ExternalSolver>,
-
-    /// A list of legacy solvers to be used for price estimation in the
-    /// following format: `<NAME>|<URL>[|<ADDRESS>[|<USE_LIQUIITY>]]`.
-    ///
-    /// These solvers are used as an intermediary "transition-period" for
-    /// CIP-27 for solvers that don't provide calldata and while not all
-    /// quotes are verified.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub price_estimation_legacy_solvers: Vec<LegacySolver>,
 
     /// The configured addresses whose orders should be considered liquidity and
     /// not regular user orders.
@@ -374,16 +361,10 @@ impl Display for OrderQuotingArguments {
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(f, "price_estimators: {}", self.price_estimators)?;
         display_list(
             f,
             "price_estimation_drivers",
             &self.price_estimation_drivers,
-        )?;
-        display_list(
-            f,
-            "price_estimation_legacy_solvers",
-            &self.price_estimation_legacy_solvers,
         )?;
         writeln!(
             f,

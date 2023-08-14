@@ -5,7 +5,7 @@ use {
         arguments::{display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimators},
+        price_estimation,
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
@@ -87,11 +87,6 @@ pub struct Arguments {
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
-
-    /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token.
-    #[clap(long, env, default_value_t)]
-    pub native_price_estimators: PriceEstimators,
 
     /// How many successful price estimates for each order will cause a fast
     /// price estimation to return its result early.
@@ -218,11 +213,6 @@ impl std::fmt::Display for Arguments {
             f,
             "solvable_orders_max_update_age_blocks: {}",
             self.solvable_orders_max_update_age_blocks,
-        )?;
-        writeln!(
-            f,
-            "native_price_estimators: {}",
-            self.native_price_estimators
         )?;
         writeln!(
             f,
