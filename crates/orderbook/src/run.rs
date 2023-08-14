@@ -27,7 +27,7 @@ use {
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
-        maintenance::{Maintaining, ServiceMaintenance},
+        maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
         order_quoting::{OrderQuoter, QuoteHandler},
@@ -40,17 +40,10 @@ use {
         signature_validator::Web3SignatureValidator,
         sources::{
             self,
-            balancer_v2::{
-                pool_fetching::BalancerContracts,
-                BalancerFactoryKind,
-                BalancerPoolFetcher,
-            },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
-            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,
         },
-        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     },
     std::{sync::Arc, time::Duration},
     tokio::task,
@@ -260,51 +253,6 @@ pub async fn run(args: Arguments) {
         )
         .expect("failed to create pool cache"),
     );
-    let block_retriver = args.shared.current_block.retriever(web3.clone());
-    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
-        web3: web3.clone(),
-    })));
-    let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
-        let factories = args
-            .shared
-            .balancer_factories
-            .clone()
-            .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
-        let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
-        let balancer_pool_fetcher = Arc::new(
-            BalancerPoolFetcher::new(
-                chain_id,
-                block_retriver.clone(),
-                token_info_fetcher.clone(),
-                cache_config,
-                current_block_stream.clone(),
-                http_factory.create(),
-                web3.clone(),
-                &contracts,
-                args.shared.balancer_pool_deny_list.clone(),
-            )
-            .await
-            .expect("failed to create Balancer pool fetcher"),
-        );
-        Some(balancer_pool_fetcher)
-    } else {
-        None
-    };
-    let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        Some(Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                web3.clone(),
-                http_factory.create(),
-                block_retriver,
-                args.shared.max_pools_to_initialize_cache,
-            )
-            .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
-        ))
-    } else {
-        None
-    };
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
         &args.shared,
@@ -422,14 +370,6 @@ pub async fn run(args: Arguments) {
         ipfs,
     ));
 
-    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
-    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
-    }
-
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
@@ -452,7 +392,7 @@ pub async fn run(args: Arguments) {
         native_price_estimator,
     );
 
-    let service_maintainer = ServiceMaintenance::new(maintainers);
+    let service_maintainer = ServiceMaintenance::new(vec![pool_fetcher as Arc<_>]);
     task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
     let mut metrics_address = args.bind_address;
