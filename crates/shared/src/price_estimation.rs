@@ -33,7 +33,6 @@ pub mod http;
 pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;
-pub mod paraswap;
 pub mod sanitized;
 pub mod trade_finder;
 
