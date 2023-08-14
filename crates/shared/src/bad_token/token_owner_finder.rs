@@ -80,11 +80,11 @@ pub struct Arguments {
     #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
-    // Override the default blockscout API url for this network
+    /// Override the default blockscout API url for this network
     #[clap(long, env)]
     pub blockscout_api_url: Option<Url>,
 
-    // Override the default ethplorer API url
+    /// Override the default ethplorer API url
     #[clap(long, env)]
     pub ethplorer_api_url: Option<Url>,
 
