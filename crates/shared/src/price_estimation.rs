@@ -11,7 +11,6 @@ use {
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
-    reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
         cmp::{Eq, PartialEq},
@@ -96,30 +95,6 @@ pub struct Arguments {
     #[clap(long, env, value_parser = U256::from_dec_str)]
     pub amount_to_estimate_prices_with: Option<U256>,
 
-    /// The API endpoint to call the Quasimodo solver for price estimation
-    #[clap(long, env)]
-    pub quasimodo_solver_url: Option<Url>,
-
-    /// The API endpoint to call the yearn solver for price estimation
-    #[clap(long, env)]
-    pub yearn_solver_url: Option<Url>,
-
-    /// The API path to use for solving.
-    #[clap(long, env, default_value = "solve")]
-    pub yearn_solver_path: String,
-
-    /// The API endpoint to call the Raven solver for price estimation
-    #[clap(long, env)]
-    pub raven_solver_url: Option<Url>,
-
-    /// The API path to use for solving.
-    #[clap(long, env, default_value = "solve")]
-    pub raven_solver_path: String,
-
-    /// The API endpoint for the Balancer SOR API for solving.
-    #[clap(long, env)]
-    pub balancer_sor_url: Option<Url>,
-
     /// The trade simulation strategy to use for supported price estimators.
     /// This ensures that the proposed trade calldata gets simulated, thus
     /// avoiding invalid calldata mistakenly advertising unachievable prices
@@ -147,11 +122,6 @@ pub struct Arguments {
     /// more price estimators will not be asked for a quote.
     #[clap(long, env, default_value = "1")]
     pub quote_prediction_confidence: f64,
-
-    /// Use 0x estimator for only buy orders. This flag can be enabled to reduce
-    /// request pressure on the 0x API.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub zeroex_only_estimate_buy_queries: bool,
 }
 
 impl Display for Arguments {
@@ -191,12 +161,6 @@ impl Display for Arguments {
             "amount_to_estimate_prices_with",
             &self.amount_to_estimate_prices_with,
         )?;
-        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
-        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
-        writeln!(f, "yearn_solver_path: {}", self.yearn_solver_path)?;
-        display_option(f, "raven_solver_url", &self.raven_solver_url)?;
-        writeln!(f, "raven_solver_path: {}", self.raven_solver_path)?;
-        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,
             "trade_simulator",
@@ -214,11 +178,6 @@ impl Display for Arguments {
             f,
             "enable_quote_predictions: {:?}",
             self.enable_quote_predictions
-        )?;
-        writeln!(
-            f,
-            "zeroex_only_estimate_buy_queries: {:?}",
-            self.zeroex_only_estimate_buy_queries
         )?;
 
         Ok(())
@@ -474,54 +433,5 @@ pub mod mocks {
         ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
             futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_price_estimators() {
-        for arg in [
-            "Baselin|0x0000000000000000000000000000000000000001", // incorrect estimator name
-            "Baseline|0x000000000000000000000000000000000000000", // address too short
-            "Baseline|0x00000000000000000000000000000000000000010", // address too long
-            "Baseline,0x0000000000000000000000000000000000000001", // wrong separator
-            "Baseline|",                                          // missing argument
-            "Baseline|0x0000000000000000000000000000000000000001|", // additional argument
-            "Baseline|0x0000000000000000000000000000000000000001|Baseline", // additional argument
-        ] {
-            let parsed = arg.parse::<PriceEstimator>();
-            assert!(
-                parsed.is_err(),
-                "string successfully parsed when it should have failed: {arg}"
-            );
-        }
-
-        let address = H160::from_low_u64_be;
-        let parsed = |arg: &str| arg.parse::<PriceEstimator>().unwrap();
-        let estimator = |kind, address| PriceEstimator { kind, address };
-        // Fallback case to allow for default CLI arguments.
-        assert_eq!(
-            parsed("Baseline"),
-            estimator(PriceEstimatorKind::Baseline, address(0))
-        );
-        assert_eq!(
-            parsed("Baseline|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::Baseline, address(1))
-        );
-        assert_eq!(
-            parsed("ZeroEx|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::ZeroEx, address(1))
-        );
-        assert_eq!(
-            parsed("OneInch|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::OneInch, address(1))
-        );
-        assert_eq!(
-            parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
-            estimator(PriceEstimatorKind::BalancerSor, address(1))
-        );
     }
 }
