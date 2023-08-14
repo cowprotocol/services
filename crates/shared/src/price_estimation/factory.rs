@@ -49,7 +49,6 @@ pub struct Network {
     pub chain_id: u64,
     pub native_token: H160,
     pub settlement: H160,
-    pub authenticator: H160,
 }
 
 /// The shared components needed for creating price estimators.

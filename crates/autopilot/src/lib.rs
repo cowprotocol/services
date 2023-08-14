@@ -286,11 +286,6 @@ pub async fn main(args: arguments::Arguments) {
             chain_id,
             native_token: native_token.address(),
             settlement: settlement_contract.address(),
-            authenticator: settlement_contract
-                .authenticator()
-                .call()
-                .await
-                .expect("failed to query solver authenticator address"),
         },
         factory::Components {
             http_factory: http_factory.clone(),
