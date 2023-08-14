@@ -48,12 +48,16 @@ impl ExternalTradeFinder {
         };
 
         let body = serde_json::to_string(&order).context("failed to encode body")?;
-        let request = self
+        let mut request = self
             .client
             .post(self.quote_endpoint.clone())
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
             .body(body);
+
+        if let Some(id) = crate::request_id::get_task_local_storage() {
+            request = request.header("X-REQUEST-ID", id);
+        }
 
         let future = async {
             let response = request.send().await.map_err(PriceEstimationError::from)?;

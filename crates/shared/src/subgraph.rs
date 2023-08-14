@@ -9,7 +9,7 @@ use {
     thiserror::Error,
 };
 
-pub const QUERY_PAGE_SIZE: usize = 100;
+pub const QUERY_PAGE_SIZE: usize = 1000;
 const MAX_NUMBER_OF_RETRIES: usize = 10;
 
 /// A general client for querying subgraphs.
@@ -93,6 +93,7 @@ impl SubgraphClient {
         &self,
         query: &str,
         mut variables: Map<String, Value>,
+        max_results: Option<usize>,
     ) -> Result<Vec<T>>
     where
         T: ContainsId + DeserializeOwned,
@@ -118,9 +119,13 @@ impl SubgraphClient {
 
             result.extend(page);
 
-            if no_more_pages {
+            if no_more_pages || max_results.is_some_and(|val| result.len() >= val) {
                 break;
             }
+        }
+
+        if let Some(max_size) = max_results {
+            result.truncate(max_size);
         }
 
         Ok(result)

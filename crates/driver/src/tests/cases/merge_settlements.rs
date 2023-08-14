@@ -17,7 +17,8 @@ async fn possible() {
         .done()
         .await;
 
-    test.solve()
+    test.solve().await.ok();
+    test.reveal()
         .await
         .ok()
         .orders(&[ab_order().name, cd_order().name]);
@@ -53,6 +54,7 @@ async fn impossible() {
 
     // Only the first A-B order gets settled.
 
-    test.solve().await.ok().orders(&[ab_order().name]);
+    test.solve().await.ok();
+    test.reveal().await.ok().orders(&[ab_order().name]);
     test.settle().await.ok().await.ab_order_executed().await;
 }

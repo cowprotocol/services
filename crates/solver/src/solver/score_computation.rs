@@ -51,7 +51,16 @@ impl ScoreCalculator {
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
-        let score = success_probability * (surplus + fees - gas_amount * gas_price);
+        let obj = surplus + fees - gas_amount * gas_price;
+        let cap = 10000000000000000.0;
+        let score = if success_probability * obj <= cap && (1.0 - success_probability) * obj <= cap
+        {
+            success_probability * obj
+        } else if success_probability * obj > cap && success_probability >= 0.5 {
+            obj - cap * (1.0 - success_probability) / success_probability
+        } else {
+            cap * success_probability / (1.0 - success_probability)
+        };
         tracing::trace!(
             ?surplus,
             ?fees,
@@ -75,7 +84,6 @@ impl ScoreCalculator {
 const DEFAULT_SCORE_PARAMETERS: &str = "\
     Naive,0.5604082285267333,0.00285114179288399,0.06499875450001853,3.3987949311136787;\
     Baseline,-0.24391894879979226,-0.05809501139187965,-0.000013222507455295696,4.27946195371547;\
-    CowDexAg,-0.9613998308805674,-0.14435150204689684,0.13923418474574772,2.7565258390467178;\
     OneInch,-0.32674185936325467,-0.05930446215554123,-0.33031769043234466,3.144609301500272;\
     Paraswap,-0.7815504846264341,-0.06965336115721313,0.0701725936991023,3.2617622830143453;\
     ZeroEx,-1.399997494341399,-0.04522233479453635,0.11066085229796373,2.7150950015915676;\
@@ -174,13 +182,14 @@ mod tests {
     #[test]
     fn score_parameters_test() {
         let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
-        assert_eq!(score_parameters.0.len(), 7);
+        assert_eq!(score_parameters.0.len(), 6);
     }
 
     #[test]
     fn compute_score_test() {
         // tx hash 0x201c948ad94d7f93ad2d3c13fa4b6bbd4270533fbfedcb8be60e68c8e709d2b6
         // objective_score = 251547381429604400
+        // success_probability ends up being 0.9202405649482063
         let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
         let inputs = objective_value::Inputs {
             surplus_given: u256_to_big_rational(&U256::from(237248548166961920u128)),
@@ -195,6 +204,6 @@ mod tests {
             .unwrap()
             .calculate(&inputs, nmb_orders)
             .unwrap();
-        assert_eq!(score, 231484104402245472u128.into());
+        assert_eq!(score, 250680657687276800u128.into());
     }
 }

@@ -33,7 +33,6 @@ include_contracts! {
     CoWSwapEthFlow;
     CoWSwapOnchainOrders;
     CowProtocolToken;
-    CowProtocolVirtualToken;
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;
@@ -142,7 +141,6 @@ mod tests {
             assert_has_deployment_address!(SushiSwapRouter for *network);
             assert_has_deployment_address!(WETH9 for *network);
             assert_has_deployment_address!(CowProtocolToken for *network);
-            assert_has_deployment_address!(CowProtocolVirtualToken for *network);
             assert_has_deployment_address!(HooksTrampoline for *network);
         }
         for network in &[MAINNET, GOERLI] {

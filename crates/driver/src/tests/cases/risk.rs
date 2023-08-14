@@ -19,8 +19,10 @@ async fn test() {
 
     let solve = test.solve().await;
 
-    solve.ok().orders(&[ab_order().name]).score(
+    solve.ok().score(
         (DEFAULT_SCORE_MIN - RISK).into(),
         (DEFAULT_SCORE_MAX - RISK).into(),
     );
+
+    test.reveal().await.ok().orders(&[ab_order().name]);
 }

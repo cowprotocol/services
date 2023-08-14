@@ -1,5 +1,5 @@
 use {
-    crate::driver_model::{settle, solve},
+    crate::driver_model::{reveal, settle, solve},
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     shared::http_client::response_body_with_size_limit,
@@ -28,6 +28,10 @@ impl Driver {
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
         self.request_response("solve", Some(request)).await
+    }
+
+    pub async fn reveal(&self) -> Result<reveal::Response> {
+        self.request_response("reveal", Option::<&()>::None).await
     }
 
     pub async fn settle(&self) -> Result<settle::Response> {

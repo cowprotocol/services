@@ -5,9 +5,11 @@ use {
         auction_participants::Participant,
         auction_prices::AuctionPrice,
         byte_array::ByteArray,
+        settlement_call_data::SettlementCallData,
         settlement_scores::Score,
     },
-    model::order::OrderUid,
+    derivative::Derivative,
+    model::{order::OrderUid, solver_competition::SolverCompetitionDB},
     number_conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
@@ -38,7 +40,8 @@ pub struct OrderExecution {
     pub executed_fee: ExecutedFee,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default, Derivative)]
+#[derivative(Debug)]
 pub struct Competition {
     pub auction_id: AuctionId,
     pub winner: H160,
@@ -53,6 +56,14 @@ pub struct Competition {
     /// chain before this block height.
     pub block_deadline: u64,
     pub order_executions: Vec<OrderExecution>,
+    pub competition_simulation_block: u64,
+    /// Winner settlement call data
+    #[derivative(Debug(format_with = "shared::debug_bytes"))]
+    pub call_data: Vec<u8>,
+    /// Uninternalized winner settlement call data
+    #[derivative(Debug(format_with = "shared::debug_bytes"))]
+    pub uninternalized_call_data: Vec<u8>,
+    pub competition_table: SolverCompetitionDB,
 }
 
 impl super::Postgres {
@@ -62,7 +73,13 @@ impl super::Postgres {
             .with_label_values(&["save_competition"])
             .start_timer();
 
+        let json = &serde_json::to_value(&competition.competition_table)?;
+
         let mut ex = self.0.begin().await.context("begin")?;
+
+        database::solver_competition::save(&mut ex, competition.auction_id, json)
+            .await
+            .context("solver_competition::save")?;
 
         for order_execution in &competition.order_executions {
             let solver_fee = order_execution
@@ -92,6 +109,10 @@ impl super::Postgres {
                     .block_deadline
                     .try_into()
                     .context("convert block deadline")?,
+                simulation_block: competition
+                    .competition_simulation_block
+                    .try_into()
+                    .context("convert simulation block")?,
             },
         )
         .await
@@ -127,6 +148,17 @@ impl super::Postgres {
         )
         .await
         .context("auction_prices::insert")?;
+
+        database::settlement_call_data::insert(
+            &mut ex,
+            SettlementCallData {
+                auction_id: competition.auction_id,
+                call_data: competition.call_data.clone(),
+                uninternalized_call_data: competition.uninternalized_call_data.clone(),
+            },
+        )
+        .await
+        .context("settlement_call_data::insert")?;
 
         ex.commit().await.context("commit")
     }

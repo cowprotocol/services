@@ -1,7 +1,7 @@
 use {
     crate::{
         domain::{
-            competition::{self, order},
+            competition::{self},
             eth,
         },
         infra::Solver,
@@ -16,7 +16,6 @@ impl Solution {
         Self {
             score: reveal.score.into(),
             submission_address: solver.address().into(),
-            orders: reveal.orders.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -27,6 +26,4 @@ pub struct Solution {
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
     submission_address: eth::H160,
-    #[serde_as(as = "Vec<serialize::Hex>")]
-    orders: Vec<[u8; order::UID_LEN]>,
 }
