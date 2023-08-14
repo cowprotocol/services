@@ -139,7 +139,11 @@ pub async fn collector(
             config.pool_deny_list.clone(),
         )
         .await
-        .expect("failed to create Balancer pool fetcher"),
+        .expect(
+            "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+             issues with the graph (in that case consider removing BalancerV2 and UniswapV3 from \
+             the [[liquidity]] arguments until the graph recovers)",
+        ),
     );
 
     Box::new(BalancerV2Liquidity::new(

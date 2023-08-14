@@ -120,7 +120,11 @@ pub async fn collector(
             config.max_pools_to_initialize,
         )
         .await
-        .unwrap(),
+        .expect(
+            "failed to create UniswapV3 pool fetcher, this is most likely due to temporary issues \
+             with the graph (in that case consider removing BalancerV2 and UniswapV3 from the \
+             [[liquidity]] arguments until the graph recovers)",
+        ),
     );
 
     Box::new(UniswapV3Liquidity::new(
