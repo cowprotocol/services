@@ -42,16 +42,8 @@ impl Auction {
                         },
                         kind: match order.class {
                             Class::Market => competition::order::Kind::Market,
-                            Class::Limit if order.partially_fillable => {
-                                competition::order::Kind::Limit {
-                                    surplus_fee: eth::U256::zero().into(),
-                                }
-                            }
                             Class::Limit => competition::order::Kind::Limit {
-                                surplus_fee: order
-                                    .surplus_fee
-                                    .ok_or(Error::MissingSurplusFee)?
-                                    .into(),
+                                surplus_fee: eth::U256::zero().into(),
                             },
                             Class::Liquidity => competition::order::Kind::Liquidity,
                         },
@@ -219,8 +211,6 @@ struct Order {
     #[serde(default)]
     buy_token_balance: BuyTokenBalance,
     class: Class,
-    #[serde_as(as = "Option<serialize::U256>")]
-    surplus_fee: Option<eth::U256>,
     #[serde_as(as = "serialize::Hex")]
     app_data: [u8; order::APP_DATA_LEN],
     signing_scheme: SigningScheme,

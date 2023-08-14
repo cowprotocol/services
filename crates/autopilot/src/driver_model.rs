@@ -109,8 +109,6 @@ pub mod solve {
         pub sell_token_balance: SellTokenSource,
         pub buy_token_balance: BuyTokenDestination,
         pub class: Class,
-        #[serde_as(as = "Option<DecimalU256>")]
-        pub surplus_fee: Option<U256>,
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,

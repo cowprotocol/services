@@ -33,7 +33,7 @@ pub async fn update_surplus_fee(
     mut ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
-    surplus_fee: Option<&BigDecimal>,
+    surplus_fee: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE order_execution

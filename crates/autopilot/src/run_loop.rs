@@ -18,7 +18,7 @@ use {
     model::{
         auction::{Auction, AuctionId},
         interaction::InteractionData,
-        order::{LimitOrderClass, OrderClass},
+        order::OrderClass,
         solver_competition::{
             CompetitionAuction,
             Order,
@@ -138,8 +138,7 @@ impl RunLoop {
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
             // Save order executions for all orders in the solution. Surplus fees for
-            // partial limit orders will be saved after settling the order
-            // onchain.
+            // limit orders will be saved after settling the order onchain.
             let mut order_executions = vec![];
             for order_id in &revealed.orders {
                 let auction_order = auction
@@ -148,18 +147,11 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.metadata.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        let executed_fee = match auction_order.metadata.class {
-                            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                                match auction_order.data.partially_fillable {
-                                    // we don't know the surplus fee in advance. will be populated
-                                    // after the transaction containing the order is mined
-                                    true => ExecutedFee::Surplus(None),
-                                    // calculated by the protocol, therefore we can trust the
-                                    // auction
-                                    false => ExecutedFee::Surplus(surplus_fee),
-                                }
-                            }
-                            _ => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                        let executed_fee = match auction_order.solver_determines_fee() {
+                            // we don't know the surplus fee in advance. will be populated
+                            // after the transaction containing the order is mined
+                            true => ExecutedFee::Surplus,
+                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
                             order_id: *order_id,
@@ -294,12 +286,10 @@ impl RunLoop {
                 .orders
                 .iter()
                 .map(|order| {
-                    let (class, surplus_fee) = match order.metadata.class {
-                        OrderClass::Market => (Class::Market, None),
-                        OrderClass::Liquidity => (Class::Liquidity, None),
-                        OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                            (Class::Limit, surplus_fee)
-                        }
+                    let class = match order.metadata.class {
+                        OrderClass::Market => Class::Market,
+                        OrderClass::Liquidity => Class::Liquidity,
+                        OrderClass::Limit(_) => Class::Limit,
                     };
                     let map_interactions =
                         |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
@@ -331,7 +321,6 @@ impl RunLoop {
                         sell_token_balance: order.data.sell_token_balance,
                         buy_token_balance: order.data.buy_token_balance,
                         class,
-                        surplus_fee,
                         app_data: order.data.app_data,
                         signature: order.signature.clone(),
                     }

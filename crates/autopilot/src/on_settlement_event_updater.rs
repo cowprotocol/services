@@ -184,8 +184,7 @@ impl OnSettlementEventUpdater {
                 Ok(settlement) => {
                     let surplus = settlement.total_surplus(&external_prices);
                     let fee = settlement.total_fees(&external_prices, orders.clone());
-                    let order_executions =
-                        settlement.partial_order_executions(&external_prices, orders);
+                    let order_executions = settlement.order_executions(&external_prices, orders);
 
                     update.auction_data = Some(AuctionData {
                         auction_id,

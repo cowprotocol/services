@@ -129,27 +129,6 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
-    /// The sell asset to pass to the solver. This is a special case due to
-    /// limit orders. For limit orders, the interaction produced by the
-    /// solver needs to leave the surplus fee inside the settlement
-    /// contract, since that's the fee taken by the protocol. For that
-    /// reason, the solver solves for the sell amount reduced by the surplus
-    /// fee; then, the settlement transaction will move the sell amount from
-    /// the order *into* the settlement contract, while the interaction
-    /// produced by the solver will move (sell amount - surplus fee) *out*
-    /// of the settlement contract and into the AMMs, hence leaving the
-    /// surplus fee inside the contract.
-    pub fn solver_sell(&self) -> eth::Asset {
-        if let Kind::Limit { surplus_fee } = self.kind {
-            eth::Asset {
-                amount: (self.sell.amount.0 - surplus_fee.0).into(),
-                token: self.sell.token,
-            }
-        } else {
-            self.sell
-        }
-    }
-
     /// The buy asset to pass to the solver. This is a special case due to
     /// orders which buy ETH. The settlement contract only works with ERC20
     /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
@@ -170,7 +149,7 @@ impl Order {
     /// Should the order fee be determined by the solver? This is true for
     /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
-        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+        matches!(self.kind, Kind::Limit { .. })
     }
 
     /// The likelihood that this order will be fulfilled, based on token prices.

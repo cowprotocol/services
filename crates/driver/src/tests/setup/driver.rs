@@ -96,10 +96,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Kind::Liquidity => "liquidity",
                 order::Kind::Limit { .. } => "limit",
             },
-            "surplusFee": match quote.order.kind {
-                order::Kind::Limit { surplus_fee } => Some(surplus_fee.0.to_string()),
-                _ => None,
-            },
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain)))
@@ -137,7 +133,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
         "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
         "amount": match quote.order.side {
             order::Side::Buy => quote.buy_amount().to_string(),
-            order::Side::Sell => (quote.sell_amount() - quote.order.surplus_fee()).to_string(),
+            order::Side::Sell => quote.sell_amount().to_string(),
         },
         "kind": match quote.order.side {
             order::Side::Sell => "sell",

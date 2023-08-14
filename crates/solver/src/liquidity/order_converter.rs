@@ -12,10 +12,9 @@ use {
         order_balance_filter::BalancedOrder,
         settlement::SettlementEncoder,
     },
-    anyhow::{ensure, Context, Result},
+    anyhow::{ensure, Result},
     contracts::WETH9,
-    ethcontract::U256,
-    model::order::{LimitOrderClass, Order, OrderClass, BUY_ETH_ADDRESS},
+    model::order::{Order, OrderClass, BUY_ETH_ADDRESS},
     std::sync::Arc,
 };
 
@@ -55,12 +54,7 @@ impl OrderConverter {
             available_sell_token_balance,
         )?;
 
-        let sell_amount = match &order.metadata.class {
-            OrderClass::Limit(limit) if !order.data.partially_fillable => {
-                compute_synthetic_order_amounts_for_limit_order(&order, limit)?
-            }
-            _ => order.data.sell_amount,
-        };
+        let sell_amount = order.data.sell_amount;
 
         let id = match order.metadata.class {
             OrderClass::Market => LimitOrderId::Market(order.metadata.uid),
@@ -103,30 +97,6 @@ struct OrderSettlementHandler {
     native_token: WETH9,
 }
 
-/// Returns the `sell_amount` adjusted for limit orders.
-fn compute_synthetic_order_amounts_for_limit_order(
-    order: &Order,
-    limit: &LimitOrderClass,
-) -> Result<U256> {
-    anyhow::ensure!(
-        order.metadata.class.is_limit(),
-        "this function should only be called for limit orders"
-    );
-    // Solvable limit orders always have a surplus fee. It would be nice if this was
-    // enforced in the API.
-    let surplus_fee = limit
-        .surplus_fee
-        .context("solvable order without surplus fee")?;
-
-    order
-        .data
-        .sell_amount
-        .checked_add(order.data.fee_amount)
-        .context("surplus_fee adjustment would overflow sell_amount")?
-        .checked_sub(surplus_fee)
-        .context("surplus_fee adjustment would underflow sell_amount")
-}
-
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -163,7 +133,8 @@ pub mod tests {
         crate::settlement::tests::assert_settlement_encoded_with,
         ethcontract::H160,
         maplit::hashmap,
-        model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata},
+        model::order::{LimitOrderClass, OrderData, OrderKind, OrderMetadata},
+        primitive_types::U256,
         shared::dummy_contract,
     };
 
@@ -413,28 +384,6 @@ pub mod tests {
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
         assert_eq!(order_.solver_fee, 50.into());
-    }
-
-    #[test]
-    fn limit_orders_get_adjusted_for_surplus_fee() {
-        let converter = OrderConverter::test(Default::default());
-        let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit(Default::default()))
-            .with_sell_amount(1_000.into())
-            .with_buy_amount(1.into())
-            .with_fee_amount(200.into())
-            .with_surplus_fee(100.into())
-            .with_solver_fee(200.into())
-            .build();
-        let solver_order = converter
-            .normalize_limit_order(BalancedOrder::full(order))
-            .unwrap();
-
-        // sell_amount + fee_amount - surplus_fee = 1_000 + 200 - 100
-        assert_eq!(solver_order.sell_amount, 1_100.into());
-        // it's the `autopilot`'s responsibility to prepare this value for us so we
-        // don't touch it
-        assert_eq!(solver_order.solver_fee, 200.into());
     }
 
     #[test]

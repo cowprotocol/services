@@ -97,10 +97,7 @@ impl Fulfillment {
 pub enum Fee {
     /// A static protocol computed fee.
     ///
-    /// That is, the fee is known upfront and is either signed as part of the
-    /// order, or, in the case of fill-or-kill limit orders, is determined by
-    /// the protocol and specified as a `surplus_fee` that is included in the
-    /// auction that is sent to the driver.
+    /// That is, the fee is known upfront and is signed as part of the order
     Static,
     /// A dynamic solver computed surplus fee.
     Dynamic(order::SellAmount),
@@ -149,24 +146,20 @@ impl Jit {
 impl Trade {
     /// The surplus fee associated with this trade, if any.
     ///
-    /// The protocol determines the fee for fill-or-kill limit orders whereas
-    /// solvers are responsible for computing the fee for partially fillable
-    /// limit orders.
+    /// The protocol determines the fee for market orders whereas
+    /// solvers are responsible for computing the fee for limit orders.
     pub(super) fn surplus_fee(&self) -> Option<order::SellAmount> {
         if let &Self::Fulfillment(Fulfillment {
             order:
                 competition::Order {
-                    kind: order::Kind::Limit { surplus_fee },
+                    kind: order::Kind::Limit { surplus_fee: _ },
                     ..
                 },
-            fee,
+            fee: Fee::Dynamic(fee),
             ..
         }) = &self
         {
-            return match fee {
-                Fee::Static => Some(*surplus_fee),
-                Fee::Dynamic(fee) => Some(*fee),
-            };
+            return Some(*fee);
         }
 
         None
