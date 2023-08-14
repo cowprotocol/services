@@ -320,7 +320,6 @@ pub async fn run(args: Arguments) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),

@@ -38,13 +38,7 @@ use {
         recent_block_cache::CacheConfig,
         signature_validator::Web3SignatureValidator,
         sources::{
-            balancer_v2::{
-                pool_fetching::BalancerContracts,
-                BalancerFactoryKind,
-                BalancerPoolFetcher,
-            },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
-            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
             BaselineSource,
             PoolAggregator,
         },
@@ -278,51 +272,9 @@ pub async fn main(args: arguments::Arguments) {
         )
         .expect("failed to create pool cache"),
     );
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
-        let factories = args
-            .shared
-            .balancer_factories
-            .clone()
-            .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
-        let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
-        let balancer_pool_fetcher = Arc::new(
-            BalancerPoolFetcher::new(
-                chain_id,
-                block_retriever.clone(),
-                token_info_fetcher.clone(),
-                cache_config,
-                current_block_stream.clone(),
-                http_factory.create(),
-                web3.clone(),
-                &contracts,
-                args.shared.balancer_pool_deny_list.clone(),
-            )
-            .await
-            .expect("failed to create Balancer pool fetcher"),
-        );
-        Some(balancer_pool_fetcher)
-    } else {
-        None
-    };
-    let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        Some(Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                web3.clone(),
-                http_factory.create(),
-                block_retriever,
-                args.shared.max_pools_to_initialize_cache,
-            )
-            .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
-        ))
-    } else {
-        None
-    };
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -339,7 +291,6 @@ pub async fn main(args: arguments::Arguments) {
                 .call()
                 .await
                 .expect("failed to query solver authenticator address"),
-            base_tokens: base_tokens.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
@@ -451,12 +402,6 @@ pub async fn main(args: arguments::Arguments) {
             .expect("Should be able to initialize event updater. Database read issues?"),
         );
         maintainers.push(broadcaster_event_updater);
-    }
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
-    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
     }
 
     let service_maintainer = ServiceMaintenance::new(maintainers);

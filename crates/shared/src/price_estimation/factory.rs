@@ -13,7 +13,6 @@ use {
     crate::{
         arguments::{self, CodeSimulatorKind, ExternalSolver},
         bad_token::BadTokenDetecting,
-        baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
@@ -51,7 +50,6 @@ pub struct Network {
     pub native_token: H160,
     pub settlement: H160,
     pub authenticator: H160,
-    pub base_tokens: Arc<BaseTokens>,
 }
 
 /// The shared components needed for creating price estimators.
