@@ -56,7 +56,6 @@ web3 = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 secp256k1 = { workspace = true }
-testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
