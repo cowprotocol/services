@@ -18,7 +18,6 @@ use {
         code_simulation::{self, CodeSimulating, TenderlyCodeSimulator},
         ethrpc::Web3,
         http_client::HttpClientFactory,
-        oneinch_api::OneInchClient,
         rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
@@ -26,7 +25,6 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
-        zeroex_api::ZeroExApi,
     },
     anyhow::{Context as _, Result},
     ethcontract::{H160, U256},
@@ -72,8 +70,6 @@ pub struct Components {
     pub uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub zeroex: Arc<dyn ZeroExApi>,
-    pub oneinch: Option<Arc<dyn OneInchClient>>,
 }
 
 impl<'a> PriceEstimatorFactory<'a> {
