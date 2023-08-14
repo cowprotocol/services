@@ -36,7 +36,6 @@ pub mod native_price_cache;
 pub mod paraswap;
 pub mod sanitized;
 pub mod trade_finder;
-pub mod zeroex;
 
 /// Shared price estimation configuration arguments.
 #[derive(clap::Parser)]
