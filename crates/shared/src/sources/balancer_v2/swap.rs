@@ -77,6 +77,7 @@ impl TokenState {
 
 /// Weighted pool data as a reference used for computing input and output
 /// amounts.
+#[derive(Debug)]
 pub struct WeightedPoolRef<'a> {
     pub reserves: &'a HashMap<H160, WeightedTokenState>,
     pub swap_fee: Bfp,
@@ -104,6 +105,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
+        dbg!("get_amount_in", in_token, out_amount, out_token, self);
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
@@ -128,6 +130,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 }
 
 /// Stable pool data as a reference used for computing input and output amounts.
+#[derive(Debug)]
 pub struct StablePoolRef<'a> {
     pub reserves: &'a HashMap<H160, TokenState>,
     pub swap_fee: Bfp,

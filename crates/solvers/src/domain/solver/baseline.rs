@@ -72,6 +72,8 @@ impl Baseline {
                             })
                             .collect();
 
+                        dbg!(&route);
+
                         // The baseline solver generates a path with swapping
                         // for exact output token amounts. This leads to
                         // potential rounding errors for buy orders, where we

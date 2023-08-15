@@ -156,12 +156,14 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
         })
 }
 
+#[derive(Debug)]
 struct Amm {
     id: liquidity::Id,
     token_pair: TokenPair,
     pool: Pool,
 }
 
+#[derive(Debug)]
 enum Pool {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),

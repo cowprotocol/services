@@ -18,7 +18,7 @@ type PathCandidate = Vec<H160>;
 /// that the resulting amount is different from the original. This situation is
 /// rare and resulting amounts should usually be identical or very close but it
 /// can occur.
-pub trait BaselineSolvable {
+pub trait BaselineSolvable: std::fmt::Debug {
     // Given the desired output token, the amount and token input, return the
     // expected amount of output token.
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256>;
@@ -115,6 +115,7 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
                             .unwrap_or_else(U256::max_value)
                             .cmp(&amount_b.unwrap_or_else(U256::max_value))
                     })?;
+                dbg!(&best_liquidity, amount);
                 path.push(best_liquidity);
                 Some((amount?, *current, path))
             },
