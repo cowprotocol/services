@@ -114,3 +114,67 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use {
+        super::*,
+        futures::FutureExt,
+        shared::recent_block_cache::Block,
+        std::sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    #[tokio::test]
+    async fn delayed_init() {
+        struct FakeSource;
+        #[async_trait::async_trait]
+        impl LiquidityCollecting for FakeSource {
+            async fn get_liquidity(
+                &self,
+                _pairs: HashSet<TokenPair>,
+                _at_block: Block,
+            ) -> Result<Vec<Liquidity>> {
+                // Yield here to verify that fetching liquidity in uninitialised state
+                // will never yield.
+                tokio::task::yield_now().await;
+                // Use specific error message to verify initialisation
+                Err(anyhow::anyhow!("I am initialised"))
+            }
+        }
+
+        const ATTEMPTS: usize = 3;
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let closure_counter = counter.clone();
+        let init = move || {
+            let closure_counter = closure_counter.clone();
+            async move {
+                let attempt = closure_counter.fetch_add(1, Ordering::SeqCst);
+                if attempt + 1 >= ATTEMPTS {
+                    Ok(FakeSource)
+                } else {
+                    Err(anyhow::anyhow!("init failed"))
+                }
+            }
+        };
+
+        let source = BackgroundInitLiquiditySource::new("fake", init, Duration::from_millis(10));
+
+        let liquidity = source
+            .get_liquidity(Default::default(), Block::Recent)
+            .now_or_never();
+        // As long as the liquidity source is not initialised `get_liquidity` returns
+        // immediately with 0 liquidity.
+        assert!(liquidity.unwrap().unwrap().is_empty());
+
+        // wait until initialisation is finished
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // init loop ran expected number of times
+        assert_eq!(counter.load(Ordering::SeqCst), ATTEMPTS);
+        let liquidity = source
+            .get_liquidity(Default::default(), Block::Recent)
+            .await;
+        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised")
+    }
+}
