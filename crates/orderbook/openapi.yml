@@ -469,6 +469,13 @@ components:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    AppData:
+      description: |
+        The string encoding of a JSON object representing some `appData`. The
+        format of the JSON expected in the `appData` field is defined
+        [here](https://github.com/cowprotocol/app-data).
+      type: string
+      example: "{\"version\":\"0.9.0\",\"metadata\":{}}"
     AppDataHash:
       description: 32 bytes encoded as hex with `0x` prefix.
       type: string
@@ -478,11 +485,7 @@ components:
       type: object
       properties:
         fullAppData:
-          description: |
-            The string encoding of a JSON object representing some `appData`. The
-            format of the JSON expected in the `appData` field is defined
-            [here](https://github.com/cowprotocol/app-data).
-          type: string
+          $ref: "#/components/schemas/AppData"
       required:
         - appData
     BigUint:
@@ -1238,7 +1241,17 @@ components:
                 - $ref: "#/components/schemas/Address"
               nullable: true
             appData:
+              description: |
+                AppData which will be assigned to the order.
+                Expects either a string JSON doc as defined on [AppData](https://github.com/cowprotocol/app-data) or a
+                hex encoded string for backwards compatibility.
+                When the first format is used, it's possible to provide the derived appDataHash field.
+              oneOf:
+                - $ref: "#/components/schemas/AppData"
+                - $ref: "#/components/schemas/AppDataHash"
+            appDataHash:
               $ref: "#/components/schemas/AppDataHash"
+              nullable: true
             partiallyFillable:
               description: Is the order fill-or-kill or partially fillable?
               type: boolean
@@ -1269,6 +1282,11 @@ components:
             - sellToken
             - buyToken
             - from
+          dependencies:
+            appDataHash:
+              properties:
+                appData:
+                  $ref: "#/components/schemas/AppData"
     OrderQuoteResponse:
       description: |
         An order quoted by the backend that can be directly signed and
