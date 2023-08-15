@@ -9,7 +9,7 @@ pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
 [dex]
-endpoint = 'http://{solver_addr}/sor'
+endpoint = 'http://{solver_addr}/order/1'
         ",
     ))
 }

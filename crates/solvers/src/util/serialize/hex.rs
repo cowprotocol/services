@@ -1,4 +1,5 @@
 use {
+    ethereum_types::U256,
     serde::{de, Deserialize, Deserializer, Serializer},
     serde_with::{DeserializeAs, SerializeAs},
     std::borrow::Cow,
@@ -20,6 +21,20 @@ impl<'de> DeserializeAs<'de, Vec<u8>> for Hex {
         hex::decode(s).map_err(|err| {
             de::Error::custom(format!("failed to decode {s:?} as a hex string: {err}",))
         })
+    }
+}
+
+impl<'de> DeserializeAs<'de, U256> for Hex {
+    fn deserialize_as<D: Deserializer<'de>>(deserializer: D) -> Result<U256, D::Error> {
+        let s = Cow::<str>::deserialize(deserializer)?;
+        let s = s
+            .strip_prefix("0x")
+            .ok_or_else(
+                || format!("failed to decode {s:?} as a hex string: missing \"0x\" prefix",),
+            )
+            .map_err(de::Error::custom)?;
+        U256::from_str_radix(s, 16)
+            .map_err(|err| de::Error::custom(format!("failed to decode {s:?} as a U256: {err}",)))
     }
 }
 

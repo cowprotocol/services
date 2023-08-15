@@ -17,10 +17,6 @@ struct Config {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     endpoint: reqwest::Url,
 
-    /// Optional Balancer V2 Vault contract address. If not specified, the
-    /// default Vault contract address will be used.
-    vault: Option<H160>,
-
     /// Optional CoW Protocol Settlement contract address. If not specified,
     /// the default Settlement contract address will be used.
     settlement: Option<H160>,
@@ -40,10 +36,6 @@ pub async fn load(path: &Path) -> super::Config {
     super::Config {
         sor: dex::balancer::Config {
             endpoint: config.endpoint,
-            vault: config
-                .vault
-                .map(eth::ContractAddress)
-                .unwrap_or(contracts.balancer_vault),
             settlement: config
                 .settlement
                 .map(eth::ContractAddress)

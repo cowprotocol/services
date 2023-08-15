@@ -1,28 +1,21 @@
 use {
     crate::domain::{auction, dex, eth, order},
-    contracts::ethcontract::I256,
-    ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
     tracing::Instrument,
 };
 
 mod dto;
-mod vault;
 
 /// Bindings to the Balancer Smart Order Router (SOR) API.
 pub struct Sor {
     client: reqwest::Client,
     endpoint: reqwest::Url,
-    vault: vault::Vault,
     settlement: eth::ContractAddress,
 }
 
 pub struct Config {
     /// The URL for the Balancer SOR API.
     pub endpoint: reqwest::Url,
-
-    /// The address of the Balancer Vault contract.
-    pub vault: eth::ContractAddress,
 
     /// The address of the Settlement contract.
     pub settlement: eth::ContractAddress,
@@ -39,7 +32,6 @@ impl Sor {
         Self {
             client: reqwest::Client::new(),
             endpoint: config.endpoint,
-            vault: vault::Vault::new(config.vault),
             settlement: config.settlement,
         }
     }
@@ -50,7 +42,8 @@ impl Sor {
         slippage: &dex::Slippage,
         gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
-        let query = dto::Query::from_domain(order, gas_price);
+        let query = dto::Query::from_domain(order, gas_price, self.settlement);
+        tracing::error!(?query);
         let quote = {
             // Set up a tracing span to make debugging of API requests easier.
             // Historically, debugging API requests to external DEXs was a bit
@@ -61,86 +54,39 @@ impl Sor {
                 .instrument(tracing::trace_span!("quote", id = %id))
                 .await?
         };
+        tracing::debug!(?quote);
 
         if quote.is_empty() {
             return Err(Error::NotFound);
         }
 
-        let (input, output) = match order.side {
-            order::Side::Buy => (quote.return_amount, quote.swap_amount),
-            order::Side::Sell => (quote.swap_amount, quote.return_amount),
-        };
+        let input = quote.price.sell_amount.hex;
+        let output = quote.price.buy_amount.hex;
 
-        let (max_input, min_output) = match order.side {
-            order::Side::Buy => (slippage.add(input), output),
-            order::Side::Sell => (input, slippage.sub(output)),
-        };
-
-        let gas = U256::from(quote.swaps.len()) * Self::GAS_PER_SWAP;
-        let call = {
-            let kind = match order.side {
-                order::Side::Sell => vault::SwapKind::GivenIn,
-                order::Side::Buy => vault::SwapKind::GivenOut,
-            } as _;
-            let swaps = quote
-                .swaps
-                .into_iter()
-                .map(|swap| vault::Swap {
-                    pool_id: swap.pool_id,
-                    asset_in_index: swap.asset_in_index.into(),
-                    asset_out_index: swap.asset_out_index.into(),
-                    amount: swap.amount,
-                    user_data: swap.user_data,
-                })
-                .collect();
-            let assets = quote.token_addresses.clone();
-            let funds = vault::Funds {
-                sender: self.settlement.0,
-                from_internal_balance: false,
-                recipient: self.settlement.0,
-                to_internal_balance: false,
-            };
-            let limits = quote
-                .token_addresses
-                .iter()
-                .map(|token| {
-                    if *token == quote.token_in {
-                        // Use positive swap limit for sell amounts (that is, maximum
-                        // amount that can be transferred in).
-                        I256::try_from(max_input).unwrap_or_default()
-                    } else if *token == quote.token_out {
-                        I256::try_from(min_output)
-                            .unwrap_or_default()
-                            .checked_neg()
-                            .expect("positive integer can't overflow negation")
-                    } else {
-                        I256::zero()
-                    }
-                })
-                .collect();
-            // Sufficiently large value with as many 0's as possible for some
-            // small gas savings.
-            let deadline = U256::one() << 255;
-
-            self.vault
-                .batch_swap(kind, swaps, assets, funds, limits, deadline)
+        let max_input = match order.side {
+            order::Side::Buy => slippage.add(input),
+            order::Side::Sell => input,
         };
 
         Ok(dex::Swap {
-            call,
+            call: dex::Call {
+                to: eth::ContractAddress(quote.to),
+                calldata: quote.data,
+            },
             input: eth::Asset {
-                token: eth::TokenAddress(quote.token_in),
+                token: eth::TokenAddress(order.sell.0),
                 amount: input,
             },
             output: eth::Asset {
-                token: eth::TokenAddress(quote.token_out),
+                token: eth::TokenAddress(order.buy.0),
                 amount: output,
             },
             allowance: dex::Allowance {
-                spender: self.vault.address(),
+                spender: eth::ContractAddress(quote.price.allowance_target),
                 amount: dex::Amount::new(max_input),
             },
-            gas: eth::Gas(gas),
+            // TODO: somehow get accurate gas estimate
+            gas: eth::Gas(Sor::GAS_PER_SWAP.into()),
         })
     }
 
@@ -157,7 +103,7 @@ impl Sor {
             .error_for_status()?
             .text()
             .await?;
-        tracing::trace!(%response, "quoted");
+        tracing::error!(%response, "quoted");
         let quote = serde_json::from_str(&response)?;
 
         Ok(quote)
