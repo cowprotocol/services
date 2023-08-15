@@ -1282,11 +1282,6 @@ components:
             - sellToken
             - buyToken
             - from
-          dependencies:
-            appDataHash:
-              properties:
-                appData:
-                  $ref: "#/components/schemas/AppData"
     OrderQuoteResponse:
       description: |
         An order quoted by the backend that can be directly signed and
