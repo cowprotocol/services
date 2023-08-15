@@ -118,7 +118,11 @@ pub fn collector(
         async move { init_liquidity(&eth, block_retriever.clone(), &config).await }
     };
     const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
-    Box::new(BackgroundInitLiquiditySource::new("uniswap-v3", init, TEN_MINUTES)) as Box<_>
+    Box::new(BackgroundInitLiquiditySource::new(
+        "uniswap-v3",
+        init,
+        TEN_MINUTES,
+    )) as Box<_>
 }
 
 async fn init_liquidity(

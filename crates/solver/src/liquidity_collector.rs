@@ -65,24 +65,27 @@ impl<L> BackgroundInitLiquiditySource<L> {
     {
         let liquidity_source: Arc<Mutex<Option<L>>> = Default::default();
         let inner = liquidity_source.clone();
-        tokio::task::spawn(async move {
-            loop {
-                match init().await {
-                    Err(err) => {
-                        tracing::warn!(
-                            "failed to initialise liquidity source; next init attempt in \
-                             {retry_init_timeout:?}: {err:?}"
-                        );
-                        tokio::time::sleep(retry_init_timeout).await;
-                    }
-                    Ok(source) => {
-                        let _ = inner.lock().await.insert(source);
-                        tracing::debug!("successfully initialised liquidity source");
-                        break;
+        tokio::task::spawn(
+            async move {
+                loop {
+                    match init().await {
+                        Err(err) => {
+                            tracing::warn!(
+                                "failed to initialise liquidity source; next init attempt in \
+                                 {retry_init_timeout:?}: {err:?}"
+                            );
+                            tokio::time::sleep(retry_init_timeout).await;
+                        }
+                        Ok(source) => {
+                            let _ = inner.lock().await.insert(source);
+                            tracing::debug!("successfully initialised liquidity source");
+                            break;
+                        }
                     }
                 }
             }
-        }.instrument(tracing::info_span!("init", source = label)));
+            .instrument(tracing::info_span!("init", source = label)),
+        );
 
         Self { liquidity_source }
     }
