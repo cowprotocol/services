@@ -5,6 +5,7 @@ use {
     shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
     std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
     tokio::sync::Mutex,
+    tracing::Instrument,
 };
 
 #[mockall::automock]
@@ -56,7 +57,7 @@ pub struct BackgroundInitLiquiditySource<L> {
 impl<L> BackgroundInitLiquiditySource<L> {
     /// Creates a new liquidity source which might only be initialized at a
     /// later point in time.
-    pub fn new<I, F>(init: I, retry_init_timeout: Duration) -> Self
+    pub fn new<I, F>(label: &str, init: I, retry_init_timeout: Duration) -> Self
     where
         I: Fn() -> F + Send + Sync + 'static,
         F: Future<Output = Result<L>> + Send,
@@ -81,7 +82,7 @@ impl<L> BackgroundInitLiquiditySource<L> {
                     }
                 }
             }
-        });
+        }.instrument(tracing::info_span!("init", source = label)));
 
         Self { liquidity_source }
     }
