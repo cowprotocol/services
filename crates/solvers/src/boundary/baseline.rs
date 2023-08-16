@@ -7,14 +7,8 @@ use {
     },
     ethereum_types::{H160, U256},
     model::TokenPair,
-    shared::{
-        baseline_solver::{self, BaseTokens, BaselineSolvable},
-        conversions::U256Ext,
-    },
-    std::{
-        cmp,
-        collections::{HashMap, HashSet},
-    },
+    shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
+    std::collections::{HashMap, HashSet},
 };
 
 pub struct Solver<'a> {
@@ -50,71 +44,43 @@ impl<'a> Solver<'a> {
             max_hops,
         );
 
-        let segments = match request.side {
-            order::Side::Buy => {
-                let (segments, _) = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        let estimate = baseline_solver::estimate_sell_amount(
-                            request.buy.amount,
-                            path,
-                            &self.amms,
-                        )?;
+        let (segments, _) = match request.side {
+            order::Side::Buy => candidates
+                .iter()
+                .filter_map(|path| {
+                    let estimate = baseline_solver::estimate_sell_amount(
+                        request.buy.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments =
+                        self.traverse_path(&estimate.path, request.sell.token.0, estimate.value)?;
+                    let buy = segments
+                        .last()
+                        .map(|segment| segment.output.amount)
+                        .unwrap_or(estimate.value);
 
-                        // Some baseline liquidity is "unstable", where if you
-                        // compute an input amount large enough to buy X tokens,
-                        // selling the computed amount over the same pool in the
-                        // exact same state will yield X-𝛿 tokens. To work
-                        // around this, try to converge to some `sell` amount
-                        // that produces enough `buy` tokens for the order.
-                        const MAX_ITERATIONS: usize = 3;
-                        let mut sell = estimate.value;
-                        for _ in 0..MAX_ITERATIONS {
-                            if sell > request.sell.amount {
-                                break;
-                            }
+                    (estimate.value <= request.sell.amount && buy >= request.buy.amount)
+                        .then_some((segments, estimate))
+                })
+                .min_by_key(|(_, estimate)| estimate.value)?,
+            order::Side::Sell => candidates
+                .iter()
+                .filter_map(|path| {
+                    let estimate = baseline_solver::estimate_buy_amount(
+                        request.sell.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments = self.traverse_path(
+                        &estimate.path,
+                        request.sell.token.0,
+                        request.sell.amount,
+                    )?;
 
-                            let Some(segments) =
-                                self.traverse_path(&estimate.path, request.sell.token.0, sell)
-                            else {
-                                continue;
-                            };
-
-                            let buy = segments
-                                .last()
-                                .map(|segment| segment.output.amount)
-                                .unwrap_or(sell);
-                            if buy >= request.buy.amount {
-                                return Some((segments, sell));
-                            }
-
-                            // The computed output amount is not enough for the
-                            // order, so scale the sell amount up a bit.
-                            let bump = cmp::max(
-                                (request.buy.amount - buy)
-                                    .checked_mul(sell)?
-                                    .checked_ceil_div(&buy)?
-                                    .checked_mul(2.into())?,
-                                U256::from(1),
-                            );
-                            sell = sell.checked_add(bump)?;
-                        }
-
-                        None
-                    })
-                    .min_by_key(|(_, sell)| *sell)?;
-                segments
-            }
-            order::Side::Sell => {
-                let estimate = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        baseline_solver::estimate_buy_amount(request.sell.amount, path, &self.amms)
-                    })
-                    .filter(|estimate| estimate.value >= request.buy.amount)
-                    .max_by_key(|estimate| estimate.value)?;
-                self.traverse_path(&estimate.path, request.sell.token.0, request.sell.amount)?
-            }
+                    (estimate.value >= request.buy.amount).then_some((segments, estimate))
+                })
+                .max_by_key(|(_, estimate)| estimate.value)?,
         };
 
         baseline::Route::new(segments)
