@@ -1,10 +1,7 @@
 use {
     crate::{domain::eth, infra::Ethereum},
     anyhow::Result,
-    std::{
-        collections::HashMap,
-        sync::RwLock,
-    },
+    std::{collections::HashMap, sync::RwLock},
 };
 
 #[derive(Clone, Debug, Default)]

@@ -74,13 +74,13 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
-        token_info: &infra::tokens::Fetcher,
+        tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let fake_auction = self
-            .fake_auction(gas_price, eth.contracts().weth_address(), token_info)
+            .fake_auction(gas_price, eth.contracts().weth_address(), tokens)
             .await;
         let solutions = solver.solve(&fake_auction, &liquidity, timeout).await?;
         Quote::new(
@@ -99,12 +99,12 @@ impl Order {
         &self,
         gas_price: eth::GasPrice,
         weth: eth::WethAddress,
-        token_info: &infra::tokens::Fetcher,
+        tokens: &infra::tokens::Fetcher,
     ) -> competition::Auction {
-        let infos = token_info.get(&[self.buy().token, self.sell().token]).await;
+        let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
 
-        let buy_token_info = infos.get(&self.buy().token);
-        let sell_token_info = infos.get(&self.sell().token);
+        let buy_token_metadata = tokens.get(&self.buy().token);
+        let sell_token_metadata = tokens.get(&self.sell().token);
 
         competition::Auction::new(
             None,
@@ -131,16 +131,16 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: sell_token_info.map(|i| i.decimals),
-                    symbol: sell_token_info.map(|i| i.symbol.clone()),
+                    decimals: sell_token_metadata.map(|i| i.decimals),
+                    symbol: sell_token_metadata.map(|i| i.symbol.clone()),
                     address: self.tokens.sell,
                     price: None,
                     available_balance: Default::default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: buy_token_info.map(|i| i.decimals),
-                    symbol: buy_token_info.map(|i| i.symbol.clone()),
+                    decimals: buy_token_metadata.map(|i| i.decimals),
+                    symbol: buy_token_metadata.map(|i| i.symbol.clone()),
                     address: self.tokens.buy,
                     price: None,
                     available_balance: Default::default(),
