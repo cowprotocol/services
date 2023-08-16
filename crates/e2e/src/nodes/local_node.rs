@@ -1,11 +1,10 @@
 use {
+    super::TestNode,
     chrono::{DateTime, Utc},
     ethcontract::U256,
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-
-pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
 pub struct Resetter<T> {
     test_node_api: TestNodeApi<T>,
@@ -24,8 +23,11 @@ impl<T: Transport> Resetter<T> {
             snapshot_id,
         }
     }
+}
 
-    pub async fn reset(&self) {
+#[async_trait::async_trait(?Send)]
+impl<T: Transport> TestNode for Resetter<T> {
+    async fn reset(&self) {
         self.test_node_api
             .revert(&self.snapshot_id)
             .await

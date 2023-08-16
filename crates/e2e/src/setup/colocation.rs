@@ -1,5 +1,5 @@
 use {
-    crate::{local_node::NODE_HOST, setup::*},
+    crate::{nodes::NODE_HOST, setup::*},
     ethcontract::{H160, H256},
     reqwest::Url,
     shared::sources::uniswap_v2::UNISWAP_INIT,

@@ -1,6 +1,6 @@
 use {
-    crate::setup::*,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
+    e2e::{setup::*, tx_safe},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
         app_data::AppDataHash,

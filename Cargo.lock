@@ -1676,6 +1676,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "app-data-hash",
+ "async-trait",
  "autopilot",
  "chrono",
  "clap",
