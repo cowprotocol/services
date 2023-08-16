@@ -99,7 +99,7 @@ impl Execution {
                             false => fee.unwrap_or_default(),
                         }
                     }
-                    false => order.order.solver_fee,
+                    false => order.order.solver_fee,    
                 };
 
                 let execution = LimitOrderExecution {
