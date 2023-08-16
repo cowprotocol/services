@@ -132,7 +132,7 @@ AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
 AND (
     CASE
-        WHEN oq.buy_amount = 0 THEN TRUE
+        WHEN oq.buy_amount = 0 THEN FALSE
         ELSE (1.0 - o.buy_amount / oq.buy_amount) >= $3
     END
 )
