@@ -3,10 +3,6 @@
 // this we create one integration test here and in this test we include all the
 // tests we want to run.
 
-#[macro_use]
-mod setup;
-mod local_node;
-
 // Each of the following modules contains tests.
 mod app_data;
 mod colocation_hooks;

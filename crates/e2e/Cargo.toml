@@ -5,9 +5,9 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-[dev-dependencies]
+[dependencies]
 anyhow = { workspace = true }
-app-data-hash = { path = "../app-data-hash" }
+async-trait = { workspace = true }
 autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -15,13 +15,10 @@ contracts = { path = "../contracts" }
 database = { path = "../database" }
 driver = { path = "../driver" }
 ethcontract = { workspace = true }
-futures = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { path = "../model" }
 orderbook = { path = "../orderbook" }
-rand = { workspace = true }
-refunder = { path = "../refunder" }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }
 serde_json = { workspace = true }
@@ -33,3 +30,9 @@ tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
+
+[dev-dependencies]
+app-data-hash = { path = "../app-data-hash" }
+futures = { workspace = true }
+rand = { workspace = true }
+refunder = { path = "../refunder" }

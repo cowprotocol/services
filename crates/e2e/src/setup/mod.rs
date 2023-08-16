@@ -1,17 +1,18 @@
 pub mod colocation;
 mod deploy;
 #[macro_use]
-mod onchain_components;
+pub mod onchain_components;
 mod services;
 
 use {
-    crate::local_node::{Resetter, NODE_HOST},
+    crate::nodes::{forked_node::Forker, local_node::Resetter, TestNode, NODE_HOST},
     anyhow::{anyhow, Result},
-    ethcontract::futures::FutureExt,
+    ethcontract::{futures::FutureExt, H160},
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
         io::Write,
+        iter::empty,
         panic::{self, AssertUnwindSafe},
         sync::Mutex,
         time::Duration,
@@ -57,6 +58,28 @@ where
 
 static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
+const DEFAULT_FILTERS: [&str; 9] = [
+    "warn",
+    "autopilot=debug",
+    "driver=debug",
+    "e2e=debug",
+    "orderbook=debug",
+    "shared=debug",
+    "solver=debug",
+    "solvers=debug",
+    "orderbook::api::request_summary=off",
+];
+
+fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<String>
+where
+    T: AsRef<str>,
+{
+    let mut default_filters: Vec<_> = DEFAULT_FILTERS.into_iter().map(String::from).collect();
+    default_filters.extend(custom_filters.into_iter().map(|f| f.as_ref().to_owned()));
+
+    default_filters
+}
+
 /// *Testing* function that takes a closure and runs it on a local testing node
 /// and database. Before each test, it creates a snapshot of the current state
 /// of the chain. The saved state is restored at the end of the test.
@@ -70,20 +93,52 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let filters = [
-        "warn",
-        "autopilot=debug",
-        "driver=debug",
-        "e2e=debug",
-        "orderbook=debug",
-        "shared=debug",
-        "solver=debug",
-        "solvers=debug",
-        "orderbook::api::request_summary=off",
-    ]
-    .join(",");
+    run(f, empty::<&str>(), None, None).await
+}
 
-    shared::tracing::initialize_reentrant(&filters);
+pub async fn run_test_with_extra_filters<F, Fut, T>(
+    f: F,
+    extra_filters: impl IntoIterator<Item = T>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+    T: AsRef<str>,
+{
+    run(f, extra_filters, None, None).await
+}
+
+pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    run(f, empty::<&str>(), Some(solver_address), Some(fork_url)).await
+}
+
+pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
+    f: F,
+    solver_address: H160,
+    fork_url: String,
+    extra_filters: impl IntoIterator<Item = T>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+    T: AsRef<str>,
+{
+    run(f, extra_filters, Some(solver_address), Some(fork_url)).await
+}
+
+async fn run<F, Fut, T>(
+    f: F,
+    filters: impl IntoIterator<Item = T>,
+    solver_address: Option<H160>,
+    fork_url: Option<String>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+    T: AsRef<str>,
+{
+    shared::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
     shared::exit_process_on_panic::set_panic_hook();
 
     // The mutex guarantees that no more than a test at a time is running on
@@ -95,7 +150,14 @@ where
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-    let resetter = Resetter::new(&web3).await;
+
+    let test_node: Box<dyn TestNode> =
+        if let (Some(fork_url), Some(solver_address)) = (fork_url, solver_address) {
+            Box::new(Forker::new(&web3, solver_address, fork_url).await)
+        } else {
+            Box::new(Resetter::new(&web3).await)
+        };
+
     services::clear_database().await;
 
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
@@ -104,7 +166,7 @@ where
     // is supposed to be used in a test environment.
     let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
 
-    resetter.reset().await;
+    test_node.reset().await;
     services::clear_database().await;
 
     if let Err(err) = result {

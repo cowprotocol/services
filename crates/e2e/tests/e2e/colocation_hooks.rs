@@ -1,5 +1,5 @@
 use {
-    crate::setup::*,
+    e2e::setup::*,
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind},

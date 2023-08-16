@@ -25,7 +25,32 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     generate_contract_with_config("CoWSwapEthFlow", |builder| {
-        builder.contract_mod_override("cowswap_eth_flow")
+        builder
+            .contract_mod_override("cowswap_eth_flow")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
+                    // <https://etherscan.io/tx/0x0247e3c15f59a52b099f192265f1c1e6227f48a280717b3eefd7a5d9d0c051a1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16169866)),
+                },
+            )
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
+                    // <https://goerli.etherscan.io/tx/0x427f4e96a6de122720428c652258eb07b463869a32239f99a6e9b321d9584f9c>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8123017)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x40a50cf069e992aa4536211b23f286ef88752187"),
+                    // <https://gnosisscan.io/tx/0x6280e079f454fbb5de3c52beddd64ca2b5be0a4b3ec74edfd5f47e118347d4fb>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(25414331)),
+                },
+            )
     });
     generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
         builder.contract_mod_override("cowswap_onchain_orders")
@@ -258,7 +283,34 @@ fn main() {
     });
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
-    generate_contract("GPv2AllowListAuthentication");
+    generate_contract_with_config("GPv2AllowListAuthentication", |builder| {
+        builder
+            .contract_mod_override("gpv2_allow_list_authentication")
+            .add_network(
+                MAINNET,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://etherscan.io/tx/0xb84bf720364f94c749f1ec1cdf0d4c44c70411b716459aaccfd24fc677013375>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12593263)),
+                },
+            )
+            .add_network(
+                GOERLI,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://goerli.etherscan.io/tx/0x39dcf30baf887a5db54551a84de8bfdb6cf418bb284b09680d13aed17d5fa0c1>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7020442)),
+                },
+            )
+            .add_network(
+                GNOSIS,
+                Network {
+                    address: addr("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE"),
+                    // <https://gnosisscan.io/tx/0x1a2d87a05a94bc6680a4faee31bbafbd74e9ddb63dd3941c717b5c609c08b957>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16465099)),
+                },
+            )
+    });
     generate_contract_with_config("GPv2Settlement", |builder| {
         builder
             .contract_mod_override("gpv2_settlement")
