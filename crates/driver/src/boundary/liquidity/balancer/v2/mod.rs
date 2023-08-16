@@ -6,7 +6,8 @@ use {
             liquidity::{self, balancer},
         },
         infra::{self, blockchain::Ethereum},
-    }, anyhow::{Context, Result},
+    },
+    anyhow::{Context, Result},
     contracts::{
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactory,
