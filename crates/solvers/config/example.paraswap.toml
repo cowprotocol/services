@@ -1,0 +1,7 @@
+relative-slippage = "0.1"
+absolute-slippage = "12"
+[dex]
+exclude-dexs = [] # which dexs to ignore as liquidity sources
+address = "0x0000000000000000000000000000000000000001" # public address of the solver
+endpoint = "https://apiv5.paraswap.io" # paraswap API URL to use
+# partner = "" # optional partner id to get increased request rates
