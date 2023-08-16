@@ -39,7 +39,7 @@ impl BalancerSor {
     ) -> Self {
         Self {
             api,
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("BalancerSoR".into()),
             rate_limiter,
             gas,
             solver,

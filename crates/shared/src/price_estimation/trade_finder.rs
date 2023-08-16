@@ -71,7 +71,7 @@ impl TradeEstimator {
                 finder,
                 verifier: None,
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("TradeEstimator".into()),
             rate_limiter,
         }
     }
@@ -344,7 +344,7 @@ impl Clone for TradeEstimator {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            sharing: Default::default(),
+            sharing: self.sharing.clone(),
             rate_limiter: self.rate_limiter.clone(),
         }
     }

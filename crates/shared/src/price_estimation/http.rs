@@ -90,7 +90,7 @@ impl HttpPriceEstimator {
     ) -> Self {
         Self {
             api,
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("http_ersimator".into()),
             pools,
             balancer_pools,
             uniswap_v3_pools,
@@ -804,7 +804,7 @@ mod tests {
                     ..Default::default()
                 },
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("Test".into()),
             pools,
             balancer_pools: Some(balancer_pool_fetcher),
             token_info,
