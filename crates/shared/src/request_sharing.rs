@@ -42,7 +42,10 @@ impl<Request, Fut: Future> RequestSharing<Request, Fut> {
 /// Returns a shallow copy (without any pending requests)
 impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
     fn clone(&self) -> Self {
-        Self::labelled(self.request_label.clone())
+        Self {
+            in_flight: Default::default(),
+            request_label: self.request_label.clone(),
+        }
     }
 }
 

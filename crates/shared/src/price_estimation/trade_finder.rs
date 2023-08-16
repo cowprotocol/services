@@ -65,13 +65,17 @@ pub struct TradeVerifier {
 }
 
 impl TradeEstimator {
-    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        finder: Arc<dyn TradeFinding>,
+        rate_limiter: Arc<RateLimiter>,
+        label: String,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 finder,
                 verifier: None,
             }),
-            sharing: RequestSharing::labelled("TradeEstimator".into()),
+            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
         }
     }

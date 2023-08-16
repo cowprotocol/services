@@ -54,7 +54,7 @@ impl OneInchTradeFinder {
                 referrer_address,
                 solver,
             )),
-            sharing: RequestSharing::labelled("OneInch".into()),
+            sharing: RequestSharing::labelled("oneinch".into()),
         }
     }
 
