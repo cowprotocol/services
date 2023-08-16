@@ -160,6 +160,16 @@ impl Ethereum {
             .map(Into::into)
             .map_err(Into::into)
     }
+
+    pub async fn decimals(&self, address: eth::TokenAddress) -> Result<u8, Error> {
+        let erc20 = self.contract_at::<contracts::ERC20>(address.0);
+        erc20.methods().decimals().call().await.map_err(Into::into)
+    }
+
+    pub async fn symbol(&self, address: eth::TokenAddress) -> Result<String, Error> {
+        let erc20 = self.contract_at::<contracts::ERC20>(address.0);
+        erc20.methods().symbol().call().await.map_err(Into::into)
+    }
 }
 
 impl fmt::Debug for Ethereum {

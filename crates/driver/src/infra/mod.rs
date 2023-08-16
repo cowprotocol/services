@@ -8,6 +8,7 @@ pub mod observe;
 pub mod simulator;
 pub mod solver;
 pub mod time;
+pub mod tokens;
 
 pub use {
     self::solver::Solver,
