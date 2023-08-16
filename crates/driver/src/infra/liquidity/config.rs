@@ -124,7 +124,7 @@ impl UniswapV3 {
     pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
-            max_pools_to_initialize: 50,
+            max_pools_to_initialize: 100,
         })
     }
 }
