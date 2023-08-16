@@ -7,8 +7,14 @@ use {
     },
     ethereum_types::{H160, U256},
     model::TokenPair,
-    shared::baseline_solver::{self, BaseTokens, BaselineSolvable},
-    std::collections::{HashMap, HashSet},
+    shared::{
+        baseline_solver::{self, BaseTokens, BaselineSolvable},
+        conversions::U256Ext,
+    },
+    std::{
+        cmp,
+        collections::{HashMap, HashSet},
+    },
 };
 
 pub struct Solver<'a> {
@@ -54,23 +60,47 @@ impl<'a> Solver<'a> {
                             path,
                             &self.amms,
                         )?;
-                        let segments = self.traverse_path(
-                            &estimate.path,
-                            request.sell.token.0,
-                            estimate.value,
-                        )?;
 
-                        let sell = estimate.value;
-                        let buy = segments
-                            .last()
-                            .map(|segment| segment.output.amount)
-                            .unwrap_or(sell);
+                        // Some baseline liquidity is "unstable", where if you
+                        // compute an input amount large enough to buy X tokens,
+                        // selling the computed amount over the same pool in the
+                        // exact same state will yield X-𝛿 tokens. To work
+                        // around this, try to converge to some `sell` amount
+                        // that produces enough `buy` tokens for the order.
+                        const MAX_ITERATIONS: usize = 3;
+                        let mut sell = estimate.value;
+                        for _ in 0..MAX_ITERATIONS {
+                            if sell > request.sell.amount {
+                                break;
+                            }
 
-                        if sell <= request.sell.amount && buy >= request.buy.amount {
-                            Some((segments, sell))
-                        } else {
-                            None
+                            let Some(segments) =
+                                self.traverse_path(&estimate.path, request.sell.token.0, sell)
+                            else {
+                                continue;
+                            };
+
+                            let buy = segments
+                                .last()
+                                .map(|segment| segment.output.amount)
+                                .unwrap_or(sell);
+                            if buy >= request.buy.amount {
+                                return Some((segments, sell));
+                            }
+
+                            // The computed output amount is not enough for the
+                            // order, so scale the sell amount up a bit.
+                            let bump = cmp::max(
+                                (request.buy.amount - buy)
+                                    .checked_mul(sell)?
+                                    .checked_ceil_div(&buy)?
+                                    .checked_mul(2.into())?,
+                                U256::from(1),
+                            );
+                            sell = sell.checked_add(bump)?;
                         }
+
+                        None
                     })
                     .min_by_key(|(_, sell)| *sell)?;
                 segments

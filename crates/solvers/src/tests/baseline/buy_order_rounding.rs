@@ -220,11 +220,8 @@ async fn balancer() {
         }))
         .await;
 
-    // We end up using the liquidity with a bad price because the baseline
-    // solver can't build a solution using the Balancer liquidity. This because
-    // Balancer weighted pools are "unstable", where if you compute an input
-    // amount large enough to buy X tokens, selling the computed amount over
-    // the same pool in the exact same state will yield X-𝛿 tokens.
+    // Note that the interaction executes slightly more than the buy order's
+    // amount. This is inevitable because of rounding.
     assert_eq!(
         solution,
         json!({
@@ -232,7 +229,7 @@ async fn balancer() {
                 "id": 0,
                 "prices": {
                     "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "1000000000000000000",
-                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "1004013040121365096289871"
+                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "15503270361046562907"
                 },
                 "trades": [
                     {
@@ -247,12 +244,21 @@ async fn balancer() {
                     {
                         "kind": "liquidity",
                         "internalize": false,
-                        "id": "2",
+                        "id": "1",
                         "inputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "outputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                        "inputAmount": "15503270361046562907",
+                        "outputAmount": "9056454904358278"
+                    },
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
                         "outputToken": "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d",
-                        "inputAmount": "1004013040121365096289871",
-                        "outputAmount": "1000000000000000000"
-                    }
+                        "inputAmount": "9056454904358278",
+                        "outputAmount": "1000000000000082826"
+                    },
                 ]
             }]
         }),
