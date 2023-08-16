@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     std::{
         collections::HashMap,
-        sync::{Arc, RwLock},
+        sync::RwLock,
     },
 };
 
@@ -16,14 +16,14 @@ pub struct Metadata {
 /// Provides metadata of tokens.
 pub struct Fetcher {
     eth: Ethereum,
-    cache: Arc<RwLock<HashMap<eth::TokenAddress, Metadata>>>,
+    cache: RwLock<HashMap<eth::TokenAddress, Metadata>>,
 }
 
 impl Fetcher {
     pub fn new(eth: Ethereum) -> Self {
         Self {
             eth,
-            cache: Arc::new(RwLock::new(HashMap::new())),
+            cache: RwLock::new(HashMap::new()),
         }
     }
 
