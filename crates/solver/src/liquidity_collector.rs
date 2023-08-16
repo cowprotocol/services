@@ -63,8 +63,13 @@ impl<L> BackgroundInitLiquiditySource<L> {
         F: Future<Output = Result<L>> + Send,
         L: LiquidityCollecting + 'static,
     {
+        Metrics::get()
+            .liquidity_enabled
+            .with_label_values(&[label])
+            .set(0);
         let liquidity_source: Arc<Mutex<Option<L>>> = Default::default();
         let inner = liquidity_source.clone();
+        let inner_label = label.to_owned();
         tokio::task::spawn(
             async move {
                 loop {
@@ -79,6 +84,10 @@ impl<L> BackgroundInitLiquiditySource<L> {
                         Ok(source) => {
                             let _ = inner.lock().await.insert(source);
                             tracing::debug!("successfully initialised liquidity source");
+                            Metrics::get()
+                                .liquidity_enabled
+                                .with_label_values(&[&inner_label])
+                                .inc();
                             break;
                         }
                     }
@@ -112,6 +121,19 @@ where
             Some(initialised_source) => initialised_source.get_liquidity(pairs, at_block).await,
             None => Ok(vec![]),
         }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Tracks whether or not the graph based liquidity is currently enabled.
+    #[metric(labels("source"))]
+    liquidity_enabled: prometheus::IntGaugeVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
     }
 }
 
@@ -159,6 +181,10 @@ mod test {
         };
 
         let source = BackgroundInitLiquiditySource::new("fake", init, Duration::from_millis(10));
+        let gauge = Metrics::get()
+            .liquidity_enabled
+            .with_label_values(&["fake"]);
+        assert_eq!(gauge.get(), 0);
 
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
@@ -175,6 +201,7 @@ mod test {
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
             .await;
-        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised")
+        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised");
+        assert_eq!(gauge.get(), 1);
     }
 }
