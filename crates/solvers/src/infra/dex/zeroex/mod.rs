@@ -21,11 +21,9 @@ pub struct Config {
     /// The base URL for the 0x swap API.
     pub endpoint: reqwest::Url,
 
-    /// Optional API key.
-    ///
     /// 0x provides a gated API for partners that requires authentication
     /// by specifying this as header in the HTTP request.
-    pub api_key: Option<String>,
+    pub api_key: String,
 
     /// The list of excluded liquidity sources. Liquidity from these sources
     /// will not be considered when solving.
@@ -48,19 +46,16 @@ pub struct Config {
 
 impl ZeroEx {
     pub fn new(config: Config) -> Result<Self, CreationError> {
-        let client = match config.api_key {
-            Some(key) => {
-                let mut key = reqwest::header::HeaderValue::from_str(&key)?;
-                key.set_sensitive(true);
+        let client = {
+            let mut key = reqwest::header::HeaderValue::from_str(&config.api_key)?;
+            key.set_sensitive(true);
 
-                let mut headers = reqwest::header::HeaderMap::new();
-                headers.insert("0x-api-key", key);
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert("0x-api-key", key);
 
-                reqwest::Client::builder()
-                    .default_headers(headers)
-                    .build()?
-            }
-            None => reqwest::Client::new(),
+            reqwest::Client::builder()
+                .default_headers(headers)
+                .build()?
         };
         let defaults = dto::Query {
             taker_address: Some(config.settlement.0),
