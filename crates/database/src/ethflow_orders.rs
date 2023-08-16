@@ -116,6 +116,9 @@ pub async fn refundable_orders(
     min_validity_duration: i64,
     min_slippage: f64,
 ) -> Result<Vec<EthOrderPlacement>, sqlx::Error> {
+    /// constraint oq.buy_amount > 0 added to avoid division by zero since table
+    /// order_quotes contains entries with buy_amount = 0 (see
+    /// V021__store_full_quotes.sql)
     const QUERY: &str = r#"
 SELECT eo.uid, eo.valid_to from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
@@ -130,12 +133,8 @@ AND o.partially_fillable = false
 AND t.order_uid is null
 AND eo.valid_to < $1
 AND o.sell_amount = oq.sell_amount
-AND (
-    CASE
-        WHEN oq.buy_amount = 0 THEN TRUE
-        ELSE (1.0 - o.buy_amount / oq.buy_amount) >= $3
-    END
-)
+AND oq.buy_amount > 0
+AND (1.0 - o.buy_amount / oq.buy_amount) >= $3
 AND eo.valid_to - extract(epoch from creation_timestamp)::int > $2
     "#;
     sqlx::query_as(QUERY)
