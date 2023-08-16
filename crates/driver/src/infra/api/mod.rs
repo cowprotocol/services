@@ -68,7 +68,7 @@ impl Api {
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
-                tokens: tokens::Fetcher::new(&self.eth),
+                tokens: tokens::Fetcher::new(self.eth.clone()),
             })));
             let path = format!("/{name}");
             observe::mounting_solver(&name, &path);

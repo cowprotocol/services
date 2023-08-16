@@ -1,8 +1,6 @@
 use {
     crate::{domain::eth, infra::Ethereum},
     anyhow::Result,
-    contracts::ERC20,
-    ethcontract::dyns::DynWeb3,
     std::{
         collections::HashMap,
         sync::{Arc, RwLock},
@@ -17,14 +15,14 @@ pub struct Metadata {
 
 /// Provides metadata of tokens.
 pub struct Fetcher {
-    web3: DynWeb3,
+    eth: Ethereum,
     cache: Arc<RwLock<HashMap<eth::TokenAddress, Metadata>>>,
 }
 
 impl Fetcher {
-    pub fn new(eth: &Ethereum) -> Self {
+    pub fn new(eth: Ethereum) -> Self {
         Self {
-            web3: eth.web3().clone(),
+            eth,
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -35,15 +33,12 @@ impl Fetcher {
         addresses: &[eth::TokenAddress],
     ) -> Vec<Result<(eth::TokenAddress, Metadata)>> {
         let futures = addresses.iter().map(|address| async {
-            let erc20 = ERC20::at(&self.web3, address.0 .0);
             // Use `try_join` because these calls get batched under the hood
             // so if one of them fails the other will as well.
             // Also this way we won't get incomplete data for a token.
-            let (decimals, symbol) = futures::future::try_join(
-                erc20.methods().decimals().call(),
-                erc20.methods().symbol().call(),
-            )
-            .await?;
+            let (decimals, symbol) =
+                futures::future::try_join(self.eth.decimals(*address), self.eth.symbol(*address))
+                    .await?;
             Ok((*address, Metadata { decimals, symbol }))
         });
         futures::future::join_all(futures).await
