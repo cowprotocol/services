@@ -27,7 +27,7 @@ impl Fetcher {
         }
     }
 
-    /// Fetches metadata of the requested token from a node.
+    /// Fetches `Metadata` of the requested tokens from a node.
     async fn fetch_token_infos(
         &self,
         addresses: &[eth::TokenAddress],
@@ -47,7 +47,7 @@ impl Fetcher {
     /// Returns the `Metadata` for the given tokens. Note that the result will
     /// not contain data for tokens that encountered errors while fetching
     /// the data.
-    pub async fn get_token_infos(
+    pub async fn get(
         &self,
         addresses: &[eth::TokenAddress],
     ) -> HashMap<eth::TokenAddress, Metadata> {

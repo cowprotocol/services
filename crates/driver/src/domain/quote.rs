@@ -101,9 +101,7 @@ impl Order {
         weth: eth::WethAddress,
         token_info: &infra::tokens::Fetcher,
     ) -> competition::Auction {
-        let infos = token_info
-            .get_token_infos(&[self.buy().token, self.sell().token])
-            .await;
+        let infos = token_info.get(&[self.buy().token, self.sell().token]).await;
 
         let buy_token_info = infos.get(&self.buy().token);
         let sell_token_info = infos.get(&self.sell().token);
