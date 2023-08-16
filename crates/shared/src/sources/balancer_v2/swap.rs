@@ -77,6 +77,7 @@ impl TokenState {
 
 /// Weighted pool data as a reference used for computing input and output
 /// amounts.
+#[derive(Debug)]
 pub struct WeightedPoolRef<'a> {
     pub reserves: &'a HashMap<H160, WeightedTokenState>,
     pub swap_fee: Bfp,
@@ -128,6 +129,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 }
 
 /// Stable pool data as a reference used for computing input and output amounts.
+#[derive(Debug)]
 pub struct StablePoolRef<'a> {
     pub reserves: &'a HashMap<H160, TokenState>,
     pub swap_fee: Bfp,
