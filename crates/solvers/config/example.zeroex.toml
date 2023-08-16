@@ -2,6 +2,7 @@ absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 
 [dex]
+# See here how to get a free key: https://0x.org/docs/introduction/getting-started
 api-key = "$YOUR_API_KEY"
 
 # Optionally specify a custom 0x API endpoint
