@@ -181,6 +181,10 @@ mod test {
         };
 
         let source = BackgroundInitLiquiditySource::new("fake", init, Duration::from_millis(10));
+        let gauge = Metrics::get()
+            .liquidity_enabled
+            .with_label_values(&["fake"]);
+        assert_eq!(gauge.get(), 0);
 
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
@@ -197,6 +201,7 @@ mod test {
         let liquidity = source
             .get_liquidity(Default::default(), Block::Recent)
             .await;
-        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised")
+        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised");
+        assert_eq!(gauge.get(), 1);
     }
 }
