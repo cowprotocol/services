@@ -171,8 +171,8 @@ impl Ethereum {
         erc20.methods().symbol().call().await.map_err(Into::into)
     }
 
-    /// Returns the current [`eth::TokenAmount`] balance of the specified account for
-    /// a given token.
+    /// Returns the current [`eth::TokenAmount`] balance of the specified
+    /// account for a given token.
     pub async fn erc20_balance(
         &self,
         holder: eth::Address,
