@@ -79,14 +79,10 @@ impl Order {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
-        let fake_auction = self.fake_auction(gas_price, eth.contracts().weth_address(), token_info).await;
-        let solutions = solver
-            .solve(
-                &fake_auction,
-                &liquidity,
-                timeout,
-            )
-            .await?;
+        let fake_auction = self
+            .fake_auction(gas_price, eth.contracts().weth_address(), token_info)
+            .await;
+        let solutions = solver.solve(&fake_auction, &liquidity, timeout).await?;
         Quote::new(
             eth,
             self,
@@ -109,8 +105,12 @@ impl Order {
             .get_token_infos(&[self.buy().token, self.sell().token])
             .await;
 
-        let buy_token_info = infos.get(&self.buy().token).expect("fetcher always returns an entry");
-        let sell_token_info = infos.get(&self.sell().token).expect("fetcher always returns an entry");
+        let buy_token_info = infos
+            .get(&self.buy().token)
+            .expect("fetcher always returns an entry");
+        let sell_token_info = infos
+            .get(&self.sell().token)
+            .expect("fetcher always returns an entry");
 
         competition::Auction::new(
             None,

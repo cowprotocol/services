@@ -1,3 +1,4 @@
+pub use shared::token_info::TokenInfo;
 use {
     crate::{boundary, domain::eth, infra::Ethereum},
     shared::token_info::{
@@ -7,8 +8,6 @@ use {
     },
     std::collections::HashMap,
 };
-
-pub use shared::token_info::TokenInfo;
 
 pub struct Fetcher(CachedTokenInfoFetcher);
 

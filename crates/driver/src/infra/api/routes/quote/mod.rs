@@ -25,7 +25,12 @@ async fn route(
         })?;
         observe::quoting(&order);
         let quote = order
-            .quote(state.eth(), state.solver(), state.liquidity(), state.token_info())
+            .quote(
+                state.eth(),
+                state.solver(),
+                state.liquidity(),
+                state.token_info(),
+            )
             .await;
         observe::quoted(state.solver().name(), &order, &quote);
         Ok(axum::response::Json(dto::Quote::new(&quote?)))
