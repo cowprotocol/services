@@ -4,10 +4,12 @@ use {
     std::{collections::HashMap, sync::RwLock},
 };
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Metadata {
     pub decimals: u8,
     pub symbol: String,
+    /// Current balance of the smart contract.
+    pub balance: eth::TokenAmount,
 }
 
 /// Provides metadata of tokens.
@@ -27,16 +29,27 @@ impl Fetcher {
     /// Fetches `Metadata` of the requested tokens from a node.
     async fn fetch_token_infos(
         &self,
-        addresses: &[eth::TokenAddress],
+        tokens: &[eth::TokenAddress],
     ) -> Vec<Result<(eth::TokenAddress, Metadata)>> {
-        let futures = addresses.iter().map(|address| async {
+        let settlement = self.eth.contracts().settlement().address().into();
+        let futures = tokens.iter().map(|token| async {
             // Use `try_join` because these calls get batched under the hood
-            // so if one of them fails the other will as well.
+            // so if one of them fails the others will as well.
             // Also this way we won't get incomplete data for a token.
-            let (decimals, symbol) =
-                futures::future::try_join(self.eth.decimals(*address), self.eth.symbol(*address))
-                    .await?;
-            Ok((*address, Metadata { decimals, symbol }))
+            let (decimals, symbol, balance) = futures::future::try_join3(
+                self.eth.decimals(*token),
+                self.eth.symbol(*token),
+                self.eth.erc20_balance(settlement, *token),
+            )
+            .await?;
+            Ok((
+                *token,
+                Metadata {
+                    decimals,
+                    symbol,
+                    balance,
+                },
+            ))
         });
         futures::future::join_all(futures).await
     }

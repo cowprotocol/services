@@ -161,14 +161,31 @@ impl Ethereum {
             .map_err(Into::into)
     }
 
-    pub async fn decimals(&self, address: eth::TokenAddress) -> Result<u8, Error> {
-        let erc20 = self.contract_at::<contracts::ERC20>(address.0);
+    pub async fn decimals(&self, token: eth::TokenAddress) -> Result<u8, Error> {
+        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
         erc20.methods().decimals().call().await.map_err(Into::into)
     }
 
-    pub async fn symbol(&self, address: eth::TokenAddress) -> Result<String, Error> {
-        let erc20 = self.contract_at::<contracts::ERC20>(address.0);
+    pub async fn symbol(&self, token: eth::TokenAddress) -> Result<String, Error> {
+        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
         erc20.methods().symbol().call().await.map_err(Into::into)
+    }
+
+    /// Returns the current [`eth::TokenAmount`] balance of the specified account for
+    /// a given token.
+    pub async fn erc20_balance(
+        &self,
+        holder: eth::Address,
+        token: eth::TokenAddress,
+    ) -> Result<eth::TokenAmount, Error> {
+        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
+        erc20
+            .methods()
+            .balance_of(holder.0)
+            .call()
+            .await
+            .map(Into::into)
+            .map_err(Into::into)
     }
 }
 

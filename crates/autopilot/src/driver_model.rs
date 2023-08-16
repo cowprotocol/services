@@ -78,8 +78,6 @@ pub mod solve {
         #[serde_as(as = "Option<DecimalU256>")]
         pub price: Option<U256>,
         pub trusted: bool,
-        pub decimals: Option<u8>,
-        pub symbol: Option<String>,
     }
 
     #[serde_as]
