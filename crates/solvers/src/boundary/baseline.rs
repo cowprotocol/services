@@ -83,8 +83,7 @@ impl<'a> Solver<'a> {
                     })
                     .filter(|estimate| estimate.value >= request.buy.amount)
                     .max_by_key(|estimate| estimate.value)?;
-                self.traverse_path(&estimate.path, request.sell.token.0, request.sell.amount)
-                    .expect("traversal of sell estimates always succeeds")
+                self.traverse_path(&estimate.path, request.sell.token.0, request.sell.amount)?
             }
         };
 
