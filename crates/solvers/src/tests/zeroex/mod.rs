@@ -11,6 +11,7 @@ pub fn config(solver_addr: &SocketAddr) -> tests::Config {
         r"
 [dex]
 endpoint = 'http://{solver_addr}/swap/v1/'
+api-key = 'SUPER_SECRET_API_KEY'
         ",
     ))
 }

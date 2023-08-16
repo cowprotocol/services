@@ -18,9 +18,9 @@ struct Config {
     #[serde_as(as = "serde_with::DisplayFromStr")]
     endpoint: reqwest::Url,
 
-    /// An optional API key to use. This is needed when configuring 0x to use
+    /// This is needed when configuring 0x to use
     /// the gated API for partners.
-    api_key: Option<String>,
+    api_key: String,
 
     /// The list of excluded liquidity sources. Liquidity from these sources
     /// will not be considered when solving.

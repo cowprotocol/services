@@ -1,13 +1,25 @@
-relative-slippage = "0.1"
-absolute-slippage = "0.02"
+absolute-slippage = "40000000000000000" # Denominated in wei, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
 
 [dex]
-excluded-sources = ["Balancer_V2"]
-enable-slippage-protection = true
+# See here how to get a free key: https://0x.org/docs/introduction/getting-started
+api-key = "$YOUR_API_KEY"
 
-# Optionally specify a custom 0x API endpoint with an access key.
+# Optionally specify a custom 0x API endpoint
 # endpoint = "https://gated.api.0x.org/swap/v1/"
-# api-key = "abc123"
 
 # Optionally specify a custom affiliate address.
 # affiliate = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+
+# Optionally specify which liquidity sources to exclude
+# excluded_sources = ["Balancer_V2"]
+
+# Optionally specify whether to enable RFQ-T liquidity
+# enable-rfqt = true
+
+# Optionally specify whether to enable slippage protection.
+# The slippage protection
+# considers average negative slippage paid out in MEV when quoting,
+# preferring private market maker orders when they are close to what you
+# would get with on-chain liquidity pools.
+# enable-slippage-protection = true
