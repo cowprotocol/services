@@ -163,6 +163,7 @@ async fn balancer() {
                 }
             ],
             "liquidity": [
+                // A xCOW -> xGNO -> wxDAI path with a good price.
                 {
                     "kind": "constantproduct",
                     "tokens": {
@@ -197,31 +198,48 @@ async fn balancer() {
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892"
                 },
+                // A fake xCOW -> wxDAI path with a BAD price.
+                {
+                    "kind": "constantproduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "1000000000000000000000000000"
+                        },
+                        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": {
+                            "balance": "1000000000000000000000"
+                        }
+                    },
+                    "fee": "0.003",
+                    "id": "2",
+                    "address": "0x9090909090909090909090909090909090909090",
+                    "gasEstimate": "90171"
+                },
             ],
             "effectiveGasPrice": "1000000000",
             "deadline": "2106-01-01T00:00:00.000Z"
         }))
         .await;
 
-    // Note that the interaction executes slightly more than the buy order's
-    // amount. This is inevitable because of rounding - if we sold 1 less wei
-    // of the input token, we would not be able to buy enough to cover the buy
-    // order, the difference stays in the settlement contract.
+    // We end up using the liquidity with a bad price because the baseline
+    // solver can't build a solution using the Balancer liquidity. This because
+    // Balancer weighted pools are "unstable", where if you compute an input
+    // amount large enough to buy X tokens, selling the computed amount over
+    // the same pool in the exact same state will yield X-𝛿 tokens.
     assert_eq!(
         solution,
         json!({
             "solutions": [{
                 "id": 0,
                 "prices": {
-                    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "1848013595",
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "1000000000000000000"
+                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "1000000000000000000",
+                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "1004013040121365096289871"
                 },
                 "trades": [
                     {
                         "kind": "fulfillment",
-                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
-                                    2a2a2a2a",
+                        "order": "0x0000000000000000000000000000000000000000000000000000000000000000\
+                                    0000000000000000000000000000000000000000\
+                                    00000000",
                         "executedAmount": "1000000000000000000"
                     }
                 ],
@@ -229,11 +247,11 @@ async fn balancer() {
                     {
                         "kind": "liquidity",
                         "internalize": false,
-                        "id": "0",
-                        "inputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                        "outputToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                        "inputAmount": "1848013595",
-                        "outputAmount": "1000000000428620302"
+                        "id": "2",
+                        "inputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "outputToken": "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d",
+                        "inputAmount": "1004013040121365096289871",
+                        "outputAmount": "1000000000000000000"
                     }
                 ]
             }]
