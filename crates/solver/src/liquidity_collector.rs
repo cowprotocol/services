@@ -3,7 +3,9 @@ use {
     anyhow::Result,
     model::TokenPair,
     shared::{baseline_solver::BaseTokens, recent_block_cache::Block},
-    std::{collections::HashSet, sync::Arc},
+    std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
+    tokio::sync::Mutex,
+    tracing::Instrument,
 };
 
 #[mockall::automock]
@@ -41,5 +43,138 @@ impl LiquidityCollecting for LiquidityCollector {
             .collect();
         tracing::debug!("got {} AMMs", amms.len());
         Ok(amms)
+    }
+}
+
+/// A liquidity source which might not be initialised on creation. Instead
+/// initialisation gets retried in a background task over and over until it
+/// succeeds. Until the liquidity source has been initialised no liquidity will
+/// be provided.
+pub struct BackgroundInitLiquiditySource<L> {
+    liquidity_source: Arc<Mutex<Option<L>>>,
+}
+
+impl<L> BackgroundInitLiquiditySource<L> {
+    /// Creates a new liquidity source which might only be initialized at a
+    /// later point in time.
+    pub fn new<I, F>(label: &str, init: I, retry_init_timeout: Duration) -> Self
+    where
+        I: Fn() -> F + Send + Sync + 'static,
+        F: Future<Output = Result<L>> + Send,
+        L: LiquidityCollecting + 'static,
+    {
+        let liquidity_source: Arc<Mutex<Option<L>>> = Default::default();
+        let inner = liquidity_source.clone();
+        tokio::task::spawn(
+            async move {
+                loop {
+                    match init().await {
+                        Err(err) => {
+                            tracing::warn!(
+                                "failed to initialise liquidity source; next init attempt in \
+                                 {retry_init_timeout:?}: {err:?}"
+                            );
+                            tokio::time::sleep(retry_init_timeout).await;
+                        }
+                        Ok(source) => {
+                            let _ = inner.lock().await.insert(source);
+                            tracing::debug!("successfully initialised liquidity source");
+                            break;
+                        }
+                    }
+                }
+            }
+            .instrument(tracing::info_span!("init", source = label)),
+        );
+
+        Self { liquidity_source }
+    }
+}
+
+#[async_trait::async_trait]
+impl<L> LiquidityCollecting for BackgroundInitLiquiditySource<L>
+where
+    L: LiquidityCollecting,
+{
+    async fn get_liquidity(
+        &self,
+        pairs: HashSet<TokenPair>,
+        at_block: Block,
+    ) -> Result<Vec<Liquidity>> {
+        // Use `try_lock` to not block caller when the lock is currently being held for
+        // a potentially very slow init logic.
+        let liquidity_source = match self.liquidity_source.try_lock() {
+            Ok(lock) => lock,
+            Err(_) => return Ok(vec![]),
+        };
+
+        match &*liquidity_source {
+            Some(initialised_source) => initialised_source.get_liquidity(pairs, at_block).await,
+            None => Ok(vec![]),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use {
+        super::*,
+        futures::FutureExt,
+        shared::recent_block_cache::Block,
+        std::sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    #[tokio::test]
+    async fn delayed_init() {
+        struct FakeSource;
+        #[async_trait::async_trait]
+        impl LiquidityCollecting for FakeSource {
+            async fn get_liquidity(
+                &self,
+                _pairs: HashSet<TokenPair>,
+                _at_block: Block,
+            ) -> Result<Vec<Liquidity>> {
+                // Yield here to verify that fetching liquidity in uninitialised state
+                // will never yield.
+                tokio::task::yield_now().await;
+                // Use specific error message to verify initialisation
+                Err(anyhow::anyhow!("I am initialised"))
+            }
+        }
+
+        const ATTEMPTS: usize = 3;
+        let counter = Arc::new(AtomicUsize::new(0));
+
+        let closure_counter = counter.clone();
+        let init = move || {
+            let closure_counter = closure_counter.clone();
+            async move {
+                let attempt = closure_counter.fetch_add(1, Ordering::SeqCst);
+                if attempt + 1 >= ATTEMPTS {
+                    Ok(FakeSource)
+                } else {
+                    Err(anyhow::anyhow!("init failed"))
+                }
+            }
+        };
+
+        let source = BackgroundInitLiquiditySource::new("fake", init, Duration::from_millis(10));
+
+        let liquidity = source
+            .get_liquidity(Default::default(), Block::Recent)
+            .now_or_never();
+        // As long as the liquidity source is not initialised `get_liquidity` returns
+        // immediately with 0 liquidity.
+        assert!(liquidity.unwrap().unwrap().is_empty());
+
+        // wait until initialisation is finished
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // init loop ran expected number of times
+        assert_eq!(counter.load(Ordering::SeqCst), ATTEMPTS);
+        let liquidity = source
+            .get_liquidity(Default::default(), Block::Recent)
+            .await;
+        assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised")
     }
 }

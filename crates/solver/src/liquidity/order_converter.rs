@@ -66,7 +66,10 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let solver_fee = remaining.remaining(order.metadata.solver_fee)?;
+        let solver_fee = match order.solver_determines_fee() {
+            true => 0.into(),
+            false => remaining.remaining(order.metadata.solver_fee)?,
+        };
         let sell_amount = remaining.remaining(sell_amount)?;
         let buy_amount = remaining.remaining(order.data.buy_amount)?;
         ensure!(

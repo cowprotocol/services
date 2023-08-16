@@ -88,22 +88,19 @@ impl Fetcher {
         .into_iter()
         .try_collect()?;
 
-        let bal_v2: Vec<_> = future::join_all(config.balancer_v2.iter().map(|config| {
-            balancer::v2::collector(eth, &block_stream, block_retriever.clone(), config)
-        }))
-        .await
-        .into_iter()
-        .collect();
+        let bal_v2: Vec<_> = config
+            .balancer_v2
+            .iter()
+            .map(|config| {
+                balancer::v2::collector(eth, block_stream.clone(), block_retriever.clone(), config)
+            })
+            .collect();
 
-        let uni_v3: Vec<_> = future::join_all(
-            config
-                .uniswap_v3
-                .iter()
-                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
-        )
-        .await
-        .into_iter()
-        .collect();
+        let uni_v3: Vec<_> = config
+            .uniswap_v3
+            .iter()
+            .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config))
+            .collect();
 
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),
