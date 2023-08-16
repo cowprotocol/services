@@ -1,5 +1,5 @@
-relative-slippage = "0.1"
-absolute-slippage = "0.02"
+absolute-slippage = "0.04" # Denominated in whole native tokens, optional
+relative-slippage = "0.1" # Percentage in the [0, 1] range
 
 [dex]
 api-key = "$YOUR_API_KEY"
