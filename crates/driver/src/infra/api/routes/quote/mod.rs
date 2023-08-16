@@ -29,7 +29,7 @@ async fn route(
                 state.eth(),
                 state.solver(),
                 state.liquidity(),
-                state.token_info(),
+                state.tokens(),
             )
             .await;
         observe::quoted(state.solver().name(), &order, &quote);

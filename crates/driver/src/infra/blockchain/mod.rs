@@ -51,6 +51,10 @@ impl Ethereum {
         })
     }
 
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
+    }
+
     pub fn chain_id(&self) -> eth::ChainId {
         self.chain_id
     }
