@@ -23,8 +23,8 @@ struct Config {
     /// The solver address.
     pub address: eth::H160,
 
-    /// Optional partner name.
-    pub partner: Option<String>,
+    /// Which partner to identify as to the paraswap API.
+    pub partner: String,
 }
 
 /// Load the ParaSwap solver configuration from a TOML file.

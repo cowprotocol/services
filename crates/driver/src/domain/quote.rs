@@ -74,13 +74,15 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
+        token_info: &infra::token_info::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
+        let fake_auction = self.fake_auction(gas_price, eth.contracts().weth_address(), token_info).await;
         let solutions = solver
             .solve(
-                &self.fake_auction(gas_price, eth.contracts().weth_address()),
+                &fake_auction,
                 &liquidity,
                 timeout,
             )
@@ -97,11 +99,19 @@ impl Order {
         )
     }
 
-    fn fake_auction(
+    async fn fake_auction(
         &self,
         gas_price: eth::GasPrice,
         weth: eth::WethAddress,
+        token_info: &infra::token_info::Fetcher,
     ) -> competition::Auction {
+        let infos = token_info
+            .get_token_infos(&[self.buy().token, self.sell().token])
+            .await;
+
+        let buy_token_info = infos.get(&self.buy().token).expect("fetcher always returns an entry");
+        let sell_token_info = infos.get(&self.sell().token).expect("fetcher always returns an entry");
+
         competition::Auction::new(
             None,
             vec![competition::Order {
@@ -127,16 +137,16 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: sell_token_info.decimals,
+                    symbol: sell_token_info.symbol.clone(),
                     address: self.tokens.sell,
                     price: None,
                     available_balance: Default::default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: buy_token_info.decimals,
+                    symbol: buy_token_info.symbol.clone(),
                     address: self.tokens.buy,
                     price: None,
                     available_balance: Default::default(),

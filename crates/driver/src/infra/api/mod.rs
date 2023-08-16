@@ -2,7 +2,7 @@ use {
     crate::{
         domain,
         domain::Mempools,
-        infra::{liquidity, observe, solver::Solver, Ethereum, Simulator},
+        infra::{liquidity, observe, solver::Solver, token_info, Ethereum, Simulator},
     },
     error::Error,
     futures::Future,
@@ -68,6 +68,7 @@ impl Api {
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
+                token_info: token_info::Fetcher::new(&self.eth),
             })));
             let path = format!("/{name}");
             observe::mounting_solver(&name, &path);
@@ -86,7 +87,7 @@ impl Api {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct State(Arc<Inner>);
 
 impl State {
@@ -105,12 +106,16 @@ impl State {
     fn liquidity(&self) -> &liquidity::Fetcher {
         &self.0.liquidity
     }
+
+    fn token_info(&self) -> &token_info::Fetcher {
+        &self.0.token_info
+    }
 }
 
-#[derive(Debug)]
 struct Inner {
     eth: Ethereum,
     solver: Solver,
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
+    token_info: token_info::Fetcher,
 }

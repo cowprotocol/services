@@ -26,6 +26,7 @@ pub mod liquidity;
 pub mod mempool;
 pub mod quote;
 pub mod settlement;
+pub mod token_info;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
 // returns that error. This will change as the legacy code gets refactored away.
