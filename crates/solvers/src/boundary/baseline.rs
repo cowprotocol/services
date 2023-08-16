@@ -48,39 +48,36 @@ impl<'a> Solver<'a> {
             order::Side::Buy => candidates
                 .iter()
                 .filter_map(|path| {
-                    let estimate = baseline_solver::estimate_sell_amount(
+                    let sell = baseline_solver::estimate_sell_amount(
                         request.buy.amount,
                         path,
                         &self.amms,
                     )?;
                     let segments =
-                        self.traverse_path(&estimate.path, request.sell.token.0, estimate.value)?;
+                        self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
                     let buy = segments
                         .last()
                         .map(|segment| segment.output.amount)
-                        .unwrap_or(estimate.value);
+                        .unwrap_or(sell.value);
 
-                    (estimate.value <= request.sell.amount && buy >= request.buy.amount)
-                        .then_some((segments, estimate))
+                    (sell.value <= request.sell.amount && buy >= request.buy.amount)
+                        .then_some((segments, sell))
                 })
-                .min_by_key(|(_, estimate)| estimate.value)?,
+                .min_by_key(|(_, sell)| sell.value)?,
             order::Side::Sell => candidates
                 .iter()
                 .filter_map(|path| {
-                    let estimate = baseline_solver::estimate_buy_amount(
+                    let buy = baseline_solver::estimate_buy_amount(
                         request.sell.amount,
                         path,
                         &self.amms,
                     )?;
-                    let segments = self.traverse_path(
-                        &estimate.path,
-                        request.sell.token.0,
-                        request.sell.amount,
-                    )?;
+                    let segments =
+                        self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
 
-                    (estimate.value >= request.buy.amount).then_some((segments, estimate))
+                    (buy.value >= request.buy.amount).then_some((segments, buy))
                 })
-                .max_by_key(|(_, estimate)| estimate.value)?,
+                .max_by_key(|(_, buy)| buy.value)?,
         };
 
         baseline::Route::new(segments)

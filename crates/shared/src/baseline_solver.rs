@@ -100,8 +100,8 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
     // Some baseline liquidity is "unstable", where if you compute an input
     // amount large enough to buy X tokens, selling the computed amount over the
     // same pool in the exact same state will yield X-𝛿 tokens. To work around
-    // this, for each hop,  to converge to some `sell` amount >= the required
-    // buy amount.
+    // this, for each hop, we try to converge to some sell amount >= the
+    // required buy amount.
     let get_amount_in =
         |liquidity: &L, in_token: H160, (exact_out_amount, out_token): (U256, H160)| {
             /// Upper bound on number of iterations to find a sufficiently high
@@ -111,7 +111,6 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
             let mut in_amount = liquidity.get_amount_in(in_token, (exact_out_amount, out_token))?;
             for _ in 0..MAX_ITERATIONS {
                 let out_amount = liquidity.get_amount_out(out_token, (in_amount, in_token))?;
-                dbg!(in_amount, out_amount);
                 if out_amount >= exact_out_amount {
                     return Some(in_amount);
                 }
@@ -145,7 +144,6 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
                         Some((
                             liquidity,
                             get_amount_in(liquidity, *current, (amount, previous))?,
-                            //liquidity.get_amount_in(*current, (amount, previous))?,
                         ))
                     })
                     .min_by_key(|(_, amount)| *amount)?;
