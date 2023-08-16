@@ -126,7 +126,7 @@ where
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
-    /// Tracks whether or now the graph based liquidity is currently enabled.
+    /// Tracks whether or not the graph based liquidity is currently enabled.
     #[metric(labels("source"))]
     liquidity_enabled: prometheus::IntGaugeVec,
 }
