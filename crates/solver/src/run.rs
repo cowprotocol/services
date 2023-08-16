@@ -312,12 +312,10 @@ pub async fn run(args: Arguments) {
 
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
 
-    let s3_instance_uploader = args
-        .s3_upload
-        .into_config()
-        .unwrap()
-        .map(S3InstanceUploader::new)
-        .map(Arc::new);
+    let s3_instance_uploader = match args.s3_upload.into_config().unwrap() {
+        Some(config) => Some(Arc::new(S3InstanceUploader::new(config).await)),
+        None => None,
+    };
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let access_list_estimator = Arc::new(

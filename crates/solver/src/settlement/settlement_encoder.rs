@@ -267,13 +267,8 @@ impl SettlementEncoder {
                     buy_price,
                 )?
             }
-            OrderClass::Limit(limit) => {
-                let surplus_fee = match order.data.partially_fillable {
-                    // Protocol determines fees for fok orders.
-                    false => limit.surplus_fee.unwrap(),
-                    // Solver determines fees for partially fillable orders.
-                    true => solver_fee,
-                };
+            OrderClass::Limit(_) => {
+                let surplus_fee = solver_fee;
 
                 // Solvers calculate with slightly adjusted amounts compared to
                 // the signed order, so adjust by the surplus fee (if needed) to

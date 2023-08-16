@@ -182,10 +182,6 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("invalid_signature", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
-        let orders = filter_fok_limit_orders_with_insufficient_sell_amount(orders);
-        let removed = counter.checkpoint("insufficient_sell", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
-
         // If we update due to an explicit notification we can reuse existing balances
         // as they cannot have changed.
         let old_balances = {
@@ -579,19 +575,6 @@ async fn filter_unsupported_tokens(
     Ok(orders)
 }
 
-fn filter_fok_limit_orders_with_insufficient_sell_amount(mut orders: Vec<Order>) -> Vec<Order> {
-    // Unwrap because solvable fok orders always have a surplus fee.
-    orders.retain(
-        |order| match (&order.metadata.class, order.data.partially_fillable) {
-            (OrderClass::Limit(limit), false) => {
-                order.data.sell_amount > limit.surplus_fee.unwrap()
-            }
-            _ => true,
-        },
-    );
-    orders
-}
-
 /// Filter out limit orders which are far enough outside the estimated native
 /// token price.
 fn filter_mispriced_limit_orders(
@@ -600,27 +583,17 @@ fn filter_mispriced_limit_orders(
     price_factor: &BigDecimal,
 ) -> Vec<Order> {
     orders.retain(|order| {
-        let surplus_fee = match (&order.metadata.class, order.data.partially_fillable) {
-            // Solvable fok limit orders always have a surplus fee.
-            (OrderClass::Limit(limit), false) => limit.surplus_fee.unwrap(),
-            // Partially fillable limit orders do not have a surplus fee.
-            (OrderClass::Limit(_), true) => 0.into(),
-            _ => return true,
-        };
-
-        let effective_sell_amount = order.data.sell_amount.saturating_sub(surplus_fee);
-        if effective_sell_amount.is_zero() {
-            return false;
+        if !order.is_limit_order() {
+            return true;
         }
 
         let sell_price = *prices.get(&order.data.sell_token).unwrap();
         let buy_price = *prices.get(&order.data.buy_token).unwrap();
 
         // Convert the sell and buy price to the native token (ETH) and make sure that
-        // sell discounting the surplus fee is higher than buy with the
-        // configurable price factor.
+        // sell is higher than buy with the configurable price factor.
         let (sell_native, buy_native) = match (
-            effective_sell_amount.checked_mul(sell_price),
+            order.data.sell_amount.checked_mul(sell_price),
             order.data.buy_amount.checked_mul(buy_price),
         ) {
             (Some(sell), Some(buy)) => (sell, buy),
@@ -1048,38 +1021,6 @@ mod tests {
     }
 
     #[test]
-    fn filters_limit_orders_with_too_high_fees() {
-        let order = |sell_amount: u8, surplus_fee: u8| Order {
-            data: OrderData {
-                buy_amount: 1u8.into(),
-                sell_amount: sell_amount.into(),
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(surplus_fee.into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let orders = vec![
-            // Enough sell amout for the surplus fee.
-            order(100, 10),
-            // Surplus fee effectively turns order into a 0 sell amount order
-            order(100, 100),
-            // Surplus fee is higher than the sell amount.
-            order(100, 101),
-        ];
-
-        assert_eq!(
-            filter_fok_limit_orders_with_insufficient_sell_amount(orders),
-            [order(100, 10)]
-        );
-    }
-
-    #[test]
     fn filters_mispriced_orders() {
         let sell_token = H160([1; 20]);
         let buy_token = H160([2; 20]);
@@ -1092,7 +1033,7 @@ mod tests {
         };
         let price_factor = "0.95".parse().unwrap();
 
-        let order = |sell_amount: u8, buy_amount: u8, surplus_fee: u8| Order {
+        let order = |sell_amount: u8, buy_amount: u8| Order {
             data: OrderData {
                 sell_token,
                 sell_amount: sell_amount.into(),
@@ -1102,7 +1043,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(surplus_fee.into()),
+                    surplus_fee: None,
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -1112,25 +1053,18 @@ mod tests {
 
         let valid_orders = vec![
             // Reasonably priced order, doesn't get filtered.
-            order(101, 200, 1),
+            order(100, 200),
             // Slightly out of price order, doesn't get filtered.
-            order(10, 21, 0),
+            order(10, 21),
         ];
 
         let invalid_orders = vec![
             // Out of price order gets filtered out.
-            order(10, 100, 0),
-            // Reasonably priced order becomes out of price after fees and gets
-            // filtered out
-            order(10, 18, 5),
-            // Zero sell amount after fees gets filtered.
-            order(1, 1, 1),
-            // Overflow sell amount after fees gets filtered.
-            order(1, 1, 100),
+            order(10, 100),
             // Overflow sell value gets filtered.
-            order(255, 1, 1),
+            order(255, 1),
             // Overflow buy value gets filtered.
-            order(100, 255, 1),
+            order(100, 255),
         ];
 
         let orders = [valid_orders.clone(), invalid_orders].concat();
@@ -1139,7 +1073,7 @@ mod tests {
             valid_orders,
         );
 
-        let mut order = order(10, 21, 0);
+        let mut order = order(10, 21);
         order.data.partially_fillable = true;
         let orders = vec![order];
         assert_eq!(

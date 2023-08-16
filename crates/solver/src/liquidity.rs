@@ -195,23 +195,21 @@ impl LimitOrder {
     /// For some orders the protocol doesn't precompute a fee. Instead solvers
     /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
-        self.partially_fillable && matches!(self.id, LimitOrderId::Limit(_))
+        matches!(self.id, LimitOrderId::Limit(_))
     }
-}
 
-impl std::fmt::Debug for LimitOrder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Limit Order {:?}", self.id)
-    }
-}
-
-impl LimitOrder {
     /// Returns the full execution amount for the specified limit order.
     pub fn full_execution_amount(&self) -> U256 {
         match self.kind {
             OrderKind::Sell => self.sell_amount,
             OrderKind::Buy => self.buy_amount,
         }
+    }
+}
+
+impl std::fmt::Debug for LimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Limit Order {:?}", self.id)
     }
 }
 

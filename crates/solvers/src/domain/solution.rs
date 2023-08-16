@@ -52,7 +52,7 @@ impl Single {
             return None;
         }
 
-        let fee = if order.has_solver_fee() {
+        let fee = if order.solver_determines_fee() {
             // TODO: If the order has signed `fee` amount already, we should
             // discount it from the surplus fee. ATM, users would pay both a
             // full order fee as well as a solver computed fee. Note that this
@@ -146,7 +146,7 @@ impl Fulfillment {
     /// Creates a new order filled to the specified amount. Returns `None` if
     /// the fill amount is incompatible with the order.
     pub fn new(order: order::Order, executed: U256, fee: Fee) -> Option<Self> {
-        if matches!(fee, Fee::Surplus(_)) != order.has_solver_fee() {
+        if matches!(fee, Fee::Surplus(_)) != order.solver_determines_fee() {
             return None;
         }
 

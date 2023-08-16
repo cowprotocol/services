@@ -10,6 +10,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
+    anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
     itertools::Itertools,
     shared::{
@@ -24,7 +25,7 @@ use {
             uniswap_v3::{self, UniswapV3Liquidity, UniswapV3SettlementHandler},
             ConcentratedLiquidity,
         },
-        liquidity_collector::LiquidityCollecting,
+        liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
     std::{
         collections::BTreeMap,
@@ -103,11 +104,32 @@ pub fn to_interaction(
         .unwrap()
 }
 
-pub async fn collector(
+pub fn collector(
     eth: &Ethereum,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
 ) -> Box<dyn LiquidityCollecting> {
+    let eth = Arc::new(eth.clone());
+    let config = Arc::new(Clone::clone(config));
+    let init = move || {
+        let eth = eth.clone();
+        let block_retriever = block_retriever.clone();
+        let config = config.clone();
+        async move { init_liquidity(&eth, block_retriever.clone(), &config).await }
+    };
+    const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    Box::new(BackgroundInitLiquiditySource::new(
+        "uniswap-v3",
+        init,
+        TEN_MINUTES,
+    )) as Box<_>
+}
+
+async fn init_liquidity(
+    eth: &Ethereum,
+    block_retriever: Arc<dyn BlockRetrieving>,
+    config: &infra::liquidity::config::UniswapV3,
+) -> anyhow::Result<impl LiquidityCollecting> {
     let web3 = boundary::web3(eth);
     let router = UniswapV3SwapRouter::at(&web3, config.router.0);
 
@@ -120,10 +142,10 @@ pub async fn collector(
             config.max_pools_to_initialize,
         )
         .await
-        .unwrap(),
+        .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    Box::new(UniswapV3Liquidity::new(
+    Ok(UniswapV3Liquidity::new(
         router,
         eth.contracts().settlement().clone(),
         web3,

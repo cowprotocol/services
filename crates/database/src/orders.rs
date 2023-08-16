@@ -600,6 +600,7 @@ pub struct OrderExecution {
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
+    pub class: OrderClass,
     /// The entire `sell_amount` of the order.
     pub sell_amount: BigDecimal,
     /// The entire `buy_amount` of the order.
@@ -627,6 +628,7 @@ SELECT
     o.sell_amount,
     o.buy_amount,
     o.kind,
+    o.class,
     CASE
         WHEN o.kind = 'sell' THEN t.sell_amount - t.fee_amount
         ELSE t.buy_amount
@@ -718,6 +720,7 @@ WHERE
 
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
+/// cleanup: fok limit orders should be allowed to not have surplus fee
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -2400,6 +2403,7 @@ mod tests {
                 sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
                 kind: OrderKind::Sell,
+                class: Default::default(),
                 sell_amount: bigdecimal(3026871740084629982950),
                 buy_amount: bigdecimal(89238894792574185),
                 executed_amount: bigdecimal(3026871740084629982950),
@@ -2476,6 +2480,7 @@ mod tests {
             vec![OrderExecution {
                 executed_solver_fee: Some(bigdecimal(42)),
                 kind: OrderKind::Sell,
+                class: OrderClass::Limit,
                 sell_amount: bigdecimal(1),
                 buy_amount: bigdecimal(1),
                 executed_amount: bigdecimal(1),
