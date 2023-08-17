@@ -131,16 +131,16 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: sell_token_metadata.map(|i| i.decimals),
-                    symbol: sell_token_metadata.map(|i| i.symbol.clone()),
+                    decimals: sell_token_metadata.and_then(|i| i.decimals),
+                    symbol: sell_token_metadata.and_then(|i| i.symbol.clone()),
                     address: self.tokens.sell,
                     price: None,
                     available_balance: Default::default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: buy_token_metadata.map(|i| i.decimals),
-                    symbol: buy_token_metadata.map(|i| i.symbol.clone()),
+                    decimals: buy_token_metadata.and_then(|i| i.decimals),
+                    symbol: buy_token_metadata.and_then(|i| i.symbol.clone()),
                     address: self.tokens.buy,
                     price: None,
                     available_balance: Default::default(),

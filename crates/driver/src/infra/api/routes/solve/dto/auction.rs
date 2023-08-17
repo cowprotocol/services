@@ -123,8 +123,8 @@ impl Auction {
             self.tokens.into_iter().map(|token| {
                 let info = token_infos.get(&token.address.into());
                 competition::auction::Token {
-                    decimals: info.map(|i| i.decimals),
-                    symbol: info.map(|i| i.symbol.clone()),
+                    decimals: info.and_then(|i| i.decimals),
+                    symbol: info.and_then(|i| i.symbol.clone()),
                     address: token.address.into(),
                     price: token.price.map(Into::into),
                     available_balance: info.map(|i| i.balance).unwrap_or(0.into()).into(),

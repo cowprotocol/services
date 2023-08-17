@@ -175,6 +175,7 @@ impl Solver {
                             "decimals": null,
                             "symbol": null,
                             "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            // TODO put the correct value here
                             "availableBalance": "0",
                             "trusted": config.trusted.contains(quote.order.sell_token),
                         }),
@@ -185,6 +186,7 @@ impl Solver {
                             "decimals": null,
                             "symbol": null,
                             "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            // TODO put the correct value here
                             "availableBalance": "0",
                             "trusted": config.trusted.contains(quote.order.buy_token),
                         }),

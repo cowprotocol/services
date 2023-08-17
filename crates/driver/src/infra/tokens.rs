@@ -6,8 +6,8 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct Metadata {
-    pub decimals: u8,
-    pub symbol: String,
+    pub decimals: Option<u8>,
+    pub symbol: Option<String>,
     /// Current balance of the smart contract.
     pub balance: eth::TokenAmount,
 }
