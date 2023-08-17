@@ -14,7 +14,7 @@ use {
     num::{BigRational, FromPrimitive},
     number_conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
     primitive_types::{H160, H256, U256},
-    prometheus::{IntCounter, IntGauge, IntGaugeVec},
+    prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
@@ -36,6 +36,10 @@ use {
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
+    /// Tracks success and failure of the solvable orders cache update task.
+    #[metric(labels("result"))]
+    auction_update: IntCounterVec,
+
     /// Auction creations.
     auction_creations: IntCounter,
 
@@ -273,6 +277,13 @@ impl SolvableOrdersCache {
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
     }
+
+    pub fn track_auction_update(&self, result: &str) {
+        self.metrics
+            .auction_update
+            .with_label_values(&[result])
+            .inc();
+    }
 }
 
 /// Applies fee objective scaling and discard all orders where an overflow
@@ -473,17 +484,23 @@ async fn update_task(
         };
         let block = current_block.borrow().number;
         match cache.update(block).await {
-            Ok(()) => tracing::debug!(
-                %block,
-                "updated solvable orders in {}s",
-                start.elapsed().as_secs_f32()
-            ),
-            Err(err) => tracing::error!(
-                ?err,
-                %block,
-                "failed to update solvable orders in {}s",
-                start.elapsed().as_secs_f32()
-            ),
+            Ok(()) => {
+                cache.track_auction_update("success");
+                tracing::debug!(
+                    %block,
+                    "updated solvable orders in {}s",
+                    start.elapsed().as_secs_f32()
+                )
+            }
+            Err(err) => {
+                cache.track_auction_update("failure");
+                tracing::warn!(
+                    ?err,
+                    %block,
+                    "failed to update solvable orders in {}s",
+                    start.elapsed().as_secs_f32()
+                )
+            }
         }
         tokio::time::sleep_until(start + update_interval).await;
     }
