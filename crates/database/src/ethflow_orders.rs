@@ -124,7 +124,7 @@ pub async fn refundable_orders(
     //
     // GREATEST(oq.buy_amount,1) added to avoid division by zero since
     // table order_quotes contains entries with buy_amount = 0 (see
-    // V021__store_full_quotes.sql)
+    // https://github.com/cowprotocol/services/pull/1767#issuecomment-1680825756)
     const QUERY: &str = r#"
 SELECT eo.uid, eo.valid_to from orders o
 INNER JOIN ethflow_orders eo on eo.uid = o.uid 
