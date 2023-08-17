@@ -123,7 +123,6 @@ pub struct Token {
     pub symbol: Option<String>,
     pub address: eth::TokenAddress,
     pub price: Option<Price>,
-    // TODO Set this field correctly, currently it isn't being passed into the driver.
     /// The balance of this token available in our settlement contract.
     pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
