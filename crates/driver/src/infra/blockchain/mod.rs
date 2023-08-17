@@ -160,53 +160,6 @@ impl Ethereum {
             .map(Into::into)
             .map_err(Into::into)
     }
-
-    /// Returns the token's decimals. Returns `None` if the token does not
-    /// implement this optional method.
-    pub async fn decimals(&self, token: eth::TokenAddress) -> Result<Option<u8>, Error> {
-        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
-        match erc20.methods().decimals().call().await {
-            // the token does not implement the optional `decimals()` method
-            Err(ethcontract::errors::MethodError {
-                inner: ethcontract::errors::ExecutionError::Revert(_),
-                ..
-            }) => Ok(None),
-            Err(err) => Err(err.into()),
-            Ok(decimals) => Ok(Some(decimals)),
-        }
-    }
-
-    /// Returns the token's symbol. Returns `None` if the token does not
-    /// implement this optional method.
-    pub async fn symbol(&self, token: eth::TokenAddress) -> Result<Option<String>, Error> {
-        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
-        match erc20.methods().symbol().call().await {
-            // the token does not implement the optional `symbol()` method
-            Err(ethcontract::errors::MethodError {
-                inner: ethcontract::errors::ExecutionError::Revert(_),
-                ..
-            }) => Ok(None),
-            Err(err) => Err(err.into()),
-            Ok(decimals) => Ok(Some(decimals)),
-        }
-    }
-
-    /// Returns the current [`eth::TokenAmount`] balance of the specified
-    /// account for a given token.
-    pub async fn erc20_balance(
-        &self,
-        holder: eth::Address,
-        token: eth::TokenAddress,
-    ) -> Result<eth::TokenAmount, Error> {
-        let erc20 = self.contract_at::<contracts::ERC20>(token.0);
-        erc20
-            .methods()
-            .balance_of(holder.0)
-            .call()
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
-    }
 }
 
 impl fmt::Debug for Ethereum {
