@@ -469,7 +469,7 @@ components:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
-    AppDataDocument:
+    AppData:
       description: |
         The string encoding of a JSON object representing some `appData`. The
         format of the JSON expected in the `appData` field is defined
@@ -487,7 +487,7 @@ components:
       type: object
       properties:
         fullAppData:
-          $ref: "#/components/schemas/AppDataDocument"
+          $ref: "#/components/schemas/AppData"
       required:
         - appData
     BigUint:
@@ -713,7 +713,7 @@ components:
           anyOf:
             - title: Full App Data
               allOf:
-                - $ref: "#/components/schemas/AppDataDocument"
+                - $ref: "#/components/schemas/AppData"
               description: |
                 **Short**:
 
@@ -1251,7 +1251,7 @@ components:
                 hex encoded string for backwards compatibility.
                 When the first format is used, it's possible to provide the derived appDataHash field.
               oneOf:
-                - $ref: "#/components/schemas/AppDataDocument"
+                - $ref: "#/components/schemas/AppData"
                 - $ref: "#/components/schemas/AppDataHash"
             appDataHash:
               description: |
