@@ -1,7 +1,10 @@
 use {
     crate::{domain::eth, infra::Ethereum},
     anyhow::Result,
-    std::{collections::HashMap, sync::RwLock},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::RwLock,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -76,21 +79,21 @@ impl Fetcher {
     /// Fetches `Metadata` of the requested tokens from a node.
     async fn fetch_token_infos(
         &self,
-        tokens: &[eth::TokenAddress],
+        tokens: HashSet<eth::TokenAddress>,
     ) -> Vec<Result<(eth::TokenAddress, Metadata)>> {
         let settlement = self.eth.contracts().settlement().address().into();
-        let futures = tokens.iter().map(|token| async {
+        let futures = tokens.into_iter().map(|token| async move {
             // Use `try_join` because these calls get batched under the hood
             // so if one of them fails the others will as well.
             // Also this way we won't get incomplete data for a token.
             let (decimals, symbol, balance) = futures::future::try_join3(
-                self.decimals(*token),
-                self.symbol(*token),
-                self.balance(settlement, *token),
+                self.decimals(token),
+                self.symbol(token),
+                self.balance(settlement, token),
             )
             .await?;
             Ok((
-                *token,
+                token,
                 Metadata {
                     decimals,
                     symbol,
@@ -108,7 +111,7 @@ impl Fetcher {
         &self,
         addresses: &[eth::TokenAddress],
     ) -> HashMap<eth::TokenAddress, Metadata> {
-        let to_fetch: Vec<_> = {
+        let to_fetch: HashSet<_> = {
             let cache = self.cache.read().unwrap();
 
             // Compute set of requested addresses that are not in cache.
@@ -121,7 +124,7 @@ impl Fetcher {
 
         // Fetch token infos not yet in cache.
         if !to_fetch.is_empty() {
-            let fetched = self.fetch_token_infos(to_fetch.as_slice()).await;
+            let fetched = self.fetch_token_infos(to_fetch).await;
 
             // Add valid token infos to cache.
             self.cache
