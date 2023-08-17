@@ -44,34 +44,50 @@ impl<'a> Solver<'a> {
             max_hops,
         );
 
-        let (path, executed_sell_amount) = match request.side {
+        let segments = match request.side {
             order::Side::Buy => {
-                let best = candidates
+                let (segments, _) = candidates
                     .iter()
                     .filter_map(|path| {
-                        baseline_solver::estimate_sell_amount(request.buy.amount, path, &self.amms)
+                        let estimate = baseline_solver::estimate_sell_amount(
+                            request.buy.amount,
+                            path,
+                            &self.amms,
+                        )?;
+                        let segments = self.traverse_path(
+                            &estimate.path,
+                            request.sell.token.0,
+                            estimate.value,
+                        )?;
+
+                        let sell = estimate.value;
+                        let buy = segments
+                            .last()
+                            .map(|segment| segment.output.amount)
+                            .unwrap_or(sell);
+
+                        if sell <= request.sell.amount && buy >= request.buy.amount {
+                            Some((segments, sell))
+                        } else {
+                            None
+                        }
                     })
-                    .filter(|estimate| estimate.value <= request.sell.amount)
-                    .min_by_key(|estimate| estimate.value)?;
-                (best.path, best.value)
+                    .min_by_key(|(_, sell)| *sell)?;
+                segments
             }
             order::Side::Sell => {
-                let best = candidates
+                let estimate = candidates
                     .iter()
                     .filter_map(|path| {
                         baseline_solver::estimate_buy_amount(request.sell.amount, path, &self.amms)
                     })
                     .filter(|estimate| estimate.value >= request.buy.amount)
                     .max_by_key(|estimate| estimate.value)?;
-                (best.path, request.sell.amount)
+                self.traverse_path(&estimate.path, request.sell.token.0, request.sell.amount)?
             }
         };
 
-        baseline::Route::new(self.traverse_path(
-            &path,
-            request.sell.token.0,
-            executed_sell_amount,
-        )?)
+        baseline::Route::new(segments)
     }
 
     fn traverse_path(
@@ -156,12 +172,14 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
         })
 }
 
+#[derive(Debug)]
 struct Amm {
     id: liquidity::Id,
     token_pair: TokenPair,
     pool: Pool,
 }
 
+#[derive(Debug)]
 enum Pool {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),

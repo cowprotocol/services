@@ -74,17 +74,15 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
+        tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
-        let solutions = solver
-            .solve(
-                &self.fake_auction(gas_price, eth.contracts().weth_address()),
-                &liquidity,
-                timeout,
-            )
-            .await?;
+        let fake_auction = self
+            .fake_auction(gas_price, eth.contracts().weth_address(), tokens)
+            .await;
+        let solutions = solver.solve(&fake_auction, &liquidity, timeout).await?;
         Quote::new(
             eth,
             self,
@@ -97,11 +95,17 @@ impl Order {
         )
     }
 
-    fn fake_auction(
+    async fn fake_auction(
         &self,
         gas_price: eth::GasPrice,
         weth: eth::WethAddress,
+        tokens: &infra::tokens::Fetcher,
     ) -> competition::Auction {
+        let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
+
+        let buy_token_metadata = tokens.get(&self.buy().token);
+        let sell_token_metadata = tokens.get(&self.sell().token);
+
         competition::Auction::new(
             None,
             vec![competition::Order {
@@ -127,16 +131,16 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: sell_token_metadata.map(|i| i.decimals),
+                    symbol: sell_token_metadata.map(|i| i.symbol.clone()),
                     address: self.tokens.sell,
                     price: None,
                     available_balance: Default::default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: buy_token_metadata.map(|i| i.decimals),
+                    symbol: buy_token_metadata.map(|i| i.symbol.clone()),
                     address: self.tokens.buy,
                     price: None,
                     available_balance: Default::default(),

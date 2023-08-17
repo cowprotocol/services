@@ -1,10 +1,7 @@
 //! Configuration parameters that get shared across all dex solvers.
 
 use {
-    crate::{
-        domain::{dex::slippage, eth},
-        util::conv,
-    },
+    crate::domain::{dex::slippage, eth},
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
@@ -23,7 +20,7 @@ struct Config {
 
     /// The absolute slippage allowed by the solver.
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
-    absolute_slippage: Option<BigDecimal>,
+    absolute_slippage: Option<eth::U256>,
 
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
@@ -64,9 +61,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
     let config = super::Config {
         slippage: slippage::Limits::new(
             config.relative_slippage,
-            config.absolute_slippage.map(|value| {
-                conv::decimal_to_ether(&value).expect("invalid absolute slippage Ether value")
-            }),
+            config.absolute_slippage.map(eth::Ether),
         )
         .expect("invalid slippage limits"),
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
