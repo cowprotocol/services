@@ -55,13 +55,18 @@ impl<'a> Solver<'a> {
                     )?;
                     let segments =
                         self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
-                    let buy = segments
-                        .last()
-                        .map(|segment| segment.output.amount)
-                        .unwrap_or(sell.value);
 
-                    (sell.value <= request.sell.amount && buy >= request.buy.amount)
-                        .then_some((segments, sell))
+                    let buy = segments.last().map(|segment| segment.output.amount);
+                    if buy.map(|buy| buy >= request.buy.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid buy estimate does not cover order"
+                        );
+                        return None;
+                    }
+
+                    (sell.value <= request.sell.amount).then_some((segments, sell))
                 })
                 .min_by_key(|(_, sell)| sell.value)?,
             order::Side::Sell => candidates
@@ -74,6 +79,16 @@ impl<'a> Solver<'a> {
                     )?;
                     let segments =
                         self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
+
+                    let sell = segments.first().map(|segment| segment.input.amount);
+                    if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid sell estimate does not cover order"
+                        );
+                        return None;
+                    }
 
                     (buy.value >= request.buy.amount).then_some((segments, buy))
                 })
