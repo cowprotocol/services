@@ -68,6 +68,10 @@ pub struct Config {
     pub slippage: Slippage,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
+    /// Should the collected liquidity not be sent with the `/solve` request?
+    /// This option only makes sense if you run a single driver for multiple
+    /// solvers.
+    pub requires_driver_liquidity: bool,
 }
 
 impl Solver {
@@ -154,6 +158,19 @@ impl Solver {
         observe::solutions(&solutions);
         Ok(solutions)
     }
+
+    /// Whether the solver needs any provided liquidity to work.
+    pub fn requires_driver_liquidity(&self) -> bool {
+        self.config.requires_driver_liquidity
+    }
+}
+
+#[derive(Copy, Debug, Clone)]
+pub enum Liquidity {
+    /// The solver relies on liquidity provided by the driver.
+    Required,
+    /// The solver does not rely on any liquidity the driver provides.
+    Ignored,
 }
 
 #[derive(Debug, Error)]

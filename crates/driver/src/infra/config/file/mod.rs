@@ -135,6 +135,10 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
+fn default_solver_specific_liquidity() -> bool {
+    true
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -157,6 +161,11 @@ struct SolverConfig {
 
     /// The account which should be used to sign settlements for this solver.
     account: Account,
+
+    /// Whether or not this specific solver relies on the liquidity provided by
+    /// the driver.
+    #[serde(default = "default_solver_specific_liquidity")]
+    requires_driver_liquidity: bool,
 }
 
 #[serde_as]

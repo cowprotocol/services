@@ -47,21 +47,7 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
-        let liquidity = self
-            .liquidity
-            .fetch(
-                &auction
-                    .orders()
-                    .iter()
-                    .filter_map(|order| match order.kind {
-                        order::Kind::Market | order::Kind::Limit { .. } => {
-                            liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
-                        }
-                        order::Kind::Liquidity => None,
-                    })
-                    .collect(),
-            )
-            .await;
+        let liquidity = self.fetch_liquidity(auction).await;
 
         // Fetch the solutions from the solver.
         let solutions = self
@@ -231,6 +217,27 @@ impl Competition {
             .unwrap()
             .as_ref()
             .map(|s| s.auction_id)
+    }
+
+    pub async fn fetch_liquidity(&self, auction: &Auction) -> Vec<liquidity::Liquidity> {
+        if !self.solver.requires_driver_liquidity() {
+            return vec![];
+        }
+
+        self.liquidity
+            .fetch(
+                &auction
+                    .orders()
+                    .iter()
+                    .filter_map(|order| match order.kind {
+                        order::Kind::Market | order::Kind::Limit { .. } => {
+                            liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
+                        }
+                        order::Kind::Liquidity => None,
+                    })
+                    .collect(),
+            )
+            .await
     }
 }
 

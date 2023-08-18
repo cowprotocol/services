@@ -4,6 +4,9 @@ endpoint = "http://0.0.0.0:7872"
 absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
+# Optional flag to control whether the driver actually sends any liquidity to the solver.
+# This is only needed if you are running a single driver for multiple solvers that have different expectations.
+# requires-driver-liquidity = false
 
 # [[solver]] # And so on, specify as many solvers as needed
 # name = "othersolver"

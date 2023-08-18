@@ -41,6 +41,7 @@ pub async fn load(path: &Path) -> infra::Config {
                     absolute: config.absolute_slippage.map(Into::into),
                 },
                 account,
+                requires_driver_liquidity: config.requires_driver_liquidity,
             }
         }))
         .await,

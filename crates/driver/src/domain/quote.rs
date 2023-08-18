@@ -76,7 +76,10 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
-        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
+        let liquidity = match solver.requires_driver_liquidity() {
+            true => liquidity.fetch(&self.liquidity_pairs()).await,
+            false => vec![],
+        };
         let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let fake_auction = self
