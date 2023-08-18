@@ -32,7 +32,8 @@ async fn sorting() {
     test.solve().await.ok();
 }
 
-// TODO Comment
+/// If a user does not have enough tokens to settle all their orders filter out
+/// the least likely to settle ones that go over the user's budget.
 #[tokio::test]
 #[ignore]
 async fn filtering() {
