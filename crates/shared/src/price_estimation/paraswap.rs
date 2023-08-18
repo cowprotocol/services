@@ -33,6 +33,7 @@ impl ParaswapPriceEstimator {
                 solver,
             )),
             rate_limiter,
+            "paraswap".into(),
         ))
     }
 

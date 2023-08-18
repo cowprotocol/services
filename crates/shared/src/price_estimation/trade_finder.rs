@@ -65,13 +65,17 @@ pub struct TradeVerifier {
 }
 
 impl TradeEstimator {
-    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        finder: Arc<dyn TradeFinding>,
+        rate_limiter: Arc<RateLimiter>,
+        label: String,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 finder,
                 verifier: None,
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
         }
     }
@@ -344,7 +348,7 @@ impl Clone for TradeEstimator {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            sharing: Default::default(),
+            sharing: self.sharing.clone(),
             rate_limiter: self.rate_limiter.clone(),
         }
     }

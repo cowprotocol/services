@@ -32,6 +32,7 @@ impl OneInchPriceEstimator {
                 solver,
             )),
             rate_limiter,
+            "oneinch".into(),
         ))
     }
 
