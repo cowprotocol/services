@@ -6,7 +6,6 @@ use {
     },
     shared::{
         current_block::CurrentBlockStream,
-        price_estimation,
         sources::{swapr::reader::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader},
     },
     solver::{liquidity::ConstantProductOrder, liquidity_collector::LiquidityCollecting},
@@ -14,6 +13,10 @@ use {
 
 /// The base unit for basis points, i.e. how many basis points in 100%.
 const BPS_BASE: u32 = 10_000;
+
+/// Median gas used per UniswapInteraction (v2).
+// estimated with https://dune.com/queries/640717
+const GAS_PER_SWAP: u64 = 90_171;
 
 pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     // invalid Swapr fee ratio; does not have exact BPS representation
@@ -26,7 +29,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
     let fee = swapr::Fee::new(bps)?;
     Ok(liquidity::Liquidity {
         id,
-        gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
+        gas: GAS_PER_SWAP.into(),
         kind: liquidity::Kind::Swapr(swapr::Pool {
             base: boundary::liquidity::uniswap::v2::to_domain_pool(pool)?,
             fee,
