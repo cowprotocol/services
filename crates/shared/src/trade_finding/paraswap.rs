@@ -11,7 +11,7 @@ use {
             TransactionBuilderQuery,
         },
         price_estimation::gas,
-        request_sharing::{BoxRequestSharing, BoxShared},
+        request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
         token_info::{TokenInfo, TokenInfoFetching},
         trade_finding::{Interaction, Trade},
     },
@@ -56,7 +56,7 @@ impl ParaswapTradeFinder {
                 disabled_paraswap_dexs,
                 solver,
             },
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("paraswap".into()),
         }
     }
 

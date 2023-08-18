@@ -30,7 +30,7 @@ impl ExternalTradeFinder {
     pub fn new(driver: Url, client: Client) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
         }
     }
