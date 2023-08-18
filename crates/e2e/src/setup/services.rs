@@ -1,19 +1,19 @@
 use {
     crate::{
-        local_node::NODE_HOST,
+        nodes::NODE_HOST,
         setup::{wait_for_condition, Contracts, TIMEOUT},
     },
     clap::Parser,
-    ethcontract::H256,
+    ethcontract::{H160, H256},
     model::{
-        app_id::AppDataHash,
+        app_data::{AppDataDocument, AppDataHash},
         auction::AuctionWithId,
         order::{Order, OrderCreation, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse},
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    reqwest::{Client, StatusCode},
+    reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
     std::time::Duration,
 };
@@ -127,6 +127,35 @@ impl<'a> Services<'a> {
         let args = [
             "solver".to_string(),
             format!("--solver-account={}", hex::encode(private_key)),
+            "--settle-interval=1".to_string(),
+            format!("--transaction-submission-nodes={NODE_HOST}"),
+            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+        ]
+        .into_iter()
+        .chain(self.api_autopilot_solver_arguments())
+        .chain(extra_args.into_iter());
+
+        let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
+        tokio::task::spawn(solver::run::run(args));
+    }
+
+    /// Start the solver service in a background task with a custom http solver.
+    pub fn start_old_driver_custom_solver(
+        &self,
+        solver_url: Option<Url>,
+        solver_account: H160,
+        extra_args: Vec<String>,
+    ) {
+        let args = [
+            "solver".to_string(),
+            format!(
+                "--external-solvers=Custom|{}|{:#x}|false",
+                solver_url
+                    .unwrap_or("http://localhost:8000".parse().unwrap())
+                    .as_str(),
+                solver_account
+            ),
+            format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
@@ -273,10 +302,10 @@ impl<'a> Services<'a> {
         }
     }
 
-    pub async fn get_app_data(
+    pub async fn get_app_data_document(
         &self,
         app_data: AppDataHash,
-    ) -> Result<String, (StatusCode, String)> {
+    ) -> Result<AppDataDocument, (StatusCode, String)> {
         let response = self
             .http
             .get(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
@@ -288,20 +317,27 @@ impl<'a> Services<'a> {
         let body = response.text().await.unwrap();
 
         match status {
-            StatusCode::OK => Ok(body),
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err((code, body)),
         }
     }
 
-    pub async fn put_app_data(
+    pub async fn get_app_data(
         &self,
         app_data: AppDataHash,
-        full_app_data: &str,
+    ) -> Result<String, (StatusCode, String)> {
+        Ok(self.get_app_data_document(app_data).await?.full_app_data)
+    }
+
+    pub async fn put_app_data_document(
+        &self,
+        app_data: AppDataHash,
+        document: AppDataDocument,
     ) -> Result<(), (StatusCode, String)> {
         let response = self
             .http
             .put(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
-            .body(full_app_data.to_owned())
+            .json(&document)
             .send()
             .await
             .unwrap();
@@ -314,6 +350,20 @@ impl<'a> Services<'a> {
         } else {
             Err((status, body))
         }
+    }
+
+    pub async fn put_app_data(
+        &self,
+        app_data: AppDataHash,
+        full_app_data: &str,
+    ) -> Result<(), (StatusCode, String)> {
+        self.put_app_data_document(
+            app_data,
+            AppDataDocument {
+                full_app_data: full_app_data.to_owned(),
+            },
+        )
+        .await
     }
 
     pub fn client(&self) -> &Client {

@@ -1,11 +1,11 @@
 use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
-    ethcontract::{dyns::DynWeb3, transport::DynTransport},
+    ethcontract::dyns::DynWeb3,
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
     std::{fmt, sync::Arc},
     thiserror::Error,
-    web3::{Transport, Web3},
+    web3::Transport,
 };
 
 pub mod contracts;
@@ -26,13 +26,7 @@ impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API hosted at the given
     /// URL.
     pub async fn ethrpc(url: &url::Url, addresses: contracts::Addresses) -> Result<Self, Error> {
-        // TODO Enable batching, reuse ethrpc? Put it in the boundary module?
-        // I feel like what we have in shared::ethrpc could be simplified if we use
-        // web3::transports::batch or something, but I haven't looked deep into it, just
-        // a gut feeling.
-        let web3 = Web3::new(DynTransport::new(web3::transports::Http::new(
-            url.as_str(),
-        )?));
+        let web3 = boundary::buffered_web3_client(url);
         let chain_id = web3.eth().chain_id().await?.into();
         let network_id = web3.net().version().await?.into();
         let contracts = Contracts::new(&web3, &network_id, addresses);

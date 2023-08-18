@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         bytes_hex::BytesHex,
         interaction::InteractionData,
         quote::QuoteId,
@@ -127,10 +127,14 @@ impl Order {
         }
     }
 
+    pub fn is_limit_order(&self) -> bool {
+        matches!(self.metadata.class, OrderClass::Limit(_))
+    }
+
     /// For some orders the protocol doesn't precompute a fee. Instead solvers
     /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
-        self.data.partially_fillable && matches!(self.metadata.class, OrderClass::Limit(_))
+        self.is_limit_order()
     }
 }
 
@@ -794,7 +798,7 @@ impl Display for OrderUid {
         let mut bytes = [0u8; 2 + 56 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Unwrap because the length is always correct.
-        hex::encode_to_slice(&self.0, &mut bytes[2..]).unwrap();
+        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)

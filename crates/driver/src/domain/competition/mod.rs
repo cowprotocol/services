@@ -85,7 +85,7 @@ impl Competition {
         let settlements = join_all(solutions.map(|solution| {
             let auction = &auction;
             async move {
-                observe::encoding(self.solver.name(), solution.id());
+                observe::encoding(solution.id());
                 (
                     solution.id(),
                     solution.encode(auction, &self.eth, &self.simulator).await,
@@ -125,11 +125,11 @@ impl Competition {
                     Ok(m) => {
                         *other = m;
                         merged = true;
-                        observe::merged(self.solver.name(), &settlement, other);
+                        observe::merged(&settlement, other);
                         break;
                     }
                     Err(err) => {
-                        observe::not_merged(self.solver.name(), &settlement, other, err);
+                        observe::not_merged(&settlement, other, err);
                     }
                 }
             }
@@ -146,7 +146,7 @@ impl Competition {
         let scores = settlements
             .into_iter()
             .map(|settlement| {
-                observe::scoring(self.solver.name(), &settlement);
+                observe::scoring(&settlement);
                 (settlement.score(&self.eth, &auction), settlement)
             })
             .collect_vec();
@@ -156,9 +156,7 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| {
-                        observe::scoring_failed(self.solver.name(), settlement.auction_id, err)
-                    })
+                    .tap_err(|err| observe::scoring_failed(self.solver.name(), err))
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -166,7 +164,7 @@ impl Competition {
 
         // Observe the scores.
         for (score, settlement) in scores.iter() {
-            observe::score(self.solver.name(), settlement, score);
+            observe::score(settlement, score);
         }
 
         // Pick the best-scoring settlement.
@@ -175,13 +173,33 @@ impl Competition {
             .max_by_key(|(score, _)| score.to_owned())
             .ok_or(Error::SolutionNotFound)?;
 
-        let orders = settlement.orders();
         *self.settlement.lock().unwrap() = Some(settlement);
 
-        Ok(Solved {
-            auction,
-            score,
-            orders,
+        Ok(Solved { score })
+    }
+
+    pub async fn reveal(&self) -> Result<Revealed, Error> {
+        let settlement = self
+            .settlement
+            .lock()
+            .unwrap()
+            .as_ref()
+            .cloned()
+            .ok_or(Error::SolutionNotAvailable)?;
+        Ok(Revealed {
+            orders: settlement.orders(),
+            internalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )
+                .into(),
+            uninternalized_calldata: settlement
+                .calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Disable,
+                )
+                .into(),
         })
     }
 
@@ -221,17 +239,26 @@ impl Competition {
     }
 }
 
-/// Solution information revealed to the protocol by the driver before the
-/// settlement happens. Note that the calldata is only revealed once the
-/// protocol instructs the driver to settle, and not before.
+/// Solution information sent to the protocol by the driver before the solution
+/// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
+}
+
+/// Winning solution information revealed to the protocol by the driver before
+/// the onchain settlement happens. Calldata is first time revealed at this
+/// point.
+#[derive(Debug)]
+pub struct Revealed {
     /// The orders solved by this solution.
     pub orders: HashSet<order::Uid>,
-    /// The auction that was solved. The auction may have been modified before
-    /// solving. See [`Auction::prioritize`].
-    pub auction: Auction,
+    /// The internalized calldata is the final calldata that appears onchain.
+    pub internalized_calldata: Bytes<Vec<u8>>,
+    /// The uninternalized calldata must be known so that the CoW solver team
+    /// can manually enforce certain rules which can not be enforced
+    /// automatically.
+    pub uninternalized_calldata: Bytes<Vec<u8>>,
 }
 
 #[derive(Debug)]

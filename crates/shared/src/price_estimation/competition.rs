@@ -215,30 +215,33 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let estimator = self.inner[estimator_index].0.as_str();
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
-            // Collect stats for winner predictions.
             let requests = self.inner.len() as u64;
-            if let (Some(competition), Ok(_)) = (&self.competition, &result) {
-                let trade = Trade::from(query);
-                let estimator = EstimatorIndex(estimator_index);
-                if let Some(predictions) = predictions.get(&trade) {
-                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                    metrics().record_prediction(&trade, was_correct);
-                }
-                competition.record_winner(trade, estimator);
-                metrics()
-                    .requests
-                    .with_label_values(&["saved"])
-                    .inc_by(requests - predictions.len() as u64);
-            }
-
             metrics()
                 .requests
                 .with_label_values(&["executed"])
                 .inc_by(requests);
-            metrics()
-                .queries_won
-                .with_label_values(&[estimator, query.kind.label()])
-                .inc();
+
+            if result.is_ok() {
+                // Collect stats for winner predictions.
+                metrics()
+                    .queries_won
+                    .with_label_values(&[estimator, query.kind.label()])
+                    .inc();
+
+                if let Some(competition) = &self.competition {
+                    let trade = Trade::from(query);
+                    let estimator = EstimatorIndex(estimator_index);
+                    if let Some(predictions) = predictions.get(&trade) {
+                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
+                        metrics().record_prediction(&trade, was_correct);
+                    }
+                    competition.record_winner(trade, estimator);
+                    metrics()
+                        .requests
+                        .with_label_values(&["saved"])
+                        .inc_by(requests - predictions.len() as u64);
+                }
+            }
 
             Some((query_index, result))
         };

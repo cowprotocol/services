@@ -30,14 +30,9 @@ pub struct Trade {
 impl Trade {
     /// Returns the fee taken from the surplus.
     pub fn surplus_fee(&self) -> Option<U256> {
-        match self.order.metadata.class {
-            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                match self.order.solver_determines_fee() {
-                    true => Some(self.solver_fee),
-                    false => Some(surplus_fee.unwrap()),
-                }
-            }
-            _ => None,
+        match self.order.solver_determines_fee() {
+            true => Some(self.solver_fee),
+            false => None,
         }
     }
 }
@@ -163,18 +158,12 @@ impl Trade {
     /// Returns the actual fees taken by the protocol.
     pub fn executed_earned_fee(&self) -> Option<U256> {
         let user_fee = self.order.data.fee_amount;
-        match (
-            &self.order.metadata.class,
-            self.order.data.partially_fillable,
-        ) {
-            (OrderClass::Limit(details), false) => {
-                self.scale_amount(user_fee.checked_add(details.surplus_fee.unwrap())?)
-            }
-            (OrderClass::Limit(_), true) => {
+        match self.order.solver_determines_fee() {
+            true => {
                 // Solvers already scale the `solver_fee` for these orders.
                 self.scale_amount(user_fee)?.checked_add(self.solver_fee)
             }
-            _ => self.scale_amount(user_fee),
+            false => self.scale_amount(user_fee),
         }
     }
 
@@ -236,10 +225,7 @@ impl Trade {
 
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
-use {
-    model::order::{LimitOrderClass, OrderClass},
-    shared::{external_prices::ExternalPrices, http_solver::model::Score},
-};
+use shared::{external_prices::ExternalPrices, http_solver::model::Score};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -1104,7 +1090,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_buy_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to pay up to 60
         // to receive 50, but ended paying the price (1) we have a surplus of 10
@@ -1154,7 +1139,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_sell_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to receive as
         // little as 40, but ended paying the price (1) we have a surplus of 10
@@ -1204,7 +1188,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::just_underscores_and_digits)]
     fn test_surplus_ratio() {
         assert_eq!(
             surplus_ratio(&r(1), &r(1), &r(1), &r(1)),

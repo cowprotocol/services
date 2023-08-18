@@ -64,7 +64,7 @@ impl Solver for NaiveSolver {
             orders,
             &external_prices,
         );
-        // Filter out partially fillable limit orders until we add support for computing
+        // Filter out limit orders until we add support for computing
         // a reasonable `solver_fee` (#1414).
         orders.retain(|o| !o.solver_determines_fee() || !self.enforce_correct_fees);
         let slippage = self.slippage_calculator.context(&external_prices);
@@ -173,8 +173,8 @@ mod tests {
             OrderUid,
             BUY_ETH_ADDRESS,
         },
-        num::{rational::Ratio, BigRational, FromPrimitive},
-        shared::{addr, external_prices::ExternalPrices},
+        num::rational::Ratio,
+        shared::addr,
     };
 
     #[test]
@@ -389,46 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn respects_limit_order_price_for_limit_orders_after_surplus_fee() {
-        // This order can be settled before but not after surplus fees
-        let orders = vec![LimitOrder::from(Order {
-            data: OrderData {
-                sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-                buy_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                sell_amount: (22397494).into(),
-                buy_amount: 18477932550000000u128.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(1675785.into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            ..Default::default()
-        })];
-
-        let tokens = TokenPair::new(
-            addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-            addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-        )
-        .unwrap();
-        let liquidity = hashmap! {
-            tokens => ConstantProductOrder {
-                address: H160::from_low_u64_be(1),
-                tokens,
-                reserves: (36338096110368, 30072348537379906026018),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: CapturingSettlementHandler::arc(),
-            },
-        };
-
-        assert!(settle(SlippageContext::default(), orders, liquidity).is_empty());
-    }
-
-    #[test]
     fn does_not_swap_more_than_reserves() {
         let usdc = addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
         let crv = addr!("D533a949740bb3306d119CC777fa900bA034cd52");
@@ -483,78 +443,5 @@ mod tests {
 
         let settlements = settle(SlippageContext::default(), orders, liquidity);
         assert!(settlements.is_empty());
-    }
-
-    #[test]
-    fn cow_from_limit_and_user_order_with_clearing_at_exact_limit_after_fees() {
-        let usdc = addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
-        let crv = addr!("D533a949740bb3306d119CC777fa900bA034cd52");
-
-        let orders = vec![
-            // After fee both sells 1.5 for 1.5
-            LimitOrder::from(Order {
-                data: OrderData {
-                    sell_token: crv,
-                    buy_token: usdc,
-                    sell_amount: 2_000_000_000.into(),
-                    buy_amount: 1_500_000_000.into(),
-                    fee_amount: 0.into(),
-                    kind: OrderKind::Sell,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    class: OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: Some(500_000_000.into()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            LimitOrder::from(Order {
-                data: OrderData {
-                    sell_token: usdc,
-                    buy_token: crv,
-                    sell_amount: 1_500_000_000.into(),
-                    buy_amount: 1_500_000_000.into(),
-                    fee_amount: 100_000_000.into(),
-                    kind: OrderKind::Sell,
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-        ];
-
-        let amm_handler = CapturingSettlementHandler::arc();
-        let tokens = TokenPair::new(usdc, crv).unwrap();
-        let liquidity = hashmap! {
-            tokens => ConstantProductOrder {
-                address: addr!("210a97ba874a8e279c95b350ae8ba143a143c159"),
-                tokens,
-                reserves: (1_000_000_000_000, 1_000_000_000_000),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: amm_handler,
-            },
-        };
-
-        let settlement = &settle(SlippageContext::default(), orders, liquidity)[0];
-        assert_eq!(
-            settlement.clearing_price(usdc),
-            settlement.clearing_price(crv)
-        );
-        assert_eq!(settlement.trades().count(), 2);
-        assert_eq!(
-            settlement.total_surplus(
-                &ExternalPrices::new(
-                    usdc,
-                    hashmap! {
-                        usdc => BigRational::from_u32(1).unwrap(),
-                        crv => BigRational::from_u32(1).unwrap()
-                    }
-                )
-                .unwrap()
-            ),
-            BigRational::from_u32(0).unwrap()
-        )
     }
 }

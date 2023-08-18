@@ -160,6 +160,10 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
+        let request_id = crate::request_id::get_task_local_storage();
+        if let Some(id) = &request_id {
+            url.query_pairs_mut().append_pair("request_id", id);
+        }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let mut request = self
             .client
@@ -167,6 +171,9 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .timeout(timeout)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
+        if let Some(id) = request_id {
+            request = request.header("X-REQUEST-ID", id);
+        }
         if let Some(api_key) = &self.config.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);
@@ -183,7 +190,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             request = request.body(body);
         };
         // temporary log, not needed once the code is stable for colocation
-        tracing::debug!(
+        tracing::trace!(
             "http request url: {}, timeout: {:?}, body: {:?}",
             query,
             timeout,
@@ -196,7 +203,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .await
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
-        tracing::debug!(body = %text, "http response");
+        tracing::trace!(body = %text, "http response");
         let context = || format!("request query {query}, response body {text}");
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(Error::RateLimited);

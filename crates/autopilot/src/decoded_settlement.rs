@@ -5,6 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
+    database::orders::OrderClass,
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
     model::{
         order::{OrderKind, OrderUid},
@@ -14,7 +15,7 @@ use {
     number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
     shared::{
         conversions::U256Ext,
-        db_order_conversions::{order_kind_from, signing_scheme_from},
+        db_order_conversions::signing_scheme_from,
         external_prices::ExternalPrices,
     },
     web3::ethabi::{Function, Token},
@@ -40,16 +41,20 @@ type DecodedSettlementTokenized = (
     [Vec<(Address, U256, Bytes<Vec<u8>>)>; 3],
 );
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedSettlement {
     // TODO check if `EncodedSettlement` can be reused
     pub tokens: Vec<Address>,
     pub clearing_prices: Vec<U256>,
     pub trades: Vec<DecodedTrade>,
     pub interactions: [Vec<DecodedInteraction>; 3],
+    /// Data that was appended to the regular call data of the `settle()` call
+    /// as a form of on-chain meta data. This gets used to associated a
+    /// settlement with an auction.
+    pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedTrade {
     pub sell_token_index: U256,
     pub buy_token_index: U256,
@@ -81,7 +86,7 @@ impl DecodedTrade {
 /// Trade flags are encoded in a 256-bit integer field. For more information on
 /// how flags are encoded see:
 /// <https://github.com/cowprotocol/contracts/blob/v1.0.0/src/contracts/libraries/GPv2Trade.sol#L58-L94>
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TradeFlags(pub U256);
 
 impl TradeFlags {
@@ -108,7 +113,7 @@ impl From<U256> for TradeFlags {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DecodedInteraction {
     pub target: Address,
     pub value: U256,
@@ -125,9 +130,94 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for DecodedInteraction {
     }
 }
 
-impl From<DecodedSettlementTokenized> for DecodedSettlement {
-    fn from((tokens, clearing_prices, trades, interactions): DecodedSettlementTokenized) -> Self {
-        DecodedSettlement {
+/// It's possible that the same order gets filled in portions across multiple or
+/// even the same settlement. This struct describes the details of such a fill.
+/// Note that most orders only have a single fill as they are fill-or-kill
+/// orders but partially fillable orders could have associated any number of
+/// [`OrderExecution`]s with them.
+#[derive(Debug, Clone)]
+pub struct OrderExecution {
+    pub order_uid: OrderUid,
+    pub executed_solver_fee: Option<U256>,
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub executed_amount: U256,
+    pub signature: Vec<u8>, //encoded signature
+    // For limit orders the solver computes the fee
+    pub solver_determines_fee: bool,
+}
+
+impl TryFrom<database::orders::OrderExecution> for OrderExecution {
+    type Error = anyhow::Error;
+
+    fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            order_uid: OrderUid(order.order_uid.0),
+            executed_solver_fee: order
+                .executed_solver_fee
+                .as_ref()
+                .and_then(big_decimal_to_u256),
+            sell_token: H160(order.sell_token.0),
+            buy_token: H160(order.buy_token.0),
+            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
+            buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
+            executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
+            signature: {
+                let signing_scheme = signing_scheme_from(order.signing_scheme);
+                let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
+                signature
+                    .encode_for_settlement(H160(order.owner.0))
+                    .to_vec()
+            },
+            solver_determines_fee: order.class == OrderClass::Limit,
+        })
+    }
+}
+
+impl DecodedSettlement {
+    /// Number of bytes that may be appended to the calldata to store an auction
+    /// id.
+    pub const META_DATA_LEN: usize = 8;
+
+    pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
+        let function = GPv2Settlement::raw_contract()
+            .abi
+            .function("settle")
+            .unwrap();
+        let without_selector = input
+            .strip_prefix(&function.selector())
+            .ok_or(DecodingError::InvalidSelector)?;
+
+        // Decoding calldata without expecting metadata can succeed even if metadata
+        // was appended. The other way around would not work so we do that first.
+        if let Ok(decoded) = Self::try_new(without_selector, function, true) {
+            return Ok(decoded);
+        }
+        Self::try_new(without_selector, function, false).map_err(Into::into)
+    }
+
+    fn try_new(data: &[u8], function: &Function, with_metadata: bool) -> Result<Self> {
+        let metadata_len = if with_metadata {
+            anyhow::ensure!(
+                data.len() % 32 == Self::META_DATA_LEN,
+                "calldata does not contain the expected number of bytes to include metadata"
+            );
+            Self::META_DATA_LEN
+        } else {
+            0
+        };
+
+        let (calldata, metadata) = data.split_at(data.len() - metadata_len);
+        let tokenized = function
+            .decode_input(calldata)
+            .context("tokenizing settlement calldata failed")?;
+        let decoded = <DecodedSettlementTokenized>::from_token(Token::Tuple(tokenized))
+            .context("decoding tokenized settlement calldata failed")?;
+
+        let (tokens, clearing_prices, trades, interactions) = decoded;
+        Ok(Self {
             tokens,
             clearing_prices,
             trades: trades
@@ -147,66 +237,8 @@ impl From<DecodedSettlementTokenized> for DecodedSettlement {
                 })
                 .collect(),
             interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
-        }
-    }
-}
-
-/// It's possible that the same order gets filled in portions across multiple or
-/// even the same settlement. This struct describes the details of such a fill.
-/// Note that most orders only have a single fill as they are fill-or-kill
-/// orders but partially fillable orders could have associated any number of
-/// [`OrderExecution`]s with them.
-#[derive(Debug, Clone)]
-pub struct OrderExecution {
-    pub order_uid: OrderUid,
-    pub executed_solver_fee: Option<U256>,
-    pub kind: OrderKind,
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub executed_amount: U256,
-    pub signature: Vec<u8>, //encoded signature
-}
-
-impl TryFrom<database::orders::OrderExecution> for OrderExecution {
-    type Error = anyhow::Error;
-
-    fn try_from(order: database::orders::OrderExecution) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            order_uid: OrderUid(order.order_uid.0),
-            executed_solver_fee: order
-                .executed_solver_fee
-                .as_ref()
-                .and_then(big_decimal_to_u256),
-            kind: order_kind_from(order.kind),
-            sell_token: H160(order.sell_token.0),
-            buy_token: H160(order.buy_token.0),
-            sell_amount: big_decimal_to_u256(&order.sell_amount).context("sell_amount")?,
-            buy_amount: big_decimal_to_u256(&order.buy_amount).context("buy_amount")?,
-            executed_amount: big_decimal_to_u256(&order.executed_amount).unwrap(),
-            signature: {
-                let signing_scheme = signing_scheme_from(order.signing_scheme);
-                let signature = Signature::from_bytes(signing_scheme, &order.signature)?;
-                signature
-                    .encode_for_settlement(H160(order.owner.0))
-                    .to_vec()
-            },
+            metadata: metadata.try_into().ok().map(Bytes),
         })
-    }
-}
-
-impl DecodedSettlement {
-    pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
-        let function = GPv2Settlement::raw_contract()
-            .abi
-            .function("settle")
-            .unwrap();
-        let decoded_input = decode_function_input(function, input)?;
-        <DecodedSettlementTokenized>::from_token(Token::Tuple(decoded_input))
-            .map(Into::into)
-            .context("failed to decode settlement")
-            .map_err(From::from)
     }
 
     /// Returns the total surplus denominated in the native asset for the
@@ -260,9 +292,10 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the list of partial limit order executions with their fees,
+    /// Returns the list of executions with their fees,
     /// which are supposed to be updated whenever a new settlement is executed.
-    pub fn partial_order_executions(
+    /// Done for the orders that have solver-computed fees (limit orders).
+    pub fn order_executions(
         &self,
         external_prices: &ExternalPrices,
         mut orders: Vec<OrderExecution>,
@@ -270,10 +303,6 @@ impl DecodedSettlement {
         self.trades
             .iter()
             .filter_map(|trade| {
-                if !trade.flags.partially_fillable() {
-                    return None;
-                }
-
                 let i = orders
                     .iter()
                     .position(|order| trade.matches_execution(order))?;
@@ -282,6 +311,12 @@ impl DecodedSettlement {
                 // end up with the correct total fees we can only
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
+
+                // Update fee only for orders with solver computed fees (limit orders)
+                if !order.solver_determines_fee {
+                    return None;
+                }
+
                 let fees = self.fee(external_prices, &order, trade);
 
                 if fees.is_none() {
@@ -301,12 +336,6 @@ impl DecodedSettlement {
         let solver_fee = match &order.executed_solver_fee {
             Some(solver_fee) => *solver_fee,
             None => {
-                // this should be a partial limit order
-                if !trade.flags.partially_fillable() {
-                    tracing::warn!("missing solver fee for non partial fee order");
-                    return None;
-                }
-
                 // get uniform prices
                 let sell_index = self
                     .tokens
@@ -592,7 +621,7 @@ mod tests {
             000000000000000000000000000000044a9059cbb00000000000000000000000005e3734ff2b3127e01070eb225afe910525959ad00000000000000000000000000000000000000000000000000000001cf862866000000000000000000000000000000000000000000000000000000000000000000000000000000001d94bedcb3641ba
             060091ed090d28bbdccdb7f1d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000060000000000000000000000000000000000000000000000000000000000000006420cf38cc000000000000000000000000000000000000000
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-            000000000"
+            000000000123432"
         );
         let settlement = DecodedSettlement::new(&call_data).unwrap();
 
@@ -702,24 +731,24 @@ mod tests {
             OrderExecution {
                 order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
                 executed_solver_fee: Some(48263037u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(),
                 sell_amount: 14955083027u128.into(),
                 sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                 buy_token: Default::default(),
                 executed_amount: 14955083027u128.into(),
                 signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
+                solver_determines_fee: false,
             },
             OrderExecution {
                 order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
                 executed_solver_fee: Some(127253135942751092736u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 1236593080.into(),
                 sell_amount: 5701912712048588025933u128.into(),
                 sell_token: addr!("f4d2888d29d722226fafa5d9b24f9164c092421e"),
                 buy_token: Default::default(),
                 executed_amount: 5701912712048588025933u128.into(),
                 signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
+                solver_determines_fee: false,
             }
         ];
         let fees = settlement
@@ -778,13 +807,13 @@ mod tests {
             OrderExecution {
                 order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
                 executed_solver_fee: None,
-                kind: OrderKind::Sell,
                 buy_amount: 11446254517730382294118u128.into(), // irrelevant
                 sell_amount: 14955083027u128.into(),            // irrelevant
                 sell_token: addr!("ba386a4ca26b85fd057ab1ef86e3dc7bdeb5ce70"),
                 buy_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                 executed_amount: 134069619089011499167823218927u128.into(),
                 signature: hex::decode("f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd71514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c").unwrap(),
+                solver_determines_fee: true,
             },
         ];
         let fees = settlement
@@ -892,18 +921,113 @@ mod tests {
             OrderExecution {
                 order_uid: Default::default(),
                 executed_solver_fee: Some(463182886014406361088u128.into()),
-                kind: OrderKind::Sell,
                 buy_amount: 89238894792574185u128.into(),
                 sell_amount: 3026871740084629982950u128.into(),
                 sell_token: addr!("f88baf18fab7e330fa0c4f83949e23f52fececce"),
                 buy_token: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 executed_amount: 0.into(),
                 signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
+                solver_determines_fee: false,
             },
         ];
         let fees = settlement
             .total_fees(&external_prices, orders)
             .to_f64_lossy();
         assert_eq!(fees, 13630555109200196.);
+    }
+
+    #[test]
+    fn decodes_metadata() {
+        let call_data = hex_literal::hex!(
+            "13d79a0b
+             0000000000000000000000000000000000000000000000000000000000000080
+             00000000000000000000000000000000000000000000000000000000000000e0
+             0000000000000000000000000000000000000000000000000000000000000140
+             0000000000000000000000000000000000000000000000000000000000000360
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+             000000000000000000000000f88baf18fab7e330fa0c4f83949e23f52fececce
+             0000000000000000000000000000000000000000000000000000000000000002
+             000000000000000000000000000000000000000000000000000132e67578cc3f
+             00000000000000000000000000000000000000000000000000000002540be400
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000020
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000b70cd1ebd3b24aeeaf90c6041446630338536e7f
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             000000000000000000000000000000000000000000000000013d0a4d504284e9
+             00000000000000000000000000000000000000000000000000000000643d6a39
+             e9f29ae547955463ed535162aefee525d8d309571a2b18bc26086c8c35d781eb
+             00000000000000000000000000000000000000000000002557f7974fde5c0000
+             0000000000000000000000000000000000000000000000000000000000000008
+             0000000000000000000000000000000000000000000000a41648a28d9cdecee6
+             0000000000000000000000000000000000000000000000000000000000000160
+             0000000000000000000000000000000000000000000000000000000000000041
+             4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a6091
+             2fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a7600
+             1c00000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000080
+             0000000000000000000000000000000000000000000000000000000000000420
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000040
+             00000000000000000000000000000000000000000000000000000000000002c0
+             000000000000000000000000ba12222222228d8ba445958a75a0704d566bf2c8
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000001e4
+             52bbbe2900000000000000000000000000000000000000000000000000000000
+             000000e00000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000009008d19f58aabd9ed0d60971565aa851
+             0560ab4100000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000000000000000000000000000a566558000
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000067f117350eab45983374f4f83d275d8a5d62b1bf0001000000000000
+             000004f200000000000000000000000000000000000000000000000000000000
+             00000001000000000000000000000000f88baf18fab7e330fa0c4f83949e23f5
+             2fececce000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead908
+             3c756cc2000000000000000000000000000000000000000000000000013eae86
+             d49c295900000000000000000000000000000000000000000000000000000000
+             000000c000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             0000000000000000000000000000000000000000000000000000000000000024
+             2e1a7d4d000000000000000000000000000000000000000000000000013eae86
+             d49c29bf00000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        )
+        .to_vec();
+
+        let original = DecodedSettlement::new(&call_data).unwrap();
+
+        // If not enough call data got appended we parse it like it didn't have any
+        // Not enough metadata appended to the calldata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN - 1];
+        let with_metadata = [call_data.clone(), metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+
+        // Same if too much metadata gets added.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data.clone(), vec![100], metadata.to_vec()].concat();
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
+
+        // If we add exactly the expected number of bytes we can parse the metadata.
+        let metadata = [42; DecodedSettlement::META_DATA_LEN];
+        let with_metadata = [call_data, metadata.to_vec()].concat();
+        let with_metadata = DecodedSettlement::new(&with_metadata).unwrap();
+        assert_eq!(with_metadata.metadata, Some(Bytes(metadata)));
+
+        // Content of the remaining fields is identical to the original
+        let metadata_removed_again = DecodedSettlement {
+            metadata: None,
+            ..with_metadata
+        };
+        assert_eq!(original, metadata_removed_again);
     }
 }

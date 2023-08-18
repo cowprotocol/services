@@ -1,5 +1,5 @@
 use {
-    crate::setup::*,
+    e2e::{setup::*, tx},
     ethcontract::{prelude::U256, H160},
     futures::StreamExt,
     model::{

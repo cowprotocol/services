@@ -31,6 +31,11 @@ impl BlockscoutTokenOwnerFinder {
         })
     }
 
+    pub fn with_base_url(&mut self, base_url: Url) -> &mut Self {
+        self.base = base_url;
+        self
+    }
+
     pub fn with_rate_limiter(&mut self, strategy: RateLimitingStrategy) -> &mut Self {
         self.rate_limiter = Some(RateLimiter::from_strategy(
             strategy,

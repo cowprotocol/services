@@ -131,14 +131,17 @@ impl Solver {
             weth,
         ))
         .unwrap();
-        observe::solver_request(self.name(), &self.config.endpoint, &body);
-        let req = self
+        observe::solver_request(&self.config.endpoint, &body);
+        let mut req = self
             .client
             .post(self.config.endpoint.clone())
             .body(body)
             .timeout(timeout.duration().to_std().unwrap());
+        if let Some(id) = shared::request_id::get_task_local_storage() {
+            req = req.header("X-REQUEST-ID", id);
+        }
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        observe::solver_response(self.name(), &self.config.endpoint, res.as_deref());
+        observe::solver_response(&self.config.endpoint, res.as_deref());
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
@@ -148,7 +151,7 @@ impl Solver {
             return Err(Error::RepeatedSolutionIds);
         }
 
-        observe::solutions(self.name(), &solutions);
+        observe::solutions(&solutions);
         Ok(solutions)
     }
 }

@@ -160,22 +160,22 @@ async fn insert_order_execute_sqlx(
     order: &Order,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(query_str)
-        .bind(&order.uid)
-        .bind(&order.owner)
+        .bind(order.uid)
+        .bind(order.owner)
         .bind(order.creation_timestamp)
-        .bind(&order.sell_token)
-        .bind(&order.buy_token)
-        .bind(&order.receiver)
+        .bind(order.sell_token)
+        .bind(order.buy_token)
+        .bind(order.receiver)
         .bind(&order.sell_amount)
         .bind(&order.buy_amount)
         .bind(order.valid_to)
-        .bind(&order.app_data)
+        .bind(order.app_data)
         .bind(&order.fee_amount)
-        .bind(&order.kind)
+        .bind(order.kind)
         .bind(order.partially_fillable)
         .bind(order.signature.as_slice())
         .bind(order.signing_scheme)
-        .bind(&order.settlement_contract)
+        .bind(order.settlement_contract)
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
         .bind(&order.full_fee_amount)
@@ -264,12 +264,12 @@ INSERT INTO interactions (
 VALUES ($1, $2, $3, $4, $5, $6)
     "#;
     sqlx::query(QUERY)
-        .bind(&order)
-        .bind(&interaction.index)
-        .bind(&interaction.target)
+        .bind(order)
+        .bind(interaction.index)
+        .bind(interaction.target)
         .bind(&interaction.value)
         .bind(&interaction.data)
-        .bind(&interaction.execution)
+        .bind(interaction.execution)
         .execute(ex)
         .await?;
     Ok(())
@@ -305,12 +305,12 @@ SET target = $3,
 value = $4, data = $5
     "#;
     sqlx::query(QUERY)
-        .bind(&order_uid)
-        .bind(&interaction.index)
-        .bind(&interaction.target)
+        .bind(order_uid)
+        .bind(interaction.index)
+        .bind(interaction.target)
         .bind(&interaction.value)
         .bind(&interaction.data)
-        .bind(&interaction.execution)
+        .bind(interaction.execution)
         .execute(ex)
         .await?;
     Ok(())
@@ -363,13 +363,13 @@ buy_amount = $6
     "
     );
     sqlx::query(QUERY)
-        .bind(&quote.order_uid)
+        .bind(quote.order_uid)
         .bind(quote.gas_amount)
         .bind(quote.gas_price)
         .bind(quote.sell_token_price)
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
-        .bind(&quote.solver)
+        .bind(quote.solver)
         .execute(ex)
         .await?;
     Ok(())
@@ -377,13 +377,13 @@ buy_amount = $6
 
 pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
     sqlx::query(INSERT_ORDER_QUOTES_QUERY)
-        .bind(&quote.order_uid)
+        .bind(quote.order_uid)
         .bind(quote.gas_amount)
         .bind(quote.gas_price)
         .bind(quote.sell_token_price)
         .bind(&quote.sell_amount)
         .bind(&quote.buy_amount)
-        .bind(&quote.solver)
+        .bind(quote.solver)
         .execute(ex)
         .await?;
     Ok(())
@@ -592,7 +592,7 @@ WHERE
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
 
-#[derive(Debug, Default, PartialEq, sqlx::FromRow)]
+#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
     pub order_uid: OrderUid,
     /// The `solver_fee` that got executed for this specific fill.
@@ -600,6 +600,7 @@ pub struct OrderExecution {
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
+    pub class: OrderClass,
     /// The entire `sell_amount` of the order.
     pub sell_amount: BigDecimal,
     /// The entire `buy_amount` of the order.
@@ -627,6 +628,7 @@ SELECT
     o.sell_amount,
     o.buy_amount,
     o.kind,
+    o.class,
     CASE
         WHEN o.kind = 'sell' THEN t.sell_amount - t.fee_amount
         ELSE t.buy_amount
@@ -718,6 +720,7 @@ WHERE
 
 /// Uses the conditions from OPEN_ORDERS and checks the fok limit orders have
 /// surplus fee.
+/// cleanup: fok limit orders should be allowed to not have surplus fee
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
@@ -802,8 +805,8 @@ pub async fn update_fok_limit_order_fees(
         .bind(&update.surplus_fee)
         .bind(update.surplus_fee_timestamp)
         .bind(&update.full_fee_amount)
-        .bind(&order_spec.sell_token)
-        .bind(&order_spec.buy_token)
+        .bind(order_spec.sell_token)
+        .bind(order_spec.buy_token)
         .bind(&order_spec.sell_amount)
         .fetch_all(ex)
         .await
@@ -2400,6 +2403,7 @@ mod tests {
                 sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
                 kind: OrderKind::Sell,
+                class: Default::default(),
                 sell_amount: bigdecimal(3026871740084629982950),
                 buy_amount: bigdecimal(89238894792574185),
                 executed_amount: bigdecimal(3026871740084629982950),
@@ -2476,6 +2480,7 @@ mod tests {
             vec![OrderExecution {
                 executed_solver_fee: Some(bigdecimal(42)),
                 kind: OrderKind::Sell,
+                class: OrderClass::Limit,
                 sell_amount: bigdecimal(1),
                 buy_amount: bigdecimal(1),
                 executed_amount: bigdecimal(1),

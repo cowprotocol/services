@@ -15,8 +15,9 @@ pub struct ExternalPriceEstimator(TradeEstimator);
 impl ExternalPriceEstimator {
     pub fn new(driver: Url, client: Client, rate_limiter: Arc<RateLimiter>) -> Self {
         Self(TradeEstimator::new(
-            Arc::new(ExternalTradeFinder::new(driver, client)),
+            Arc::new(ExternalTradeFinder::new(driver.clone(), client)),
             rate_limiter,
+            driver.to_string(),
         ))
     }
 

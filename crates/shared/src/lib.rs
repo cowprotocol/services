@@ -39,6 +39,7 @@ pub mod price_estimation;
 pub mod rate_limiter;
 pub mod recent_block_cache;
 pub mod remaining_amounts;
+pub mod request_id;
 pub mod request_sharing;
 pub mod signature_validator;
 pub mod sources;
@@ -50,7 +51,6 @@ pub mod token_list;
 pub mod trace_many;
 pub mod tracing;
 pub mod trade_finding;
-pub mod univ3_router_api;
 pub mod url;
 pub mod zeroex_api;
 

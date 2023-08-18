@@ -218,7 +218,11 @@ pub async fn run(args: Arguments) {
                 args.shared.balancer_pool_deny_list,
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         maintainers.push(balancer_pool_fetcher.clone());
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
@@ -312,12 +316,10 @@ pub async fn run(args: Arguments) {
 
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
 
-    let s3_instance_uploader = args
-        .s3_upload
-        .into_config()
-        .unwrap()
-        .map(S3InstanceUploader::new)
-        .map(Arc::new);
+    let s3_instance_uploader = match args.s3_upload.into_config().unwrap() {
+        Some(config) => Some(Arc::new(S3InstanceUploader::new(config).await)),
+        None => None,
+    };
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let access_list_estimator = Arc::new(
@@ -344,7 +346,6 @@ pub async fn run(args: Arguments) {
         solvers,
         base_tokens.clone(),
         native_token.clone(),
-        args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         args.balancer_sor_url,
         &settlement_contract,
@@ -409,7 +410,11 @@ pub async fn run(args: Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         maintainers.push(uniswap_v3_pool_fetcher.clone());
         liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
@@ -579,7 +584,6 @@ pub async fn run(args: Arguments) {
             .tenderly
             .get_api_instance(&http_factory, "driver".to_owned())
             .expect("failed to create Tenderly API"),
-        args.solution_comparison_decimal_cutoff,
         args.process_partially_fillable_liquidity_orders,
         args.process_partially_fillable_limit_orders,
         settlement_rater,

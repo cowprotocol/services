@@ -241,7 +241,6 @@ pub struct Token {
     pub symbol: Option<String>,
     pub address: eth::TokenAddress,
     pub price: Option<Price>,
-    // TODO Set this field correctly, currently it isn't being passed into the driver.
     /// The balance of this token available in our settlement contract.
     pub available_balance: eth::U256,
     /// Is this token well-known and trusted by the protocol?
@@ -309,7 +308,7 @@ impl From<Deadline> for chrono::DateTime<chrono::Utc> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Id(i64);
+pub struct Id(pub i64);
 
 impl Id {
     pub fn to_be_bytes(self) -> [u8; 8] {

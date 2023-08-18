@@ -1,10 +1,7 @@
 use {
-    crate::{
-        eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-        local_node::TestNodeApi,
-        setup::*,
-    },
+    crate::eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     chrono::{TimeZone, Utc},
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     refunder::refund_service::RefundService,

@@ -277,34 +277,28 @@ impl<'a> Submitter<'a> {
                         .cancel_transaction(&gas_price, self.nonce)
                         .await
                     {
-                        Ok(handle) => {
-                            if use_soft_cancellations {
-                                // If the submission node supports soft cancellations it will
-                                // simply discard all transactions with the same `sender` and
-                                // `nonce` from the internal mempool when it sees the
-                                // cancellation tx. That means the tx does not have to get mined to
-                                // have an effect.
-                                // Usually a node will only accept a replacement tx when the
-                                // associated gas fee is at least 12.5% higher than on the pending
-                                // tx.
-                                // The remaining submission logic assumes the regular replacement
-                                // conditions so it would wait for the gas price to increase before
-                                // submitting another tx from the same `sender` if there is still a
-                                // tx pending. This would block the whole driver.
-                                // Because this is unnecessary with soft cancellations we can
-                                // simply "forget" the submitted tx by clearing `transactions`.
-                                tracing::debug!("clear list of pending tx hashes due to soft cancellation");
-                                transactions.clear();
-                            } else {
-                                transactions.push((handle, gas_price));
-                            }
-                        }
+                        Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
                 Ok(None)
             },
         };
+
+        // Update (overwrite) the submitted transaction list with `transactions`
+        // variable that, at this point, contains both transactions from
+        // previous submission loop and transactions from current submission
+        // loop.
+        // This is not needed when soft cancellations are used as any pending tx will
+        // have been removed from the mempool and doesn't require further tracking.
+        if !use_soft_cancellations {
+            tracing::debug!("update list of pending tx hashes with {:?}", transactions);
+            self.submitted_transactions.update(
+                self.account.address(),
+                self.nonce,
+                transactions.clone(),
+            );
+        }
 
         // After stopping submission of new transactions we wait for some time to give a
         // potentially mined previously submitted transaction time to propagate
@@ -319,18 +313,7 @@ impl<'a> Submitter<'a> {
         // because of the delay in block propagation. We simulate tx and it fails, we
         // return back 6. If we don't wait another 20s to receive block B, we
         // wont see mined tx.
-
         if !transactions.is_empty() {
-            // Update (overwrite) the submitted transaction list with `transactions`
-            // variable that, at this point, contains both transactions from
-            // previous submission loop and transactions from current submission
-            // loop
-            self.submitted_transactions.update(
-                self.account.address(),
-                self.nonce,
-                transactions.clone(),
-            );
-
             const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
@@ -497,6 +480,12 @@ impl<'a> Submitter<'a> {
                 if gas_price.max_priority_fee_per_gas < replacement_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
+                    tracing::debug!(
+                        ?gas_price,
+                        ?replacement_price,
+                        sleep = ?params.retry_interval,
+                        "keep waiting for gas price to increase enough"
+                    );
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
@@ -630,7 +619,7 @@ impl<'a> Submitter<'a> {
     }
 
     /// Prepare all data needed for cancellation of previously submitted
-    /// transaction and execute cancellation
+    /// transaction and execute cancellation.
     async fn cancel_transaction(
         &self,
         gas_price: &GasPrice1559,

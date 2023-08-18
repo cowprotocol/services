@@ -48,7 +48,7 @@ pub mod solve {
     use {
         chrono::{DateTime, Utc},
         model::{
-            app_id::AppDataHash,
+            app_data::AppDataHash,
             bytes_hex::BytesHex,
             order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,
@@ -78,8 +78,6 @@ pub mod solve {
         #[serde_as(as = "Option<DecimalU256>")]
         pub price: Option<U256>,
         pub trusted: bool,
-        pub decimals: Option<u8>,
-        pub symbol: Option<String>,
     }
 
     #[serde_as]
@@ -109,8 +107,6 @@ pub mod solve {
         pub sell_token_balance: SellTokenSource,
         pub buy_token_balance: BuyTokenDestination,
         pub class: Class,
-        #[serde_as(as = "Option<DecimalU256>")]
-        pub surplus_fee: Option<U256>,
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
@@ -141,7 +137,31 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+    }
+}
+
+pub mod reveal {
+    use {
+        model::{bytes_hex, order::OrderUid},
+        serde::Deserialize,
+        serde_with::serde_as,
+    };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Calldata {
+        #[serde(with = "bytes_hex")]
+        pub internalized: Vec<u8>,
+        #[serde(with = "bytes_hex")]
+        pub uninternalized: Vec<u8>,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Response {
         pub orders: Vec<OrderUid>,
+        pub calldata: Calldata,
     }
 }
 

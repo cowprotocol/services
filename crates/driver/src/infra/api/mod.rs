@@ -2,7 +2,7 @@ use {
     crate::{
         domain,
         domain::Mempools,
-        infra::{liquidity, observe, solver::Solver, Ethereum, Simulator},
+        infra::{liquidity, observe, solver::Solver, tokens, Ethereum, Simulator},
     },
     error::Error,
     futures::Future,
@@ -54,6 +54,7 @@ impl Api {
             let router = routes::info(router);
             let router = routes::quote(router);
             let router = routes::solve(router);
+            let router = routes::reveal(router);
             let router = routes::settle(router);
             let router = router.with_state(State(Arc::new(Inner {
                 eth: self.eth.clone(),
@@ -67,14 +68,18 @@ impl Api {
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
+                tokens: tokens::Fetcher::new(self.eth.clone()),
             })));
             let path = format!("/{name}");
             observe::mounting_solver(&name, &path);
             app = app.nest(&path, router);
         }
 
+        let make_svc = shared::make_service_with_task_local_storage!(app);
+
         // Start the server.
-        let server = axum::Server::bind(&self.addr).serve(app.into_make_service());
+        let server = axum::Server::bind(&self.addr).serve(make_svc);
+        tracing::info!(port = server.local_addr().port(), "serving driver");
         if let Some(addr_sender) = self.addr_sender {
             addr_sender.send(server.local_addr()).unwrap();
         }
@@ -82,7 +87,7 @@ impl Api {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct State(Arc<Inner>);
 
 impl State {
@@ -101,12 +106,16 @@ impl State {
     fn liquidity(&self) -> &liquidity::Fetcher {
         &self.0.liquidity
     }
+
+    fn tokens(&self) -> &tokens::Fetcher {
+        &self.0.tokens
+    }
 }
 
-#[derive(Debug)]
 struct Inner {
     eth: Ethereum,
     solver: Solver,
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
+    tokens: tokens::Fetcher,
 }

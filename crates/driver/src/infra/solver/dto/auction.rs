@@ -59,9 +59,9 @@ impl Auction {
                 .iter()
                 .map(|order| Order {
                     uid: order.uid.into(),
-                    sell_token: order.solver_sell().token.into(),
+                    sell_token: order.sell.token.into(),
                     buy_token: order.solver_buy(weth).token.into(),
-                    sell_amount: order.solver_sell().amount.into(),
+                    sell_amount: order.sell.amount.into(),
                     buy_amount: order.solver_buy(weth).amount.into(),
                     fee_amount: order.fee.solver.into(),
                     kind: match order.side {

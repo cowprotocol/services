@@ -1,8 +1,8 @@
 use {
-    crate::setup::*,
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind},
         signature::EcdsaSigningScheme,
     },

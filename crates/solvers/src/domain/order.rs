@@ -28,8 +28,8 @@ impl Order {
     }
 
     /// Returns `true` if the order expects a solver-computed fee.
-    pub fn has_solver_fee(&self) -> bool {
-        self.partially_fillable && self.class == Class::Limit
+    pub fn solver_determines_fee(&self) -> bool {
+        self.class == Class::Limit
     }
 }
 
@@ -172,7 +172,6 @@ pub enum Signature {
 }
 
 impl Signature {
-    #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Self::Eip712(signature) | Self::EthSign(signature) => signature.to_bytes().to_vec(),

@@ -7,6 +7,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
+    anyhow::{Context, Result},
     contracts::{
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactory,
@@ -27,7 +28,7 @@ use {
     solver::{
         interactions::allowances::Allowances,
         liquidity::{balancer_v2, balancer_v2::BalancerV2Liquidity},
-        liquidity_collector::LiquidityCollecting,
+        liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
     std::sync::Arc,
 };
@@ -71,12 +72,35 @@ fn to_interaction(
     }
 }
 
-pub async fn collector(
+pub fn collector(
+    eth: &Ethereum,
+    block_stream: CurrentBlockStream,
+    block_retriever: Arc<dyn BlockRetrieving>,
+    config: &infra::liquidity::config::BalancerV2,
+) -> Box<dyn LiquidityCollecting> {
+    let eth = Arc::new(eth.clone());
+    let config = Arc::new(config.clone());
+    let init = move || {
+        let eth = eth.clone();
+        let block_stream = block_stream.clone();
+        let block_retriever = block_retriever.clone();
+        let config = config.clone();
+        async move { init_liquidity(&eth, &block_stream, block_retriever.clone(), &config).await }
+    };
+    const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    Box::new(BackgroundInitLiquiditySource::new(
+        "balancer-v2",
+        init,
+        TEN_MINUTES,
+    )) as Box<_>
+}
+
+async fn init_liquidity(
     eth: &Ethereum,
     block_stream: &CurrentBlockStream,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
-) -> Box<dyn LiquidityCollecting> {
+) -> Result<impl LiquidityCollecting> {
     let web3 = boundary::web3(eth);
     let contracts = BalancerContracts {
         vault: BalancerV2Vault::at(&web3, config.vault.into()),
@@ -139,10 +163,10 @@ pub async fn collector(
             config.pool_deny_list.clone(),
         )
         .await
-        .expect("failed to create Balancer pool fetcher"),
+        .context("failed to create balancer pool fetcher")?,
     );
 
-    Box::new(BalancerV2Liquidity::new(
+    Ok(BalancerV2Liquidity::new(
         web3,
         balancer_pool_fetcher,
         eth.contracts().settlement().clone(),

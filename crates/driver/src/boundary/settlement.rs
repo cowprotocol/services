@@ -18,7 +18,7 @@ use {
     anyhow::{anyhow, ensure, Context, Result},
     bigdecimal::Signed,
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         interaction::InteractionData,
         order::{
             BuyTokenDestination,

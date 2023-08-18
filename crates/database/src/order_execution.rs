@@ -1,5 +1,5 @@
 use {
-    crate::{auction::AuctionId, OrderUid, PgTransaction},
+    crate::{auction::AuctionId, OrderUid},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
     std::ops::DerefMut,
@@ -30,10 +30,10 @@ VALUES ($1, $2, $3, $4, $5)
 // update already existing order_execution record with surplus_fee for partial
 // limit orders
 pub async fn update_surplus_fee(
-    ex: &mut PgTransaction<'_>,
+    mut ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
-    surplus_fee: Option<&BigDecimal>,
+    surplus_fee: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE order_execution

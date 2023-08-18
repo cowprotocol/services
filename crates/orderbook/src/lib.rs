@@ -2,7 +2,7 @@ use {
     crate::{database::Postgres, orderbook::Orderbook},
     anyhow::{anyhow, Context as _, Result},
     contracts::GPv2Settlement,
-    futures::Future,
+    futures::{Future, FutureExt},
     model::DomainSeparator,
     shared::{order_quoting::QuoteHandler, price_estimation::native::NativePriceEstimating},
     std::{net::SocketAddr, sync::Arc},
@@ -41,7 +41,12 @@ pub fn serve_api(
     )
     .boxed();
     tracing::info!(%address, "serving order book");
-    let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
+    let warp_svc = warp::service(filter);
+    let warp_svc = shared::make_service_with_task_local_storage!(warp_svc);
+    let server = hyper::Server::bind(&address)
+        .serve(warp_svc)
+        .with_graceful_shutdown(shutdown_receiver)
+        .map(|_| ());
     task::spawn(server)
 }
 

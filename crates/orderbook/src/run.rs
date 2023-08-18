@@ -9,14 +9,7 @@ use {
         serve_api,
         verify_deployed_contract_constants,
     },
-    contracts::{
-        BalancerV2Vault,
-        CowProtocolToken,
-        CowProtocolVirtualToken,
-        HooksTrampoline,
-        IUniswapV3Factory,
-        WETH9,
-    },
+    contracts::{BalancerV2Vault, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
     futures::StreamExt,
     model::{order::BUY_ETH_ADDRESS, DomainSeparator},
@@ -31,12 +24,7 @@ use {
         },
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
-        fee_subsidy::{
-            config::FeeSubsidyConfiguration,
-            cow_token::CowSubsidy,
-            FeeSubsidies,
-            FeeSubsidizing,
-        },
+        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
@@ -46,7 +34,7 @@ use {
         order_quoting::{OrderQuoter, QuoteHandler},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
-            factory::{self, PriceEstimatorFactory},
+            factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
@@ -298,7 +286,11 @@ pub async fn run(args: Arguments) {
                 args.shared.balancer_pool_deny_list.clone(),
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         Some(balancer_pool_fetcher)
     } else {
@@ -314,7 +306,11 @@ pub async fn run(args: Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         ))
     } else {
         None
@@ -369,48 +365,31 @@ pub async fn run(args: Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(
+        .price_estimator(&PriceEstimatorSource::for_args(
             args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            args.order_quoting.price_estimators.as_slice(),
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
             args.fast_price_estimation_results_required,
-            &args.order_quoting.price_estimation_drivers,
         )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
+        .native_price_estimator(&PriceEstimatorSource::for_args(
             args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
 
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_tokens = match (cow_token, cow_vtoken) {
-        (None, None) => None,
-        (Some(token), Some(vtoken)) => Some((token, vtoken)),
-        _ => panic!("should either have both cow token contracts or none"),
-    };
-    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-        tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(
-            token,
-            vtoken,
-            args.order_quoting.cow_fee_factors.unwrap_or_default(),
-        )
-    });
-
-    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
@@ -421,14 +400,6 @@ pub async fn run(args: Arguments) {
             .copied()
             .collect(),
     }) as Arc<dyn FeeSubsidizing>;
-
-    let fee_subsidy = match cow_subsidy {
-        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-            fee_subsidy_config,
-            Arc::new(cow_subsidy),
-        ])),
-        None => fee_subsidy_config,
-    };
 
     let validity_configuration = OrderValidPeriodConfiguration {
         min: args.min_order_validity_period,

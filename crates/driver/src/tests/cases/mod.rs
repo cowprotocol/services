@@ -40,4 +40,7 @@ pub const DEFAULT_SCORE_MIN: u128 = 2000000000000000000u128;
 pub const DEFAULT_SCORE_MAX: u128 = 500000000000000000000000000000u128;
 
 /// The default surplus fee for limit orders.
-pub const DEFAULT_SURPLUS_FEE: u128 = 100u128;
+pub const DEFAULT_SURPLUS_FEE: u128 = 0u128;
+
+/// The default solver fee for limit orders.
+pub const DEFAULT_SOLVER_FEE: u128 = 100u128;

@@ -74,11 +74,12 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
+        tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
-            .solve(&self.fake_auction(eth).await?, &liquidity, timeout)
+            .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
             .await?;
         Quote::new(
             eth,
@@ -92,7 +93,16 @@ impl Order {
         )
     }
 
-    async fn fake_auction(&self, eth: &Ethereum) -> Result<competition::Auction, Error> {
+    async fn fake_auction(
+        &self,
+        eth: &Ethereum,
+        tokens: &infra::tokens::Fetcher,
+    ) -> Result<competition::Auction, Error> {
+        let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
+
+        let buy_token_metadata = tokens.get(&self.buy().token);
+        let sell_token_metadata = tokens.get(&self.sell().token);
+
         competition::Auction::new(
             None,
             vec![competition::Order {
@@ -118,19 +128,19 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: sell_token_metadata.and_then(|m| m.decimals),
+                    symbol: sell_token_metadata.and_then(|m| m.symbol.clone()),
                     address: self.tokens.sell,
                     price: None,
-                    available_balance: Default::default(),
+                    available_balance: sell_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: buy_token_metadata.and_then(|m| m.decimals),
+                    symbol: buy_token_metadata.and_then(|m| m.symbol.clone()),
                     address: self.tokens.buy,
                     price: None,
-                    available_balance: Default::default(),
+                    available_balance: buy_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
                     trusted: false,
                 },
             ]
@@ -171,9 +181,14 @@ impl Order {
             // Note that we intentionally do not use [`eth::U256::max_value()`]
             // as an order with this would cause overflows with the smart
             // contract, so buy orders requiring excessively large sell amounts
-            // would not work anyway.
+            // would not work anyway. Instead we use `2 ** 144`, the rationale
+            // being that Uniswap V2 pool reserves are 112-bit integers. Noting
+            // that `256 - 112 = 144`, this means that we can us to trade a full
+            // `type(uint112).max` without overflowing a `uint256` on the smart
+            // contract level. Requiring to trade more than `type(uint112).max`
+            // is unlikely and would not work with Uniswap V2 anyway.
             order::Side::Buy => eth::Asset {
-                amount: (eth::U256::one() << 192).into(),
+                amount: (eth::U256::one() << 144).into(),
                 token: self.tokens.sell,
             },
         }

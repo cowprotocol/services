@@ -7,7 +7,8 @@ module.exports = {
                 accountsBalance: "1000000000000000000000000"
             },
             gas: 1e7,
-            gasPrice: 1
+            gasPrice: 1,
+            chainId: 1
         }
     }
 };

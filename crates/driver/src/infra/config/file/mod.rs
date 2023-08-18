@@ -290,7 +290,7 @@ pub enum UniswapV3Config {
 
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
-        max_pools_to_initialize: u64,
+        max_pools_to_initialize: usize,
     },
 
     #[serde(rename_all = "kebab-case")]
@@ -300,7 +300,7 @@ pub enum UniswapV3Config {
 
         /// How many pools to initialize during start up.
         #[serde(default = "uniswap_v3::default_max_pools_to_initialize")]
-        max_pools_to_initialize: u64,
+        max_pools_to_initialize: usize,
     },
 }
 
@@ -311,8 +311,8 @@ pub enum UniswapV3Preset {
 }
 
 mod uniswap_v3 {
-    pub fn default_max_pools_to_initialize() -> u64 {
-        50
+    pub fn default_max_pools_to_initialize() -> usize {
+        100
     }
 }
 

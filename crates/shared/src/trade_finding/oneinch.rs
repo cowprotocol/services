@@ -13,7 +13,7 @@ use {
             SwapQuery,
         },
         price_estimation::gas,
-        request_sharing::{BoxRequestSharing, BoxShared},
+        request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
     },
     futures::FutureExt as _,
     model::order::OrderKind,
@@ -54,7 +54,7 @@ impl OneInchTradeFinder {
                 referrer_address,
                 solver,
             )),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("oneinch".into()),
         }
     }
 

@@ -1,9 +1,9 @@
 use {
-    crate::setup::*,
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
+    e2e::{setup::*, tx_safe},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
-        app_id::AppDataHash,
+        app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::{hashed_eip712_message, Signature},
     },

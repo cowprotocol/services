@@ -3,12 +3,13 @@ use {
     database::auction::AuctionId,
     number_conversions::big_decimal_to_u256,
     primitive_types::{H160, U256},
+    sqlx::PgConnection,
     std::collections::BTreeMap,
 };
 
 impl super::Postgres {
     pub async fn get_auction_prices(
-        &self,
+        ex: &mut PgConnection,
         auction_id: AuctionId,
     ) -> anyhow::Result<BTreeMap<H160, U256>> {
         let _timer = super::Metrics::get()
@@ -16,8 +17,7 @@ impl super::Postgres {
             .with_label_values(&["get_auction_prices"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await.context("acquire")?;
-        let prices = database::auction_prices::fetch(&mut ex, auction_id)
+        let prices = database::auction_prices::fetch(ex, auction_id)
             .await
             .with_context(|| format!("get_auction_prices for auction {auction_id}"))?
             .into_iter()

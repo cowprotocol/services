@@ -17,7 +17,7 @@ use {
         },
     },
     ethereum_types::U256,
-    std::collections::HashSet,
+    std::{cmp, collections::HashSet},
 };
 
 pub struct Baseline {
@@ -72,10 +72,21 @@ impl Baseline {
                             })
                             .collect();
 
+                        // The baseline solver generates a path with swapping
+                        // for exact output token amounts. This leads to
+                        // potential rounding errors for buy orders, where we
+                        // can buy slightly more than intended. Fix this by
+                        // capping the output amount to the order's buy amount
+                        // for buy orders.
+                        let mut output = route.output();
+                        if let order::Side::Buy = order.side {
+                            output.amount = cmp::min(output.amount, order.buy.amount);
+                        }
+
                         solution::Single {
                             order: order.clone(),
                             input: route.input(),
-                            output: route.output(),
+                            output,
                             interactions,
                             gas: route.gas(),
                         }

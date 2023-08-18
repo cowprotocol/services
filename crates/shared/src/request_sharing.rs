@@ -3,6 +3,7 @@ use {
         future::{BoxFuture, Shared, WeakShared},
         FutureExt,
     },
+    prometheus::IntCounterVec,
     std::{future::Future, sync::Mutex},
 };
 
@@ -19,6 +20,7 @@ use {
 /// while one of them is already in flight.
 pub struct RequestSharing<Request, Fut: Future> {
     in_flight: Mutex<Vec<(Request, WeakShared<Fut>)>>,
+    request_label: String,
 }
 
 /// Request sharing for boxed futures.
@@ -28,10 +30,21 @@ pub type BoxRequestSharing<Request, Response> =
 /// A boxed shared future.
 pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
-impl<Request, Fut: Future> Default for RequestSharing<Request, Fut> {
-    fn default() -> Self {
+impl<Request, Fut: Future> RequestSharing<Request, Fut> {
+    pub fn labelled(request_label: String) -> Self {
         Self {
             in_flight: Default::default(),
+            request_label,
+        }
+    }
+}
+
+/// Returns a shallow copy (without any pending requests)
+impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
+    fn clone(&self) -> Self {
+        Self {
+            in_flight: Default::default(),
+            request_label: self.request_label.clone(),
         }
     }
 }
@@ -86,8 +99,17 @@ where
         });
 
         if let Some(existing) = existing {
+            Metrics::get()
+                .request_sharing_access
+                .with_label_values(&[&self.request_label, "hits"])
+                .inc();
             return existing;
         }
+
+        Metrics::get()
+            .request_sharing_access
+            .with_label_values(&[&self.request_label, "misses"])
+            .inc();
 
         let shared = future(&request).shared();
         // unwrap because downgrade only returns None if the Shared has already
@@ -97,13 +119,26 @@ where
     }
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Request sharing hits & misses
+    #[metric(labels("request_label", "result"))]
+    request_sharing_access: IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn shares_request() {
-        let sharing = RequestSharing::default();
+        let sharing = RequestSharing::labelled("test".into());
         let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
         let shared1 = sharing.shared(0, async { panic!() }.boxed());
         // Would use Arc::ptr_eq but Shared doesn't implement it.

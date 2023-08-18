@@ -54,8 +54,8 @@ impl Solver {
                 "sellToken": hex_address(config.blockchain.get_token(sell_token)),
                 "buyToken": hex_address(config.blockchain.get_token(buy_token)),
                 "sellAmount": match quote.order.side {
-                    order::Side::Buy if config.quote => "6277101735386680763835789423207666416102355444464034512896".to_owned(),
-                    _ => (quote.sell_amount() - quote.order.surplus_fee()).to_string(),
+                    order::Side::Buy if config.quote => "22300745198530623141535718272648361505980416".to_owned(),
+                    _ => quote.sell_amount().to_string(),
                 },
                 "buyAmount": match quote.order.side {
                     order::Side::Sell if config.quote => "1".to_owned(),
@@ -115,19 +115,41 @@ impl Solver {
                     (fulfillment.quoted_order.sell - fulfillment.quoted_order.order.surplus_fee())
                         .to_string(),
                 );
-                trades_json.push(json!({
-                    "kind": "fulfillment",
-                    "order": if config.quote { Default::default() } else { fulfillment.quoted_order.order_uid(config.blockchain) },
-                    "executedAmount":
-                        match fulfillment.quoted_order.order.executed {
-                            Some(executed) => executed.to_string(),
-                            None => match fulfillment.quoted_order.order.side {
-                                order::Side::Sell =>
-                                    (fulfillment.quoted_order.sell_amount() - fulfillment.quoted_order.order.surplus_fee()).to_string(),
-                                order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
-                            },
-                        }
-                }))
+                {
+                    // trades have optional field `fee`
+                    let order = if config.quote {
+                        Default::default()
+                    } else {
+                        fulfillment.quoted_order.order_uid(config.blockchain)
+                    };
+                    let executed_amount = match fulfillment.quoted_order.order.executed {
+                        Some(executed) => executed.to_string(),
+                        None => match fulfillment.quoted_order.order.side {
+                            order::Side::Sell => (fulfillment.quoted_order.sell_amount()
+                                - fulfillment.quoted_order.order.surplus_fee())
+                            .to_string(),
+                            order::Side::Buy => fulfillment.quoted_order.buy_amount().to_string(),
+                        },
+                    };
+                    let fee = fulfillment
+                        .quoted_order
+                        .order
+                        .solver_fee
+                        .map(|fee| fee.to_string());
+                    match fee {
+                        Some(fee) => trades_json.push(json!({
+                            "kind": "fulfillment",
+                            "order": order,
+                            "executedAmount": executed_amount,
+                            "fee": fee,
+                        })),
+                        None => trades_json.push(json!({
+                            "kind": "fulfillment",
+                            "order": order,
+                            "executedAmount": executed_amount,
+                        })),
+                    }
+                }
             }
             solutions_json.push(json!({
                 "id": i,
@@ -138,37 +160,37 @@ impl Solver {
             }));
         }
 
-        let tokens_json = config
+        let build_tokens = config
             .solutions
             .iter()
             .flat_map(|s| s.fulfillments.iter())
             .flat_map(|f| {
                 let quote = &f.quoted_order;
+                let build_token = |token_name: String| async move {
+                    let token = config.blockchain.get_token_wrapped(token_name.as_str());
+                    let contract = contracts::ERC20::at(&config.blockchain.web3, token);
+                    let settlement = config.blockchain.settlement.address();
+                    (
+                        hex_address(token),
+                        json!({
+                            "decimals": contract.decimals().call().await.ok(),
+                            "symbol": contract.symbol().call().await.ok(),
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            // available balance might break if one test settles 2 auctions after
+                            // another
+                            "availableBalance": contract.balance_of(settlement).call().await.unwrap().to_string(),
+                            "trusted": config.trusted.contains(token_name.as_str()),
+                        }),
+                    )
+                };
                 [
-                    (
-                        hex_address(
-                            config.blockchain.get_token_wrapped(quote.order.sell_token),
-                        ),
-                        json!({
-                            "decimals": null,
-                            "symbol": null,
-                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
-                            "availableBalance": "0",
-                            "trusted": config.trusted.contains(quote.order.sell_token),
-                        }),
-                    ),
-                    (
-                        hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
-                        json!({
-                            "decimals": null,
-                            "symbol": null,
-                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
-                            "availableBalance": "0",
-                            "trusted": config.trusted.contains(quote.order.buy_token),
-                        }),
-                    ),
+                    build_token(quote.order.sell_token.to_string()),
+                    build_token(quote.order.buy_token.to_string()),
                 ]
-            })
+            });
+        let tokens_json = futures::future::join_all(build_tokens)
+            .await
+            .into_iter()
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();

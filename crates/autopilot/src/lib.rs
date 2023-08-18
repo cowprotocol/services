@@ -1,14 +1,3 @@
-pub mod arguments;
-pub mod database;
-pub mod decoded_settlement;
-pub mod driver_api;
-pub mod driver_model;
-pub mod event_updater;
-pub mod fok_limit_orders;
-pub mod on_settlement_event_updater;
-pub mod run_loop;
-pub mod solvable_orders;
-
 use {
     crate::{
         database::{
@@ -24,13 +13,7 @@ use {
         fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
-    contracts::{
-        BalancerV2Vault,
-        CowProtocolToken,
-        CowProtocolVirtualToken,
-        IUniswapV3Factory,
-        WETH9,
-    },
+    contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
     ethcontract::{errors::DeployError, BlockNumber},
     futures::StreamExt,
     model::DomainSeparator,
@@ -45,19 +28,14 @@ use {
         },
         baseline_solver::BaseTokens,
         current_block::block_number_to_block_number_hash,
-        fee_subsidy::{
-            config::FeeSubsidyConfiguration,
-            cow_token::CowSubsidy,
-            FeeSubsidies,
-            FeeSubsidizing,
-        },
+        fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
         order_quoting::OrderQuoter,
-        price_estimation::factory::{self, PriceEstimatorFactory},
+        price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator::Web3SignatureValidator,
         sources::{
@@ -78,6 +56,17 @@ use {
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
 };
+
+pub mod arguments;
+pub mod database;
+pub mod decoded_settlement;
+pub mod driver_api;
+pub mod driver_model;
+pub mod event_updater;
+pub mod fok_limit_orders;
+pub mod on_settlement_event_updater;
+pub mod run_loop;
+pub mod solvable_orders;
 
 /// To never get to the state where a limit order can not be considered usable
 /// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
@@ -326,7 +315,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.balancer_pool_deny_list.clone(),
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         Some(balancer_pool_fetcher)
     } else {
@@ -342,7 +335,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         ))
     } else {
         None
@@ -397,16 +394,18 @@ pub async fn main(args: arguments::Arguments) {
     .expect("failed to initialize price estimator factory");
 
     let price_estimator = price_estimator_factory
-        .price_estimator(
+        .price_estimator(&PriceEstimatorSource::for_args(
             args.order_quoting.price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(
+        .native_price_estimator(&PriceEstimatorSource::for_args(
             args.native_price_estimators.as_slice(),
             &args.order_quoting.price_estimation_drivers,
-        )
+            &args.order_quoting.price_estimation_legacy_solvers,
+        ))
         .unwrap();
 
     let skip_event_sync_start = if args.skip_event_sync {
@@ -434,47 +433,19 @@ pub async fn main(args: arguments::Arguments) {
         .await
         .expect("failed to create gas price estimator"),
     ));
-    let cow_token = match CowProtocolToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
-    let cow_tokens = match (cow_token, cow_vtoken) {
-        (None, None) => None,
-        (Some(token), Some(vtoken)) => Some((token, vtoken)),
-        _ => panic!("should either have both cow token contracts or none"),
-    };
-    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
-        tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(
-            token,
-            vtoken,
-            args.order_quoting.cow_fee_factors.unwrap_or_default(),
-        )
-    });
     let liquidity_order_owners: HashSet<_> = args
         .order_quoting
         .liquidity_order_owners
         .iter()
         .copied()
         .collect();
-    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+    let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
         liquidity_order_owners: liquidity_order_owners.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
-    let fee_subsidy = match cow_subsidy {
-        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
-            fee_subsidy_config,
-            Arc::new(cow_subsidy),
-        ])),
-        None => fee_subsidy_config,
-    };
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
         native_price_estimator.clone(),
@@ -638,7 +609,6 @@ pub async fn main(args: arguments::Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-            token_info: token_info_fetcher,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

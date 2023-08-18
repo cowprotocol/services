@@ -214,7 +214,6 @@ pub enum SimulationError {
 pub enum SolverType {
     Naive,
     Baseline,
-    CowDexAg,
     OneInch,
     Paraswap,
     ZeroEx,
@@ -362,7 +361,6 @@ pub async fn create(
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
     native_token: WETH9,
-    cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
     balancer_sor_url: Url,
     settlement_contract: &GPv2Settlement,
@@ -497,15 +495,6 @@ pub async fn create(
                     slippage_calculator,
                     ethflow_contract,
                     order_converter.clone(),
-                )),
-                SolverType::CowDexAg => shared(create_http_solver(
-                    account,
-                    cow_dex_ag_solver_url.clone(),
-                    "CowDexAg".to_string(),
-                    SolverConfig::default(),
-                    InstanceType::Plain,
-                    slippage_calculator,
-                    false,
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,

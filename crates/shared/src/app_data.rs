@@ -1,6 +1,6 @@
 use {
     anyhow::{anyhow, Context, Result},
-    model::{app_id::AppDataHash, order::Hooks},
+    model::{app_data::AppDataHash, order::Hooks},
     serde::Deserialize,
 };
 

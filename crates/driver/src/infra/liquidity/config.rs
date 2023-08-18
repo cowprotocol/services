@@ -115,7 +115,7 @@ pub struct UniswapV3 {
     pub router: eth::ContractAddress,
 
     /// How many pools should be initialized during start up.
-    pub max_pools_to_initialize: u64,
+    pub max_pools_to_initialize: usize,
 }
 
 impl UniswapV3 {
@@ -124,7 +124,7 @@ impl UniswapV3 {
     pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
-            max_pools_to_initialize: 50,
+            max_pools_to_initialize: 100,
         })
     }
 }
