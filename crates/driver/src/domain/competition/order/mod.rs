@@ -1,7 +1,7 @@
 use crate::{
     domain::eth,
     infra::{blockchain, Ethereum},
-    util::{self, conv, Bytes},
+    util::{self, conv::u256::U256Ext, Bytes},
 };
 
 pub mod signature;
@@ -163,8 +163,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                conv::u256::to_big_rational(buy.0)
-                    .checked_div(&conv::u256::to_big_rational(sell.0))
+                buy.0
+                    .to_big_rational()
+                    .checked_div(&sell.0.to_big_rational())
                     .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),

@@ -1645,7 +1645,6 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",

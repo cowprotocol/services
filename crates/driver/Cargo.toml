@@ -59,7 +59,6 @@ contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 gas-estimation = { workspace = true }
 model = { path = "../model" }
-number-conversions = { path = "../number-conversions" }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }
