@@ -160,37 +160,37 @@ impl Solver {
             }));
         }
 
-        let tokens_json = config
+        let build_tokens = config
             .solutions
             .iter()
             .flat_map(|s| s.fulfillments.iter())
             .flat_map(|f| {
                 let quote = &f.quoted_order;
+                let build_token = |token_name: String| async move {
+                    let token = config.blockchain.get_token_wrapped(token_name.as_str());
+                    let contract = contracts::ERC20::at(&config.blockchain.web3, token);
+                    let settlement = config.blockchain.settlement.address();
+                    (
+                        hex_address(token),
+                        json!({
+                            "decimals": contract.decimals().call().await.ok(),
+                            "symbol": contract.symbol().call().await.ok(),
+                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
+                            // available balance might break if one test settles 2 auctions after
+                            // another
+                            "availableBalance": contract.balance_of(settlement).call().await.unwrap().to_string(),
+                            "trusted": config.trusted.contains(token_name.as_str()),
+                        }),
+                    )
+                };
                 [
-                    (
-                        hex_address(
-                            config.blockchain.get_token_wrapped(quote.order.sell_token),
-                        ),
-                        json!({
-                            "decimals": null,
-                            "symbol": null,
-                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
-                            "availableBalance": "0",
-                            "trusted": config.trusted.contains(quote.order.sell_token),
-                        }),
-                    ),
-                    (
-                        hex_address(config.blockchain.get_token_wrapped(quote.order.buy_token)),
-                        json!({
-                            "decimals": null,
-                            "symbol": null,
-                            "referencePrice": if config.quote { None } else { Some("1000000000000000000") },
-                            "availableBalance": "0",
-                            "trusted": config.trusted.contains(quote.order.buy_token),
-                        }),
-                    ),
+                    build_token(quote.order.sell_token.to_string()),
+                    build_token(quote.order.buy_token.to_string()),
                 ]
-            })
+            });
+        let tokens_json = futures::future::join_all(build_tokens)
+            .await
+            .into_iter()
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();

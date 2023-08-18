@@ -5,7 +5,7 @@ use {
             competition::{auction, order},
             eth,
         },
-        infra::Ethereum,
+        infra::{tokens, Ethereum},
         util::serialize,
     },
     itertools::Itertools,
@@ -14,7 +14,18 @@ use {
 };
 
 impl Auction {
-    pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
+    pub async fn into_domain(
+        self,
+        eth: &Ethereum,
+        tokens: &tokens::Fetcher,
+    ) -> Result<competition::Auction, Error> {
+        let token_addresses: Vec<_> = self
+            .tokens
+            .iter()
+            .map(|token| token.address.into())
+            .collect();
+        let token_infos = tokens.get(&token_addresses).await;
+
         competition::Auction::new(
             Some(self.id.try_into()?),
             self.orders
@@ -109,16 +120,17 @@ impl Auction {
                     })
                 })
                 .try_collect::<_, Vec<_>, Error>()?,
-            self.tokens
-                .into_iter()
-                .map(|token| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
+            self.tokens.into_iter().map(|token| {
+                let info = token_infos.get(&token.address.into());
+                competition::auction::Token {
+                    decimals: info.and_then(|i| i.decimals),
+                    symbol: info.and_then(|i| i.symbol.clone()),
                     address: token.address.into(),
                     price: token.price.map(Into::into),
-                    available_balance: Default::default(),
+                    available_balance: info.map(|i| i.balance).unwrap_or(0.into()).into(),
                     trusted: token.trusted,
-                }),
+                }
+            }),
             eth.gas_price().await.map_err(Error::GasPrice)?,
             self.deadline.into(),
             eth.contracts().weth_address(),
@@ -176,8 +188,6 @@ struct Token {
     #[serde_as(as = "Option<serialize::U256>")]
     pub price: Option<eth::U256>,
     pub trusted: bool,
-    pub decimals: Option<u8>,
-    pub symbol: Option<String>,
 }
 
 #[serde_as]

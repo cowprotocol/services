@@ -1,15 +1,15 @@
 [[solver]]
 name = "mysolver" # Arbitrary name given to this solver, must be unique
-endpoint = "http://0.0.0.0:33219/solve"
-absolute-slippage = "12" # Denominated in wei, optional
+endpoint = "http://0.0.0.0:7872"
+absolute-slippage = "40000000000000000" # Denominated in wei, optional
 relative-slippage = "0.1" # Percentage in the [0, 1] range
 account = "0x0000000000000000000000000000000000000000000000000000000000000001" # The private key of the solver
 
-[[solver]] # And so on, specify as many solvers as needed
-name = "othersolver"
-endpoint = "http://localhost:1235"
-relative-slippage = "0.1"
-account = "0x0000000000000000000000000000000000000000000000000000000000000002"
+# [[solver]] # And so on, specify as many solvers as needed
+# name = "othersolver"
+# endpoint = "http://localhost:1235"
+# relative-slippage = "0.1"
+# account = "0x0000000000000000000000000000000000000000000000000000000000000002"
 
 [[submission.mempool]]
 mempool = "public"
@@ -44,3 +44,23 @@ base-tokens = [
 # [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
 # router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
 # pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
+
+# [[liquidity.balancer-v2]] # Balancer V2 configuration
+# preset = "balancer-v2"
+# pool-deny-list = [] # optional
+
+# [[liquidity.balancer-v2]] # Custom Balancer V2 configuration
+# vault = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+# weighted = [] # weighted pool factory addresses
+# stable = [] # stable pool factory addresses
+# liquidity-bootstrapping = [] # liquidity bootstrapping pool factory addresses
+# pool-deny-list = [] # which pools to ignore
+
+# [[liquidity.uniswap-v3]] # Uniswap V3 configuration
+# preset = "uniswap-v3"
+# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
+
+# [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
+# router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
+
