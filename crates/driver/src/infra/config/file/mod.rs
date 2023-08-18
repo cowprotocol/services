@@ -14,6 +14,12 @@ pub use load::load;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
+    /// Optionally specify the chain ID that that driver is configured for.
+    /// Note that the actual chain ID is fetched from the configured Ethereum
+    /// RPC endpoint, and the driver will exit if it does not match this
+    /// value.
+    chain_id: Option<eth::U256>,
+
     /// Disable access list simulation, useful for environments that don't
     /// support this, such as less popular blockchains.
     #[serde(default)]
@@ -50,32 +56,32 @@ struct SubmissionConfig {
     /// to miners above regular gas price estimation. Expects a floating point
     /// value between 0 and 1.
     #[serde(default = "default_additional_tip_percentage")]
-    pub additional_tip_percentage: f64,
+    additional_tip_percentage: f64,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a
     /// settlement.
     #[serde(default = "default_gas_price_cap")]
-    pub gas_price_cap: f64,
+    gas_price_cap: f64,
 
     /// The target confirmation time for settlement transactions used
     /// to estimate gas price. Specified in seconds.
     #[serde(default = "default_target_confirm_time_secs")]
-    pub target_confirm_time_secs: u64,
+    target_confirm_time_secs: u64,
 
     /// Amount of time to wait before retrying to submit the tx to
     /// the ethereum network. Specified in seconds.
     #[serde(default = "default_retry_interval_secs")]
-    pub retry_interval_secs: u64,
+    retry_interval_secs: u64,
 
     /// The maximum time to spend trying to settle a transaction through the
     /// Ethereum network before giving up. Specified in seconds.
     #[serde(default = "default_max_confirm_time_secs")]
-    pub max_confirm_time_secs: u64,
+    max_confirm_time_secs: u64,
 
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private Flashbots mempool.
     #[serde(rename = "mempool", default)]
-    pub mempools: Vec<Mempool>,
+    mempools: Vec<Mempool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,12 +178,12 @@ enum Account {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ContractsConfig {
+struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
-    pub gp_v2_settlement: Option<eth::H160>,
+    gp_v2_settlement: Option<eth::H160>,
 
     /// Override the default address of the WETH contract.
-    pub weth: Option<eth::H160>,
+    weth: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -205,32 +211,32 @@ struct TenderlyConfig {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct LiquidityConfig {
+struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
     #[serde(default)]
-    pub base_tokens: Vec<eth::H160>,
+    base_tokens: Vec<eth::H160>,
 
     /// Liquidity provided by a Uniswap V2 compatible contract.
     #[serde(default)]
-    pub uniswap_v2: Vec<UniswapV2Config>,
+    uniswap_v2: Vec<UniswapV2Config>,
 
     /// Liquidity provided by a Swapr compatible contract.
     #[serde(default)]
-    pub swapr: Vec<SwaprConfig>,
+    swapr: Vec<SwaprConfig>,
 
     /// Liquidity provided by a Uniswap V3 compatible contract.
     #[serde(default)]
-    pub uniswap_v3: Vec<UniswapV3Config>,
+    uniswap_v3: Vec<UniswapV3Config>,
 
     /// Liquidity provided by a Balancer V2 compatible contract.
     #[serde(default)]
-    pub balancer_v2: Vec<BalancerV2Config>,
+    balancer_v2: Vec<BalancerV2Config>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum UniswapV2Config {
+enum UniswapV2Config {
     #[serde(rename_all = "kebab-case")]
     Preset { preset: UniswapV2Preset },
 
@@ -246,7 +252,7 @@ pub enum UniswapV2Config {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum UniswapV2Preset {
+enum UniswapV2Preset {
     UniswapV2,
     SushiSwap,
     Honeyswap,
@@ -256,7 +262,7 @@ pub enum UniswapV2Preset {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum SwaprConfig {
+enum SwaprConfig {
     #[serde(rename_all = "kebab-case")]
     Preset { preset: SwaprPreset },
 
@@ -272,13 +278,13 @@ pub enum SwaprConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum SwaprPreset {
+enum SwaprPreset {
     Swapr,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum UniswapV3Config {
+enum UniswapV3Config {
     #[serde(rename_all = "kebab-case")]
     Preset {
         preset: UniswapV3Preset,
@@ -301,7 +307,7 @@ pub enum UniswapV3Config {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum UniswapV3Preset {
+enum UniswapV3Preset {
     UniswapV3,
 }
 
@@ -313,7 +319,7 @@ mod uniswap_v3 {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum BalancerV2Config {
+enum BalancerV2Config {
     #[serde(rename_all = "kebab-case")]
     Preset {
         preset: BalancerV2Preset,
@@ -348,6 +354,6 @@ pub enum BalancerV2Config {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum BalancerV2Preset {
+enum BalancerV2Preset {
     BalancerV2,
 }
