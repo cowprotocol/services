@@ -5,7 +5,7 @@
 
 use {
     crate::price_estimation::PriceEstimationError,
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
     num::BigInt,
