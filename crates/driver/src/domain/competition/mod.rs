@@ -46,9 +46,7 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: Auction) -> Result<Solved, Error> {
-        let auction = auction.prioritize(&self.eth).await;
-
+    pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
         let liquidity = self
             .liquidity
             .fetch(
@@ -68,7 +66,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(&auction, &liquidity, auction.deadline().timeout()?)
+            .solve(auction, &liquidity, auction.deadline().timeout()?)
             .await?;
 
         // Empty solutions aren't useful, so discard them.
@@ -82,15 +80,12 @@ impl Competition {
         });
 
         // Encode the solutions into settlements.
-        let settlements = join_all(solutions.map(|solution| {
-            let auction = &auction;
-            async move {
-                observe::encoding(solution.id());
-                (
-                    solution.id(),
-                    solution.encode(auction, &self.eth, &self.simulator).await,
-                )
-            }
+        let settlements = join_all(solutions.map(|solution| async move {
+            observe::encoding(solution.id());
+            (
+                solution.id(),
+                solution.encode(auction, &self.eth, &self.simulator).await,
+            )
         }))
         .await;
 
@@ -147,7 +142,7 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (settlement.score(&self.eth, &auction), settlement)
+                (settlement.score(&self.eth, auction), settlement)
             })
             .collect_vec();
 
