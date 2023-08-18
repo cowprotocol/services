@@ -90,7 +90,6 @@ impl Auction {
             };
             std::cmp::Reverse((
                 class,
-                // TODO No need to expose Tokens anymore, just use the auction
                 // If the orders are of the same kind, then sort by likelihood of fulfillment
                 // based on token prices.
                 order.likelihood(&self.tokens),
