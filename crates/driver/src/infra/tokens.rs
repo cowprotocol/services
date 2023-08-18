@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     std::{
         collections::{HashMap, HashSet},
-        sync::RwLock,
+        sync::{Arc, RwLock},
     },
 };
 
@@ -15,20 +15,35 @@ pub struct Metadata {
     pub balance: eth::TokenAmount,
 }
 
+#[derive(Clone)]
+pub struct Fetcher(Arc<Inner>);
+
+impl Fetcher {
+    pub fn new(eth: Ethereum) -> Self {
+        Self(Arc::new(Inner {
+            eth,
+            cache: RwLock::new(HashMap::new()),
+        }))
+    }
+
+    /// Returns the `Metadata` for the given tokens. Note that the result will
+    /// not contain data for tokens that encountered errors while fetching
+    /// the data.
+    pub async fn get(
+        &self,
+        addresses: &[eth::TokenAddress],
+    ) -> HashMap<eth::TokenAddress, Metadata> {
+        self.0.get(addresses).await
+    }
+}
+
 /// Provides metadata of tokens.
-pub struct Fetcher {
+struct Inner {
     eth: Ethereum,
     cache: RwLock<HashMap<eth::TokenAddress, Metadata>>,
 }
 
-impl Fetcher {
-    pub fn new(eth: Ethereum) -> Self {
-        Self {
-            eth,
-            cache: RwLock::new(HashMap::new()),
-        }
-    }
-
+impl Inner {
     /// Returns the token's decimals. Returns `None` if the token does not
     /// implement this optional method.
     async fn decimals(&self, token: eth::TokenAddress) -> Result<Option<u8>> {
