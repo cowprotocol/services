@@ -41,13 +41,6 @@ base-tokens = [
 # router = "0xb9960d9bca016e9748be75dd52f02188b9d0829f"
 # pool-code = "0xd306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776"
 
-# [[liquidity.uniswap-v2]] # Uniswap V2 configuration
-# preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
-
-# [[liquidity.uniswap-v2]] # Custom Uniswap V2 configuration
-# router = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
-# pool-code = "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
-
 # [[liquidity.balancer-v2]] # Balancer V2 configuration
 # preset = "balancer-v2"
 # pool-deny-list = [] # optional
@@ -61,9 +54,9 @@ base-tokens = [
 
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration
 # preset = "uniswap-v3"
-# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
+# max-pools-to-initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
 # router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
+# max-pools-to-initialize = 100 # how many of the deepest pools to initialise on startup
 
