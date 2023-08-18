@@ -481,10 +481,10 @@ impl<'a> Submitter<'a> {
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
                     tracing::debug!(
-                        ?gas_price,
-                        ?replacement_price,
                         sleep = ?params.retry_interval,
-                        "keep waiting for gas price to increase enough"
+                        "keep waiting for gas price to increase enough, gas price={}, replacement price={}",
+                        gas_price,
+                        replacement_price,
                     );
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
@@ -492,7 +492,7 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::debug!(
-                "creating transaction with gas price {}, gas estimate {}",
+                "creating transaction with gas price={}, gas estimate={}",
                 gas_price,
                 params.gas_estimate,
             );
