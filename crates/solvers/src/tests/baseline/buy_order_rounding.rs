@@ -220,11 +220,8 @@ async fn balancer() {
         }))
         .await;
 
-    // We end up using the liquidity with a bad price because the baseline
-    // solver can't build a solution using the Balancer liquidity. This because
-    // Balancer weighted pools are "unstable", where if you compute an input
-    // amount large enough to buy X tokens, selling the computed amount over
-    // the same pool in the exact same state will yield X-𝛿 tokens.
+    // Note that the interaction executes slightly more than the buy order's
+    // amount. This is inevitable because of rounding.
     assert_eq!(
         solution,
         json!({
@@ -232,7 +229,7 @@ async fn balancer() {
                 "id": 0,
                 "prices": {
                     "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "1000000000000000000",
-                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "1004013040121365096289871"
+                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "15503270361046566989"
                 },
                 "trades": [
                     {
@@ -247,12 +244,166 @@ async fn balancer() {
                     {
                         "kind": "liquidity",
                         "internalize": false,
-                        "id": "2",
+                        "id": "1",
                         "inputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "outputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                        "inputAmount": "15503270361046566989",
+                        "outputAmount": "9056454904358278"
+                    },
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
                         "outputToken": "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d",
-                        "inputAmount": "1004013040121365096289871",
-                        "outputAmount": "1000000000000000000"
+                        "inputAmount": "9056454904358278",
+                        "outputAmount": "1000000000000082826"
+                    },
+                ]
+            }]
+        }),
+    );
+}
+
+#[tokio::test]
+async fn same_path() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "100"
+                base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                    "decimals": 18,
+                    "symbol": "xCOW",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                    "decimals": 18,
+                    "symbol": "xGNO",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a",
+                    "sellToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                    "buyToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                    "sellAmount": "16000000000000000000",
+                    "buyAmount": "9056454904357528",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                }
+            ],
+            "liquidity": [
+                {
+                    "kind": "weightedproduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "1963528800698237927834721",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        },
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "1152796145430714835825",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        }
+                    },
+                    "fee": "0.005",
+                    "id": "0",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
+                    "gasEstimate": "0"
+                },
+                {
+                    "kind": "constantproduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "1000000000000000000000000000"
+                        },
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "585921934616708391829053"
+                        }
+                    },
+                    "fee": "0.003",
+                    "id": "1",
+                    "address": "0x9090909090909090909090909090909090909090",
+                    "gasEstimate": "0"
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    // Lets get down to the math!
+    // --------------------------
+    //
+    // Balancer V2 weighted pools are unstable - this means that when computing
+    // `get_amount_out(TOK0, (get_amount_in(TOK1, (a, TOK0)), TOK1)) < a`,
+    // meaning that we actually need to sell a bit more than computed in order
+    // to cover the buy order. Specifically, in this example:
+    // - the computed input amount is `15503270361045187239 xCOW`
+    // - the corresponding output amount is `9056454904357125 xGNO` (`403` less than
+    //   what is actually needed)
+    // - the optimal input amount is `15503270361046529181 xCOW`, such that this
+    //   amount -1 would result in an output amount that is not enough to cover the
+    //   order
+    //
+    // Interestingly, in the same path, we have an constant product pool (i.e.
+    // Uniswap-like pool) L1 which if used for a solution would result in
+    // selling an amount that is higher than the computed input amount for the
+    // Balancer pool, but lower than its optimal input amount.
+    //
+    // This tests asserts that we use L1 in the solution.
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [{
+                "id": 0,
+                "prices": {
+                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "9056454904357528",
+                    "0x9c58bacc331c9aa871afd802db6379a98e80cedb": "15503270361045187242"
+                },
+                "trades": [
+                    {
+                        "kind": "fulfillment",
+                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a",
+                        "executedAmount": "9056454904357528"
                     }
+                ],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "1",
+                        "inputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "outputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                        "inputAmount": "15503270361045187242",
+                        "outputAmount": "9056454904357528"
+                    },
                 ]
             }]
         }),
