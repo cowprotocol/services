@@ -9,6 +9,7 @@ use {
 };
 
 pub mod contracts;
+pub mod token;
 
 pub use self::contracts::Contracts;
 
@@ -61,22 +62,6 @@ impl Ethereum {
     /// Create a contract instance at the specified address.
     pub fn contract_at<T: ContractAt>(&self, address: eth::ContractAddress) -> T {
         T::at(self, address)
-    }
-
-    /// Fetch the ERC20 allowance for the spender. See the allowance method in
-    /// EIP-20.
-    ///
-    /// https://eips.ethereum.org/EIPS/eip-20#methods
-    pub async fn allowance(
-        &self,
-        owner: eth::Address,
-        spender: eth::allowance::Spender,
-    ) -> Result<eth::allowance::Existing, Error> {
-        let amount = contracts::ERC20::at(&self.web3, spender.token.into())
-            .allowance(owner.0, spender.address.0)
-            .call()
-            .await?;
-        Ok(eth::Allowance { spender, amount }.into())
     }
 
     /// Check if a smart contract is deployed to the given address.
@@ -153,6 +138,11 @@ impl Ethereum {
             .await
             .map(Into::into)
             .map_err(Into::into)
+    }
+
+    /// Returns a [`token::Erc20`] for the specified address.
+    pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
+        token::Erc20::new(self.contract_at(address.into()))
     }
 }
 
