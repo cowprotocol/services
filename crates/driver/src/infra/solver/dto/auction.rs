@@ -1,10 +1,12 @@
 use {
     crate::{
         domain::{competition, competition::order, eth, liquidity},
-        util::serialize,
+        util::{
+            conv::{rational_to_big_decimal, u256::U256Ext},
+            serialize,
+        },
     },
     indexmap::IndexMap,
-    number_conversions::{rational_to_big_decimal, u256_to_big_int},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::{BTreeMap, HashMap},
@@ -134,10 +136,13 @@ impl Auction {
                             })
                             .collect(),
                         amplification_parameter: rational_to_big_decimal(&num::BigRational::new(
-                            u256_to_big_int(&pool.amplification_parameter.factor()),
-                            u256_to_big_int(&pool.amplification_parameter.precision()),
+                            pool.amplification_parameter.factor().to_big_int(),
+                            pool.amplification_parameter.precision().to_big_int(),
                         )),
-                        fee: bigdecimal::BigDecimal::new(u256_to_big_int(&pool.fee.into()), 18),
+                        fee: bigdecimal::BigDecimal::new(
+                            eth::U256::from(pool.fee).to_big_int(),
+                            18,
+                        ),
                     }),
                     liquidity::Kind::BalancerV2Weighted(pool) => {
                         Liquidity::WeightedProduct(WeightedProductPool {
@@ -154,14 +159,17 @@ impl Auction {
                                             balance: r.asset.amount.into(),
                                             scaling_factor: r.scale.factor(),
                                             weight: bigdecimal::BigDecimal::new(
-                                                u256_to_big_int(&r.weight.into()),
+                                                eth::U256::from(r.weight).to_big_int(),
                                                 18,
                                             ),
                                         },
                                     )
                                 })
                                 .collect(),
-                            fee: bigdecimal::BigDecimal::new(u256_to_big_int(&pool.fee.into()), 18),
+                            fee: bigdecimal::BigDecimal::new(
+                                eth::U256::from(pool.fee).to_big_int(),
+                                18,
+                            ),
                         })
                     }
                     liquidity::Kind::Swapr(pool) => {

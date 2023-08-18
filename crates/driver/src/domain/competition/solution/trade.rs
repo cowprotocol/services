@@ -1,9 +1,9 @@
-use {
-    crate::domain::{
+use crate::{
+    domain::{
         competition::{self, order},
         eth,
     },
-    shared::conversions::U256Ext,
+    util::conv::u256::U256Ext,
 };
 
 /// A trade which executes an order as part of this solution.
