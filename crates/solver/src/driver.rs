@@ -321,7 +321,7 @@ impl Driver {
             .estimate()
             .await
             .context("failed to estimate gas price")?;
-        tracing::debug!("solving with gas price of {:?}", gas_price);
+        tracing::debug!("solving with gas price of {}", gas_price);
 
         let pairs: HashSet<_> = auction
             .orders

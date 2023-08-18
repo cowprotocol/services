@@ -492,11 +492,8 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas \
-                 estimate {}",
-                gas_price.base_fee_per_gas,
-                gas_price.max_fee_per_gas,
-                gas_price.max_priority_fee_per_gas,
+                "creating transaction with gas price (gas_price {}, gas estimate {}",
+                gas_price,
                 params.gas_estimate,
             );
 
