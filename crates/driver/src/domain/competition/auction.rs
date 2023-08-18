@@ -72,11 +72,12 @@ impl Auction {
         &self.orders
     }
 
-    // Prioritize the orders such that those which are more likely to be fulfilled
-    // come before less likely orders. Filter out orders which the trader doesn't
-    // have enough balance to pay for.
-    //
-    // Prioritization is skipped during quoting. It's only used during competition.
+    /// Prioritize the orders such that those which are more likely to be
+    /// fulfilled come before less likely orders. Filter out orders which
+    /// the trader doesn't have enough balance to pay for.
+    ///
+    /// Prioritization is skipped during quoting. It's only used during
+    /// competition.
     pub async fn prioritize(mut self, eth: &Ethereum) -> Self {
         // Sort orders so that most likely to be fulfilled come first.
         self.orders.sort_by_key(|order| {
