@@ -65,12 +65,12 @@ async fn weighted() {
                     "tokens": {
                         "0x6810e776880c02933d47db1b9fc05908e5386b96": {
                             "balance": "11260752191375725565253",
-                            "scalingFactor": "1000000000000000000",
+                            "scalingFactor": "1",
                             "weight": "0.5",
                         },
                         "0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab": {
                             "balance": "18764168403990393422000071",
-                            "scalingFactor": "1000000000000000000",
+                            "scalingFactor": "1",
                             "weight": "0.5",
                         }
                     },
@@ -176,12 +176,12 @@ async fn weighted_v3plus() {
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "5089632258314443812936111",
-                            "scalingFactor": "1000000000000000000",
+                            "scalingFactor": "1",
                             "weight": "0.5",
                         },
                         "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
                             "balance": "3043530764763263654069",
-                            "scalingFactor": "1000000000000000000",
+                            "scalingFactor": "1",
                             "weight": "0.5",
                         }
                     },

@@ -90,6 +90,35 @@ pub struct WeightedPoolRef<'a> {
     pub version: WeightedPoolVersion,
 }
 
+impl WeightedPoolRef<'_> {
+    fn get_amount_in_exact(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
+        // Note that the output of this function does not depend on the pool
+        // specialization. All contract branches compute this amount with:
+        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
+        let in_reserves = self.reserves.get(&in_token)?;
+        let out_reserves = self.reserves.get(&out_token)?;
+
+        let calc_in_given_out = match self.version {
+            WeightedPoolVersion::V0 => weighted_math::calc_in_given_out,
+            WeightedPoolVersion::V3Plus => weighted_math::calc_in_given_out_v3,
+        };
+        let in_amount = calc_in_given_out(
+            in_reserves.common.upscaled_balance()?,
+            in_reserves.weight,
+            out_reserves.common.upscaled_balance()?,
+            out_reserves.weight,
+            out_reserves.common.upscale(out_amount)?,
+        )
+        .ok()?;
+        let amount_in_before_fee = in_reserves.common.downscale_up(in_amount).ok()?;
+        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
+    }
+}
+
 impl BaselineSolvable for WeightedPoolRef<'_> {
     fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
@@ -115,27 +144,39 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         out_reserves.common.downscale_down(out_amount)
     }
 
-    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
-        // Note that the output of this function does not depend on the pool
-        // specialization. All contract branches compute this amount with:
-        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
-        let in_reserves = self.reserves.get(&in_token)?;
-        let out_reserves = self.reserves.get(&out_token)?;
+    fn get_amount_in(
+        &self,
+        in_token: H160,
+        (exact_out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
+        // Balancer V2 weighted pools are "unstable", where if you compute an
+        // input amount large enough to buy X tokens, selling the computed
+        // amount over the same pool in the exact same state will yield X-𝛿
+        // tokens. To work around this, for each hop, we try to converge to some
+        // sell amount >= the required buy amount.
 
-        let calc_in_given_out = match self.version {
-            WeightedPoolVersion::V0 => weighted_math::calc_in_given_out,
-            WeightedPoolVersion::V3Plus => weighted_math::calc_in_given_out_v3,
-        };
-        let in_amount = calc_in_given_out(
-            in_reserves.common.upscaled_balance()?,
-            in_reserves.weight,
-            out_reserves.common.upscaled_balance()?,
-            out_reserves.weight,
-            out_reserves.common.upscale(out_amount)?,
-        )
-        .ok()?;
-        let amount_in_before_fee = in_reserves.common.downscale_up(in_amount).ok()?;
-        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
+        let in_amount = self.get_amount_in_exact(in_token, (exact_out_amount, out_token))?;
+        let out_amount = self.get_amount_out(out_token, (in_amount, in_token))?;
+        if out_amount >= exact_out_amount {
+            return Some(in_amount);
+        }
+
+        // If the computed output amount is not enough; we bump the sell amount
+        // a bit. We start with 1e-12 tokens (normalized to 18 decimals) and
+        // multiply the amount to bump by 10 for each iteration up to 1e-6.
+        let in_reserves = self.reserves.get(&in_token)?;
+        let mut bump = U256::exp10(6_u8.saturating_sub(in_reserves.common.scaling_exponent) as _);
+        for _ in 0..6 {
+            let bumped_in_amount = in_amount.checked_add(bump)?;
+            let out_amount = self.get_amount_out(out_token, (bumped_in_amount, in_token))?;
+            if out_amount >= exact_out_amount {
+                return Some(bumped_in_amount);
+            }
+
+            bump *= 10;
+        }
+
+        None
     }
 
     fn gas_cost(&self) -> usize {
