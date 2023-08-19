@@ -1,4 +1,4 @@
-//! Simple test case that verifies that the baseline solver can settle a buy
+//! Simple test cases that verify that the baseline solver can settle a buy
 //! orders, and deal with weird rounding behaviour.
 
 use {crate::tests, serde_json::json};
@@ -106,7 +106,7 @@ async fn uniswap() {
 }
 
 #[tokio::test]
-async fn balancer() {
+async fn balancer_weighted() {
     let engine = tests::SolverEngine::new(
         "baseline",
         tests::Config::String(
@@ -196,7 +196,8 @@ async fn balancer() {
                     "fee": "0.005",
                     "id": "1",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
-                    "gasEstimate": "88892"
+                    "gasEstimate": "88892",
+                    "version": "v0"
                 },
                 // A fake xCOW -> wxDAI path with a BAD price.
                 {
@@ -258,6 +259,117 @@ async fn balancer() {
                         "outputToken": "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d",
                         "inputAmount": "9056454904358278",
                         "outputAmount": "1000000000000082826"
+                    },
+                ]
+            }]
+        }),
+    );
+}
+
+#[tokio::test]
+async fn balancer_weighted_v3plus() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "100"
+                base-tokens = []
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                    "decimals": 18,
+                    "symbol": "xCOW",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                    "decimals": 18,
+                    "symbol": "xGNO",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a",
+                    "sellToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                    "buyToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                    "sellAmount": "100000000000000000000000",
+                    "buyAmount": "1000000000000000000000",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                }
+            ],
+            "liquidity": [
+                {
+                    "kind": "weightedproduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "18764168403990393422000071",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        },
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "11260752191375725565253",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        }
+                    },
+                    "fee": "0.005",
+                    "id": "0",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
+                    "gasEstimate": "88892",
+                    "version": "v3plus",
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [{
+                "id": 0,
+                "prices": {
+                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "603167793526702182",
+                    "0x9c58bacc331c9aa871afd802db6379a98e80cedb": "1000000000000000000000"
+                },
+                "trades": [
+                    {
+                        "kind": "fulfillment",
+                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a",
+                        "executedAmount": "1000000000000000000000"
+                    }
+                ],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                        "outputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "inputAmount": "603167793526702182",
+                        "outputAmount": "1000000000000001964333"
                     },
                 ]
             }]
@@ -333,7 +445,8 @@ async fn same_path() {
                     "fee": "0.005",
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
-                    "gasEstimate": "0"
+                    "gasEstimate": "0",
+                    "version": "v0",
                 },
                 {
                     "kind": "constantproduct",

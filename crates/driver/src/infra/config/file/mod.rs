@@ -337,6 +337,9 @@ enum BalancerV2Config {
         /// The weighted pool factory contract addresses.
         weighted: Vec<eth::H160>,
 
+        /// The weighted pool factory v3+ contract addresses.
+        weighted_v3plus: Vec<eth::H160>,
+
         /// The stable pool factory contract addresses.
         stable: Vec<eth::H160>,
 

@@ -168,6 +168,7 @@ mod tests {
                 kind: PoolKind::Weighted(weighted::PoolState {
                     tokens: Default::default(),
                     swap_fee: Bfp::zero(),
+                    version: Default::default(),
                 }),
             })),
             Ok(PoolStatus::Paused),

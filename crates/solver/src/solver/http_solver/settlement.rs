@@ -572,6 +572,7 @@ mod tests {
                     }
                 },
                 fee: "0.03".parse().unwrap(),
+                version: Default::default(),
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
@@ -857,6 +858,7 @@ mod tests {
                 }
             },
             fee: "0.001".parse().unwrap(),
+            version: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
 

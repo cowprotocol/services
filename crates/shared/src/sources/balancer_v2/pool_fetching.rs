@@ -62,7 +62,7 @@ use {
 pub use {
     common::TokenState,
     stable::AmplificationParameter,
-    weighted::TokenState as WeightedTokenState,
+    weighted::{TokenState as WeightedTokenState, Version as WeightedPoolVersion},
 };
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
@@ -80,6 +80,7 @@ pub struct CommonPoolState {
 pub struct WeightedPool {
     pub common: CommonPoolState,
     pub reserves: HashMap<H160, WeightedTokenState>,
+    pub version: WeightedPoolVersion,
 }
 
 impl WeightedPool {
@@ -92,6 +93,7 @@ impl WeightedPool {
                 paused: false,
             },
             reserves: weighted_state.tokens.into_iter().collect(),
+            version: weighted_state.version,
         }
     }
 }
@@ -380,11 +382,11 @@ async fn create_aggregate_pool_fetcher(
     let mut fetchers = Vec::new();
     for (kind, instance) in &contracts.factories {
         let registry = match kind {
-            BalancerFactoryKind::Weighted
-            | BalancerFactoryKind::WeightedV3
-            | BalancerFactoryKind::WeightedV4
-            | BalancerFactoryKind::Weighted2Token => {
+            BalancerFactoryKind::Weighted | BalancerFactoryKind::Weighted2Token => {
                 registry!(BalancerV2WeightedPoolFactory, instance)
+            }
+            BalancerFactoryKind::WeightedV3 | BalancerFactoryKind::WeightedV4 => {
+                registry!(BalancerV2WeightedPoolFactoryV3, instance)
             }
             BalancerFactoryKind::Stable | BalancerFactoryKind::StableV2 => {
                 registry!(BalancerV2StablePoolFactory, instance)

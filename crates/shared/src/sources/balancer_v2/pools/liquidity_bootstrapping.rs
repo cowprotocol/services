@@ -18,7 +18,7 @@ use {
     futures::{future::BoxFuture, FutureExt as _},
 };
 
-pub use super::weighted::{PoolState, TokenState};
+pub use super::weighted::{PoolState, TokenState, Version};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -96,7 +96,11 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
                 .collect();
             let swap_fee = common.swap_fee;
 
-            Ok(Some(PoolState { tokens, swap_fee }))
+            Ok(Some(PoolState {
+                tokens,
+                swap_fee,
+                version: Version::V0,
+            }))
         }
         .boxed()
     }
@@ -197,7 +201,14 @@ mod tests {
             pool_state.await.unwrap()
         };
 
-        assert_eq!(pool_state, Some(PoolState { tokens, swap_fee }));
+        assert_eq!(
+            pool_state,
+            Some(PoolState {
+                tokens,
+                swap_fee,
+                version: Version::V0
+            })
+        );
     }
 
     #[tokio::test]

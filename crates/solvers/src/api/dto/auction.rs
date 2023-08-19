@@ -209,6 +209,7 @@ struct WeightedProductPool {
     gas_estimate: U256,
     tokens: HashMap<H160, WeightedProductReserve>,
     fee: BigDecimal,
+    version: WeightedProductVersion,
 }
 
 #[serde_as]
@@ -220,6 +221,13 @@ struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     scaling_factor: U256,
     weight: BigDecimal,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum WeightedProductVersion {
+    V0,
+    V3Plus,
 }
 
 impl WeightedProductPool {
@@ -252,6 +260,10 @@ impl WeightedProductPool {
             state: liquidity::State::WeightedProduct(liquidity::weighted_product::Pool {
                 reserves,
                 fee: conv::decimal_to_rational(&self.fee).ok_or("invalid weighted product fee")?,
+                version: match self.version {
+                    WeightedProductVersion::V0 => liquidity::weighted_product::Version::V0,
+                    WeightedProductVersion::V3Plus => liquidity::weighted_product::Version::V3Plus,
+                },
             }),
         })
     }
