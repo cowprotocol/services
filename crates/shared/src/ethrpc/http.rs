@@ -93,14 +93,21 @@ async fn execute_rpc<T: DeserializeOwned>(
     // Log the raw text before decoding to get more information on responses that
     // aren't valid json. Debug encoding so we don't get control characters like
     // newlines in the output.
-    tracing::trace!(name = %inner.name, %id, body = %text.trim(), "received response");
     if !status.is_success() {
         return Err(Web3Error::Transport(TransportError::Message(format!(
             "HTTP error {status}"
         ))));
     }
 
-    let result = jsonrpc_core::serde_from_str(&text)?;
+    let result = jsonrpc_core::serde_from_str(&text).map_err(|err| {
+        Web3Error::Decoder(format!(
+            "{:?}, raw response: {}, {}, {}",
+            err,
+            inner.name,
+            id,
+            text.trim()
+        ))
+    })?;
     Ok(result)
 }
 
