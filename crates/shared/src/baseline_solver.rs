@@ -106,11 +106,12 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
         |liquidity: &L, in_token: H160, (exact_out_amount, out_token): (U256, H160)| {
             /// Upper bound on number of iterations to find a sufficiently high
             /// sell amount.
-            const MAX_ITERATIONS: usize = 3;
+            const MAX_ITERATIONS: usize = 10000;
 
             let mut in_amount = liquidity.get_amount_in(in_token, (exact_out_amount, out_token))?;
-            for _ in 0..MAX_ITERATIONS {
+            for i in 0..MAX_ITERATIONS {
                 let out_amount = liquidity.get_amount_out(out_token, (in_amount, in_token))?;
+                dbg!("TODONOW", i, in_amount, out_amount);
                 if out_amount >= exact_out_amount {
                     return Some(in_amount);
                 }

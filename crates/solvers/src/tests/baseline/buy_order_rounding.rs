@@ -377,6 +377,122 @@ async fn balancer_weighted_v3plus() {
     );
 }
 
+/// Run with:
+///
+/// ```text
+/// cargo test -p solvers -- --nocapture buy_order_rounding::distant_convergence
+/// ```
+#[tokio::test]
+async fn distant_convergence() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "100"
+                base-tokens = []
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                    "decimals": 18,
+                    "symbol": "xCOW",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                    "decimals": 18,
+                    "symbol": "xGNO",
+                    "referencePrice": null,
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                              2a2a2a2a",
+                    "sellToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                    "buyToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                    "sellAmount": "100000000000000000000000",
+                    "buyAmount": "999999999999999843119",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                }
+            ],
+            "liquidity": [
+                {
+                    "kind": "weightedproduct",
+                    "tokens": {
+                        "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
+                            "balance": "5089632258314443812936111",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        },
+                        "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
+                            "balance": "3043530764763263654069",
+                            "scalingFactor": "1000000000000000000",
+                            "weight": "0.5",
+                        }
+                    },
+                    "fee": "0.005",
+                    "id": "0",
+                    "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
+                    "gasEstimate": "88892",
+                    "version": "v3plus",
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [{
+                "id": 0,
+                "prices": {
+                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "TODO",
+                    "0x9c58bacc331c9aa871afd802db6379a98e80cedb": "TODO"
+                },
+                "trades": [
+                    {
+                        "kind": "fulfillment",
+                        "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a\
+                                    2a2a2a2a",
+                        "executedAmount": "1000000000000000000000"
+                    }
+                ],
+                "interactions": [
+                    {
+                        "kind": "liquidity",
+                        "internalize": false,
+                        "id": "0",
+                        "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
+                        "outputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
+                        "inputAmount": "TODO",
+                        "outputAmount": "TODO"
+                    },
+                ]
+            }]
+        }),
+    );
+}
+
 #[tokio::test]
 async fn same_path() {
     let engine = tests::SolverEngine::new(
