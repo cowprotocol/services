@@ -44,47 +44,55 @@ impl<'a> Solver<'a> {
             max_hops,
         );
 
-        let segments = match request.side {
-            order::Side::Buy => {
-                let (segments, _) = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        let estimate = baseline_solver::estimate_sell_amount(
-                            request.buy.amount,
-                            path,
-                            &self.amms,
-                        )?;
-                        let segments = self.traverse_path(
-                            &estimate.path,
-                            request.sell.token.0,
-                            estimate.value,
-                        )?;
+        let (segments, _) = match request.side {
+            order::Side::Buy => candidates
+                .iter()
+                .filter_map(|path| {
+                    let sell = baseline_solver::estimate_sell_amount(
+                        request.buy.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments =
+                        self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
 
-                        let sell = estimate.value;
-                        let buy = segments
-                            .last()
-                            .map(|segment| segment.output.amount)
-                            .unwrap_or(sell);
+                    let buy = segments.last().map(|segment| segment.output.amount);
+                    if buy.map(|buy| buy >= request.buy.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid buy estimate does not cover order"
+                        );
+                        return None;
+                    }
 
-                        if sell <= request.sell.amount && buy >= request.buy.amount {
-                            Some((segments, sell))
-                        } else {
-                            None
-                        }
-                    })
-                    .min_by_key(|(_, sell)| *sell)?;
-                segments
-            }
-            order::Side::Sell => {
-                let estimate = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        baseline_solver::estimate_buy_amount(request.sell.amount, path, &self.amms)
-                    })
-                    .filter(|estimate| estimate.value >= request.buy.amount)
-                    .max_by_key(|estimate| estimate.value)?;
-                self.traverse_path(&estimate.path, request.sell.token.0, request.sell.amount)?
-            }
+                    (sell.value <= request.sell.amount).then_some((segments, sell))
+                })
+                .min_by_key(|(_, sell)| sell.value)?,
+            order::Side::Sell => candidates
+                .iter()
+                .filter_map(|path| {
+                    let buy = baseline_solver::estimate_buy_amount(
+                        request.sell.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments =
+                        self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
+
+                    let sell = segments.first().map(|segment| segment.input.amount);
+                    if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid sell estimate does not cover order"
+                        );
+                        return None;
+                    }
+
+                    (buy.value >= request.buy.amount).then_some((segments, buy))
+                })
+                .max_by_key(|(_, buy)| buy.value)?,
         };
 
         baseline::Route::new(segments)

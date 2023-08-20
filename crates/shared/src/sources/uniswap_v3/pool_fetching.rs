@@ -132,9 +132,7 @@ impl PoolsCheckpointHandler {
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
-        let registered_pools = graph_api
-            .get_registered_pools(Some(max_pools_to_initialize_cache))
-            .await?;
+        let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
             "initialized registered pools",
@@ -147,10 +145,21 @@ impl PoolsCheckpointHandler {
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 
+        // can't fetch the state of all pools in constructor for performance reasons,
+        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
+        // liquidity
+        registered_pools.pools.sort_unstable_by(|a, b| {
+            a.total_value_locked_eth
+                .partial_cmp(&b.total_value_locked_eth)
+                .unwrap()
+        });
         let pool_ids = registered_pools
             .pools
-            .iter()
+            .clone()
+            .into_iter()
             .map(|pool| pool.id)
+            .rev()
+            .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
         let pools = graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)

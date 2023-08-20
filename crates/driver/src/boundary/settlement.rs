@@ -14,6 +14,7 @@ use {
             liquidity,
         },
         infra::Ethereum,
+        util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, ensure, Context, Result},
     bigdecimal::Signed,
@@ -35,7 +36,6 @@ use {
         signature::EcdsaSignature,
         DomainSeparator,
     },
-    number_conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, TokenAmount},
@@ -213,7 +213,7 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        let gas_price = u256_to_big_rational(&auction.gas_price().effective().into());
+        let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
         let inputs = solver::objective_value::Inputs::from_settlement(
             &self.inner,
             &prices,
@@ -221,7 +221,7 @@ impl Settlement {
             &gas.into(),
         );
         ensure!(!inputs.objective_value().is_negative(), "negative score");
-        let objective_value = big_rational_to_u256(&inputs.objective_value())?;
+        let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
         Ok((objective_value - self.risk.0).into())
     }
 
