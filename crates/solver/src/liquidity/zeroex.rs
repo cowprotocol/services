@@ -49,6 +49,8 @@ impl ZeroExLiquidity {
         let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
         let inner = cache.clone();
 
+        // TODO add a single call using http to get all orders to initialize the cache
+
         tokio::task::spawn(async move {
             loop {
                 // TODO add metric and backoff
@@ -129,9 +131,8 @@ async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>
     while let Some(msg) = socket.next().await {
         let text = msg
             .context("websocket error")?
-            .to_text()
-            .context("conversion error")?
-            .to_owned();
+            .into_text()
+            .context("conversion error")?;
         let records = serde_json::from_str::<OrdersResponse>(&text)
             .with_context(|| format!("deserialization error {}", text))?
             .payload;
