@@ -11,37 +11,97 @@ use {
     },
     anyhow::Result,
     contracts::{GPv2Settlement, IZeroEx},
+    futures::{SinkExt, StreamExt},
     model::{order::OrderKind, TokenPair},
     primitive_types::{H160, U256},
+    reqwest::Url,
     shared::{
         ethrpc::Web3,
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
-        zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi},
+        zeroex_api::{
+            websocket::{OrderRecord, OrdersResponse},
+            Order,
+        },
     },
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
     },
+    tokio::{net::TcpStream, sync::Mutex},
+    tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
 };
 
 pub struct ZeroExLiquidity {
-    pub api: Arc<dyn ZeroExApi>,
     pub zeroex: IZeroEx,
     pub gpv2: GPv2Settlement,
     pub allowance_manager: Box<dyn AllowanceManaging>,
+    // cached orders, updated by background task
+    // key for hashmap is order hash
+    pub cache: Arc<Mutex<HashMap<String, OrderRecord>>>,
 }
 
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
-    pub fn new(web3: Web3, api: Arc<dyn ZeroExApi>, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
+    pub fn new(web3: Web3, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
         let allowance_manager = AllowanceManager::new(web3, gpv2.address());
+        let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
+        let inner = cache.clone();
+        // call background task to update cache
+        tokio::task::spawn(async move {
+            loop {
+                // inside loop to reconnect on error
+                let mut socket: WebSocketStream<MaybeTlsStream<TcpStream>> =
+                    connect_socket().await.unwrap();
+
+                while let Some(msg) = socket.next().await {
+                    let text = match msg {
+                        Ok(msg) => match msg.to_text() {
+                            Ok(text) => text.to_owned(),
+                            Err(err) => {
+                                tracing::debug!(?err, "conversion failed, reconnecting");
+                                break;
+                            }
+                        },
+                        Err(err) => {
+                            tracing::debug!(?err, "websocket error, reconnecting");
+                            break;
+                        }
+                    };
+
+                    let records = match serde_json::from_str::<OrdersResponse>(&text) {
+                        Ok(response) => response.payload,
+                        Err(err) => {
+                            tracing::debug!(?err, text, "deserialization failed, reconnecting");
+                            break;
+                        }
+                    };
+
+                    // update cache
+                    let mut cache = inner.lock().await;
+                    for record in records {
+                        match record.metadata.state {
+                            shared::zeroex_api::websocket::State::Added
+                            | shared::zeroex_api::websocket::State::Updated => {
+                                cache.insert(
+                                    hex::encode(record.metadata.order_hash.clone()),
+                                    record,
+                                );
+                            }
+                            shared::zeroex_api::websocket::State::Expired => {
+                                cache.remove(&hex::encode(record.metadata.order_hash));
+                            }
+                        }
+                    }
+                }
+            }
+        });
         Self {
-            api,
             zeroex,
             gpv2,
             allowance_manager: Box::new(allowance_manager),
+            cache,
         }
     }
 
@@ -86,27 +146,14 @@ impl LiquidityCollecting for ZeroExLiquidity {
         pairs: HashSet<TokenPair>,
         _block: Block,
     ) -> Result<Vec<Liquidity>> {
-        let queries = &[
-            // orders fillable by anyone
-            OrdersQuery::default(),
-            // orders fillable only by our settlement contract
-            OrdersQuery {
-                sender: Some(self.gpv2.address()),
-                ..Default::default()
-            },
-        ];
-
-        let zeroex_orders_results =
-            futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
-        let zeroex_orders = zeroex_orders_results
-            .into_iter()
-            .flat_map(|result| match result {
-                Ok(order_record_vec) => order_record_vec,
-                Err(err) => {
-                    tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
-                    vec![]
-                }
-            });
+        let zeroex_orders = self
+            .cache
+            .lock()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter();
 
         let order_buckets = generate_order_buckets(zeroex_orders, pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
@@ -128,6 +175,29 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
         Ok(zeroex_liquidity_orders)
     }
+}
+
+async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+    let url = Url::parse("wss://api.0x.org/orderbook/v1").unwrap();
+    let mut socket = tokio_tungstenite::connect_async(url).await?.0;
+
+    // Construct the subscription message to fetch all orders
+    let subscription_msg = serde_json::json!({
+        "type": "subscribe",
+        "channel": "orders",
+        "requestId": "example-request-id",
+        "payload": {
+            "snapshot": true,
+        }
+    });
+
+    socket
+        .send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+            subscription_msg.to_string(),
+        ))
+        .await?;
+
+    Ok(socket)
 }
 
 fn generate_order_buckets(
@@ -220,7 +290,7 @@ pub mod tests {
             baseline_solver::BaseTokens,
             http_solver::model::InternalizationStrategy,
             interaction::Interaction,
-            zeroex_api::OrderMetadata,
+            zeroex_api::websocket::OrderMetadata,
         },
     };
 

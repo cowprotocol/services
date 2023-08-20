@@ -575,6 +575,70 @@ impl Metrics {
     }
 }
 
+pub mod websocket {
+    use super::*;
+
+    #[serde_as]
+    #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
+    #[derivative(Default)]
+    #[serde(rename_all = "UPPERCASE")]
+    pub enum State {
+        #[derivative(Default)]
+        Added,
+        Updated,
+        Expired,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
+    #[derivative(Default)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OrderMetadata {
+        #[serde(with = "model::bytes_hex")]
+        pub order_hash: Vec<u8>,
+        #[serde_as(as = "DisplayFromStr")]
+        pub remaining_fillable_taker_amount: u128,
+        pub state: State,
+    }
+
+    #[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
+    pub struct OrderRecord {
+        #[serde(rename = "metaData")]
+        pub metadata: OrderMetadata,
+        pub order: Order,
+    }
+
+    impl OrderRecord {
+        /// Scales the `maker_amount` according to how much of the partially
+        /// fillable amount was already used.
+        pub fn remaining_maker_amount(&self) -> Result<u128> {
+            if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
+                anyhow::bail!("remaining taker amount bigger than total taker amount");
+            }
+
+            // all numbers are at most u128::MAX so none of these operations can overflow
+            let scaled_maker_amount = U256::from(self.order.maker_amount)
+                * U256::from(self.metadata.remaining_fillable_taker_amount)
+                / U256::from(self.order.taker_amount);
+
+            // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
+            // in an u128
+            Ok(scaled_maker_amount.as_u128())
+        }
+    }
+
+    /// A Ox API `orders` response.
+    #[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct OrdersResponse {
+        #[serde(rename = "type")]
+        pub _type: String,
+        pub channel: String,
+        pub payload: Vec<OrderRecord>,
+        pub request_id: String,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -887,7 +951,13 @@ mod tests {
             if msg.is_text() {
                 let _text = msg.to_text().unwrap();
                 counter += 1;
-                println!("Received message, orders counter: {}", counter);
+                println!("Received message {}", _text);
+                let records = serde_json::from_str::<websocket::OrdersResponse>(_text)
+                    .unwrap()
+                    .payload;
+                if counter == 30 {
+                    break;
+                }
                 // You can parse and process the message JSON here to extract
                 // the orders
             }

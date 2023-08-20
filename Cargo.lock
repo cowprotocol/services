@@ -4084,6 +4084,7 @@ dependencies = [
  "testlib",
  "thiserror",
  "tokio",
+ "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
  "web3",
