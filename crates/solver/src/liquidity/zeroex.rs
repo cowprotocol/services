@@ -95,6 +95,9 @@ impl ZeroExLiquidity {
                         }
                     }
                 }
+
+                // wait 1s before reconnecting
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             }
         });
         Self {
