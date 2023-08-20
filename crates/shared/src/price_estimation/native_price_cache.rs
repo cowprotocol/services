@@ -1,4 +1,5 @@
 use {
+    super::PriceEstimationError,
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
     futures::stream::StreamExt,
     itertools::{Either, Itertools},
@@ -41,7 +42,7 @@ impl Metrics {
 pub struct CachingNativePriceEstimator(Arc<Inner>);
 
 struct Inner {
-    cache: Mutex<HashMap<H160, CachedPrice>>,
+    cache: Mutex<HashMap<H160, CachedResult>>,
     high_priority: Mutex<HashSet<H160>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
@@ -56,8 +57,8 @@ struct UpdateTask {
 }
 
 #[derive(Debug, Clone)]
-struct CachedPrice {
-    price: f64,
+struct CachedResult {
+    result: Result<f64, PriceEstimationError>,
     updated_at: Instant,
     requested_at: Instant,
 }
@@ -67,16 +68,16 @@ impl Inner {
     fn get_cached_price(
         token: &H160,
         now: Instant,
-        cache: &mut MutexGuard<HashMap<H160, CachedPrice>>,
+        cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
-    ) -> Option<f64> {
+    ) -> Option<Result<f64, PriceEstimationError>> {
         match cache.entry(*token) {
             Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.requested_at = now;
                 let is_recent = now.saturating_duration_since(entry.updated_at) < *max_age;
-                is_recent.then_some(entry.price)
+                is_recent.then_some(entry.result.clone())
             }
             Entry::Vacant(entry) => {
                 if create_missing_entry {
@@ -85,8 +86,8 @@ impl Inner {
                     // This should happen only for prices missing while building the auction.
                     // Otherwise malicious actors could easily cause the cache size to blow up.
                     let outdated_timestamp = now.checked_sub(*max_age).unwrap();
-                    entry.insert(CachedPrice {
-                        price: 0.,
+                    entry.insert(CachedResult {
+                        result: Ok(0.),
                         updated_at: outdated_timestamp,
                         requested_at: now,
                     });
@@ -102,7 +103,7 @@ impl Inner {
         tokens: &[H160],
         max_age: &Duration,
         create_missing_entry: bool,
-    ) -> (Vec<(usize, f64)>, Vec<usize>) {
+    ) -> (Vec<(usize, Result<f64, PriceEstimationError>)>, Vec<usize>) {
         if tokens.is_empty() {
             return Default::default();
         }
@@ -138,7 +139,7 @@ impl Inner {
                     let mut cache = self.cache.lock().unwrap();
                     let price = Self::get_cached_price(token, now, &mut cache, &max_age, false);
                     if let Some(price) = price {
-                        return (index, Ok(price));
+                        return (index, price);
                     }
                 }
 
@@ -151,13 +152,13 @@ impl Inner {
                     .expect("stream yields exactly 1 item");
 
                 // update price in cache
-                if let Ok(price) = result {
+                if should_cache(&result) {
                     let now = Instant::now();
                     let mut cache = self.cache.lock().unwrap();
                     cache.insert(
                         *token,
-                        CachedPrice {
-                            price,
+                        CachedResult {
+                            result: result.clone(),
                             updated_at: now,
                             requested_at: now,
                         },
@@ -190,6 +191,19 @@ impl Inner {
             )
         });
         outdated
+    }
+}
+
+fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
+    // We don't want to cache errors that we consider transient
+    match result {
+        Ok(_) => true,
+        Err(PriceEstimationError::NoLiquidity) => true,
+        Err(PriceEstimationError::ZeroAmount) => true,
+        Err(PriceEstimationError::UnsupportedToken { .. }) => true,
+        Err(PriceEstimationError::UnsupportedOrderType) => true,
+        Err(PriceEstimationError::Other(_)) => false,
+        Err(PriceEstimationError::RateLimited) => false,
     }
 }
 
@@ -277,7 +291,10 @@ impl CachingNativePriceEstimator {
     /// Only returns prices that are currently cached. Missing prices will get
     /// prioritized to get fetched during the next cycles of the maintenance
     /// background task.
-    pub fn get_cached_prices(&self, tokens: &[H160]) -> HashMap<H160, f64> {
+    pub fn get_cached_prices(
+        &self,
+        tokens: &[H160],
+    ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
         let (cached_prices, missing_indices) =
             self.0.get_cached_prices(tokens, &self.0.max_age, true);
         Metrics::get()
@@ -286,7 +303,7 @@ impl CachingNativePriceEstimator {
             .inc_by(missing_indices.len() as u64);
         let result = cached_prices
             .iter()
-            .map(|(index, price)| (tokens[*index], *price))
+            .map(|(index, price)| (tokens[*index], price.clone()))
             .collect();
         result
     }
@@ -315,7 +332,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 .inc_by(cached_prices.len() as u64);
 
             for (index, price) in cached_prices {
-                yield (index, Ok(price));
+                yield (index, price);
             }
 
             if missing_indices.is_empty() {
@@ -378,11 +395,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn does_not_cache_failed_estimates() {
+    async fn caches_nonrecoverable_failed_estimates() {
         let mut inner = MockNativePriceEstimating::new();
         inner
             .expect_estimate_native_prices()
-            .times(10)
+            .times(1)
             .returning(move |tokens| {
                 assert_eq!(tokens.len(), 1);
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))]).boxed()
@@ -404,6 +421,37 @@ mod tests {
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::NoLiquidity
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn does_not_cache_recoverable_failed_estimates() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_prices()
+            .times(10)
+            .returning(move |tokens| {
+                assert_eq!(tokens.len(), 1);
+                futures::stream::iter([(0, Err(PriceEstimationError::RateLimited))]).boxed()
+            });
+
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Default::default(),
+            None,
+            Default::default(),
+            1,
+        );
+
+        for _ in 0..10 {
+            let tokens = &[token(0)];
+            let mut stream = estimator.estimate_native_prices(tokens);
+            let (_, result) = stream.next().await.unwrap();
+            assert!(matches!(
+                result.as_ref().unwrap_err(),
+                PriceEstimationError::RateLimited
             ));
         }
     }
@@ -605,16 +653,16 @@ mod tests {
                 [
                     (
                         t0,
-                        CachedPrice {
-                            price: 0.,
+                        CachedResult {
+                            result: Ok(0.),
                             updated_at: now,
                             requested_at: now,
                         },
                     ),
                     (
                         t1,
-                        CachedPrice {
-                            price: 0.,
+                        CachedResult {
+                            result: Ok(0.),
                             updated_at: now,
                             requested_at: now,
                         },
