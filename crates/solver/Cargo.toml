@@ -52,7 +52,7 @@ shared = { path = "../shared" }
 strum = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
-tokio-tungstenite = { version = "0.14", features = ["native-tls"] }
+tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 web3 = { workspace = true }
 

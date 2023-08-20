@@ -50,7 +50,6 @@ thiserror = { workspace = true }
 time = { version = "0.3", features = ["macros"] }
 tokio = { workspace = true, features = ["macros", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-tungstenite = { version = "0.14", features = ["native-tls"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
 url = { workspace = true }

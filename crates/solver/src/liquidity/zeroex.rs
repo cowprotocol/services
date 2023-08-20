@@ -488,7 +488,7 @@ pub mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    //#[ignore]
     async fn connect_and_update_cache_test() {
         let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
         let inner = cache.clone();

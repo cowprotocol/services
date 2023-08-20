@@ -645,8 +645,6 @@ mod tests {
         super::*,
         crate::addr,
         chrono::{DateTime, NaiveDate},
-        futures::SinkExt,
-        tokio_stream::StreamExt,
     };
 
     #[tokio::test]
@@ -917,47 +915,5 @@ mod tests {
                 .remaining_maker_amount()
                 .unwrap()
         );
-    }
-
-    #[tokio::test]
-    async fn websocket_test() {
-        let url = Url::parse("wss://api.0x.org/orderbook/v1").unwrap();
-        let mut socket = tokio_tungstenite::connect_async(url)
-            .await
-            .expect("Failed to connect")
-            .0;
-        println!("WebSocket handshake has been successfully completed");
-
-        // Construct the subscription message to fetch all orders
-        let subscription_msg = serde_json::json!({
-            "type": "subscribe",
-            "channel": "orders",
-            "requestId": "cowswap-request-id",
-        });
-
-        socket
-            .send(tokio_tungstenite::tungstenite::protocol::Message::Text(
-                subscription_msg.to_string(),
-            ))
-            .await
-            .unwrap();
-
-        let mut counter = 0;
-        while let Some(msg) = socket.next().await {
-            let msg = msg.unwrap();
-            if msg.is_text() {
-                let _text = msg.to_text().unwrap();
-                counter += 1;
-                println!("Received message {}", _text);
-                let _records = serde_json::from_str::<websocket::OrdersResponse>(_text)
-                    .unwrap()
-                    .payload;
-                if counter == 30 {
-                    break;
-                }
-                // You can parse and process the message JSON here to extract
-                // the orders
-            }
-        }
     }
 }
