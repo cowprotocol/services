@@ -627,6 +627,21 @@ pub mod websocket {
         }
     }
 
+    impl From<super::OrderRecord> for OrderRecord {
+        fn from(order_record: super::OrderRecord) -> Self {
+            Self {
+                metadata: OrderMetadata {
+                    order_hash: order_record.metadata.order_hash,
+                    remaining_fillable_taker_amount: order_record
+                        .metadata
+                        .remaining_fillable_taker_amount,
+                    state: Default::default(),
+                },
+                order: order_record.order,
+            }
+        }
+    }
+
     /// A Ox API `orders` response.
     #[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
     #[serde(rename_all = "camelCase")]

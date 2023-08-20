@@ -11,6 +11,7 @@ use {
     },
     anyhow::{Context, Result},
     contracts::{GPv2Settlement, IZeroEx},
+    ethcontract::Address,
     futures::{SinkExt, StreamExt},
     model::{order::OrderKind, TokenPair},
     primitive_types::{H160, U256},
@@ -22,6 +23,8 @@ use {
         zeroex_api::{
             websocket::{OrderRecord, OrdersResponse},
             Order,
+            OrdersQuery,
+            ZeroExApi,
         },
     },
     std::{
@@ -44,15 +47,20 @@ pub struct ZeroExLiquidity {
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
-    pub fn new(web3: Web3, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
+    pub fn new(web3: Web3, api: Arc<dyn ZeroExApi>, zeroex: IZeroEx, gpv2: GPv2Settlement) -> Self {
         let allowance_manager = AllowanceManager::new(web3, gpv2.address());
         let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
         let inner = cache.clone();
-
-        // TODO add a single call using http to get all orders to initialize the cache
+        let api = api.clone();
+        let sender = gpv2.address();
 
         tokio::task::spawn(async move {
+            // initialize cache by fetching all existing orders via http api
+            init_cache(api, inner.clone(), sender).await;
+
             loop {
+                // from now on, rely on websocket connection to do incremental updates
+
                 // TODO add metric and backoff
 
                 if let Err(err) = connect_and_update_cache(inner.clone()).await {
@@ -105,6 +113,42 @@ impl ZeroExLiquidity {
     }
 }
 
+/// Calls the 0x API to get all orders and initializes the cache with them.
+async fn init_cache(
+    api: Arc<dyn ZeroExApi>,
+    cache: Arc<Mutex<HashMap<String, OrderRecord>>>,
+    sender: Address,
+) {
+    let queries = &[
+        // orders fillable by anyone
+        OrdersQuery::default(),
+        // orders fillable only by our settlement contract
+        OrdersQuery {
+            sender: Some(sender),
+            ..Default::default()
+        },
+    ];
+
+    let zeroex_orders_results =
+        futures::future::join_all(queries.iter().map(|query| api.get_orders(query))).await;
+    let zeroex_orders = zeroex_orders_results
+        .into_iter()
+        .flat_map(|result| match result {
+            Ok(order_record_vec) => order_record_vec,
+            Err(err) => {
+                tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
+                vec![]
+            }
+        });
+
+    let mut cache = cache.lock().await;
+    cache
+        .extend(zeroex_orders.map(|order| (hex::encode(&order.metadata.order_hash), order.into())));
+}
+
+/// Creates a websocket connection to 0x and subscribes to orderbook updates.
+/// Once this function is done, the websocket is open and ready to receive
+/// messages.
 async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let url = Url::parse("wss://api.0x.org/orderbook/v1")?;
     let mut socket = tokio_tungstenite::connect_async(url).await?.0;
@@ -125,6 +169,9 @@ async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> 
     Ok(socket)
 }
 
+/// Creates a websocket connection and reads the messages from it.
+/// The messages are then used to update the cache.
+/// If the connection is lost, calling again this function will reconnect.
 async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>>) -> Result<()> {
     let mut socket = connect_socket().await.unwrap();
 

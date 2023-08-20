@@ -394,6 +394,7 @@ pub async fn run(args: Arguments) {
     if baseline_sources.contains(&BaselineSource::ZeroEx) {
         liquidity_sources.push(Box::new(ZeroExLiquidity::new(
             web3.clone(),
+            zeroex_api.clone(),
             contracts::IZeroEx::deployed(&web3).await.unwrap(),
             settlement_contract.clone(),
         )));
