@@ -40,8 +40,9 @@ mod tests {
     use {
         super::*,
         contracts::IUniswapLikeRouter,
+        ethrpc::dummy,
         hex_literal::hex,
-        shared::{dummy_contract, ethrpc::dummy},
+        shared::dummy_contract,
     };
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {

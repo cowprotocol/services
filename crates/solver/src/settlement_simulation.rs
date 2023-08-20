@@ -9,6 +9,7 @@ use {
         transaction::TransactionBuilder,
         Account,
     },
+    ethrpc::Web3,
     futures::FutureExt,
     gas_estimation::GasPrice1559,
     itertools::Itertools,
@@ -16,7 +17,6 @@ use {
     shared::{
         conversions::into_gas_price,
         encoded_settlement::EncodedSettlement,
-        ethrpc::Web3,
         tenderly_api::{SimulationRequest, TenderlyApi},
     },
     web3::types::{AccessList, BlockId},
@@ -182,7 +182,7 @@ pub fn settle_method_builder(
 
 /// The call data of a settle call with this settlement.
 pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&shared::ethrpc::dummy::web3(), H160::default());
+    let contract = GPv2Settlement::at(&ethrpc::dummy::web3(), H160::default());
     let method = contract.settle(
         settlement.tokens,
         settlement.clearing_prices,

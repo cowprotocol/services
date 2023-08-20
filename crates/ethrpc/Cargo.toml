@@ -1,0 +1,69 @@
+[package]
+name = "ethrpc"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "ethrpc"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+async-trait = "0.1"
+# axum = "0.6"
+# bigdecimal = "0.3"
+# chrono = { version = "0.4", features = ["clock"], default-features = false }
+# ethabi = "18.0"
+ethereum-types = "0.14"
+futures = "0.3"
+global-metrics = { path = "../global-metrics" }
+hex = "0.4"
+hex-literal = "0.4"
+# hyper = "0.14"
+# indexmap = { version = "2", features = ["serde"] }
+# itertools = "0.11"
+lazy_static = { workspace = true }
+mockall = { workspace = true }
+# num = "0.4"
+prometheus = "0.13"
+prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+# rand = "0.8"
+reqwest = "0.11"
+scopeguard = "1"
+serde = "1.0"
+serde_json = "1.0"
+# serde_with = "3.0"
+# tap = "1.0.1"
+# tempfile = "3.4"
+# thiserror = "1.0"
+tokio = { version = "1.22", features = ["macros", "rt-multi-thread", "signal", "time"] }
+# toml = "0.7"
+# tower = "0.4"
+# tower-http = { version = "0.4", features = ["limit", "trace"] }
+# url = { version = "2.3", features = ["serde"] }
+web3 = "0.19"
+
+# # These still use { workspace = true } because they're used at
+# # the boundary between driver and shared.
+# primitive-types = { workspace = true }
+# secp256k1 = { workspace = true }
+
+# # TODO These either need to be removed or changed to be direct
+# # dependencies rather than workspace dependencies
+# anyhow = { workspace = true }
+clap = { workspace = true }
+contracts = { path = "../contracts" }
+ethcontract = { workspace = true }
+# gas-estimation = { workspace = true }
+# model = { path = "../model" }
+# shared = { path = "../shared" }
+# solver = { path = "../solver" }
+tracing = { workspace = true }
+# warp = { workspace = true }
+
+[dev-dependencies]
+maplit = { workspace = true }
+# tokio = { workspace = true, features = ["test-util"] }
+testlib = { path = "../testlib" }

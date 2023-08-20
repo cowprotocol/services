@@ -7,10 +7,10 @@ use {
     anyhow::{anyhow, bail, ensure, Context as _, Result},
     contracts::ERC20,
     ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256},
+    ethrpc::Web3,
     maplit::hashmap,
     shared::{
         dummy_contract,
-        ethrpc::Web3,
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
     },
@@ -248,9 +248,10 @@ mod tests {
             web3::types::CallRequest,
             Bytes,
         },
+        ethrpc::mock,
         maplit::{hashmap, hashset},
         serde_json::{json, Value},
-        shared::{addr, ethrpc::mock},
+        shared::addr,
     };
 
     #[test]

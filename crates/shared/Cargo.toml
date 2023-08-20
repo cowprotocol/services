@@ -23,6 +23,7 @@ database = { path = "../database" }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethcontract-mock = { workspace = true }
+ethrpc = { path = "../ethrpc"}
 flate2 = "1"
 futures = { workspace = true }
 gas-estimation = { workspace = true }
@@ -40,7 +41,6 @@ primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
-scopeguard = "1"
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
