@@ -481,8 +481,8 @@ impl<'a> Submitter<'a> {
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
                     tracing::debug!(
-                        ?gas_price,
-                        ?replacement_price,
+                        %gas_price,
+                        %replacement_price,
                         sleep = ?params.retry_interval,
                         "keep waiting for gas price to increase enough"
                     );
@@ -491,13 +491,8 @@ impl<'a> Submitter<'a> {
                 }
             }
 
-            tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas \
-                 estimate {}",
-                gas_price.base_fee_per_gas,
-                gas_price.max_fee_per_gas,
-                gas_price.max_priority_fee_per_gas,
-                params.gas_estimate,
+            tracing::debug!(%gas_price, gas_estimate=%params.gas_estimate,
+                "creating transaction with gas price"
             );
 
             // execute transaction
