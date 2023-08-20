@@ -949,7 +949,7 @@ mod tests {
                 let _text = msg.to_text().unwrap();
                 counter += 1;
                 println!("Received message {}", _text);
-                let records = serde_json::from_str::<websocket::OrdersResponse>(_text)
+                let _records = serde_json::from_str::<websocket::OrdersResponse>(_text)
                     .unwrap()
                     .payload;
                 if counter == 30 {

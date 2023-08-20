@@ -48,54 +48,12 @@ impl ZeroExLiquidity {
         let allowance_manager = AllowanceManager::new(web3, gpv2.address());
         let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
         let inner = cache.clone();
-        // call background task to update cache
+
         tokio::task::spawn(async move {
             loop {
-                // inside loop to reconnect on error
-                let mut socket = connect_socket().await.unwrap();
+                connect_and_update_cache(inner.clone()).await;
 
-                while let Some(msg) = socket.next().await {
-                    let text = match msg {
-                        Ok(msg) => match msg.to_text() {
-                            Ok(text) => text.to_owned(),
-                            Err(err) => {
-                                tracing::debug!(?err, "conversion failed, reconnecting");
-                                break;
-                            }
-                        },
-                        Err(err) => {
-                            tracing::debug!(?err, "websocket error, reconnecting");
-                            break;
-                        }
-                    };
-
-                    let records = match serde_json::from_str::<OrdersResponse>(&text) {
-                        Ok(response) => response.payload,
-                        Err(err) => {
-                            tracing::debug!(?err, text, "deserialization failed, reconnecting");
-                            break;
-                        }
-                    };
-
-                    // update cache
-                    let mut cache = inner.lock().await;
-                    for record in records {
-                        match record.metadata.state {
-                            shared::zeroex_api::websocket::State::Added
-                            | shared::zeroex_api::websocket::State::Updated => {
-                                cache.insert(
-                                    hex::encode(record.metadata.order_hash.clone()),
-                                    record,
-                                );
-                            }
-                            shared::zeroex_api::websocket::State::Expired => {
-                                cache.remove(&hex::encode(record.metadata.order_hash));
-                            }
-                        }
-                    }
-                }
-
-                // wait 1s before reconnecting
+                // wait 3s before reconnecting
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             }
         });
@@ -141,6 +99,67 @@ impl ZeroExLiquidity {
     }
 }
 
+async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
+    let url = Url::parse("wss://api.0x.org/orderbook/v1")?;
+    let mut socket = tokio_tungstenite::connect_async(url).await?.0;
+
+    // Construct the subscription message to fetch all orders
+    let subscription_msg = serde_json::json!({
+        "type": "subscribe",
+        "channel": "orders",
+        "requestId": "cowswap-request-id",
+    });
+
+    socket
+        .send(tokio_tungstenite::tungstenite::protocol::Message::Text(
+            subscription_msg.to_string(),
+        ))
+        .await?;
+
+    Ok(socket)
+}
+
+async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>>) {
+    let mut socket = connect_socket().await.unwrap();
+
+    while let Some(msg) = socket.next().await {
+        let text = match msg {
+            Ok(msg) => match msg.to_text() {
+                Ok(text) => text.to_owned(),
+                Err(err) => {
+                    tracing::debug!(?err, "conversion failed, reconnecting");
+                    return;
+                }
+            },
+            Err(err) => {
+                tracing::debug!(?err, "websocket error, reconnecting");
+                return;
+            }
+        };
+
+        let records = match serde_json::from_str::<OrdersResponse>(&text) {
+            Ok(response) => response.payload,
+            Err(err) => {
+                tracing::debug!(?err, text, "deserialization failed, reconnecting");
+                return;
+            }
+        };
+
+        let mut cache = cache.lock().await;
+        for record in records {
+            match record.metadata.state {
+                shared::zeroex_api::websocket::State::Added
+                | shared::zeroex_api::websocket::State::Updated => {
+                    cache.insert(hex::encode(record.metadata.order_hash.clone()), record);
+                }
+                shared::zeroex_api::websocket::State::Expired => {
+                    cache.remove(&hex::encode(record.metadata.order_hash));
+                }
+            }
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl LiquidityCollecting for ZeroExLiquidity {
     async fn get_liquidity(
@@ -177,26 +196,6 @@ impl LiquidityCollecting for ZeroExLiquidity {
 
         Ok(zeroex_liquidity_orders)
     }
-}
-
-async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-    let url = Url::parse("wss://api.0x.org/orderbook/v1").unwrap();
-    let mut socket = tokio_tungstenite::connect_async(url).await?.0;
-
-    // Construct the subscription message to fetch all orders
-    let subscription_msg = serde_json::json!({
-        "type": "subscribe",
-        "channel": "orders",
-        "requestId": "cowswap-request-id",
-    });
-
-    socket
-        .send(tokio_tungstenite::tungstenite::protocol::Message::Text(
-            subscription_msg.to_string(),
-        ))
-        .await?;
-
-    Ok(socket)
 }
 
 fn generate_order_buckets(
@@ -291,6 +290,7 @@ pub mod tests {
             interaction::Interaction,
             zeroex_api::websocket::OrderMetadata,
         },
+        std::time::Duration,
     };
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
@@ -492,5 +492,35 @@ pub mod tests {
             .encode(),]
             .concat(),
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn connect_and_update_cache_test() {
+        let cache: Arc<Mutex<HashMap<String, OrderRecord>>> = Default::default();
+        let inner = cache.clone();
+
+        tokio::task::spawn(async move {
+            loop {
+                connect_and_update_cache(inner.clone()).await;
+
+                // wait 3s before reconnecting
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
+        });
+
+        // read cache
+        loop {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+
+            let cache_size = {
+                let cache = cache.lock().await;
+                cache.len()
+            };
+            println!("reader size: {}", cache_size);
+            if cache_size > 100 {
+                break;
+            }
+        }
     }
 }
