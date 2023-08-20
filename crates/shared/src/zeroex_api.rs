@@ -585,6 +585,7 @@ pub mod websocket {
     pub enum State {
         #[derivative(Default)]
         Added,
+        Fillable,
         Updated,
         Expired,
     }
