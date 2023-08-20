@@ -491,10 +491,8 @@ impl<'a> Submitter<'a> {
                 }
             }
 
-            tracing::debug!(
-                "creating transaction with gas price={}, gas estimate={}",
-                gas_price,
-                params.gas_estimate,
+            tracing::debug!(%gas_price, gas_estimate=%params.gas_estimate,
+                "creating transaction with gas price"
             );
 
             // execute transaction
