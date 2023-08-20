@@ -9,7 +9,7 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    anyhow::Result,
+    anyhow::{Context, Result},
     contracts::{GPv2Settlement, IZeroEx},
     futures::{SinkExt, StreamExt},
     model::{order::OrderKind, TokenPair},
@@ -51,7 +51,11 @@ impl ZeroExLiquidity {
 
         tokio::task::spawn(async move {
             loop {
-                connect_and_update_cache(inner.clone()).await;
+                // TODO add metric and backoff
+
+                if let Err(err) = connect_and_update_cache(inner.clone()).await {
+                    tracing::debug!("Error updating 0x cache: {:?}, reconnecting...", err);
+                }
 
                 // wait 3s before reconnecting
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
@@ -119,31 +123,18 @@ async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> 
     Ok(socket)
 }
 
-async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>>) {
+async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>>) -> Result<()> {
     let mut socket = connect_socket().await.unwrap();
 
     while let Some(msg) = socket.next().await {
-        let text = match msg {
-            Ok(msg) => match msg.to_text() {
-                Ok(text) => text.to_owned(),
-                Err(err) => {
-                    tracing::debug!(?err, "conversion failed, reconnecting");
-                    return;
-                }
-            },
-            Err(err) => {
-                tracing::debug!(?err, "websocket error, reconnecting");
-                return;
-            }
-        };
-
-        let records = match serde_json::from_str::<OrdersResponse>(&text) {
-            Ok(response) => response.payload,
-            Err(err) => {
-                tracing::debug!(?err, text, "deserialization failed, reconnecting");
-                return;
-            }
-        };
+        let text = msg
+            .context("websocket error")?
+            .to_text()
+            .context("conversion error")?
+            .to_owned();
+        let records = serde_json::from_str::<OrdersResponse>(&text)
+            .with_context(|| format!("deserialization error {}", text))?
+            .payload;
 
         let mut cache = cache.lock().await;
         for record in records {
@@ -158,6 +149,8 @@ async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<String, OrderRecord>>
             }
         }
     }
+
+    Ok(())
 }
 
 #[async_trait::async_trait]
@@ -502,7 +495,7 @@ pub mod tests {
 
         tokio::task::spawn(async move {
             loop {
-                connect_and_update_cache(inner.clone()).await;
+                let _ = connect_and_update_cache(inner.clone()).await;
 
                 // wait 3s before reconnecting
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
