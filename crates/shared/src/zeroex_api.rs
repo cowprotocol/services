@@ -932,10 +932,7 @@ mod tests {
         let subscription_msg = serde_json::json!({
             "type": "subscribe",
             "channel": "orders",
-            "requestId": "example-request-id",
-            "payload": {
-                "snapshot": true,
-            }
+            "requestId": "cowswap-request-id",
         });
 
         socket

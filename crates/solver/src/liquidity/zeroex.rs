@@ -52,8 +52,7 @@ impl ZeroExLiquidity {
         tokio::task::spawn(async move {
             loop {
                 // inside loop to reconnect on error
-                let mut socket: WebSocketStream<MaybeTlsStream<TcpStream>> =
-                    connect_socket().await.unwrap();
+                let mut socket = connect_socket().await.unwrap();
 
                 while let Some(msg) = socket.next().await {
                     let text = match msg {
@@ -188,10 +187,7 @@ async fn connect_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> 
     let subscription_msg = serde_json::json!({
         "type": "subscribe",
         "channel": "orders",
-        "requestId": "example-request-id",
-        "payload": {
-            "snapshot": true,
-        }
+        "requestId": "cowswap-request-id",
     });
 
     socket
