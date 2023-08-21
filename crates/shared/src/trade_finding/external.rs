@@ -121,6 +121,7 @@ impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
+            "DeadlineExceeded" => Self::DeadlineExceeded,
             _ => Self::Other(anyhow!("{}", value.description)),
         }
     }
