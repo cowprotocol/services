@@ -55,7 +55,7 @@ use {
     model::TokenPair,
     reqwest::Client,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
     },
 };
@@ -79,7 +79,7 @@ pub struct CommonPoolState {
 #[derive(Clone, Debug)]
 pub struct WeightedPool {
     pub common: CommonPoolState,
-    pub reserves: HashMap<H160, WeightedTokenState>,
+    pub reserves: BTreeMap<H160, WeightedTokenState>,
     pub version: WeightedPoolVersion,
 }
 
@@ -101,7 +101,7 @@ impl WeightedPool {
 #[derive(Clone, Debug)]
 pub struct StablePool {
     pub common: CommonPoolState,
-    pub reserves: HashMap<H160, TokenState>,
+    pub reserves: BTreeMap<H160, TokenState>,
     pub amplification_parameter: AmplificationParameter,
 }
 

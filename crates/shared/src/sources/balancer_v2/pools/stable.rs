@@ -42,7 +42,7 @@ pub struct PoolState {
     pub amplification_parameter: AmplificationParameter,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmplificationParameter {
     factor: U256,
     precision: U256,
@@ -55,8 +55,8 @@ impl AmplificationParameter {
     }
 
     /// This is the format used to pass into smart contracts.
-    pub fn as_u256(&self) -> U256 {
-        self.factor * self.precision
+    pub fn with_base(&self, base: U256) -> Option<U256> {
+        Some(self.factor.checked_mul(base)?.checked_mul(base)? / self.precision)
     }
 
     /// This is the format used to pass along to HTTP solver.
@@ -235,8 +235,9 @@ mod tests {
         assert_eq!(
             AmplificationParameter::new(2.into(), 3.into())
                 .unwrap()
-                .as_u256(),
-            6.into()
+                .with_base(1000.into())
+                .unwrap(),
+            666666.into()
         );
         assert_eq!(
             AmplificationParameter::new(7.into(), 8.into())

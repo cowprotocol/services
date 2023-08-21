@@ -3,6 +3,7 @@ use {
         baseline_solver::BaselineSolvable,
         sources::balancer_v2::{
             pool_fetching::{
+                AmplificationParameter,
                 StablePool,
                 TokenState,
                 WeightedPool,
@@ -15,7 +16,7 @@ use {
     error::Error,
     ethcontract::{H160, U256},
     fixed_point::Bfp,
-    std::{cmp, collections::HashMap},
+    std::{cmp, collections::BTreeMap},
 };
 
 mod error;
@@ -85,7 +86,7 @@ impl TokenState {
 /// amounts.
 #[derive(Debug)]
 pub struct WeightedPoolRef<'a> {
-    pub reserves: &'a HashMap<H160, WeightedTokenState>,
+    pub reserves: &'a BTreeMap<H160, WeightedTokenState>,
     pub swap_fee: Bfp,
     pub version: WeightedPoolVersion,
 }
@@ -156,9 +157,9 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 /// Stable pool data as a reference used for computing input and output amounts.
 #[derive(Debug)]
 pub struct StablePoolRef<'a> {
-    pub reserves: &'a HashMap<H160, TokenState>,
+    pub reserves: &'a BTreeMap<H160, TokenState>,
     pub swap_fee: Bfp,
-    pub amplification_parameter: U256,
+    pub amplification_parameter: AmplificationParameter,
 }
 
 #[derive(Debug)]
@@ -169,15 +170,6 @@ struct BalancesWithIndices {
 }
 
 impl StablePoolRef<'_> {
-    // TODO - https://github.com/gnosis/gp-v2-services/pull/1225#discussion_r739033527
-    // Based on this discussion, it remains to verify that the non-deterministic
-    // ordering of the Balance array returned by this method cannot give rise to
-    // any undesired rounding/precision errors in the functions which operate on
-    // this. Specifically, the internal methods
-    // - calculate_invariant and
-    // - get_token_balance_given_invariant_and_all_other_balances
-    // which perform balancer-arithmetic on the balances array from inside
-    // calc_X_given_Y See issue for this task here: https://github.com/cowprotocol/services/issues/100
     fn upscale_balances_with_token_indices(
         &self,
         in_token: &H160,
@@ -200,6 +192,11 @@ impl StablePoolRef<'_> {
             balances,
         })
     }
+
+    fn amplification_parameter_u256(&self) -> Option<U256> {
+        self.amplification_parameter
+            .with_base(*stable_math::AMP_PRECISION)
+    }
 }
 
 impl BaselineSolvable for StablePoolRef<'_> {
@@ -218,7 +215,7 @@ impl BaselineSolvable for StablePoolRef<'_> {
         } = self.upscale_balances_with_token_indices(&in_token, &out_token)?;
         let in_amount_minus_fees = subtract_swap_fee_amount(in_amount, self.swap_fee).ok()?;
         let out_amount = stable_math::calc_out_given_in(
-            self.amplification_parameter,
+            self.amplification_parameter_u256()?,
             balances.as_mut_slice(),
             token_index_in,
             token_index_out,
@@ -239,7 +236,7 @@ impl BaselineSolvable for StablePoolRef<'_> {
             mut balances,
         } = self.upscale_balances_with_token_indices(&in_token, &out_token)?;
         let in_amount = stable_math::calc_in_given_out(
-            self.amplification_parameter,
+            self.amplification_parameter_u256()?,
             balances.as_mut_slice(),
             token_index_in,
             token_index_out,
@@ -337,7 +334,7 @@ impl StablePool {
         StablePoolRef {
             reserves: &self.reserves,
             swap_fee: self.common.swap_fee,
-            amplification_parameter: self.amplification_parameter.as_u256(),
+            amplification_parameter: self.amplification_parameter,
         }
     }
 }
@@ -364,7 +361,6 @@ mod tests {
             pool_fetching::{AmplificationParameter, CommonPoolState},
             pools::common::scaling_exponent_from_decimals,
         },
-        std::collections::HashMap,
     };
 
     fn create_weighted_pool_with(
@@ -374,7 +370,7 @@ mod tests {
         scaling_exps: Vec<u8>,
         swap_fee: U256,
     ) -> WeightedPool {
-        let mut reserves = HashMap::new();
+        let mut reserves = BTreeMap::new();
         for i in 0..tokens.len() {
             let (token, balance, weight, scaling_exponent) =
                 (tokens[i], balances[i], weights[i], scaling_exps[i]);
@@ -408,7 +404,7 @@ mod tests {
         scaling_exps: Vec<u8>,
         swap_fee: U256,
     ) -> StablePool {
-        let mut reserves = HashMap::new();
+        let mut reserves = BTreeMap::new();
         for i in 0..tokens.len() {
             let (token, balance, scaling_exponent) = (tokens[i], balances[i], scaling_exps[i]);
             reserves.insert(

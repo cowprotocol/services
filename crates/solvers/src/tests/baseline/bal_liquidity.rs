@@ -230,3 +230,161 @@ async fn weighted_v3plus() {
         }),
     );
 }
+
+#[tokio::test]
+async fn stable() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "1"
+                base-tokens = []
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+                    "decimals": 18,
+                    "symbol": "WETH",
+                    "referencePrice": "1000000000000000000",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "TODO": {
+                    "decimals": 18,
+                    "symbol": "DAI",
+                    "referencePrice": "TODO",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "TODO": {
+                    "decimals": 6,
+                    "symbol": "USDC",
+                    "referencePrice": "TODO",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                              0101010101010101010101010101010101010101\
+                              01010101",
+                    "sellToken": "TODO",
+                    "buyToken": "TODO",
+                    "sellAmount": "1000000000000000000000",
+                    "buyAmount": "950000000",
+                    "feeAmount": "0",
+                    "kind": "sell",
+                    "partiallyFillable": false,
+                    "class": "market",
+                },
+                {
+                    "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
+                              0202020202020202020202020202020202020202\
+                              02020202",
+                    "sellToken": "TODO",
+                    "buyToken": "TODO",
+                    "sellAmount": "950000000000000000000",
+                    "buyAmount": "1000000000",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                },
+            ],
+            "liquidity": [
+                {
+                    "kind": "stable",
+                    "tokens": {
+                        "TODO": {
+                            "balance": "TODO",
+                            "scalingFactor": "1",
+                        },
+                        "TODO": {
+                            "balance": "TODO",
+                            "scalingFactor": "1",
+                        }
+                    },
+                    "fee": "TODO",
+                    "amplificationParameter": "TODO",
+                    "id": "0",
+                    "address": "TODO",
+                    "gasEstimate": "183520",
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [
+                {
+                    "id": 0,
+                    "prices": {
+                        "TODO": "TODO",
+                        "TODO": "1000000000000000000000"
+                    },
+                    "trades": [
+                        {
+                            "kind": "fulfillment",
+                            "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                                        0101010101010101010101010101010101010101\
+                                        01010101",
+                            "executedAmount": "1000000000000000000000"
+                        }
+                    ],
+                    "interactions": [
+                        {
+                            "kind": "liquidity",
+                            "internalize": false,
+                            "id": "0",
+                            "inputToken": "TODO",
+                            "outputToken": "TODO",
+                            "inputAmount": "1000000000000000000000",
+                            "outputAmount": "TODO"
+                        },
+                    ]
+                },
+                {
+                    "id": 1,
+                    "prices": {
+                        "TODO": "TODO",
+                        "TODO": "1000000000000000000000"
+                    },
+                    "trades": [
+                        {
+                            "kind": "fulfillment",
+                            "order": "0x0202020202020202020202020202020202020202020202020202020202020202\
+                                        0202020202020202020202020202020202020202\
+                                        02020202",
+                            "executedAmount": "1000000000"
+                        }
+                    ],
+                    "interactions": [
+                        {
+                            "kind": "liquidity",
+                            "internalize": false,
+                            "id": "0",
+                            "inputToken": "TODO",
+                            "outputToken": "TODO",
+                            "inputAmount": "TODO",
+                            "outputAmount": "1000000000"
+                        },
+                    ]
+                },
+            ]
+        }),
+    );
+}

@@ -502,7 +502,7 @@ mod tests {
             settlement::{PricedTrade, Trade},
         },
         hex_literal::hex,
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::{
             order::{OrderData, OrderUid},
             signature::Signature,
@@ -555,7 +555,7 @@ mod tests {
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 address: H160::from_low_u64_be(2),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     t0 => WeightedTokenState {
                         common: TokenState {
                             balance: U256::from(200),
@@ -577,7 +577,7 @@ mod tests {
             }),
             Liquidity::BalancerStable(StablePoolOrder {
                 address: H160::from_low_u64_be(3),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     t0 => TokenState {
                         balance: U256::from(300),
                         scaling_exponent: 0,
@@ -841,7 +841,7 @@ mod tests {
 
         let wpo = WeightedProductOrder {
             address: H160::from_low_u64_be(2),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 token_c => WeightedTokenState {
                     common: TokenState {
                         balance: U256::from(1251682293173877359u128),
@@ -864,7 +864,7 @@ mod tests {
 
         let spo = StablePoolOrder {
             address: H160::from_low_u64_be(3),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
                     scaling_exponent: 0

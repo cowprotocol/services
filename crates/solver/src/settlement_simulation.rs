@@ -262,7 +262,7 @@ mod tests {
         },
         contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9},
         ethcontract::{Account, PrivateKey},
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::{order::Order, TokenPair},
         num::rational::Ratio,
         serde_json::json,
@@ -502,7 +502,7 @@ mod tests {
 
         let spo = StablePoolOrder {
             address: H160::from_low_u64_be(1),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
                     balance: U256::from(46543572661097157184873466u128),
                     scaling_exponent: 18
