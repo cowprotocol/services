@@ -1,7 +1,6 @@
 use {
     crate::{
         arguments::{display_option, CodeSimulatorKind},
-        bad_token::{BadTokenDetecting, TokenQuality},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
@@ -504,19 +503,6 @@ where
     futures::stream::once(estimator)
         .flat_map(|iter| futures::stream::iter(iter.into_iter().enumerate()))
         .boxed()
-}
-
-pub async fn ensure_token_supported(
-    token: H160,
-    bad_token_detector: &dyn BadTokenDetecting,
-) -> Result<(), PriceEstimationError> {
-    match bad_token_detector.detect(token).await {
-        Ok(TokenQuality::Good) => Ok(()),
-        Ok(TokenQuality::Bad { reason }) => {
-            Err(PriceEstimationError::UnsupportedToken { token, reason })
-        }
-        Err(err) => Err(PriceEstimationError::Other(err)),
-    }
 }
 
 pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
