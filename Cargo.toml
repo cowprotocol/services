@@ -14,7 +14,7 @@ ethcontract = { version = "0.25.1", default-features = false, features = ["aws-k
 ethcontract-generate = { version = "0.25", default-features = false }
 ethcontract-mock = { version = "0.25", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.2", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.3", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.4"
 itertools = "0.11"

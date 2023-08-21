@@ -41,6 +41,8 @@ impl Api {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         );
 
+        let tokens = tokens::Fetcher::new(self.eth.clone());
+
         // Add the metrics endpoint.
         app = routes::metrics(app);
 
@@ -68,7 +70,7 @@ impl Api {
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
-                tokens: tokens::Fetcher::new(self.eth.clone()),
+                tokens: tokens.clone(),
             })));
             let path = format!("/{name}");
             observe::mounting_solver(&name, &path);
