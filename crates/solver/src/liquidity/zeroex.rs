@@ -60,9 +60,9 @@ impl ZeroExLiquidity {
 
         tokio::task::spawn(
             async move {
+                let mut backoff = DEFAULT_BACKOFF;
                 // loop needed for reconnections
                 loop {
-                    let mut backoff = DEFAULT_BACKOFF;
                     // initialize cache by fetching all existing orders via http api
                     if let Err(err) = init_cache(api.clone(), inner.clone(), sender).await {
                         tracing::warn!(
@@ -75,6 +75,7 @@ impl ZeroExLiquidity {
                         continue;
                     }
 
+                    backoff = DEFAULT_BACKOFF;
                     // from now on, rely on websocket connection to do incremental updates
                     if let Err(err) = connect_and_update_cache(inner.clone()).await {
                         tracing::debug!("Error updating 0x cache: {:?}, reconnecting...", err);
