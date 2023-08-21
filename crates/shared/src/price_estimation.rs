@@ -335,7 +335,7 @@ pub enum PriceEstimationError {
     NoLiquidity,
 
     #[error("Deadline exceeded")]
-    DeadlineExceeded, 
+    DeadlineExceeded,
 
     #[error("Zero Amount")]
     ZeroAmount,
