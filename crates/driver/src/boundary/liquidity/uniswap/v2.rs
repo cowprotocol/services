@@ -15,7 +15,6 @@ use {
         ethrpc::Web3,
         http_solver::model::TokenAmount,
         maintenance::Maintaining,
-        price_estimation,
         sources::uniswap_v2::{
             pair_provider::PairProvider,
             pool_cache::PoolCache,
@@ -34,6 +33,10 @@ use {
     tracing::Instrument,
 };
 
+/// Median gas used per UniswapInteraction (v2).
+// estimated with https://dune.com/queries/640717
+const GAS_PER_SWAP: u64 = 90_171;
+
 pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     assert!(
         *pool.fee.numer() == 3 && *pool.fee.denom() == 1000,
@@ -42,7 +45,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
 
     Ok(liquidity::Liquidity {
         id,
-        gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
+        gas: GAS_PER_SWAP.into(),
         kind: liquidity::Kind::UniswapV2(to_domain_pool(pool)?),
     })
 }

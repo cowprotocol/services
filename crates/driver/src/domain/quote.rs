@@ -12,7 +12,7 @@ use {
             blockchain::{self, Ethereum},
             solver::{self, Solver},
         },
-        util::{self, conv},
+        util::{self, conv::u256::U256Ext},
     },
     std::{collections::HashSet, iter},
 };
@@ -36,16 +36,14 @@ impl Quote {
             .clearing_price(order.tokens.buy)
             .ok_or(QuotingFailed::ClearingBuyMissing)?;
         let amount = match order.side {
-            order::Side::Sell => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(order.amount.into())
-                    * conv::u256::to_big_rational(sell_price)
-                    / conv::u256::to_big_rational(buy_price)),
-            ),
-            order::Side::Buy => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(order.amount.into())
-                    * conv::u256::to_big_rational(buy_price)
-                    / conv::u256::to_big_rational(sell_price)),
-            ),
+            order::Side::Sell => eth::U256::from_big_rational(
+                &(eth::U256::from(order.amount).to_big_rational() * sell_price.to_big_rational()
+                    / buy_price.to_big_rational()),
+            )?,
+            order::Side::Buy => eth::U256::from_big_rational(
+                &(eth::U256::from(order.amount).to_big_rational() * buy_price.to_big_rational()
+                    / sell_price.to_big_rational()),
+            )?,
         };
         Ok(Self {
             amount,

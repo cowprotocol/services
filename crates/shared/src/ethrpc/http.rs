@@ -100,7 +100,15 @@ async fn execute_rpc<T: DeserializeOwned>(
         ))));
     }
 
-    let result = jsonrpc_core::serde_from_str(&text)?;
+    let result = jsonrpc_core::serde_from_str(&text).map_err(|err| {
+        Web3Error::Decoder(format!(
+            "{:?}, raw response: {}, {}, {}",
+            err,
+            inner.name,
+            id,
+            text.trim()
+        ))
+    })?;
     Ok(result)
 }
 
