@@ -34,6 +34,7 @@ use {
     },
     tokio::{net::TcpStream, sync::Mutex},
     tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
+    tracing::Instrument,
 };
 
 pub struct ZeroExLiquidity {
@@ -57,29 +58,32 @@ impl ZeroExLiquidity {
         let api = api.clone();
         let sender = gpv2.address();
 
-        tokio::task::spawn(async move {
-            // loop needed for reconnections
-            loop {
-                let mut backoff = DEFAULT_BACKOFF;
-                // initialize cache by fetching all existing orders via http api
-                if let Err(err) = init_cache(api.clone(), inner.clone(), sender).await {
-                    tracing::warn!(
-                        "Error initializing 0x cache: {:?}, retrying with backoff {:?} ...",
-                        err,
-                        backoff
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff *= 2;
-                    continue;
-                }
+        tokio::task::spawn(
+            async move {
+                // loop needed for reconnections
+                loop {
+                    let mut backoff = DEFAULT_BACKOFF;
+                    // initialize cache by fetching all existing orders via http api
+                    if let Err(err) = init_cache(api.clone(), inner.clone(), sender).await {
+                        tracing::warn!(
+                            "Error initializing 0x cache: {:?}, retrying with backoff {:?} ...",
+                            err,
+                            backoff
+                        );
+                        tokio::time::sleep(backoff).await;
+                        backoff *= 2;
+                        continue;
+                    }
 
-                // from now on, rely on websocket connection to do incremental updates
-                if let Err(err) = connect_and_update_cache(inner.clone()).await {
-                    tracing::debug!("Error updating 0x cache: {:?}, reconnecting...", err);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    // from now on, rely on websocket connection to do incremental updates
+                    if let Err(err) = connect_and_update_cache(inner.clone()).await {
+                        tracing::debug!("Error updating 0x cache: {:?}, reconnecting...", err);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    }
                 }
             }
-        });
+            .instrument(tracing::debug_span!("0x cache updater")),
+        );
         Self {
             zeroex,
             gpv2,
@@ -128,7 +132,11 @@ async fn init_cache(
     cache: Arc<Mutex<HashMap<OrderId, OrderRecord>>>,
     sender: Address,
 ) -> Result<()> {
-    cache.lock().await.clear(); // init can be called multiple times, so clear the cache first
+    {
+        // init can be called multiple times, so clear the cache first
+        let mut cache = cache.lock().await;
+        cache.clear();
+    }
 
     let queries = &[
         // orders fillable by anyone
@@ -140,20 +148,11 @@ async fn init_cache(
         },
     ];
 
-    let zeroex_orders_results =
-        futures::future::join_all(queries.iter().map(|query| api.get_orders(query))).await;
-    let mut zeroex_orders = vec![];
-    for result in zeroex_orders_results {
-        match result {
-            Ok(orders) => zeroex_orders.extend(orders),
-            Err(err) => {
-                return Err(anyhow::anyhow!(
-                    "ZeroExResponse error during liqudity fetching: {}",
-                    err
-                ));
-            }
-        }
-    }
+    let zeroex_orders =
+        futures::future::try_join_all(queries.iter().map(|query| api.get_orders(query)))
+            .await
+            .context("failed to fetch 0x limit orders")?;
+    let zeroex_orders: Vec<_> = zeroex_orders.into_iter().flatten().collect();
 
     let mut cache = cache.lock().await;
     cache.extend(
