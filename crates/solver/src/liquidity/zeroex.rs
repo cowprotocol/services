@@ -578,8 +578,7 @@ pub mod tests {
         let sender = {
             let transport = create_env_test_transport();
             let web3 = Web3::new(transport);
-            let sender = GPv2Settlement::deployed(&web3).await.unwrap().address();
-            sender
+            GPv2Settlement::deployed(&web3).await.unwrap().address()
         };
 
         tokio::task::spawn(async move {
