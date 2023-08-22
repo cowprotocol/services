@@ -135,6 +135,8 @@ async fn init_cache(
 ) -> Result<()> {
     {
         // init can be called multiple times, so clear the cache first
+        // clearing is done before fetching 0x orders because fetching can keep failing
+        // for a long time and we don't want to keep stale orders
         let mut cache = cache.lock().await;
         cache.clear();
     }
