@@ -521,7 +521,10 @@ fn get_orders_with_native_prices(
     let prices: HashMap<_, _> = native_price_estimator
         .get_cached_prices(&traded_tokens)
         .into_iter()
-        .flat_map(|(token, price)| to_normalized_price(price).map(|price| (token, price)))
+        .flat_map(|(token, result)| {
+            let price = to_normalized_price(result.ok()?)?;
+            Some((token, price))
+        })
         .collect();
 
     let high_priority_tokens = orders

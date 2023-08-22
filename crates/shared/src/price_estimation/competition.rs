@@ -325,18 +325,20 @@ fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bo
 }
 
 fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
-    // NOTE(nlordell): How errors are joined is kind of arbitrary. I decided to
-    // just order them in the following priority.
+    // Errors are sorted by recoverability. E.g. a rate-limited estimation may
+    // succeed if tried again, whereas unsupported order types can never recover
+    // unless code changes. This can be used to decide which errors we want to
+    // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
             // highest priority
-            PriceEstimationError::ZeroAmount => 0,
-            PriceEstimationError::UnsupportedToken { .. } => 1,
-            PriceEstimationError::NoLiquidity => 2,
-            PriceEstimationError::Other(_) => 3,
-            PriceEstimationError::DeadlineExceeded => 4,
-            PriceEstimationError::UnsupportedOrderType => 5,
             PriceEstimationError::RateLimited => 6,
+            PriceEstimationError::DeadlineExceeded => 5,
+            PriceEstimationError::Other(_) => 4,
+            PriceEstimationError::UnsupportedToken { .. } => 3,
+            PriceEstimationError::ZeroAmount => 2,
+            PriceEstimationError::NoLiquidity => 1,
+            PriceEstimationError::UnsupportedOrderType => 0,
             // lowest priority
         }
     }
@@ -506,10 +508,10 @@ mod tests {
             PriceEstimationError::Other(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
-        // unsupported token has higher priority than no liquidity
+        // no liquidity has higher priority than unsupported token
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. },
+            PriceEstimationError::NoLiquidity { .. },
         ));
     }
 
