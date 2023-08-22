@@ -128,6 +128,9 @@ pub enum TradeError {
     #[error("Unsupported Order Type")]
     UnsupportedOrderType,
 
+    #[error("Deadline exceeded")]
+    DeadlineExceeded,
+
     #[error("Rate limited")]
     RateLimited,
 
@@ -140,6 +143,7 @@ impl From<PriceEstimationError> for TradeError {
         match err {
             PriceEstimationError::NoLiquidity => Self::NoLiquidity,
             PriceEstimationError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            PriceEstimationError::DeadlineExceeded => Self::DeadlineExceeded,
             PriceEstimationError::RateLimited => Self::RateLimited,
             PriceEstimationError::Other(err) => Self::Other(err),
             _ => Self::Other(anyhow::anyhow!(err.to_string())),
@@ -152,6 +156,7 @@ impl Clone for TradeError {
         match self {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::RateLimited => Self::RateLimited,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }

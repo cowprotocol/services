@@ -334,6 +334,9 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
+    #[error("Deadline exceeded")]
+    DeadlineExceeded,
+
     #[error("Zero Amount")]
     ZeroAmount,
 
@@ -367,6 +370,7 @@ impl Clone for PriceEstimationError {
                 reason: reason.clone(),
             },
             Self::NoLiquidity => Self::NoLiquidity,
+            Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
             Self::RateLimited => Self::RateLimited,

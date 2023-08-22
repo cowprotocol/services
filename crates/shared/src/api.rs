@@ -241,6 +241,10 @@ impl IntoWarpReply for PriceEstimationError {
                 error("NoLiquidity", "not enough liquidity"),
                 StatusCode::NOT_FOUND,
             ),
+            Self::DeadlineExceeded => with_status(
+                error("DeadlineExceeded", "quoting deadline exceeded"),
+                StatusCode::NOT_FOUND,
+            ),
             Self::ZeroAmount => with_status(
                 error("ZeroAmount", "Please use non-zero amount field"),
                 StatusCode::BAD_REQUEST,
