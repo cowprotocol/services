@@ -251,24 +251,24 @@ async fn stable() {
         .solve(json!({
             "id": "1",
             "tokens": {
+                "0x6b175474e89094c44da98b954eedeac495271d0f": {
+                    "decimals": 18,
+                    "symbol": "DAI",
+                    "referencePrice": "597423824203645",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+                    "decimals": 6,
+                    "symbol": "USDC",
+                    "referencePrice": "597647838715990684620292096",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
                     "decimals": 18,
                     "symbol": "WETH",
                     "referencePrice": "1000000000000000000",
-                    "availableBalance": "0",
-                    "trusted": true
-                },
-                "TODO": {
-                    "decimals": 18,
-                    "symbol": "DAI",
-                    "referencePrice": "TODO",
-                    "availableBalance": "0",
-                    "trusted": true
-                },
-                "TODO": {
-                    "decimals": 6,
-                    "symbol": "USDC",
-                    "referencePrice": "TODO",
                     "availableBalance": "0",
                     "trusted": true
                 },
@@ -278,10 +278,10 @@ async fn stable() {
                     "uid": "0x0101010101010101010101010101010101010101010101010101010101010101\
                               0101010101010101010101010101010101010101\
                               01010101",
-                    "sellToken": "TODO",
-                    "buyToken": "TODO",
-                    "sellAmount": "1000000000000000000000",
-                    "buyAmount": "950000000",
+                    "sellToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                    "sellAmount": "10000000000000000000",
+                    "buyAmount": "9500000",
                     "feeAmount": "0",
                     "kind": "sell",
                     "partiallyFillable": false,
@@ -291,10 +291,10 @@ async fn stable() {
                     "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
                               0202020202020202020202020202020202020202\
                               02020202",
-                    "sellToken": "TODO",
-                    "buyToken": "TODO",
-                    "sellAmount": "950000000000000000000",
-                    "buyAmount": "1000000000",
+                    "sellToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                    "sellAmount": "10500000000000000000",
+                    "buyAmount": "10000000",
                     "feeAmount": "0",
                     "kind": "buy",
                     "partiallyFillable": false,
@@ -305,19 +305,23 @@ async fn stable() {
                 {
                     "kind": "stable",
                     "tokens": {
-                        "TODO": {
-                            "balance": "TODO",
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": {
+                            "balance": "40178655991481716284687",
                             "scalingFactor": "1",
                         },
-                        "TODO": {
-                            "balance": "TODO",
-                            "scalingFactor": "1",
-                        }
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+                            "balance": "35862722437",
+                            "scalingFactor": "1000000000000",
+                        },
+                        "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+                            "balance": "49917496165",
+                            "scalingFactor": "1000000000000",
+                        },
                     },
-                    "fee": "TODO",
-                    "amplificationParameter": "TODO",
+                    "fee": "0.00005",
+                    "amplificationParameter": "1390.0",
                     "id": "0",
-                    "address": "TODO",
+                    "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
                     "gasEstimate": "183520",
                 },
             ],

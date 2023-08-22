@@ -244,7 +244,14 @@ impl BaselineSolvable for StablePoolRef<'_> {
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.downscale_up(in_amount).ok()?;
-        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
+        let in_amount = add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()?;
+
+        converge_in_amount(
+            in_amount,
+            out_amount,
+            |x| self.get_amount_out(out_token, (x, in_token)),
+            (in_reserves.scaling_exponent, out_reserves.scaling_exponent),
+        )
     }
 
     fn gas_cost(&self) -> usize {
