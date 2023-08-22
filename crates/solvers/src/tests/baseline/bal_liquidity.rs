@@ -319,7 +319,7 @@ async fn stable() {
                         },
                     },
                     "fee": "0.00005",
-                    "amplificationParameter": "1390.0",
+                    "amplificationParameter": "1.39",
                     "id": "0",
                     "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
                     "gasEstimate": "183520",
@@ -337,8 +337,8 @@ async fn stable() {
                 {
                     "id": 0,
                     "prices": {
-                        "TODO": "TODO",
-                        "TODO": "1000000000000000000000"
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": "9998567",
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10000000000000000000"
                     },
                     "trades": [
                         {
@@ -346,7 +346,7 @@ async fn stable() {
                             "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
                                         0101010101010101010101010101010101010101\
                                         01010101",
-                            "executedAmount": "1000000000000000000000"
+                            "executedAmount": "10000000000000000000"
                         }
                     ],
                     "interactions": [
@@ -354,18 +354,18 @@ async fn stable() {
                             "kind": "liquidity",
                             "internalize": false,
                             "id": "0",
-                            "inputToken": "TODO",
-                            "outputToken": "TODO",
-                            "inputAmount": "1000000000000000000000",
-                            "outputAmount": "TODO"
+                            "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                            "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                            "inputAmount": "10000000000000000000",
+                            "outputAmount": "9998567"
                         },
                     ]
                 },
                 {
                     "id": 1,
                     "prices": {
-                        "TODO": "TODO",
-                        "TODO": "1000000000000000000000"
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": "10000000",
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10001432531566571462"
                     },
                     "trades": [
                         {
@@ -373,7 +373,7 @@ async fn stable() {
                             "order": "0x0202020202020202020202020202020202020202020202020202020202020202\
                                         0202020202020202020202020202020202020202\
                                         02020202",
-                            "executedAmount": "1000000000"
+                            "executedAmount": "10000000"
                         }
                     ],
                     "interactions": [
@@ -381,10 +381,10 @@ async fn stable() {
                             "kind": "liquidity",
                             "internalize": false,
                             "id": "0",
-                            "inputToken": "TODO",
-                            "outputToken": "TODO",
-                            "inputAmount": "TODO",
-                            "outputAmount": "1000000000"
+                            "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                            "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                            "inputAmount": "10001432531566571462",
+                            "outputAmount": "10000000"
                         },
                     ]
                 },
