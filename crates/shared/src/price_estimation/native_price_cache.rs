@@ -197,13 +197,16 @@ impl Inner {
 fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     // We don't want to cache errors that we consider transient
     match result {
-        Ok(_) => true,
-        Err(PriceEstimationError::NoLiquidity) => true,
-        Err(PriceEstimationError::ZeroAmount) => true,
-        Err(PriceEstimationError::UnsupportedToken { .. }) => true,
-        Err(PriceEstimationError::UnsupportedOrderType) => true,
-        Err(PriceEstimationError::Other(_)) => false,
-        Err(PriceEstimationError::RateLimited) => false,
+        Ok(_)
+        | Err(PriceEstimationError::NoLiquidity { .. })
+        | Err(PriceEstimationError::UnsupportedToken { .. }) => true,
+        Err(PriceEstimationError::Other(_))
+        | Err(PriceEstimationError::DeadlineExceeded)
+        | Err(PriceEstimationError::RateLimited) => false,
+        Err(PriceEstimationError::ZeroAmount) | Err(PriceEstimationError::UnsupportedOrderType) => {
+            tracing::error!(?result, "Unexpected error in native price cache");
+            false
+        }
     }
 }
 

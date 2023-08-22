@@ -325,9 +325,9 @@ fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bo
 }
 
 fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
-    // Errors are sorted by recoverability. E.g. a rate-limited estimation may yield
-    // Ok if tried again Whereas unsupported order types can never recover
-    // unless code changes. This can be used to decide which errors  we want to
+    // Errors are sorted by recoverability. E.g. a rate-limited estimation may
+    // succeed if tried again, whereas unsupported order types can never recover
+    // unless code changes. This can be used to decide which errors we want to
     // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
