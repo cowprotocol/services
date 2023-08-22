@@ -9,7 +9,7 @@ use {
         liquidity_collector::LiquidityCollecting,
         settlement::SettlementEncoder,
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::{GPv2Settlement, IZeroEx},
     ethcontract::Address,
     futures::{SinkExt, StreamExt},
@@ -33,7 +33,7 @@ use {
         time::Duration,
     },
     tokio::{net::TcpStream, sync::Mutex},
-    tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
+    tokio_tungstenite::{tungstenite::Message, MaybeTlsStream, WebSocketStream},
     tracing::Instrument,
 };
 
@@ -78,7 +78,7 @@ impl ZeroExLiquidity {
                     backoff = DEFAULT_BACKOFF;
                     // from now on, rely on websocket connection to do incremental updates
                     if let Err(err) = connect_and_update_cache(inner.clone()).await {
-                        tracing::debug!("Error updating 0x cache: {:?}, reconnecting...", err);
+                        tracing::debug!("Error updating 0x cache, reconnecting... {:?}", err);
                         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                     }
                 }
@@ -194,27 +194,74 @@ async fn connect_socket() -> Result<Socket> {
 /// Creates a websocket connection and reads the messages from it.
 /// The messages are then used to update the cache.
 /// If the connection is lost, calling again this function will reconnect.
-async fn connect_and_update_cache(cache: Arc<Mutex<HashMap<OrderId, OrderRecord>>>) -> Result<()> {
+async fn connect_and_update_cache(
+    cache: Arc<Mutex<HashMap<OrderId, OrderRecord>>>,
+) -> Result<(), UpdateError> {
     let mut socket = connect_socket().await?;
     let result = update_cache(&mut socket, cache.clone()).await;
-    socket.close(None).await?;
+    let _ = socket.close(None).await; // ignore errors (socket might be already closed)
     result
+}
+
+#[derive(Debug)]
+enum UpdateError {
+    // The websocket is closed on server side, with optional reason
+    SocketClosed(Option<anyhow::Error>),
+    // Received a message type that we don't handle
+    UnsupportedMessage,
+    // Received proper `text` type of message but it can't be deserialized (mailformed or changed
+    // format)
+    DeserializeError(anyhow::Error),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for UpdateError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+impl From<UpdateError> for anyhow::Error {
+    fn from(err: UpdateError) -> Self {
+        match err {
+            UpdateError::SocketClosed(err) => anyhow::anyhow!("socket closed, reason {:?}", err),
+            UpdateError::UnsupportedMessage => anyhow::anyhow!("unsupported message"),
+            UpdateError::DeserializeError(err) => err,
+            UpdateError::Other(err) => err,
+        }
+    }
 }
 
 async fn update_cache(
     socket: &mut Socket,
     cache: Arc<Mutex<HashMap<OrderId, OrderRecord>>>,
-) -> Result<()> {
+) -> Result<(), UpdateError> {
     while let Some(msg) = socket.next().await {
-        let text = msg
-            .context("websocket error")?
-            .into_text()
-            .context("conversion error")?;
-        if text.is_empty() {
-            continue;
-        }
+        let msg = msg.context("websocket error")?;
+        let text = match msg {
+            Message::Text(text) => text,
+            Message::Close(frame) => {
+                return Err(UpdateError::SocketClosed(
+                    frame.map(|frame| anyhow!(frame.reason)),
+                ))
+            }
+            Message::Ping(payload) => {
+                // send pong message to keep the connection alive
+                socket
+                    .send(Message::Pong(payload))
+                    .await
+                    .context("ping pong failure")?;
+                continue;
+            }
+            _ => {
+                tracing::debug!("Received unsupported message {:?}", msg);
+                return Err(UpdateError::UnsupportedMessage);
+            }
+        };
+
         let records = serde_json::from_str::<OrdersResponse>(&text)
-            .with_context(|| format!("deserialization error {}", text))?
+            .with_context(|| format!("deserialization error, text received: {}", text))
+            .map_err(UpdateError::DeserializeError)?
             .payload;
 
         let mut cache = cache.lock().await;
@@ -599,7 +646,7 @@ pub mod tests {
                 }
                 // from now on, rely on websocket connection to do incremental updates
                 if let Err(err) = connect_and_update_cache(inner.clone()).await {
-                    println!("Error updating 0x cache: {:?}, reconnecting...", err);
+                    println!("Error updating 0x cache, reconnecting... {:?}", err);
                     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                 }
             }
