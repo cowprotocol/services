@@ -21,7 +21,7 @@ use {
         http_solver::model::TokenAmount,
         recent_block_cache::Block,
         zeroex_api::{
-            websocket::{OrderRecord, OrdersResponse},
+            websocket::{OrderRecord, OrderState, OrdersResponse},
             Order,
             OrdersQuery,
             ZeroExApi,
@@ -185,9 +185,7 @@ async fn connect_socket() -> Result<Socket> {
     });
 
     socket
-        .send(tokio_tungstenite::tungstenite::protocol::Message::Text(
-            subscription_msg.to_string(),
-        ))
+        .send(Message::Text(subscription_msg.to_string()))
         .await?;
 
     Ok(socket)
@@ -201,7 +199,8 @@ async fn connect_and_update_cache(
 ) -> Result<(), UpdateError> {
     let mut socket = connect_socket().await?;
     let result = update_cache(&mut socket, cache.clone()).await;
-    let _ = socket.close(None).await; // ignore errors (socket might be already closed)
+    // this call will error if the socket is already closed but that's fine
+    let _ = socket.close(None).await;
     result
 }
 
@@ -269,12 +268,10 @@ async fn update_cache(
         let mut cache = cache.lock().await;
         for record in records {
             match record.metadata.state {
-                shared::zeroex_api::websocket::State::Added
-                | shared::zeroex_api::websocket::State::Updated
-                | shared::zeroex_api::websocket::State::Fillable => {
+                OrderState::Added | OrderState::Updated | OrderState::Fillable => {
                     cache.insert(hex::encode(record.metadata.order_hash.clone()), record);
                 }
-                shared::zeroex_api::websocket::State::Expired => {
+                OrderState::Expired => {
                     cache.remove(&hex::encode(record.metadata.order_hash));
                 }
             }
@@ -654,7 +651,7 @@ pub mod tests {
             }
         });
 
-        // read cache
+        // read cache from outside
         loop {
             tokio::time::sleep(Duration::from_secs(3)).await;
 

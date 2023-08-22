@@ -582,7 +582,7 @@ pub mod websocket {
     #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
     #[derivative(Default)]
     #[serde(rename_all = "UPPERCASE")]
-    pub enum State {
+    pub enum OrderState {
         #[derivative(Default)]
         Added,
         Fillable,
@@ -599,7 +599,7 @@ pub mod websocket {
         pub order_hash: Vec<u8>,
         #[serde_as(as = "DisplayFromStr")]
         pub remaining_fillable_taker_amount: u128,
-        pub state: State,
+        pub state: OrderState,
     }
 
     #[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
