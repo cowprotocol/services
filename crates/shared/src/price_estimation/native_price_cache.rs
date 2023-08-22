@@ -56,9 +56,11 @@ struct UpdateTask {
     concurrent_requests: usize,
 }
 
+type CacheEntry = Result<f64, PriceEstimationError>;
+
 #[derive(Debug, Clone)]
 struct CachedResult {
-    result: Result<f64, PriceEstimationError>,
+    result: CacheEntry,
     updated_at: Instant,
     requested_at: Instant,
 }
@@ -103,7 +105,7 @@ impl Inner {
         tokens: &[H160],
         max_age: &Duration,
         create_missing_entry: bool,
-    ) -> (Vec<(usize, Result<f64, PriceEstimationError>)>, Vec<usize>) {
+    ) -> (Vec<(usize, CacheEntry)>, Vec<usize>) {
         if tokens.is_empty() {
             return Default::default();
         }

@@ -522,10 +522,8 @@ fn get_orders_with_native_prices(
         .get_cached_prices(&traded_tokens)
         .into_iter()
         .flat_map(|(token, result)| {
-            result
-                .ok()
-                .and_then(to_normalized_price)
-                .map(|price| (token, price))
+            let price = to_normalized_price(result.ok()?)?;
+            Some((token, price))
         })
         .collect();
 
