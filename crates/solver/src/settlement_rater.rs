@@ -296,15 +296,10 @@ impl ScoreCalculator {
             (0.0..=1.0).contains(&success_probability),
             "success probability must be between 0 and 1."
         );
-        let success_probability =
-            BigRational::from_float(success_probability).context("Invalid success probability.")?;
+        let success_probability = BigRational::from_float(success_probability).unwrap();
         let cost_fail = BigRational::from_float(0.0).unwrap();
         let optimal_score =
             self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
-        ensure!(
-            optimal_score <= *objective_value,
-            "Optimal score higher than objective value"
-        );
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
         Ok(Score::Protocol(score))
     }
@@ -322,6 +317,12 @@ impl ScoreCalculator {
             "Computing optimal bid"
         );
         let probability_fail = BigRational::one() - probability_success.clone();
+        // filter out invalid solution where there is no chance of success or where the
+        // success is 100% (because it can't be true, there is always some risk of
+        // failure)
+        ensure!(!probability_success.is_zero(), "success is zero");
+        ensure!(!probability_fail.is_zero(), "fail is zero");
+
         let payoff_obj_minus_cap = self.payoff(
             objective.clone() - self.score_cap.clone(),
             objective.clone(),
@@ -339,18 +340,22 @@ impl ScoreCalculator {
         let optimal_bid = if payoff_obj_minus_cap >= BigRational::zero()
             && payoff_cap <= BigRational::zero()
         {
-            Ok(probability_success * objective - probability_fail * cost_fail)
+            Ok(probability_success * objective.clone() - probability_fail * cost_fail)
         } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-            ensure!(!probability_success.is_zero(), "success is zero");
-            Ok(objective
+            Ok(objective.clone()
                 - probability_fail / probability_success * (self.score_cap.clone() + cost_fail))
         } else if payoff_obj_minus_cap < BigRational::zero() && payoff_cap <= BigRational::zero() {
-            ensure!(!probability_fail.is_zero(), "fail is zero");
             Ok(probability_success / probability_fail * self.score_cap.clone() - cost_fail)
         } else {
             Err(anyhow!("Invalid bid"))
         };
         tracing::trace!(?optimal_bid, "Optimal bid");
+        if let Ok(optimal_bid) = optimal_bid.as_ref() {
+            ensure!(
+                optimal_bid <= &objective,
+                "Optimal score higher than objective value"
+            );
+        }
         optimal_bid
     }
 
@@ -385,7 +390,7 @@ mod tests {
 
     #[allow(dead_code)]
     fn calculate_score(objective_value: BigRational, success_probability: f64) -> U256 {
-        let score_cap = BigRational::from_float(10_000_000_000_000_000.).unwrap();
+        let score_cap = BigRational::from_float(1e17).unwrap();
         let score_calculator = super::ScoreCalculator::new(score_cap);
         score_calculator
             .compute_score(&objective_value, success_probability)

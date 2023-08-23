@@ -494,7 +494,7 @@ impl std::fmt::Display for Arguments {
             self.additional_mining_deadline
         )?;
         writeln!(f, "{}", self.risk_params)?;
-        writeln!(f, "{}", self.score_cap)?;
+        writeln!(f, "score_cap {}", self.score_cap)?;
         writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
         writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
         writeln!(
