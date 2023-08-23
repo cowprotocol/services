@@ -342,7 +342,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             // lowest priority
         }
     }
-    error_to_integer_priority(b) < error_to_integer_priority(a)
+    error_to_integer_priority(b) > error_to_integer_priority(a)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -406,6 +406,17 @@ mod tests {
         std::time::Duration,
         tokio::time::sleep,
     };
+
+    #[test]
+    fn is_second_error_preferred_test() {
+        let a = PriceEstimationError::UnsupportedOrderType;
+        let b = PriceEstimationError::NoLiquidity;
+        let c = PriceEstimationError::RateLimited;
+
+        assert!(is_second_error_preferred(&a, &b));
+        assert!(is_second_error_preferred(&a, &c));
+        assert!(is_second_error_preferred(&b, &c));
+    }
 
     #[tokio::test]
     async fn works() {
