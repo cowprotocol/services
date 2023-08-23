@@ -242,8 +242,8 @@ pub mod tests {
         for class in [
             OrderClass::Market,
             OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
+                //surplus_fee: Some(Default::default()),
+                //surplus_fee_timestamp: Some(Default::default()),
                 executed_surplus_fee: None,
             }),
             OrderClass::Liquidity,

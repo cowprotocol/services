@@ -70,7 +70,7 @@ impl Postgres {
     pub async fn solvable_orders(
         &self,
         min_valid_to: u32,
-        min_surplus_fee_timestamp: DateTime<Utc>,
+        //min_surplus_fee_timestamp: DateTime<Utc>,
     ) -> Result<SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
@@ -81,7 +81,7 @@ impl Postgres {
         let orders = database::orders::solvable_orders(
             &mut ex,
             min_valid_to as i64,
-            min_surplus_fee_timestamp,
+            //min_surplus_fee_timestamp,
         )
         .map(|result| match result {
             Ok(order) => full_order_into_model_order(order),

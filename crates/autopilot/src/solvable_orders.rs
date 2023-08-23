@@ -2,7 +2,6 @@ use {
     crate::database::Postgres,
     anyhow::Result,
     bigdecimal::BigDecimal,
-    chrono::Utc,
     database::order_events::OrderEventLabel,
     itertools::Itertools,
     model::{
@@ -76,7 +75,7 @@ pub struct SolvableOrdersCache {
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     ethflow_contract_address: Option<H160>,
-    surplus_fee_age: Duration,
+    //surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
@@ -112,7 +111,7 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         ethflow_contract_address: Option<H160>,
-        surplus_fee_age: Duration,
+        //surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
         fee_objective_scaling_factor: f64,
@@ -137,7 +136,7 @@ impl SolvableOrdersCache {
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
             ethflow_contract_address,
-            surplus_fee_age,
+            //surplus_fee_age,
             limit_order_price_factor,
             store_in_db,
             fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
@@ -166,7 +165,7 @@ impl SolvableOrdersCache {
             .database
             .solvable_orders(
                 min_valid_to,
-                Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
+                //Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
             )
             .await?;
 
@@ -1063,7 +1062,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: None,
+                    //surplus_fee: None,
                     ..Default::default()
                 }),
                 ..Default::default()

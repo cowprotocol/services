@@ -63,8 +63,8 @@ mod tests {
 
         let settlement =
             Settlement::with_default_prices(vec![order(OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
+                //surplus_fee: Some(Default::default()),
+                //surplus_fee_timestamp: Some(Default::default()),
                 executed_surplus_fee: None,
             }))]);
         assert!(has_user_order(&settlement));
@@ -84,8 +84,8 @@ mod tests {
         let settlement = Settlement::with_default_prices(vec![
             order(OrderClass::Liquidity),
             order(OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
+                //surplus_fee: Some(Default::default()),
+                //surplus_fee_timestamp: Some(Default::default()),
                 executed_surplus_fee: None,
             })),
         ]);
