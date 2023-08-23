@@ -152,7 +152,7 @@ async fn init_liquidity(
 
     let balancer_pool_fetcher = Arc::new(
         BalancerPoolFetcher::new(
-            eth.chain_id().into(),
+            eth.network().chain.into(),
             block_retriever.clone(),
             token_info_fetcher.clone(),
             boundary::liquidity::cache_config(),

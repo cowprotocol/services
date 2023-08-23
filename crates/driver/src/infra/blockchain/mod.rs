@@ -13,24 +13,53 @@ pub mod token;
 
 pub use self::contracts::Contracts;
 
+/// An Ethereum RPC connection.
+pub struct Rpc {
+    web3: DynWeb3,
+    network: Network,
+}
+
+/// Network information for an Ethereum blockchain connection.
+#[derive(Clone, Debug)]
+pub struct Network {
+    pub id: eth::NetworkId,
+    pub chain: eth::ChainId,
+}
+
+impl Rpc {
+    /// Instantiate an RPC client to an Ethereum (or Ethereum-compatible) node
+    /// at the specifed URL.
+    pub async fn new(url: &url::Url) -> Result<Self, Error> {
+        let web3 = boundary::buffered_web3_client(url);
+        let id = web3.net().version().await?.into();
+        let chain = web3.eth().chain_id().await?.into();
+
+        Ok(Self {
+            web3,
+            network: Network { id, chain },
+        })
+    }
+
+    /// Returns the network information for the RPC connection.
+    pub fn network(&self) -> &Network {
+        &self.network
+    }
+}
+
 /// The Ethereum blockchain.
 #[derive(Clone)]
 pub struct Ethereum {
     web3: DynWeb3,
-    chain_id: eth::ChainId,
-    network_id: eth::NetworkId,
+    network: Network,
     contracts: Contracts,
     gas: Arc<NativeGasEstimator>,
 }
 
 impl Ethereum {
-    /// Access the Ethereum blockchain through an RPC API hosted at the given
-    /// URL.
-    pub async fn ethrpc(url: &url::Url, addresses: contracts::Addresses) -> Result<Self, Error> {
-        let web3 = boundary::buffered_web3_client(url);
-        let chain_id = web3.eth().chain_id().await?.into();
-        let network_id = web3.net().version().await?.into();
-        let contracts = Contracts::new(&web3, &network_id, addresses);
+    /// Access the Ethereum blockchain through an RPC API.
+    pub async fn new(rpc: Rpc, addresses: contracts::Addresses) -> Result<Self, Error> {
+        let Rpc { web3, network } = rpc;
+        let contracts = Contracts::new(&web3, &network.id, addresses);
         let gas = Arc::new(
             NativeGasEstimator::new(web3.transport().clone(), None)
                 .await
@@ -39,19 +68,14 @@ impl Ethereum {
 
         Ok(Self {
             web3,
-            chain_id,
-            network_id,
+            network,
             contracts,
             gas,
         })
     }
 
-    pub fn chain_id(&self) -> eth::ChainId {
-        self.chain_id
-    }
-
-    pub fn network_id(&self) -> &eth::NetworkId {
-        &self.network_id
+    pub fn network(&self) -> &Network {
+        &self.network
     }
 
     /// Onchain smart contract bindings.
@@ -150,8 +174,7 @@ impl fmt::Debug for Ethereum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("Ethereum")
             .field("web3", &self.web3)
-            .field("chain_id", &self.chain_id)
-            .field("network_id", &self.network_id)
+            .field("network", &self.network)
             .field("contracts", &self.contracts)
             .field("gas", &"Arc<NativeGasEstimator>")
             .finish()
