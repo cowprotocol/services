@@ -2,7 +2,13 @@ use {
     crate::{
         baseline_solver::BaselineSolvable,
         sources::balancer_v2::{
-            pool_fetching::{StablePool, TokenState, WeightedPool, WeightedTokenState},
+            pool_fetching::{
+                StablePool,
+                TokenState,
+                WeightedPool,
+                WeightedPoolVersion,
+                WeightedTokenState,
+            },
             swap::math::BalU256,
         },
     },
@@ -81,6 +87,7 @@ impl TokenState {
 pub struct WeightedPoolRef<'a> {
     pub reserves: &'a HashMap<H160, WeightedTokenState>,
     pub swap_fee: Bfp,
+    pub version: WeightedPoolVersion,
 }
 
 impl BaselineSolvable for WeightedPoolRef<'_> {
@@ -93,7 +100,11 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 
         let in_amount_minus_fees = subtract_swap_fee_amount(in_amount, self.swap_fee).ok()?;
 
-        let out_amount = weighted_math::calc_out_given_in(
+        let calc_out_given_in = match self.version {
+            WeightedPoolVersion::V0 => weighted_math::calc_out_given_in,
+            WeightedPoolVersion::V3Plus => weighted_math::calc_out_given_in_v3,
+        };
+        let out_amount = calc_out_given_in(
             in_reserves.common.upscaled_balance()?,
             in_reserves.weight,
             out_reserves.common.upscaled_balance()?,
@@ -111,7 +122,11 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
 
-        let in_amount = weighted_math::calc_in_given_out(
+        let calc_in_given_out = match self.version {
+            WeightedPoolVersion::V0 => weighted_math::calc_in_given_out,
+            WeightedPoolVersion::V3Plus => weighted_math::calc_in_given_out_v3,
+        };
+        let in_amount = calc_in_given_out(
             in_reserves.common.upscaled_balance()?,
             in_reserves.weight,
             out_reserves.common.upscaled_balance()?,
@@ -245,6 +260,7 @@ impl WeightedPool {
         WeightedPoolRef {
             reserves: &self.reserves,
             swap_fee: self.common.swap_fee,
+            version: self.version,
         }
     }
 }
@@ -315,6 +331,7 @@ mod tests {
                 paused: true,
             },
             reserves,
+            version: Default::default(),
         }
     }
 

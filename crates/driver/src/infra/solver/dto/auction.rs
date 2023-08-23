@@ -170,6 +170,14 @@ impl Auction {
                                 eth::U256::from(pool.fee).to_big_int(),
                                 18,
                             ),
+                            version: match pool.version {
+                                liquidity::balancer::v2::weighted::Version::V0 => {
+                                    WeightedProductVersion::V0
+                                }
+                                liquidity::balancer::v2::weighted::Version::V3Plus => {
+                                    WeightedProductVersion::V3Plus
+                                }
+                            },
                         })
                     }
                     liquidity::Kind::Swapr(pool) => {
@@ -308,6 +316,7 @@ struct WeightedProductPool {
     tokens: IndexMap<eth::H160, WeightedProductReserve>,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     fee: bigdecimal::BigDecimal,
+    version: WeightedProductVersion,
 }
 
 #[serde_as]
@@ -320,6 +329,13 @@ struct WeightedProductReserve {
     scaling_factor: eth::U256,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     weight: bigdecimal::BigDecimal,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum WeightedProductVersion {
+    V0,
+    V3Plus,
 }
 
 #[serde_as]

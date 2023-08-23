@@ -77,6 +77,50 @@ pub fn calc_in_given_out(
     balance_in.mul_up(ratio)
 }
 
+pub fn calc_out_given_in_v3(
+    balance_in: Bfp,
+    weight_in: Bfp,
+    balance_out: Bfp,
+    weight_out: Bfp,
+    amount_in: Bfp,
+) -> Result<Bfp, Error> {
+    if amount_in > balance_in.mul_down(*MAX_IN_RATIO)? {
+        return Err(Error::MaxInRatio);
+    }
+
+    let denominator = balance_in.add(amount_in).expect("See proof above.");
+    let base = balance_in.div_up(denominator)?;
+    let exponent = weight_in.div_down(weight_out)?;
+    let power = base.pow_up_v3(exponent)?;
+
+    balance_out.mul_down(power.complement())
+}
+
+pub fn calc_in_given_out_v3(
+    balance_in: Bfp,
+    weight_in: Bfp,
+    balance_out: Bfp,
+    weight_out: Bfp,
+    amount_out: Bfp,
+) -> Result<Bfp, Error> {
+    if amount_out > balance_out.mul_down(*MAX_OUT_RATIO)? {
+        return Err(Error::MaxOutRatio);
+    }
+
+    let denominator = balance_out.sub(amount_out).expect(
+        "if amount_out > balance_out >= balance_out.mul_down(*MAX_OUT_RATIO) contradicting above \
+         inequality",
+    );
+    let base = balance_out.div_up(denominator)?;
+    let exponent = weight_out.div_up(weight_in)?;
+    let power = base.pow_up_v3(exponent)?;
+    let ratio = power
+        .sub(Bfp::one())
+        .expect("power=0 => base=0 => balance_out=0 => amount_out=0 => denominator div by zero");
+
+    balance_in.mul_up(ratio)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -10,7 +10,11 @@ use {
         },
     },
     anyhow::{anyhow, Result},
-    contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory},
+    contracts::{
+        BalancerV2WeightedPool,
+        BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3,
+    },
     ethcontract::{BlockId, H160},
     futures::{future::BoxFuture, FutureExt as _},
     std::collections::BTreeMap,
@@ -26,12 +30,20 @@ pub struct PoolInfo {
 pub struct PoolState {
     pub tokens: BTreeMap<H160, TokenState>,
     pub swap_fee: Bfp,
+    pub version: Version,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenState {
     pub common: common::TokenState,
     pub weight: Bfp,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Version {
+    #[default]
+    V0,
+    V3Plus,
 }
 
 impl PoolIndexing for PoolInfo {
@@ -84,21 +96,53 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
         _: &mut Web3CallBatch,
         _: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_info = pool_info.clone();
-        async move {
-            let common = common_pool_state.await;
-            let tokens = common
-                .tokens
-                .into_iter()
-                .zip(&pool_info.weights)
-                .map(|((address, common), &weight)| (address, TokenState { common, weight }))
-                .collect();
-            let swap_fee = common.swap_fee;
-
-            Ok(Some(PoolState { tokens, swap_fee }))
-        }
-        .boxed()
+        pool_state(Version::V0, pool_info.clone(), common_pool_state)
     }
+}
+
+#[async_trait::async_trait]
+impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
+    type PoolInfo = <BalancerV2WeightedPoolFactory as FactoryIndexing>::PoolInfo;
+    type PoolState = <BalancerV2WeightedPoolFactory as FactoryIndexing>::PoolState;
+
+    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        let v0 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
+        v0.specialize_pool_info(pool).await
+    }
+
+    fn fetch_pool_state(
+        &self,
+        pool_info: &Self::PoolInfo,
+        common_pool_state: BoxFuture<'static, common::PoolState>,
+        _: &mut Web3CallBatch,
+        _: BlockId,
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
+        pool_state(Version::V3Plus, pool_info.clone(), common_pool_state)
+    }
+}
+
+fn pool_state(
+    version: Version,
+    info: PoolInfo,
+    common: BoxFuture<'static, common::PoolState>,
+) -> BoxFuture<'static, Result<Option<PoolState>>> {
+    async move {
+        let common = common.await;
+        let tokens = common
+            .tokens
+            .into_iter()
+            .zip(&info.weights)
+            .map(|((address, common), &weight)| (address, TokenState { common, weight }))
+            .collect();
+        let swap_fee = common.swap_fee;
+
+        Ok(Some(PoolState {
+            tokens,
+            swap_fee,
+            version,
+        }))
+    }
+    .boxed()
 }
 
 #[cfg(test)]
@@ -267,6 +311,7 @@ mod tests {
             Some(PoolState {
                 tokens: weighted_tokens,
                 swap_fee,
+                version: Version::V0,
             })
         );
     }

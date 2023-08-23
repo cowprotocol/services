@@ -3,7 +3,7 @@ use {
     crate::domain::{eth, liquidity},
     ethereum_types::{H160, H256, U256},
     shared::sources::balancer_v2::{
-        pool_fetching::{CommonPoolState, TokenState, WeightedTokenState},
+        pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
         swap::fixed_point::Bfp,
     },
     std::collections::HashMap,
@@ -48,6 +48,10 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
             paused: false,
         },
         reserves,
+        version: match pool.version {
+            liquidity::weighted_product::Version::V0 => WeightedPoolVersion::V0,
+            liquidity::weighted_product::Version::V3Plus => WeightedPoolVersion::V3Plus,
+        },
     })
 }
 

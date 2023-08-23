@@ -73,7 +73,7 @@ impl Settlement {
 
         let settlement_contract = eth.contracts().settlement();
         let domain = order::signature::domain_separator(
-            eth.chain_id(),
+            eth.network().chain,
             settlement_contract.clone().address().into(),
         );
 
@@ -123,8 +123,8 @@ impl Settlement {
             settlement
                 .encoder
                 .append_to_execution_plan(Arc::new(Erc20ApproveInteraction {
-                    token: eth.contract_at(approval.0.spender.token.into()),
-                    spender: approval.0.spender.address.into(),
+                    token: eth.contract_at(approval.0.token.into()),
+                    spender: approval.0.spender.into(),
                     amount: approval.0.amount,
                 }));
         }
