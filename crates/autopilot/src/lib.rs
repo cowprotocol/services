@@ -521,7 +521,6 @@ pub async fn main(args: arguments::Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
-        //args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -551,27 +550,6 @@ pub async fn main(args: arguments::Arguments) {
             .run_forever()
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
-
-    // if args.process_fill_or_kill_limit_orders {
-    //     let limit_order_age =
-    // chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
-    //     LimitOrderQuoter {
-    //         limit_order_age,
-    //         quoter,
-    //         database: db.clone(),
-    //         parallelism: args.limit_order_quoter_parallelism,
-    //         balance_fetcher: balance_fetcher.clone(),
-    //         strategies: args.quoting_strategies,
-    //         batch_size: args.limit_order_quoter_batch_size,
-    //     }
-    //     .spawn();
-    //     LimitOrderMetrics {
-    //         quoting_age: limit_order_age,
-    //         validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-    //         database: db.clone(),
-    //     }
-    //     .spawn();
-    // }
 
     if args.enable_colocation {
         if args.drivers.is_empty() {

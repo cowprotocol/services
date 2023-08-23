@@ -75,7 +75,6 @@ pub struct SolvableOrdersCache {
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     ethflow_contract_address: Option<H160>,
-    //surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
@@ -111,7 +110,6 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         ethflow_contract_address: Option<H160>,
-        //surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
         fee_objective_scaling_factor: f64,
@@ -136,7 +134,6 @@ impl SolvableOrdersCache {
             signature_validator,
             metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
             ethflow_contract_address,
-            //surplus_fee_age,
             limit_order_price_factor,
             store_in_db,
             fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
@@ -161,13 +158,7 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self
-            .database
-            .solvable_orders(
-                min_valid_to,
-                //Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
-            )
-            .await?;
+        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
         let mut order_events = vec![];
@@ -727,14 +718,7 @@ mod tests {
         mockall::predicate::eq,
         model::{
             interaction::InteractionData,
-            order::{
-                Interactions,
-                LimitOrderClass,
-                OrderBuilder,
-                OrderData,
-                OrderMetadata,
-                OrderUid,
-            },
+            order::{Interactions, OrderBuilder, OrderData, OrderMetadata, OrderUid},
         },
         primitive_types::H160,
         shared::{
@@ -1061,10 +1045,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                class: OrderClass::Limit(LimitOrderClass {
-                    //surplus_fee: None,
-                    ..Default::default()
-                }),
+                class: OrderClass::Limit(Default::default()),
                 ..Default::default()
             },
             ..Default::default()

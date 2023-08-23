@@ -45,23 +45,6 @@ impl Order {
     fn is_liquidity_order(&self) -> bool {
         matches!(self.class, OrderClass::Liquidity)
     }
-
-    // fn effective_sell_amount(&self) -> Option<U256> {
-    //     let amount = match &self.class {
-    //         OrderClass::Limit(limit) => {
-    //             // Use wrapping arithmetic. The orderbook should guarantee that
-    //             // the effective sell amount fits in a `U256`.
-    //             self.sell_amount
-    //                 .overflowing_add(self.fee_amount)
-    //                 .0
-    //                 .overflowing_sub(limit.surplus_fee?)
-    //                 .0
-    //         }
-    //         OrderClass::Market | OrderClass::Liquidity => self.sell_amount,
-    //     };
-
-    //     Some(amount)
-    // }
 }
 
 struct OrderBookApi {
