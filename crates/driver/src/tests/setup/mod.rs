@@ -16,7 +16,6 @@ use {
                 DEFAULT_SCORE_MAX,
                 DEFAULT_SCORE_MIN,
                 DEFAULT_SURPLUS_FACTOR,
-                DEFAULT_SURPLUS_FEE,
                 ETH_ORDER_AMOUNT,
             },
             setup::blockchain::Blockchain,
@@ -156,9 +155,7 @@ impl Order {
     /// Make this a limit order.
     pub fn limit(self) -> Self {
         Self {
-            kind: order::Kind::Limit {
-                surplus_fee: eth::U256::from(DEFAULT_SURPLUS_FEE).into(),
-            },
+            kind: order::Kind::Limit,
             ..self
         }
     }
@@ -184,7 +181,7 @@ impl Order {
 
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
-            order::Kind::Limit { surplus_fee: _ } => self.solver_fee.unwrap_or_default(),
+            order::Kind::Limit => self.solver_fee.unwrap_or_default(),
             _ => 0.into(),
         }
     }
