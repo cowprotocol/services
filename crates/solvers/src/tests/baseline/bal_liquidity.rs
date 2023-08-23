@@ -330,9 +330,6 @@ async fn stable() {
         }))
         .await;
 
-    // TODONOW simulations:
-    // - sel: https://dashboard.tenderly.co/shared/simulation/1f5ff18d-7388-4388-815e-830c1a6229e7
-    // - buy: https://dashboard.tenderly.co/shared/simulation/9054058c-1622-4448-a44e-047fc6cef3ee
     assert_eq!(
         solution,
         json!({
