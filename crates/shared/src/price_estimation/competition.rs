@@ -331,7 +331,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
     // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
-            // highest priority
+            // highest priority (prefer)
             PriceEstimationError::RateLimited => 6,
             PriceEstimationError::DeadlineExceeded => 5,
             PriceEstimationError::Other(_) => 4,
@@ -342,7 +342,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             // lowest priority
         }
     }
-    error_to_integer_priority(b) < error_to_integer_priority(a)
+    error_to_integer_priority(b) > error_to_integer_priority(a)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -508,10 +508,10 @@ mod tests {
             PriceEstimationError::Other(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
-        // no liquidity has higher priority than unsupported token
+        // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::NoLiquidity { .. },
+            PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 
