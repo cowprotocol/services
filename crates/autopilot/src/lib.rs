@@ -10,7 +10,6 @@ use {
             Postgres,
         },
         event_updater::{EventUpdater, GPv2SettlementContract},
-        //fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
     contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
@@ -63,7 +62,6 @@ pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
-//pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
 pub mod run_loop;
 pub mod solvable_orders;
