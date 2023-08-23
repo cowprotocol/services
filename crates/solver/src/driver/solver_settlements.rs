@@ -8,6 +8,29 @@ pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement.user_trades().next().is_some()
 }
 
+#[derive(Debug, Clone)]
+pub enum GasCost {
+    // Calculated by the protocol.
+    Protocol(BigRational),
+    // Provided by the solver.
+    Solver(BigRational),
+}
+
+impl Default for GasCost {
+    fn default() -> Self {
+        Self::Protocol(Default::default())
+    }
+}
+
+impl GasCost {
+    pub fn cost(&self) -> &BigRational {
+        match self {
+            Self::Protocol(cost) => cost,
+            Self::Solver(cost) => cost,
+        }
+    }
+}
+
 // Each individual settlement has an objective value.
 #[derive(Debug, Default, Clone)]
 pub struct RatedSettlement {
@@ -17,8 +40,11 @@ pub struct RatedSettlement {
     pub surplus: BigRational,     // In wei.
     pub earned_fees: BigRational, // In wei.
     pub solver_fees: BigRational, // In wei.
-    pub gas_estimate: U256,       // In gas units.
-    pub gas_price: BigRational,   // In wei per gas unit.
+    // protocol estimated gas usage
+    pub gas_estimate: U256, // In gas units.
+    // protocol estimated gas price
+    pub gas_price: BigRational, // In wei per gas unit.
+    pub gas_cost: GasCost,      // In wei.
     pub objective_value: BigRational,
     pub score: Score,   // auction based score.
     pub ranking: usize, // auction based ranking.

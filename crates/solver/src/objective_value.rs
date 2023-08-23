@@ -1,38 +1,27 @@
-use {
-    crate::settlement::Settlement,
-    num::BigRational,
-    number_conversions::u256_to_big_rational,
-    primitive_types::U256,
-    shared::external_prices::ExternalPrices,
-};
+use {crate::settlement::Settlement, num::BigRational, shared::external_prices::ExternalPrices};
 
 #[derive(Debug)]
 pub struct Inputs {
     pub surplus_given: BigRational,
     pub solver_fees: BigRational,
-    pub gas_price: BigRational,
-    pub gas_amount: BigRational,
+    pub gas_cost: BigRational,
 }
 
 impl Inputs {
     pub fn from_settlement(
         settlement: &Settlement,
         prices: &ExternalPrices,
-        gas_price: BigRational,
-        gas_amount: &U256,
+        gas_cost: BigRational,
     ) -> Self {
-        let gas_amount = u256_to_big_rational(gas_amount);
-
         Self {
             surplus_given: settlement.total_surplus(prices),
             solver_fees: settlement.total_solver_fees(prices),
-            gas_price,
-            gas_amount,
+            gas_cost,
         }
     }
 
     pub fn objective_value(&self) -> BigRational {
-        &self.surplus_given + &self.solver_fees - &self.gas_price * &self.gas_amount
+        &self.surplus_given + &self.solver_fees - &self.gas_cost
     }
 }
 
@@ -65,8 +54,7 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate1.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
 
@@ -79,8 +67,7 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate2.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();
 
@@ -100,8 +87,7 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate1.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
 
@@ -114,8 +100,7 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate2.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();
 
@@ -135,8 +120,7 @@ mod tests {
         let obj_value1 = Inputs {
             surplus_given: surplus1.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate1.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate1.clone() * gas_price.clone(),
         }
         .objective_value();
 
@@ -149,8 +133,7 @@ mod tests {
         let obj_value2 = Inputs {
             surplus_given: surplus2.clone(),
             solver_fees: solver_fees.clone(),
-            gas_amount: gas_estimate2.clone(),
-            gas_price: gas_price.clone(),
+            gas_cost: gas_estimate2.clone() * gas_price.clone(),
         }
         .objective_value();
 

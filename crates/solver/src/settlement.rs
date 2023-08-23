@@ -260,6 +260,7 @@ pub struct Settlement {
     /// success_probability
     pub score: Option<Score>,
     pub success_probability: Option<f64>,
+    pub gas_cost: Option<U256>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -309,6 +310,7 @@ impl Settlement {
             submitter: self.submitter.clone(),
             score: self.score,
             success_probability: self.success_probability,
+            gas_cost: self.gas_cost,
         }
     }
 
@@ -503,6 +505,10 @@ impl Settlement {
             },
             success_probability: match (self.success_probability, other.success_probability) {
                 (Some(left), Some(right)) => Some(left * right),
+                _ => None,
+            },
+            gas_cost: match (self.gas_cost, other.gas_cost) {
+                (Some(left), Some(right)) => Some(left + right),
                 _ => None,
             },
         })

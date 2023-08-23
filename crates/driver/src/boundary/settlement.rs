@@ -214,12 +214,9 @@ impl Settlement {
                 .collect(),
         )?;
         let gas_price = u256_to_big_rational(&auction.gas_price().effective().into());
-        let inputs = solver::objective_value::Inputs::from_settlement(
-            &self.inner,
-            &prices,
-            gas_price,
-            &gas.into(),
-        );
+        let gas_cost = gas_price * u256_to_big_rational(&gas.into());
+        let inputs =
+            solver::objective_value::Inputs::from_settlement(&self.inner, &prices, gas_cost);
         ensure!(!inputs.objective_value().is_negative(), "negative score");
         let objective_value = big_rational_to_u256(&inputs.objective_value())?;
         Ok((objective_value - self.risk.0).into())

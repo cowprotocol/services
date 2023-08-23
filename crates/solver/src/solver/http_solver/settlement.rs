@@ -154,6 +154,7 @@ struct IntermediateSettlement<'a> {
     submitter: SubmissionPreference,
     score: Option<Score>,
     success_probability: Option<f64>,
+    gas_cost: Option<U256>,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
     enforce_correct_fees: bool,
 }
@@ -242,6 +243,7 @@ impl<'a> IntermediateSettlement<'a> {
         let submitter = settled.submitter;
         let score = settled.score;
         let success_probability = settled.success_probability;
+        let gas_cost = settled.gas_cost;
 
         if duplicate_coordinates(&executions) {
             return Err(ConversionError::InvalidExecutionPlans(anyhow!(
@@ -257,6 +259,7 @@ impl<'a> IntermediateSettlement<'a> {
             submitter,
             score,
             success_probability,
+            gas_cost,
             enforce_correct_fees,
         })
     }
@@ -266,6 +269,7 @@ impl<'a> IntermediateSettlement<'a> {
         settlement.submitter = self.submitter;
         settlement.score = self.score;
         settlement.success_probability = self.success_probability;
+        settlement.gas_cost = self.gas_cost;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
