@@ -178,10 +178,7 @@ impl BalancerV2 {
                 contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
                 contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
             ]),
-            stable: factory_addresses(&[
-                contracts::BalancerV2StablePoolFactory::raw_contract(),
-                contracts::BalancerV2StablePoolFactoryV2::raw_contract(),
-            ]),
+            stable: factory_addresses(&[contracts::BalancerV2StablePoolFactoryV2::raw_contract()]),
             liquidity_bootstrapping: factory_addresses(&[
                 contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
                 contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),

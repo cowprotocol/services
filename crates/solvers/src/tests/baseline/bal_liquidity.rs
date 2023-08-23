@@ -306,20 +306,20 @@ async fn stable() {
                     "kind": "stable",
                     "tokens": {
                         "0x6b175474e89094c44da98b954eedeac495271d0f": {
-                            "balance": "40178655991481716284687",
+                            "balance": "505781036390938593206504",
                             "scalingFactor": "1",
                         },
                         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
-                            "balance": "35862722437",
+                            "balance": "554894862074",
                             "scalingFactor": "1000000000000",
                         },
                         "0xdac17f958d2ee523a2206206994597c13d831ec7": {
-                            "balance": "49917496165",
+                            "balance": "1585576741011",
                             "scalingFactor": "1000000000000",
                         },
                     },
-                    "fee": "0.00005",
-                    "amplificationParameter": "1.39",
+                    "fee": "0.0001",
+                    "amplificationParameter": "5.0",
                     "id": "0",
                     "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
                     "gasEstimate": "183520",
@@ -330,6 +330,9 @@ async fn stable() {
         }))
         .await;
 
+    // TODONOW simulations:
+    // - sel: https://dashboard.tenderly.co/shared/simulation/1f5ff18d-7388-4388-815e-830c1a6229e7
+    // - buy: https://dashboard.tenderly.co/shared/simulation/9054058c-1622-4448-a44e-047fc6cef3ee
     assert_eq!(
         solution,
         json!({
@@ -337,7 +340,7 @@ async fn stable() {
                 {
                     "id": 0,
                     "prices": {
-                        "0x6b175474e89094c44da98b954eedeac495271d0f": "9998567",
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": "9999475",
                         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10000000000000000000"
                     },
                     "trades": [
@@ -357,7 +360,7 @@ async fn stable() {
                             "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
                             "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
                             "inputAmount": "10000000000000000000",
-                            "outputAmount": "9998567"
+                            "outputAmount": "9999475"
                         },
                     ]
                 },
@@ -365,7 +368,7 @@ async fn stable() {
                     "id": 1,
                     "prices": {
                         "0x6b175474e89094c44da98b954eedeac495271d0f": "10000000",
-                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10001432531566571462"
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10000524328839166557"
                     },
                     "trades": [
                         {
@@ -383,7 +386,7 @@ async fn stable() {
                             "id": "0",
                             "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
                             "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-                            "inputAmount": "10001432531566571462",
+                            "inputAmount": "10000524328839166557",
                             "outputAmount": "10000000"
                         },
                     ]

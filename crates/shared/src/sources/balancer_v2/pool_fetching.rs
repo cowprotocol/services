@@ -43,7 +43,6 @@ use {
     contracts::{
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactory,
         BalancerV2StablePoolFactoryV2,
         BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
@@ -170,7 +169,6 @@ pub enum BalancerFactoryKind {
     WeightedV3,
     WeightedV4,
     Weighted2Token,
-    Stable,
     StableV2,
     LiquidityBootstrapping,
     NoProtocolFeeLiquidityBootstrapping,
@@ -186,7 +184,6 @@ impl BalancerFactoryKind {
                 Self::WeightedV3,
                 Self::WeightedV4,
                 Self::Weighted2Token,
-                Self::Stable,
                 Self::StableV2,
             ],
             100 => vec![Self::WeightedV3, Self::WeightedV4, Self::StableV2],
@@ -229,7 +226,6 @@ impl BalancerContracts {
                 BalancerFactoryKind::Weighted2Token => {
                     instance!(BalancerV2WeightedPool2TokensFactory)
                 }
-                BalancerFactoryKind::Stable => instance!(BalancerV2StablePoolFactory),
                 BalancerFactoryKind::StableV2 => instance!(BalancerV2StablePoolFactoryV2),
                 BalancerFactoryKind::LiquidityBootstrapping => {
                     instance!(BalancerV2LiquidityBootstrappingPoolFactory)
@@ -388,8 +384,8 @@ async fn create_aggregate_pool_fetcher(
             BalancerFactoryKind::WeightedV3 | BalancerFactoryKind::WeightedV4 => {
                 registry!(BalancerV2WeightedPoolFactoryV3, instance)
             }
-            BalancerFactoryKind::Stable | BalancerFactoryKind::StableV2 => {
-                registry!(BalancerV2StablePoolFactory, instance)
+            BalancerFactoryKind::StableV2 => {
+                registry!(BalancerV2StablePoolFactoryV2, instance)
             }
             BalancerFactoryKind::LiquidityBootstrapping
             | BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
