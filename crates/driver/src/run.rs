@@ -108,7 +108,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
 }
 
 async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
-    blockchain::Rpc::connect(&args.ethrpc)
+    blockchain::Rpc::new(&args.ethrpc)
         .await
         .expect("connect ethereum RPC")
 }

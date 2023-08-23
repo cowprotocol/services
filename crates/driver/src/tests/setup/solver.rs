@@ -195,7 +195,7 @@ impl Solver {
 
         let url = config.blockchain.web3_url.parse().unwrap();
         let eth = Ethereum::new(
-            infra::blockchain::Rpc::connect(&url).await.unwrap(),
+            infra::blockchain::Rpc::new(&url).await.unwrap(),
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
