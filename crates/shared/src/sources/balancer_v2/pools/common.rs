@@ -286,7 +286,7 @@ pub fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
 }
 
 /// Converts a token decimal count to its corresponding scaling exponent.
-fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
+pub fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
     // Technically this should never fail for Balancer Pools since tokens
     // with more than 18 decimals (not supported by balancer contracts)
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/deployments-latest/pkg/pool-utils/contracts/BasePool.sol#L476-L487
