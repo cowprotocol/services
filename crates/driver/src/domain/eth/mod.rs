@@ -27,7 +27,7 @@ pub const ETH_TOKEN: TokenAddress = TokenAddress(ContractAddress(H160([0xee; 20]
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChainId(pub U256);
 
 impl From<U256> for ChainId {

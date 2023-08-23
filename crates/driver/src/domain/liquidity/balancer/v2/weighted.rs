@@ -25,6 +25,7 @@ pub struct Pool {
     pub id: Id,
     pub reserves: Reserves,
     pub fee: Fee,
+    pub version: Version,
 }
 
 impl Pool {
@@ -135,4 +136,16 @@ impl From<Weight> for eth::U256 {
     fn from(value: Weight) -> Self {
         value.0
     }
+}
+
+/// The weighted pool version. Different Balancer V2 weighted pool versions use
+/// slightly different math.
+#[derive(Clone, Copy, Debug)]
+pub enum Version {
+    /// Weighted pool math from the original Balancer V2 weighted pool
+    /// implementation.
+    V0,
+    /// Weighted pool math for Balancer V2 weighted pools versions 3+. This uses
+    /// a "shortcut" when computing exponentiation for 50/50 and 20/80 pools.
+    V3Plus,
 }

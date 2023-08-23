@@ -8,6 +8,7 @@ use {
 pub struct Pool {
     pub reserves: Reserves,
     pub fee: eth::Rational,
+    pub version: Version,
 }
 
 /// A reprensentation of BalancerV2-like weighted pool reserves.
@@ -65,4 +66,16 @@ pub struct Reserve {
     pub asset: eth::Asset,
     pub weight: eth::Rational,
     pub scale: liquidity::ScalingFactor,
+}
+
+/// The version of the weighted product math to use. Different versions have
+/// slightly different rounding properties.
+#[derive(Copy, Clone, Debug)]
+pub enum Version {
+    /// Weighted pool math from the original Balancer V2 weighted pool
+    /// implementation.
+    V0,
+    /// Weighted pool math for Balancer V2 weighted pools versions 3+. This uses
+    /// a "shortcut" when computing exponentiation for 50/50 and 20/80 pools.
+    V3Plus,
 }

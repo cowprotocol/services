@@ -74,6 +74,7 @@ impl BalancerV2Liquidity {
                 address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee,
+                version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.id,
                     settlement: self.settlement.clone(),
@@ -234,6 +235,7 @@ mod tests {
                 StablePool,
                 TokenState,
                 WeightedPool,
+                WeightedPoolVersion,
                 WeightedTokenState,
             },
         },
@@ -286,6 +288,7 @@ mod tests {
                         weight: "0.5".parse().unwrap(),
                     },
                 },
+                version: WeightedPoolVersion::V0,
             },
             WeightedPool {
                 common: CommonPoolState {
@@ -310,6 +313,7 @@ mod tests {
                         weight: "0.5".parse().unwrap(),
                     },
                 },
+                version: WeightedPoolVersion::V3Plus,
             },
         ];
 
@@ -397,12 +401,28 @@ mod tests {
         assert_eq!(stable_orders.len(), 1);
 
         assert_eq!(
-            (&weighted_orders[0].reserves, &weighted_orders[0].fee),
-            (&weighted_pools[0].reserves, &"0.002".parse().unwrap()),
+            (
+                &weighted_orders[0].reserves,
+                &weighted_orders[0].fee,
+                weighted_orders[0].version
+            ),
+            (
+                &weighted_pools[0].reserves,
+                &"0.002".parse().unwrap(),
+                WeightedPoolVersion::V0
+            ),
         );
         assert_eq!(
-            (&weighted_orders[1].reserves, &weighted_orders[1].fee),
-            (&weighted_pools[1].reserves, &"0.001".parse().unwrap()),
+            (
+                &weighted_orders[1].reserves,
+                &weighted_orders[1].fee,
+                weighted_orders[1].version
+            ),
+            (
+                &weighted_pools[1].reserves,
+                &"0.001".parse().unwrap(),
+                WeightedPoolVersion::V3Plus
+            ),
         );
         assert_eq!(
             (&stable_orders[0].reserves, &stable_orders[0].fee),

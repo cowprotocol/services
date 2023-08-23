@@ -378,6 +378,7 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
     WeightedPoolRef {
         reserves: &amm.reserves,
         swap_fee: amm.fee,
+        version: amm.version,
     }
 }
 
@@ -745,6 +746,7 @@ mod tests {
                     },
                 },
                 fee: "0.001".parse().unwrap(),
+                version: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
             }),
         ];
@@ -815,6 +817,7 @@ mod tests {
             .cloned()
             .collect(),
             fee: Bfp::zero(),
+            version: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         // When baseline solver goes from the buy token to the sell token it sees that a
