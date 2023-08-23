@@ -24,7 +24,6 @@ pub mod external_prices;
 pub mod fee_subsidy;
 pub mod gas_price;
 pub mod gas_price_estimation;
-pub mod gelato_api;
 pub mod http_client;
 pub mod http_solver;
 pub mod interaction;
