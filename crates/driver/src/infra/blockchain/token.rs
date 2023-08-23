@@ -20,7 +20,7 @@ impl Erc20 {
     /// Fetch the ERC20 allowance for the spender. See the allowance method in
     /// EIP-20.
     ///
-    /// https://eips.ethereum.org/EIPS/eip-20#methods
+    /// https://eips.ethereum.org/EIPS/eip-20#allowance
     pub async fn allowance(
         &self,
         owner: eth::Address,
@@ -38,7 +38,7 @@ impl Erc20 {
     /// Fetch the ERC20 token decimals. Returns `None` if the token does not
     /// implement this optional method. See the decimals method in EIP-20.
     ///
-    /// https://eips.ethereum.org/EIPS/eip-20#methods
+    /// https://eips.ethereum.org/EIPS/eip-20#decimals
     pub async fn decimals(&self) -> Result<Option<u8>, Error> {
         match self.contract.decimals().call().await {
             Ok(decimals) => Ok(Some(decimals)),
@@ -50,7 +50,7 @@ impl Erc20 {
     /// Fetch the ERC20 token symbol. Returns `None` if the token does not
     /// implement this optional method. See the symbol method in EIP-20.
     ///
-    /// https://eips.ethereum.org/EIPS/eip-20#methods
+    /// https://eips.ethereum.org/EIPS/eip-20#symbol
     pub async fn symbol(&self) -> Result<Option<String>, Error> {
         match self.contract.symbol().call().await {
             Ok(symbol) => Ok(Some(symbol)),
@@ -62,7 +62,7 @@ impl Erc20 {
     /// Fetch the ERC20 balance of the specified account. Returns the current
     /// balance as an [`eth::TokenAmount`]. See the balanceOf method in EIP-20.
     ///
-    /// https://eips.ethereum.org/EIPS/eip-20#methods
+    /// https://eips.ethereum.org/EIPS/eip-20#balanceof
     pub async fn balance(&self, holder: eth::Address) -> Result<eth::TokenAmount, Error> {
         self.contract
             .balance_of(holder.0)
