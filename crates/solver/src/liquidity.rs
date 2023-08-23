@@ -22,7 +22,12 @@ use {
         http_solver::model::TokenAmount,
         sources::{
             balancer_v2::{
-                pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+                pool_fetching::{
+                    AmplificationParameter,
+                    TokenState,
+                    WeightedPoolVersion,
+                    WeightedTokenState,
+                },
                 swap::fixed_point::Bfp,
             },
             uniswap_v2::pool_fetching::Pool,
@@ -318,6 +323,7 @@ pub struct WeightedProductOrder {
     pub address: H160,
     pub reserves: HashMap<H160, WeightedTokenState>,
     pub fee: Bfp,
+    pub version: WeightedPoolVersion,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
@@ -445,6 +451,7 @@ impl Default for WeightedProductOrder {
             address: Default::default(),
             reserves: Default::default(),
             fee: Bfp::zero(),
+            version: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
         }
     }

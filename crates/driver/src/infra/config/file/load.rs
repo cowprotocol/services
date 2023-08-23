@@ -159,12 +159,17 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::BalancerV2Config::Manual {
                         vault,
                         weighted,
+                        weighted_v3plus,
                         stable,
                         liquidity_bootstrapping,
                         pool_deny_list,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
                         weighted: weighted
+                            .into_iter()
+                            .map(eth::ContractAddress::from)
+                            .collect(),
+                        weighted_v3plus: weighted_v3plus
                             .into_iter()
                             .map(eth::ContractAddress::from)
                             .collect(),

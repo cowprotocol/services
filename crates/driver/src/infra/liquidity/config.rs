@@ -138,6 +138,9 @@ pub struct BalancerV2 {
     /// Weighted pool factory addresses.
     pub weighted: Vec<eth::ContractAddress>,
 
+    /// Weighted pool factory v3+ addresses.
+    pub weighted_v3plus: Vec<eth::ContractAddress>,
+
     /// Stable pool factory addresses.
     pub stable: Vec<eth::ContractAddress>,
 
@@ -169,9 +172,11 @@ impl BalancerV2 {
             vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), network)?,
             weighted: factory_addresses(&[
                 contracts::BalancerV2WeightedPoolFactory::raw_contract(),
+                contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),
+            ]),
+            weighted_v3plus: factory_addresses(&[
                 contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
                 contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
-                contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),
             ]),
             stable: factory_addresses(&[
                 contracts::BalancerV2StablePoolFactory::raw_contract(),
