@@ -821,14 +821,15 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         // When baseline solver goes from the buy token to the sell token it sees that a
-        // path with a sell amount of 7999613.
+        // path with a sell amount of 7999613. However, since we "bump" the sell amount,
+        // we will compute an input amount that is sufficiently high.
         assert_eq!(
             pool_0.get_amount_in(tokens[1], (1.into(), tokens[2])),
             Some(1.into())
         );
         assert_eq!(
             pool_1.get_amount_in(tokens[0], (1.into(), tokens[1])),
-            Some(7999613.into())
+            Some(8999613.into())
         );
         // But then when it goes from the sell token to the buy token to construct the
         // settlement it encounters the asymmetry of the weighted pool. With the
@@ -836,6 +837,11 @@ mod tests {
         assert_eq!(
             pool_1.get_amount_out(tokens[1], (7999613.into(), tokens[0])),
             Some(0.into()),
+        );
+        // Note that the bumped input amount will be high enough.
+        assert_eq!(
+            pool_1.get_amount_out(tokens[1], (8999613.into(), tokens[0])),
+            Some(1.into()),
         );
         // This makes using the second pool fail.
         assert_eq!(pool_0.get_amount_in(tokens[2], (0.into(), tokens[1])), None);

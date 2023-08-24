@@ -15,7 +15,7 @@ use {
     error::Error,
     ethcontract::{H160, U256},
     fixed_point::Bfp,
-    std::collections::HashMap,
+    std::{cmp, collections::HashMap},
 };
 
 mod error;
@@ -135,7 +135,17 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.common.downscale_up(in_amount).ok()?;
-        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
+        let in_amount = add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()?;
+
+        converge_in_amount(
+            in_amount,
+            out_amount,
+            |x| self.get_amount_out(out_token, (x, in_token)),
+            (
+                in_reserves.common.scaling_exponent,
+                out_reserves.common.scaling_exponent,
+            ),
+        )
     }
 
     fn gas_cost(&self) -> usize {
@@ -245,14 +255,57 @@ impl BaselineSolvable for StablePoolRef<'_> {
     }
 }
 
-impl StablePool {
-    fn as_pool_ref(&self) -> StablePoolRef {
-        StablePoolRef {
-            reserves: &self.reserves,
-            swap_fee: self.common.swap_fee,
-            amplification_parameter: self.amplification_parameter.as_u256(),
-        }
+/// Balancer V2 pools are "unstable", where if you compute an input amount large
+/// enough to buy X tokens, selling the computed amount over the same pool in
+/// the exact same state will yield X-𝛿 tokens. To work around this, for each
+/// hop, we try to converge to some sell amount >= the required buy amount.
+fn converge_in_amount(
+    in_amount: U256,
+    exact_out_amount: U256,
+    get_amount_out: impl Fn(U256) -> Option<U256>,
+    (in_exponent, out_exponent): (u8, u8),
+) -> Option<U256> {
+    let out_amount = get_amount_out(in_amount)?;
+    if out_amount >= exact_out_amount {
+        return Some(in_amount);
     }
+
+    // If the computed output amount is not enough; we bump the sell amount a
+    // bit. We start with some epsilon and multiply the amount to bump by 10 for
+    // each iteration. When swapping tokens with 18 decimals, this corresponds
+    // to bumping from [1e-12, 1e-6).
+    let mut bump = in_token_epsilon(in_exponent, out_exponent);
+    for _ in 0..6 {
+        let bumped_in_amount = in_amount.checked_add(bump)?;
+        let out_amount = get_amount_out(bumped_in_amount)?;
+        if out_amount >= exact_out_amount {
+            return Some(bumped_in_amount);
+        }
+
+        bump *= 10;
+    }
+
+    None
+}
+
+/// Computes the smallest "epsilon" amount in input token atoms given input and
+/// output token scaling exponent (which is an additive inverse of the token
+/// decimals).
+///
+/// This value is computed as 1e-12 token atoms normalized to the input token
+/// decimals. Additionally, we make sure that the epsilon is large enough to
+/// have an effect on the output token.
+///
+/// The amount 1e-12 was chosen based on observed errors when debugging Balancer
+/// pool input/output amount computations.
+fn in_token_epsilon(in_exponent: u8, out_exponent: u8) -> U256 {
+    // Compute the exponent of the epsilon value. We take the maximum of the
+    // desired 1e-12 with the tokens' scaling exponents. This ensures that we
+    // don't use an epsilon of input token that is much smaller than an atom
+    // of the output token.
+    let exp = cmp::max(6_u8, cmp::max(in_exponent, out_exponent));
+    // Normalize the exponent to the input token's decimals.
+    U256::exp10((exp - in_exponent) as _)
 }
 
 impl WeightedPool {
@@ -279,6 +332,16 @@ impl BaselineSolvable for WeightedPool {
     }
 }
 
+impl StablePool {
+    fn as_pool_ref(&self) -> StablePoolRef {
+        StablePoolRef {
+            reserves: &self.reserves,
+            swap_fee: self.common.swap_fee,
+            amplification_parameter: self.amplification_parameter.as_u256(),
+        }
+    }
+}
+
 impl BaselineSolvable for StablePool {
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
         self.as_pool_ref().get_amount_out(out_token, input)
@@ -297,7 +360,10 @@ impl BaselineSolvable for StablePool {
 mod tests {
     use {
         super::*,
-        crate::sources::balancer_v2::pool_fetching::{AmplificationParameter, CommonPoolState},
+        crate::sources::balancer_v2::{
+            pool_fetching::{AmplificationParameter, CommonPoolState},
+            pools::common::scaling_exponent_from_decimals,
+        },
         std::collections::HashMap,
     };
 
@@ -527,5 +593,40 @@ mod tests {
         let amount_out = 900_000_000_000_000_000_000_u128.into();
         let res_out = pool.get_amount_in(usdc, (amount_out, dai));
         assert_eq!(res_out.unwrap(), amount_in.into());
+    }
+
+    #[test]
+    fn in_token_epilon_values() {
+        // two 18-decimal tokens should correspond to 1e-12, or 1e6 atoms.
+        assert_eq!(
+            in_token_epsilon(
+                scaling_exponent_from_decimals(18).unwrap(),
+                scaling_exponent_from_decimals(18).unwrap(),
+            ),
+            U256::exp10(6)
+        );
+
+        // 18-decimal token input with 6-decimal token output (e.g. DAI->USDC)
+        // here we expect 1e-6 (i.e. 1 USDC atom) - or 1e12 DAI atoms, as
+        // smaller amounts of DAI aren't expected to have an impact on the USDC
+        // output.
+        assert_eq!(
+            in_token_epsilon(
+                scaling_exponent_from_decimals(18).unwrap(),
+                scaling_exponent_from_decimals(6).unwrap(),
+            ),
+            U256::exp10(12)
+        );
+
+        // 2-decimal token input with 6-decimal token output (e.g. GUSD->USDC)
+        // here we expect 1e-2 or 1 GUSD atom, as this is the smallest amount to
+        // bump that is greater than 1e-12.
+        assert_eq!(
+            in_token_epsilon(
+                scaling_exponent_from_decimals(2).unwrap(),
+                scaling_exponent_from_decimals(6).unwrap(),
+            ),
+            U256::one()
+        );
     }
 }

@@ -2,13 +2,9 @@
 //! onchain liquidity.
 
 use {
-    crate::conversions::U256Ext,
     ethcontract::{H160, U256},
     model::TokenPair,
-    std::{
-        cmp,
-        collections::{HashMap, HashSet},
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 /// The maximum number of hops to use when trading with AMMs along a path.
@@ -97,38 +93,6 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
     path: &[H160],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,
 ) -> Option<Estimate<'a, U256, L>> {
-    // Some baseline liquidity is "unstable", where if you compute an input
-    // amount large enough to buy X tokens, selling the computed amount over the
-    // same pool in the exact same state will yield X-𝛿 tokens. To work around
-    // this, for each hop, we try to converge to some sell amount >= the
-    // required buy amount.
-    let get_amount_in =
-        |liquidity: &L, in_token: H160, (exact_out_amount, out_token): (U256, H160)| {
-            /// Upper bound on number of iterations to find a sufficiently high
-            /// sell amount.
-            const MAX_ITERATIONS: usize = 3;
-
-            let mut in_amount = liquidity.get_amount_in(in_token, (exact_out_amount, out_token))?;
-            for _ in 0..MAX_ITERATIONS {
-                let out_amount = liquidity.get_amount_out(out_token, (in_amount, in_token))?;
-                if out_amount >= exact_out_amount {
-                    return Some(in_amount);
-                }
-
-                // The computed output amount is not enough; so scale the sell
-                // amount up a bit.
-                let bump = cmp::max(
-                    (exact_out_amount - out_amount)
-                        .checked_mul(in_amount)?
-                        .checked_ceil_div(&out_amount)?,
-                    U256::from(1),
-                );
-                in_amount = in_amount.checked_add(bump)?;
-            }
-
-            None
-        };
-
     let buy_token = path.last()?;
     path.iter()
         .rev()
@@ -143,7 +107,7 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
                     .filter_map(|liquidity| {
                         Some((
                             liquidity,
-                            get_amount_in(liquidity, *current, (amount, previous))?,
+                            liquidity.get_amount_in(*current, (amount, previous))?,
                         ))
                     })
                     .min_by_key(|(_, amount)| *amount)?;
