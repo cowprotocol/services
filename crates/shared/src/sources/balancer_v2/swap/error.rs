@@ -51,6 +51,7 @@ errors_from_codes!(
     (MaxOutRatio, 305),
     (InvalidToken, 309),
     (StableInvariantDidntConverge, 321),
+    (StableGetBalanceDidntConverge, 322),
 );
 
 #[cfg(test)]

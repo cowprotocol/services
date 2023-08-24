@@ -1,16 +1,16 @@
-pub use shared::sources::balancer_v2::pool_fetching::WeightedPool as Pool;
+pub use shared::sources::balancer_v2::pool_fetching::StablePool as Pool;
 use {
     crate::domain::{eth, liquidity},
     ethereum_types::{H160, H256, U256},
     shared::sources::balancer_v2::{
-        pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
+        pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
     },
 };
 
-/// Converts a domain pool into a [`shared`] Balancer V2 weighted pool. Returns
+/// Converts a domain pool into a [`shared`] Balancer V2 stable pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.
-pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool) -> Option<Pool> {
+pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option<Pool> {
     // NOTE: this is only used for encoding and not for solving, so it's OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
@@ -28,16 +28,18 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
         .map(|reserve| {
             Some((
                 reserve.asset.token.0,
-                WeightedTokenState {
-                    common: TokenState {
-                        balance: reserve.asset.amount,
-                        scaling_exponent: reserve.scale.exponent(),
-                    },
-                    weight: to_fixed_point(&reserve.weight)?,
+                TokenState {
+                    balance: reserve.asset.amount,
+                    scaling_exponent: reserve.scale.exponent(),
                 },
             ))
         })
         .collect::<Option<_>>()?;
+    let amplification_parameter = AmplificationParameter::new(
+        *pool.amplification_parameter.numer(),
+        *pool.amplification_parameter.denom(),
+    )
+    .ok()?;
 
     Some(Pool {
         common: CommonPoolState {
@@ -47,10 +49,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
             paused: false,
         },
         reserves,
-        version: match pool.version {
-            liquidity::weighted_product::Version::V0 => WeightedPoolVersion::V0,
-            liquidity::weighted_product::Version::V3Plus => WeightedPoolVersion::V3Plus,
-        },
+        amplification_parameter,
     })
 }
 

@@ -230,3 +230,165 @@ async fn weighted_v3plus() {
         }),
     );
 }
+
+#[tokio::test]
+async fn stable() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "1"
+                base-tokens = []
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0x6b175474e89094c44da98b954eedeac495271d0f": {
+                    "decimals": 18,
+                    "symbol": "DAI",
+                    "referencePrice": "597423824203645",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+                    "decimals": 6,
+                    "symbol": "USDC",
+                    "referencePrice": "597647838715990684620292096",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+                    "decimals": 18,
+                    "symbol": "WETH",
+                    "referencePrice": "1000000000000000000",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                              0101010101010101010101010101010101010101\
+                              01010101",
+                    "sellToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                    "sellAmount": "10000000000000000000",
+                    "buyAmount": "9500000",
+                    "feeAmount": "0",
+                    "kind": "sell",
+                    "partiallyFillable": false,
+                    "class": "market",
+                },
+                {
+                    "uid": "0x0202020202020202020202020202020202020202020202020202020202020202\
+                              0202020202020202020202020202020202020202\
+                              02020202",
+                    "sellToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                    "buyToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                    "sellAmount": "10500000000000000000",
+                    "buyAmount": "10000000",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                },
+            ],
+            "liquidity": [
+                {
+                    "kind": "stable",
+                    "tokens": {
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": {
+                            "balance": "505781036390938593206504",
+                            "scalingFactor": "1",
+                        },
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": {
+                            "balance": "554894862074",
+                            "scalingFactor": "1000000000000",
+                        },
+                        "0xdac17f958d2ee523a2206206994597c13d831ec7": {
+                            "balance": "1585576741011",
+                            "scalingFactor": "1000000000000",
+                        },
+                    },
+                    "fee": "0.0001",
+                    "amplificationParameter": "5000.0",
+                    "id": "0",
+                    "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
+                    "gasEstimate": "183520",
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [
+                {
+                    "id": 0,
+                    "prices": {
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": "9999475",
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10000000000000000000"
+                    },
+                    "trades": [
+                        {
+                            "kind": "fulfillment",
+                            "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                                        0101010101010101010101010101010101010101\
+                                        01010101",
+                            "executedAmount": "10000000000000000000"
+                        }
+                    ],
+                    "interactions": [
+                        {
+                            "kind": "liquidity",
+                            "internalize": false,
+                            "id": "0",
+                            "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                            "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                            "inputAmount": "10000000000000000000",
+                            "outputAmount": "9999475"
+                        },
+                    ]
+                },
+                {
+                    "id": 1,
+                    "prices": {
+                        "0x6b175474e89094c44da98b954eedeac495271d0f": "10000000",
+                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "10000524328839166557"
+                    },
+                    "trades": [
+                        {
+                            "kind": "fulfillment",
+                            "order": "0x0202020202020202020202020202020202020202020202020202020202020202\
+                                        0202020202020202020202020202020202020202\
+                                        02020202",
+                            "executedAmount": "10000000"
+                        }
+                    ],
+                    "interactions": [
+                        {
+                            "kind": "liquidity",
+                            "internalize": false,
+                            "id": "0",
+                            "inputToken": "0x6b175474e89094c44da98b954eedeac495271d0f",
+                            "outputToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                            "inputAmount": "10000524328839166557",
+                            "outputAmount": "10000000"
+                        },
+                    ]
+                },
+            ]
+        }),
+    );
+}
