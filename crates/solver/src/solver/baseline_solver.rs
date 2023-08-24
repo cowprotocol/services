@@ -396,7 +396,7 @@ mod tests {
             },
             test::account,
         },
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::order::OrderKind,
         num::rational::Ratio,
         shared::{
@@ -729,7 +729,7 @@ mod tests {
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 address: H160::from_low_u64_be(2),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         common: TokenState {
                             balance: 799_086_982_149_629_058_u128.into(),
