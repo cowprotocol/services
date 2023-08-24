@@ -17,6 +17,11 @@ include_contracts! {
     BalancerV2Authorizer;
     BalancerV2BasePool;
     BalancerV2BasePoolFactory;
+    BalancerV2ComposableStablePool;
+    BalancerV2ComposableStablePoolFactory;
+    BalancerV2ComposableStablePoolFactoryV3;
+    BalancerV2ComposableStablePoolFactoryV4;
+    BalancerV2ComposableStablePoolFactoryV5;
     BalancerV2LiquidityBootstrappingPool;
     BalancerV2LiquidityBootstrappingPoolFactory;
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory;
