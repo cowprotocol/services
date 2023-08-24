@@ -50,12 +50,12 @@ impl Display for Arguments {
     }
 }
 
-impl From<&Arguments> for ethrpc::Arguments {
-    fn from(args: &Arguments) -> ethrpc::Arguments {
-        ethrpc::Arguments {
-            ethrpc_max_batch_size: args.ethrpc_max_batch_size,
-            ethrpc_max_concurrent_requests: args.ethrpc_max_concurrent_requests,
-            ethrpc_batch_delay: args.ethrpc_batch_delay,
+impl Arguments {
+    fn ethrpc(&self) -> ethrpc::Config {
+        ethrpc::Config {
+            ethrpc_max_batch_size: self.ethrpc_max_batch_size,
+            ethrpc_max_concurrent_requests: self.ethrpc_max_concurrent_requests,
+            ethrpc_batch_delay: self.ethrpc_batch_delay,
         }
     }
 }
@@ -68,5 +68,5 @@ pub fn web3(
     name: impl ToString,
 ) -> Web3 {
     let http_builder = http_factory.builder();
-    ethrpc::web3(args.into(), http_builder, url, name)
+    ethrpc::web3(args.ethrpc(), http_builder, url, name)
 }

@@ -9,11 +9,7 @@ use {
     self::{buffered::BufferedTransport, http::HttpTransport},
     ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
     reqwest::{Client, Url},
-    std::{
-        fmt::{self, Display, Formatter},
-        num::NonZeroUsize,
-        time::Duration,
-    },
+    std::{num::NonZeroUsize, time::Duration},
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
@@ -22,7 +18,8 @@ pub type Web3 = DynWeb3;
 pub type Web3Transport = DynTransport;
 pub type Web3CallBatch = CallBatch<Web3Transport>;
 
-pub struct Arguments {
+#[derive(Debug)]
+pub struct Config {
     /// Maximum batch size for Ethereum RPC requests. Use '0' to disable
     /// batching.
     pub ethrpc_max_batch_size: usize,
@@ -36,7 +33,7 @@ pub struct Arguments {
     pub ethrpc_batch_delay: Duration,
 }
 
-impl Arguments {
+impl Config {
     /// Returns the buffered transport configuration or `None` if batching is
     /// disabled.
     fn into_buffered_configuration(self) -> Option<buffered::Configuration> {
@@ -54,7 +51,7 @@ impl Arguments {
     }
 }
 
-impl Default for Arguments {
+impl Default for Config {
     fn default() -> Self {
         Self {
             ethrpc_max_batch_size: 20,
@@ -64,22 +61,9 @@ impl Default for Arguments {
     }
 }
 
-impl Display for Arguments {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "ethrpc_max_batch_size: {}", self.ethrpc_max_batch_size)?;
-        writeln!(
-            f,
-            "ethrpc_max_concurrent_requests: {}",
-            self.ethrpc_max_concurrent_requests
-        )?;
-
-        Ok(())
-    }
-}
-
 /// Create a Web3 instance.
 pub fn web3(
-    args: Arguments,
+    args: Config,
     http_factory: reqwest::ClientBuilder,
     url: &Url,
     name: impl ToString,
