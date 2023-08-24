@@ -279,7 +279,7 @@ impl TransportMetrics {
 mod tests {
     use {
         super::*,
-        crate::ethrpc::{create_env_test_transport, Web3},
+        crate::{create_env_test_transport, Web3},
     };
 
     #[test]

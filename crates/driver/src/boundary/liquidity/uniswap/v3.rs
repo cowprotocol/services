@@ -78,7 +78,7 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = shared::ethrpc::dummy::web3();
+    let web3 = ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
         UniswapV3SwapRouter::at(&web3, pool.router.0),

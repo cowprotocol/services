@@ -2,13 +2,11 @@
 //! in order to determine whether or not it is valid.
 
 use {
-    crate::{
-        ethrpc::extensions::{StateOverride, StateOverrides},
-        trade_finding::{EncodedInteraction, Interaction},
-    },
+    crate::trade_finding::{EncodedInteraction, Interaction},
     anyhow::Result,
     contracts::support::Trader,
     ethcontract::{H160, U256},
+    ethrpc::extensions::{StateOverride, StateOverrides},
     std::{collections::HashMap, iter},
     web3::types::CallRequest,
 };

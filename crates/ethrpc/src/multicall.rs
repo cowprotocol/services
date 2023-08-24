@@ -1,7 +1,7 @@
 //! Multicall encoding and decoding.
 
 use {
-    crate::ethrpc::dummy,
+    crate::dummy,
     contracts::support::Multicall,
     ethcontract::{
         errors::ExecutionError,
@@ -219,7 +219,7 @@ where
 mod tests {
     use {
         super::*,
-        crate::ethrpc::{create_env_test_transport, Web3},
+        crate::{create_env_test_transport, Web3},
         std::fmt::Debug,
     };
 
@@ -244,9 +244,10 @@ mod tests {
                 data: vec![3, 4],
             },
         ]);
+        let bytecode = &<Multicall>::raw_contract().bytecode.to_bytes().unwrap().0[..];
 
         let expected = [
-            &bytecode!(Multicall).0[..],
+            bytecode,
             &hex!(
                 "0000000000000000000000000000000000000000000000000000000000000020
                  0000000000000000000000000000000000000000000000000000000000000002
@@ -275,7 +276,7 @@ mod tests {
     fn decode_multicall() {
         let decoded = decode(
             3,
-            bytes!(
+            hex!(
                 "0000000000000000000000000000000000000000000000000000000000000020
                  0000000000000000000000000000000000000000000000000000000000000003
                  0000000000000000000000000000000000000000000000000000000000000060
@@ -296,7 +297,8 @@ mod tests {
                  0000000000000000000000000000000000000000000000000000000000000004
                  706f6f7000000000000000000000000000000000000000000000000000000000
                          00000000000000000000000000000000000000000000000000000000"
-            ),
+            )
+            .into(),
         );
 
         assert_result_eq(

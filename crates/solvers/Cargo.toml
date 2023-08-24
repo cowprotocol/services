@@ -18,6 +18,7 @@ bigdecimal = { version = "0.3", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"], default-features = false }
 clap = { version = "4", features = ["derive", "env"] }
 ethereum-types = "0.14"
+ethrpc = { path = "../ethrpc" }
 futures = "0.3"
 hex = "0.4"
 hyper = "0.14"
