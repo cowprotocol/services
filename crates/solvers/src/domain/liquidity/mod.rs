@@ -6,11 +6,7 @@ pub mod limit_order;
 pub mod stable;
 pub mod weighted_product;
 
-use {
-    crate::domain::eth,
-    ethereum_types::{H160, U256},
-    std::cmp::Ordering,
-};
+use {crate::domain::eth, ethereum_types::H160, std::cmp::Ordering};
 
 /// A source of liquidity which can be used by the solver.
 #[derive(Clone, Debug)]
@@ -57,32 +53,27 @@ impl TokenPair {
 }
 
 /// A scaling factor used for normalizing token amounts.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ScalingFactor(U256);
+#[derive(Clone, Copy, Debug)]
+pub struct ScalingFactor(eth::Rational);
 
 impl ScalingFactor {
     /// Creates a new scaling factor. Returns `None` if the specified value is
     /// 0 (as a 0 scaling factor is not allowed).
-    pub fn new(value: U256) -> Option<Self> {
-        if value.is_zero() {
+    pub fn new(value: eth::Rational) -> Option<Self> {
+        if value.numer().is_zero() || value.denom().is_zero() {
             return None;
         }
         Some(Self(value))
     }
 
     /// Returns the underlying scaling factor value.
-    pub fn get(&self) -> U256 {
+    pub fn get(&self) -> eth::Rational {
         self.0
-    }
-
-    /// Returns the inverse of the scaling factor in base 1e18.
-    pub fn inverse(&self) -> U256 {
-        U256::exp10(18) / self.0
     }
 }
 
 impl Default for ScalingFactor {
     fn default() -> Self {
-        Self(U256::one())
+        Self(eth::Rational::new_raw(1.into(), 1.into()))
     }
 }

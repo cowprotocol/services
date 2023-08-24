@@ -50,6 +50,8 @@ impl From<Fee> for eth::U256 {
 }
 
 /// A token scaling factor.
+///
+/// Scaling factors are rational numbers represented as (value / 1e18).
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ScalingFactor(eth::U256);
 

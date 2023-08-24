@@ -67,7 +67,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
-    async fn scaling_factors(&self, tokens: &[H160]) -> Result<Vec<U256>> {
+    async fn scaling_factors(&self, tokens: &[H160]) -> Result<Vec<Bfp>> {
         let token_infos = self.token_infos.get_token_infos(tokens).await;
         tokens
             .iter()
@@ -215,7 +215,7 @@ pub struct PoolInfo {
     pub id: H256,
     pub address: H160,
     pub tokens: Vec<H160>,
-    pub scaling_factors: Vec<U256>,
+    pub scaling_factors: Vec<Bfp>,
     pub block_created: u64,
 }
 
@@ -262,7 +262,7 @@ pub struct PoolState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenState {
     pub balance: U256,
-    pub scaling_factor: U256,
+    pub scaling_factor: Bfp,
 }
 
 /// Compute the scaling rate from a Balancer pool's scaling factor.
@@ -277,15 +277,16 @@ pub struct TokenState {
 ///
 /// In other words, this is the **inverse** of the scaling factor, as it is
 /// defined in the Balancer V2 math.
-pub fn compute_scaling_rate(scaling_factor: U256) -> Result<U256> {
-    U256::exp10(18)
-        .checked_div(scaling_factor)
+pub fn compute_scaling_rate(scaling_factor: Bfp) -> Result<U256> {
+    Bfp::exp10(18)
+        .as_uint256()
+        .checked_div(scaling_factor.as_uint256())
         .context("unsupported scaling factor of 0")
 }
 
 /// Converts a token decimal count to its corresponding scaling factor.
-pub fn scaling_factor_from_decimals(decimals: u8) -> Result<U256> {
-    Ok(U256::exp10(scaling_exponent_from_decimals(decimals)? as _))
+pub fn scaling_factor_from_decimals(decimals: u8) -> Result<Bfp> {
+    Ok(Bfp::exp10(scaling_exponent_from_decimals(decimals)? as _))
 }
 
 /// Converts a token decimal count to its corresponding scaling exponent.
@@ -400,7 +401,7 @@ mod tests {
                 id: pool_id,
                 address: pool.address(),
                 tokens: tokens.to_vec(),
-                scaling_factors: vec![1.into(), 1.into(), 1_000_000_000_000_u128.into()],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
             }
         );
@@ -411,11 +412,7 @@ mod tests {
         let pool_id = H256([0x90; 32]);
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
         let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
-        let scaling_factors = [
-            U256::from(1),
-            U256::from(1),
-            U256::from(1_000_000_000_000_u128),
-        ];
+        let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
 
         let mock = Mock::new(42);
         let web3 = mock.web3();
@@ -519,7 +516,7 @@ mod tests {
             id: Default::default(),
             address: pool.address(),
             tokens: tokens.to_vec(),
-            scaling_factors: vec![1.into(), 1.into(), 1.into()],
+            scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
             block_created: 1337,
         };
 
@@ -555,7 +552,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
-                scaling_factors: vec![1.into(), 1.into(), 1_000_000_000_000_u128.into()],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
             },
             weights: vec![bfp!("0.5"), bfp!("0.25"), bfp!("0.25")],
@@ -824,7 +821,7 @@ mod tests {
                 id: H256([4; 32]),
                 address: H160([3; 20]),
                 tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
-                scaling_factors: vec![1_000_000_000_000_000_u128.into(), 1.into()],
+                scaling_factors: vec![Bfp::exp10(15), Bfp::exp10(0)],
                 block_created: 42,
             }
         );
@@ -876,7 +873,7 @@ mod tests {
         for i in 0_u8..=18 {
             assert_eq!(
                 scaling_factor_from_decimals(i).unwrap(),
-                U256::exp10(18 - i as usize)
+                Bfp::exp10(18 - i as i32)
             );
         }
         assert_eq!(

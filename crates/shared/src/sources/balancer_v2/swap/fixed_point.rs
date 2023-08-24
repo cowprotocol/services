@@ -114,6 +114,15 @@ impl Bfp {
         *ONE
     }
 
+    pub fn exp10(exp: i32) -> Self {
+        let exp = exp.saturating_add(18);
+        if exp < 0 {
+            return Self::zero();
+        }
+
+        Self(U256::exp10(exp as _))
+    }
+
     pub fn from_wei(num: U256) -> Self {
         Self(num)
     }

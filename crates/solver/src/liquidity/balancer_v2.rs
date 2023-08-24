@@ -227,16 +227,19 @@ mod tests {
             dummy_contract,
             http_solver::model::{InternalizationStrategy, TokenAmount},
             interaction::Interaction,
-            sources::balancer_v2::pool_fetching::{
-                AmplificationParameter,
-                CommonPoolState,
-                FetchedBalancerPools,
-                MockBalancerPoolFetching,
-                StablePool,
-                TokenState,
-                WeightedPool,
-                WeightedPoolVersion,
-                WeightedTokenState,
+            sources::balancer_v2::{
+                pool_fetching::{
+                    AmplificationParameter,
+                    CommonPoolState,
+                    FetchedBalancerPools,
+                    MockBalancerPoolFetching,
+                    StablePool,
+                    TokenState,
+                    WeightedPool,
+                    WeightedPoolVersion,
+                    WeightedTokenState,
+                },
+                swap::fixed_point::Bfp,
             },
         },
     };
@@ -269,21 +272,21 @@ mod tests {
                     H160([0x70; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 100.into(),
-                            scaling_factor: 10_000_000_000_000_000_u128.into(),
+                            scaling_factor: Bfp::exp10(16),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0x71; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000.into(),
-                            scaling_factor: 1_000_000_000_000_u128.into(),
+                            scaling_factor: Bfp::exp10(12),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },

@@ -2,16 +2,13 @@ use {
     crate::{
         baseline_solver::BaselineSolvable,
         conversions::U256Ext,
-        sources::balancer_v2::{
-            pool_fetching::{
-                AmplificationParameter,
-                StablePool,
-                TokenState,
-                WeightedPool,
-                WeightedPoolVersion,
-                WeightedTokenState,
-            },
-            swap::math::BalU256,
+        sources::balancer_v2::pool_fetching::{
+            AmplificationParameter,
+            StablePool,
+            TokenState,
+            WeightedPool,
+            WeightedPoolVersion,
+            WeightedTokenState,
         },
     },
     error::Error,
@@ -47,14 +44,14 @@ fn subtract_swap_fee_amount(amount: U256, swap_fee: Bfp) -> Result<U256, Error> 
 impl TokenState {
     /// Converts the stored balance into its internal representation as a
     /// Balancer fixed point number.
-    fn upscaled_balance(&self) -> Option<Bfp> {
+    fn upscaled_balance(&self) -> Result<Bfp, Error> {
         self.upscale(self.balance)
     }
 
     /// Scales the input token amount to the value that is used by the Balancer
     /// contract to execute math operations.
-    fn upscale(&self, amount: U256) -> Option<Bfp> {
-        amount.checked_mul(self.scaling_factor).map(Bfp::from_wei)
+    fn upscale(&self, amount: U256) -> Result<Bfp, Error> {
+        Bfp::from_wei(amount).mul_down(self.scaling_factor)
     }
 
     /// Returns the token amount corresponding to the internal Balancer
@@ -62,13 +59,13 @@ impl TokenState {
     /// Based on contract code here:
     /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/c18ff2686c61a8cbad72cdcfc65e9b11476fdbc3/pkg/pool-utils/contracts/BasePool.sol#L560-L562
     fn downscale_up(&self, amount: Bfp) -> Result<U256, Error> {
-        amount.as_uint256().bdiv_up(self.scaling_factor)
+        Ok(amount.div_up(self.scaling_factor)?.as_uint256())
     }
 
     /// Similar to downscale up above, but rounded down, this is just checked
     /// div. https://github.com/balancer-labs/balancer-v2-monorepo/blob/c18ff2686c61a8cbad72cdcfc65e9b11476fdbc3/pkg/pool-utils/contracts/BasePool.sol#L542-L544
-    fn downscale_down(&self, amount: Bfp) -> Option<U256> {
-        amount.as_uint256().checked_div(self.scaling_factor)
+    fn downscale_down(&self, amount: Bfp) -> Result<U256, Error> {
+        Ok(amount.div_down(self.scaling_factor)?.as_uint256())
     }
 }
 
@@ -96,14 +93,14 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
             WeightedPoolVersion::V3Plus => weighted_math::calc_out_given_in_v3,
         };
         let out_amount = calc_out_given_in(
-            in_reserves.common.upscaled_balance()?,
+            in_reserves.common.upscaled_balance().ok()?,
             in_reserves.weight,
-            out_reserves.common.upscaled_balance()?,
+            out_reserves.common.upscaled_balance().ok()?,
             out_reserves.weight,
-            in_reserves.common.upscale(in_amount_minus_fees)?,
+            in_reserves.common.upscale(in_amount_minus_fees).ok()?,
         )
         .ok()?;
-        out_reserves.common.downscale_down(out_amount)
+        out_reserves.common.downscale_down(out_amount).ok()
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
@@ -118,11 +115,11 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
             WeightedPoolVersion::V3Plus => weighted_math::calc_in_given_out_v3,
         };
         let in_amount = calc_in_given_out(
-            in_reserves.common.upscaled_balance()?,
+            in_reserves.common.upscaled_balance().ok()?,
             in_reserves.weight,
-            out_reserves.common.upscaled_balance()?,
+            out_reserves.common.upscaled_balance().ok()?,
             out_reserves.weight,
-            out_reserves.common.upscale(out_amount)?,
+            out_reserves.common.upscale(out_amount).ok()?,
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.common.downscale_up(in_amount).ok()?;
@@ -158,7 +155,7 @@ impl StablePoolRef<'_> {
         &self,
         in_token: &H160,
         out_token: &H160,
-    ) -> Option<BalancesWithIndices> {
+    ) -> Result<BalancesWithIndices, Error> {
         let mut balances = vec![];
         let (mut token_index_in, mut token_index_out) = (0, 0);
         for (index, (token, balance)) in self.reserves.iter().enumerate() {
@@ -170,7 +167,7 @@ impl StablePoolRef<'_> {
             }
             balances.push(balance.upscaled_balance()?)
         }
-        Some(BalancesWithIndices {
+        Ok(BalancesWithIndices {
             token_index_in,
             token_index_out,
             balances,
@@ -196,17 +193,19 @@ impl BaselineSolvable for StablePoolRef<'_> {
             token_index_in,
             token_index_out,
             mut balances,
-        } = self.upscale_balances_with_token_indices(&in_token, &out_token)?;
+        } = self
+            .upscale_balances_with_token_indices(&in_token, &out_token)
+            .ok()?;
         let in_amount_minus_fees = subtract_swap_fee_amount(in_amount, self.swap_fee).ok()?;
         let out_amount = stable_math::calc_out_given_in(
             self.amplification_parameter_u256()?,
             balances.as_mut_slice(),
             token_index_in,
             token_index_out,
-            in_reserves.upscale(in_amount_minus_fees)?,
+            in_reserves.upscale(in_amount_minus_fees).ok()?,
         )
         .ok()?;
-        out_reserves.downscale_down(out_amount)
+        out_reserves.downscale_down(out_amount).ok()
     }
 
     /// Comes from `swapGivenOut`:
@@ -218,13 +217,15 @@ impl BaselineSolvable for StablePoolRef<'_> {
             token_index_in,
             token_index_out,
             mut balances,
-        } = self.upscale_balances_with_token_indices(&in_token, &out_token)?;
+        } = self
+            .upscale_balances_with_token_indices(&in_token, &out_token)
+            .ok()?;
         let in_amount = stable_math::calc_in_given_out(
             self.amplification_parameter_u256()?,
             balances.as_mut_slice(),
             token_index_in,
             token_index_out,
-            out_reserves.upscale(out_amount)?,
+            out_reserves.upscale(out_amount).ok()?,
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.downscale_up(in_amount).ok()?;
@@ -334,7 +335,7 @@ mod tests {
         tokens: Vec<H160>,
         balances: Vec<U256>,
         weights: Vec<Bfp>,
-        scaling_factors: Vec<U256>,
+        scaling_factors: Vec<Bfp>,
         swap_fee: U256,
     ) -> WeightedPool {
         let mut reserves = BTreeMap::new();
@@ -368,7 +369,7 @@ mod tests {
         tokens: Vec<H160>,
         balances: Vec<U256>,
         amplification_parameter: AmplificationParameter,
-        scaling_factors: Vec<U256>,
+        scaling_factors: Vec<Bfp>,
         swap_fee: U256,
     ) -> StablePool {
         let mut reserves = BTreeMap::new();
@@ -398,7 +399,7 @@ mod tests {
     fn downscale() {
         let token_state = TokenState {
             balance: Default::default(),
-            scaling_factor: 1_000_000_000_000_u128.into(),
+            scaling_factor: Bfp::exp10(12),
         };
         let input = Bfp::from_wei(900_546_079_866_630_330_575_i128.into());
         assert_eq!(
@@ -423,8 +424,8 @@ mod tests {
                 1_850_304_144_768_426_873_445_489_i128.into(),
                 95_671_347_892_391_047_965_654_i128.into(),
             ],
-            vec!["0.9".parse().unwrap(), "0.1".parse().unwrap()],
-            vec![1.into(), 1.into()],
+            vec![bfp!("0.9"), bfp!("0.1")],
+            vec![Bfp::exp10(0), Bfp::exp10(0)],
             2_000_000_000_000_000_i128.into(),
         );
 
@@ -444,8 +445,8 @@ mod tests {
         let b = create_weighted_pool_with(
             vec![weth, tusd],
             vec![60_000_000_000_000_000_i128.into(), 250_000_000_i128.into()],
-            vec!["0.5".parse().unwrap(), "0.5".parse().unwrap()],
-            vec![1.into(), 1_000_000_000_000_u128.into()],
+            vec![bfp!("0.5"), bfp!("0.5")],
+            vec![Bfp::exp10(0), Bfp::exp10(12)],
             1_000_000_000_000_000_i128.into(),
         );
 
@@ -464,11 +465,7 @@ mod tests {
             tokens.clone(),
             balances,
             AmplificationParameter::new(1.into(), 1.into()).unwrap(),
-            vec![
-                1_000_000_000_000_000_000_u128.into(),
-                1_000_000_000_000_000_000_u128.into(),
-                1_000_000_000_000_000_000_u128.into(),
-            ],
+            vec![Bfp::exp10(18), Bfp::exp10(18), Bfp::exp10(18)],
             1.into(),
         );
 
@@ -507,11 +504,7 @@ mod tests {
         let usdc = H160::from_low_u64_be(2);
         let tusd = H160::from_low_u64_be(3);
         let tokens = vec![dai, usdc, tusd];
-        let scaling_exps = vec![
-            1.into(),
-            1_000_000_000_000_u128.into(),
-            1_000_000_000_000_u128.into(),
-        ];
+        let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
             AmplificationParameter::new(570000.into(), 1000.into()).unwrap();
         let balances = vec![
@@ -544,11 +537,7 @@ mod tests {
         let usdc = H160::from_low_u64_be(2);
         let tusd = H160::from_low_u64_be(3);
         let tokens = vec![dai, usdc, tusd];
-        let scaling_exps = vec![
-            1.into(),
-            1_000_000_000_000_u128.into(),
-            1_000_000_000_000_u128.into(),
-        ];
+        let scaling_exps = vec![Bfp::exp10(0), Bfp::exp10(12), Bfp::exp10(12)];
         let amplification_parameter =
             AmplificationParameter::new(570000.into(), 1000.into()).unwrap();
         let balances = vec![

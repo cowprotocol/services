@@ -185,10 +185,7 @@ mod tests {
                     id: H256([2; 32]),
                     address: H160([1; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                    scaling_factors: vec![
-                        100_000_000_000_000_000_u128.into(),
-                        10_000_000_000_000_000_u128.into()
-                    ],
+                    scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16),],
                     block_created: 42,
                 },
                 weights: vec![
@@ -259,7 +256,7 @@ mod tests {
             },
             H160([2; 20]) => common::TokenState {
                 balance: 10_000_000.into(),
-                scaling_factor: 1_000_000_000_000_u128.into(),
+                scaling_factor: bfp!("1000000000000"),
             },
         };
         let weights = [bfp!("0.8"), bfp!("0.2")];

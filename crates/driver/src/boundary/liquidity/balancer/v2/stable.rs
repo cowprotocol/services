@@ -29,7 +29,9 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                                 token: token.into(),
                                 amount: reserve.balance.into(),
                             },
-                            scale: balancer::v2::ScalingFactor::new(reserve.scaling_factor)?,
+                            scale: balancer::v2::ScalingFactor::new(
+                                reserve.scaling_factor.as_uint256(),
+                            )?,
                         })
                     })
                     .collect::<Result<_>>()?,

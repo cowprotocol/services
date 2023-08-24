@@ -30,7 +30,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
                 reserve.asset.token.0,
                 TokenState {
                     balance: reserve.asset.amount,
-                    scaling_factor: reserve.scale.get(),
+                    scaling_factor: to_fixed_point(&reserve.scale.get())?,
                 },
             ))
         })

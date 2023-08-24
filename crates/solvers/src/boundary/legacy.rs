@@ -221,22 +221,31 @@ fn to_boundary_auction(
                 }),
                 to_big_rational(&state.fee),
             ),
-            liquidity::State::Stable(state) => (
-                AmmParameters::Stable(StablePoolParameters {
-                    reserves: state
-                        .reserves
-                        .iter()
-                        .map(|reserve| (reserve.asset.token.0, reserve.asset.amount))
-                        .collect(),
-                    scaling_rates: state
-                        .reserves
-                        .iter()
-                        .map(|reserve| (reserve.asset.token.0, to_scaling_rate(&reserve.scale)))
-                        .collect(),
-                    amplification_parameter: to_big_rational(&state.amplification_parameter),
-                }),
-                to_big_rational(&state.fee),
-            ),
+            liquidity::State::Stable(state) => {
+                let Some(scaling_rates) = state
+                    .reserves
+                    .iter()
+                    .map(|reserve| Some((reserve.asset.token.0, to_scaling_rate(&reserve.scale)?)))
+                    .collect()
+                else {
+                    // A scaling factor that cannot be represented in the format
+                    // expected by the legacy solver, so skip this liquidity.
+                    continue;
+                };
+
+                (
+                    AmmParameters::Stable(StablePoolParameters {
+                        reserves: state
+                            .reserves
+                            .iter()
+                            .map(|reserve| (reserve.asset.token.0, reserve.asset.amount))
+                            .collect(),
+                        scaling_rates,
+                        amplification_parameter: to_big_rational(&state.amplification_parameter),
+                    }),
+                    to_big_rational(&state.fee),
+                )
+            }
             liquidity::State::Concentrated(state) => {
                 let token = |address: eth::TokenAddress| {
                     // Uniswap V3 math doesn't care about decimals, so default
@@ -534,10 +543,10 @@ fn to_big_int(i: &U256) -> num::BigInt {
 //     auto in = in_unscaled / m_scaling_rates.at(t_in).convert_to<double>();
 // ```
 //
-// In other words, this is the **inverse** of the scaling factor, as it is
-// defined in the Balancer V2 pool.
-fn to_scaling_rate(r: &liquidity::ScalingFactor) -> U256 {
-    r.inverse()
+// In other words, this is the **inverse** of the scaling factor in scaled by
+// 1e18.
+fn to_scaling_rate(r: &liquidity::ScalingFactor) -> Option<U256> {
+    Some(U256::exp10(18).checked_mul(*r.get().denom())? / r.get().numer())
 }
 
 impl From<model::signature::EcdsaSignature> for order::EcdsaSignature {

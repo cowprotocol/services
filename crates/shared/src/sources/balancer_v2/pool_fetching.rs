@@ -470,7 +470,6 @@ mod tests {
             token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         },
         hex_literal::hex,
-        primitive_types::U256,
         std::time::Duration,
     };
 
@@ -607,7 +606,7 @@ mod tests {
                         let token_state = &state.tokens[&token.address];
                         assert_eq!(
                             token_state.common.scaling_factor,
-                            U256::exp10(18 - token.decimals as usize)
+                            Bfp::exp10(18 - token.decimals as i32)
                         );
 
                         // Don't check weights for LBPs because they may be out
@@ -623,7 +622,7 @@ mod tests {
                         let token_state = &state.tokens[&token.address];
                         assert_eq!(
                             token_state.scaling_factor,
-                            U256::exp10(18 - token.decimals as usize)
+                            Bfp::exp10(18 - token.decimals as i32)
                         );
                     }
                 }

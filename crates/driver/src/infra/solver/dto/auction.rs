@@ -157,7 +157,10 @@ impl Auction {
                                         r.asset.token.into(),
                                         WeightedProductReserve {
                                             balance: r.asset.amount.into(),
-                                            scaling_factor: r.scale.into(),
+                                            scaling_factor: bigdecimal::BigDecimal::new(
+                                                eth::U256::from(r.scale).to_big_int(),
+                                                18,
+                                            ),
                                             weight: bigdecimal::BigDecimal::new(
                                                 eth::U256::from(r.weight).to_big_int(),
                                                 18,
@@ -325,8 +328,8 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    scaling_factor: eth::U256,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    scaling_factor: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     weight: bigdecimal::BigDecimal,
 }
