@@ -11,7 +11,7 @@ use {
         },
     },
     anyhow::{ensure, Result},
-    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory},
+    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::{BlockId, H160, U256},
     futures::{future::BoxFuture, FutureExt as _},
     num::BigRational,
@@ -42,7 +42,7 @@ pub struct PoolState {
     pub amplification_parameter: AmplificationParameter,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmplificationParameter {
     factor: U256,
     precision: U256,
@@ -55,8 +55,8 @@ impl AmplificationParameter {
     }
 
     /// This is the format used to pass into smart contracts.
-    pub fn as_u256(&self) -> U256 {
-        self.factor * self.precision
+    pub fn with_base(&self, base: U256) -> Option<U256> {
+        Some(self.factor.checked_mul(base)? / self.precision)
     }
 
     /// This is the format used to pass along to HTTP solver.
@@ -79,7 +79,7 @@ impl AmplificationParameter {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2StablePoolFactory {
+impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -161,7 +161,7 @@ mod tests {
                 amplification_parameter.precision,
             ));
 
-        let factory = dummy_contract!(BalancerV2StablePoolFactory, H160::default());
+        let factory = dummy_contract!(BalancerV2StablePoolFactoryV2, H160::default());
         let pool_info = PoolInfo {
             common: common::PoolInfo {
                 id: H256([0x90; 32]),
@@ -235,8 +235,9 @@ mod tests {
         assert_eq!(
             AmplificationParameter::new(2.into(), 3.into())
                 .unwrap()
-                .as_u256(),
-            6.into()
+                .with_base(1000.into())
+                .unwrap(),
+            666.into()
         );
         assert_eq!(
             AmplificationParameter::new(7.into(), 8.into())

@@ -10,7 +10,7 @@ use {
     anyhow::{Context, Result},
     contracts::{
         BalancerV2LiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactory,
+        BalancerV2StablePoolFactoryV2,
         BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
         BalancerV2WeightedPoolFactoryV3,
@@ -135,8 +135,8 @@ async fn init_liquidity(
                 .iter()
                 .map(|&factory| {
                     (
-                        BalancerFactoryKind::Stable,
-                        BalancerV2StablePoolFactory::at(&web3, factory.into())
+                        BalancerFactoryKind::StableV2,
+                        BalancerV2StablePoolFactoryV2::at(&web3, factory.into())
                             .raw_instance()
                             .clone(),
                     )

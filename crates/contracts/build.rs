@@ -190,26 +190,6 @@ fn main() {
                 },
             )
     });
-    generate_contract_with_config("BalancerV2StablePoolFactory", |builder| {
-        builder
-            .contract_mod_override("balancer_v2_stable_pool_factory")
-            .add_network(
-                MAINNET,
-                Network {
-                    address: addr("0xc66ba2b6595d3613ccab350c886ace23866ede24"),
-                    // <https://etherscan.io/tx/0xfd417511f3902a304cca51023e8e771de22ffa7f30b9c8650ec5757328ab89a6>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(12703127)),
-                },
-            )
-            .add_network(
-                GOERLI,
-                Network {
-                    address: addr("0x44afeb87c871D8fEA9398a026DeA2BD3A13F5769"),
-                    // <https://goerli.etherscan.io/tx/0x4d8719fd92229abef303e47f3133155089b5ec4aff53524bca3a0b42936e458b>
-                    deployment_information: Some(DeploymentInformation::BlockNumber(6992992)),
-                },
-            )
-    });
     generate_contract_with_config("BalancerV2StablePoolFactoryV2", |builder| {
         builder
             .contract_mod_override("balancer_v2_stable_pool_factory_v2")

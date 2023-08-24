@@ -1,5 +1,3 @@
-// TODO - incorporate this into baseline solver.
-#![allow(dead_code)]
 //! Module emulating some of the functions in the Balancer StableMath.sol
 //! smart contract. The original contract code can be found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pkg/pool-stable/contracts/StableMath.sol
@@ -12,7 +10,7 @@ use {
 };
 
 lazy_static! {
-    static ref AMP_PRECISION: U256 = U256::from(1000);
+    pub static ref AMP_PRECISION: U256 = U256::from(1000);
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57-L119
@@ -190,7 +188,7 @@ fn get_token_balance_given_invariant_and_all_other_balances(
             Some(token_balance) => return Ok(Bfp::from_wei(token_balance)),
         }
     }
-    Err(Error::StableInvariantDidntConverge)
+    Err(Error::StableGetBalanceDidntConverge)
 }
 
 fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {

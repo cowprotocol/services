@@ -54,11 +54,6 @@ fn run() -> Result<()> {
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
              deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
         )?
-        .github(
-            "BalancerV2StablePoolFactory",
-            "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/\
-             deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
-        )?
         .npm(
             "CowProtocolToken",
             "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/\
