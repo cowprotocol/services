@@ -75,11 +75,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "static", value_enum)]
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
-    /// Override the Blockscout token owner finder-specific timeout
-    /// configuration.
-    #[clap(long, env, value_parser = duration_from_seconds, default_value = "45")]
-    pub blockscout_http_timeout: Duration,
-
     /// Override the default blockscout API url for this network
     #[clap(long, env)]
     pub blockscout_api_url: Option<Url>,
@@ -176,11 +171,6 @@ impl Display for Arguments {
             "token_owner_finder_uniswap_v3_fee_values: {:?}",
             self.token_owner_finder_uniswap_v3_fee_values
         )?;
-        writeln!(
-            f,
-            "blockscout_http_timeout: {:?}",
-            self.blockscout_http_timeout,
-        )?;
         display_option(f, "blockscout_api_url", &self.blockscout_api_url)?;
         display_option(f, "ethplorer_api_url", &self.ethplorer_api_url)?;
         display_secret_option(f, "ethplorer_api_key", &self.ethplorer_api_key)?;
@@ -251,10 +241,8 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        let mut blockscout = BlockscoutTokenOwnerFinder::try_with_network(
-            http_factory.configure(|builder| builder.timeout(args.blockscout_http_timeout)),
-            chain_id,
-        )?;
+        let mut blockscout =
+            BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), chain_id)?;
         if let Some(base_url) = args.blockscout_api_url.clone() {
             blockscout.with_base_url(base_url);
         }

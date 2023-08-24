@@ -1,9 +1,7 @@
 mod dry_run;
-pub mod gelato;
 pub mod submitter;
 
 use {
-    self::gelato::GelatoSubmitter,
     crate::{
         metrics::SettlementSubmissionOutcome,
         settlement::{Revertable, Settlement},
@@ -156,7 +154,6 @@ pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
     PublicMempool(StrategyArgs),
-    Gelato(Arc<GelatoSubmitter>),
     DryRun,
 }
 
@@ -166,7 +163,7 @@ impl TransactionStrategy {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
             TransactionStrategy::PublicMempool(args) => Some(args),
-            TransactionStrategy::Gelato(_) | TransactionStrategy::DryRun => None,
+            TransactionStrategy::DryRun => None,
         }
     }
 
@@ -175,7 +172,6 @@ impl TransactionStrategy {
             TransactionStrategy::Eden(_) => "Eden",
             TransactionStrategy::Flashbots(_) => "Flashbots",
             TransactionStrategy::PublicMempool(_) => "Mempool",
-            TransactionStrategy::Gelato(_) => "Gelato",
             TransactionStrategy::DryRun => "DryRun",
         }
     }
@@ -203,31 +199,14 @@ impl SolutionSubmitter {
         // TODO(nlordell): We can refactor the `SolutionSubmitter` interface to
         // better reflect configuration incompatibilities like this.
         for strategy in &self.transaction_strategies {
-            match strategy {
-                TransactionStrategy::DryRun => {
-                    return dry_run::log_settlement(account, &self.contract, settlement)
-                        .await
-                        .map(|tx| SubmissionReceipt {
-                            tx,
-                            strategy: strategy.label(),
-                        })
-                        .map_err(Into::into);
-                }
-                TransactionStrategy::Gelato(gelato) => {
-                    return tokio::time::timeout(
-                        self.max_confirm_time,
-                        gelato.relay_settlement(account, settlement),
-                    )
+            if let TransactionStrategy::DryRun = strategy {
+                return dry_run::log_settlement(account, &self.contract, settlement)
                     .await
-                    .map(|tx| {
-                        tx.map(|tx| SubmissionReceipt {
-                            tx,
-                            strategy: strategy.label(),
-                        })
+                    .map(|tx| SubmissionReceipt {
+                        tx,
+                        strategy: strategy.label(),
                     })
-                    .map_err(|_| SubmissionError::Timeout)?;
-                }
-                _ => {}
+                    .map_err(Into::into);
             }
         }
 

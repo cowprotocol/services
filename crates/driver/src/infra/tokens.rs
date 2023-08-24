@@ -1,6 +1,8 @@
 use {
-    crate::{domain::eth, infra::Ethereum},
-    anyhow::Result,
+    crate::{
+        domain::eth,
+        infra::{blockchain, Ethereum},
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, RwLock},
@@ -44,71 +46,25 @@ struct Inner {
 }
 
 impl Inner {
-    /// Returns the token's decimals. Returns `None` if the token does not
-    /// implement this optional method.
-    async fn decimals(&self, token: eth::TokenAddress) -> Result<Option<u8>> {
-        let erc20 = self.eth.contract_at::<contracts::ERC20>(token.0);
-        match erc20.methods().decimals().call().await {
-            // the token does not implement the optional `decimals()` method
-            Err(ethcontract::errors::MethodError {
-                inner: ethcontract::errors::ExecutionError::Revert(_),
-                ..
-            }) => Ok(None),
-            Err(err) => Err(err.into()),
-            Ok(decimals) => Ok(Some(decimals)),
-        }
-    }
-
-    /// Returns the token's symbol. Returns `None` if the token does not
-    /// implement this optional method.
-    async fn symbol(&self, token: eth::TokenAddress) -> Result<Option<String>> {
-        let erc20 = self.eth.contract_at::<contracts::ERC20>(token.0);
-        match erc20.methods().symbol().call().await {
-            // the token does not implement the optional `symbol()` method
-            Err(ethcontract::errors::MethodError {
-                inner: ethcontract::errors::ExecutionError::Revert(_),
-                ..
-            }) => Ok(None),
-            Err(err) => Err(err.into()),
-            Ok(decimals) => Ok(Some(decimals)),
-        }
-    }
-
-    /// Returns the current [`eth::TokenAmount`] balance of the specified
-    /// account for a given token.
-    async fn balance(
-        &self,
-        holder: eth::Address,
-        token: eth::TokenAddress,
-    ) -> Result<eth::TokenAmount> {
-        let erc20 = self.eth.contract_at::<contracts::ERC20>(token.0);
-        erc20
-            .methods()
-            .balance_of(holder.0)
-            .call()
-            .await
-            .map(Into::into)
-            .map_err(Into::into)
-    }
-
     /// Fetches `Metadata` of the requested tokens from a node.
     async fn fetch_token_infos(
         &self,
         tokens: HashSet<eth::TokenAddress>,
-    ) -> Vec<Result<(eth::TokenAddress, Metadata)>> {
+    ) -> Vec<Result<(eth::TokenAddress, Metadata), blockchain::Error>> {
         let settlement = self.eth.contracts().settlement().address().into();
         let futures = tokens.into_iter().map(|token| async move {
+            let token = self.eth.erc20(token);
             // Use `try_join` because these calls get batched under the hood
             // so if one of them fails the others will as well.
             // Also this way we won't get incomplete data for a token.
             let (decimals, symbol, balance) = futures::future::try_join3(
-                self.decimals(token),
-                self.symbol(token),
-                self.balance(settlement, token),
+                token.decimals(),
+                token.symbol(),
+                token.balance(settlement),
             )
             .await?;
             Ok((
-                token,
+                token.address(),
                 Metadata {
                     decimals,
                     symbol,
@@ -119,13 +75,7 @@ impl Inner {
         futures::future::join_all(futures).await
     }
 
-    /// Returns the `Metadata` for the given tokens. Note that the result will
-    /// not contain data for tokens that encountered errors while fetching
-    /// the data.
-    pub async fn get(
-        &self,
-        addresses: &[eth::TokenAddress],
-    ) -> HashMap<eth::TokenAddress, Metadata> {
+    async fn get(&self, addresses: &[eth::TokenAddress]) -> HashMap<eth::TokenAddress, Metadata> {
         let to_fetch: HashSet<_> = {
             let cache = self.cache.read().unwrap();
 

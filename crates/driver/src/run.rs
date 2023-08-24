@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{eth, Mempools},
+        domain::Mempools,
         infra::{
             self,
             blockchain::{self, Ethereum},
@@ -38,10 +38,12 @@ pub async fn run(
 ) {
     let args = cli::Args::parse_from(args);
     observe::init(&args.log);
-    let config = config::file::load(&args.config).await;
+
+    let ethrpc = ethrpc(&args).await;
+    let config = config::file::load(ethrpc.network(), &args.config).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let eth = ethereum(&config, &args).await;
+    let eth = ethereum(&config, ethrpc).await;
     let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
         solvers: solvers(&config, &eth),
@@ -92,7 +94,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
                 save: tenderly.save,
                 save_if_fails: tenderly.save_if_fails,
             },
-            eth.network_id().to_owned(),
+            eth.network().id.clone(),
         ),
         None => Simulator::ethereum(eth.to_owned()),
     };
@@ -105,16 +107,16 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
     simulator
 }
 
-async fn ethereum(config: &infra::Config, args: &cli::Args) -> Ethereum {
-    Ethereum::ethrpc(
-        &args.ethrpc,
-        blockchain::contracts::Addresses {
-            settlement: config.contracts.gp_v2_settlement.map(Into::into),
-            weth: config.contracts.weth.map(Into::into),
-        },
-    )
-    .await
-    .expect("initialize ethereum RPC API")
+async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
+    blockchain::Rpc::new(&args.ethrpc)
+        .await
+        .expect("connect ethereum RPC")
+}
+
+async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
+    Ethereum::new(ethrpc, config.contracts)
+        .await
+        .expect("initialize ethereum RPC API")
 }
 
 fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
@@ -126,134 +128,7 @@ fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {
 }
 
 async fn liquidity(config: &config::Config, eth: &Ethereum) -> liquidity::Fetcher {
-    let config = liquidity::Config {
-        base_tokens: config
-            .liquidity
-            .base_tokens
-            .iter()
-            .copied()
-            .map(eth::TokenAddress::from)
-            .collect(),
-        uniswap_v2: config
-            .liquidity
-            .uniswap_v2
-            .iter()
-            .cloned()
-            .map(|config| match config {
-                config::file::UniswapV2Config::Preset { preset } => match preset {
-                    config::file::UniswapV2Preset::UniswapV2 => {
-                        liquidity::config::UniswapV2::uniswap_v2(eth.network_id())
-                    }
-                    config::file::UniswapV2Preset::SushiSwap => {
-                        liquidity::config::UniswapV2::sushi_swap(eth.network_id())
-                    }
-                    config::file::UniswapV2Preset::Honeyswap => {
-                        liquidity::config::UniswapV2::honeyswap(eth.network_id())
-                    }
-                    config::file::UniswapV2Preset::Baoswap => {
-                        liquidity::config::UniswapV2::baoswap(eth.network_id())
-                    }
-                    config::file::UniswapV2Preset::PancakeSwap => {
-                        liquidity::config::UniswapV2::pancake_swap(eth.network_id())
-                    }
-                }
-                .expect("no Uniswap V2 preset for current network"),
-                config::file::UniswapV2Config::Manual { router, pool_code } => {
-                    liquidity::config::UniswapV2 {
-                        router: router.into(),
-                        pool_code: pool_code.into(),
-                    }
-                }
-            })
-            .collect(),
-        swapr: config
-            .liquidity
-            .swapr
-            .iter()
-            .cloned()
-            .map(|config| match config {
-                config::file::SwaprConfig::Preset { preset } => match preset {
-                    config::file::SwaprPreset::Swapr => {
-                        liquidity::config::Swapr::swapr(eth.network_id())
-                    }
-                }
-                .expect("no Swapr preset for current network"),
-                config::file::SwaprConfig::Manual { router, pool_code } => {
-                    liquidity::config::Swapr {
-                        router: router.into(),
-                        pool_code: pool_code.into(),
-                    }
-                }
-            })
-            .collect(),
-        uniswap_v3: config
-            .liquidity
-            .uniswap_v3
-            .iter()
-            .cloned()
-            .map(|config| match config {
-                config::file::UniswapV3Config::Preset {
-                    preset,
-                    max_pools_to_initialize,
-                } => liquidity::config::UniswapV3 {
-                    max_pools_to_initialize,
-                    ..match preset {
-                        config::file::UniswapV3Preset::UniswapV3 => {
-                            liquidity::config::UniswapV3::uniswap_v3(eth.network_id())
-                        }
-                    }
-                    .expect("no Uniswap V3 preset for current network")
-                },
-                config::file::UniswapV3Config::Manual {
-                    router,
-                    max_pools_to_initialize,
-                } => liquidity::config::UniswapV3 {
-                    router: router.into(),
-                    max_pools_to_initialize,
-                },
-            })
-            .collect(),
-        balancer_v2: config
-            .liquidity
-            .balancer_v2
-            .iter()
-            .cloned()
-            .map(|config| match config {
-                config::file::BalancerV2Config::Preset {
-                    preset,
-                    pool_deny_list,
-                } => liquidity::config::BalancerV2 {
-                    pool_deny_list: pool_deny_list.clone(),
-                    ..match preset {
-                        config::file::BalancerV2Preset::BalancerV2 => {
-                            liquidity::config::BalancerV2::balancer_v2(eth.network_id())
-                        }
-                    }
-                    .expect("no Balancer V2 preset for current network")
-                },
-                config::file::BalancerV2Config::Manual {
-                    vault,
-                    weighted,
-                    stable,
-                    liquidity_bootstrapping,
-                    pool_deny_list,
-                } => liquidity::config::BalancerV2 {
-                    vault: vault.into(),
-                    weighted: weighted
-                        .into_iter()
-                        .map(eth::ContractAddress::from)
-                        .collect(),
-                    stable: stable.into_iter().map(eth::ContractAddress::from).collect(),
-                    liquidity_bootstrapping: liquidity_bootstrapping
-                        .into_iter()
-                        .map(eth::ContractAddress::from)
-                        .collect(),
-                    pool_deny_list: pool_deny_list.clone(),
-                },
-            })
-            .collect(),
-    };
-    liquidity::Fetcher::new(eth, &config)
+    liquidity::Fetcher::new(eth, &config.liquidity)
         .await
         .expect("initialize liquidity fetcher")
 }

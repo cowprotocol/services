@@ -1,20 +1,16 @@
-use super::{Address, TokenAddress};
+use super::{Address, TokenAddress, U256};
 
 /// An ERC20 allowance.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Allowance {
-    pub spender: Spender,
-    pub amount: super::U256,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Spender {
-    /// The spender address.
-    pub address: Address,
-    /// The token being spent.
+    /// The token for the allowance.
     pub token: TokenAddress,
+    /// The spender address.
+    pub spender: Address,
+    /// The amount for the allowance.
+    pub amount: U256,
 }
 
 /// An allowance that's already in effect, this essentially models the result of
@@ -60,7 +56,7 @@ impl Approval {
     /// [`U256::max_value`].
     pub fn max(self) -> Self {
         Self(Allowance {
-            amount: super::U256::max_value(),
+            amount: U256::max_value(),
             ..self.0
         })
     }

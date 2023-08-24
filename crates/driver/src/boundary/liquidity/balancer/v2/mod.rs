@@ -13,6 +13,7 @@ use {
         BalancerV2StablePoolFactory,
         BalancerV2Vault,
         BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3,
         GPv2Settlement,
     },
     shared::{
@@ -118,6 +119,18 @@ async fn init_liquidity(
                 })
                 .collect::<Vec<_>>(),
             config
+                .weighted_v3plus
+                .iter()
+                .map(|&factory| {
+                    (
+                        BalancerFactoryKind::WeightedV3,
+                        BalancerV2WeightedPoolFactoryV3::at(&web3, factory.into())
+                            .raw_instance()
+                            .clone(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            config
                 .stable
                 .iter()
                 .map(|&factory| {
@@ -152,7 +165,7 @@ async fn init_liquidity(
 
     let balancer_pool_fetcher = Arc::new(
         BalancerPoolFetcher::new(
-            eth.chain_id().into(),
+            eth.network().chain.into(),
             block_retriever.clone(),
             token_info_fetcher.clone(),
             boundary::liquidity::cache_config(),

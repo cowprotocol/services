@@ -578,6 +578,7 @@ mod tests {
                     weight: pool_info.weights[2],
                 },
             },
+            version: Default::default(),
         };
 
         let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
@@ -662,6 +663,7 @@ mod tests {
                 future::ready(Ok(Some(weighted::PoolState {
                     swap_fee: Bfp::zero(),
                     tokens: Default::default(),
+                    version: Default::default(),
                 })))
                 .boxed()
             });

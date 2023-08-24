@@ -33,6 +33,8 @@ lazy_static! {
     static ref ZERO: Bfp = Bfp(U256::zero());
     static ref EPSILON: Bfp = Bfp(U256::one());
     static ref ONE: Bfp = Bfp(*ONE_18);
+    static ref TWO: Bfp = Bfp(*ONE_18 * 2);
+    static ref FOUR: Bfp = Bfp(*ONE_18 * 4);
     static ref MAX_POW_RELATIVE_ERROR: Bfp = Bfp(10000_usize.into());
 }
 
@@ -182,6 +184,22 @@ impl Bfp {
         let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
 
         raw.add(max_error)
+    }
+
+    pub fn pow_up_v3(self, exp: Self) -> Result<Self, Error> {
+        if exp == *ONE {
+            Ok(self)
+        } else if exp == *TWO {
+            self.mul_up(self)
+        } else if exp == *FOUR {
+            let square = self.mul_up(self)?;
+            square.mul_up(square)
+        } else {
+            let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
+            let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
+
+            raw.add(max_error)
+        }
     }
 }
 
