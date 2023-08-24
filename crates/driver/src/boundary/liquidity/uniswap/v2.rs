@@ -9,10 +9,10 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
+    ethrpc::Web3,
     futures::StreamExt,
     shared::{
         current_block::{self, CurrentBlockStream},
-        ethrpc::Web3,
         http_solver::model::TokenAmount,
         maintenance::Maintaining,
         sources::uniswap_v2::{
@@ -95,8 +95,8 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
-        IUniswapLikeRouter::at(&shared::ethrpc::dummy::web3(), pool.router.into()),
-        GPv2Settlement::at(&shared::ethrpc::dummy::web3(), receiver.0),
+        IUniswapLikeRouter::at(&ethrpc::dummy::web3(), pool.router.into()),
+        GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
     );
 

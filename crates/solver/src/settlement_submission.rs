@@ -15,10 +15,11 @@ use {
         Address,
         TransactionHash,
     },
+    ethrpc::Web3,
     futures::FutureExt,
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     primitive_types::{H256, U256},
-    shared::{code_fetching::CodeFetching, ethrpc::Web3, http_solver::model::SubmissionPreference},
+    shared::{code_fetching::CodeFetching, http_solver::model::SubmissionPreference},
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},

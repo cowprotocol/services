@@ -1,0 +1,36 @@
+[package]
+name = "ethrpc"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "ethrpc"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+async-trait = { workspace= true }
+ethereum-types = { workspace = true }
+futures = { workspace = true }
+global-metrics = { path = "../global-metrics" }
+hex = { workspace = true }
+hex-literal = { workspace = true }
+lazy_static = { workspace = true }
+mockall = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+reqwest = { workspace = true }
+scopeguard = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = [] }
+web3 = { workspace = true }
+contracts = { path = "../contracts" }
+ethcontract = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+maplit = { workspace = true }
+testlib = { path = "../testlib" }

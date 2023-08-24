@@ -218,7 +218,7 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
-        maplit::{hashmap, hashset},
+        maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
         primitive_types::H160,
@@ -265,7 +265,7 @@ mod tests {
                     swap_fee: "0.002".parse().unwrap(),
                     paused: true,
                 },
-                reserves: hashmap! {
+                reserves: btreemap! {
                     H160([0x70; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 100.into(),
@@ -297,7 +297,7 @@ mod tests {
                     swap_fee: "0.001".parse().unwrap(),
                     paused: true,
                 },
-                reserves: hashmap! {
+                reserves: btreemap! {
                     H160([0x73; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
@@ -325,7 +325,7 @@ mod tests {
                 paused: true,
             },
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 H160([0x73; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),
                         scaling_exponent: 0,

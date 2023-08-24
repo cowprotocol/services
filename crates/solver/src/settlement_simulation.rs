@@ -9,6 +9,7 @@ use {
         transaction::TransactionBuilder,
         Account,
     },
+    ethrpc::Web3,
     futures::FutureExt,
     gas_estimation::GasPrice1559,
     itertools::Itertools,
@@ -16,7 +17,6 @@ use {
     shared::{
         conversions::into_gas_price,
         encoded_settlement::EncodedSettlement,
-        ethrpc::Web3,
         tenderly_api::{SimulationRequest, TenderlyApi},
     },
     web3::types::{AccessList, BlockId},
@@ -182,7 +182,7 @@ pub fn settle_method_builder(
 
 /// The call data of a settle call with this settlement.
 pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&shared::ethrpc::dummy::web3(), H160::default());
+    let contract = GPv2Settlement::at(&ethrpc::dummy::web3(), H160::default());
     let method = contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
@@ -262,7 +262,7 @@ mod tests {
         },
         contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9},
         ethcontract::{Account, PrivateKey},
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::{order::Order, TokenPair},
         num::rational::Ratio,
         serde_json::json,
@@ -502,7 +502,7 @@ mod tests {
 
         let spo = StablePoolOrder {
             address: H160::from_low_u64_be(1),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
                     balance: U256::from(46543572661097157184873466u128),
                     scaling_exponent: 18
