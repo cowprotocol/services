@@ -304,14 +304,14 @@ mod tests {
                     H160([0x73; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
@@ -331,11 +331,11 @@ mod tests {
             reserves: btreemap! {
                 H160([0x73; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),
-                        scaling_factor: 1.into(),
+                        scaling_factor: Bfp::exp10(0),
                     },
                 H160([0xb0; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),
-                        scaling_factor: 1.into(),
+                        scaling_factor: Bfp::exp10(0),
                     }
             },
         }];

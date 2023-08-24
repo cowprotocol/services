@@ -185,7 +185,7 @@ mod tests {
                     id: H256([2; 32]),
                     address: H160([1; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                    scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16),],
+                    scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16)],
                     block_created: 42,
                 },
                 weights: vec![
@@ -238,7 +238,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 address: pool.address(),
-                scaling_factors: vec![1.into(), 1.into(), 1.into()],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
                 block_created: 42,
             })
             .await
@@ -252,11 +252,11 @@ mod tests {
         let tokens = btreemap! {
             H160([1; 20]) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
-                scaling_factor: 1.into(),
+                scaling_factor: Bfp::exp10(0),
             },
             H160([2; 20]) => common::TokenState {
                 balance: 10_000_000.into(),
-                scaling_factor: bfp!("1000000000000"),
+                scaling_factor: Bfp::exp10(12),
             },
         };
         let weights = [bfp!("0.8"), bfp!("0.2")];

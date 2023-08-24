@@ -733,14 +733,14 @@ mod tests {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         common: TokenState {
                             balance: 799_086_982_149_629_058_u128.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => WeightedTokenState {
                         common: TokenState {
                             balance: 1_251_682_293_173_877_359_u128.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
@@ -797,7 +797,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4294966784u64.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 255.into(),
                     },
@@ -807,7 +807,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4278190173u64.into(),
-                            scaling_factor: 1.into(),
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 2030043135usize.into(),
                     },
