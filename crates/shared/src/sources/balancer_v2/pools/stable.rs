@@ -56,7 +56,7 @@ impl AmplificationParameter {
 
     /// This is the format used to pass into smart contracts.
     pub fn with_base(&self, base: U256) -> Option<U256> {
-        Some(self.factor.checked_mul(base)?.checked_mul(base)? / self.precision)
+        Some(self.factor.checked_mul(base)? / self.precision)
     }
 
     /// This is the format used to pass along to HTTP solver.
@@ -237,7 +237,7 @@ mod tests {
                 .unwrap()
                 .with_base(1000.into())
                 .unwrap(),
-            666666.into()
+            666.into()
         );
         assert_eq!(
             AmplificationParameter::new(7.into(), 8.into())

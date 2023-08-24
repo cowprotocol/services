@@ -319,7 +319,7 @@ async fn stable() {
                         },
                     },
                     "fee": "0.0001",
-                    "amplificationParameter": "5.0",
+                    "amplificationParameter": "5000.0",
                     "id": "0",
                     "address": "0x06df3b2bbb68adc8b0e302443692037ed9f91b42",
                     "gasEstimate": "183520",

@@ -6,7 +6,6 @@ use {
         pool_fetching::{AmplificationParameter, CommonPoolState, TokenState},
         swap::fixed_point::Bfp,
     },
-    std::collections::BTreeMap,
 };
 
 /// Converts a domain pool into a [`shared`] Balancer V2 stable pool. Returns

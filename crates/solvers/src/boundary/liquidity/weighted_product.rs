@@ -6,7 +6,6 @@ use {
         pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
         swap::fixed_point::Bfp,
     },
-    std::collections::BTreeMap,
 };
 
 /// Converts a domain pool into a [`shared`] Balancer V2 weighted pool. Returns
