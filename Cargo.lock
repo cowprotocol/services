@@ -1895,7 +1895,6 @@ name = "ethrpc"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "clap",
  "contracts",
  "ethcontract",
  "ethereum-types",
