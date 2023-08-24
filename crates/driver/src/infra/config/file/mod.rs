@@ -349,6 +349,9 @@ enum BalancerV2Config {
         /// offerings.
         liquidity_bootstrapping: Vec<eth::H160>,
 
+        /// The composable stable pool factory contract addresses.
+        composable_stable: Vec<eth::H160>,
+
         /// Deny listed Balancer V2 pools.
         #[serde(default)]
         pool_deny_list: Vec<eth::H256>,

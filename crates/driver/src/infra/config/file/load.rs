@@ -162,6 +162,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         weighted_v3plus,
                         stable,
                         liquidity_bootstrapping,
+                        composable_stable,
                         pool_deny_list,
                     } => liquidity::config::BalancerV2 {
                         vault: vault.into(),
@@ -175,6 +176,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .collect(),
                         stable: stable.into_iter().map(eth::ContractAddress::from).collect(),
                         liquidity_bootstrapping: liquidity_bootstrapping
+                            .into_iter()
+                            .map(eth::ContractAddress::from)
+                            .collect(),
+                        composable_stable: composable_stable
                             .into_iter()
                             .map(eth::ContractAddress::from)
                             .collect(),
