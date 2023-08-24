@@ -130,7 +130,7 @@ impl Auction {
                                     r.asset.token.into(),
                                     StableReserve {
                                         balance: r.asset.amount.into(),
-                                        scaling_factor: r.scale.factor(),
+                                        scaling_factor: r.scale.into(),
                                     },
                                 )
                             })
@@ -157,7 +157,7 @@ impl Auction {
                                         r.asset.token.into(),
                                         WeightedProductReserve {
                                             balance: r.asset.amount.into(),
-                                            scaling_factor: r.scale.factor(),
+                                            scaling_factor: r.scale.into(),
                                             weight: bigdecimal::BigDecimal::new(
                                                 eth::U256::from(r.weight).to_big_int(),
                                                 18,

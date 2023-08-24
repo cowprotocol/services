@@ -231,7 +231,7 @@ fn to_boundary_auction(
                     scaling_rates: state
                         .reserves
                         .iter()
-                        .map(|reserve| (reserve.asset.token.0, reserve.scale.inverse()))
+                        .map(|reserve| (reserve.asset.token.0, to_scaling_rate(&reserve.scale)))
                         .collect(),
                     amplification_parameter: to_big_rational(&state.amplification_parameter),
                 }),
@@ -524,6 +524,20 @@ fn to_big_int(i: &U256) -> num::BigInt {
     let mut bytes = [0; 32];
     i.to_big_endian(&mut bytes);
     num::BigInt::from_bytes_be(num::bigint::Sign::Plus, &bytes)
+}
+
+// A "scaling rate" is used by Quasimodo for token scaling, scaling, and
+// specifically represents `double` that, when dividing a token amount in atoms,
+// would compute the equivalent amount in base units. From the source:
+//
+// ```text
+//     auto in = in_unscaled / m_scaling_rates.at(t_in).convert_to<double>();
+// ```
+//
+// In other words, this is the **inverse** of the scaling factor, as it is
+// defined in the Balancer V2 pool.
+fn to_scaling_rate(r: &liquidity::ScalingFactor) -> U256 {
+    r.inverse()
 }
 
 impl From<model::signature::EcdsaSignature> for order::EcdsaSignature {

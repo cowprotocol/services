@@ -60,9 +60,11 @@ impl ScalingFactor {
         }
         Ok(Self(factor))
     }
+}
 
-    pub fn factor(&self) -> eth::U256 {
-        self.0
+impl From<ScalingFactor> for eth::U256 {
+    fn from(value: ScalingFactor) -> Self {
+        value.0
     }
 }
 
