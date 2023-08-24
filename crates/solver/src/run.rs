@@ -16,7 +16,6 @@ use {
         settlement_post_processing::PostProcessingPipeline,
         settlement_rater::SettlementRater,
         settlement_submission::{
-            gelato::GelatoSubmitter,
             submitter::{
                 eden_api::EdenApi,
                 flashbots_api::FlashbotsApi,
@@ -44,7 +43,6 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc,
-        gelato_api::GelatoClient,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::serve_metrics,
@@ -503,18 +501,6 @@ pub async fn run(args: Arguments) {
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                     use_soft_cancellations: false,
                 }))
-            }
-            TransactionStrategyArg::Gelato => {
-                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
-                    GelatoSubmitter::new(
-                        web3.clone(),
-                        settlement_contract.clone(),
-                        GelatoClient::new(&http_factory, args.gelato_api_key.clone().unwrap()),
-                        args.gelato_submission_poll_interval,
-                    )
-                    .await
-                    .unwrap(),
-                )))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
