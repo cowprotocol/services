@@ -50,32 +50,22 @@ impl From<Fee> for eth::U256 {
 }
 
 /// A token scaling factor.
-///
-/// Internally it is represented as an exponent where the factor for scaling the
-/// token is `10.pow(exponent)`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ScalingFactor(u8);
+pub struct ScalingFactor(eth::U256);
 
 impl ScalingFactor {
-    pub fn from_exponent(exponent: u8) -> Result<Self, InvalidScalingExponent> {
-        if !(0..18).contains(&exponent) {
-            return Err(InvalidScalingExponent);
+    pub fn new(factor: eth::U256) -> Result<Self, InvalidScalingFactor> {
+        if factor.is_zero() {
+            return Err(InvalidScalingFactor);
         }
-        Ok(Self(exponent))
-    }
-
-    pub fn exponent(&self) -> u8 {
-        self.0
+        Ok(Self(factor))
     }
 
     pub fn factor(&self) -> eth::U256 {
-        let d = 18_u8
-            .checked_sub(self.0)
-            .expect("invariant guarantees this subtraction can't underflow");
-        eth::U256::exp10(d.into())
+        self.0
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("scaling factor exponent must be in range [0, 18]")]
-pub struct InvalidScalingExponent;
+#[error("scaling factor must be non-zero")]
+pub struct InvalidScalingFactor;

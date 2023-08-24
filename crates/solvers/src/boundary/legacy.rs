@@ -231,7 +231,7 @@ fn to_boundary_auction(
                     scaling_rates: state
                         .reserves
                         .iter()
-                        .map(|reserve| (reserve.asset.token.0, reserve.scale.get()))
+                        .map(|reserve| (reserve.asset.token.0, reserve.scale.inverse()))
                         .collect(),
                     amplification_parameter: to_big_rational(&state.amplification_parameter),
                 }),

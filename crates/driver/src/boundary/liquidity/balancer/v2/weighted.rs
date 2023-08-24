@@ -31,9 +31,7 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
                                 amount: reserve.common.balance.into(),
                             },
                             weight: reserve.weight.as_uint256().into(),
-                            scale: balancer::v2::ScalingFactor::from_exponent(
-                                reserve.common.scaling_exponent,
-                            )?,
+                            scale: balancer::v2::ScalingFactor::new(reserve.common.scaling_factor)?,
                         })
                     })
                     .collect::<Result<_>>()?,

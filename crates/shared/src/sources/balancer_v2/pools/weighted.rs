@@ -185,7 +185,10 @@ mod tests {
                     id: H256([2; 32]),
                     address: H160([1; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                    scaling_exponents: vec![17, 16],
+                    scaling_factors: vec![
+                        100_000_000_000_000_000_u128.into(),
+                        10_000_000_000_000_000_u128.into()
+                    ],
                     block_created: 42,
                 },
                 weights: vec![
@@ -238,7 +241,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 address: pool.address(),
-                scaling_exponents: vec![0, 0, 0],
+                scaling_factors: vec![1.into(), 1.into(), 1.into()],
                 block_created: 42,
             })
             .await
@@ -252,11 +255,11 @@ mod tests {
         let tokens = btreemap! {
             H160([1; 20]) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: 1.into(),
             },
             H160([2; 20]) => common::TokenState {
                 balance: 10_000_000.into(),
-                scaling_exponent: 12,
+                scaling_factor: 1_000_000_000_000_u128.into(),
             },
         };
         let weights = [bfp!("0.8"), bfp!("0.2")];
@@ -271,10 +274,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: H160([0x90; 20]),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
-                    .values()
-                    .map(|token| token.scaling_exponent)
-                    .collect(),
+                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
                 block_created: 1337,
             },
             weights: weights.to_vec(),

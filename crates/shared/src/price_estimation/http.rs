@@ -363,7 +363,7 @@ impl HttpPriceEstimator {
                             .reserves
                             .into_iter()
                             .map(|(token, state)| {
-                                Ok((token, compute_scaling_rate(state.scaling_exponent)?))
+                                Ok((token, compute_scaling_rate(state.scaling_factor)?))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| "convert stable pool to solver model".to_string())?,
