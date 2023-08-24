@@ -1633,6 +1633,7 @@ dependencies = [
  "ethabi",
  "ethcontract",
  "ethereum-types",
+ "ethrpc",
  "futures",
  "gas-estimation",
  "global-metrics",
@@ -1887,6 +1888,33 @@ dependencies = [
  "impl-serde",
  "primitive-types",
  "uint",
+]
+
+[[package]]
+name = "ethrpc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "contracts",
+ "ethcontract",
+ "ethereum-types",
+ "futures",
+ "global-metrics",
+ "hex",
+ "hex-literal",
+ "lazy_static",
+ "maplit",
+ "mockall",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "testlib",
+ "tokio",
+ "tracing",
+ "web3",
 ]
 
 [[package]]
@@ -3937,6 +3965,7 @@ dependencies = [
  "derivative",
  "ethcontract",
  "ethcontract-mock",
+ "ethrpc",
  "flate2",
  "futures",
  "gas-estimation",
@@ -3955,7 +3984,6 @@ dependencies = [
  "prometheus-metric-storage",
  "regex",
  "reqwest",
- "scopeguard",
  "secp256k1",
  "serde",
  "serde_json",
@@ -4046,6 +4074,7 @@ dependencies = [
  "derivative",
  "ethcontract",
  "ethcontract-mock",
+ "ethrpc",
  "flate2",
  "futures",
  "gas-estimation",
@@ -4090,6 +4119,7 @@ dependencies = [
  "clap",
  "contracts",
  "ethereum-types",
+ "ethrpc",
  "futures",
  "glob",
  "hex",

@@ -4,9 +4,10 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    crate::{code_simulation::CodeSimulating, ethrpc::extensions::StateOverride},
+    crate::code_simulation::CodeSimulating,
     anyhow::{Context, Result},
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    ethrpc::extensions::StateOverride,
     futures::future,
     maplit::hashmap,
     std::sync::Arc,
