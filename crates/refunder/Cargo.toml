@@ -15,10 +15,10 @@ database = { path = "../database" }
 ethcontract = { workspace = true }
 futures = {workspace = true}
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
 lazy_static = { workspace = true }
 model = { path = "../model" }
 number-conversions = { path = "../number-conversions" }
+observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

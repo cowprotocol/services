@@ -28,7 +28,6 @@ database = { path = "../database" }
 ethcontract = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 hyper = "0.14"
@@ -37,6 +36,7 @@ model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
+observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

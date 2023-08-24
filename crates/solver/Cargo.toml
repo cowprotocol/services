@@ -28,7 +28,7 @@ ethcontract-mock = { workspace = true }
 flate2 = "1.0"
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
+observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }

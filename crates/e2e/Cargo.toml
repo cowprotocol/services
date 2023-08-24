@@ -18,6 +18,7 @@ ethcontract = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { path = "../model" }
+observe = { path = "../observe" }
 orderbook = { path = "../orderbook" }
 reqwest = { workspace = true, features = ["blocking"] }
 secp256k1 = { workspace = true }

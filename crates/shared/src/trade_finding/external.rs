@@ -55,7 +55,7 @@ impl ExternalTradeFinder {
             .header(header::ACCEPT, "application/json")
             .body(body);
 
-        if let Some(id) = crate::request_id::get_task_local_storage() {
+        if let Some(id) = observe::request_id::get_task_local_storage() {
             request = request.header("X-REQUEST-ID", id);
         }
 

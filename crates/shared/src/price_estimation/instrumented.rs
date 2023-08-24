@@ -15,7 +15,7 @@ pub struct InstrumentedPriceEstimator {
 impl InstrumentedPriceEstimator {
     /// Wraps an existing price estimator in an instrumented one.
     pub fn new(inner: Box<dyn PriceEstimating>, name: String) -> Self {
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         for result in ["success", "failure"] {
             metrics
                 .price_estimates

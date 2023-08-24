@@ -42,7 +42,7 @@ impl HttpTransport {
             inner: Arc::new(Inner {
                 url,
                 id: AtomicUsize::new(0),
-                metrics: TransportMetrics::instance(global_metrics::get_metric_storage_registry())
+                metrics: TransportMetrics::instance(observe::metrics::get_storage_registry())
                     .unwrap(),
                 name,
             }),
@@ -339,7 +339,7 @@ mod tests {
             .await
             .unwrap();
         let metric_storage =
-            TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+            TransportMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
         for method_name in ["eth_blockNumber", "eth_chainId"] {
             let number_calls = metric_storage
                 .inner_batch_requests_initiated

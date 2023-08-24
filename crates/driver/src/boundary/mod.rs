@@ -36,11 +36,7 @@ pub use {
     mempool::Mempool,
     model::order::OrderData,
     settlement::Settlement,
-    shared::{
-        ethrpc::Web3,
-        exit_process_on_panic,
-        tracing::initialize_reentrant as initialize_tracing,
-    },
+    shared::ethrpc::Web3,
 };
 
 /// Returns a Web3 instance with a trait object transport needed by various

@@ -27,7 +27,7 @@ derivative = { workspace = true }
 ethcontract = { workspace = true }
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
+observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }

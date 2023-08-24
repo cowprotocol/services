@@ -162,7 +162,7 @@ where
             block_stream,
             maximum_retries: config.max_retries,
             delay_between_retries: config.delay_between_retries,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
         })
     }
