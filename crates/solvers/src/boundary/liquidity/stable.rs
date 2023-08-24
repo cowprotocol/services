@@ -12,7 +12,7 @@ use {
 /// Converts a domain pool into a [`shared`] Balancer V2 stable pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.
 pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option<Pool> {
-    // NOTE: this is only used for encoding and not for solving, so it OK to
+    // NOTE: this is only used for encoding and not for solving, so it's OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
     // pretty good.
@@ -35,7 +35,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::stable::Pool) -> Option
                 },
             ))
         })
-        .collect::<Option<BTreeMap<_, _>>>()?;
+        .collect::<Option<_>>()?;
     let amplification_parameter = AmplificationParameter::new(
         *pool.amplification_parameter.numer(),
         *pool.amplification_parameter.denom(),
@@ -59,7 +59,7 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // Balancer "fixed point numbers" are in a weird decimal FP format (instead
     // of a base 2 FP format you typically see). Just convert our ratio into
     // this format.
-    let base = U256::from(1_000_000_000_000_000_000_u128);
+    let base = U256::exp10(18);
     let wei = ratio.numer().checked_mul(base)? / ratio.denom();
     Some(Bfp::from_wei(wei))
 }

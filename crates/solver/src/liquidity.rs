@@ -356,12 +356,10 @@ pub fn token_pairs<T>(reserves: &BTreeMap<H160, T>) -> Vec<TokenPair> {
     reserves
         .keys()
         .flat_map(|&token_a| {
-            reserves
-                .keys()
-                .filter_map(move |&token_b| match TokenPair::new(token_a, token_b) {
-                    Some(pair) if pair.get().0 == token_a => Some(pair),
-                    _ => None,
-                })
+            reserves.keys().filter_map(move |&token_b| {
+                let pair = TokenPair::new(token_a, token_b)?;
+                (pair.get().0 == token_a).then_some(pair)
+            })
         })
         .collect()
 }
