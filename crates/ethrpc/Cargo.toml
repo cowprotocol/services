@@ -14,11 +14,11 @@ doctest = false
 async-trait = { workspace= true }
 ethereum-types = { workspace = true }
 futures = { workspace = true }
-global-metrics = { path = "../global-metrics" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 lazy_static = { workspace = true }
 mockall = { workspace = true }
+observe = { path = "../observe" }
 prometheus = { workspace = true }
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
 reqwest = { workspace = true }
