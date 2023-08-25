@@ -27,6 +27,7 @@ fn main() {
     }
 }
 
+#[rustfmt::skip]
 fn run() -> Result<()> {
     let vendor = Vendor::new()?;
 
@@ -112,6 +113,18 @@ fn run() -> Result<()> {
 
     vendor
         .abi_only()
+        .github(
+            "BalancerV2ComposableStablePool",
+            "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
+             tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
+             ComposableStablePool.json",
+        )?
+        .github(
+            "BalancerV2ComposableStablePoolFactory",
+            "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
+             tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
+             ComposableStablePoolFactory.json",
+        )?
         .github(
             "BalancerV2LiquidityBootstrappingPool",
             "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/pkg/\
