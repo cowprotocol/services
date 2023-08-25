@@ -633,3 +633,139 @@ async fn same_path() {
         }),
     );
 }
+
+#[tokio::test]
+async fn balancer_stable() {
+    let engine = tests::SolverEngine::new(
+        "baseline",
+        tests::Config::String(
+            r#"
+                chain-id = "100"
+                base-tokens = []
+                max-hops = 0
+                max-partial-attempts = 1
+            "#
+            .to_owned(),
+        ),
+    )
+    .await;
+
+    let solution = engine
+        .solve(json!({
+            "id": "1",
+            "tokens": {
+                "0x4b1e2c2762667331bc91648052f646d1b0d35984": {
+                    "decimals": 18,
+                    "symbol": "agEUR",
+                    "referencePrice": "1090118822951692177",
+                    "availableBalance": "0",
+                    "trusted": false
+                },
+                "0x5c78d05b8ecf97507d1cf70646082c54faa4da95": {
+                    "decimals": 18,
+                    "symbol": "bb-agEUR-EURe",
+                    "referencePrice": "10915976478387159906",
+                    "availableBalance": "0",
+                    "trusted": false
+                },
+                "0xcb444e90d8198415266c6a2724b7900fb12fc56e": {
+                    "decimals": 18,
+                    "symbol": "EURe",
+                    "referencePrice": "10917431192660550458",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+                "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": {
+                    "decimals": 18,
+                    "symbol": "wxDAI",
+                    "referencePrice": "1000000000000000000",
+                    "availableBalance": "0",
+                    "trusted": true
+                },
+            },
+            "orders": [
+                {
+                    "uid": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                              0101010101010101010101010101010101010101\
+                              01010101",
+                    "sellToken": "0x4b1e2c2762667331bc91648052f646d1b0d35984",
+                    "buyToken": "0xcb444e90d8198415266c6a2724b7900fb12fc56e",
+                    "sellAmount": "10500000000000000000",
+                    "buyAmount": "10000000000000000000",
+                    "feeAmount": "0",
+                    "kind": "buy",
+                    "partiallyFillable": false,
+                    "class": "market",
+                },
+            ],
+            "liquidity": [
+                {
+                    "kind": "stable",
+                    "tokens": {
+                        "0x4b1e2c2762667331bc91648052f646d1b0d35984": {
+                            "balance": "126041615528606990697699",
+                            "scalingFactor": "1",
+                        },
+                        "0x5c78d05b8ecf97507d1cf70646082c54faa4da95": {
+                            "balance": "2596148429267369423681023550322451",
+                            "scalingFactor": "1",
+                        },
+                        "0xcb444e90d8198415266c6a2724b7900fb12fc56e": {
+                            "balance": "170162457652825667152980",
+                            "scalingFactor": "1",
+                        },
+                    },
+                    "fee": "0.0001",
+                    "amplificationParameter": "100.0",
+                    "id": "0",
+                    "address": "0x5c78d05b8ecf97507d1cf70646082c54faa4da95",
+                    "gasEstimate": "183520",
+                },
+            ],
+            "effectiveGasPrice": "1000000000",
+            "deadline": "2106-01-01T00:00:00.000Z"
+        }))
+        .await;
+
+    // Here:
+    //
+    // ```
+    // get_amount_in(1.0) = 9.970226684231795303
+    // get_amount_out(9.970226684231795303) = 9.999999999999999999
+    // get_amount_out(9.970226684231795304) = 1.0
+    // ```
+    assert_eq!(
+        solution,
+        json!({
+            "solutions": [
+                {
+                    "id": 0,
+                    "prices": {
+                        "0x4b1e2c2762667331bc91648052f646d1b0d35984": "10000000000000000000",
+                        "0xcb444e90d8198415266c6a2724b7900fb12fc56e": "9970226684231795304"
+                    },
+                    "trades": [
+                        {
+                            "kind": "fulfillment",
+                            "order": "0x0101010101010101010101010101010101010101010101010101010101010101\
+                                        0101010101010101010101010101010101010101\
+                                        01010101",
+                            "executedAmount": "10000000000000000000"
+                        }
+                    ],
+                    "interactions": [
+                        {
+                            "kind": "liquidity",
+                            "internalize": false,
+                            "id": "0",
+                            "inputToken": "0x4b1e2c2762667331bc91648052f646d1b0d35984",
+                            "outputToken": "0xcb444e90d8198415266c6a2724b7900fb12fc56e",
+                            "inputAmount": "9970226684231795304",
+                            "outputAmount": "10000000000000000000"
+                        },
+                    ]
+                },
+            ]
+        }),
+    );
+}

@@ -321,15 +321,13 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
                 Liquidity::BalancerStable(amm) => AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
                         reserves: amm
-                            .reserves
-                            .iter()
-                            .map(|(token, state)| (*token, state.balance))
+                            .reserves_without_bpt()
+                            .map(|(token, state)| (token, state.balance))
                             .collect(),
                         scaling_rates: amm
-                            .reserves
-                            .iter()
+                            .reserves_without_bpt()
                             .map(|(token, state)| {
-                                Ok((*token, compute_scaling_rate(state.scaling_factor)?))
+                                Ok((token, compute_scaling_rate(state.scaling_factor)?))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| {

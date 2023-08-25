@@ -222,9 +222,21 @@ fn to_boundary_auction(
                 to_big_rational(&state.fee),
             ),
             liquidity::State::Stable(state) => {
-                let Some(scaling_rates) = state
-                    .reserves
-                    .iter()
+                // Composable stable pools have their own BPT tokens as a
+                // registered token and, when doing "regular swaps" skips the
+                // BPT token. Since the legacy solver API expects regular stable
+                // pools, we adapt composable stable pools by skipping the BPT
+                // token from the reserves.
+                //
+                // <https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L278>
+                let reserves_without_bpt = || {
+                    state
+                        .reserves
+                        .iter()
+                        .filter(|reserve| reserve.asset.token.0 != liquidity.address)
+                };
+
+                let Some(scaling_rates) = reserves_without_bpt()
                     .map(|reserve| Some((reserve.asset.token.0, to_scaling_rate(&reserve.scale)?)))
                     .collect()
                 else {
@@ -235,9 +247,7 @@ fn to_boundary_auction(
 
                 (
                     AmmParameters::Stable(StablePoolParameters {
-                        reserves: state
-                            .reserves
-                            .iter()
+                        reserves: reserves_without_bpt()
                             .map(|reserve| (reserve.asset.token.0, reserve.asset.amount))
                             .collect(),
                         scaling_rates,

@@ -259,7 +259,7 @@ pub struct PoolState {
 }
 
 /// Common pool token state information that is shared among all pool types.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TokenState {
     pub balance: U256,
     pub scaling_factor: Bfp,
