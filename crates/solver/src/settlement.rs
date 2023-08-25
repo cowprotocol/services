@@ -259,7 +259,7 @@ pub enum PriceCheckTokens {
 impl From<Option<Vec<H160>>> for PriceCheckTokens {
     fn from(token_list: Option<Vec<H160>>) -> Self {
         if let Some(tokens) = token_list {
-            PriceCheckTokens::Tokens(HashSet::from_iter(tokens.into_iter()))
+            PriceCheckTokens::Tokens(HashSet::from_iter(tokens))
         } else {
             PriceCheckTokens::All
         }

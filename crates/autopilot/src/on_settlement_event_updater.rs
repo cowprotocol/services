@@ -316,34 +316,34 @@ mod tests {
 
         assert!(!updater.update().await.unwrap());
 
-        let query = r#"
+        let query = r"
 INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_nonce)
 VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a', NULL, NULL)
-    ;"#;
+    ;";
         updater.db.0.execute(query).await.unwrap();
 
-        let query = r#"
+        let query = r"
 INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
 VALUES (0, '\xa21740833858985e4d801533a808786d3647fb83', 4701)
-    ;"#;
+    ;";
         updater.db.0.execute(query).await.unwrap();
 
-        let query = r#"
+        let query = r"
 INSERT INTO auction_prices (auction_id, token, price)
 VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 6347795727933475088343330979840),
         (0, '\x6b175474e89094c44da98b954eedeac495271d0f', 634671683530053),
         (0, '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 634553336916241343152390144)
-            ;"#;
+            ;";
 
         updater.db.0.execute(query).await.unwrap();
 
         assert!(updater.update().await.unwrap());
 
-        let query = r#"
+        let query = r"
 SELECT tx_from, tx_nonce
 FROM settlements
 WHERE block_number = 15875801 AND log_index = 405
-        ;"#;
+        ;";
         let (tx_from, tx_nonce): (Vec<u8>, i64) = sqlx::query_as(query)
             .fetch_one(&updater.db.0)
             .await
@@ -354,10 +354,10 @@ WHERE block_number = 15875801 AND log_index = 405
         );
         assert_eq!(tx_nonce, 4701);
 
-        let query = r#"
+        let query = r"
 SELECT auction_id, tx_from, tx_nonce
 FROM auction_transaction
-        ;"#;
+        ;";
         let (auction_id, tx_from, tx_nonce): (i64, Vec<u8>, i64) = sqlx::query_as(query)
             .fetch_one(&updater.db.0)
             .await

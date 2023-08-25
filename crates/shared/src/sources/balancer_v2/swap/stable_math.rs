@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn invariant_converges_at_extreme_values() {
         let amp = 5000.;
-        let balances: Vec<Bfp> = vec!["0.00001", "1200000", "300"]
+        let balances: Vec<Bfp> = ["0.00001", "1200000", "300"]
             .iter()
             .map(|x| Bfp::from_str(x).unwrap())
             .collect();

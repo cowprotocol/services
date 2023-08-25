@@ -61,10 +61,10 @@ pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
     let sell_token = path.first()?;
     path.iter()
         .skip(1)
-        .fold(
-            Some((sell_amount, *sell_token, Vec::new())),
+        .try_fold(
+            (sell_amount, *sell_token, Vec::new()),
             |previous, current| {
-                let (amount, previous, mut path) = previous?;
+                let (amount, previous, mut path) = previous;
                 let (best_liquidity, amount) = liquidity
                     .get(&TokenPair::new(*current, previous)?)?
                     .iter()
@@ -97,24 +97,21 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
     path.iter()
         .rev()
         .skip(1)
-        .fold(
-            Some((buy_amount, *buy_token, Vec::new())),
-            |previous, current| {
-                let (amount, previous, mut path) = previous?;
-                let (best_liquidity, amount) = liquidity
-                    .get(&TokenPair::new(*current, previous)?)?
-                    .iter()
-                    .filter_map(|liquidity| {
-                        Some((
-                            liquidity,
-                            liquidity.get_amount_in(*current, (amount, previous))?,
-                        ))
-                    })
-                    .min_by_key(|(_, amount)| *amount)?;
-                path.push(best_liquidity);
-                Some((amount, *current, path))
-            },
-        )
+        .try_fold((buy_amount, *buy_token, Vec::new()), |previous, current| {
+            let (amount, previous, mut path) = previous;
+            let (best_liquidity, amount) = liquidity
+                .get(&TokenPair::new(*current, previous)?)?
+                .iter()
+                .filter_map(|liquidity| {
+                    Some((
+                        liquidity,
+                        liquidity.get_amount_in(*current, (amount, previous))?,
+                    ))
+                })
+                .min_by_key(|(_, amount)| *amount)?;
+            path.push(best_liquidity);
+            Some((amount, *current, path))
+        })
         .map(|(amount, _, liquidity)| Estimate {
             value: amount,
             // Since we reversed the path originally, we need to re-reverse it here.
@@ -265,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_path_candidates() {
-        let base_tokens = vec![
+        let base_tokens = [
             H160::from_low_u64_be(0),
             H160::from_low_u64_be(1),
             H160::from_low_u64_be(2),
