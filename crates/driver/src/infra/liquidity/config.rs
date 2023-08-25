@@ -186,16 +186,12 @@ impl BalancerV2 {
                 contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
                 contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
             ]),
-            // TODO(nlordell): For now, we don't index these pools by default,
-            // they can be enabled once they are tested and verified to be
-            // correctly supported.
-            // composable_stable: factory_addresses(&[
-            //     contracts::BalancerV2ComposableStablePoolFactory::raw_contract(),
-            //     contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
-            //     contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
-            //     contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
-            // ]),
-            composable_stable: Vec::new(),
+            composable_stable: factory_addresses(&[
+                contracts::BalancerV2ComposableStablePoolFactory::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
+            ]),
             pool_deny_list: Vec::new(),
         })
     }
