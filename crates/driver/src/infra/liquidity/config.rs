@@ -147,6 +147,9 @@ pub struct BalancerV2 {
     /// Liquidity bootstrapping pool factory addresses.
     pub liquidity_bootstrapping: Vec<eth::ContractAddress>,
 
+    /// Composable stable pool factory addresses.
+    pub composable_stable: Vec<eth::ContractAddress>,
+
     /// Deny listed Balancer V2 pools.
     ///
     /// Since pools allow for custom controllers and logic, it is possible for
@@ -183,6 +186,16 @@ impl BalancerV2 {
                 contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
                 contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
             ]),
+            // TODO(nlordell): For now, we don't index these pools by default,
+            // they can be enabled once they are tested and verified to be
+            // correctly supported.
+            // composable_stable: factory_addresses(&[
+            //     contracts::BalancerV2ComposableStablePoolFactory::raw_contract(),
+            //     contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
+            //     contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
+            //     contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
+            // ]),
+            composable_stable: Vec::new(),
             pool_deny_list: Vec::new(),
         })
     }

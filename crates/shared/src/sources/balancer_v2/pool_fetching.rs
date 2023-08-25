@@ -4,12 +4,6 @@
 //! returns all up-to-date `Weighted` and `Stable` pools to be consumed by
 //! external users (e.g. Price Estimators and Solvers).
 
-mod aggregate;
-mod cache;
-mod internal;
-mod pool_storage;
-mod registry;
-
 use {
     self::{
         aggregate::Aggregate,
@@ -41,6 +35,10 @@ use {
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::{
+        BalancerV2ComposableStablePoolFactory,
+        BalancerV2ComposableStablePoolFactoryV3,
+        BalancerV2ComposableStablePoolFactoryV4,
+        BalancerV2ComposableStablePoolFactoryV5,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
@@ -63,6 +61,13 @@ pub use {
     stable::AmplificationParameter,
     weighted::{TokenState as WeightedTokenState, Version as WeightedPoolVersion},
 };
+
+mod aggregate;
+mod cache;
+mod internal;
+mod pool_storage;
+mod registry;
+
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
 }
@@ -172,19 +177,42 @@ pub enum BalancerFactoryKind {
     StableV2,
     LiquidityBootstrapping,
     NoProtocolFeeLiquidityBootstrapping,
+    ComposableStable,
+    ComposableStableV3,
+    ComposableStableV4,
+    ComposableStableV5,
 }
 
 impl BalancerFactoryKind {
     /// Returns a vector with supported factories for the specified chain ID.
     pub fn for_chain(chain_id: u64) -> Vec<Self> {
+        // TODO(nlordell): For now, we don't index these pools by default, they
+        // can be enabled once they are tested and verified to be correctly
+        // supported.
         match chain_id {
-            1 => Self::value_variants().to_owned(),
+            // 1 => Self::value_variants().to_owned(),
+            1 => vec![
+                Self::Weighted,
+                Self::WeightedV3,
+                Self::WeightedV4,
+                Self::Weighted2Token,
+                Self::StableV2,
+                Self::LiquidityBootstrapping,
+                Self::NoProtocolFeeLiquidityBootstrapping,
+                // Self::ComposableStable,
+                // Self::ComposableStableV3,
+                // Self::ComposableStableV4,
+                // Self::ComposableStableV5,
+            ],
             5 => vec![
                 Self::Weighted,
                 Self::WeightedV3,
                 Self::WeightedV4,
                 Self::Weighted2Token,
                 Self::StableV2,
+                // Self::ComposableStableV3,
+                // Self::ComposableStableV4,
+                // Self::ComposableStableV5,
             ],
             100 => vec![Self::WeightedV3, Self::WeightedV4, Self::StableV2],
             _ => Default::default(),
@@ -232,6 +260,18 @@ impl BalancerContracts {
                 }
                 BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
                     instance!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory)
+                }
+                BalancerFactoryKind::ComposableStable => {
+                    instance!(BalancerV2ComposableStablePoolFactory)
+                }
+                BalancerFactoryKind::ComposableStableV3 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV3)
+                }
+                BalancerFactoryKind::ComposableStableV4 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV4)
+                }
+                BalancerFactoryKind::ComposableStableV5 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV5)
                 }
             };
 
@@ -390,6 +430,12 @@ async fn create_aggregate_pool_fetcher(
             BalancerFactoryKind::LiquidityBootstrapping
             | BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
                 registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
+            }
+            BalancerFactoryKind::ComposableStable
+            | BalancerFactoryKind::ComposableStableV3
+            | BalancerFactoryKind::ComposableStableV4
+            | BalancerFactoryKind::ComposableStableV5 => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
             }
         };
         fetchers.push(registry);

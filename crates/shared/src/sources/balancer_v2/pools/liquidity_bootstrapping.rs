@@ -123,21 +123,21 @@ mod tests {
             H160([1; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("1000.0").as_uint256(),
-                    scaling_factor: bfp!("1"),
+                    scaling_factor: Bfp::exp10(0),
                 },
                 weight: bfp!("0.5"),
             },
             H160([2; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("10.0").as_uint256(),
-                    scaling_factor: bfp!("1"),
+                    scaling_factor: Bfp::exp10(0),
                 },
                 weight: bfp!("0.3"),
             },
             H160([3; 20]) => TokenState {
                 common: common::TokenState {
                     balance: 15_000_000.into(),
-                    scaling_factor: bfp!("1000000000000"),
+                    scaling_factor: Bfp::exp10(12),
                 },
                 weight: bfp!("0.2"),
             },
@@ -244,11 +244,11 @@ mod tests {
             tokens: btreemap! {
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_factor: 1.into(),
+                    scaling_factor: Bfp::exp10(0),
                 },
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_factor: 1.into(),
+                    scaling_factor: Bfp::exp10(0),
                 },
             },
         };
