@@ -55,9 +55,7 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-        let request = query
-            .into_request(&self.client, &self.base_url, &self.partner)
-            .send();
+        let request = query.into_request(&self.client, &self.base_url).send();
         let response = request.await?;
         let status = response.status();
         let response_text = response.text().await?;
@@ -315,14 +313,12 @@ struct TransactionBuilderQueryWithPartner<'a> {
 }
 
 impl TransactionBuilderQueryWithPartner<'_> {
-    pub fn into_request(self, client: &Client, base_url: &str, partner: &str) -> RequestBuilder {
+    pub fn into_request(self, client: &Client, base_url: &str) -> RequestBuilder {
         let mut url = crate::url::join(
             &Url::parse(base_url).expect("invalid base url"),
             "/transactions/1",
         );
-        url.query_pairs_mut()
-            .append_pair("ignoreChecks", "true")
-            .append_pair("partner", partner);
+        url.query_pairs_mut().append_pair("ignoreChecks", "true");
 
         tracing::trace!("Paraswap API (transaction) query url: {}", url);
         client.post(url).json(&self)
@@ -414,7 +410,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client, "https://apiv5.paraswap.io", "Test")
+            .into_request(&client, "https://apiv5.paraswap.io")
             .send()
             .await
             .unwrap();
@@ -473,7 +469,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client, "https://apiv5.paraswap.io", "Test")
+            .into_request(&client, "https://apiv5.paraswap.io")
             .send()
             .await
             .unwrap();
