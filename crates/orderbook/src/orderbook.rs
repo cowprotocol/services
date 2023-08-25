@@ -62,7 +62,7 @@ fn order_class_label(class: &OrderClass) -> &'static str {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Self::instance(global_metrics::get_metric_storage_registry())
+        Self::instance(observe::metrics::get_storage_registry())
             .expect("unexpected error getting metrics instance")
     }
 

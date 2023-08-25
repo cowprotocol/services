@@ -15,7 +15,7 @@ pub async fn run(
     bind: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
-    crate::boundary::initialize_tracing(&args.log);
+    observe::tracing::initialize_reentrant(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
     let solver = match args.command {

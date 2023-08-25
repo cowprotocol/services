@@ -160,7 +160,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
-        let request_id = crate::request_id::get_task_local_storage();
+        let request_id = observe::request_id::get_task_local_storage();
         if let Some(id) = &request_id {
             url.query_pairs_mut().append_pair("request_id", id);
         }

@@ -475,7 +475,7 @@ impl Setup {
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
-        crate::boundary::initialize_tracing("driver=trace");
+        observe::tracing::initialize_reentrant("driver=trace");
 
         if let Some(name) = self.name.as_ref() {
             tracing::warn!("\n***** [RUNNING TEST CASE] *****\n{name}");

@@ -284,7 +284,7 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         // Create some bogus settlements to see that the simulation returns an error.
-        shared::tracing::initialize(
+        observe::tracing::initialize(
             "info,solver=debug,shared=debug,shared::transport=trace",
             tracing::Level::ERROR.into(),
         );
@@ -713,7 +713,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_chunked() {
-        shared::tracing::initialize(
+        observe::tracing::initialize(
             "info,solver=debug,shared=debug,shared::transport=trace",
             tracing::Level::ERROR.into(),
         );

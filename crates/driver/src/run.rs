@@ -1,6 +1,5 @@
 use {
     crate::{
-        boundary,
         domain::Mempools,
         infra::{
             self,
@@ -9,7 +8,6 @@ use {
             config,
             liquidity,
             mempool,
-            observe,
             simulator::{self, Simulator},
             solver::Solver,
             Api,
@@ -23,7 +21,7 @@ use {
 };
 
 pub async fn main() {
-    boundary::exit_process_on_panic::set_panic_hook();
+    observe::panic_hook::install();
     run(std::env::args(), None).await
 }
 
@@ -37,7 +35,7 @@ pub async fn run(
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
-    observe::init(&args.log);
+    crate::infra::observe::init(&args.log);
 
     let ethrpc = ethrpc(&args).await;
     let config = config::file::load(ethrpc.network(), &args.config).await;

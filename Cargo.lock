@@ -55,8 +55,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "global-metrics",
  "model",
+ "observe",
  "primitive-types",
  "prometheus",
  "reqwest",
@@ -256,7 +256,6 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -265,6 +264,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -1636,7 +1636,6 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "hyper",
@@ -1646,6 +1645,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -1688,6 +1688,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "model",
+ "observe",
  "orderbook",
  "rand",
  "refunder",
@@ -1899,12 +1900,12 @@ dependencies = [
  "ethcontract",
  "ethereum-types",
  "futures",
- "global-metrics",
  "hex",
  "hex-literal",
  "lazy_static",
  "maplit",
  "mockall",
+ "observe",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest",
@@ -2180,15 +2181,6 @@ name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
-
-[[package]]
-name = "global-metrics"
-version = "0.1.0"
-dependencies = [
- "once_cell",
- "prometheus",
- "prometheus-metric-storage",
-]
 
 [[package]]
 name = "h2"
@@ -3027,6 +3019,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "observe"
+version = "0.1.0"
+dependencies = [
+ "atty",
+ "once_cell",
+ "prometheus",
+ "prometheus-metric-storage",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3098,7 +3104,6 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "hyper",
@@ -3108,6 +3113,7 @@ dependencies = [
  "multibase",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -3476,10 +3482,10 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "lazy_static",
  "model",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -3955,7 +3961,6 @@ dependencies = [
  "app-data-hash",
  "async-stream",
  "async-trait",
- "atty",
  "bigdecimal",
  "cached",
  "chrono",
@@ -3969,7 +3974,6 @@ dependencies = [
  "flate2",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -3979,6 +3983,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -4078,7 +4083,6 @@ dependencies = [
  "flate2",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -4089,6 +4093,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "once_cell",
  "primitive-types",
  "prometheus",
@@ -4127,6 +4132,7 @@ dependencies = [
  "itertools 0.11.0",
  "model",
  "num",
+ "observe",
  "reqwest",
  "serde",
  "serde_json",

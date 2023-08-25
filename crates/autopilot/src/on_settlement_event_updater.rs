@@ -292,7 +292,7 @@ mod tests {
     #[ignore]
     async fn manual_node_test() {
         // TODO update test
-        shared::tracing::initialize_reentrant("autopilot=trace");
+        observe::tracing::initialize_reentrant("autopilot=trace");
         let db = Postgres::new("postgresql://").await.unwrap();
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();

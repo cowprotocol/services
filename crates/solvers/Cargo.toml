@@ -39,6 +39,7 @@ tower-http = { version = "0.4", features = ["trace"] }
 anyhow = { workspace = true }
 contracts = { path = "../contracts" }
 model = { path = "../model" }
+observe = { path = "../observe" }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }

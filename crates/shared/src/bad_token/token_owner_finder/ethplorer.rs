@@ -36,7 +36,7 @@ impl EthplorerTokenOwnerFinder {
             base: Url::try_from(BASE).unwrap(),
             api_key: api_key.unwrap_or_else(|| FREE_API_KEY.to_owned()),
             rate_limiter: None,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry())?,
+            metrics: Metrics::instance(observe::metrics::get_storage_registry())?,
         })
     }
 

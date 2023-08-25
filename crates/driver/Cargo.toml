@@ -23,7 +23,6 @@ ethabi = "18.0"
 ethereum-types = "0.14"
 ethrpc = { path = "../ethrpc" }
 futures = "0.3"
-global-metrics = { path = "../global-metrics" }
 hex = "0.4"
 hex-literal = "0.4"
 hyper = "0.14"
@@ -60,6 +59,7 @@ contracts = { path = "../contracts" }
 ethcontract = { workspace = true }
 gas-estimation = { workspace = true }
 model = { path = "../model" }
+observe = { path = "../observe" }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 tracing = { workspace = true }

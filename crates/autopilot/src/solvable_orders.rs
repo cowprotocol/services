@@ -135,7 +135,7 @@ impl SolvableOrdersCache {
             }),
             native_price_estimator,
             signature_validator,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             ethflow_contract_address,
             surplus_fee_age,
             limit_order_price_factor,
@@ -835,7 +835,7 @@ mod tests {
             Default::default(),
             1,
         );
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
         // We'll have no native prices in this call. But this call will cause a
         // background task to fetch the missing prices so we'll have them in the
