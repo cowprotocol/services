@@ -1,6 +1,5 @@
 mod arguments;
-mod eth_call;
-mod get_block_and_call;
+mod retriever;
 
 use {
     crate::ethrpc::Web3,
@@ -18,7 +17,7 @@ use {
     },
 };
 
-pub use self::arguments::{Arguments, BlockRetrieverStrategy};
+pub use self::arguments::Arguments;
 
 pub type BlockNumberHash = (u64, H256);
 
