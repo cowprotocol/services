@@ -1,5 +1,5 @@
 mod arguments;
-mod get_block_and_call;
+mod retriever;
 
 use {
     crate::ethrpc::Web3,

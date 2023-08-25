@@ -1,7 +1,7 @@
 //! Global block stream arguments.
 
 use {
-    super::{current_block_stream, get_block_and_call, BlockRetrieving, CurrentBlockStream},
+    super::{current_block_stream, retriever, BlockRetrieving, CurrentBlockStream},
     crate::arguments::duration_from_seconds,
     anyhow::Result,
     clap::Parser,
@@ -30,7 +30,7 @@ pub struct Arguments {
 
 impl Arguments {
     pub fn retriever(&self, web3: Web3) -> Arc<dyn BlockRetrieving> {
-        Arc::new(get_block_and_call::BlockRetriever(web3))
+        Arc::new(retriever::BlockRetriever(web3))
     }
 
     pub async fn stream(&self, web3: Web3) -> Result<CurrentBlockStream> {
