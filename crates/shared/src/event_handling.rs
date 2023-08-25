@@ -609,7 +609,7 @@ mod tests {
         }
 
         async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()> {
-            self.events.extend(events.into_iter());
+            self.events.extend(events);
             Ok(())
         }
 
