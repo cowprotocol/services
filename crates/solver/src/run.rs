@@ -354,6 +354,7 @@ pub async fn run(args: Arguments) {
         args.shared.disabled_one_inch_protocols,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
+        args.shared.paraswap_api_url,
         &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
