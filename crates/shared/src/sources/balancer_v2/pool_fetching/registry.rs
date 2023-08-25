@@ -7,8 +7,7 @@ use {
         current_block::{BlockNumberHash, BlockRetrieving},
         ethcontract_error::EthcontractErrorType,
         ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
-        event_handling::EventHandler,
-        impl_event_retrieving,
+        event_handling::{EventHandler, EventRetrieving},
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
@@ -20,15 +19,28 @@ use {
     },
     anyhow::Result,
     contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
-    ethcontract::{errors::MethodError, BlockId, Instance, H256},
+    ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     futures::future,
+    hex_literal::hex,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
 };
 
-impl_event_retrieving! {
-    pub BasePoolFactoryContract for balancer_v2_base_pool_factory
+pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
+
+const POOL_CREATED_TOPIC: H256 = H256(hex!(
+    "83a48fbcfc991335314e74d0496aab6a1987e992ddc85dddbcc4d6dd6ef2e9fc"
+));
+
+impl EventRetrieving for BasePoolFactoryContract {
+    type Event = balancer_v2_base_pool_factory::Event;
+
+    fn get_events(&self) -> DynAllEventsBuilder<Self::Event> {
+        let mut events = self.0.all_events();
+        events.filter = events.filter.topic0(POOL_CREATED_TOPIC.into());
+        events
+    }
 }
 
 /// Type alias for the internal event updater type.

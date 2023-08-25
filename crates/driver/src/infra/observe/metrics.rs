@@ -20,11 +20,11 @@ pub struct Metrics {
 
 /// Setup the metrics registry.
 pub fn init() {
-    global_metrics::setup_metrics_registry_reentrant(Some("driver".to_owned()), None);
+    observe::metrics::setup_registry_reentrant(Some("driver".to_owned()), None);
 }
 
 /// Get the metrics instance.
 pub fn get() -> &'static Metrics {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
 }

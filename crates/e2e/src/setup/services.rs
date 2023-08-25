@@ -93,7 +93,7 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::main(args));
@@ -133,7 +133,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(solver::run::run(args));
@@ -162,7 +162,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(solver::run::run(args));

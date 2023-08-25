@@ -138,8 +138,8 @@ async fn run<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    shared::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
-    shared::exit_process_on_panic::set_panic_hook();
+    observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
+    observe::panic_hook::install();
 
     // The mutex guarantees that no more than a test at a time is running on
     // the testing node.

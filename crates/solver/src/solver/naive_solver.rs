@@ -112,7 +112,7 @@ fn settle_pair(
             return None;
         }
     };
-    multi_order_solver::solve(slippage, orders.into_iter(), uniswap)
+    multi_order_solver::solve(slippage, orders, uniswap)
 }
 
 fn organize_orders_by_token_pair(orders: Vec<LimitOrder>) -> HashMap<TokenPair, Vec<LimitOrder>> {

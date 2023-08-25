@@ -683,7 +683,7 @@ struct Metrics {
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
     let result = if was_successful { "success" } else { "error" };
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .submissions
         .with_label_values(&[submitter, result])
@@ -691,7 +691,7 @@ pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
 }
 
 fn track_mined_transactions(submitter: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .mined_transactions
         .with_label_values(&[submitter])
@@ -699,7 +699,7 @@ fn track_mined_transactions(submitter: &str) {
 }
 
 fn track_strategy_outcome(strategy: &str, outcome: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .strategy_outcomes
         .with_label_values(&[strategy, outcome])
@@ -725,7 +725,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn flashbots_mainnet_settlement() {
-        shared::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
+        observe::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
 
         let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();

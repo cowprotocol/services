@@ -563,7 +563,7 @@ struct Metrics {
 }
 
 fn track_block_range(range: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .block_ranges
         .with_label_values(&[range])
@@ -609,7 +609,7 @@ mod tests {
         }
 
         async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()> {
-            self.events.extend(events.into_iter());
+            self.events.extend(events);
             Ok(())
         }
 

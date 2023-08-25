@@ -20,7 +20,7 @@ pub type ApiReply = WithStatus<Json>;
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let response = err.default_response();
 
-    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics
         .requests_rejected
         .with_label_values(&[response.status().as_str()])
@@ -183,7 +183,7 @@ pub fn finalize_router(
     routes: Vec<(&'static str, BoxedRoute)>,
     log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics.reset_requests_rejected();
     for (method, _) in &routes {
         metrics.reset_requests_complete(method);

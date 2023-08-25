@@ -8,8 +8,8 @@ use {
     crate::settlement::Settlement,
     anyhow::{Context, Result},
     ethcontract::transaction::TransactionBuilder,
+    ethrpc::{http::HttpTransport, Web3, Web3Transport},
     reqwest::{Client, IntoUrl},
-    shared::ethrpc::{http::HttpTransport, Web3, Web3Transport},
 };
 
 #[derive(Clone)]

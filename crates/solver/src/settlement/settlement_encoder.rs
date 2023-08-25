@@ -292,8 +292,8 @@ impl SettlementEncoder {
                 )?
             }
         };
-        self.pre_interactions.extend(interactions.pre.into_iter());
-        self.post_interactions.extend(interactions.post.into_iter());
+        self.pre_interactions.extend(interactions.pre);
+        self.post_interactions.extend(interactions.post);
         Ok(execution)
     }
 
@@ -484,8 +484,8 @@ impl SettlementEncoder {
     /// Returns the total surplus denominated in the native asset for this
     /// solution.
     pub fn total_surplus(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
-        self.user_trades().fold(Some(num::zero()), |acc, trade| {
-            Some(acc? + trade.surplus_in_native_token(external_prices)?)
+        self.user_trades().try_fold(num::zero(), |acc, trade| {
+            Some(acc + trade.surplus_in_native_token(external_prices)?)
         })
     }
 
