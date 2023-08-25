@@ -1,8 +1,9 @@
 use {
-    super::{eth_call, BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive},
+    super::{BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive},
     crate::ethrpc::Web3,
     anyhow::{bail, Context, Result},
     contracts::support::FetchBlock,
+    primitive_types::{H256, U256},
     web3::{
         transports::Batch,
         types::{BlockNumber, CallRequest},
@@ -46,7 +47,7 @@ impl BlockRetrieving for BlockRetriever {
             )
         };
 
-        let call = eth_call::decode(
+        let call = decode(
             return_data
                 .as_slice()
                 .try_into()
@@ -87,6 +88,21 @@ impl BlockRetrieving for BlockRetriever {
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         self.0.blocks(range).await
     }
+}
+
+/// Decodes the return data from the `FetchBlock` contract.
+fn decode(return_data: [u8; 96]) -> Result<BlockInfo> {
+    let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
+        .ok()
+        .context("block number overflows u64")?;
+    let hash = H256::from_slice(&return_data[32..64]);
+    let parent_hash = H256::from_slice(&return_data[64..96]);
+
+    Ok(BlockInfo {
+        number,
+        hash,
+        parent_hash,
+    })
 }
 
 #[cfg(test)]

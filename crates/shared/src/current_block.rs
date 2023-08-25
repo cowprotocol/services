@@ -1,5 +1,4 @@
 mod arguments;
-mod eth_call;
 mod get_block_and_call;
 
 use {
@@ -18,7 +17,7 @@ use {
     },
 };
 
-pub use self::arguments::{Arguments, BlockRetrieverStrategy};
+pub use self::arguments::Arguments;
 
 pub type BlockNumberHash = (u64, H256);
 
