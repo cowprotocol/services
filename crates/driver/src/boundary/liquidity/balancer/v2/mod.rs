@@ -9,7 +9,6 @@ use {
     },
     anyhow::{Context, Result},
     contracts::{
-        BalancerV2ComposableStablePoolFactory,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2StablePoolFactoryV2,
         BalancerV2Vault,
@@ -150,18 +149,6 @@ async fn init_liquidity(
                     (
                         BalancerFactoryKind::LiquidityBootstrapping,
                         BalancerV2LiquidityBootstrappingPoolFactory::at(&web3, factory.into())
-                            .raw_instance()
-                            .clone(),
-                    )
-                })
-                .collect::<Vec<_>>(),
-            config
-                .composable_stable
-                .iter()
-                .map(|&factory| {
-                    (
-                        BalancerFactoryKind::ComposableStable,
-                        BalancerV2ComposableStablePoolFactory::at(&web3, factory.into())
                             .raw_instance()
                             .clone(),
                     )
