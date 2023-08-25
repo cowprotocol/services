@@ -186,35 +186,27 @@ pub enum BalancerFactoryKind {
 impl BalancerFactoryKind {
     /// Returns a vector with supported factories for the specified chain ID.
     pub fn for_chain(chain_id: u64) -> Vec<Self> {
-        // TODO(nlordell): For now, we don't index these pools by default, they
-        // can be enabled once they are tested and verified to be correctly
-        // supported.
         match chain_id {
-            // 1 => Self::value_variants().to_owned(),
-            1 => vec![
-                Self::Weighted,
-                Self::WeightedV3,
-                Self::WeightedV4,
-                Self::Weighted2Token,
-                Self::StableV2,
-                Self::LiquidityBootstrapping,
-                Self::NoProtocolFeeLiquidityBootstrapping,
-                // Self::ComposableStable,
-                // Self::ComposableStableV3,
-                // Self::ComposableStableV4,
-                // Self::ComposableStableV5,
-            ],
+            1 => Self::value_variants().to_owned(),
             5 => vec![
                 Self::Weighted,
                 Self::WeightedV3,
                 Self::WeightedV4,
                 Self::Weighted2Token,
                 Self::StableV2,
-                // Self::ComposableStableV3,
-                // Self::ComposableStableV4,
-                // Self::ComposableStableV5,
+                Self::ComposableStable,
+                Self::ComposableStableV3,
+                Self::ComposableStableV4,
+                Self::ComposableStableV5,
             ],
-            100 => vec![Self::WeightedV3, Self::WeightedV4, Self::StableV2],
+            100 => vec![
+                Self::WeightedV3,
+                Self::WeightedV4,
+                Self::StableV2,
+                Self::ComposableStableV3,
+                Self::ComposableStableV4,
+                Self::ComposableStableV5,
+            ],
             _ => Default::default(),
         }
     }
