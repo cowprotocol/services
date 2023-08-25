@@ -335,21 +335,26 @@ enum BalancerV2Config {
         vault: eth::H160,
 
         /// The weighted pool factory contract addresses.
+        #[serde(default)]
         weighted: Vec<eth::H160>,
 
         /// The weighted pool factory v3+ contract addresses.
+        #[serde(default)]
         weighted_v3plus: Vec<eth::H160>,
 
         /// The stable pool factory contract addresses.
+        #[serde(default)]
         stable: Vec<eth::H160>,
 
         /// The liquidity bootstrapping pool factory contract addresses.
         ///
         /// These are weighted pools with dynamic weights for initial token
         /// offerings.
+        #[serde(default)]
         liquidity_bootstrapping: Vec<eth::H160>,
 
         /// The composable stable pool factory contract addresses.
+        #[serde(default)]
         composable_stable: Vec<eth::H160>,
 
         /// Deny listed Balancer V2 pools.
