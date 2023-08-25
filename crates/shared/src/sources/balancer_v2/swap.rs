@@ -152,11 +152,13 @@ struct BalancesWithIndices {
 }
 
 impl<'a> StablePoolRef<'a> {
-    /// Composable stable pools have their own BPT tokens as a registered token
-    /// and, when doing "regular swaps" skips the BPT token.
-    ///
     /// This method returns an iterator over the stable pool reserves while
-    /// filtering out the BPT token for the pool (i.e. the pool address).
+    /// filtering out the BPT token for the pool (i.e. the pool address). This
+    /// is used because composable stable pools include their own BPT token
+    /// (i.e. the ERC-20 at the pool address) in its registered tokens (i.e. the
+    /// ERC-20s that can be swapped over the Balancer V2 Vault), however, this
+    /// token is ignored when computing input and output amounts for regular
+    /// swaps.
     ///
     /// <https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L278>
     pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + 'a {
