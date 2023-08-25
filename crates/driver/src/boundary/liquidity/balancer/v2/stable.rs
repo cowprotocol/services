@@ -29,8 +29,8 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                                 token: token.into(),
                                 amount: reserve.balance.into(),
                             },
-                            scale: balancer::v2::ScalingFactor::from_exponent(
-                                reserve.scaling_exponent,
+                            scale: balancer::v2::ScalingFactor::from_raw(
+                                reserve.scaling_factor.as_uint256(),
                             )?,
                         })
                     })
@@ -40,7 +40,7 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                 pool.amplification_parameter.factor(),
                 pool.amplification_parameter.precision(),
             )?,
-            fee: pool.fee.as_uint256().into(),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
         }),
     })
 }

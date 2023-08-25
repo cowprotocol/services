@@ -733,14 +733,14 @@ mod tests {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         common: TokenState {
                             balance: 799_086_982_149_629_058_u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => WeightedTokenState {
                         common: TokenState {
                             balance: 1_251_682_293_173_877_359_u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
@@ -797,7 +797,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4294966784u64.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 255.into(),
                     },
@@ -807,7 +807,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4278190173u64.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 2030043135usize.into(),
                     },
@@ -829,7 +829,7 @@ mod tests {
         );
         assert_eq!(
             pool_1.get_amount_in(tokens[0], (1.into(), tokens[1])),
-            Some(8999613.into())
+            Some(15999226.into())
         );
         // But then when it goes from the sell token to the buy token to construct the
         // settlement it encounters the asymmetry of the weighted pool. With the
@@ -840,7 +840,7 @@ mod tests {
         );
         // Note that the bumped input amount will be high enough.
         assert_eq!(
-            pool_1.get_amount_out(tokens[1], (8999613.into(), tokens[0])),
+            pool_1.get_amount_out(tokens[1], (15999226.into(), tokens[0])),
             Some(1.into()),
         );
         // This makes using the second pool fail.

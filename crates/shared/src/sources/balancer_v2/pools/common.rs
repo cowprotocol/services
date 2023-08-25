@@ -67,7 +67,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
-    async fn scaling_exponents(&self, tokens: &[H160]) -> Result<Vec<u8>> {
+    async fn scaling_factors(&self, tokens: &[H160]) -> Result<Vec<Bfp>> {
         let token_infos = self.token_infos.get_token_infos(tokens).await;
         tokens
             .iter()
@@ -77,7 +77,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
                     .ok_or_else(|| anyhow!("missing token info for {:?}", token))?
                     .decimals
                     .ok_or_else(|| anyhow!("missing decimals for token {:?}", token))?;
-                scaling_exponent_from_decimals(decimals)
+                scaling_factor_from_decimals(decimals)
             })
             .collect()
     }
@@ -96,13 +96,13 @@ impl<Factory> PoolInfoFetcher<Factory> {
             .get_pool_tokens(Bytes(pool_id.0))
             .call()
             .await?;
-        let scaling_exponents = self.scaling_exponents(&tokens).await?;
+        let scaling_factors = self.scaling_factors(&tokens).await?;
 
         Ok(PoolInfo {
             id: pool_id,
             address: pool_address,
             tokens,
-            scaling_exponents,
+            scaling_factors,
             block_created,
         })
     }
@@ -139,13 +139,13 @@ impl<Factory> PoolInfoFetcher<Factory> {
 
             let (token_addresses, balances, _) = balances.await?;
             ensure!(pool.tokens == token_addresses, "pool token mismatch");
-            let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_exponents)
-                .map(|(&address, balance, &scaling_exponent)| {
+            let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_factors)
+                .map(|(&address, balance, &scaling_factor)| {
                     (
                         address,
                         TokenState {
                             balance,
-                            scaling_exponent,
+                            scaling_factor,
                         },
                     )
                 })
@@ -215,7 +215,7 @@ pub struct PoolInfo {
     pub id: H256,
     pub address: H160,
     pub tokens: Vec<H160>,
-    pub scaling_exponents: Vec<u8>,
+    pub scaling_factors: Vec<Bfp>,
     pub block_created: u64,
 }
 
@@ -228,10 +228,10 @@ impl PoolInfo {
             id: pool.id,
             address: pool.address,
             tokens: pool.tokens.iter().map(|token| token.address).collect(),
-            scaling_exponents: pool
+            scaling_factors: pool
                 .tokens
                 .iter()
-                .map(|token| scaling_exponent_from_decimals(token.decimals))
+                .map(|token| scaling_factor_from_decimals(token.decimals))
                 .collect::<Result<_>>()?,
             block_created,
         })
@@ -262,27 +262,31 @@ pub struct PoolState {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenState {
     pub balance: U256,
-    pub scaling_exponent: u8,
+    pub scaling_factor: Bfp,
 }
 
-/// Compute the scaling rate from a Balancer pool's scaling exponent.
+/// Compute the scaling rate from a Balancer pool's scaling factor.
 ///
-/// This method returns an error on any arithmetic underflow when computing the
-/// token decimals. Note that in theory, this should be impossible to happen.
-/// However, we are extra careful and return an `Error` in case it does to avoid
-/// panicking. Additionally, wrapped math could have been used here, but that
-/// would create invalid settlements.
-pub fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
-    // Balancer `scaling_exponent`s are `18 - decimals`, we want the rate which
-    // is `10 ** decimals`.
-    let decimals = 18_u8
-        .checked_sub(scaling_exponent)
-        .context("underflow computing decimals from Balancer pool scaling exponent")?;
+/// A "scaling rate" is what the optimisation solvers (a.k.a. Quasimodo) expects
+/// for token scaling, specifically, it expects a `double` that, when dividing
+/// a token amount, would return its amount in base units:
+///
+/// ```text
+///     auto in = in_unscaled / m_scaling_rates.at(t_in).convert_to<double>();
+/// ```
+///
+/// In other words, this is the **inverse** of the scaling factor, as it is
+/// defined in the Balancer V2 math.
+pub fn compute_scaling_rate(scaling_factor: Bfp) -> Result<U256> {
+    Bfp::exp10(18)
+        .as_uint256()
+        .checked_div(scaling_factor.as_uint256())
+        .context("unsupported scaling factor of 0")
+}
 
-    debug_assert!(decimals <= 18);
-    // `decimals` is guaranteed to be between 0 and 18, and 10**18 cannot
-    // cannot overflow a `U256`, so we do not need to use `checked_pow`.
-    Ok(U256::from(10).pow(decimals.into()))
+/// Converts a token decimal count to its corresponding scaling factor.
+pub fn scaling_factor_from_decimals(decimals: u8) -> Result<Bfp> {
+    Ok(Bfp::exp10(scaling_exponent_from_decimals(decimals)? as _))
 }
 
 /// Converts a token decimal count to its corresponding scaling exponent.
@@ -397,7 +401,7 @@ mod tests {
                 id: pool_id,
                 address: pool.address(),
                 tokens: tokens.to_vec(),
-                scaling_exponents: vec![0, 0, 12],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
             }
         );
@@ -408,7 +412,7 @@ mod tests {
         let pool_id = H256([0x90; 32]);
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
         let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
-        let scaling_exponents = [0, 0, 12];
+        let scaling_factors = [Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)];
 
         let mock = Mock::new(42);
         let web3 = mock.web3();
@@ -440,7 +444,7 @@ mod tests {
             id: pool_id,
             address: pool.address(),
             tokens: tokens.to_vec(),
-            scaling_exponents: scaling_exponents.to_vec(),
+            scaling_factors: scaling_factors.to_vec(),
             block_created: 1337,
         };
 
@@ -463,15 +467,15 @@ mod tests {
                 tokens: btreemap! {
                     tokens[0] => TokenState {
                         balance: balances[0].as_uint256(),
-                        scaling_exponent: scaling_exponents[0],
+                        scaling_factor: scaling_factors[0],
                     },
                     tokens[1] => TokenState {
                         balance: balances[1].as_uint256(),
-                        scaling_exponent: scaling_exponents[1],
+                        scaling_factor: scaling_factors[1],
                     },
                     tokens[2] => TokenState {
                         balance: balances[2].as_uint256(),
-                        scaling_exponent: scaling_exponents[2],
+                        scaling_factor: scaling_factors[2],
                     },
                 },
             }
@@ -512,7 +516,7 @@ mod tests {
             id: Default::default(),
             address: pool.address(),
             tokens: tokens.to_vec(),
-            scaling_exponents: vec![0, 0, 0],
+            scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
             block_created: 1337,
         };
 
@@ -548,7 +552,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
-                scaling_exponents: vec![0, 0, 12],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(12)],
                 block_created: 1337,
             },
             weights: vec![bfp!("0.5"), bfp!("0.25"), bfp!("0.25")],
@@ -559,21 +563,21 @@ mod tests {
                 pool_info.common.tokens[0] => weighted::TokenState {
                     common: TokenState {
                         balance: bfp!("1000.0").as_uint256(),
-                        scaling_exponent: pool_info.common.scaling_exponents[0],
+                        scaling_factor: pool_info.common.scaling_factors[0],
                     },
                     weight: pool_info.weights[0],
                 },
                 pool_info.common.tokens[1] => weighted::TokenState {
                     common: TokenState {
                         balance: bfp!("10.0").as_uint256(),
-                        scaling_exponent: pool_info.common.scaling_exponents[1],
+                        scaling_factor: pool_info.common.scaling_factors[1],
                     },
                     weight: pool_info.weights[1],
                 },
                 pool_info.common.tokens[2] => weighted::TokenState {
                     common: TokenState {
                         balance: bfp!("15.0").as_uint256(),
-                        scaling_exponent: pool_info.common.scaling_exponents[2],
+                        scaling_factor: pool_info.common.scaling_factors[2],
                     },
                     weight: pool_info.weights[2],
                 },
@@ -678,7 +682,7 @@ mod tests {
                 id: Default::default(),
                 address: pool.address(),
                 tokens: Default::default(),
-                scaling_exponents: Default::default(),
+                scaling_factors: Default::default(),
                 block_created: Default::default(),
             },
             weights: Default::default(),
@@ -734,7 +738,7 @@ mod tests {
                 id: Default::default(),
                 address: pool.address(),
                 tokens: Default::default(),
-                scaling_exponents: Default::default(),
+                scaling_factors: Default::default(),
                 block_created: Default::default(),
             },
             weights: Default::default(),
@@ -754,7 +758,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scaling_exponent_error_on_missing_info() {
+    async fn scaling_factor_error_on_missing_info() {
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos
             .expect_get_token_infos()
@@ -766,13 +770,13 @@ mod tests {
             token_infos: Arc::new(token_infos),
         };
         assert!(pool_info_fetcher
-            .scaling_exponents(&[H160([0xff; 20])])
+            .scaling_factors(&[H160([0xff; 20])])
             .await
             .is_err());
     }
 
     #[tokio::test]
-    async fn scaling_exponent_error_on_missing_decimals() {
+    async fn scaling_factor_error_on_missing_decimals() {
         let token = H160([0xff; 20]);
         let mut token_infos = MockTokenInfoFetching::new();
         token_infos.expect_get_token_infos().returning(move |_| {
@@ -786,7 +790,7 @@ mod tests {
             factory: MockFactoryIndexing::new(),
             token_infos: Arc::new(token_infos),
         };
-        assert!(pool_info_fetcher.scaling_exponents(&[token]).await.is_err());
+        assert!(pool_info_fetcher.scaling_factors(&[token]).await.is_err());
     }
 
     #[test]
@@ -817,7 +821,7 @@ mod tests {
                 id: H256([4; 32]),
                 address: H160([3; 20]),
                 tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
-                scaling_exponents: vec![15, 0],
+                scaling_factors: vec![Bfp::exp10(15), Bfp::exp10(0)],
                 block_created: 42,
             }
         );
@@ -865,12 +869,15 @@ mod tests {
     }
 
     #[test]
-    fn scaling_exponent_from_decimals_ok_and_err() {
-        for i in 0..=18 {
-            assert_eq!(scaling_exponent_from_decimals(i).unwrap(), 18u8 - i);
+    fn scaling_factor_from_decimals_ok_and_err() {
+        for i in 0_u8..=18 {
+            assert_eq!(
+                scaling_factor_from_decimals(i).unwrap(),
+                Bfp::exp10(18 - i as i32)
+            );
         }
         assert_eq!(
-            scaling_exponent_from_decimals(19).unwrap_err().to_string(),
+            scaling_factor_from_decimals(19).unwrap_err().to_string(),
             "unsupported token with more than 18 decimals"
         )
     }
@@ -909,17 +916,17 @@ mod tests {
 
     #[test]
     fn compute_scaling_rates() {
-        // Tokens with 18 decimals
         assert_eq!(
-            compute_scaling_rate(0).unwrap(),
+            compute_scaling_rate(scaling_factor_from_decimals(18).unwrap()).unwrap(),
             U256::from(1_000_000_000_000_000_000_u128),
         );
-        // Tokens with 6 decimals
-        assert_eq!(compute_scaling_rate(12).unwrap(), U256::from(1_000_000));
-        // Tokens with 0 decimals
-        assert_eq!(compute_scaling_rate(18).unwrap(), U256::from(1));
-
-        // Tokens with invalid number of decimals, i.e. greater than 18
-        assert!(compute_scaling_rate(42).is_err());
+        assert_eq!(
+            compute_scaling_rate(scaling_factor_from_decimals(6).unwrap()).unwrap(),
+            U256::from(1_000_000)
+        );
+        assert_eq!(
+            compute_scaling_rate(scaling_factor_from_decimals(0).unwrap()).unwrap(),
+            U256::from(1)
+        );
     }
 }

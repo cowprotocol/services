@@ -135,15 +135,15 @@ mod tests {
         let tokens = btreemap! {
             H160([1; 20]) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: Bfp::exp10(0),
             },
             H160([2; 20]) => common::TokenState {
                 balance: bfp!("10.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: Bfp::exp10(0),
             },
             H160([3; 20]) => common::TokenState {
                 balance: 15_000_000.into(),
-                scaling_exponent: 12,
+                scaling_factor: Bfp::exp10(12),
             },
         };
         let swap_fee = bfp!("0.00015");
@@ -167,10 +167,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
-                    .values()
-                    .map(|token| token.scaling_exponent)
-                    .collect(),
+                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
                 block_created: 1337,
             },
         };

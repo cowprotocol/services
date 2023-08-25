@@ -230,7 +230,7 @@ async fn balancer_weighted() {
                 "id": 0,
                 "prices": {
                     "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "1000000000000000000",
-                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "15503270361055187239"
+                    "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d": "15503270361052085989"
                 },
                 "trades": [
                     {
@@ -248,8 +248,8 @@ async fn balancer_weighted() {
                         "id": "1",
                         "inputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
                         "outputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
-                        "inputAmount": "15503270361055187239",
-                        "outputAmount": "9056454904362889"
+                        "inputAmount": "15503270361052085989",
+                        "outputAmount": "9056454904360584"
                     },
                     {
                         "kind": "liquidity",
@@ -257,8 +257,8 @@ async fn balancer_weighted() {
                         "id": "0",
                         "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
                         "outputToken": "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d",
-                        "inputAmount": "9056454904362889",
-                        "outputAmount": "1000000000000591490"
+                        "inputAmount": "9056454904360584",
+                        "outputAmount": "1000000000000337213"
                     },
                 ]
             }]
@@ -460,7 +460,7 @@ async fn distant_convergence() {
             "solutions": [{
                 "id": 0,
                 "prices": {
-                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "601109440403462000",
+                    "0x177127622c4a00f3d409b75571e12cb3c8973d3c": "601109440402472000",
                     "0x9c58bacc331c9aa871afd802db6379a98e80cedb": "999999999999999843119"
                 },
                 "trades": [
@@ -479,8 +479,8 @@ async fn distant_convergence() {
                         "id": "0",
                         "inputToken": "0x9c58bacc331c9aa871afd802db6379a98e80cedb",
                         "outputToken": "0x177127622c4a00f3d409b75571e12cb3c8973d3c",
-                        "inputAmount": "601109440403462000",
-                        "outputAmount": "1000000000001659063234"
+                        "inputAmount": "601109440402472000",
+                        "outputAmount": "1000000000000015112015"
                     },
                 ]
             }]

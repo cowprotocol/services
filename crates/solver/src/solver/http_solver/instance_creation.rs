@@ -329,7 +329,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<H160, A
                             .reserves
                             .iter()
                             .map(|(token, state)| {
-                                Ok((*token, compute_scaling_rate(state.scaling_exponent)?))
+                                Ok((*token, compute_scaling_rate(state.scaling_factor)?))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| {

@@ -218,8 +218,7 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
-    #[serde_as(as = "serialize::U256")]
-    scaling_factor: U256,
+    scaling_factor: BigDecimal,
     weight: BigDecimal,
 }
 
@@ -244,7 +243,8 @@ impl WeightedProductPool {
                         },
                         weight: conv::decimal_to_rational(&token.weight)
                             .ok_or("invalid token weight")?,
-                        scale: liquidity::ScalingFactor::new(token.scaling_factor)
+                        scale: conv::decimal_to_rational(&token.scaling_factor)
+                            .and_then(liquidity::ScalingFactor::new)
                             .ok_or("invalid token scaling factor")?,
                     })
                 })
@@ -288,8 +288,7 @@ struct StablePool {
 struct StableReserve {
     #[serde_as(as = "serialize::U256")]
     balance: U256,
-    #[serde_as(as = "serialize::U256")]
-    scaling_factor: U256,
+    scaling_factor: BigDecimal,
 }
 
 impl StablePool {
@@ -304,7 +303,8 @@ impl StablePool {
                             token: eth::TokenAddress(*address),
                             amount: token.balance,
                         },
-                        scale: liquidity::ScalingFactor::new(token.scaling_factor)
+                        scale: conv::decimal_to_rational(&token.scaling_factor)
+                            .and_then(liquidity::ScalingFactor::new)
                             .ok_or("invalid token scaling factor")?,
                     })
                 })

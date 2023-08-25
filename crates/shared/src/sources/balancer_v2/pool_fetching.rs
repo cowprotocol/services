@@ -604,7 +604,10 @@ mod tests {
                 PoolKind::Weighted(state) => {
                     for token in &subgraph_pool.tokens {
                         let token_state = &state.tokens[&token.address];
-                        assert_eq!(token_state.common.scaling_exponent, 18 - token.decimals);
+                        assert_eq!(
+                            token_state.common.scaling_factor,
+                            Bfp::exp10(18 - token.decimals as i32)
+                        );
 
                         // Don't check weights for LBPs because they may be out
                         // of date in the subgraph. See:
@@ -617,7 +620,10 @@ mod tests {
                 PoolKind::Stable(state) => {
                     for token in &subgraph_pool.tokens {
                         let token_state = &state.tokens[&token.address];
-                        assert_eq!(token_state.scaling_exponent, 18 - token.decimals);
+                        assert_eq!(
+                            token_state.scaling_factor,
+                            Bfp::exp10(18 - token.decimals as i32)
+                        );
                     }
                 }
             };

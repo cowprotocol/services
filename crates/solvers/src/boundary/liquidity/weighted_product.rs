@@ -31,7 +31,7 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
                 WeightedTokenState {
                     common: TokenState {
                         balance: reserve.asset.amount,
-                        scaling_exponent: reserve.scale.exponent(),
+                        scaling_factor: to_fixed_point(&reserve.scale.get())?,
                     },
                     weight: to_fixed_point(&reserve.weight)?,
                 },

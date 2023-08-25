@@ -123,21 +123,21 @@ mod tests {
             H160([1; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("1000.0").as_uint256(),
-                    scaling_exponent: 0,
+                    scaling_factor: bfp!("1"),
                 },
                 weight: bfp!("0.5"),
             },
             H160([2; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("10.0").as_uint256(),
-                    scaling_exponent: 0,
+                    scaling_factor: bfp!("1"),
                 },
                 weight: bfp!("0.3"),
             },
             H160([3; 20]) => TokenState {
                 common: common::TokenState {
                     balance: 15_000_000.into(),
-                    scaling_exponent: 12,
+                    scaling_factor: bfp!("1000000000000"),
                 },
                 weight: bfp!("0.2"),
             },
@@ -170,9 +170,9 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
+                scaling_factors: tokens
                     .values()
-                    .map(|token| token.common.scaling_exponent)
+                    .map(|token| token.common.scaling_factor)
                     .collect(),
                 block_created: 1337,
             },
@@ -234,7 +234,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([1; 20])],
-                scaling_exponents: vec![0, 0],
+                scaling_factors: vec![1.into(), 1.into()],
                 block_created: 1337,
             },
         };
@@ -244,11 +244,11 @@ mod tests {
             tokens: btreemap! {
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_exponent: 0,
+                    scaling_factor: 1.into(),
                 },
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_exponent: 0,
+                    scaling_factor: 1.into(),
                 },
             },
         };

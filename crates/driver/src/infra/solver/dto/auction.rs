@@ -130,7 +130,7 @@ impl Auction {
                                     r.asset.token.into(),
                                     StableReserve {
                                         balance: r.asset.amount.into(),
-                                        scaling_factor: r.scale.factor(),
+                                        scaling_factor: scaling_factor_to_decimal(r.scale),
                                     },
                                 )
                             })
@@ -139,10 +139,7 @@ impl Auction {
                             pool.amplification_parameter.factor().to_big_int(),
                             pool.amplification_parameter.precision().to_big_int(),
                         )),
-                        fee: bigdecimal::BigDecimal::new(
-                            eth::U256::from(pool.fee).to_big_int(),
-                            18,
-                        ),
+                        fee: fee_to_decimal(pool.fee),
                     }),
                     liquidity::Kind::BalancerV2Weighted(pool) => {
                         Liquidity::WeightedProduct(WeightedProductPool {
@@ -157,19 +154,13 @@ impl Auction {
                                         r.asset.token.into(),
                                         WeightedProductReserve {
                                             balance: r.asset.amount.into(),
-                                            scaling_factor: r.scale.factor(),
-                                            weight: bigdecimal::BigDecimal::new(
-                                                eth::U256::from(r.weight).to_big_int(),
-                                                18,
-                                            ),
+                                            scaling_factor: scaling_factor_to_decimal(r.scale),
+                                            weight: weight_to_decimal(r.weight),
                                         },
                                     )
                                 })
                                 .collect(),
-                            fee: bigdecimal::BigDecimal::new(
-                                eth::U256::from(pool.fee).to_big_int(),
-                                18,
-                            ),
+                            fee: fee_to_decimal(pool.fee),
                             version: match pool.version {
                                 liquidity::balancer::v2::weighted::Version::V0 => {
                                     WeightedProductVersion::V0
@@ -325,8 +316,8 @@ struct WeightedProductPool {
 struct WeightedProductReserve {
     #[serde_as(as = "serialize::U256")]
     balance: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    scaling_factor: eth::U256,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    scaling_factor: bigdecimal::BigDecimal,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     weight: bigdecimal::BigDecimal,
 }
@@ -360,8 +351,8 @@ struct StablePool {
 struct StableReserve {
     #[serde_as(as = "serialize::U256")]
     balance: eth::U256,
-    #[serde_as(as = "serialize::U256")]
-    scaling_factor: eth::U256,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    scaling_factor: bigdecimal::BigDecimal,
 }
 
 #[serde_as]
@@ -404,4 +395,18 @@ struct ForeignLimitOrder {
     taker_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
     taker_token_fee_amount: eth::U256,
+}
+
+fn fee_to_decimal(fee: liquidity::balancer::v2::Fee) -> bigdecimal::BigDecimal {
+    bigdecimal::BigDecimal::new(fee.as_raw().to_big_int(), 18)
+}
+
+fn weight_to_decimal(weight: liquidity::balancer::v2::weighted::Weight) -> bigdecimal::BigDecimal {
+    bigdecimal::BigDecimal::new(weight.as_raw().to_big_int(), 18)
+}
+
+fn scaling_factor_to_decimal(
+    scale: liquidity::balancer::v2::ScalingFactor,
+) -> bigdecimal::BigDecimal {
+    bigdecimal::BigDecimal::new(scale.as_raw().to_big_int(), 18)
 }

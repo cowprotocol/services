@@ -269,7 +269,10 @@ mod tests {
         shared::{
             ethrpc::create_env_test_transport,
             http_solver::model::{InternalizationStrategy, SettledBatchAuctionModel},
-            sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
+            sources::balancer_v2::{
+                pools::{common::TokenState, stable::AmplificationParameter},
+                swap::fixed_point::Bfp,
+            },
             tenderly_api::TenderlyHttpApi,
         },
         std::{
@@ -504,17 +507,17 @@ mod tests {
             address: H160::from_low_u64_be(1),
             reserves: btreemap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
-                    balance: U256::from(46543572661097157184873466u128),
-                    scaling_exponent: 18
+                    balance: 46_543_572_661_097_157_184_873_466_u128.into(),
+                    scaling_factor: Bfp::exp10(0),
                 },
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".parse().unwrap() => TokenState {
-                    balance: U256::from(50716887827666u128),
-                    scaling_exponent: 6
+                    balance: 50_716_887_827_666_u128.into(),
+                    scaling_factor: Bfp::exp10(12),
                 },
                 "0xdac17f958d2ee523a2206206994597c13d831ec7".parse().unwrap() => TokenState{
-                    balance: U256::from(38436050628181u128),
-                                        scaling_exponent: 6
-                                    },
+                    balance: 38_436_050_628_181_u128.into(),
+                    scaling_factor: Bfp::exp10(12),
+                },
             },
             fee: "0.001".parse().unwrap(),
             amplification_parameter: AmplificationParameter::new(1573.into(), 1.into()).unwrap(),
