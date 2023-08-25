@@ -182,7 +182,7 @@ mod tests {
             swap_fee,
             tokens: tokens
                 .iter()
-                .map(|(address, token)| (*address, token.common.clone()))
+                .map(|(address, token)| (*address, token.common))
                 .collect(),
         };
 

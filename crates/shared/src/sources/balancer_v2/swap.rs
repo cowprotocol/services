@@ -138,6 +138,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 /// Stable pool data as a reference used for computing input and output amounts.
 #[derive(Debug)]
 pub struct StablePoolRef<'a> {
+    pub address: H160,
     pub reserves: &'a BTreeMap<H160, TokenState>,
     pub swap_fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
@@ -150,7 +151,24 @@ struct BalancesWithIndices {
     balances: Vec<Bfp>,
 }
 
-impl StablePoolRef<'_> {
+impl<'a> StablePoolRef<'a> {
+    /// This method returns an iterator over the stable pool reserves while
+    /// filtering out the BPT token for the pool (i.e. the pool address). This
+    /// is used because composable stable pools include their own BPT token
+    /// (i.e. the ERC-20 at the pool address) in its registered tokens (i.e. the
+    /// ERC-20s that can be swapped over the Balancer V2 Vault), however, this
+    /// token is ignored when computing input and output amounts for regular
+    /// swaps.
+    ///
+    /// <https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L278>
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + 'a {
+        let bpt = self.address;
+        self.reserves
+            .iter()
+            .map(|(token, state)| (*token, *state))
+            .filter(move |&(token, _)| token != bpt)
+    }
+
     fn upscale_balances_with_token_indices(
         &self,
         in_token: &H160,
@@ -158,11 +176,12 @@ impl StablePoolRef<'_> {
     ) -> Result<BalancesWithIndices, Error> {
         let mut balances = vec![];
         let (mut token_index_in, mut token_index_out) = (0, 0);
-        for (index, (token, balance)) in self.reserves.iter().enumerate() {
-            if token == in_token {
+
+        for (index, (token, balance)) in self.reserves_without_bpt().enumerate() {
+            if token == *in_token {
                 token_index_in = index;
             }
-            if token == out_token {
+            if token == *out_token {
                 token_index_out = index;
             }
             balances.push(balance.upscaled_balance()?)
@@ -178,15 +197,14 @@ impl StablePoolRef<'_> {
         self.amplification_parameter
             .with_base(*stable_math::AMP_PRECISION)
     }
-}
 
-impl BaselineSolvable for StablePoolRef<'_> {
-    /// Stable pools use the BaseGeneralPool.sol for these methods, called from
-    /// within `onSwap` https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L31-L44
-
-    /// This comes from `swapGivenIn`
-    /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L46-L63
-    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+    /// Comes from `_onRegularSwap(true, ...)`:
+    /// https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L270
+    fn regular_swap_given_in(
+        &self,
+        out_token: H160,
+        (in_amount, in_token): (U256, H160),
+    ) -> Option<U256> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
         let BalancesWithIndices {
@@ -208,9 +226,13 @@ impl BaselineSolvable for StablePoolRef<'_> {
         out_reserves.downscale_down(out_amount).ok()
     }
 
-    /// Comes from `swapGivenOut`:
-    /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/589542001aeca5bdc120404874fe0137f6a4c749/pkg/pool-utils/contracts/BaseGeneralPool.sol#L65-L82
-    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
+    /// Comes from `_onRegularSwap(false, ...)`:
+    /// https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L270
+    fn regular_swap_given_out(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
         let BalancesWithIndices {
@@ -229,11 +251,36 @@ impl BaselineSolvable for StablePoolRef<'_> {
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.downscale_up(in_amount).ok()?;
-        let in_amount = add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()?;
+        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
+    }
 
-        converge_in_amount(in_amount, out_amount, |x| {
-            self.get_amount_out(out_token, (x, in_token))
-        })
+    /// Comes from `_swapWithBpt`:
+    // https://etherscan.io/address/0xf9ac7B9dF2b3454E841110CcE5550bD5AC6f875F#code#F2#L301
+    fn swap_with_bpt(&self) -> Option<U256> {
+        // TODO: We currently do not implement swapping with BPT for composable
+        // stable pools.
+        None
+    }
+}
+
+impl BaselineSolvable for StablePoolRef<'_> {
+    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+        if in_token == self.address || out_token == self.address {
+            self.swap_with_bpt()
+        } else {
+            self.regular_swap_given_in(out_token, (in_amount, in_token))
+        }
+    }
+
+    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
+        if in_token == self.address || out_token == self.address {
+            self.swap_with_bpt()
+        } else {
+            let in_amount = self.regular_swap_given_out(in_token, (out_amount, out_token))?;
+            converge_in_amount(in_amount, out_amount, |x| {
+                self.get_amount_out(out_token, (x, in_token))
+            })
+        }
     }
 
     fn gas_cost(&self) -> usize {
@@ -303,10 +350,16 @@ impl BaselineSolvable for WeightedPool {
 impl StablePool {
     fn as_pool_ref(&self) -> StablePoolRef {
         StablePoolRef {
+            address: self.common.address,
             reserves: &self.reserves,
             swap_fee: self.common.swap_fee,
             amplification_parameter: self.amplification_parameter,
         }
+    }
+
+    /// See [`StablePoolRef::reserves_without_bpt`].
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + '_ {
+        self.as_pool_ref().reserves_without_bpt()
     }
 }
 

@@ -355,13 +355,11 @@ impl HttpPriceEstimator {
                 Ok(AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
                         reserves: pool
-                            .reserves
-                            .iter()
-                            .map(|(token, state)| (*token, state.balance))
+                            .reserves_without_bpt()
+                            .map(|(token, state)| (token, state.balance))
                             .collect(),
                         scaling_rates: pool
-                            .reserves
-                            .into_iter()
+                            .reserves_without_bpt()
                             .map(|(token, state)| {
                                 Ok((token, compute_scaling_rate(state.scaling_factor)?))
                             })

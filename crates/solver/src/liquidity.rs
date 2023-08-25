@@ -346,6 +346,19 @@ pub struct StablePoolOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
+impl StablePoolOrder {
+    /// See [`shared::sources::balancer_v2::swap::StablePoolRef::reserves_without_bpt`].
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + '_ {
+        shared::sources::balancer_v2::swap::StablePoolRef {
+            address: self.address,
+            reserves: &self.reserves,
+            swap_fee: self.fee,
+            amplification_parameter: self.amplification_parameter,
+        }
+        .reserves_without_bpt()
+    }
+}
+
 impl std::fmt::Debug for StablePoolOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Stable Pool AMM {:?}", self.reserves.keys())
