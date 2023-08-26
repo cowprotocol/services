@@ -16,7 +16,7 @@ use {
     thiserror::Error,
 };
 
-const BASE_URL: &str = "https://apiv5.paraswap.io";
+pub const DEFAULT_URL: &str = "https://apiv5.paraswap.io";
 
 /// Mockable implementation of the API for unit test
 #[async_trait::async_trait]
@@ -31,13 +31,14 @@ pub trait ParaswapApi: Send + Sync + 'static {
 
 pub struct DefaultParaswapApi {
     pub client: Client,
+    pub base_url: String,
     pub partner: String,
 }
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
-        let url = query.into_url(&self.partner);
+        let url = query.into_url(&self.base_url, &self.partner);
         tracing::trace!("Querying Paraswap price API: {}", url);
         let request = self.client.get(url).send();
 
@@ -56,7 +57,7 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client).send();
+        let request = query.into_request(&self.client, &self.base_url).send();
         let response = request.await?;
         let status = response.status();
         let response_text = response.text().await?;
@@ -155,8 +156,8 @@ pub struct PriceQuery {
 }
 
 impl PriceQuery {
-    pub fn into_url(self, partner: &str) -> Url {
-        let mut url = crate::url::join(&Url::parse(BASE_URL).expect("invalid base url"), "/prices");
+    pub fn into_url(self, base_url: &str, partner: &str) -> Url {
+        let mut url = crate::url::join(&Url::parse(base_url).expect("invalid base url"), "/prices");
 
         let side = match self.side {
             Side::Buy => "BUY",
@@ -314,9 +315,9 @@ struct TransactionBuilderQueryWithPartner<'a> {
 }
 
 impl TransactionBuilderQueryWithPartner<'_> {
-    pub fn into_request(self, client: &Client) -> RequestBuilder {
+    pub fn into_request(self, client: &Client, base_url: &str) -> RequestBuilder {
         let mut url = crate::url::join(
-            &Url::parse(BASE_URL).expect("invalid base url"),
+            &Url::parse(base_url).expect("invalid base url"),
             "/transactions/1",
         );
         url.query_pairs_mut().append_pair("ignoreChecks", "true");
@@ -374,7 +375,7 @@ mod tests {
             exclude_dexs: None,
         };
 
-        let url = price_query.into_url("cowswap");
+        let url = price_query.into_url(DEFAULT_URL, "cowswap");
         println!("{url}");
         let price_response: PriceResponse = reqwest::get(url)
             .await
@@ -411,7 +412,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client)
+            .into_request(&client, DEFAULT_URL)
             .send()
             .await
             .unwrap();
@@ -439,7 +440,7 @@ mod tests {
             exclude_dexs: Some(vec!["ParaSwapPool4".to_string()]),
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
+        let price_response: PriceResponse = reqwest::get(price_query.into_url(DEFAULT_URL, "Test"))
             .await
             .expect("price query failed")
             .json()
@@ -469,7 +470,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client)
+            .into_request(&client, DEFAULT_URL)
             .send()
             .await
             .unwrap();
@@ -494,7 +495,7 @@ mod tests {
             exclude_dexs: Some(vec!["Foo".to_string(), "Bar".to_string()]),
         };
 
-        assert_eq!(&query.into_url("Test").to_string(), "https://apiv5.paraswap.io/prices?partner=Test&srcToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&destToken=0x6810e776880c02933d47db1b9fc05908e5386b96&srcDecimals=18&destDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
+        assert_eq!(&query.into_url(DEFAULT_URL, "Test").to_string(), "https://apiv5.paraswap.io/prices?partner=Test&srcToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&destToken=0x6810e776880c02933d47db1b9fc05908e5386b96&srcDecimals=18&destDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
     }
 
     #[test]
@@ -754,7 +755,7 @@ mod tests {
             exclude_dexs: None,
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
+        let price_response: PriceResponse = reqwest::get(price_query.into_url(DEFAULT_URL, "Test"))
             .await
             .expect("price query failed")
             .json()
@@ -763,6 +764,7 @@ mod tests {
 
         let api = DefaultParaswapApi {
             client: Client::new(),
+            base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
         };
 
