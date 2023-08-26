@@ -436,7 +436,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
             .add_network_str(GOERLI, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
-            .add_network_str(GNOSIS, "0xD49Fa4e610d489aB98008bC4424B9F7276fF34bA")
+            .add_network_str(GNOSIS, "0x01DcB88678aedD0C4cC9552B20F4718550250574")
     });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
