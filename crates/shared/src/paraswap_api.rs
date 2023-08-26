@@ -16,6 +16,8 @@ use {
     thiserror::Error,
 };
 
+pub const DEFAULT_URL: &str = "https://apiv5.paraswap.io";
+
 /// Mockable implementation of the API for unit test
 #[async_trait::async_trait]
 #[mockall::automock]
@@ -373,7 +375,7 @@ mod tests {
             exclude_dexs: None,
         };
 
-        let url = price_query.into_url("https://apiv5.paraswap.io", "cowswap");
+        let url = price_query.into_url(DEFAULT_URL, "cowswap");
         println!("{url}");
         let price_response: PriceResponse = reqwest::get(url)
             .await
@@ -410,7 +412,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client, "https://apiv5.paraswap.io")
+            .into_request(&client, DEFAULT_URL)
             .send()
             .await
             .unwrap();
@@ -438,13 +440,12 @@ mod tests {
             exclude_dexs: Some(vec!["ParaSwapPool4".to_string()]),
         };
 
-        let price_response: PriceResponse =
-            reqwest::get(price_query.into_url("https://apiv5.paraswap.io", "Test"))
-                .await
-                .expect("price query failed")
-                .json()
-                .await
-                .expect("Response is not json");
+        let price_response: PriceResponse = reqwest::get(price_query.into_url(DEFAULT_URL, "Test"))
+            .await
+            .expect("price query failed")
+            .json()
+            .await
+            .expect("Response is not json");
 
         println!(
             "Price Response: {}",
@@ -469,7 +470,7 @@ mod tests {
 
         let client = Client::new();
         let transaction_response = transaction_query
-            .into_request(&client, "https://apiv5.paraswap.io")
+            .into_request(&client, DEFAULT_URL)
             .send()
             .await
             .unwrap();
@@ -494,7 +495,7 @@ mod tests {
             exclude_dexs: Some(vec!["Foo".to_string(), "Bar".to_string()]),
         };
 
-        assert_eq!(&query.into_url("https://apiv5.paraswap.io", "Test").to_string(), "https://apiv5.paraswap.io/prices?partner=Test&srcToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&destToken=0x6810e776880c02933d47db1b9fc05908e5386b96&srcDecimals=18&destDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
+        assert_eq!(&query.into_url(DEFAULT_URL, "Test").to_string(), "https://apiv5.paraswap.io/prices?partner=Test&srcToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&destToken=0x6810e776880c02933d47db1b9fc05908e5386b96&srcDecimals=18&destDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
     }
 
     #[test]
@@ -754,17 +755,16 @@ mod tests {
             exclude_dexs: None,
         };
 
-        let price_response: PriceResponse =
-            reqwest::get(price_query.into_url("https://apiv5.paraswap.io", "Test"))
-                .await
-                .expect("price query failed")
-                .json()
-                .await
-                .expect("Response is not json");
+        let price_response: PriceResponse = reqwest::get(price_query.into_url(DEFAULT_URL, "Test"))
+            .await
+            .expect("price query failed")
+            .json()
+            .await
+            .expect("Response is not json");
 
         let api = DefaultParaswapApi {
             client: Client::new(),
-            base_url: "https://apiv5.paraswap.io".into(),
+            base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
         };
 
