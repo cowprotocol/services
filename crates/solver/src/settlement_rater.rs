@@ -11,12 +11,12 @@ use {
         settlement_submission::gas_limit_for_estimate,
         solver::{Simulation, SimulationError, SimulationWithError, SolverInfo},
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::{bail, ensure, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::{errors::ExecutionError, Account},
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
-    num::{BigRational, One, Zero},
+    num::{BigRational, One},
     number_conversions::{big_rational_to_u256, u256_to_big_rational},
     primitive_types::U256,
     shared::{
@@ -25,7 +25,7 @@ use {
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
     },
-    std::{borrow::Borrow, cmp::min, sync::Arc},
+    std::{borrow::Borrow, sync::Arc},
     web3::types::AccessList,
 };
 
@@ -311,136 +311,203 @@ impl ScoreCalculator {
             "success probability must be between 0 and 1."
         );
         let success_probability = BigRational::from_float(success_probability).unwrap();
-        let cost_fail = BigRational::from_float(0.0).unwrap();
-        let optimal_score =
-            self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
+        let optimal_score = compute_optimal_bid(
+            objective_value.clone(),
+            success_probability,
+            self.score_cap.clone(),
+        )?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
         Ok(Score::Protocol(score))
     }
-
-    fn compute_optimal_bid(
-        &self,
-        objective: BigRational,
-        probability_success: BigRational,
-        cost_fail: BigRational,
-    ) -> Result<BigRational> {
-        tracing::trace!(
-            ?objective,
-            ?probability_success,
-            ?cost_fail,
-            "Computing optimal bid"
-        );
-        let probability_fail = BigRational::one() - probability_success.clone();
-        // filter out invalid solution where there is no chance of success or where the
-        // success is 100% (because it can't be true, there is always some risk of
-        // failure)
-        ensure!(!probability_success.is_zero(), "success is zero");
-        ensure!(!probability_fail.is_zero(), "fail is zero");
-
-        let payoff_obj_minus_cap = self.payoff(
-            objective.clone() - self.score_cap.clone(),
-            objective.clone(),
-            probability_success.clone(),
-            cost_fail.clone(),
-        );
-        tracing::trace!(?payoff_obj_minus_cap, "Payoff obj minus cap");
-        let payoff_cap = self.payoff(
-            self.score_cap.clone(),
-            objective.clone(),
-            probability_success.clone(),
-            cost_fail.clone(),
-        );
-        tracing::trace!(?payoff_cap, "Payoff cap");
-        let optimal_bid = if payoff_obj_minus_cap >= BigRational::zero()
-            && payoff_cap <= BigRational::zero()
-        {
-            Ok(probability_success * objective.clone() - probability_fail * cost_fail)
-        } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-            Ok(objective.clone()
-                - probability_fail / probability_success * (self.score_cap.clone() + cost_fail))
-        } else if payoff_obj_minus_cap < BigRational::zero() && payoff_cap <= BigRational::zero() {
-            Ok(probability_success / probability_fail * self.score_cap.clone() - cost_fail)
-        } else {
-            Err(anyhow!("Invalid bid"))
-        };
-        tracing::trace!(?optimal_bid, "Optimal bid");
-        if let Ok(optimal_bid) = optimal_bid.as_ref() {
-            ensure!(
-                optimal_bid <= &objective,
-                "Optimal score higher than objective value"
-            );
-        }
-        optimal_bid
-    }
-
-    fn payoff(
-        &self,
-        score_reference: BigRational,
-        objective: BigRational,
-        probability_success: BigRational,
-        cost_fail: BigRational,
-    ) -> BigRational {
-        tracing::trace!(
-            ?score_reference,
-            ?objective,
-            ?probability_success,
-            ?cost_fail,
-            "Computing payoff"
-        );
-        let probability_fail = BigRational::one() - probability_success.clone();
-        let payoff_success = min(objective - score_reference.clone(), self.score_cap.clone());
-        tracing::trace!(?payoff_success, "Payoff success");
-        let payoff_fail = -min(score_reference, self.score_cap.clone()) - cost_fail;
-        tracing::trace!(?payoff_fail, "Payoff fail");
-        let payoff_expectation =
-            probability_success * payoff_success + probability_fail * payoff_fail;
-        tracing::trace!(?payoff_expectation, "Payoff expectation");
-        payoff_expectation
-    }
 }
 
-mod tests {
-    use {num::BigRational, primitive_types::U256};
+fn compute_optimal_bid(
+    objective: BigRational,
+    probability_success: BigRational,
+    cap: BigRational,
+) -> Result<BigRational> {
+    tracing::trace!(
+        ?objective,
+        ?probability_success,
+        ?cap,
+        "Computing optimal bid"
+    );
+    let probability_fail = BigRational::one() - probability_success.clone();
 
-    #[allow(dead_code)]
-    fn calculate_score(objective_value: BigRational, success_probability: f64) -> U256 {
-        let score_cap = BigRational::from_float(1e17).unwrap();
-        let score_calculator = super::ScoreCalculator::new(score_cap);
-        score_calculator
-            .compute_score(&objective_value, success_probability)
-            .unwrap()
-            .score()
+    // Solvers are paid the difference between their eventually achieved objective
+    // value and the second best reported bid (aka reference score). If a solver
+    // fails to submit a solution the achieved objective is 0 and therefore they are
+    // penalized by the reference score. The optimal bidding strategy requires
+    // solvers to bid in a way that even in the worst case (i.e. they win, but
+    // the runners up bids the same value) their expected profit is zero (due to
+    // the second-price mechanism, truthful revelation of your absolute limit,
+    // i.e. 0 profit in the worst case, is the dominant strategy and will lead to
+    // optimal payouts in the average case).
+    //
+    // To do so, they discount their bid by the probability of success. This
+    // will ensure that the expected penalties (p_fail * bid) equal the
+    // expected profits (p_success * (obj - bid)).
+    //
+    // !!! Importantly, what we are trying to ensure is that
+    // => p_fail * bid = p_success * (obj - bid)
+    //
+    // which can be rewritten to:
+    let mut bid = probability_success.clone() * objective.clone();
+
+    // Now, this strategy would be optimal if rewards weren't capped.
+    // Given the cap, above equality becomes:
+    //
+    // => p_fail * std::cmp::min(bid, cap) = p_success * std::cmp::min(obj - bid,
+    // cap)
+    //
+    // We now look at the four cases that can arise from
+    // choosing the left or right argument in the `min` function on both
+    // sides of the equation:
+    if bid <= cap && objective.clone() - bid.clone() <= cap {
+        //Cap doesn't matter, equation reduces to the original one. We are done
+    } else if bid <= cap && objective.clone() - bid.clone() > cap {
+        // In the success case our reward is capped, thus we need to solve for
+        // p_fail * bid = p_success * cap
+        bid = (probability_success * cap) / probability_fail;
+    } else if bid > cap && objective.clone() - bid.clone() <= cap {
+        // In the failure case our penalty is capped, thus we need to solve
+        // p_fail * cap = p_success * (obj - bid)
+        bid = objective.clone() - (probability_fail * cap) / probability_success;
+    } else {
+        // The cap decides our payment in both cases, thus `bid`
+        // disappears from the equation and cannot be solved for.
+        // p_fail * cap = p_success * cap
+        // It can be proven by contradiction that this case can never happen.
+        bail!("Unreachable case for computing optimal bid");
+    }
+    tracing::trace!(?bid, "Optimal bid");
+    ensure!(
+        bid <= objective,
+        "Optimal score higher than objective value"
+    );
+    Ok(bid)
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        crate::settlement_rater::compute_optimal_bid,
+        num::{BigRational, One, ToPrimitive, Zero},
+    };
+
+    // This is the original payoff implementation from #1753
+    // TODO: Remove this function once tests are working
+    fn create_payoff_fn(
+        objective: BigRational,
+        probability_success: BigRational,
+        cap: BigRational,
+    ) -> impl Fn(BigRational) -> BigRational {
+        move |score_reference: BigRational| -> BigRational {
+            tracing::trace!(
+                ?score_reference,
+                ?objective,
+                ?probability_success,
+                ?cap,
+                "Computing payoff"
+            );
+            let probability_fail = BigRational::one() - probability_success.clone();
+            let payoff_success =
+                std::cmp::min(objective.clone() - score_reference.clone(), cap.clone());
+            tracing::trace!(?payoff_success, "Payoff success");
+            let payoff_fail = -std::cmp::min(score_reference, cap.clone());
+            tracing::trace!(?payoff_fail, "Payoff fail");
+            let payoff_expectation =
+                probability_success.clone() * payoff_success + probability_fail * payoff_fail;
+            tracing::trace!(?payoff_expectation, "Payoff expectation");
+            payoff_expectation
+        }
     }
 
     #[test]
     fn compute_score_with_success_probability_test() {
+        let cap = BigRational::from_float(1e17).unwrap();
         let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
-        let success_probability = 0.9202405649482063;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let success_probability = BigRational::from_float(0.9202405649482063).unwrap();
+        let payoff = create_payoff_fn(
+            objective_value.clone(),
+            success_probability.clone(),
+            cap.clone(),
+        );
+
+        // Case 2
+        assert!(payoff(cap.clone()) > BigRational::zero());
+        assert!(payoff(objective_value.clone() - cap.clone()) > BigRational::zero());
+
+        let score = compute_optimal_bid(objective_value, success_probability, cap)
+            .unwrap()
+            .to_f64()
+            .unwrap();
         assert_eq!(score, 250680657682686317.);
     }
 
     #[test]
     fn compute_score_with_success_probability_test2() {
+        let cap = BigRational::from_float(1e17).unwrap();
         let objective_value = num::BigRational::from_float(1e16).unwrap();
-        let success_probability = 0.9;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let success_probability = BigRational::from_float(0.9).unwrap();
+        let payoff = create_payoff_fn(
+            objective_value.clone(),
+            success_probability.clone(),
+            cap.clone(),
+        );
+
+        // Case 1 (working)
+        assert!(payoff(cap.clone()) > BigRational::zero());
+        assert!(payoff(objective_value.clone() - cap.clone()) > BigRational::zero());
+
+        let score = compute_optimal_bid(objective_value, success_probability, cap)
+            .unwrap()
+            .to_f64()
+            .unwrap();
         assert_eq!(score, 9e15);
     }
 
     #[test]
     fn compute_score_with_success_probability_test3() {
+        let cap = BigRational::from_float(1e17).unwrap();
         let objective_value = num::BigRational::from_float(1e17).unwrap();
-        let success_probability = 2.0 / 3.0;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let success_probability = BigRational::from_float(2.0 / 3.0).unwrap();
+        let payoff = create_payoff_fn(
+            objective_value.clone(),
+            success_probability.clone(),
+            cap.clone(),
+        );
+
+        // Case 1
+        assert!(payoff(cap.clone()) > BigRational::zero());
+        assert!(payoff(objective_value.clone() - cap.clone()) > BigRational::zero());
+
+        let score = compute_optimal_bid(objective_value.clone(), success_probability, cap)
+            .unwrap()
+            .to_f64()
+            .unwrap();
         assert_eq!(score, 94999999999999999.);
     }
 
     #[test]
     fn compute_score_with_success_probability_test4() {
+        let cap = BigRational::from_float(1e17).unwrap();
         let objective_value = num::BigRational::from_float(1e17).unwrap();
-        let success_probability = 1.0 / 3.0;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let success_probability = BigRational::from_float(1.0 / 3.0).unwrap();
+        let payoff = create_payoff_fn(
+            objective_value.clone(),
+            success_probability.clone(),
+            cap.clone(),
+        );
+
+        // Case 1
+        assert!(payoff(cap.clone()) > BigRational::zero());
+        assert!(payoff(objective_value.clone() - cap.clone()) > BigRational::zero());
+
+        let score = compute_optimal_bid(objective_value, success_probability, cap)
+            .unwrap()
+            .to_f64()
+            .unwrap();
         assert_eq!(score, 4999999999999999.);
     }
 }
