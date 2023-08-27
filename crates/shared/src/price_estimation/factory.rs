@@ -440,6 +440,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
             factory.rate_limiter(name),
             factory.shared_args.one_inch_referrer_address,
             solver,
+            factory.network.settlement,
         ))
     }
 
