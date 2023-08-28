@@ -182,7 +182,7 @@ impl BalanceFetching for CachingBalanceFetcher {
             }
         }
 
-        cached.extend(missing.into_iter().zip(new_balances.into_iter()));
+        cached.extend(missing.into_iter().zip(new_balances));
         cached.sort_by_key(|(i, _)| *i);
         cached.into_iter().map(|(_, balance)| balance).collect()
     }

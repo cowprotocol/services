@@ -378,6 +378,7 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
     WeightedPoolRef {
         reserves: &amm.reserves,
         swap_fee: amm.fee,
+        version: amm.version,
     }
 }
 
@@ -395,7 +396,7 @@ mod tests {
             },
             test::account,
         },
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::order::OrderKind,
         num::rational::Ratio,
         shared::{
@@ -728,23 +729,24 @@ mod tests {
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 address: H160::from_low_u64_be(2),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         common: TokenState {
                             balance: 799_086_982_149_629_058_u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => WeightedTokenState {
                         common: TokenState {
                             balance: 1_251_682_293_173_877_359_u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                 },
                 fee: "0.001".parse().unwrap(),
+                version: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
             }),
         ];
@@ -795,7 +797,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4294966784u64.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 255.into(),
                     },
@@ -805,7 +807,7 @@ mod tests {
                     WeightedTokenState {
                         common: TokenState {
                             balance: 4278190173u64.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: 2030043135usize.into(),
                     },
@@ -815,17 +817,19 @@ mod tests {
             .cloned()
             .collect(),
             fee: Bfp::zero(),
+            version: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
         // When baseline solver goes from the buy token to the sell token it sees that a
-        // path with a sell amount of 7999613.
+        // path with a sell amount of 7999613. However, since we "bump" the sell amount,
+        // we will compute an input amount that is sufficiently high.
         assert_eq!(
             pool_0.get_amount_in(tokens[1], (1.into(), tokens[2])),
             Some(1.into())
         );
         assert_eq!(
             pool_1.get_amount_in(tokens[0], (1.into(), tokens[1])),
-            Some(7999613.into())
+            Some(15999226.into())
         );
         // But then when it goes from the sell token to the buy token to construct the
         // settlement it encounters the asymmetry of the weighted pool. With the
@@ -833,6 +837,11 @@ mod tests {
         assert_eq!(
             pool_1.get_amount_out(tokens[1], (7999613.into(), tokens[0])),
             Some(0.into()),
+        );
+        // Note that the bumped input amount will be high enough.
+        assert_eq!(
+            pool_1.get_amount_out(tokens[1], (15999226.into(), tokens[0])),
+            Some(1.into()),
         );
         // This makes using the second pool fail.
         assert_eq!(pool_0.get_amount_in(tokens[2], (0.into(), tokens[1])), None);

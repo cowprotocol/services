@@ -5,7 +5,7 @@
 
 use {
     crate::price_estimation::PriceEstimationError,
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
     num::BigInt,
@@ -31,8 +31,6 @@ pub struct DefaultBalancerSorApi {
 impl DefaultBalancerSorApi {
     /// Creates a new Balancer SOR API instance.
     pub fn new(client: Client, base_url: impl IntoUrl, chain_id: u64) -> Result<Self> {
-        ensure!(chain_id == 1, "Balancer SOR API only supported on Mainnet",);
-
         let url = crate::url::join(&base_url.into_url()?, &chain_id.to_string());
         Ok(Self { client, url })
     }

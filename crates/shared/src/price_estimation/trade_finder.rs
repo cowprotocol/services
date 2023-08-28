@@ -15,7 +15,6 @@ use {
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
-        ethrpc::extensions::StateOverride,
         interaction::EncodedInteraction,
         rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
@@ -28,6 +27,7 @@ use {
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    ethrpc::extensions::StateOverride,
     futures::{
         future::{BoxFuture, FutureExt as _},
         stream::StreamExt as _,
@@ -117,7 +117,7 @@ impl Inner {
                 if verification.is_some() {
                     // TODO turn this into a hard error when everything else is set up
                     tracing::warn!(
-                        "verified quote was requested by no verification scheme was configured"
+                        "verified quote was requested but no verification scheme was configured"
                     );
                 }
                 let quote = self.finder.get_quote(&query).await?;
@@ -377,6 +377,7 @@ impl From<TradeError> for PriceEstimationError {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
             TradeError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            TradeError::DeadlineExceeded => Self::DeadlineExceeded,
             TradeError::RateLimited => Self::RateLimited,
             TradeError::Other(err) => Self::Other(err),
         }

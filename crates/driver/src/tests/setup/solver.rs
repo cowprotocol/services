@@ -194,8 +194,8 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
-        let eth = Ethereum::ethrpc(
-            &url,
+        let eth = Ethereum::new(
+            infra::blockchain::Rpc::new(&url).await.unwrap(),
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),

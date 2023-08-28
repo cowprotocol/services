@@ -3,16 +3,15 @@ use {
     crate::domain::{eth, liquidity},
     ethereum_types::{H160, H256, U256},
     shared::sources::balancer_v2::{
-        pool_fetching::{CommonPoolState, TokenState, WeightedTokenState},
+        pool_fetching::{CommonPoolState, TokenState, WeightedPoolVersion, WeightedTokenState},
         swap::fixed_point::Bfp,
     },
-    std::collections::HashMap,
 };
 
 /// Converts a domain pool into a [`shared`] Balancer V2 weighted pool. Returns
 /// `None` if the domain pool cannot be represented as a boundary pool.
 pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool) -> Option<Pool> {
-    // NOTE: this is only used for encoding and not for solving, so it OK to
+    // NOTE: this is only used for encoding and not for solving, so it's OK to
     // use this an approximate value for now. In fact, Balancer V2 pool IDs
     // are `pool address || pool kind || pool index`, so this approximation is
     // pretty good.
@@ -32,13 +31,13 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
                 WeightedTokenState {
                     common: TokenState {
                         balance: reserve.asset.amount,
-                        scaling_exponent: reserve.scale.exponent(),
+                        scaling_factor: to_fixed_point(&reserve.scale.get())?,
                     },
                     weight: to_fixed_point(&reserve.weight)?,
                 },
             ))
         })
-        .collect::<Option<HashMap<_, _>>>()?;
+        .collect::<Option<_>>()?;
 
     Some(Pool {
         common: CommonPoolState {
@@ -48,6 +47,10 @@ pub fn to_boundary_pool(address: H160, pool: &liquidity::weighted_product::Pool)
             paused: false,
         },
         reserves,
+        version: match pool.version {
+            liquidity::weighted_product::Version::V0 => WeightedPoolVersion::V0,
+            liquidity::weighted_product::Version::V3Plus => WeightedPoolVersion::V3Plus,
+        },
     })
 }
 
@@ -56,7 +59,7 @@ fn to_fixed_point(ratio: &eth::Rational) -> Option<Bfp> {
     // Balancer "fixed point numbers" are in a weird decimal FP format (instead
     // of a base 2 FP format you typically see). Just convert our ratio into
     // this format.
-    let base = U256::from(1_000_000_000_000_000_000_u128);
+    let base = U256::exp10(18);
     let wei = ratio.numer().checked_mul(base)? / ratio.denom();
     Some(Bfp::from_wei(wei))
 }

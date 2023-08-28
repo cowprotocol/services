@@ -42,7 +42,7 @@ impl HttpTransport {
             inner: Arc::new(Inner {
                 url,
                 id: AtomicUsize::new(0),
-                metrics: TransportMetrics::instance(global_metrics::get_metric_storage_registry())
+                metrics: TransportMetrics::instance(observe::metrics::get_storage_registry())
                     .unwrap(),
                 name,
             }),
@@ -100,7 +100,15 @@ async fn execute_rpc<T: DeserializeOwned>(
         ))));
     }
 
-    let result = jsonrpc_core::serde_from_str(&text)?;
+    let result = jsonrpc_core::serde_from_str(&text).map_err(|err| {
+        Web3Error::Decoder(format!(
+            "{:?}, raw response: {}, {}, {}",
+            err,
+            inner.name,
+            id,
+            text.trim()
+        ))
+    })?;
     Ok(result)
 }
 
@@ -271,7 +279,7 @@ impl TransportMetrics {
 mod tests {
     use {
         super::*,
-        crate::ethrpc::{create_env_test_transport, Web3},
+        crate::{create_env_test_transport, Web3},
     };
 
     #[test]
@@ -331,7 +339,7 @@ mod tests {
             .await
             .unwrap();
         let metric_storage =
-            TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+            TransportMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
         for method_name in ["eth_blockNumber", "eth_chainId"] {
             let number_calls = metric_storage
                 .inner_batch_requests_initiated

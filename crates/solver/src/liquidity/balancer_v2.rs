@@ -74,6 +74,7 @@ impl BalancerV2Liquidity {
                 address: pool.common.address,
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee,
+                version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.id,
                     settlement: self.settlement.clone(),
@@ -217,7 +218,7 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
-        maplit::{hashmap, hashset},
+        maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
         primitive_types::H160,
@@ -226,15 +227,19 @@ mod tests {
             dummy_contract,
             http_solver::model::{InternalizationStrategy, TokenAmount},
             interaction::Interaction,
-            sources::balancer_v2::pool_fetching::{
-                AmplificationParameter,
-                CommonPoolState,
-                FetchedBalancerPools,
-                MockBalancerPoolFetching,
-                StablePool,
-                TokenState,
-                WeightedPool,
-                WeightedTokenState,
+            sources::balancer_v2::{
+                pool_fetching::{
+                    AmplificationParameter,
+                    CommonPoolState,
+                    FetchedBalancerPools,
+                    MockBalancerPoolFetching,
+                    StablePool,
+                    TokenState,
+                    WeightedPool,
+                    WeightedPoolVersion,
+                    WeightedTokenState,
+                },
+                swap::fixed_point::Bfp,
             },
         },
     };
@@ -263,29 +268,30 @@ mod tests {
                     swap_fee: "0.002".parse().unwrap(),
                     paused: true,
                 },
-                reserves: hashmap! {
+                reserves: btreemap! {
                     H160([0x70; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 100.into(),
-                            scaling_exponent: 16,
+                            scaling_factor: Bfp::exp10(16),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0x71; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000.into(),
-                            scaling_exponent: 12,
+                            scaling_factor: Bfp::exp10(12),
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                 },
+                version: WeightedPoolVersion::V0,
             },
             WeightedPool {
                 common: CommonPoolState {
@@ -294,22 +300,23 @@ mod tests {
                     swap_fee: "0.001".parse().unwrap(),
                     paused: true,
                 },
-                reserves: hashmap! {
+                reserves: btreemap! {
                     H160([0x73; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
                         common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
-                            scaling_exponent: 0,
+                            scaling_factor: Bfp::exp10(0),
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                 },
+                version: WeightedPoolVersion::V3Plus,
             },
         ];
 
@@ -321,14 +328,14 @@ mod tests {
                 paused: true,
             },
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 H160([0x73; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     },
                 H160([0xb0; 20]) => TokenState {
                         balance: 1_000_000_000_000_000_000u128.into(),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     }
             },
         }];
@@ -397,12 +404,28 @@ mod tests {
         assert_eq!(stable_orders.len(), 1);
 
         assert_eq!(
-            (&weighted_orders[0].reserves, &weighted_orders[0].fee),
-            (&weighted_pools[0].reserves, &"0.002".parse().unwrap()),
+            (
+                &weighted_orders[0].reserves,
+                &weighted_orders[0].fee,
+                weighted_orders[0].version
+            ),
+            (
+                &weighted_pools[0].reserves,
+                &"0.002".parse().unwrap(),
+                WeightedPoolVersion::V0
+            ),
         );
         assert_eq!(
-            (&weighted_orders[1].reserves, &weighted_orders[1].fee),
-            (&weighted_pools[1].reserves, &"0.001".parse().unwrap()),
+            (
+                &weighted_orders[1].reserves,
+                &weighted_orders[1].fee,
+                weighted_orders[1].version
+            ),
+            (
+                &weighted_pools[1].reserves,
+                &"0.001".parse().unwrap(),
+                WeightedPoolVersion::V3Plus
+            ),
         );
         assert_eq!(
             (&stable_orders[0].reserves, &stable_orders[0].fee),

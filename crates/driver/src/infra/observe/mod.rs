@@ -31,7 +31,7 @@ mod metrics;
 /// Setup the observability. The log argument configures the tokio tracing
 /// framework.
 pub fn init(log: &str) {
-    boundary::initialize_tracing(log);
+    observe::tracing::initialize_reentrant(log);
     metrics::init();
 }
 

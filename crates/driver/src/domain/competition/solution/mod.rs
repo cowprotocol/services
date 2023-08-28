@@ -104,7 +104,8 @@ impl Solution {
     ) -> Result<impl Iterator<Item = eth::allowance::Approval>, Error> {
         let settlement_contract = &eth.contracts().settlement();
         let allowances = try_join_all(self.allowances().map(|required| async move {
-            eth.allowance(settlement_contract.address().into(), required.0.spender)
+            eth.erc20(required.0.token)
+                .allowance(settlement_contract.address().into(), required.0.spender)
                 .await
                 .map(|existing| (required, existing))
         }))
@@ -149,13 +150,20 @@ impl Solution {
         let allowances = self.interactions.iter().flat_map(Interaction::allowances);
         for allowance in allowances {
             let amount = normalized
-                .entry(allowance.0.spender)
+                .entry((allowance.0.token, allowance.0.spender))
                 .or_insert(eth::U256::zero());
             *amount = amount.saturating_add(allowance.0.amount);
         }
         normalized
             .into_iter()
-            .map(|(spender, amount)| eth::Allowance { spender, amount }.into())
+            .map(|((token, spender), amount)| {
+                eth::Allowance {
+                    token,
+                    spender,
+                    amount,
+                }
+                .into()
+            })
             .sorted()
     }
 

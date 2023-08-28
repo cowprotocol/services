@@ -3,14 +3,14 @@
 use {
     crate::{
         ethcontract_error::EthcontractErrorType,
-        ethrpc::{
-            extensions::{EthExt as _, StateOverride, StateOverrides},
-            Web3,
-        },
         tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     },
     anyhow::{ensure, Context as _, Result},
     ethcontract::{errors::ExecutionError, H256},
+    ethrpc::{
+        extensions::{EthExt as _, StateOverride, StateOverrides},
+        Web3,
+    },
     std::sync::Arc,
     thiserror::Error,
     web3::types::{BlockNumber, CallRequest},

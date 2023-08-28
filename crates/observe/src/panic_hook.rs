@@ -8,7 +8,7 @@
 /// The downside of this approach is that it prevents use of
 /// expected/intentional panics. We do not use those so this isn't a problem. See https://github.com/cowprotocol/services/issues/514 for
 /// alternatives.
-pub fn set_panic_hook() {
+pub fn install() {
     let previous_hook = std::panic::take_hook();
     let new_hook = move |info: &std::panic::PanicInfo| {
         previous_hook(info);
@@ -30,7 +30,7 @@ mod tests {
         let handle = std::thread::spawn(|| panic!("you should see this message"));
         assert!(handle.join().is_err());
 
-        set_panic_hook();
+        install();
         // Should print panic trace log because we call the previous panic handler
         // installed by tracing::initialize, and kill the process.
         let handle = std::thread::spawn(|| panic!("you should see this message"));
@@ -47,7 +47,7 @@ mod tests {
         let handle = tokio::task::spawn(async { panic!("you should see this message") });
         assert!(handle.await.is_err());
 
-        set_panic_hook();
+        install();
         let handle = tokio::task::spawn(async { panic!("you should see this message") });
         let _ = handle.await;
         unreachable!("you should NOT see this message");

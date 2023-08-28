@@ -55,7 +55,7 @@ impl ExternalTradeFinder {
             .header(header::ACCEPT, "application/json")
             .body(body);
 
-        if let Some(id) = crate::request_id::get_task_local_storage() {
+        if let Some(id) = observe::request_id::get_task_local_storage() {
             request = request.header("X-REQUEST-ID", id);
         }
 
@@ -121,6 +121,7 @@ impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
+            "DeadlineExceeded" => Self::DeadlineExceeded,
             _ => Self::Other(anyhow!("{}", value.description)),
         }
     }

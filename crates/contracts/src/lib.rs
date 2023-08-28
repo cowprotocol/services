@@ -17,11 +17,15 @@ include_contracts! {
     BalancerV2Authorizer;
     BalancerV2BasePool;
     BalancerV2BasePoolFactory;
+    BalancerV2ComposableStablePool;
+    BalancerV2ComposableStablePoolFactory;
+    BalancerV2ComposableStablePoolFactoryV3;
+    BalancerV2ComposableStablePoolFactoryV4;
+    BalancerV2ComposableStablePoolFactoryV5;
     BalancerV2LiquidityBootstrappingPool;
     BalancerV2LiquidityBootstrappingPoolFactory;
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory;
     BalancerV2StablePool;
-    BalancerV2StablePoolFactory;
     BalancerV2StablePoolFactoryV2;
     BalancerV2Vault;
     BalancerV2WeightedPool2TokensFactory;
@@ -154,7 +158,6 @@ mod tests {
         }
 
         // only mainnet
-        assert_has_deployment_address!(BalancerV2StablePoolFactory for MAINNET);
         assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for MAINNET);
         assert_has_deployment_address!(BalancerV2LiquidityBootstrappingPoolFactory for MAINNET);
         assert_has_deployment_address!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory for MAINNET);
@@ -189,7 +192,6 @@ mod tests {
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
         }
         // only mainnet
-        assert_has_deployment_information!(BalancerV2StablePoolFactory for MAINNET);
         assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for MAINNET);
     }
 

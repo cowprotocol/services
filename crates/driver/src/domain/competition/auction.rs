@@ -107,7 +107,8 @@ impl Auction {
             (order::Trader, eth::TokenAddress),
             Result<eth::TokenAmount, crate::infra::blockchain::Error>,
         > = join_all(tokens_by_trader.map(|(trader, token)| async move {
-            let balance = eth.balance_of(trader.into(), token).await;
+            let contract = eth.erc20(token);
+            let balance = contract.balance(trader.into()).await;
             ((trader, token), balance)
         }))
         .await

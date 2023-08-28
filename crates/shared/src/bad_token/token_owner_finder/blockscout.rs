@@ -99,7 +99,7 @@ struct Metrics {
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
+        let metric = &Metrics::instance(observe::metrics::get_storage_registry())
             .unwrap()
             .results;
 

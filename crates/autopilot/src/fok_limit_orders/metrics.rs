@@ -31,8 +31,7 @@ impl LimitOrderMetrics {
     pub fn spawn(self) {
         tokio::spawn(
             async move {
-                let metrics =
-                    Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+                let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
                 loop {
                     let limit_orders = self.database.count_fok_limit_orders().await.unwrap();

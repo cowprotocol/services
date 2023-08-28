@@ -371,6 +371,7 @@ pub async fn create(
     disabled_one_inch_protocols: Vec<String>,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
+    paraswap_api_url: String,
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
@@ -545,6 +546,7 @@ pub async fn create(
                     disabled_paraswap_dexs.clone(),
                     http_factory.create(),
                     paraswap_partner.clone(),
+                    paraswap_api_url.clone(),
                     slippage_calculator,
                 )))),
                 SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(

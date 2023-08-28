@@ -267,7 +267,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Self::instance(global_metrics::get_metric_storage_registry()).unwrap()
+        Self::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
 

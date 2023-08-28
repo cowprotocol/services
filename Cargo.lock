@@ -55,8 +55,8 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "global-metrics",
  "model",
+ "observe",
  "primitive-types",
  "prometheus",
  "reqwest",
@@ -256,7 +256,6 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -265,6 +264,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -1633,9 +1633,9 @@ dependencies = [
  "ethabi",
  "ethcontract",
  "ethereum-types",
+ "ethrpc",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "hyper",
@@ -1645,7 +1645,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -1688,6 +1688,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "model",
+ "observe",
  "orderbook",
  "rand",
  "refunder",
@@ -1888,6 +1889,33 @@ dependencies = [
  "impl-serde",
  "primitive-types",
  "uint",
+]
+
+[[package]]
+name = "ethrpc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "contracts",
+ "ethcontract",
+ "ethereum-types",
+ "futures",
+ "hex",
+ "hex-literal",
+ "lazy_static",
+ "maplit",
+ "mockall",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "testlib",
+ "tokio",
+ "tracing",
+ "web3",
 ]
 
 [[package]]
@@ -2105,7 +2133,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/cowprotocol/gas-estimation?tag=v0.7.2#c1d6795b902f399b036fb544ff538e34ad42d096"
+source = "git+https://github.com/cowprotocol/gas-estimation?tag=v0.7.3#5384e9d013bf33fed32b3e5366ed01b2d8cacbe4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2153,15 +2181,6 @@ name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
-
-[[package]]
-name = "global-metrics"
-version = "0.1.0"
-dependencies = [
- "once_cell",
- "prometheus",
- "prometheus-metric-storage",
-]
 
 [[package]]
 name = "h2"
@@ -3000,6 +3019,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "observe"
+version = "0.1.0"
+dependencies = [
+ "atty",
+ "once_cell",
+ "prometheus",
+ "prometheus-metric-storage",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3071,7 +3104,6 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "hyper",
@@ -3081,6 +3113,7 @@ dependencies = [
  "multibase",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -3449,10 +3482,10 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
- "global-metrics",
  "lazy_static",
  "model",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -3928,7 +3961,6 @@ dependencies = [
  "app-data-hash",
  "async-stream",
  "async-trait",
- "atty",
  "bigdecimal",
  "cached",
  "chrono",
@@ -3938,10 +3970,10 @@ dependencies = [
  "derivative",
  "ethcontract",
  "ethcontract-mock",
+ "ethrpc",
  "flate2",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -3951,12 +3983,12 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
  "regex",
  "reqwest",
- "scopeguard",
  "secp256k1",
  "serde",
  "serde_json",
@@ -4047,10 +4079,10 @@ dependencies = [
  "derivative",
  "ethcontract",
  "ethcontract-mock",
+ "ethrpc",
  "flate2",
  "futures",
  "gas-estimation",
- "global-metrics",
  "hex",
  "hex-literal",
  "itertools 0.11.0",
@@ -4061,6 +4093,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "observe",
  "once_cell",
  "primitive-types",
  "prometheus",
@@ -4091,6 +4124,7 @@ dependencies = [
  "clap",
  "contracts",
  "ethereum-types",
+ "ethrpc",
  "futures",
  "glob",
  "hex",
@@ -4098,6 +4132,7 @@ dependencies = [
  "itertools 0.11.0",
  "model",
  "num",
+ "observe",
  "reqwest",
  "serde",
  "serde_json",

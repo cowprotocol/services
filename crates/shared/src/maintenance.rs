@@ -21,7 +21,7 @@ impl ServiceMaintenance {
         Self {
             maintainers,
             retry_delay: Duration::from_secs(1),
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         }
     }
 }
@@ -178,7 +178,7 @@ mod tests {
                 Arc::new(ok2_mock_maintenance),
             ],
             retry_delay: Duration::default(),
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         };
 
         assert!(service_maintenance.run_maintenance().await.is_err());
@@ -203,7 +203,7 @@ mod tests {
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(mock_maintenance)],
             retry_delay: Duration::default(),
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         };
 
         let block_stream = stream::repeat(BlockInfo::default()).take(block_count);
@@ -214,7 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn block_stream_retries_failed_blocks() {
-        crate::tracing::initialize("debug", tracing::Level::ERROR.into());
+        observe::tracing::initialize("debug", tracing::Level::ERROR.into());
 
         let mut mock_maintenance = MockMaintaining::new();
         let mut sequence = Sequence::new();
@@ -247,7 +247,7 @@ mod tests {
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(mock_maintenance)],
             retry_delay: Duration::default(),
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         };
 
         let block_stream = async_stream::stream! {

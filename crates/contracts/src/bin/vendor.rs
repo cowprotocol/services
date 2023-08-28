@@ -27,6 +27,7 @@ fn main() {
     }
 }
 
+#[rustfmt::skip]
 fn run() -> Result<()> {
     let vendor = Vendor::new()?;
 
@@ -53,11 +54,6 @@ fn run() -> Result<()> {
             "BalancerV2WeightedPool2TokensFactory",
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/\
              deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
-        )?
-        .github(
-            "BalancerV2StablePoolFactory",
-            "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/\
-             deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
         )?
         .npm(
             "CowProtocolToken",
@@ -117,6 +113,18 @@ fn run() -> Result<()> {
 
     vendor
         .abi_only()
+        .github(
+            "BalancerV2ComposableStablePool",
+            "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
+             tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
+             ComposableStablePool.json",
+        )?
+        .github(
+            "BalancerV2ComposableStablePoolFactory",
+            "balancer/balancer-deployments/7211ed9f209d767f8ff411bb57262daf83ecb439/\
+             tasks/deprecated/20230206-composable-stable-pool-v3/artifact/\
+             ComposableStablePoolFactory.json",
+        )?
         .github(
             "BalancerV2LiquidityBootstrappingPool",
             "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/pkg/\

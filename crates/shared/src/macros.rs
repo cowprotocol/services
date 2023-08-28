@@ -36,7 +36,7 @@ macro_rules! json_map {
 #[macro_export]
 macro_rules! dummy_contract {
     ($contract:ty, $addr:expr) => {
-        <$contract>::at(&$crate::ethrpc::dummy::web3(), $addr.into())
+        <$contract>::at(&ethrpc::dummy::web3(), $addr.into())
     };
 }
 

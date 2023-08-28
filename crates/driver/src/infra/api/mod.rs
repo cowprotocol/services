@@ -2,7 +2,7 @@ use {
     crate::{
         domain,
         domain::Mempools,
-        infra::{liquidity, observe, solver::Solver, tokens, Ethereum, Simulator},
+        infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
     },
     error::Error,
     futures::Future,
@@ -41,6 +41,8 @@ impl Api {
                 .layer(tower_http::trace::TraceLayer::new_for_http()),
         );
 
+        let tokens = tokens::Fetcher::new(self.eth.clone());
+
         // Add the metrics endpoint.
         app = routes::metrics(app);
 
@@ -68,14 +70,14 @@ impl Api {
                     settlement: Default::default(),
                 },
                 liquidity: self.liquidity.clone(),
-                tokens: tokens::Fetcher::new(self.eth.clone()),
+                tokens: tokens.clone(),
             })));
             let path = format!("/{name}");
-            observe::mounting_solver(&name, &path);
+            infra::observe::mounting_solver(&name, &path);
             app = app.nest(&path, router);
         }
 
-        let make_svc = shared::make_service_with_task_local_storage!(app);
+        let make_svc = observe::make_service_with_task_local_storage!(app);
 
         // Start the server.
         let server = axum::Server::bind(&self.addr).serve(make_svc);

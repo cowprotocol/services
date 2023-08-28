@@ -325,21 +325,24 @@ fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bo
 }
 
 fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
-    // NOTE(nlordell): How errors are joined is kind of arbitrary. I decided to
-    // just order them in the following priority.
+    // Errors are sorted by recoverability. E.g. a rate-limited estimation may
+    // succeed if tried again, whereas unsupported order types can never recover
+    // unless code changes. This can be used to decide which errors we want to
+    // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
-            // highest priority
-            PriceEstimationError::ZeroAmount => 0,
-            PriceEstimationError::UnsupportedToken { .. } => 1,
-            PriceEstimationError::NoLiquidity => 2,
-            PriceEstimationError::Other(_) => 3,
-            PriceEstimationError::UnsupportedOrderType => 4,
-            PriceEstimationError::RateLimited => 5,
+            // highest priority (prefer)
+            PriceEstimationError::RateLimited => 6,
+            PriceEstimationError::DeadlineExceeded => 5,
+            PriceEstimationError::Other(_) => 4,
+            PriceEstimationError::UnsupportedToken { .. } => 3,
+            PriceEstimationError::ZeroAmount => 2,
+            PriceEstimationError::NoLiquidity => 1,
+            PriceEstimationError::UnsupportedOrderType => 0,
             // lowest priority
         }
     }
-    error_to_integer_priority(b) < error_to_integer_priority(a)
+    error_to_integer_priority(b) > error_to_integer_priority(a)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -387,7 +390,7 @@ impl Metrics {
 }
 
 fn metrics() -> &'static Metrics {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
 }
 
@@ -508,7 +511,7 @@ mod tests {
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. },
+            PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 

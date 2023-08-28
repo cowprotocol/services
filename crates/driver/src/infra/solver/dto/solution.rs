@@ -33,7 +33,9 @@ impl Solutions {
                                     .iter()
                                     .find(|order| order.uid == fulfillment.order)
                                     // TODO this error should reference the UID
-                                    .ok_or(super::Error("invalid order UID specified in fulfillment"))?
+                                    .ok_or(super::Error(
+                                        "invalid order UID specified in fulfillment"
+                                    ))?
                                     .clone();
 
                                 competition::solution::trade::Fulfillment::new(
@@ -141,10 +143,8 @@ impl Solutions {
                                             .into_iter()
                                             .map(|allowance| {
                                                 eth::Allowance {
-                                                    spender: eth::allowance::Spender {
-                                                        address: allowance.spender.into(),
-                                                        token: allowance.token.into(),
-                                                    },
+                                                    token: allowance.token.into(),
+                                                    spender: allowance.spender.into(),
                                                     amount: allowance.amount,
                                                 }
                                                 .into()
@@ -198,7 +198,10 @@ impl Solutions {
                     solver.clone(),
                     solution.risk.into(),
                     weth,
-                ).map_err(|competition::solution::InvalidClearingPrices| super::Error("invalid clearing prices"))
+                )
+                .map_err(|competition::solution::InvalidClearingPrices| {
+                    super::Error("invalid clearing prices")
+                })
             })
             .collect()
     }

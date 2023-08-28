@@ -18,7 +18,7 @@ use {
     futures::{future::BoxFuture, FutureExt as _},
 };
 
-pub use super::weighted::{PoolState, TokenState};
+pub use super::weighted::{PoolState, TokenState, Version};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -96,7 +96,11 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
                 .collect();
             let swap_fee = common.swap_fee;
 
-            Ok(Some(PoolState { tokens, swap_fee }))
+            Ok(Some(PoolState {
+                tokens,
+                swap_fee,
+                version: Version::V0,
+            }))
         }
         .boxed()
     }
@@ -119,21 +123,21 @@ mod tests {
             H160([1; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("1000.0").as_uint256(),
-                    scaling_exponent: 0,
+                    scaling_factor: Bfp::exp10(0),
                 },
                 weight: bfp!("0.5"),
             },
             H160([2; 20]) => TokenState {
                 common: common::TokenState {
                     balance: bfp!("10.0").as_uint256(),
-                    scaling_exponent: 0,
+                    scaling_factor: Bfp::exp10(0),
                 },
                 weight: bfp!("0.3"),
             },
             H160([3; 20]) => TokenState {
                 common: common::TokenState {
                     balance: 15_000_000.into(),
-                    scaling_exponent: 12,
+                    scaling_factor: Bfp::exp10(12),
                 },
                 weight: bfp!("0.2"),
             },
@@ -166,9 +170,9 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
+                scaling_factors: tokens
                     .values()
-                    .map(|token| token.common.scaling_exponent)
+                    .map(|token| token.common.scaling_factor)
                     .collect(),
                 block_created: 1337,
             },
@@ -178,7 +182,7 @@ mod tests {
             swap_fee,
             tokens: tokens
                 .iter()
-                .map(|(address, token)| (*address, token.common.clone()))
+                .map(|(address, token)| (*address, token.common))
                 .collect(),
         };
 
@@ -197,7 +201,14 @@ mod tests {
             pool_state.await.unwrap()
         };
 
-        assert_eq!(pool_state, Some(PoolState { tokens, swap_fee }));
+        assert_eq!(
+            pool_state,
+            Some(PoolState {
+                tokens,
+                swap_fee,
+                version: Version::V0
+            })
+        );
     }
 
     #[tokio::test]
@@ -223,7 +234,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([1; 20])],
-                scaling_exponents: vec![0, 0],
+                scaling_factors: vec![1.into(), 1.into()],
                 block_created: 1337,
             },
         };
@@ -233,11 +244,11 @@ mod tests {
             tokens: btreemap! {
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_exponent: 0,
+                    scaling_factor: Bfp::exp10(0),
                 },
                 H160([1; 20]) => common::TokenState {
                     balance: 0.into(),
-                    scaling_exponent: 0,
+                    scaling_factor: Bfp::exp10(0),
                 },
             },
         };

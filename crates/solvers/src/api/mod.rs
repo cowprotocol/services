@@ -27,7 +27,7 @@ impl Api {
             )
             .with_state(Arc::new(self.solver));
 
-        let make_svc = shared::make_service_with_task_local_storage!(app);
+        let make_svc = observe::make_service_with_task_local_storage!(app);
 
         let server = axum::Server::bind(&self.addr).serve(make_svc);
         if let Some(bind) = bind {
@@ -59,16 +59,11 @@ async fn solve(
 
         tracing::trace!(?auction);
 
-        let solutions = state
-            .solve(auction)
-            .await
-            .into_iter()
-            .next()
-            .map(|solution| dto::Solutions::from_domain(&[solution]))
-            .unwrap_or_default();
+        let solutions = state.solve(auction).await;
 
         tracing::trace!(?solutions);
 
+        let solutions = dto::Solutions::from_domain(&solutions);
         (
             axum::http::StatusCode::OK,
             axum::response::Json(dto::Response::Ok(solutions)),

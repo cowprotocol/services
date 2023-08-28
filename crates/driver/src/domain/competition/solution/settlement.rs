@@ -8,7 +8,7 @@ use {
             eth,
         },
         infra::{blockchain::Ethereum, Simulator},
-        util,
+        util::conv::u256::U256Ext,
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
@@ -73,8 +73,7 @@ impl Settlement {
             .iter()
             .flat_map(|interaction| interaction.inputs())
         {
-            *flow.entry(input.token).or_default() -=
-                util::conv::u256::to_big_int(input.amount.into());
+            *flow.entry(input.token).or_default() -= eth::U256::from(input.amount).to_big_int();
         }
 
         // Interaction outputs represent flow into the contract, i.e. positive flow.
@@ -83,8 +82,7 @@ impl Settlement {
             .iter()
             .flat_map(|interaction| interaction.outputs())
         {
-            *flow.entry(output.token).or_default() +=
-                util::conv::u256::to_big_int(output.amount.into());
+            *flow.entry(output.token).or_default() += eth::U256::from(output.amount).to_big_int();
         }
 
         // For trades, the sold amounts are always entering the contract (positive
@@ -92,12 +90,11 @@ impl Settlement {
         // (negative flow).
         for trade in solution.trades.iter() {
             let trade::Execution { sell, buy } = trade.execution(&solution)?;
-            *flow.entry(sell.token).or_default() +=
-                util::conv::u256::to_big_int(sell.amount.into());
+            *flow.entry(sell.token).or_default() += eth::U256::from(sell.amount).to_big_int();
             // Within the settlement contract, the orders which buy ETH are wrapped into
             // WETH, and hence contribute to WETH flow.
             *flow.entry(buy.token.wrap(solution.weth)).or_default() -=
-                util::conv::u256::to_big_int(buy.amount.into());
+                eth::U256::from(buy.amount).to_big_int();
         }
 
         if flow.values().any(|v| v.is_negative()) {

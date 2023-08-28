@@ -536,7 +536,7 @@ mod tests {
                 "appDataHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
             }),
         ];
-        let expected_errors = vec![
+        let expected_errors = [
             "ECDSA-signed orders cannot be on-chain",
             "ECDSA-signed orders cannot be on-chain",
             "ECDSA-signed orders cannot be on-chain",

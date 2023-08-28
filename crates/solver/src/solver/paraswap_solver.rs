@@ -61,6 +61,7 @@ impl ParaswapSolver {
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
+        base_url: String,
         slippage_calculator: SlippageCalculator,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
@@ -72,6 +73,7 @@ impl ParaswapSolver {
             allowance_fetcher: Box::new(allowance_fetcher),
             client: Box::new(DefaultParaswapApi {
                 client,
+                base_url,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
             }),
             disabled_paraswap_dexs,
@@ -564,6 +566,7 @@ mod tests {
             vec![],
             Client::new(),
             None,
+            "https://apiv5.paraswap.io".into(),
             SlippageCalculator::default(),
         );
 

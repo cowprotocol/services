@@ -11,7 +11,7 @@ use {
         },
     },
     anyhow::{ensure, Result},
-    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory},
+    contracts::{BalancerV2StablePool, BalancerV2StablePoolFactoryV2},
     ethcontract::{BlockId, H160, U256},
     futures::{future::BoxFuture, FutureExt as _},
     num::BigRational,
@@ -42,7 +42,7 @@ pub struct PoolState {
     pub amplification_parameter: AmplificationParameter,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmplificationParameter {
     factor: U256,
     precision: U256,
@@ -55,8 +55,8 @@ impl AmplificationParameter {
     }
 
     /// This is the format used to pass into smart contracts.
-    pub fn as_u256(&self) -> U256 {
-        self.factor * self.precision
+    pub fn with_base(&self, base: U256) -> Option<U256> {
+        Some(self.factor.checked_mul(base)? / self.precision)
     }
 
     /// This is the format used to pass along to HTTP solver.
@@ -79,7 +79,7 @@ impl AmplificationParameter {
 }
 
 #[async_trait::async_trait]
-impl FactoryIndexing for BalancerV2StablePoolFactory {
+impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
@@ -135,15 +135,15 @@ mod tests {
         let tokens = btreemap! {
             H160([1; 20]) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: Bfp::exp10(0),
             },
             H160([2; 20]) => common::TokenState {
                 balance: bfp!("10.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: Bfp::exp10(0),
             },
             H160([3; 20]) => common::TokenState {
                 balance: 15_000_000.into(),
-                scaling_exponent: 12,
+                scaling_factor: Bfp::exp10(12),
             },
         };
         let swap_fee = bfp!("0.00015");
@@ -161,16 +161,13 @@ mod tests {
                 amplification_parameter.precision,
             ));
 
-        let factory = dummy_contract!(BalancerV2StablePoolFactory, H160::default());
+        let factory = dummy_contract!(BalancerV2StablePoolFactoryV2, H160::default());
         let pool_info = PoolInfo {
             common: common::PoolInfo {
                 id: H256([0x90; 32]),
                 address: pool.address(),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
-                    .values()
-                    .map(|token| token.scaling_exponent)
-                    .collect(),
+                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
                 block_created: 1337,
             },
         };
@@ -235,8 +232,9 @@ mod tests {
         assert_eq!(
             AmplificationParameter::new(2.into(), 3.into())
                 .unwrap()
-                .as_u256(),
-            6.into()
+                .with_base(1000.into())
+                .unwrap(),
+            666.into()
         );
         assert_eq!(
             AmplificationParameter::new(7.into(), 8.into())
