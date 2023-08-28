@@ -263,8 +263,7 @@ impl Driver {
 
         let current_block_during_liquidity_fetch = self.block_stream.borrow().number;
 
-        let before_count = auction.orders.len();
-        let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
+        self.in_flight_orders.update_and_filter(&mut auction);
 
         let auction_start_block = auction.block;
         let competition_auction = CompetitionAuction {
