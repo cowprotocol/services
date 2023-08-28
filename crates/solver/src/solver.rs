@@ -400,8 +400,8 @@ pub async fn create(
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
-    fn shared(solver: impl Solver + 'static) -> Option<Arc<dyn Solver>> {
-        Some(Arc::new(solver))
+    fn shared(solver: impl Solver + 'static) -> Arc<dyn Solver> {
+        Arc::new(solver)
     }
 
     let buffer_retriever = Arc::new(BufferRetriever::new(
@@ -460,7 +460,7 @@ pub async fn create(
 
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
-        .map(|(account, solver_type)| {
+        .filter_map(|(account, solver_type)| {
             let single_order = |inner: Box<dyn SingleOrderSolving>| {
                 SingleOrderSolver::new(
                     inner,
@@ -484,7 +484,7 @@ pub async fn create(
             let score_calculator = score_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
-                SolverType::None => None,
+                SolverType::None => return None,
                 SolverType::Naive => shared(NaiveSolver::new(
                     account,
                     slippage_calculator,
@@ -570,20 +570,12 @@ pub async fn create(
                 )))),
             };
 
-            let solver = match solver {
-                Some(solver) => solver,
-                None => {
-                    return None;
-                }
-            };
-
-            shared(OptimizingSolver {
+            Some(shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
                 score_calculator,
-            })
+            }))
         })
-        .flatten()
         .collect();
 
     let external_solvers = join_all(external_solvers.into_iter().map(|solver| async move {
@@ -599,7 +591,6 @@ pub async fn create(
             slippage_configuration.get_global_calculator(),
             solver.use_liquidity,
         ))
-        .expect("External solver should always be Some")
     }))
     .await;
     solvers.extend(external_solvers);
