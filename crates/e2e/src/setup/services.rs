@@ -139,7 +139,8 @@ impl<'a> Services<'a> {
         tokio::task::spawn(solver::run::run(args));
     }
 
-    /// Start the solver service in a background task with a custom http solver.
+    /// Start the solver service in a background task with a custom http solver
+    /// only.
     pub fn start_old_driver_custom_solver(
         &self,
         solver_url: Option<Url>,
@@ -155,6 +156,7 @@ impl<'a> Services<'a> {
                     .as_str(),
                 solver_account
             ),
+            "--solvers=None".to_string(),
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
