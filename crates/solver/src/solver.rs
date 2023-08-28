@@ -212,6 +212,7 @@ pub enum SimulationError {
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {
+    None,
     Naive,
     Baseline,
     OneInch,
@@ -459,7 +460,7 @@ pub async fn create(
 
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
-        .map(|(account, solver_type)| {
+        .filter_map(|(account, solver_type)| {
             let single_order = |inner: Box<dyn SingleOrderSolving>| {
                 SingleOrderSolver::new(
                     inner,
@@ -483,6 +484,7 @@ pub async fn create(
             let score_calculator = score_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
+                SolverType::None => return None,
                 SolverType::Naive => shared(NaiveSolver::new(
                     account,
                     slippage_calculator,
@@ -567,11 +569,12 @@ pub async fn create(
                     slippage_calculator,
                 )))),
             };
-            shared(OptimizingSolver {
+
+            Some(shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
                 score_calculator,
-            })
+            }))
         })
         .collect();
 
@@ -591,6 +594,10 @@ pub async fn create(
     }))
     .await;
     solvers.extend(external_solvers);
+
+    if solvers.is_empty() {
+        return Err(anyhow!("no solvers configured"));
+    }
 
     for solver in &solvers {
         tracing::info!(
