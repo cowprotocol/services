@@ -15,7 +15,7 @@ use {
                 Solution,
                 Solved,
             },
-            eth,
+            eth::{self},
             quote::{self, Quote},
             Liquidity,
         },
@@ -183,8 +183,8 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 /// Observe the result of solving an auction.
 pub fn solved(solver: &solver::Name, result: &Result<Solved, competition::Error>) {
     match result {
-        Ok(reveal) => {
-            tracing::info!(?reveal, "solved auction");
+        Ok(solved) => {
+            tracing::info!(?solved, "solved auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "Success"])
@@ -312,4 +312,17 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
     }
+}
+
+#[derive(Debug)]
+pub enum OrderExcludedFromAuctionReason<'a> {
+    CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
+    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+}
+
+pub fn order_excluded_from_auction(
+    order: &competition::Order,
+    reason: OrderExcludedFromAuctionReason,
+) {
+    tracing::trace!(uid=?order.uid, ?reason,"order excluded from auction");
 }

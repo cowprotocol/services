@@ -103,6 +103,10 @@ impl Order {
         }
     }
 
+    pub fn trader(&self) -> Trader {
+        Trader(self.signature.signer)
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -283,6 +287,16 @@ pub enum SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+/// The address which placed the order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Trader(eth::Address);
+
+impl From<Trader> for eth::Address {
+    fn from(value: Trader) -> Self {
+        value.0
+    }
 }
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to

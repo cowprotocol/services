@@ -36,7 +36,7 @@ impl Solver {
     pub async fn new(config: Config<'_>) -> Self {
         let mut solutions_json = Vec::new();
         let mut orders_json = Vec::new();
-        for quote in config.quoted_orders {
+        for quote in config.quoted_orders.iter().filter(|q| !q.order.filtered) {
             // ETH orders get unwrapped into WETH by the driver before being passed to the
             // solver.
             let sell_token = if quote.order.sell_token == "ETH" {
@@ -199,6 +199,7 @@ impl Solver {
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
+                ethflow: config.blockchain.ethflow,
             },
         )
         .await

@@ -131,10 +131,10 @@ impl Auction {
                     trusted: token.trusted,
                 }
             }),
-            eth.gas_price().await.map_err(Error::GasPrice)?,
             self.deadline.into(),
-            eth.contracts().weth_address(),
+            eth,
         )
+        .await
         .map_err(Into::into)
     }
 }
@@ -147,8 +147,8 @@ pub enum Error {
     MissingSurplusFee,
     #[error("invalid tokens in auction")]
     InvalidTokens,
-    #[error("error getting gas price")]
-    GasPrice(#[source] crate::infra::blockchain::Error),
+    #[error("blockchain error: {0:?}")]
+    Blockchain(#[source] crate::infra::blockchain::Error),
 }
 
 impl From<auction::InvalidId> for Error {
@@ -157,9 +157,12 @@ impl From<auction::InvalidId> for Error {
     }
 }
 
-impl From<auction::InvalidTokens> for Error {
-    fn from(_value: auction::InvalidTokens) -> Self {
-        Self::InvalidTokens
+impl From<auction::Error> for Error {
+    fn from(value: auction::Error) -> Self {
+        match value {
+            auction::Error::InvalidTokens => Self::InvalidTokens,
+            auction::Error::Blockchain(err) => Self::Blockchain(err),
+        }
     }
 }
 

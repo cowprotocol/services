@@ -105,6 +105,12 @@ pub struct Order {
     /// Override the executed amount of the order. Useful for testing liquidity
     /// orders. Otherwise [`execution_diff`] is probably more suitable.
     pub executed: Option<eth::U256>,
+
+    /// Should this order be filtered out before being sent to the solver?
+    pub filtered: bool,
+    /// Should the trader account be funded with enough tokens to place this
+    /// order? True by default.
+    pub funded: bool,
 }
 
 impl Order {
@@ -113,10 +119,18 @@ impl Order {
         Self { name, ..self }
     }
 
-    /// Reduce the amount of this order by the given amount.
+    /// Reduce the sell amount of this order by the given amount.
     pub fn reduce_amount(self, diff: eth::U256) -> Self {
         Self {
             sell_amount: self.sell_amount - diff,
+            ..self
+        }
+    }
+
+    /// Multiply the sell amount of this order by the given factor.
+    pub fn multiply_amount(self, mult: eth::U256) -> Self {
+        Self {
+            sell_amount: self.sell_amount * mult,
             ..self
         }
     }
@@ -182,6 +196,24 @@ impl Order {
         }
     }
 
+    /// Mark that this order should be filtered out before being sent to the
+    /// solver.
+    pub fn filtered(self) -> Self {
+        Self {
+            filtered: true,
+            ..self
+        }
+    }
+
+    /// Mark that the trader should not be funded with tokens that are needed to
+    /// place this order.
+    pub fn unfunded(self) -> Self {
+        Self {
+            funded: false,
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
             order::Kind::Limit { surplus_fee: _ } => self.solver_fee.unwrap_or_default(),
@@ -207,6 +239,8 @@ impl Default for Order {
             surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
             execution_diff: Default::default(),
             executed: Default::default(),
+            filtered: Default::default(),
+            funded: true,
         }
     }
 }

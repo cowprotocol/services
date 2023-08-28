@@ -84,7 +84,7 @@ impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) 
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
             api::routes::AuctionError::InvalidTokens => Kind::InvalidTokens,
-            api::routes::AuctionError::GasPrice(_) => Kind::Unknown,
+            api::routes::AuctionError::Blockchain(_) => Kind::Unknown,
         };
         error.into()
     }
