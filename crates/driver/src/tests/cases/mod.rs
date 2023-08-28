@@ -7,7 +7,7 @@ pub mod internalization;
 pub mod merge_settlements;
 pub mod multiple_solutions;
 pub mod negative_scores;
-pub mod order_sorting;
+pub mod order_prioritization;
 pub mod quote;
 pub mod risk;
 pub mod settle;

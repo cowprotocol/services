@@ -10,7 +10,7 @@ use {
     model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
-        current_block::{self, BlockRetrieverStrategy, CurrentBlockStream},
+        current_block::{self, CurrentBlockStream},
         http_client::HttpClientFactory,
         recent_block_cache::{self, CacheConfig},
     },
@@ -61,7 +61,6 @@ impl Fetcher {
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
-            block_stream_retriever_strategy: BlockRetrieverStrategy::default(),
         };
 
         let block_stream = blocks.stream(boundary::web3(eth)).await?;

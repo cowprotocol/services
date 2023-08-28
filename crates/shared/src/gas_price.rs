@@ -23,7 +23,7 @@ where
     pub fn new(inner: T) -> Self {
         Self {
             inner,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
         }
     }
 }

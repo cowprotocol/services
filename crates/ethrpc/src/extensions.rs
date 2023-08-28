@@ -80,7 +80,8 @@ pub struct StateOverride {
 mod tests {
     use {
         super::*,
-        crate::ethrpc::{create_env_test_transport, Web3},
+        crate::{create_env_test_transport, Web3},
+        hex_literal::hex,
         maplit::hashmap,
         web3::types::BlockNumber,
     };
@@ -91,7 +92,7 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
 
-        let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
+        let address = H160(hex!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"));
         let output = web3
             .eth()
             .call_with_state_overrides(
@@ -103,7 +104,7 @@ mod tests {
                 hashmap! {
                     address => StateOverride {
                         // EVM program to just return 32 bytes from 0 to 31
-                        code: Some(bytes!(
+                        code: Some(hex!(
                             "7f 000102030405060708090a0b0c0d0e0f
                                 101112131415161718191a1b1c1d1e1f
                              60 00
@@ -111,7 +112,7 @@ mod tests {
                              60 20
                              60 00
                              f3"
-                        )),
+                        ).into()),
                         ..Default::default()
                     },
                 },

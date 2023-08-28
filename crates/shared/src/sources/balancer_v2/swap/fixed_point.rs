@@ -33,6 +33,8 @@ lazy_static! {
     static ref ZERO: Bfp = Bfp(U256::zero());
     static ref EPSILON: Bfp = Bfp(U256::one());
     static ref ONE: Bfp = Bfp(*ONE_18);
+    static ref TWO: Bfp = Bfp(*ONE_18 * 2);
+    static ref FOUR: Bfp = Bfp(*ONE_18 * 4);
     static ref MAX_POW_RELATIVE_ERROR: Bfp = Bfp(10000_usize.into());
 }
 
@@ -112,6 +114,19 @@ impl Bfp {
         *ONE
     }
 
+    /// Returns 10 to the power of `exp` as a fixed point number.
+    ///
+    /// Note that this implementation truncates for exponents less than the
+    /// smallest representable value (i.e. when `exp < -18`).
+    pub fn exp10(exp: i32) -> Self {
+        let exp = exp.saturating_add(18);
+        if exp < 0 {
+            return Self::zero();
+        }
+
+        Self(U256::exp10(exp as _))
+    }
+
     pub fn from_wei(num: U256) -> Self {
         Self(num)
     }
@@ -182,6 +197,22 @@ impl Bfp {
         let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
 
         raw.add(max_error)
+    }
+
+    pub fn pow_up_v3(self, exp: Self) -> Result<Self, Error> {
+        if exp == *ONE {
+            Ok(self)
+        } else if exp == *TWO {
+            self.mul_up(self)
+        } else if exp == *FOUR {
+            let square = self.mul_up(self)?;
+            square.mul_up(square)
+        } else {
+            let raw = Bfp(logexpmath::pow(self.0, exp.0)?);
+            let max_error = raw.mul_up(*MAX_POW_RELATIVE_ERROR)?.add(Bfp(1.into()))?;
+
+            raw.add(max_error)
+        }
     }
 }
 
@@ -442,5 +473,18 @@ mod tests {
     #[test]
     fn bfp_debug() {
         assert_eq!(format!("{:?}", Bfp::one()), "1.000000000000000000");
+    }
+
+    #[test]
+    fn bfp_exp10() {
+        let exp10 = |exp: i32| format!("{:?}", Bfp::exp10(exp));
+
+        assert_eq!(exp10(18), "1000000000000000000.000000000000000000");
+        assert_eq!(exp10(6), "1000000.000000000000000000");
+        assert_eq!(exp10(0), "1.000000000000000000");
+        assert_eq!(exp10(-1), "0.100000000000000000");
+        assert_eq!(exp10(-18), "0.000000000000000001");
+        assert_eq!(exp10(-19), "0.000000000000000000");
+        assert_eq!(exp10(-42), "0.000000000000000000");
     }
 }

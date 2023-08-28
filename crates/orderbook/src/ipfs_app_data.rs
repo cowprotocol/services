@@ -22,7 +22,7 @@ struct Metrics {
 
 impl IpfsAppData {
     pub fn new(ipfs: Ipfs) -> Self {
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
         // Initialize metrics.
         for outcome in &["error", "found", "missing"] {
             for source in &["cache", "node"] {

@@ -8,6 +8,7 @@
 //! types by just implementing the required `BalancerFactory` trait.
 
 pub mod common;
+pub mod composable_stable;
 pub mod liquidity_bootstrapping;
 pub mod stable;
 pub mod weighted;

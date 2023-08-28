@@ -78,7 +78,7 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = shared::ethrpc::dummy::web3();
+    let web3 = ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
         UniswapV3SwapRouter::at(&web3, pool.router.0),
@@ -135,7 +135,7 @@ async fn init_liquidity(
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
-            eth.chain_id().0.as_u64(),
+            eth.network().chain.into(),
             web3.clone(),
             boundary::liquidity::http_client(),
             block_retriever,

@@ -37,45 +37,45 @@ impl From<Id> for eth::H256 {
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Fee(pub eth::U256);
 
-impl From<eth::U256> for Fee {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
+impl Fee {
+    /// Creates a new pool fee for the specified raw [`eth::U256`] value. This
+    /// method expects a fee represented as `f * 1e18`. That is, a fee of 100%
+    /// is created with `Fee::new(U256::exp10(18))`.
+    pub fn from_raw(weight: eth::U256) -> Self {
+        Self(weight)
     }
-}
 
-impl From<Fee> for eth::U256 {
-    fn from(value: Fee) -> Self {
-        value.0
+    /// Returns the fee as a raw [`eth::U256`] value as it is represented
+    /// on-chain.
+    pub fn as_raw(&self) -> eth::U256 {
+        self.0
     }
 }
 
 /// A token scaling factor.
-///
-/// Internally it is represented as an exponent where the factor for scaling the
-/// token is `10.pow(exponent)`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ScalingFactor(u8);
+pub struct ScalingFactor(eth::U256);
 
 impl ScalingFactor {
-    pub fn from_exponent(exponent: u8) -> Result<Self, InvalidScalingExponent> {
-        if !(0..18).contains(&exponent) {
-            return Err(InvalidScalingExponent);
+    /// Creates a new scaling for the specified raw [`eth::U256`] value. This
+    /// method expects a factor represented as `f * 1e18`. That is, a scaling
+    /// factor of 1 is created with `ScalingFactor::new(U256::exp10(18))`.
+    ///
+    /// Returns `None` if the scaling factor is equal to 0.
+    pub fn from_raw(factor: eth::U256) -> Result<Self, ZeroScalingFactor> {
+        if factor.is_zero() {
+            return Err(ZeroScalingFactor);
         }
-        Ok(Self(exponent))
+        Ok(Self(factor))
     }
 
-    pub fn exponent(&self) -> u8 {
+    /// Returns the scaling factor as a raw [`eth::U256`] value as it is
+    /// represented on-chain.
+    pub fn as_raw(&self) -> eth::U256 {
         self.0
-    }
-
-    pub fn factor(&self) -> eth::U256 {
-        let d = 18_u8
-            .checked_sub(self.0)
-            .expect("invariant guarantees this subtraction can't underflow");
-        eth::U256::exp10(d.into())
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("scaling factor exponent must be in range [0, 18]")]
-pub struct InvalidScalingExponent;
+#[error("scaling factor must be non-zero")]
+pub struct ZeroScalingFactor;

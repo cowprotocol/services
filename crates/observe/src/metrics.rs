@@ -17,28 +17,25 @@ static REGISTRY: OnceCell<prometheus_metric_storage::StorageRegistry> = OnceCell
 /// This function panics if it's called twice, or if it's called after
 /// any call to [`get_registry`]. This function also panics if registry
 /// configuration is invalid.
-pub fn setup_metrics_registry(prefix: Option<String>, labels: Option<HashMap<String, String>>) {
+pub fn setup_registry(prefix: Option<String>, labels: Option<HashMap<String, String>>) {
     let registry = prometheus::Registry::new_custom(prefix, labels).unwrap();
     let storage_registry = prometheus_metric_storage::StorageRegistry::new(registry);
     REGISTRY.set(storage_registry).unwrap();
 }
 
-/// Like [`setup_metrics_registry`], but can be called multiple times in a row.
+/// Like [`setup_registry`], but can be called multiple times in a row.
 /// Later calls are ignored.
 ///
 /// Useful for tests.
-pub fn setup_metrics_registry_reentrant(
-    prefix: Option<String>,
-    labels: Option<HashMap<String, String>>,
-) {
+pub fn setup_registry_reentrant(prefix: Option<String>, labels: Option<HashMap<String, String>>) {
     let registry = prometheus::Registry::new_custom(prefix, labels).unwrap();
     let storage_registry = prometheus_metric_storage::StorageRegistry::new(registry);
     REGISTRY.set(storage_registry).ok();
 }
 
 /// Get the global instance of the metrics registry.
-pub fn get_metrics_registry() -> &'static prometheus::Registry {
-    get_metric_storage_registry().registry()
+pub fn get_registry() -> &'static prometheus::Registry {
+    get_storage_registry().registry()
 }
 
 /// Get the global instance of the metric storage registry.
@@ -51,6 +48,6 @@ pub fn get_metrics_registry() -> &'static prometheus::Registry {
 /// a hook that will call [`setup_registry`] before each test, so we'll
 /// have to initialize it manually before every test, which is tedious
 /// to say the least.
-pub fn get_metric_storage_registry() -> &'static prometheus_metric_storage::StorageRegistry {
+pub fn get_storage_registry() -> &'static prometheus_metric_storage::StorageRegistry {
     REGISTRY.get_or_init(prometheus_metric_storage::StorageRegistry::default)
 }

@@ -83,7 +83,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap()
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
 

@@ -244,6 +244,7 @@ mod tests {
         let tokens = TokenInfoFetcher { web3 };
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
+            base_url: "https://apiv5.paraswap.io".to_string(),
             partner: "Test".to_string(),
         };
         let finder = ParaswapTradeFinder::new(

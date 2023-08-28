@@ -623,7 +623,7 @@ fn get_prioritized_orders(
     let market = prioritize_orders(market, prices, order_prioritization_config);
     let limit = prioritize_orders(limit, prices, order_prioritization_config);
 
-    market.into_iter().chain(limit.into_iter()).collect()
+    market.into_iter().chain(limit).collect()
 }
 
 /// Returns the `native_sell_amount / native_buy_amount` of the given order

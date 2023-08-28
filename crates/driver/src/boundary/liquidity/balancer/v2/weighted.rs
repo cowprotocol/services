@@ -6,6 +6,7 @@ use {
             liquidity::{self, balancer},
         },
     },
+    shared::sources::balancer_v2::pool_fetching::WeightedPoolVersion,
     solver::liquidity::{balancer_v2, WeightedProductOrder},
 };
 
@@ -29,15 +30,21 @@ pub fn to_domain(id: liquidity::Id, pool: WeightedProductOrder) -> Result<liquid
                                 token: token.into(),
                                 amount: reserve.common.balance.into(),
                             },
-                            weight: reserve.weight.as_uint256().into(),
-                            scale: balancer::v2::ScalingFactor::from_exponent(
-                                reserve.common.scaling_exponent,
+                            weight: balancer::v2::weighted::Weight::from_raw(
+                                reserve.weight.as_uint256(),
+                            ),
+                            scale: balancer::v2::ScalingFactor::from_raw(
+                                reserve.common.scaling_factor.as_uint256(),
                             )?,
                         })
                     })
                     .collect::<Result<_>>()?,
             )?,
-            fee: pool.fee.as_uint256().into(),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
+            version: match pool.version {
+                WeightedPoolVersion::V0 => balancer::v2::weighted::Version::V0,
+                WeightedPoolVersion::V3Plus => balancer::v2::weighted::Version::V3Plus,
+            },
         }),
     })
 }

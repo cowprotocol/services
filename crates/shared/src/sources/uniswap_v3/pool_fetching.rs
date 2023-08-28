@@ -205,9 +205,7 @@ impl PoolsCheckpointHandler {
                     existing_pools.keys(),
                     missing_pools
                 );
-                pools_checkpoint
-                    .missing_pools
-                    .extend(missing_pools.into_iter());
+                pools_checkpoint.missing_pools.extend(missing_pools);
                 (existing_pools, pools_checkpoint.block_number)
             }
             None => Default::default(),

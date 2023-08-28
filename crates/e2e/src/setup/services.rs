@@ -93,7 +93,7 @@ impl<'a> Services<'a> {
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
         .chain(Self::api_autopilot_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::main(args));
@@ -133,13 +133,14 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(solver::run::run(args));
     }
 
-    /// Start the solver service in a background task with a custom http solver.
+    /// Start the solver service in a background task with a custom http solver
+    /// only.
     pub fn start_old_driver_custom_solver(
         &self,
         solver_url: Option<Url>,
@@ -155,6 +156,7 @@ impl<'a> Services<'a> {
                     .as_str(),
                 solver_account
             ),
+            "--solvers=None".to_string(),
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
@@ -162,7 +164,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args.into_iter());
+        .chain(extra_args);
 
         let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(solver::run::run(args));

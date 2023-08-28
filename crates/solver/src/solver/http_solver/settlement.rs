@@ -502,7 +502,7 @@ mod tests {
             settlement::{PricedTrade, Trade},
         },
         hex_literal::hex,
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::{
             order::{OrderData, OrderUid},
             signature::Signature,
@@ -555,35 +555,36 @@ mod tests {
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 address: H160::from_low_u64_be(2),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     t0 => WeightedTokenState {
                         common: TokenState {
                             balance: U256::from(200),
-                            scaling_exponent: 4,
+                            scaling_factor: Bfp::exp10(4),
                         },
                         weight: Bfp::from(200_000_000_000_000_000),
                     },
                     t1 => WeightedTokenState {
                         common: TokenState {
                             balance: U256::from(800),
-                            scaling_exponent: 6,
+                            scaling_factor: Bfp::exp10(6),
                         },
                         weight: Bfp::from(800_000_000_000_000_000),
                     }
                 },
                 fee: "0.03".parse().unwrap(),
+                version: Default::default(),
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
                 address: H160::from_low_u64_be(3),
-                reserves: hashmap! {
+                reserves: btreemap! {
                     t0 => TokenState {
                         balance: U256::from(300),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     },
                     t1 => TokenState {
                         balance: U256::from(400),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     },
                 },
                 fee: "3".parse().unwrap(),
@@ -840,36 +841,37 @@ mod tests {
 
         let wpo = WeightedProductOrder {
             address: H160::from_low_u64_be(2),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 token_c => WeightedTokenState {
                     common: TokenState {
                         balance: U256::from(1251682293173877359u128),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     },
                     weight: Bfp::from(500_000_000_000_000_000),
                 },
                 token_b => WeightedTokenState {
                     common: TokenState {
                         balance: U256::from(799086982149629058u128),
-                        scaling_exponent: 0,
+                        scaling_factor: Bfp::exp10(0),
                     },
                     weight: Bfp::from(500_000_000_000_000_000),
                 }
             },
             fee: "0.001".parse().unwrap(),
+            version: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
 
         let spo = StablePoolOrder {
             address: H160::from_low_u64_be(3),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
-                    scaling_exponent: 0
+                    scaling_factor: Bfp::exp10(0),
                 },
                 token_b => TokenState {
                     balance: U256::from(5678u128),
-                    scaling_exponent: 0
+                    scaling_factor: Bfp::exp10(0),
                 },
             },
             fee: "0.001".parse().unwrap(),

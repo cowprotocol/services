@@ -5,7 +5,7 @@ pub(in crate::infra::api) fn metrics(app: axum::Router<()>) -> axum::Router<()> 
 }
 
 async fn route() -> String {
-    let registry = global_metrics::get_metrics_registry();
+    let registry = observe::metrics::get_registry();
     let encoder = prometheus::TextEncoder::new();
     let mut buffer = Vec::new();
     encoder.encode(&registry.gather(), &mut buffer).unwrap();

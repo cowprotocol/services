@@ -173,6 +173,20 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                         }
                     }
                 }
+                liquidity::State::Stable(pool) => {
+                    if let Some(boundary_pool) =
+                        boundary::liquidity::stable::to_boundary_pool(liquidity.address, pool)
+                    {
+                        for pair in pool.reserves.token_pairs() {
+                            let token_pair = to_boundary_token_pair(&pair);
+                            amms.entry(token_pair).or_default().push(Amm {
+                                id: liquidity.id.clone(),
+                                token_pair,
+                                pool: Pool::Stable(boundary_pool.clone()),
+                            });
+                        }
+                    }
+                }
                 // The baseline solver does not currently support other AMMs.
                 _ => {}
             };
@@ -191,6 +205,7 @@ struct Amm {
 enum Pool {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),
+    Stable(boundary::liquidity::stable::Pool),
 }
 
 impl BaselineSolvable for Amm {
@@ -198,6 +213,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
             Pool::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
+            Pool::Stable(pool) => pool.get_amount_out(out_token, input),
         }
     }
 
@@ -205,6 +221,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
             Pool::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
+            Pool::Stable(pool) => pool.get_amount_in(in_token, out),
         }
     }
 
@@ -212,6 +229,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.gas_cost(),
             Pool::WeightedProduct(pool) => pool.gas_cost(),
+            Pool::Stable(pool) => pool.gas_cost(),
         }
     }
 }
