@@ -74,7 +74,10 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{
-            vec_estimates, Estimate, MockPriceEstimating, PriceEstimationError,
+            vec_estimates,
+            Estimate,
+            MockPriceEstimating,
+            PriceEstimationError,
         },
         anyhow::anyhow,
         ethcontract::H160,

@@ -5,7 +5,8 @@ use {
         metrics::{SolverMetrics, SolverSimulationOutcome},
         settlement::Settlement,
         settlement_simulation::{
-            simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
+            simulate_and_error_with_tenderly_link,
+            simulate_before_after_access_list,
         },
         settlement_submission::{SubmissionError, SubmissionReceipt},
         solver::{Simulation, SimulationWithError, Solver},
@@ -269,7 +270,9 @@ impl DriverLogger {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, crate::solver::dummy_arc_solver, model::solver_competition::Score,
+        super::*,
+        crate::solver::dummy_arc_solver,
+        model::solver_competition::Score,
         num::BigRational,
     };
 

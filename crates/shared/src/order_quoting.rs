@@ -2,13 +2,18 @@ use {
     super::price_estimation::{
         self,
         native::{native_single_estimate, NativePriceEstimating},
-        single_estimate, PriceEstimating, PriceEstimationError,
+        single_estimate,
+        PriceEstimating,
+        PriceEstimationError,
     },
     crate::{
         db_order_conversions::order_kind_from,
         fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
         order_validation::{
-            AppDataValidationError, OrderValidating, PartialValidationError, PreOrderData,
+            AppDataValidationError,
+            OrderValidating,
+            PartialValidationError,
+            PreOrderData,
         },
         price_estimation::Verification,
         trade_finding,
@@ -22,8 +27,14 @@ use {
     model::{
         order::{OrderClass, OrderCreationAppData, OrderKind},
         quote::{
-            OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality,
-            QuoteId, QuoteSigningScheme, SellAmount,
+            OrderQuote,
+            OrderQuoteRequest,
+            OrderQuoteResponse,
+            OrderQuoteSide,
+            PriceQuality,
+            QuoteId,
+            QuoteSigningScheme,
+            SellAmount,
         },
     },
     number_conversions::big_decimal_to_u256,

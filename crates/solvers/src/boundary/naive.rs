@@ -9,7 +9,13 @@ use {
     model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
 =======
     model::order::{
-        LimitOrderClass, Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid,
+        LimitOrderClass,
+        Order,
+        OrderClass,
+        OrderData,
+        OrderKind,
+        OrderMetadata,
+        OrderUid,
     },
 >>>>>>> 3e979597 (Differentiate between server internal (404) and protocol internal errors (500))
     num::{BigRational, One},
@@ -17,8 +23,14 @@ use {
     solver::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
-            AmmOrderExecution, ConstantProductOrder, Exchange, LimitOrder, LimitOrderExecution,
-            LimitOrderId, LiquidityOrderId, SettlementHandling,
+            AmmOrderExecution,
+            ConstantProductOrder,
+            Exchange,
+            LimitOrder,
+            LimitOrderExecution,
+            LimitOrderId,
+            LiquidityOrderId,
+            SettlementHandling,
         },
         settlement::SettlementEncoder,
         solver::naive_solver::multi_order_solver,

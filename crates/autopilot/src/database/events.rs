@@ -3,8 +3,10 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::gpv2_settlement::{
         event_data::{
-            OrderInvalidated as ContractInvalidation, PreSignature as ContractPreSignature,
-            Settlement as ContractSettlement, Trade as ContractTrade,
+            OrderInvalidated as ContractInvalidation,
+            PreSignature as ContractPreSignature,
+            Settlement as ContractSettlement,
+            Trade as ContractTrade,
         },
         Event as ContractEvent,
     },

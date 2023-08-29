@@ -24,7 +24,8 @@ use {
     },
     anyhow::{Context, Result},
     contracts::balancer_v2_base_pool_factory::{
-        event_data::PoolCreated, Event as BasePoolFactoryEvent,
+        event_data::PoolCreated,
+        Event as BasePoolFactoryEvent,
     },
     ethcontract::{Event, H160, H256},
     ethrpc::current_block::RangeInclusive,

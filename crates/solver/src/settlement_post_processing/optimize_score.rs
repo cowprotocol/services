@@ -1,7 +1,9 @@
 use {
     super::SettlementSimulating,
     crate::{
-        objective_value::Inputs, settlement::Settlement, solver::score_computation::ScoreCalculator,
+        objective_value::Inputs,
+        settlement::Settlement,
+        solver::score_computation::ScoreCalculator,
     },
     anyhow::{anyhow, Result},
     ethcontract::Address,

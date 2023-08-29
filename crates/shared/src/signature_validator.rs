@@ -1,8 +1,11 @@
 mod web3;
 
 use {
-    ethcontract::Bytes, hex_literal::hex, model::interaction::InteractionData,
-    primitive_types::H160, thiserror::Error,
+    ethcontract::Bytes,
+    hex_literal::hex,
+    model::interaction::InteractionData,
+    primitive_types::H160,
+    thiserror::Error,
 };
 
 pub use self::web3::Web3SignatureValidator;

@@ -38,7 +38,10 @@ impl UniswapInteraction {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, contracts::IUniswapLikeRouter, ethrpc::dummy, hex_literal::hex,
+        super::*,
+        contracts::IUniswapLikeRouter,
+        ethrpc::dummy,
+        hex_literal::hex,
         shared::dummy_contract,
     };
 

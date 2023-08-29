@@ -1,10 +1,13 @@
 use {
     super::{
         trade_finder::{TradeEstimator, TradeVerifier},
-        PriceEstimateResult, PriceEstimating, Query,
+        PriceEstimateResult,
+        PriceEstimating,
+        Query,
     },
     crate::{
-        oneinch_api::OneInchClient, rate_limiter::RateLimiter,
+        oneinch_api::OneInchClient,
+        rate_limiter::RateLimiter,
         trade_finding::oneinch::OneInchTradeFinder,
     },
     primitive_types::H160,

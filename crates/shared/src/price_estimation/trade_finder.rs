@@ -3,7 +3,12 @@
 
 use {
     super::{
-        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        rate_limited,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
         Verification,
     },
     crate::{
@@ -18,7 +23,8 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::{
         support::{Solver, Trader},
-        GPv2Settlement, WETH9,
+        GPv2Settlement,
+        WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::extensions::StateOverride,

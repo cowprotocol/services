@@ -1,5 +1,7 @@
 use {
-    super::SettlementSimulating, crate::settlement::Settlement, primitive_types::H160,
+    super::SettlementSimulating,
+    crate::settlement::Settlement,
+    primitive_types::H160,
     shared::token_list::AutoUpdatingTokenList,
 };
 

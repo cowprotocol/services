@@ -286,7 +286,10 @@ mod tests {
             bad_token::token_owner_finder::{
                 blockscout::BlockscoutTokenOwnerFinder,
                 liquidity::{
-                    BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
+                    BalancerVaultFinder,
+                    FeeValues,
+                    UniswapLikePairProviderFinder,
+                    UniswapV3Finder,
                 },
                 solvers::{
                     solver_api::SolverConfiguration,
@@ -301,7 +304,14 @@ mod tests {
         hex_literal::hex,
         std::{env, time::Duration},
         web3::types::{
-            Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace,
+            Action,
+            ActionType,
+            Bytes,
+            Call,
+            CallResult,
+            CallType,
+            Res,
+            TransactionTrace,
         },
     };
 

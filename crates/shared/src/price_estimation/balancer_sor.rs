@@ -1,7 +1,11 @@
 use {
     super::{
         gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
     },
     crate::{
         balancer_sor_api::{self, BalancerSorApi},

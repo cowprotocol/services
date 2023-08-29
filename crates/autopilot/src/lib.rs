@@ -39,11 +39,14 @@ use {
         signature_validator::Web3SignatureValidator,
         sources::{
             balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource, PoolAggregator,
+            BaselineSource,
+            PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
