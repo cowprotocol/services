@@ -94,7 +94,7 @@ pub struct Order {
     // TODO For now I'll always set these to zero. But I think they should be tested as well.
     // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
-    pub solver_fee: eth::U256,
+    pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
     /// the order gets placed and thereby generate surplus. Whether the sell or
@@ -105,6 +105,12 @@ pub struct Order {
     /// Override the executed amount of the order. Useful for testing liquidity
     /// orders. Otherwise [`execution_diff`] is probably more suitable.
     pub executed: Option<eth::U256>,
+
+    /// Should this order be filtered out before being sent to the solver?
+    pub filtered: bool,
+    /// Should the trader account be funded with enough tokens to place this
+    /// order? True by default.
+    pub funded: bool,
 }
 
 impl Order {
@@ -113,10 +119,18 @@ impl Order {
         Self { name, ..self }
     }
 
-    /// Reduce the amount of this order by the given amount.
+    /// Reduce the sell amount of this order by the given amount.
     pub fn reduce_amount(self, diff: eth::U256) -> Self {
         Self {
             sell_amount: self.sell_amount - diff,
+            ..self
+        }
+    }
+
+    /// Multiply the sell amount of this order by the given factor.
+    pub fn multiply_amount(self, mult: eth::U256) -> Self {
+        Self {
+            sell_amount: self.sell_amount * mult,
             ..self
         }
     }
@@ -148,6 +162,11 @@ impl Order {
         Self { side, ..self }
     }
 
+    /// Set the solver fee.
+    pub fn solver_fee(self, solver_fee: Option<eth::U256>) -> Self {
+        Self { solver_fee, ..self }
+    }
+
     /// Make this a limit order.
     pub fn limit(self) -> Self {
         Self {
@@ -177,9 +196,27 @@ impl Order {
         }
     }
 
+    /// Mark that this order should be filtered out before being sent to the
+    /// solver.
+    pub fn filtered(self) -> Self {
+        Self {
+            filtered: true,
+            ..self
+        }
+    }
+
+    /// Mark that the trader should not be funded with tokens that are needed to
+    /// place this order.
+    pub fn unfunded(self) -> Self {
+        Self {
+            funded: false,
+            ..self
+        }
+    }
+
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
-            order::Kind::Limit { surplus_fee } => surplus_fee.0,
+            order::Kind::Limit { surplus_fee: _ } => self.solver_fee.unwrap_or_default(),
             _ => 0.into(),
         }
     }
@@ -202,6 +239,8 @@ impl Default for Order {
             surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
             execution_diff: Default::default(),
             executed: Default::default(),
+            filtered: Default::default(),
+            funded: true,
         }
     }
 }
@@ -470,7 +509,7 @@ impl Setup {
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
-        crate::boundary::initialize_tracing("driver=trace");
+        observe::tracing::initialize_reentrant("driver=trace");
 
         if let Some(name) = self.name.as_ref() {
             tracing::warn!("\n***** [RUNNING TEST CASE] *****\n{name}");

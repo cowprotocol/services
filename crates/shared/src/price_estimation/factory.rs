@@ -390,6 +390,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
         Ok(ParaswapPriceEstimator::new(
             Arc::new(DefaultParaswapApi {
                 client: factory.components.http_factory.create(),
+                base_url: factory.shared_args.paraswap_api_url.clone(),
                 partner: factory
                     .shared_args
                     .paraswap_partner
@@ -439,6 +440,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
             factory.rate_limiter(name),
             factory.shared_args.one_inch_referrer_address,
             solver,
+            factory.network.settlement,
         ))
     }
 

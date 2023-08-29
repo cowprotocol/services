@@ -183,7 +183,7 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            metrics: Storage::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Storage::instance(observe::metrics::get_storage_registry()).unwrap(),
             last_runloop_completed: Mutex::new(Instant::now()),
         })
     }

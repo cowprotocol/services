@@ -84,7 +84,7 @@ impl BufferRetrieving for BufferRetriever {
             .chain(
                 tokens_without_eth
                     .into_iter()
-                    .zip(join_all(futures).await.into_iter())
+                    .zip(join_all(futures).await)
                     .map(|(&address, balance)| {
                         (address, balance.map_err(BufferRetrievalError::Erc20))
                     }),

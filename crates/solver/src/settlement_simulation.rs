@@ -9,6 +9,7 @@ use {
         transaction::TransactionBuilder,
         Account,
     },
+    ethrpc::Web3,
     futures::FutureExt,
     gas_estimation::GasPrice1559,
     itertools::Itertools,
@@ -16,7 +17,6 @@ use {
     shared::{
         conversions::into_gas_price,
         encoded_settlement::EncodedSettlement,
-        ethrpc::Web3,
         tenderly_api::{SimulationRequest, TenderlyApi},
     },
     web3::types::{AccessList, BlockId},
@@ -182,7 +182,7 @@ pub fn settle_method_builder(
 
 /// The call data of a settle call with this settlement.
 pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
-    let contract = GPv2Settlement::at(&shared::ethrpc::dummy::web3(), H160::default());
+    let contract = GPv2Settlement::at(&ethrpc::dummy::web3(), H160::default());
     let method = contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
@@ -262,14 +262,17 @@ mod tests {
         },
         contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9},
         ethcontract::{Account, PrivateKey},
-        maplit::hashmap,
+        maplit::{btreemap, hashmap},
         model::{order::Order, TokenPair},
         num::rational::Ratio,
         serde_json::json,
         shared::{
             ethrpc::create_env_test_transport,
             http_solver::model::{InternalizationStrategy, SettledBatchAuctionModel},
-            sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter},
+            sources::balancer_v2::{
+                pools::{common::TokenState, stable::AmplificationParameter},
+                swap::fixed_point::Bfp,
+            },
             tenderly_api::TenderlyHttpApi,
         },
         std::{
@@ -284,7 +287,7 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         // Create some bogus settlements to see that the simulation returns an error.
-        shared::tracing::initialize(
+        observe::tracing::initialize(
             "info,solver=debug,shared=debug,shared::transport=trace",
             tracing::Level::ERROR.into(),
         );
@@ -502,19 +505,19 @@ mod tests {
 
         let spo = StablePoolOrder {
             address: H160::from_low_u64_be(1),
-            reserves: hashmap! {
+            reserves: btreemap! {
                 "0x6b175474e89094c44da98b954eedeac495271d0f".parse().unwrap() => TokenState {
-                    balance: U256::from(46543572661097157184873466u128),
-                    scaling_exponent: 18
+                    balance: 46_543_572_661_097_157_184_873_466_u128.into(),
+                    scaling_factor: Bfp::exp10(0),
                 },
                 "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".parse().unwrap() => TokenState {
-                    balance: U256::from(50716887827666u128),
-                    scaling_exponent: 6
+                    balance: 50_716_887_827_666_u128.into(),
+                    scaling_factor: Bfp::exp10(12),
                 },
                 "0xdac17f958d2ee523a2206206994597c13d831ec7".parse().unwrap() => TokenState{
-                    balance: U256::from(38436050628181u128),
-                                        scaling_exponent: 6
-                                    },
+                    balance: 38_436_050_628_181_u128.into(),
+                    scaling_factor: Bfp::exp10(12),
+                },
             },
             fee: "0.001".parse().unwrap(),
             amplification_parameter: AmplificationParameter::new(1573.into(), 1.into()).unwrap(),
@@ -713,7 +716,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_chunked() {
-        shared::tracing::initialize(
+        observe::tracing::initialize(
             "info,solver=debug,shared=debug,shared::transport=trace",
             tracing::Level::ERROR.into(),
         );

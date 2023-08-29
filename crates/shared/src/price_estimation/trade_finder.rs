@@ -15,7 +15,6 @@ use {
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
-        ethrpc::extensions::StateOverride,
         interaction::EncodedInteraction,
         rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
@@ -28,6 +27,7 @@ use {
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    ethrpc::extensions::StateOverride,
     futures::{
         future::{BoxFuture, FutureExt as _},
         stream::StreamExt as _,
@@ -65,13 +65,17 @@ pub struct TradeVerifier {
 }
 
 impl TradeEstimator {
-    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        finder: Arc<dyn TradeFinding>,
+        rate_limiter: Arc<RateLimiter>,
+        label: String,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 finder,
                 verifier: None,
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
         }
     }
@@ -113,7 +117,7 @@ impl Inner {
                 if verification.is_some() {
                     // TODO turn this into a hard error when everything else is set up
                     tracing::warn!(
-                        "verified quote was requested by no verification scheme was configured"
+                        "verified quote was requested but no verification scheme was configured"
                     );
                 }
                 let quote = self.finder.get_quote(&query).await?;
@@ -344,7 +348,7 @@ impl Clone for TradeEstimator {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            sharing: Default::default(),
+            sharing: self.sharing.clone(),
             rate_limiter: self.rate_limiter.clone(),
         }
     }
@@ -373,6 +377,7 @@ impl From<TradeError> for PriceEstimationError {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
             TradeError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            TradeError::DeadlineExceeded => Self::DeadlineExceeded,
             TradeError::RateLimited => Self::RateLimited,
             TradeError::Other(err) => Self::Other(err),
         }

@@ -1,7 +1,7 @@
 use crate::{
     domain::eth,
     infra::{blockchain, Ethereum},
-    util::{self, conv, Bytes},
+    util::{self, conv::u256::U256Ext, Bytes},
 };
 
 pub mod signature;
@@ -103,6 +103,10 @@ impl Order {
         }
     }
 
+    pub fn trader(&self) -> Trader {
+        Trader(self.signature.signer)
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -129,27 +133,6 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
-    /// The sell asset to pass to the solver. This is a special case due to
-    /// limit orders. For limit orders, the interaction produced by the
-    /// solver needs to leave the surplus fee inside the settlement
-    /// contract, since that's the fee taken by the protocol. For that
-    /// reason, the solver solves for the sell amount reduced by the surplus
-    /// fee; then, the settlement transaction will move the sell amount from
-    /// the order *into* the settlement contract, while the interaction
-    /// produced by the solver will move (sell amount - surplus fee) *out*
-    /// of the settlement contract and into the AMMs, hence leaving the
-    /// surplus fee inside the contract.
-    pub fn solver_sell(&self) -> eth::Asset {
-        if let Kind::Limit { surplus_fee } = self.kind {
-            eth::Asset {
-                amount: (self.sell.amount.0 - surplus_fee.0).into(),
-                token: self.sell.token,
-            }
-        } else {
-            self.sell
-        }
-    }
-
     /// The buy asset to pass to the solver. This is a special case due to
     /// orders which buy ETH. The settlement contract only works with ERC20
     /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
@@ -170,7 +153,7 @@ impl Order {
     /// Should the order fee be determined by the solver? This is true for
     /// partial limit orders.
     pub fn solver_determines_fee(&self) -> bool {
-        self.is_partial() && matches!(self.kind, Kind::Limit { .. })
+        matches!(self.kind, Kind::Limit { .. })
     }
 
     /// The likelihood that this order will be fulfilled, based on token prices.
@@ -184,8 +167,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                conv::u256::to_big_rational(buy.0)
-                    .checked_div(&conv::u256::to_big_rational(sell.0))
+                buy.0
+                    .to_big_rational()
+                    .checked_div(&sell.0.to_big_rational())
                     .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),
@@ -303,6 +287,16 @@ pub enum SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+/// The address which placed the order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Trader(eth::Address);
+
+impl From<Trader> for eth::Address {
+    fn from(value: Trader) -> Self {
+        value.0
+    }
 }
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to

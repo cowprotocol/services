@@ -44,34 +44,58 @@ impl<'a> Solver<'a> {
             max_hops,
         );
 
-        let (path, executed_sell_amount) = match request.side {
-            order::Side::Buy => {
-                let best = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        baseline_solver::estimate_sell_amount(request.buy.amount, path, &self.amms)
-                    })
-                    .filter(|estimate| estimate.value <= request.sell.amount)
-                    .min_by_key(|estimate| estimate.value)?;
-                (best.path, best.value)
-            }
-            order::Side::Sell => {
-                let best = candidates
-                    .iter()
-                    .filter_map(|path| {
-                        baseline_solver::estimate_buy_amount(request.sell.amount, path, &self.amms)
-                    })
-                    .filter(|estimate| estimate.value >= request.buy.amount)
-                    .max_by_key(|estimate| estimate.value)?;
-                (best.path, request.sell.amount)
-            }
+        let (segments, _) = match request.side {
+            order::Side::Buy => candidates
+                .iter()
+                .filter_map(|path| {
+                    let sell = baseline_solver::estimate_sell_amount(
+                        request.buy.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments =
+                        self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
+
+                    let buy = segments.last().map(|segment| segment.output.amount);
+                    if buy.map(|buy| buy >= request.buy.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid buy estimate does not cover order"
+                        );
+                        return None;
+                    }
+
+                    (sell.value <= request.sell.amount).then_some((segments, sell))
+                })
+                .min_by_key(|(_, sell)| sell.value)?,
+            order::Side::Sell => candidates
+                .iter()
+                .filter_map(|path| {
+                    let buy = baseline_solver::estimate_buy_amount(
+                        request.sell.amount,
+                        path,
+                        &self.amms,
+                    )?;
+                    let segments =
+                        self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
+
+                    let sell = segments.first().map(|segment| segment.input.amount);
+                    if sell.map(|sell| sell >= request.sell.amount) != Some(true) {
+                        tracing::warn!(
+                            ?request,
+                            ?segments,
+                            "invalid sell estimate does not cover order"
+                        );
+                        return None;
+                    }
+
+                    (buy.value >= request.buy.amount).then_some((segments, buy))
+                })
+                .max_by_key(|(_, buy)| buy.value)?,
         };
 
-        baseline::Route::new(self.traverse_path(
-            &path,
-            request.sell.token.0,
-            executed_sell_amount,
-        )?)
+        baseline::Route::new(segments)
     }
 
     fn traverse_path(
@@ -149,6 +173,20 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                         }
                     }
                 }
+                liquidity::State::Stable(pool) => {
+                    if let Some(boundary_pool) =
+                        boundary::liquidity::stable::to_boundary_pool(liquidity.address, pool)
+                    {
+                        for pair in pool.reserves.token_pairs() {
+                            let token_pair = to_boundary_token_pair(&pair);
+                            amms.entry(token_pair).or_default().push(Amm {
+                                id: liquidity.id.clone(),
+                                token_pair,
+                                pool: Pool::Stable(boundary_pool.clone()),
+                            });
+                        }
+                    }
+                }
                 // The baseline solver does not currently support other AMMs.
                 _ => {}
             };
@@ -156,15 +194,18 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
         })
 }
 
+#[derive(Debug)]
 struct Amm {
     id: liquidity::Id,
     token_pair: TokenPair,
     pool: Pool,
 }
 
+#[derive(Debug)]
 enum Pool {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),
+    Stable(boundary::liquidity::stable::Pool),
 }
 
 impl BaselineSolvable for Amm {
@@ -172,6 +213,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
             Pool::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
+            Pool::Stable(pool) => pool.get_amount_out(out_token, input),
         }
     }
 
@@ -179,6 +221,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
             Pool::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
+            Pool::Stable(pool) => pool.get_amount_in(in_token, out),
         }
     }
 
@@ -186,6 +229,7 @@ impl BaselineSolvable for Amm {
         match &self.pool {
             Pool::ConstantProduct(pool) => pool.gas_cost(),
             Pool::WeightedProduct(pool) => pool.gas_cost(),
+            Pool::Stable(pool) => pool.gas_cost(),
         }
     }
 }

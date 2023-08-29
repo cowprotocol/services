@@ -16,7 +16,6 @@ use {
         settlement_post_processing::PostProcessingPipeline,
         settlement_rater::{ScoreCalculator, SettlementRater},
         settlement_submission::{
-            gelato::GelatoSubmitter,
             submitter::{
                 eden_api::EdenApi,
                 flashbots_api::FlashbotsApi,
@@ -45,7 +44,6 @@ use {
         baseline_solver::BaseTokens,
         code_fetching::CachedCodeFetcher,
         ethrpc,
-        gelato_api::GelatoClient,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::serve_metrics,
@@ -219,7 +217,11 @@ pub async fn run(args: Arguments) {
                 args.shared.balancer_pool_deny_list,
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         maintainers.push(balancer_pool_fetcher.clone());
         liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
@@ -313,12 +315,10 @@ pub async fn run(args: Arguments) {
 
     let domain = DomainSeparator::new(chain_id, settlement_contract.address());
 
-    let s3_instance_uploader = args
-        .s3_upload
-        .into_config()
-        .unwrap()
-        .map(S3InstanceUploader::new)
-        .map(Arc::new);
+    let s3_instance_uploader = match args.s3_upload.into_config().unwrap() {
+        Some(config) => Some(Arc::new(S3InstanceUploader::new(config).await)),
+        None => None,
+    };
 
     let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone())));
     let access_list_estimator = Arc::new(
@@ -356,6 +356,7 @@ pub async fn run(args: Arguments) {
         args.shared.disabled_one_inch_protocols,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
+        args.shared.paraswap_api_url,
         &http_factory,
         metrics.clone(),
         zeroex_api.clone(),
@@ -410,7 +411,11 @@ pub async fn run(args: Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         maintainers.push(uniswap_v3_pool_fetcher.clone());
         liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
@@ -499,18 +504,6 @@ pub async fn run(args: Arguments) {
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                     use_soft_cancellations: false,
                 }))
-            }
-            TransactionStrategyArg::Gelato => {
-                transaction_strategies.push(TransactionStrategy::Gelato(Arc::new(
-                    GelatoSubmitter::new(
-                        web3.clone(),
-                        settlement_contract.clone(),
-                        GelatoClient::new(&http_factory, args.gelato_api_key.clone().unwrap()),
-                        args.gelato_submission_poll_interval,
-                    )
-                    .await
-                    .unwrap(),
-                )))
             }
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)

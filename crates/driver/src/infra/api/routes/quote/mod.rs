@@ -1,12 +1,15 @@
-use crate::infra::{
-    api::{Error, State},
-    observe,
+use {
+    crate::infra::{
+        api::{Error, State},
+        observe,
+    },
+    tap::TapFallible,
+    tracing::Instrument,
 };
 
 mod dto;
 
 pub use dto::OrderError;
-use {tap::TapFallible, tracing::Instrument};
 
 pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<State> {
     router.route("/quote", axum::routing::post(route))
@@ -22,7 +25,12 @@ async fn route(
         })?;
         observe::quoting(&order);
         let quote = order
-            .quote(state.eth(), state.solver(), state.liquidity())
+            .quote(
+                state.eth(),
+                state.solver(),
+                state.liquidity(),
+                state.tokens(),
+            )
             .await;
         observe::quoted(state.solver().name(), &order, &quote);
         Ok(axum::response::Json(dto::Quote::new(&quote?)))

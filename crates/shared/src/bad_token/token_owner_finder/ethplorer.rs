@@ -9,7 +9,7 @@ use {
     serde::Deserialize,
 };
 
-const BASE: &str = "https://api.ethplorer.io/getTopTokenHolders/";
+const BASE: &str = "https://api.ethplorer.io";
 const FREE_API_KEY: &str = "freekey";
 
 pub struct EthplorerTokenOwnerFinder {
@@ -36,8 +36,13 @@ impl EthplorerTokenOwnerFinder {
             base: Url::try_from(BASE).unwrap(),
             api_key: api_key.unwrap_or_else(|| FREE_API_KEY.to_owned()),
             rate_limiter: None,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry())?,
+            metrics: Metrics::instance(observe::metrics::get_storage_registry())?,
         })
+    }
+
+    pub fn with_base_url(&mut self, base_url: Url) -> &mut Self {
+        self.base = base_url;
+        self
     }
 
     pub fn with_rate_limiter(&mut self, strategy: RateLimitingStrategy) -> &mut Self {
@@ -46,7 +51,7 @@ impl EthplorerTokenOwnerFinder {
     }
 
     async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let mut url = crate::url::join(&self.base, &format!("{token:?}"));
+        let mut url = crate::url::join(&self.base, &format!("getTopTokenHolders/{token:?}"));
         // We technically only need one candidate, returning the top 2 in case there
         // is a race condition and tokens have just been transferred out.
         url.query_pairs_mut().append_pair("limit", "2");

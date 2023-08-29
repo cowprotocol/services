@@ -227,6 +227,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
+    /// The ParaSwap API base url to use.
+    #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
+    pub paraswap_api_url: String,
+
     /// Special partner authentication for Paraswap API (allowing higher rater
     /// limits)
     #[clap(long, env)]
@@ -292,7 +296,7 @@ pub struct Arguments {
 
     /// The number of pools to initially populate the UniswapV3 cache
     #[clap(long, env, default_value = "100")]
-    pub max_pools_to_initialize_cache: u64,
+    pub max_pools_to_initialize_cache: usize,
 
     /// The time in seconds between new blocks on the network.
     #[clap(long, env, value_parser = duration_from_seconds)]

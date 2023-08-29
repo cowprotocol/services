@@ -316,7 +316,7 @@ mod tests {
             ),
         ];
 
-        shared::tracing::initialize_reentrant("INFO");
+        observe::tracing::initialize_reentrant("INFO");
         DriverLogger::print_settlements(&a);
     }
 }

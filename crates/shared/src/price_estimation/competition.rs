@@ -215,30 +215,33 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let estimator = self.inner[estimator_index].0.as_str();
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
-            // Collect stats for winner predictions.
             let requests = self.inner.len() as u64;
-            if let (Some(competition), Ok(_)) = (&self.competition, &result) {
-                let trade = Trade::from(query);
-                let estimator = EstimatorIndex(estimator_index);
-                if let Some(predictions) = predictions.get(&trade) {
-                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                    metrics().record_prediction(&trade, was_correct);
-                }
-                competition.record_winner(trade, estimator);
-                metrics()
-                    .requests
-                    .with_label_values(&["saved"])
-                    .inc_by(requests - predictions.len() as u64);
-            }
-
             metrics()
                 .requests
                 .with_label_values(&["executed"])
                 .inc_by(requests);
-            metrics()
-                .queries_won
-                .with_label_values(&[estimator, query.kind.label()])
-                .inc();
+
+            if result.is_ok() {
+                // Collect stats for winner predictions.
+                metrics()
+                    .queries_won
+                    .with_label_values(&[estimator, query.kind.label()])
+                    .inc();
+
+                if let Some(competition) = &self.competition {
+                    let trade = Trade::from(query);
+                    let estimator = EstimatorIndex(estimator_index);
+                    if let Some(predictions) = predictions.get(&trade) {
+                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
+                        metrics().record_prediction(&trade, was_correct);
+                    }
+                    competition.record_winner(trade, estimator);
+                    metrics()
+                        .requests
+                        .with_label_values(&["saved"])
+                        .inc_by(requests - predictions.len() as u64);
+                }
+            }
 
             Some((query_index, result))
         };
@@ -322,21 +325,24 @@ fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bo
 }
 
 fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
-    // NOTE(nlordell): How errors are joined is kind of arbitrary. I decided to
-    // just order them in the following priority.
+    // Errors are sorted by recoverability. E.g. a rate-limited estimation may
+    // succeed if tried again, whereas unsupported order types can never recover
+    // unless code changes. This can be used to decide which errors we want to
+    // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
-            // highest priority
-            PriceEstimationError::ZeroAmount => 0,
-            PriceEstimationError::UnsupportedToken { .. } => 1,
-            PriceEstimationError::NoLiquidity => 2,
-            PriceEstimationError::Other(_) => 3,
-            PriceEstimationError::UnsupportedOrderType => 4,
-            PriceEstimationError::RateLimited => 5,
+            // highest priority (prefer)
+            PriceEstimationError::RateLimited => 6,
+            PriceEstimationError::DeadlineExceeded => 5,
+            PriceEstimationError::Other(_) => 4,
+            PriceEstimationError::UnsupportedToken { .. } => 3,
+            PriceEstimationError::ZeroAmount => 2,
+            PriceEstimationError::NoLiquidity => 1,
+            PriceEstimationError::UnsupportedOrderType => 0,
             // lowest priority
         }
     }
-    error_to_integer_priority(b) < error_to_integer_priority(a)
+    error_to_integer_priority(b) > error_to_integer_priority(a)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -384,7 +390,7 @@ impl Metrics {
 }
 
 fn metrics() -> &'static Metrics {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
 }
 
@@ -505,7 +511,7 @@ mod tests {
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. },
+            PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 

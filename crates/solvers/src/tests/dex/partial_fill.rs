@@ -11,7 +11,7 @@ use {
 /// fills possible.
 #[tokio::test]
 async fn tested_amounts_adjust_depending_on_response() {
-    // shared::tracing::initialize_reentrant("solvers=trace");
+    // observe::tracing::initialize_reentrant("solvers=trace");
     let inner_request = |amount| {
         json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -337,7 +337,7 @@ async fn tested_amounts_wrap_around() {
 /// than we receive from the swap).
 #[tokio::test]
 async fn moves_surplus_fee_to_buy_token() {
-    // shared::tracing::initialize_reentrant("solvers=trace");
+    // observe::tracing::initialize_reentrant("solvers=trace");
     let api = mock::http::setup(vec![
         mock::http::Expectation::Post {
             path: mock::http::Path::Any,

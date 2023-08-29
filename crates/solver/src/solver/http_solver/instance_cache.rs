@@ -109,7 +109,7 @@ impl Metrics {
     fn get() -> &'static Self {
         static INIT: OnceCell<&'static Metrics> = OnceCell::new();
         INIT.get_or_init(|| {
-            let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+            let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
             for result in ["success", "failure"] {
                 metrics
                     .instance_cache_uploads

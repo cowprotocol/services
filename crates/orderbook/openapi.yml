@@ -401,7 +401,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AppDataDocument"
+                $ref: "#/components/schemas/AppDataObject"
         404:
           description: No full `appData` stored for this hash.
     put:
@@ -421,7 +421,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AppDataDocument"
+              $ref: "#/components/schemas/AppDataObject"
       responses:
         200:
           description: The full `appData` already exists.
@@ -469,20 +469,25 @@ components:
       description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    AppData:
+      description: |
+        The string encoding of a JSON object representing some `appData`. The
+        format of the JSON expected in the `appData` field is defined
+        [here](https://github.com/cowprotocol/app-data).
+      type: string
+      example: "{\"version\":\"0.9.0\",\"metadata\":{}}"
     AppDataHash:
-      description: 32 bytes encoded as hex with `0x` prefix.
+      description: |
+        32 bytes encoded as hex with `0x` prefix.
+        It's expected to be the hash of the stringified JSON object representing the `appData`.
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
-    AppDataDocument:
+    AppDataObject:
       description: An `appData` document that is registered with the API.
       type: object
       properties:
         fullAppData:
-          description: |
-            The string encoding of a JSON object representing some `appData`. The
-            format of the JSON expected in the `appData` field is defined
-            [here](https://github.com/cowprotocol/app-data).
-          type: string
+          $ref: "#/components/schemas/AppData"
       required:
         - appData
     BigUint:
@@ -703,11 +708,12 @@ components:
           nullable: true
         appData:
           description: |
-            This field comes in two forms for backward compatibility. The first form (`appDataHash`)
-            will eventually stop being accepted.
+            This field comes in two forms for backward compatibility. The hash form will eventually 
+            stop being accepted.
           anyOf:
-            - $ref: "#/components/schemas/AppDataHash"
             - title: Full App Data
+              allOf:
+                - $ref: "#/components/schemas/AppData"
               description: |
                 **Short**:
 
@@ -743,6 +749,7 @@ components:
 
                 The total byte size of this field's UTF-8 encoded bytes is limited to 1000.
               type: string
+            - $ref: "#/components/schemas/AppDataHash"
         appDataHash:
           description: |
            May be set for debugging purposes. If set, this field is compared to what the backend
@@ -1238,7 +1245,21 @@ components:
                 - $ref: "#/components/schemas/Address"
               nullable: true
             appData:
-              $ref: "#/components/schemas/AppDataHash"
+              description: |
+                AppData which will be assigned to the order.
+                Expects either a string JSON doc as defined on [AppData](https://github.com/cowprotocol/app-data) or a
+                hex encoded string for backwards compatibility.
+                When the first format is used, it's possible to provide the derived appDataHash field.
+              oneOf:
+                - $ref: "#/components/schemas/AppData"
+                - $ref: "#/components/schemas/AppDataHash"
+            appDataHash:
+              description: |
+                The hash of the stringified JSON appData doc.
+                If present, `appData` field must be set with the aforementioned data where this hash is derived from.
+                In case they differ, the call will fail.
+              anyOf:
+                - $ref: "#/components/schemas/AppDataHash"
             partiallyFillable:
               description: Is the order fill-or-kill or partially fillable?
               type: boolean

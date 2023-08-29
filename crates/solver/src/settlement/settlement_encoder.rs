@@ -267,13 +267,8 @@ impl SettlementEncoder {
                     buy_price,
                 )?
             }
-            OrderClass::Limit(limit) => {
-                let surplus_fee = match order.data.partially_fillable {
-                    // Protocol determines fees for fok orders.
-                    false => limit.surplus_fee.unwrap(),
-                    // Solver determines fees for partially fillable orders.
-                    true => solver_fee,
-                };
+            OrderClass::Limit(_) => {
+                let surplus_fee = solver_fee;
 
                 // Solvers calculate with slightly adjusted amounts compared to
                 // the signed order, so adjust by the surplus fee (if needed) to
@@ -297,8 +292,8 @@ impl SettlementEncoder {
                 )?
             }
         };
-        self.pre_interactions.extend(interactions.pre.into_iter());
-        self.post_interactions.extend(interactions.post.into_iter());
+        self.pre_interactions.extend(interactions.pre);
+        self.post_interactions.extend(interactions.post);
         Ok(execution)
     }
 
@@ -489,8 +484,8 @@ impl SettlementEncoder {
     /// Returns the total surplus denominated in the native asset for this
     /// solution.
     pub fn total_surplus(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
-        self.user_trades().fold(Some(num::zero()), |acc, trade| {
-            Some(acc? + trade.surplus_in_native_token(external_prices)?)
+        self.user_trades().try_fold(num::zero(), |acc, trade| {
+            Some(acc + trade.surplus_in_native_token(external_prices)?)
         })
     }
 

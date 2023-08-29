@@ -90,7 +90,7 @@ impl HttpPriceEstimator {
     ) -> Self {
         Self {
             api,
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("http_estimator".into()),
             pools,
             balancer_pools,
             uniswap_v3_pools,
@@ -355,15 +355,13 @@ impl HttpPriceEstimator {
                 Ok(AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
                         reserves: pool
-                            .reserves
-                            .iter()
-                            .map(|(token, state)| (*token, state.balance))
+                            .reserves_without_bpt()
+                            .map(|(token, state)| (token, state.balance))
                             .collect(),
                         scaling_rates: pool
-                            .reserves
-                            .into_iter()
+                            .reserves_without_bpt()
                             .map(|(token, state)| {
-                                Ok((token, compute_scaling_rate(state.scaling_exponent)?))
+                                Ok((token, compute_scaling_rate(state.scaling_factor)?))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| "convert stable pool to solver model".to_string())?,
@@ -419,7 +417,6 @@ mod tests {
         super::*,
         crate::{
             current_block::current_block_stream,
-            ethrpc::{http::HttpTransport, Web3},
             gas_price_estimation::FakeGasPriceEstimator,
             http_solver::{
                 model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
@@ -448,6 +445,7 @@ mod tests {
         anyhow::anyhow,
         clap::ValueEnum,
         ethcontract::dyns::DynTransport,
+        ethrpc::{http::HttpTransport, Web3},
         gas_estimation::GasPrice1559,
         maplit::hashmap,
         model::order::OrderKind,
@@ -804,7 +802,7 @@ mod tests {
                     ..Default::default()
                 },
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("test".into()),
             pools,
             balancer_pools: Some(balancer_pool_fetcher),
             token_info,

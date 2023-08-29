@@ -10,7 +10,7 @@ use {
     model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
-        current_block::{self, BlockRetrieverStrategy, CurrentBlockStream},
+        current_block::{self, CurrentBlockStream},
         http_client::HttpClientFactory,
         recent_block_cache::{self, CacheConfig},
     },
@@ -61,7 +61,6 @@ impl Fetcher {
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
             block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
-            block_stream_retriever_strategy: BlockRetrieverStrategy::default(),
         };
 
         let block_stream = blocks.stream(boundary::web3(eth)).await?;
@@ -88,22 +87,19 @@ impl Fetcher {
         .into_iter()
         .try_collect()?;
 
-        let bal_v2: Vec<_> = future::join_all(config.balancer_v2.iter().map(|config| {
-            balancer::v2::collector(eth, &block_stream, block_retriever.clone(), config)
-        }))
-        .await
-        .into_iter()
-        .collect();
+        let bal_v2: Vec<_> = config
+            .balancer_v2
+            .iter()
+            .map(|config| {
+                balancer::v2::collector(eth, block_stream.clone(), block_retriever.clone(), config)
+            })
+            .collect();
 
-        let uni_v3: Vec<_> = future::join_all(
-            config
-                .uniswap_v3
-                .iter()
-                .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config)),
-        )
-        .await
-        .into_iter()
-        .collect();
+        let uni_v3: Vec<_> = config
+            .uniswap_v3
+            .iter()
+            .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config))
+            .collect();
 
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),

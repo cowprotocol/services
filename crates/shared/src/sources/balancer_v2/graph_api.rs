@@ -166,6 +166,7 @@ pub enum PoolType {
     Stable,
     Weighted,
     LiquidityBootstrapping,
+    ComposableStable,
 }
 
 /// Token data for pools.
@@ -193,6 +194,7 @@ mod pools_query {
                         "Stable",
                         "Weighted",
                         "LiquidityBootstrapping",
+                        "ComposableStable",
                     ]
                 }
             ) {
@@ -314,6 +316,23 @@ mod tests {
                             },
                         ],
                     },
+                    {
+                        "poolType": "ComposableStable",
+                        "address": "0x2222222222222222222222222222222222222222",
+                        "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                        "factory": "0x5555555555555555555555555555555555555555",
+                        "swapEnabled": true,
+                        "tokens": [
+                            {
+                                "address": "0x3333333333333333333333333333333333333333",
+                                "decimals": 3,
+                            },
+                            {
+                                "address": "0x4444444444444444444444444444444444444444",
+                                "decimals": 4,
+                            },
+                        ],
+                    },
                 ],
             }))
             .unwrap(),
@@ -373,6 +392,25 @@ mod tests {
                                 address: H160([0x44; 20]),
                                 decimals: 4,
                                 weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                            },
+                        ],
+                    },
+                    PoolData {
+                        pool_type: PoolType::ComposableStable,
+                        id: H256([0x11; 32]),
+                        address: H160([0x22; 20]),
+                        factory: H160([0x55; 20]),
+                        swap_enabled: true,
+                        tokens: vec![
+                            Token {
+                                address: H160([0x33; 20]),
+                                decimals: 3,
+                                weight: None,
+                            },
+                            Token {
+                                address: H160([0x44; 20]),
+                                decimals: 4,
+                                weight: None,
                             },
                         ],
                     },

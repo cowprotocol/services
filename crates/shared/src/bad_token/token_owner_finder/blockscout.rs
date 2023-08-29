@@ -31,6 +31,11 @@ impl BlockscoutTokenOwnerFinder {
         })
     }
 
+    pub fn with_base_url(&mut self, base_url: Url) -> &mut Self {
+        self.base = base_url;
+        self
+    }
+
     pub fn with_rate_limiter(&mut self, strategy: RateLimitingStrategy) -> &mut Self {
         self.rate_limiter = Some(RateLimiter::from_strategy(
             strategy,
@@ -94,7 +99,7 @@ struct Metrics {
 #[async_trait::async_trait]
 impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
+        let metric = &Metrics::instance(observe::metrics::get_storage_registry())
             .unwrap()
             .results;
 

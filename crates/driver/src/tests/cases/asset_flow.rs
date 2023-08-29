@@ -2,7 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::DEFAULT_SURPLUS_FEE,
+        cases::{DEFAULT_SOLVER_FEE, DEFAULT_SURPLUS_FEE},
         setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Solution},
     },
 };
@@ -23,10 +23,21 @@ async fn matrix() {
                     surplus_fee: order::SellAmount(DEFAULT_SURPLUS_FEE.into()),
                 },
             ] {
+                let solver_fee = match kind {
+                    order::Kind::Market => None,
+                    order::Kind::Limit { .. } => Some(DEFAULT_SOLVER_FEE.into()),
+                    order::Kind::Liquidity => None,
+                };
                 let test = tests::setup()
                     .name(format!("{side:?} {kind:?}\n{diff:?}"))
                     .pool(ab_pool())
-                    .order(ab_order().side(side).kind(kind).execution_diff(diff))
+                    .order(
+                        ab_order()
+                            .side(side)
+                            .kind(kind)
+                            .execution_diff(diff)
+                            .solver_fee(solver_fee),
+                    )
                     .solution(ab_solution())
                     .done()
                     .await;
@@ -165,6 +176,7 @@ async fn mix() {
                     increase_buy: 30.into(),
                     ..Default::default()
                 })
+                .solver_fee(Some(DEFAULT_SOLVER_FEE.into()))
                 // Change the order UID by increasing valid_to. Otherwise, this order UID would be
                 // the same as the one above.
                 .increase_valid_to(),

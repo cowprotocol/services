@@ -16,11 +16,11 @@ use {
         transaction::{Transaction, TransactionBuilder},
         H256,
     },
+    ethrpc::{http::HttpTransport, Web3, Web3Transport},
     futures::{FutureExt, TryFutureExt},
     jsonrpc_core::types::Value,
     reqwest::{Client, IntoUrl, Url},
     serde::Deserialize,
-    shared::ethrpc::{http::HttpTransport, Web3, Web3Transport},
     web3::{helpers, types::Bytes},
 };
 

@@ -1,9 +1,6 @@
-use {
-    self::file::{ContractsConfig, LiquidityConfig},
-    crate::{
-        domain::eth,
-        infra::{mempool, simulator, solver},
-    },
+use crate::{
+    domain::eth,
+    infra::{blockchain, liquidity, mempool, simulator, solver},
 };
 
 pub mod file;
@@ -14,8 +11,8 @@ pub struct Config {
     pub disable_access_list_simulation: bool,
     pub disable_gas_simulation: Option<eth::Gas>,
     pub solvers: Vec<solver::Config>,
-    pub liquidity: LiquidityConfig,
+    pub liquidity: liquidity::Config,
     pub tenderly: Option<simulator::tenderly::Config>,
     pub mempools: Vec<mempool::Config>,
-    pub contracts: ContractsConfig,
+    pub contracts: blockchain::contracts::Addresses,
 }

@@ -315,7 +315,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.balancer_pool_deny_list.clone(),
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         Some(balancer_pool_fetcher)
     } else {
@@ -331,7 +335,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         ))
     } else {
         None
@@ -601,7 +609,6 @@ pub async fn main(args: arguments::Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-            token_info: token_info_fetcher,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

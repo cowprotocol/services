@@ -1,6 +1,5 @@
 mod arguments;
-mod eth_call;
-mod get_block_and_call;
+mod retriever;
 
 use {
     crate::ethrpc::Web3,
@@ -18,7 +17,7 @@ use {
     },
 };
 
-pub use self::arguments::{Arguments, BlockRetrieverStrategy};
+pub use self::arguments::Arguments;
 
 pub type BlockNumberHash = (u64, H256);
 
@@ -253,7 +252,7 @@ pub struct Metrics {
 /// Updates metrics about the difference of the new block number compared to the
 /// current block.
 fn update_block_metrics(current_block: u64, new_block: u64) {
-    let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
+    let metric = &Metrics::instance(observe::metrics::get_storage_registry())
         .unwrap()
         .block_stream_update_delta;
 
@@ -277,7 +276,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        crate::tracing::initialize_reentrant("shared=debug");
+        observe::tracing::initialize_reentrant("shared=debug");
         let node = std::env::var("NODE_URL").unwrap();
         let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);

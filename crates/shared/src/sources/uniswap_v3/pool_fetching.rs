@@ -129,7 +129,7 @@ impl PoolsCheckpointHandler {
     pub async fn new(
         chain_id: u64,
         client: Client,
-        max_pools_to_initialize_cache: u64,
+        max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
         let mut registered_pools = graph_api.get_registered_pools().await?;
@@ -159,7 +159,7 @@ impl PoolsCheckpointHandler {
             .into_iter()
             .map(|pool| pool.id)
             .rev()
-            .take(max_pools_to_initialize_cache as usize)
+            .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
         let pools = graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
@@ -205,9 +205,7 @@ impl PoolsCheckpointHandler {
                     existing_pools.keys(),
                     missing_pools
                 );
-                pools_checkpoint
-                    .missing_pools
-                    .extend(missing_pools.into_iter());
+                pools_checkpoint.missing_pools.extend(missing_pools);
                 (existing_pools, pools_checkpoint.block_number)
             }
             None => Default::default(),
@@ -260,7 +258,7 @@ impl UniswapV3PoolFetcher {
         web3: Web3,
         client: Client,
         block_retriever: Arc<dyn BlockRetrieving>,
-        max_pools_to_initialize: u64,
+        max_pools_to_initialize: usize,
     ) -> Result<Self> {
         let checkpoint =
             PoolsCheckpointHandler::new(chain_id, client, max_pools_to_initialize).await?;

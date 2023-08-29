@@ -1,6 +1,6 @@
 use {
-    crate::setup::*,
     database::order_events::OrderEventLabel,
+    e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},

@@ -229,7 +229,7 @@ where
 mod tests {
     use {
         super::*,
-        crate::ethrpc::mock::MockTransport,
+        crate::mock::MockTransport,
         ethcontract::{Web3, U256},
         mockall::predicate,
         serde_json::json,

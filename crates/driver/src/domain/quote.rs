@@ -12,7 +12,7 @@ use {
             blockchain::{self, Ethereum},
             solver::{self, Solver},
         },
-        util::{self, conv},
+        util::{self, conv::u256::U256Ext},
     },
     std::{collections::HashSet, iter},
 };
@@ -36,16 +36,14 @@ impl Quote {
             .clearing_price(order.tokens.buy)
             .ok_or(QuotingFailed::ClearingBuyMissing)?;
         let amount = match order.side {
-            order::Side::Sell => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(order.amount.into())
-                    * conv::u256::to_big_rational(sell_price)
-                    / conv::u256::to_big_rational(buy_price)),
-            ),
-            order::Side::Buy => conv::u256::from_big_rational(
-                &(conv::u256::to_big_rational(order.amount.into())
-                    * conv::u256::to_big_rational(buy_price)
-                    / conv::u256::to_big_rational(sell_price)),
-            ),
+            order::Side::Sell => eth::U256::from_big_rational(
+                &(eth::U256::from(order.amount).to_big_rational() * sell_price.to_big_rational()
+                    / buy_price.to_big_rational()),
+            )?,
+            order::Side::Buy => eth::U256::from_big_rational(
+                &(eth::U256::from(order.amount).to_big_rational() * buy_price.to_big_rational()
+                    / sell_price.to_big_rational()),
+            )?,
         };
         Ok(Self {
             amount,
@@ -74,16 +72,12 @@ impl Order {
         eth: &Ethereum,
         solver: &Solver,
         liquidity: &infra::liquidity::Fetcher,
+        tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
-        let gas_price = eth.gas_price().await?;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
-            .solve(
-                &self.fake_auction(gas_price, eth.contracts().weth_address()),
-                &liquidity,
-                timeout,
-            )
+            .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
             .await?;
         Quote::new(
             eth,
@@ -97,11 +91,16 @@ impl Order {
         )
     }
 
-    fn fake_auction(
+    async fn fake_auction(
         &self,
-        gas_price: eth::GasPrice,
-        weth: eth::WethAddress,
-    ) -> competition::Auction {
+        eth: &Ethereum,
+        tokens: &infra::tokens::Fetcher,
+    ) -> Result<competition::Auction, Error> {
+        let tokens = tokens.get(&[self.buy().token, self.sell().token]).await;
+
+        let buy_token_metadata = tokens.get(&self.buy().token);
+        let sell_token_metadata = tokens.get(&self.sell().token);
+
         competition::Auction::new(
             None,
             vec![competition::Order {
@@ -127,28 +126,31 @@ impl Order {
             }],
             [
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: sell_token_metadata.and_then(|m| m.decimals),
+                    symbol: sell_token_metadata.and_then(|m| m.symbol.clone()),
                     address: self.tokens.sell,
                     price: None,
-                    available_balance: Default::default(),
+                    available_balance: sell_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
                     trusted: false,
                 },
                 auction::Token {
-                    decimals: None,
-                    symbol: None,
+                    decimals: buy_token_metadata.and_then(|m| m.decimals),
+                    symbol: buy_token_metadata.and_then(|m| m.symbol.clone()),
                     address: self.tokens.buy,
                     price: None,
-                    available_balance: Default::default(),
+                    available_balance: buy_token_metadata.map(|m| m.balance.0).unwrap_or_default(),
                     trusted: false,
                 },
             ]
             .into_iter(),
-            gas_price.effective().into(),
             Default::default(),
-            weth,
+            eth,
         )
-        .unwrap()
+        .await
+        .map_err(|err| match err {
+            auction::Error::InvalidTokens => panic!("fake auction with invalid tokens"),
+            auction::Error::Blockchain(e) => e.into(),
+        })
     }
 
     /// The asset being bought, or [`eth::U256::one`] if this is a sell, to

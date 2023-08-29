@@ -212,7 +212,7 @@ impl Alerter {
         config: AlertConfig,
         api_get_order_min_interval: Duration,
     ) -> Self {
-        let registry = global_metrics::get_metrics_registry();
+        let registry = observe::metrics::get_registry();
         let no_trades_but_matchable_order =
             IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
         registry
@@ -397,11 +397,11 @@ struct Arguments {
 #[tokio::main]
 async fn main() {
     let args = Arguments::parse();
-    shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
-    shared::exit_process_on_panic::set_panic_hook();
+    observe::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
+    observe::panic_hook::install();
     tracing::info!("running alerter with {:#?}", args);
 
-    global_metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);
+    observe::metrics::setup_registry(Some("gp_v2_alerter".to_string()), None);
     let filter = shared::metrics::handle_metrics();
     tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
 

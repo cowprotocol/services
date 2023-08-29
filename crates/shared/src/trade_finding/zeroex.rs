@@ -4,7 +4,7 @@ use {
     super::{Interaction, Quote, Trade, TradeError, TradeFinding},
     crate::{
         price_estimation::{gas, Query},
-        request_sharing::{BoxRequestSharing, BoxShared},
+        request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
         zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
     },
     futures::FutureExt as _,
@@ -40,7 +40,7 @@ impl ZeroExTradeFinder {
                 buy_only,
                 solver,
             },
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("zeroex".into()),
         }
     }
 

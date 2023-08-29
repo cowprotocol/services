@@ -1,6 +1,6 @@
 use {
-    crate::setup::*,
     database::order_events::OrderEventLabel,
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         app_data::AppDataHash,

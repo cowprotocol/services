@@ -115,7 +115,7 @@ pub struct UniswapV3 {
     pub router: eth::ContractAddress,
 
     /// How many pools should be initialized during start up.
-    pub max_pools_to_initialize: u64,
+    pub max_pools_to_initialize: usize,
 }
 
 impl UniswapV3 {
@@ -124,7 +124,7 @@ impl UniswapV3 {
     pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
-            max_pools_to_initialize: 50,
+            max_pools_to_initialize: 100,
         })
     }
 }
@@ -138,11 +138,17 @@ pub struct BalancerV2 {
     /// Weighted pool factory addresses.
     pub weighted: Vec<eth::ContractAddress>,
 
+    /// Weighted pool factory v3+ addresses.
+    pub weighted_v3plus: Vec<eth::ContractAddress>,
+
     /// Stable pool factory addresses.
     pub stable: Vec<eth::ContractAddress>,
 
     /// Liquidity bootstrapping pool factory addresses.
     pub liquidity_bootstrapping: Vec<eth::ContractAddress>,
+
+    /// Composable stable pool factory addresses.
+    pub composable_stable: Vec<eth::ContractAddress>,
 
     /// Deny listed Balancer V2 pools.
     ///
@@ -169,17 +175,22 @@ impl BalancerV2 {
             vault: deployment_address(contracts::BalancerV2Vault::raw_contract(), network)?,
             weighted: factory_addresses(&[
                 contracts::BalancerV2WeightedPoolFactory::raw_contract(),
-                contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
-                contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
                 contracts::BalancerV2WeightedPool2TokensFactory::raw_contract(),
             ]),
-            stable: factory_addresses(&[
-                contracts::BalancerV2StablePoolFactory::raw_contract(),
-                contracts::BalancerV2StablePoolFactoryV2::raw_contract(),
+            weighted_v3plus: factory_addresses(&[
+                contracts::BalancerV2WeightedPoolFactoryV3::raw_contract(),
+                contracts::BalancerV2WeightedPoolFactoryV4::raw_contract(),
             ]),
+            stable: factory_addresses(&[contracts::BalancerV2StablePoolFactoryV2::raw_contract()]),
             liquidity_bootstrapping: factory_addresses(&[
                 contracts::BalancerV2LiquidityBootstrappingPoolFactory::raw_contract(),
                 contracts::BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::raw_contract(),
+            ]),
+            composable_stable: factory_addresses(&[
+                contracts::BalancerV2ComposableStablePoolFactory::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV3::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV4::raw_contract(),
+                contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
         })

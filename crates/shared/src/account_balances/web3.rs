@@ -495,20 +495,18 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(matches!(
-            fetcher
-                .can_transfer(
-                    &Query {
-                        token: token.address(),
-                        owner: trader.address(),
-                        source: SellTokenSource::External,
-                        interactions: vec![],
-                    },
-                    100.into(),
-                )
-                .await,
-            Ok(_),
-        ));
+        assert!(fetcher
+            .can_transfer(
+                &Query {
+                    token: token.address(),
+                    owner: trader.address(),
+                    source: SellTokenSource::External,
+                    interactions: vec![],
+                },
+                100.into(),
+            )
+            .await
+            .is_ok());
         assert!(matches!(
             fetcher
                 .can_transfer(
