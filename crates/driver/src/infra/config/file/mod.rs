@@ -12,7 +12,8 @@ pub use load::load;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+// TODO: add back `deny_unknown_fields` once we are ready to release the driver
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// Optionally specify the chain ID that that driver is configured for.
     /// Note that the actual chain ID is fetched from the configured Ethereum

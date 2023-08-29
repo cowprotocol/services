@@ -18,9 +18,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    // Not printing detailed error because it could leak private keys.
     let config: file::Config = toml::de::from_str(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+        .unwrap_or_else(|err| panic!("TOML syntax error while reading {path:?} {err:?}"));
 
     assert_eq!(
         config.chain_id.map(eth::ChainId).unwrap_or(network.chain),
