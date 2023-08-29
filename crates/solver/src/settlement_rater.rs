@@ -17,7 +17,7 @@ use {
     ethcontract::{errors::ExecutionError, Account},
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
-    num::{BigRational, One, Zero},
+    num::{zero, BigRational, CheckedDiv, One, Zero},
     number_conversions::{big_rational_to_u256, u256_to_big_rational},
     primitive_types::U256,
     shared::{
@@ -335,82 +335,116 @@ impl ScoreCalculator {
 
     fn compute_optimal_bid(
         &self,
-        objective: BigRational,
+        score: BigRational,
         probability_success: BigRational,
         cost_fail: BigRational,
     ) -> Result<BigRational> {
         tracing::trace!(
-            ?objective,
+            ?score,
             ?probability_success,
             ?cost_fail,
             "Computing optimal bid"
         );
-        let probability_fail = BigRational::one() - probability_success.clone();
-        // filter out invalid solution where there is no chance of success or where the
-        // success is 100% (because it can't be true, there is always some risk of
-        // failure)
-        ensure!(!probability_success.is_zero(), "success is zero");
-        ensure!(!probability_fail.is_zero(), "fail is zero");
 
-        let payoff_obj_minus_cap = self.payoff(
-            objective.clone() - self.score_cap.clone(),
-            objective.clone(),
+        let payout_score_minus_cap = self.payout(
+            score.clone() - self.score_cap.clone(),
+            score.clone(),
             probability_success.clone(),
             cost_fail.clone(),
         );
-        tracing::trace!(?payoff_obj_minus_cap, "Payoff obj minus cap");
-        let payoff_cap = self.payoff(
+        let payout_cap = self.payout(
             self.score_cap.clone(),
-            objective.clone(),
+            score.clone(),
             probability_success.clone(),
             cost_fail.clone(),
         );
-        tracing::trace!(?payoff_cap, "Payoff cap");
-        let optimal_bid = if payoff_obj_minus_cap >= BigRational::zero()
-            && payoff_cap <= BigRational::zero()
-        {
-            Ok(probability_success * objective.clone() - probability_fail * cost_fail)
-        } else if payoff_obj_minus_cap >= BigRational::zero() && payoff_cap > BigRational::zero() {
-            Ok(objective.clone()
-                - probability_fail / probability_success * (self.score_cap.clone() + cost_fail))
-        } else if payoff_obj_minus_cap < BigRational::zero() && payoff_cap <= BigRational::zero() {
-            Ok(probability_success / probability_fail * self.score_cap.clone() - cost_fail)
-        } else {
-            Err(anyhow!("Invalid bid"))
+        tracing::trace!(
+            ?payout_score_minus_cap,
+            ?payout_cap,
+            "Payout score minus cap and payout cap"
+        );
+
+        let score_cap = self.score_cap.clone();
+        let probability_fail = BigRational::one() - probability_success.clone();
+
+        // https://www.notion.so/cownation/Optimal-bidding-strategy-84b4c710466a4c56af9295015308452a
+        let bid = {
+            if payout_score_minus_cap >= zero() && payout_cap <= zero() {
+                // `score - cap <= cap` due to monotonicity of the payout function and the zero
+                // of the payout function lies between `score - cap` and `cap`. For such scores
+                // the cap in the payment is not binding, the payout function is just linear in
+                // the reference score and the zero of the function is at
+
+                // `probability_success * score - probability_fail * cost_fail`
+                let bid = probability_success * score.clone() - probability_fail * cost_fail;
+                Ok(bid)
+            } else if payout_score_minus_cap >= zero() && payout_cap > zero() {
+                // optimal score is larger than `score - cap` and `cap` due to monotonicity
+                // of the payout function. For such reference scores the cap in the payment is
+                // always binding in case of reverts and never in case of success, and the zero
+                // of the function is at
+
+                //score - probability_fail / probability_success * (cap + cost_fail)
+                let bid = score.clone()
+                    - probability_fail
+                        .checked_div(&probability_success)
+                        .context("division by success")?
+                        * (score_cap + cost_fail);
+                Ok(bid)
+            } else if payout_score_minus_cap < zero() && payout_cap <= zero() {
+                // optimal score is smaller than `score - cap` and `cap` due to monotonicity of
+                // the payout function. In that case, the cap is always binding in case of
+                // success and never binds for reverts. Thus in this range the payout function
+                // is again just linear in the reference score and the zero can be computed as
+
+                // probability_success / probability_fail * cap - cost_fail
+                let bid = probability_success
+                    .checked_div(&probability_fail)
+                    .context("division by fail")?
+                    * score_cap
+                    - cost_fail;
+                Ok(bid)
+            } else {
+                Err(anyhow!("Invalid bid"))
+            }
         };
-        tracing::trace!(?optimal_bid, "Optimal bid");
-        if let Ok(optimal_bid) = optimal_bid.as_ref() {
-            ensure!(
-                optimal_bid <= &objective,
-                "Optimal score higher than objective value"
-            );
+
+        tracing::trace!(?bid, "Optimal bid");
+        if let Ok(bid) = bid.as_ref() {
+            ensure!(bid <= &score, "Optimal bid higher than initial score");
         }
-        optimal_bid
+        bid
     }
 
-    fn payoff(
+    // amount that should be payed out to solver or penalized from solver
+    fn payout(
         &self,
         score_reference: BigRational,
-        objective: BigRational,
+        score: BigRational,
         probability_success: BigRational,
         cost_fail: BigRational,
     ) -> BigRational {
         tracing::trace!(
             ?score_reference,
-            ?objective,
+            ?score,
             ?probability_success,
             ?cost_fail,
-            "Computing payoff"
+            "Computing payout"
         );
+
+        // this much is payed out to the solver if the transaction succeeds
+        let reward = min(score - score_reference.clone(), self.score_cap.clone());
+        // this much is solver penalized if the transaction fails
+        let penalty = min(score_reference, self.score_cap.clone()) + cost_fail;
+
+        tracing::trace!(?reward, ?penalty, "Reward and penalty");
+
+        // final payout is the combination of the two above
         let probability_fail = BigRational::one() - probability_success.clone();
-        let payoff_success = min(objective - score_reference.clone(), self.score_cap.clone());
-        tracing::trace!(?payoff_success, "Payoff success");
-        let payoff_fail = -min(score_reference, self.score_cap.clone()) - cost_fail;
-        tracing::trace!(?payoff_fail, "Payoff fail");
-        let payoff_expectation =
-            probability_success * payoff_success + probability_fail * payoff_fail;
-        tracing::trace!(?payoff_expectation, "Payoff expectation");
-        payoff_expectation
+        let payout = probability_success * reward - probability_fail * penalty;
+
+        tracing::trace!(?payout, "Final payout");
+        payout
     }
 }
 
