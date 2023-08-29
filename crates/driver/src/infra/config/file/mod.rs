@@ -12,7 +12,6 @@ pub use load::load;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-// TODO: add back `deny_unknown_fields` once we are ready to release the driver
 #[serde(rename_all = "kebab-case")]
 struct Config {
     /// Optionally specify the chain ID that that driver is configured for.
@@ -51,7 +50,7 @@ struct Config {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct SubmissionConfig {
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation. Expects a floating point
@@ -144,7 +143,7 @@ fn default_soft_cancellations_flag() -> bool {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct SolverConfig {
     /// The endpoint of this solver. `POST`ing an auction to this endpoint
     /// should prompt the solver to calculate and return a solution.
@@ -178,7 +177,7 @@ enum Account {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct ContractsConfig {
     /// Override the default address of the GPv2Settlement contract.
     gp_v2_settlement: Option<eth::H160>,
@@ -193,7 +192,7 @@ struct ContractsConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct TenderlyConfig {
     /// Optionally override the Tenderly API URL.
     url: Option<Url>,
@@ -216,7 +215,7 @@ struct TenderlyConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
     /// whether or not the token appears in the auction.
@@ -241,7 +240,7 @@ struct LiquidityConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 enum UniswapV2Config {
     #[serde(rename_all = "kebab-case")]
     Preset { preset: UniswapV2Preset },
@@ -267,7 +266,7 @@ enum UniswapV2Preset {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 enum SwaprConfig {
     #[serde(rename_all = "kebab-case")]
     Preset { preset: SwaprPreset },
@@ -283,13 +282,13 @@ enum SwaprConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 enum SwaprPreset {
     Swapr,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 enum UniswapV3Config {
     #[serde(rename_all = "kebab-case")]
     Preset {
@@ -312,7 +311,7 @@ enum UniswapV3Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 enum UniswapV3Preset {
     UniswapV3,
 }
@@ -324,7 +323,7 @@ mod uniswap_v3 {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(untagged)]
 enum BalancerV2Config {
     #[serde(rename_all = "kebab-case")]
     Preset {
@@ -370,7 +369,7 @@ enum BalancerV2Config {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 enum BalancerV2Preset {
     BalancerV2,
 }

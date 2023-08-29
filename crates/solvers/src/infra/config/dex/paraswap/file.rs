@@ -10,7 +10,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// The base URL for the ParaSwap API.
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]

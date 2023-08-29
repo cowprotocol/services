@@ -9,7 +9,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 struct Config {
     /// Optional chain ID. This is used to automatically determine the address
     /// of the WETH contract.
