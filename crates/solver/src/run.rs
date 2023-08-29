@@ -338,7 +338,10 @@ pub async fn run(args: Arguments) {
         settlement_contract: settlement_contract.clone(),
         web3: web3.clone(),
         code_fetcher: code_fetcher.clone(),
-        score_calculator: ScoreCalculator::new(u256_to_big_rational(&args.score_cap)),
+        score_calculator: ScoreCalculator::new(
+            u256_to_big_rational(&args.score_cap),
+            args.transaction_strategy.clone(),
+        ),
     });
 
     let solver = crate::solver::create(

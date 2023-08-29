@@ -502,7 +502,7 @@ impl std::fmt::Display for Arguments {
     }
 }
 
-#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum TransactionStrategyArg {
     PublicMempool,

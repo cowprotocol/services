@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments::TransactionStrategyArg,
         driver::solver_settlements::{GasCost, RatedSettlement},
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
@@ -252,10 +253,11 @@ impl SettlementRating for SettlementRater {
         // recalculate score if success probability is provided
         let score = match settlement.success_probability {
             Some(success_probability) => {
-                match self
-                    .score_calculator
-                    .compute_score(&objective_value, success_probability)
-                {
+                match self.score_calculator.compute_score(
+                    &objective_value,
+                    &inputs.gas_cost,
+                    success_probability,
+                ) {
                     Ok(score) => score,
                     Err(err) => {
                         tracing::warn!(?err, "Failed to compute score with success probability");
@@ -294,16 +296,29 @@ impl SettlementRating for SettlementRater {
 
 pub struct ScoreCalculator {
     score_cap: BigRational,
+    submission_strategies: Vec<TransactionStrategyArg>,
 }
 
 impl ScoreCalculator {
-    pub fn new(score_cap: BigRational) -> Self {
-        Self { score_cap }
+    pub fn new(score_cap: BigRational, submission_strategies: Vec<TransactionStrategyArg>) -> Self {
+        Self {
+            score_cap,
+            submission_strategies,
+        }
+    }
+
+    pub fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
+        if self.submission_strategies == vec![TransactionStrategyArg::Flashbots] {
+            BigRational::zero()
+        } else {
+            gas_cost.clone()
+        }
     }
 
     pub fn compute_score(
         &self,
         objective_value: &BigRational,
+        gas_cost: &BigRational,
         success_probability: f64,
     ) -> Result<Score> {
         ensure!(
@@ -311,7 +326,7 @@ impl ScoreCalculator {
             "success probability must be between 0 and 1."
         );
         let success_probability = BigRational::from_float(success_probability).unwrap();
-        let cost_fail = BigRational::from_float(0.0).unwrap();
+        let cost_fail = self.cost_fail(&gas_cost);
         let optimal_score =
             self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
@@ -401,13 +416,18 @@ impl ScoreCalculator {
 
 #[cfg(test)]
 mod tests {
-    use {num::BigRational, primitive_types::U256};
+    use {crate::arguments::TransactionStrategyArg, num::BigRational, primitive_types::U256};
 
-    fn calculate_score(objective_value: BigRational, success_probability: f64) -> U256 {
+    fn calculate_score(
+        objective_value: &BigRational,
+        gas_cost: &BigRational,
+        success_probability: f64,
+    ) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator = super::ScoreCalculator::new(score_cap);
+        let score_calculator =
+            super::ScoreCalculator::new(score_cap, vec![TransactionStrategyArg::Flashbots]);
         score_calculator
-            .compute_score(&objective_value, success_probability)
+            .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()
             .score()
     }
@@ -415,32 +435,40 @@ mod tests {
     #[test]
     fn compute_score_with_success_probability_test() {
         let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
+        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 0.9202405649482063;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let score =
+            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
         assert_eq!(score, 250680657682686317.);
     }
 
     #[test]
     fn compute_score_with_success_probability_test2() {
         let objective_value = num::BigRational::from_float(1e16).unwrap();
+        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 0.9;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let score =
+            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
         assert_eq!(score, 9e15);
     }
 
     #[test]
     fn compute_score_with_success_probability_test3() {
         let objective_value = num::BigRational::from_float(1e17).unwrap();
+        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 2.0 / 3.0;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let score =
+            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
         assert_eq!(score, 94999999999999999.);
     }
 
     #[test]
     fn compute_score_with_success_probability_test4() {
         let objective_value = num::BigRational::from_float(1e17).unwrap();
+        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 1.0 / 3.0;
-        let score = calculate_score(objective_value, success_probability).to_f64_lossy();
+        let score =
+            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
         assert_eq!(score, 4999999999999999.);
     }
 }
