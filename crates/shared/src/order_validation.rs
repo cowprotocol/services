@@ -5,11 +5,7 @@ use {
         bad_token::{BadTokenDetecting, TokenQuality},
         code_fetching::CodeFetching,
         order_quoting::{
-            CalculateQuoteError,
-            FindQuoteError,
-            OrderQuoting,
-            Quote,
-            QuoteParameters,
+            CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
             QuoteSearchParameters,
         },
         price_estimation::{PriceEstimationError, Verification},
@@ -25,25 +21,13 @@ use {
         app_data::AppDataHash,
         interaction::InteractionData,
         order::{
-            BuyTokenDestination,
-            Hook,
-            Hooks,
-            Interactions,
-            Order,
-            OrderClass,
-            OrderCreation,
-            OrderCreationAppData,
-            OrderData,
-            OrderKind,
-            OrderMetadata,
-            SellTokenSource,
-            VerificationError,
-            BUY_ETH_ADDRESS,
+            BuyTokenDestination, Hook, Hooks, Interactions, Order, OrderClass, OrderCreation,
+            OrderCreationAppData, OrderData, OrderKind, OrderMetadata, SellTokenSource,
+            VerificationError, BUY_ETH_ADDRESS,
         },
         quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
         signature::{self, hashed_eip712_message, Signature, SigningScheme},
-        time,
-        DomainSeparator,
+        time, DomainSeparator,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
 };
@@ -213,7 +197,7 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::ZeroAmount
             }
             CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::Other(err)) => {
+            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),

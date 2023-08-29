@@ -1,14 +1,10 @@
 use {
     super::{
         trade_finder::{TradeEstimator, TradeVerifier},
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        PriceEstimateResult, PriceEstimating, Query,
     },
     crate::{
-        paraswap_api::ParaswapApi,
-        rate_limiter::RateLimiter,
-        token_info::TokenInfoFetching,
+        paraswap_api::ParaswapApi, rate_limiter::RateLimiter, token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
     primitive_types::H160,

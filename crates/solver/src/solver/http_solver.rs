@@ -5,8 +5,7 @@ pub mod settlement;
 
 use {
     self::{
-        instance_cache::SharedInstanceCreator,
-        instance_creation::Instances,
+        instance_cache::SharedInstanceCreator, instance_creation::Instances,
         settlement::ConversionError,
     },
     super::{Auction, AuctionResult, Solver},
@@ -22,13 +21,9 @@ use {
     shared::{
         http_solver::{
             model::{
-                BatchAuctionModel,
-                InteractionData,
-                SettledBatchAuctionModel,
-                SolverRejectionReason,
+                BatchAuctionModel, InteractionData, SettledBatchAuctionModel, SolverRejectionReason,
             },
-            DefaultHttpSolverApi,
-            HttpSolverApi,
+            DefaultHttpSolverApi, HttpSolverApi,
         },
         token_list::AutoUpdatingTokenList,
     },
@@ -231,8 +226,7 @@ mod tests {
             interactions::allowances::MockAllowanceManaging,
             liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, Liquidity},
             solver::http_solver::{
-                buffers::MockBufferRetrieving,
-                instance_creation::InstanceCreator,
+                buffers::MockBufferRetrieving, instance_creation::InstanceCreator,
             },
         },
         ::model::TokenPair,

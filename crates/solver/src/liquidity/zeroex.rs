@@ -217,10 +217,8 @@ pub mod tests {
         crate::interactions::allowances::Approval,
         maplit::hashmap,
         shared::{
-            baseline_solver::BaseTokens,
-            http_solver::model::InternalizationStrategy,
-            interaction::Interaction,
-            zeroex_api::OrderMetadata,
+            baseline_solver::BaseTokens, http_solver::model::InternalizationStrategy,
+            interaction::Interaction, zeroex_api::OrderMetadata,
         },
     };
 

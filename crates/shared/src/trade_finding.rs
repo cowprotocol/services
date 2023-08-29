@@ -145,10 +145,13 @@ impl From<PriceEstimationError> for TradeError {
             PriceEstimationError::UnsupportedOrderType(order_type) => {
                 Self::UnsupportedOrderType(order_type)
             }
-            PriceEstimationError::DeadlineExceeded => Self::DeadlineExceeded,
+            PriceEstimationError::UnsupportedToken { token, .. } => {
+                Self::UnsupportedOrderType(format!("{token:#x}"))
+            }
+            PriceEstimationError::ZeroAmount => Self::UnsupportedOrderType("zero amount".into()),
             PriceEstimationError::RateLimited => Self::RateLimited,
-            PriceEstimationError::Other(err) => Self::Other(err),
-            _ => Self::Other(anyhow::anyhow!(err.to_string())),
+            PriceEstimationError::EstimatorInternal(err)
+            | PriceEstimationError::ProtocolInternal(err) => Self::Other(err),
         }
     }
 }

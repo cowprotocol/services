@@ -3,9 +3,7 @@
 
 use {
     crate::{
-        maintenance::Maintaining,
-        recent_block_cache::Block,
-        sources::balancer_v2::pools::Pool,
+        maintenance::Maintaining, recent_block_cache::Block, sources::balancer_v2::pools::Pool,
     },
     anyhow::Result,
     ethcontract::H256,

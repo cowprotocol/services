@@ -9,10 +9,7 @@ use {
     shared::{
         api::{error, extract_payload, ApiReply, IntoWarpReply},
         order_validation::{
-            AppDataValidationError,
-            OrderValidToError,
-            PartialValidationError,
-            ValidationError,
+            AppDataValidationError, OrderValidToError, PartialValidationError, ValidationError,
         },
     },
     std::{convert::Infallible, sync::Arc},

@@ -8,10 +8,7 @@ use {
     self::{
         blockscout::BlockscoutTokenOwnerFinder,
         liquidity::{
-            BalancerVaultFinder,
-            FeeValues,
-            UniswapLikePairProviderFinder,
-            UniswapV3Finder,
+            BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
         },
     },
     crate::{
@@ -19,8 +16,7 @@ use {
         bad_token::token_owner_finder::{
             ethplorer::EthplorerTokenOwnerFinder,
             solvers::{
-                solver_api::SolverConfiguration,
-                solver_finder::AutoUpdatingSolverTokenOwnerFinder,
+                solver_api::SolverConfiguration, solver_finder::AutoUpdatingSolverTokenOwnerFinder,
             },
             token_owner_list::TokenOwnerList,
         },

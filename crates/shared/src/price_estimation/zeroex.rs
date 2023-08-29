@@ -1,14 +1,10 @@
 use {
     super::{
         trade_finder::{TradeEstimator, TradeVerifier},
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        PriceEstimateResult, PriceEstimating, Query,
     },
     crate::{
-        rate_limiter::RateLimiter,
-        trade_finding::zeroex::ZeroExTradeFinder,
-        zeroex_api::ZeroExApi,
+        rate_limiter::RateLimiter, trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi,
     },
     primitive_types::H160,
     std::sync::Arc,

@@ -222,9 +222,7 @@ fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
 #[cfg(test)]
 mod tests {
     use {
-        super::*,
-        crate::sources::balancer_v2::swap::fixed_point::Bfp,
-        ethcontract::U256,
+        super::*, crate::sources::balancer_v2::swap::fixed_point::Bfp, ethcontract::U256,
         std::str::FromStr,
     };
 

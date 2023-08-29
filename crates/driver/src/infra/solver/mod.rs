@@ -2,8 +2,7 @@ use {
     crate::{
         domain::{
             competition::{auction::Auction, solution::Solution, SolverTimeout},
-            eth,
-            liquidity,
+            eth, liquidity,
         },
         infra::blockchain::Ethereum,
         util,

@@ -1,12 +1,8 @@
 use {
     anyhow::Context,
     database::{
-        auction::AuctionId,
-        auction_participants::Participant,
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
-        settlement_call_data::SettlementCallData,
-        settlement_scores::Score,
+        auction::AuctionId, auction_participants::Participant, auction_prices::AuctionPrice,
+        byte_array::ByteArray, settlement_call_data::SettlementCallData, settlement_scores::Score,
     },
     derivative::Derivative,
     model::{order::OrderUid, solver_competition::SolverCompetitionDB},

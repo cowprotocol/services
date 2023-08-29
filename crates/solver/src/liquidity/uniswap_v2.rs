@@ -14,9 +14,7 @@ use {
     model::TokenPair,
     primitive_types::H160,
     shared::{
-        ethrpc::Web3,
-        http_solver::model::TokenAmount,
-        recent_block_cache::Block,
+        ethrpc::Web3, http_solver::model::TokenAmount, recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::PoolFetching,
     },
     std::{

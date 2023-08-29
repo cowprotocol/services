@@ -17,10 +17,7 @@ use {
     model::u256_decimal,
     reqwest::{
         header::{HeaderMap, HeaderValue},
-        Client,
-        IntoUrl,
-        StatusCode,
-        Url,
+        Client, IntoUrl, StatusCode, Url,
     },
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},

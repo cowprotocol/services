@@ -1,9 +1,7 @@
 use {
     super::{
         trade_finder::{TradeEstimator, TradeVerifier},
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        PriceEstimateResult, PriceEstimating, Query,
     },
     crate::{rate_limiter::RateLimiter, trade_finding::external::ExternalTradeFinder},
     reqwest::{Client, Url},

@@ -1,10 +1,7 @@
 use {
     crate::setup::deploy::Contracts,
     contracts::{
-        CowProtocolToken,
-        ERC20Mintable,
-        GnosisSafe,
-        GnosisSafeCompatibilityFallbackHandler,
+        CowProtocolToken, ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler,
     },
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     hex_literal::hex,

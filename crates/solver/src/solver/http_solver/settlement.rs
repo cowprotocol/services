@@ -2,13 +2,8 @@ use {
     crate::{
         interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
         liquidity::{
-            order_converter::OrderConverter,
-            slippage::SlippageContext,
-            AmmOrderExecution,
-            LimitOrder,
-            LimitOrderExecution,
-            LimitOrderId,
-            Liquidity,
+            order_converter::OrderConverter, slippage::SlippageContext, AmmOrderExecution,
+            LimitOrder, LimitOrderExecution, LimitOrderId, Liquidity,
         },
         order_balance_filter::BalancedOrder,
         settlement::Settlement,
@@ -493,11 +488,8 @@ mod tests {
         crate::{
             interactions::allowances::MockAllowanceManaging,
             liquidity::{
-                tests::CapturingSettlementHandler,
-                ConstantProductOrder,
-                LiquidityOrderId,
-                StablePoolOrder,
-                WeightedProductOrder,
+                tests::CapturingSettlementHandler, ConstantProductOrder, LiquidityOrderId,
+                StablePoolOrder, WeightedProductOrder,
             },
             settlement::{PricedTrade, Trade},
         },

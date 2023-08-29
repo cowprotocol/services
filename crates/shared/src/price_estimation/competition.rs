@@ -1,10 +1,6 @@
 use {
     crate::price_estimation::{
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     futures::stream::StreamExt,
     model::order::OrderKind,
@@ -333,8 +329,8 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
         match err {
             // highest priority (prefer)
             PriceEstimationError::RateLimited => 6,
-            PriceEstimationError::DeadlineExceeded => 5,
-            PriceEstimationError::Other(_) => 4,
+            PriceEstimationError::ProtocolInternal(_) => 5,
+            PriceEstimationError::EstimatorInternal(_) => 4,
             PriceEstimationError::UnsupportedToken { .. } => 3,
             PriceEstimationError::ZeroAmount => 2,
             PriceEstimationError::NoLiquidity => 1,
@@ -464,7 +460,7 @@ mod tests {
                 Ok(estimates[0]),
                 Ok(estimates[0]),
                 Ok(estimates[0]),
-                Err(PriceEstimationError::Other(anyhow!("a"))),
+                Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
                 Err(PriceEstimationError::NoLiquidity),
             ])
             .enumerate()
@@ -477,10 +473,10 @@ mod tests {
             .returning(move |queries| {
                 assert_eq!(queries.len(), 5);
                 futures::stream::iter([
-                    Err(PriceEstimationError::Other(anyhow!(""))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
                     Ok(estimates[1]),
                     Ok(estimates[1]),
-                    Err(PriceEstimationError::Other(anyhow!("b"))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
                     Err(PriceEstimationError::UnsupportedToken {
                         token: H160([0; 20]),
                         reason: "".to_string(),
@@ -505,7 +501,7 @@ mod tests {
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
             result[3].as_ref().unwrap_err(),
-            PriceEstimationError::Other(err)
+            PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
         // unsupported token has higher priority than no liquidity

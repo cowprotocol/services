@@ -7,9 +7,7 @@ use {
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
-        Deserialize,
-        Deserializer,
-        Serialize,
+        Deserialize, Deserializer, Serialize,
     },
     serde_json::Value,
     serde_with::{serde_as, DisplayFromStr},
