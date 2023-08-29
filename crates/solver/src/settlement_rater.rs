@@ -326,7 +326,7 @@ impl ScoreCalculator {
             "success probability must be between 0 and 1."
         );
         let success_probability = BigRational::from_float(success_probability).unwrap();
-        let cost_fail = self.cost_fail(&gas_cost);
+        let cost_fail = self.cost_fail(gas_cost);
         let optimal_score =
             self.compute_optimal_bid(objective_value.clone(), success_probability, cost_fail)?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
