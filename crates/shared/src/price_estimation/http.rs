@@ -218,6 +218,7 @@ impl HttpPriceEstimator {
             .await
             .map_err(|err| match err {
                 ApiError::RateLimited => PriceEstimationError::RateLimited,
+                ApiError::DeadlineExceeded => PriceEstimationError::DeadlineExceeded,
                 ApiError::Other(err) => PriceEstimationError::Other(err),
             })
         };
