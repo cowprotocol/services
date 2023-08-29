@@ -2,7 +2,10 @@
 
 use {
     super::single_order_solver::{
-        execution_respects_order, SettlementError, SingleOrderSettlement, SingleOrderSolving,
+        execution_respects_order,
+        SettlementError,
+        SingleOrderSettlement,
+        SingleOrderSolving,
     },
     crate::{
         interactions::{

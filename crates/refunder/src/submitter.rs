@@ -15,7 +15,8 @@ use {
     database::OrderUid,
     ethcontract::{
         transaction::{confirm::ConfirmParams, ResolveCondition},
-        Account, U256,
+        Account,
+        U256,
     },
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     shared::{

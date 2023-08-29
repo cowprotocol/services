@@ -1,6 +1,10 @@
 use {
     crate::price_estimation::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        Estimate,
+        PriceEstimateResult,
+        PriceEstimating,
+        PriceEstimationError,
+        Query,
     },
     futures::stream::StreamExt,
     model::order::OrderKind,

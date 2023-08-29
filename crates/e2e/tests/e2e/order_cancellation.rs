@@ -5,8 +5,13 @@ use {
     model::{
         app_data::AppDataHash,
         order::{
-            CancellationPayload, OrderCancellation, OrderCancellations, OrderCreation, OrderStatus,
-            OrderUid, SignedOrderCancellations,
+            CancellationPayload,
+            OrderCancellation,
+            OrderCancellations,
+            OrderCreation,
+            OrderStatus,
+            OrderUid,
+            SignedOrderCancellations,
         },
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},

@@ -19,7 +19,8 @@ use {
     web3::{
         helpers,
         types::{AccessList, AccessListItem, Bytes, CallRequest},
-        BatchTransport, Transport,
+        BatchTransport,
+        Transport,
     },
 };
 

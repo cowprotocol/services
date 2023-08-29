@@ -1,7 +1,9 @@
 use {
     crate::{
-        driver::solver_settlements::RatedSettlement, metrics::SolverMetrics,
-        settlement::Settlement, solver::Solver,
+        driver::solver_settlements::RatedSettlement,
+        metrics::SolverMetrics,
+        settlement::Settlement,
+        solver::Solver,
     },
     ethcontract::H160,
     model::order::OrderUid,

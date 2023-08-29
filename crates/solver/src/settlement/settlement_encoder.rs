@@ -11,8 +11,10 @@ use {
     number_conversions::big_rational_to_u256,
     primitive_types::{H160, U256},
     shared::{
-        conversions::U256Ext, encoded_settlement::EncodedSettlement,
-        http_solver::model::InternalizationStrategy, interaction::Interaction,
+        conversions::U256Ext,
+        encoded_settlement::EncodedSettlement,
+        http_solver::model::InternalizationStrategy,
+        interaction::Interaction,
     },
     std::{
         collections::{hash_map::Entry, HashMap, HashSet},

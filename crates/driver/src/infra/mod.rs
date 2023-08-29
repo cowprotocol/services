@@ -11,6 +11,10 @@ pub mod time;
 pub mod tokens;
 
 pub use {
-    self::solver::Solver, api::Api, blockchain::Ethereum, config::Config, mempool::Mempool,
+    self::solver::Solver,
+    api::Api,
+    blockchain::Ethereum,
+    config::Config,
+    mempool::Mempool,
     simulator::Simulator,
 };

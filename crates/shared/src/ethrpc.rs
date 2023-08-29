@@ -1,5 +1,9 @@
 pub use ethrpc::{
-    create_env_test_transport, create_test_transport, Web3, Web3CallBatch, Web3Transport,
+    create_env_test_transport,
+    create_test_transport,
+    Web3,
+    Web3CallBatch,
+    Web3Transport,
 };
 use {
     crate::{arguments::duration_from_seconds, http_client::HttpClientFactory},

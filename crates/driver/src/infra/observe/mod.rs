@@ -11,7 +11,9 @@ use {
             competition::{
                 self,
                 solution::{self, Settlement},
-                Auction, Solution, Solved,
+                Auction,
+                Solution,
+                Solved,
             },
             eth::{self},
             quote::{self, Quote},

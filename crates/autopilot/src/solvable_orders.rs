@@ -729,7 +729,12 @@ mod tests {
         model::{
             interaction::InteractionData,
             order::{
-                Interactions, LimitOrderClass, OrderBuilder, OrderData, OrderMetadata, OrderUid,
+                Interactions,
+                LimitOrderClass,
+                OrderBuilder,
+                OrderData,
+                OrderMetadata,
+                OrderUid,
             },
         },
         primitive_types::H160,

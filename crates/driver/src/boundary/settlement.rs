@@ -2,13 +2,16 @@ use {
     crate::{
         domain::{
             competition::{
-                self, auction, order,
+                self,
+                auction,
+                order,
                 solution::{
                     self,
                     settlement::{self, Internalization},
                 },
             },
-            eth, liquidity,
+            eth,
+            liquidity,
         },
         infra::Ethereum,
         util::conv::u256::U256Ext,
@@ -19,8 +22,16 @@ use {
         app_data::AppDataHash,
         interaction::InteractionData,
         order::{
-            BuyTokenDestination, Interactions, LimitOrderClass, Order, OrderClass, OrderData,
-            OrderKind, OrderMetadata, OrderUid, SellTokenSource,
+            BuyTokenDestination,
+            Interactions,
+            LimitOrderClass,
+            Order,
+            OrderClass,
+            OrderData,
+            OrderKind,
+            OrderMetadata,
+            OrderUid,
+            SellTokenSource,
         },
         signature::EcdsaSignature,
         DomainSeparator,
@@ -34,7 +45,8 @@ use {
         liquidity::{
             order_converter::OrderConverter,
             slippage::{SlippageCalculator, SlippageContext},
-            AmmOrderExecution, LimitOrderExecution,
+            AmmOrderExecution,
+            LimitOrderExecution,
         },
         settlement_simulation::settle_method_builder,
     },

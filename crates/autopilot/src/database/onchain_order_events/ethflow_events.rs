@@ -3,7 +3,8 @@ use {
     crate::database::events::meta_to_event_index,
     anyhow::{anyhow, Context, Result},
     contracts::cowswap_onchain_orders::{
-        event_data::OrderPlacement as ContractOrderPlacement, Event as ContractEvent,
+        event_data::OrderPlacement as ContractOrderPlacement,
+        Event as ContractEvent,
     },
     database::{
         byte_array::ByteArray,

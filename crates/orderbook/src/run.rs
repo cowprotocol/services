@@ -1,7 +1,13 @@
 use {
     crate::{
-        app_data, arguments::Arguments, database::Postgres, ipfs::Ipfs, ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook, serve_api, verify_deployed_contract_constants,
+        app_data,
+        arguments::Arguments,
+        database::Postgres,
+        ipfs::Ipfs,
+        ipfs_app_data::IpfsAppData,
+        orderbook::Orderbook,
+        serve_api,
+        verify_deployed_contract_constants,
     },
     contracts::{BalancerV2Vault, HooksTrampoline, IUniswapV3Factory, WETH9},
     ethcontract::errors::DeployError,
@@ -36,11 +42,14 @@ use {
         sources::{
             self,
             balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource, PoolAggregator,
+            BaselineSource,
+            PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         zeroex_api::DefaultZeroExApi,
