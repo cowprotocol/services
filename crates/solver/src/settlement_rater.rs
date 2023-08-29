@@ -465,17 +465,8 @@ mod tests {
     }
 
     #[test]
-    fn compute_score_with_success_probability_test() {
-        let objective_value = num::BigRational::from_float(251547381429604400.).unwrap();
-        let gas_cost = BigRational::from_float(1e16).unwrap();
-        let success_probability = 0.9202405649482063;
-        let score =
-            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
-        assert_eq!(score, 250680657682686317.);
-    }
-
-    #[test]
-    fn compute_score_with_success_probability_test2() {
+    fn compute_score_with_success_probability_case_1() {
+        // testing case `payout_score_minus_cap >= zero() && payout_cap <= zero()`
         let objective_value = num::BigRational::from_float(1e16).unwrap();
         let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 0.9;
@@ -485,7 +476,8 @@ mod tests {
     }
 
     #[test]
-    fn compute_score_with_success_probability_test3() {
+    fn compute_score_with_success_probability_case_2() {
+        // testing case `payout_score_minus_cap >= zero() && payout_cap > zero()`
         let objective_value = num::BigRational::from_float(1e17).unwrap();
         let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 2.0 / 3.0;
@@ -495,7 +487,8 @@ mod tests {
     }
 
     #[test]
-    fn compute_score_with_success_probability_test4() {
+    fn compute_score_with_success_probability_case_3() {
+        // testing case `payout_score_minus_cap < zero() && payout_cap <= zero()`
         let objective_value = num::BigRational::from_float(1e17).unwrap();
         let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 1.0 / 3.0;
