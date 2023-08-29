@@ -23,6 +23,7 @@ impl OneInchPriceEstimator {
         rate_limiter: Arc<RateLimiter>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(OneInchTradeFinder::new(
@@ -30,6 +31,7 @@ impl OneInchPriceEstimator {
                 disabled_protocols,
                 referrer_address,
                 solver,
+                settlement_contract,
             )),
             rate_limiter,
             "oneinch".into(),
@@ -74,6 +76,7 @@ mod tests {
                 )),
                 None,
                 H160([1; 20]),
+                H160([2; 20]),
             )
         }
 
