@@ -213,18 +213,10 @@ impl Settlement {
                 })
                 .collect(),
         )?;
-        //let gas_price = u256_to_big_rational(&auction.gas_price().effective().into());
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let gas_cost = gas_price * u256_to_big_rational(&gas.into());
+        let gas_cost = gas_price * gas.0.to_big_rational();
         let inputs =
             solver::objective_value::Inputs::from_settlement(&self.inner, &prices, gas_cost);
-        // let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        // let inputs = solver::objective_value::Inputs::from_settlement(
-        //     &self.inner,
-        //     &prices,
-        //     gas_price,
-        //     &gas.into(),
-        // );
         ensure!(!inputs.objective_value().is_negative(), "negative score");
         let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
         Ok((objective_value - self.risk.0).into())
