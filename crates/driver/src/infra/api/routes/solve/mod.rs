@@ -27,6 +27,7 @@ async fn route(
             .tap_err(|err| {
                 observe::invalid_dto(err, "auction");
             })?;
+        let auction = auction.prioritize(state.eth()).await;
         observe::auction(&auction);
         let competition = state.competition();
         let result = competition.solve(&auction).await;

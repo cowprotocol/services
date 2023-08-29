@@ -235,6 +235,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
+            ethflow: config.contracts.ethflow.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
