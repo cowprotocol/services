@@ -346,25 +346,23 @@ impl ScoreCalculator {
             "Computing optimal bid"
         );
 
-        let payout_score_minus_cap = self.payout(
-            score.clone() - self.score_cap.clone(),
-            score.clone(),
-            probability_success.clone(),
-            cost_fail.clone(),
-        );
-        let payout_cap = self.payout(
-            self.score_cap.clone(),
-            score.clone(),
-            probability_success.clone(),
-            cost_fail.clone(),
-        );
+        let payout = |score_reference: BigRational| {
+            self.payout(
+                score_reference,
+                score.clone(),
+                probability_success.clone(),
+                cost_fail.clone(),
+            )
+        };
+
+        let payout_cap = payout(self.score_cap.clone());
+        let payout_score_minus_cap = payout(score.clone() - self.score_cap.clone());
         tracing::trace!(
             ?payout_score_minus_cap,
             ?payout_cap,
             "Payout score minus cap and payout cap"
         );
 
-        let score_cap = self.score_cap.clone();
         let probability_fail = BigRational::one() - probability_success.clone();
 
         // https://www.notion.so/cownation/Optimal-bidding-strategy-84b4c710466a4c56af9295015308452a
@@ -389,7 +387,7 @@ impl ScoreCalculator {
                     - probability_fail
                         .checked_div(&probability_success)
                         .context("division by success")?
-                        * (score_cap + cost_fail);
+                        * (self.score_cap.clone() + cost_fail);
                 Ok(bid)
             } else if payout_score_minus_cap < zero() && payout_cap <= zero() {
                 // optimal score is smaller than `score - cap` and `cap` due to monotonicity of
@@ -401,7 +399,7 @@ impl ScoreCalculator {
                 let bid = probability_success
                     .checked_div(&probability_fail)
                     .context("division by fail")?
-                    * score_cap
+                    * self.score_cap.clone()
                     - cost_fail;
                 Ok(bid)
             } else {
