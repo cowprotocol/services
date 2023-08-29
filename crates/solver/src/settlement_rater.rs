@@ -263,7 +263,7 @@ impl SettlementRating for SettlementRater {
                     }
                 }
             }
-            None => score, // remove once success probability becomes mandatory
+            None => score,
         };
 
         let gas_cost = match settlement.gas_cost.as_ref() {
