@@ -18,10 +18,11 @@ use {
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
     num::{zero, BigRational, CheckedDiv, One, Zero},
-    number_conversions::{big_rational_to_u256, u256_to_big_rational},
+    number_conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
         code_fetching::CodeFetching,
+        conversions::U256Ext,
         ethrpc::Web3,
         external_prices::ExternalPrices,
         http_solver::model::{InternalizationStrategy, SimulatedTransaction},
@@ -229,11 +230,8 @@ impl SettlementRating for SettlementRater {
         let earned_fees = settlement.total_earned_fees(prices);
         let inputs = {
             let gas_cost = match settlement.gas_cost.as_ref() {
-                Some(gas_cost) => number_conversions::u256_to_big_rational(gas_cost),
-                None => {
-                    number_conversions::u256_to_big_rational(&simulation.gas_estimate)
-                        * effective_gas_price.clone()
-                }
+                Some(gas_cost) => gas_cost.to_big_rational(),
+                None => simulation.gas_estimate.to_big_rational() * effective_gas_price.clone(),
             };
             crate::objective_value::Inputs::from_settlement(&settlement, prices, gas_cost)
         };
@@ -269,10 +267,9 @@ impl SettlementRating for SettlementRater {
         };
 
         let gas_cost = match settlement.gas_cost.as_ref() {
-            Some(gas_cost) => GasCost::SolverEstimated(u256_to_big_rational(gas_cost)),
+            Some(gas_cost) => GasCost::SolverEstimated(gas_cost.to_big_rational()),
             None => {
-                let gas_cost =
-                    &u256_to_big_rational(&simulation.gas_estimate) * &effective_gas_price;
+                let gas_cost = &simulation.gas_estimate.to_big_rational() * &effective_gas_price;
                 GasCost::ProtocolEstimated(gas_cost)
             }
         };
