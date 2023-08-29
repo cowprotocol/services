@@ -41,13 +41,9 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     database::byte_array::ByteArray,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     primitive_types::{H160, H256},
-    shared::{
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        external_prices::ExternalPrices,
-    },
+    shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
     std::time::Duration,
     web3::types::{Transaction, TransactionId},
@@ -297,7 +293,7 @@ mod tests {
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let current_block = shared::current_block::current_block_stream(
+        let current_block = ethrpc::current_block::current_block_stream(
             Arc::new(web3.clone()),
             Duration::from_secs(1),
         )

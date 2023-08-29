@@ -15,12 +15,12 @@ use {
         PgTransaction,
     },
     ethcontract::Event as EthContractEvent,
-    hex_literal::hex,
-    shared::{
-        contracts::settlement_deployment_block_number_hash,
+    ethrpc::{
         current_block::{block_number_to_block_number_hash, BlockNumberHash},
-        ethrpc::Web3,
+        Web3,
     },
+    hex_literal::hex,
+    shared::contracts::settlement_deployment_block_number_hash,
     sqlx::types::BigDecimal,
     std::{collections::HashMap, convert::TryInto},
 };

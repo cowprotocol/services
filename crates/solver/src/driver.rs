@@ -17,6 +17,7 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::Account,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -36,8 +37,6 @@ use {
     primitive_types::{H160, U256},
     shared::{
         account_balances::BalanceFetching,
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
         external_prices::ExternalPrices,
         http_solver::model::{
             AuctionResult,

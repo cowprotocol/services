@@ -4,6 +4,7 @@ use {
     bigdecimal::BigDecimal,
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    ethrpc::current_block::CurrentBlockStream,
     itertools::Itertools,
     model::{
         auction::Auction,
@@ -18,7 +19,6 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        current_block::CurrentBlockStream,
         price_estimation::native_price_cache::CachingNativePriceEstimator,
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},

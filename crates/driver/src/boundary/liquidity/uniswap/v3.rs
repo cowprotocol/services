@@ -12,9 +12,9 @@ use {
     },
     anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    ethrpc::current_block::BlockRetrieving,
     itertools::Itertools,
     shared::{
-        current_block::BlockRetrieving,
         http_solver::model::TokenAmount,
         interaction::Interaction,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,

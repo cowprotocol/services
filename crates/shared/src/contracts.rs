@@ -1,13 +1,13 @@
 use {
-    crate::{
-        current_block::{block_number_to_block_number_hash, BlockNumberHash},
-        ethrpc::Web3,
-    },
     anyhow::{anyhow, bail, Result},
     contracts::GPv2Settlement,
     ethcontract::{
         common::{contract::Network, DeploymentInformation},
         Contract,
+    },
+    ethrpc::{
+        current_block::{block_number_to_block_number_hash, BlockNumberHash},
+        Web3,
     },
     web3::types::U64,
 };

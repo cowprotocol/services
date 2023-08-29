@@ -254,6 +254,7 @@ dependencies = [
  "database",
  "derivative",
  "ethcontract",
+ "ethrpc",
  "futures",
  "gas-estimation",
  "hex",
@@ -1684,6 +1685,7 @@ dependencies = [
  "database",
  "driver",
  "ethcontract",
+ "ethrpc",
  "futures",
  "hex",
  "hex-literal",
@@ -1895,6 +1897,7 @@ dependencies = [
 name = "ethrpc"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "contracts",
  "ethcontract",
@@ -1906,6 +1909,7 @@ dependencies = [
  "maplit",
  "mockall",
  "observe",
+ "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
  "reqwest",
@@ -1914,6 +1918,7 @@ dependencies = [
  "serde_json",
  "testlib",
  "tokio",
+ "tokio-stream",
  "tracing",
  "web3",
 ]
@@ -3480,6 +3485,7 @@ dependencies = [
  "contracts",
  "database",
  "ethcontract",
+ "ethrpc",
  "futures",
  "gas-estimation",
  "lazy_static",

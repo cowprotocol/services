@@ -3,9 +3,9 @@ use {
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
+    ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     refunder::refund_service::RefundService,
-    shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
 };
 
