@@ -14,6 +14,7 @@ use {
     anyhow::{anyhow, ensure, Context, Result},
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
@@ -29,12 +30,7 @@ use {
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
-    shared::{
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::{event_handling::MAX_REORG_BLOCK_COUNT, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,

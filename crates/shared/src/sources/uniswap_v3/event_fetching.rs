@@ -1,9 +1,5 @@
 use {
-    crate::{
-        current_block::RangeInclusive,
-        ethrpc::Web3,
-        event_handling::{EventRetrieving, EventStoring},
-    },
+    crate::event_handling::{EventRetrieving, EventStoring},
     anyhow::{Context, Result},
     contracts::{
         uniswap_v3_pool::event_data::{Burn, Mint, Swap},
@@ -19,6 +15,7 @@ use {
         H160,
         H256,
     },
+    ethrpc::{current_block::RangeInclusive, Web3},
     hex_literal::hex,
     std::collections::BTreeMap,
 };

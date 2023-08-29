@@ -16,8 +16,9 @@ use {
         OrderUid,
     },
     ethcontract::{Event as EthContractEvent, EventMetadata},
+    ethrpc::current_block::RangeInclusive,
     number_conversions::u256_to_big_decimal,
-    shared::{current_block::RangeInclusive, event_handling::EventStoring},
+    shared::event_handling::EventStoring,
     std::convert::TryInto,
 };
 
