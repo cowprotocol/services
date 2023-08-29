@@ -399,10 +399,10 @@ impl ScoreCalculator {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use {num::BigRational, primitive_types::U256};
 
-    #[allow(dead_code)]
     fn calculate_score(objective_value: BigRational, success_probability: f64) -> U256 {
         let score_cap = BigRational::from_float(1e17).unwrap();
         let score_calculator = super::ScoreCalculator::new(score_cap);
