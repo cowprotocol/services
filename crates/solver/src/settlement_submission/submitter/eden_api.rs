@@ -4,10 +4,7 @@ use {
     crate::{
         settlement::Settlement,
         settlement_submission::submitter::{
-            common::PrivateNetwork,
-            Strategy,
-            SubmissionLoopStatus,
-            TransactionHandle,
+            common::PrivateNetwork, Strategy, SubmissionLoopStatus, TransactionHandle,
             TransactionSubmitting,
         },
     },

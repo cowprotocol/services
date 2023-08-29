@@ -7,9 +7,7 @@ use {
         filters::BoxedFilter,
         hyper::StatusCode,
         reply::{json, with_status, Json, WithStatus},
-        Filter,
-        Rejection,
-        Reply,
+        Filter, Rejection, Reply,
     },
 };
 
@@ -248,11 +246,11 @@ impl IntoWarpReply for PriceEstimationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::NoLiquidity => with_status(
+            Self::NoLiquidity | Self::RateLimited | Self::EstimatorInternal(_) => with_status(
                 error("NoLiquidity", "no route found"),
                 StatusCode::NOT_FOUND,
             ),
-            Self::Other(err) => {
+            Self::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
             }

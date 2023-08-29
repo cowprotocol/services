@@ -15,8 +15,7 @@ use {
     ethrpc::current_block::BlockRetrieving,
     itertools::Itertools,
     shared::{
-        http_solver::model::TokenAmount,
-        interaction::Interaction,
+        http_solver::model::TokenAmount, interaction::Interaction,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
     },
     solver::{

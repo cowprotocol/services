@@ -4,30 +4,16 @@ use {
         http_solver::{
             gas_model::GasModel,
             model::{
-                AmmModel,
-                AmmParameters,
-                BatchAuctionModel,
-                ConcentratedPoolParameters,
-                ConstantProductPoolParameters,
-                MetadataModel,
-                OrderModel,
-                SettledBatchAuctionModel,
-                StablePoolParameters,
-                TokenAmount,
-                TokenInfoModel,
-                WeightedPoolTokenData,
+                AmmModel, AmmParameters, BatchAuctionModel, ConcentratedPoolParameters,
+                ConstantProductPoolParameters, MetadataModel, OrderModel, SettledBatchAuctionModel,
+                StablePoolParameters, TokenAmount, TokenInfoModel, WeightedPoolTokenData,
                 WeightedProductPoolParameters,
             },
-            Error as ApiError,
-            HttpSolverApi,
+            Error as ApiError, HttpSolverApi,
         },
         price_estimation::{
             gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
-            rate_limited,
-            Estimate,
-            PriceEstimateResult,
-            PriceEstimating,
-            PriceEstimationError,
+            rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
             Query,
         },
         rate_limiter::RateLimiter,
@@ -40,7 +26,7 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     ethcontract::{H160, U256},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     gas_estimation::GasPriceEstimating,
@@ -106,8 +92,14 @@ impl HttpPriceEstimator {
     }
 
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price())
-            .max(1.into()); // flooring at 1 to avoid division by zero error
+        let gas_price = U256::from_f64_lossy(
+            self.gas_info
+                .estimate()
+                .await
+                .map_err(PriceEstimationError::ProtocolInternal)?
+                .effective_gas_price(),
+        )
+        .max(1.into()); // flooring at 1 to avoid division by zero error
 
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (U256::max_value(), query.in_amount),
@@ -152,7 +144,8 @@ impl HttpPriceEstimator {
                 self.uniswap_pools(pairs.clone(), &gas_model),
                 self.balancer_pools(pairs.clone(), &gas_model),
                 self.uniswap_v3_pools(pairs.clone(), &gas_model)
-            )?;
+            )
+            .map_err(PriceEstimationError::ProtocolInternal)?;
             for pools in [uniswap_pools, balancer_pools, uniswap_v3_pools] {
                 for pool in pools {
                     amms.insert(pool.address, pool);
@@ -218,8 +211,10 @@ impl HttpPriceEstimator {
             .await
             .map_err(|err| match err {
                 ApiError::RateLimited => PriceEstimationError::RateLimited,
-                ApiError::DeadlineExceeded => PriceEstimationError::DeadlineExceeded,
-                ApiError::Other(err) => PriceEstimationError::Other(err),
+                ApiError::DeadlineExceeded => {
+                    PriceEstimationError::EstimatorInternal(anyhow!("timeout"))
+                }
+                ApiError::Other(err) => PriceEstimationError::EstimatorInternal(err),
             })
         };
         let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
@@ -384,7 +379,10 @@ impl HttpPriceEstimator {
     fn extract_cost(&self, cost: &Option<TokenAmount>) -> Result<U256, PriceEstimationError> {
         if let Some(cost) = cost {
             if cost.token != self.native_token {
-                Err(anyhow::anyhow!("cost specified as an unknown token {}", cost.token).into())
+                Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "cost specified as an unknown token {}",
+                    cost.token
+                )))
             } else {
                 Ok(cost.amount)
             }
@@ -420,22 +418,16 @@ mod tests {
             gas_price_estimation::FakeGasPriceEstimator,
             http_solver::{
                 model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
-                DefaultHttpSolverApi,
-                MockHttpSolverApi,
-                SolverConfig,
+                DefaultHttpSolverApi, MockHttpSolverApi, SolverConfig,
             },
             price_estimation::Query,
             recent_block_cache::CacheConfig,
             sources::{
                 balancer_v2::{
-                    pool_fetching::BalancerContracts,
-                    BalancerFactoryKind,
-                    BalancerPoolFetcher,
+                    pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
                 },
                 uniswap_v2::{
-                    self,
-                    pool_cache::PoolCache,
-                    pool_fetching::test_util::FakePoolFetcher,
+                    self, pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher,
                 },
                 uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
                 BaselineSource,
@@ -559,7 +551,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert!(matches!(err, PriceEstimationError::Other(_)));
+        assert!(matches!(err, PriceEstimationError::EstimatorInternal(_)));
     }
 
     #[tokio::test]

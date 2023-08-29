@@ -5,8 +5,7 @@ use {
         contract::{AllEventsBuilder, ParseLog},
         dyns::DynTransport,
         errors::ExecutionError,
-        Event as EthcontractEvent,
-        EventMetadata,
+        Event as EthcontractEvent, EventMetadata,
     },
     ethrpc::current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
@@ -575,9 +574,7 @@ mod tests {
         contracts::{gpv2_settlement, GPv2Settlement},
         ethcontract::{BlockNumber, H256},
         ethrpc::{
-            create_env_test_transport,
-            current_block::block_number_to_block_number_hash,
-            Web3,
+            create_env_test_transport, current_block::block_number_to_block_number_hash, Web3,
         },
         std::str::FromStr,
     };

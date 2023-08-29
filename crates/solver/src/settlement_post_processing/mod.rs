@@ -17,9 +17,7 @@ use {
     optimize_unwrapping::optimize_unwrapping,
     primitive_types::H160,
     shared::{
-        ethrpc::Web3,
-        external_prices::ExternalPrices,
-        http_solver::model::InternalizationStrategy,
+        ethrpc::Web3, external_prices::ExternalPrices, http_solver::model::InternalizationStrategy,
         token_list::AutoUpdatingTokenList,
     },
 };

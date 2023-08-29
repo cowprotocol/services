@@ -21,11 +21,7 @@ use {
         interaction::InteractionData,
         order::OrderClass,
         solver_competition::{
-            CompetitionAuction,
-            Order,
-            Score,
-            SolverCompetitionDB,
-            SolverSettlement,
+            CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
         },
     },
     primitive_types::{H160, H256},

@@ -4,8 +4,7 @@ use {
         net::SocketAddr,
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc,
-            Mutex,
+            Arc, Mutex,
         },
     },
     tokio::task::JoinHandle,

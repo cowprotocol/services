@@ -14,8 +14,7 @@ use {
     num::BigRational,
     number_conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
     shared::{
-        conversions::U256Ext,
-        db_order_conversions::signing_scheme_from,
+        conversions::U256Ext, db_order_conversions::signing_scheme_from,
         external_prices::ExternalPrices,
     },
     web3::ethabi::{Function, Token},

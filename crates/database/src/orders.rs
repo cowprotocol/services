@@ -1,11 +1,7 @@
 use {
     crate::{
-        auction::AuctionId,
-        onchain_broadcasted_orders::OnchainOrderPlacementError,
-        Address,
-        AppId,
-        OrderUid,
-        TransactionHash,
+        auction::AuctionId, onchain_broadcasted_orders::OnchainOrderPlacementError, Address, AppId,
+        OrderUid, TransactionHash,
     },
     futures::stream::BoxStream,
     sqlx::{
@@ -13,8 +9,7 @@ use {
             chrono::{DateTime, Utc},
             BigDecimal,
         },
-        FromRow,
-        PgConnection,
+        FromRow, PgConnection,
     },
 };
 
@@ -898,10 +893,7 @@ mod tests {
         crate::{
             byte_array::ByteArray,
             ethflow_orders::{
-                insert_or_overwrite_ethflow_order,
-                insert_refund_tx_hash,
-                EthOrderPlacement,
-                Refund,
+                insert_or_overwrite_ethflow_order, insert_refund_tx_hash, EthOrderPlacement, Refund,
             },
             events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
             onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},

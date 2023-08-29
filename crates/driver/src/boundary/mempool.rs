@@ -13,10 +13,7 @@ use {
             submitter::{
                 flashbots_api::FlashbotsApi,
                 public_mempool_api::{PublicMempoolApi, SubmissionNode, SubmissionNodeKind},
-                Strategy,
-                Submitter,
-                SubmitterGasPriceEstimator,
-                SubmitterParams,
+                Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
                 TransactionSubmitting,
             },
             SubTxPoolRef,

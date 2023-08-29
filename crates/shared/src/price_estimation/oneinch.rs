@@ -1,13 +1,10 @@
 use {
     super::{
         trade_finder::{TradeEstimator, TradeVerifier},
-        PriceEstimateResult,
-        PriceEstimating,
-        Query,
+        PriceEstimateResult, PriceEstimating, Query,
     },
     crate::{
-        oneinch_api::OneInchClient,
-        rate_limiter::RateLimiter,
+        oneinch_api::OneInchClient, rate_limiter::RateLimiter,
         trade_finding::oneinch::OneInchTradeFinder,
     },
     primitive_types::H160,
@@ -186,7 +183,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string().contains("Internal Server Error")
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string().contains("Internal Server Error")
         ));
     }
 
@@ -212,7 +209,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string() == "malformed JSON"
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string() == "malformed JSON"
         ));
     }
 

@@ -3,12 +3,7 @@
 
 use {
     super::{
-        rate_limited,
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
         Verification,
     },
     crate::{
@@ -20,11 +15,10 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Trade, TradeError, TradeFinding},
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::{
         support::{Solver, Trader},
-        GPv2Settlement,
-        WETH9,
+        GPv2Settlement, WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::extensions::StateOverride,
@@ -111,7 +105,7 @@ impl Inner {
                 verifier
                     .verify(&price_query, verification, trade)
                     .await
-                    .map_err(PriceEstimationError::Other)
+                    .map_err(PriceEstimationError::EstimatorInternal)
             }
             (_, verification) => {
                 if verification.is_some() {
@@ -377,9 +371,9 @@ impl From<TradeError> for PriceEstimationError {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
             TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
-            TradeError::DeadlineExceeded => Self::DeadlineExceeded,
+            TradeError::DeadlineExceeded => Self::EstimatorInternal(anyhow!("timeout")),
             TradeError::RateLimited => Self::RateLimited,
-            TradeError::Other(err) => Self::Other(err),
+            TradeError::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }

@@ -3,13 +3,8 @@ use {
         baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
         conversions::U256Ext,
         price_estimation::{
-            gas,
-            rate_limited,
-            Estimate,
-            PriceEstimateResult,
-            PriceEstimating,
-            PriceEstimationError,
-            Query,
+            gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating,
+            PriceEstimationError, Query,
         },
         rate_limiter::RateLimiter,
         recent_block_cache::Block,
@@ -74,13 +69,13 @@ impl PriceEstimating for BaselinePriceEstimator {
                 .gas_estimator
                 .estimate()
                 .await
-                .map_err(PriceEstimationError::Other)?;
+                .map_err(PriceEstimationError::ProtocolInternal)?;
             Ok(gas_price.effective_gas_price())
         };
         let pools = async {
             self.pools_for_queries(queries)
                 .await
-                .map_err(PriceEstimationError::Other)
+                .map_err(PriceEstimationError::ProtocolInternal)
         };
 
         type Init = Result<(f64, Pools), PriceEstimationError>;

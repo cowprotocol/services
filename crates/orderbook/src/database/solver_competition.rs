@@ -3,9 +3,7 @@ use {
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     anyhow::{Context, Result},
     database::{
-        auction_participants::Participant,
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
+        auction_participants::Participant, auction_prices::AuctionPrice, byte_array::ByteArray,
         settlement_scores::Score,
     },
     model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},

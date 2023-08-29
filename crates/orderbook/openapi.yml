@@ -36,6 +36,8 @@ paths:
                 $ref: "#/components/schemas/OrderPostError"
         403:
           description: Forbidden, your account is deny-listed.
+        404:
+          description: No route was found quoting the order.
         429:
           description: Too many order placements.
         500:
@@ -328,9 +330,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FeeAndQuoteError"
-        403:
-          description: Forbidden, your account is deny-listed.
+                $ref: "#/components/schemas/PriceEstimationError"
+        404:
+          description: No route was found for the specified order.
         429:
           description: Too many order quotes.
         500:
@@ -1059,25 +1061,31 @@ components:
           enum:
             [
               DuplicateOrder,
-              InsufficientFee,
-              InsufficientAllowance,
-              InsufficientBalance,
-              InsufficientValidTo,
-              ExcessiveValidTo,
-              InvalidSignature,
-              TransferEthToContract,
-              TransferSimulationFailed,
-              UnsupportedToken,
+              QuoteNotFound,
+              InvalidQuote,
+              MissingFrom,
               WrongOwner,
               InvalidEip1271Signature,
-              MissingFrom,
-              SameBuyAndSellToken,
+              InsufficientBalance,
+              InsufficientAllowance,
+              InvalidSignature,
+              InsufficientFee,
+              SellAmountOverflow,
+              TransferSimulationFailed,
               ZeroAmount,
+              IncompatibleSigningScheme,
+              TooManyLimitOrders
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
+              InsufficientValidTo,
+              ExcessiveValidTo,
+              TransferEthToContract,
+              InvalidNativeSellToken
+              SameBuyAndSellToken,
               UnsupportedSignature,
-              TooManyLimitOrders,
+              UnsupportedToken,
+              UnsupportedCustomInteraction
               InvalidAppData,
               AppDataHashMismatch,
             ]
@@ -1140,17 +1148,16 @@ components:
       required:
         - errorType
         - description
-    FeeAndQuoteError:
+    PriceEstimationError:
       type: object
       properties:
         errorType:
           type: string
           enum:
             [
-              "NoLiquidity",
               "UnsupportedToken",
-              "AmountIsZero",
-              "SellAmountDoesNotCoverFee",
+              "ZeroAmount",
+              "UnsupportedOrderType"
             ]
         description:
           type: string

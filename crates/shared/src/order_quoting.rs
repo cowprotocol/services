@@ -2,18 +2,13 @@ use {
     super::price_estimation::{
         self,
         native::{native_single_estimate, NativePriceEstimating},
-        single_estimate,
-        PriceEstimating,
-        PriceEstimationError,
+        single_estimate, PriceEstimating, PriceEstimationError,
     },
     crate::{
         db_order_conversions::order_kind_from,
         fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
         order_validation::{
-            AppDataValidationError,
-            OrderValidating,
-            PartialValidationError,
-            PreOrderData,
+            AppDataValidationError, OrderValidating, PartialValidationError, PreOrderData,
         },
         price_estimation::Verification,
         trade_finding,
@@ -27,14 +22,8 @@ use {
     model::{
         order::{OrderClass, OrderCreationAppData, OrderKind},
         quote::{
-            OrderQuote,
-            OrderQuoteRequest,
-            OrderQuoteResponse,
-            OrderQuoteSide,
-            PriceQuality,
-            QuoteId,
-            QuoteSigningScheme,
-            SellAmount,
+            OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality,
+            QuoteId, QuoteSigningScheme, SellAmount,
         },
     },
     number_conversions::big_decimal_to_u256,
@@ -544,7 +533,7 @@ impl OrderQuoter {
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .estimate()
-                .map_err(PriceEstimationError::from),
+                .map_err(PriceEstimationError::ProtocolInternal),
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it

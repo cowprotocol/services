@@ -6,8 +6,7 @@ use {
     },
     ethrpc::current_block::CurrentBlockStream,
     shared::sources::{
-        swapr::reader::SwaprPoolReader,
-        uniswap_v2::pool_fetching::DefaultPoolReader,
+        swapr::reader::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader,
     },
     solver::{liquidity::ConstantProductOrder, liquidity_collector::LiquidityCollecting},
 };

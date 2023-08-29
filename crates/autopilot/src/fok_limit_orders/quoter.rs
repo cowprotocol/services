@@ -114,7 +114,8 @@ impl LimitOrderQuoter {
             }
             Err(
                 CalculateQuoteError::Other(err)
-                | CalculateQuoteError::Price(PriceEstimationError::Other(err)),
+                | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err))
+                | CalculateQuoteError::Price(PriceEstimationError::EstimatorInternal(err)),
             ) => {
                 tracing::warn!(?order_spec, ?err, "limit order quote error");
                 Metrics::get()

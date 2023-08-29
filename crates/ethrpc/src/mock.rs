@@ -12,9 +12,7 @@ use {
         fmt::{self, Debug, Formatter},
         sync::{
             atomic::{AtomicUsize, Ordering},
-            Arc,
-            Mutex,
-            MutexGuard,
+            Arc, Mutex, MutexGuard,
         },
     },
 };

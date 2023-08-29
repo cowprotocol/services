@@ -3,10 +3,7 @@ use {
         encode::IsNull,
         error::BoxDynError,
         postgres::{PgArgumentBuffer, PgHasArrayType, PgTypeInfo, PgValueFormat, PgValueRef},
-        Decode,
-        Encode,
-        Postgres,
-        Type,
+        Decode, Encode, Postgres, Type,
     },
     std::fmt::{self, Debug, Formatter},
 };

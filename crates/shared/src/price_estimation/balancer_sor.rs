@@ -1,11 +1,7 @@
 use {
     super::{
         gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     crate::{
         balancer_sor_api::{self, BalancerSorApi},
@@ -47,7 +43,11 @@ impl BalancerSor {
     }
 
     async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-        let gas_price = self.gas.estimate().await?;
+        let gas_price = self
+            .gas
+            .estimate()
+            .await
+            .map_err(PriceEstimationError::ProtocolInternal)?;
         let query_ = balancer_sor_api::Query {
             sell_token: query.sell_token,
             buy_token: query.buy_token,

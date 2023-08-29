@@ -9,10 +9,7 @@ use {
         maintenance::Maintaining,
         recent_block_cache::Block,
         sources::balancer_v2::pools::{
-            common::PoolInfoFetching,
-            FactoryIndexing,
-            Pool,
-            PoolStatus,
+            common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus,
         },
     },
     anyhow::Result,
@@ -20,10 +17,7 @@ use {
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     ethrpc::{
         current_block::{BlockNumberHash, BlockRetrieving},
-        Web3,
-        Web3CallBatch,
-        Web3Transport,
-        MAX_BATCH_SIZE,
+        Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE,
     },
     futures::future,
     hex_literal::hex,
