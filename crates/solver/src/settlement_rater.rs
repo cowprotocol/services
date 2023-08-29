@@ -267,11 +267,11 @@ impl SettlementRating for SettlementRater {
         };
 
         let gas_cost = match settlement.gas_cost.as_ref() {
-            Some(gas_cost) => GasCost::Solver(u256_to_big_rational(gas_cost)),
+            Some(gas_cost) => GasCost::SolverEstimated(u256_to_big_rational(gas_cost)),
             None => {
                 let gas_cost =
                     &u256_to_big_rational(&simulation.gas_estimate) * &effective_gas_price;
-                GasCost::Protocol(gas_cost)
+                GasCost::ProtocolEstimated(gas_cost)
             }
         };
 

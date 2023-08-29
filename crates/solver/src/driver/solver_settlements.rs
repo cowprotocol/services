@@ -10,23 +10,21 @@ pub fn has_user_order(settlement: &Settlement) -> bool {
 
 #[derive(Debug, Clone)]
 pub enum GasCost {
-    // Calculated by the protocol.
-    Protocol(BigRational),
-    // Provided by the solver.
-    Solver(BigRational),
+    ProtocolEstimated(BigRational),
+    SolverEstimated(BigRational),
 }
 
 impl Default for GasCost {
     fn default() -> Self {
-        Self::Protocol(Default::default())
+        Self::ProtocolEstimated(Default::default())
     }
 }
 
 impl GasCost {
     pub fn cost(&self) -> &BigRational {
         match self {
-            Self::Protocol(cost) => cost,
-            Self::Solver(cost) => cost,
+            Self::ProtocolEstimated(cost) => cost,
+            Self::SolverEstimated(cost) => cost,
         }
     }
 }

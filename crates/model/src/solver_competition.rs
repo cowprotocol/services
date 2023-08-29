@@ -111,17 +111,14 @@ pub struct SolverSettlement {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
 pub enum Cost {
-    // estimated by the protocol
-    Protocol(f64),
-    // estimated by the solver
-    Solver(f64),
+    ProtocolEstimated(f64),
+    SolverEstimated(f64),
 }
 
 impl Default for Cost {
     fn default() -> Self {
-        Self::Protocol(Default::default())
+        Self::ProtocolEstimated(Default::default())
     }
 }
 
@@ -217,7 +214,7 @@ mod tests {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
                         "fees": 5.0f64,
-                        "cost": 6.0f64,
+                        "cost": { "ProtocolEstimated": 6.0f64 },
                         "gas": 7u64,
                     },
                     "score": "1",
@@ -266,7 +263,7 @@ mod tests {
                         total: 3.,
                         surplus: 4.,
                         fees: 5.,
-                        cost: Cost::Protocol(6.),
+                        cost: Cost::ProtocolEstimated(6.),
                         gas: 7,
                     },
                     score: Some(Score::Solver(1.into())),
