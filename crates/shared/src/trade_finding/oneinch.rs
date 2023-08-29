@@ -129,7 +129,7 @@ impl Inner {
         query: &Query,
     ) -> Result<Option<Vec<String>>, TradeError> {
         if query.kind == OrderKind::Buy {
-            return Err(TradeError::UnsupportedOrderType);
+            return Err(TradeError::UnsupportedOrderType("buy order".to_string()));
         }
 
         let allowed_protocols = self
@@ -415,7 +415,7 @@ mod tests {
             })
             .await;
 
-        assert!(matches!(est, Err(TradeError::UnsupportedOrderType)));
+        assert!(matches!(est, Err(TradeError::UnsupportedOrderType(_))));
     }
 
     #[tokio::test]

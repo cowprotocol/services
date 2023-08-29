@@ -376,7 +376,7 @@ impl From<TradeError> for PriceEstimationError {
     fn from(err: TradeError) -> Self {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
-            TradeError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
             TradeError::DeadlineExceeded => Self::DeadlineExceeded,
             TradeError::RateLimited => Self::RateLimited,
             TradeError::Other(err) => Self::Other(err),

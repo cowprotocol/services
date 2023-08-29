@@ -151,7 +151,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 
