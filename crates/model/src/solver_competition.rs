@@ -144,6 +144,11 @@ pub enum Score {
     #[serde(rename = "scoreProtocol")]
     #[serde(with = "u256_decimal")]
     Protocol(U256),
+    /// The score is calculated by the protocol and success_probability provided
+    /// by solver is taken into account
+    #[serde(rename = "scoreProtocolRisk")]
+    #[serde(with = "u256_decimal")]
+    ProtocolWithRisk(U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
     #[serde(rename = "scoreDiscounted")]
@@ -162,6 +167,7 @@ impl Score {
         match self {
             Self::Solver(score) => *score,
             Self::Protocol(score) => *score,
+            Self::ProtocolWithRisk(score) => *score,
             Self::Discounted(score) => *score,
         }
     }
