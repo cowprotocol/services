@@ -2374,7 +2374,7 @@ mod tests {
             ValidationError::PriceForQuote(_)
         );
         assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType),
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType("test".into())),
             ValidationError::PriceForQuote(_)
         );
         assert_calc_error_matches!(

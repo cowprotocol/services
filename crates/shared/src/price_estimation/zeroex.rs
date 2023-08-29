@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(estimates.len(), 3);
         assert!(matches!(
             &estimates[0],
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
         assert!(matches!(
             &estimates[1],
@@ -238,7 +238,7 @@ mod tests {
         ));
         assert!(matches!(
             &estimates[2],
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 

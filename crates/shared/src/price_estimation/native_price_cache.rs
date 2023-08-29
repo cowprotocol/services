@@ -205,7 +205,8 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
         Err(PriceEstimationError::Other(_))
         | Err(PriceEstimationError::DeadlineExceeded)
         | Err(PriceEstimationError::RateLimited) => false,
-        Err(PriceEstimationError::ZeroAmount) | Err(PriceEstimationError::UnsupportedOrderType) => {
+        Err(PriceEstimationError::ZeroAmount)
+        | Err(PriceEstimationError::UnsupportedOrderType(_)) => {
             tracing::error!(?result, "Unexpected error in native price cache");
             false
         }

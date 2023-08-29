@@ -338,7 +338,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             PriceEstimationError::UnsupportedToken { .. } => 3,
             PriceEstimationError::ZeroAmount => 2,
             PriceEstimationError::NoLiquidity => 1,
-            PriceEstimationError::UnsupportedOrderType => 0,
+            PriceEstimationError::UnsupportedOrderType(_) => 0,
             // lowest priority
         }
     }

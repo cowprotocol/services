@@ -56,7 +56,7 @@ impl ZeroExTradeFinder {
 impl Inner {
     async fn quote(&self, query: &Query) -> Result<Trade, TradeError> {
         if self.buy_only && query.kind == OrderKind::Sell {
-            return Err(TradeError::UnsupportedOrderType);
+            return Err(TradeError::UnsupportedOrderType("sell order".to_string()));
         }
 
         let (sell_amount, buy_amount) = match query.kind {
