@@ -233,8 +233,6 @@ pub struct SettledBatchAuctionModel {
     pub submitter: SubmissionPreference,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    /// TODO remove this field once all solvers conform to sending the
-    /// success_probability
     pub score: Option<Score>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }

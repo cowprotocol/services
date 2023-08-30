@@ -242,8 +242,6 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
                                           * struct */
-    /// TODO(#1821) remove this field once all solvers conform to sending the
-    /// success_probability
     pub score: Option<Score>,
 }
 
