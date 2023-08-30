@@ -334,125 +334,130 @@ impl ScoreCalculator {
         );
         let success_probability = BigRational::from_float(success_probability).unwrap();
         let cost_fail = self.cost_fail(gas_cost);
-        let optimal_score =
-            self.compute_optimal_score(objective_value.clone(), success_probability, cost_fail)?;
+        let optimal_score = compute_optimal_score(
+            objective_value.clone(),
+            success_probability,
+            cost_fail,
+            self.score_cap.clone(),
+        )?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
         Ok(Score::ProtocolWithSolverRisk(score))
     }
+}
 
-    fn compute_optimal_score(
-        &self,
-        objective: BigRational,
-        probability_success: BigRational,
-        cost_fail: BigRational,
-    ) -> Result<BigRational> {
-        tracing::trace!(
-            ?objective,
-            ?probability_success,
-            ?cost_fail,
-            "Computing optimal score"
-        );
+fn compute_optimal_score(
+    objective: BigRational,
+    probability_success: BigRational,
+    cost_fail: BigRational,
+    score_cap: BigRational,
+) -> Result<BigRational> {
+    tracing::trace!(
+        ?objective,
+        ?probability_success,
+        ?cost_fail,
+        "Computing optimal score"
+    );
 
-        let profit = |score_reference: BigRational| {
-            self.profit(
-                score_reference,
-                objective.clone(),
-                probability_success.clone(),
-                cost_fail.clone(),
-            )
-        };
+    let profit = |score_reference: BigRational| {
+        profit(
+            score_reference,
+            objective.clone(),
+            probability_success.clone(),
+            cost_fail.clone(),
+            score_cap.clone(),
+        )
+    };
 
-        let profit_cap = profit(self.score_cap.clone());
-        let profit_obj_minus_cap = profit(objective.clone() - self.score_cap.clone());
-        tracing::trace!(
-            ?profit_obj_minus_cap,
-            ?profit_cap,
-            "profit score minus cap and profit cap"
-        );
+    let profit_cap = profit(score_cap.clone());
+    let profit_obj_minus_cap = profit(objective.clone() - score_cap.clone());
+    tracing::trace!(
+        ?profit_obj_minus_cap,
+        ?profit_cap,
+        "profit score minus cap and profit cap"
+    );
 
-        let probability_fail = BigRational::one() - probability_success.clone();
+    let probability_fail = BigRational::one() - probability_success.clone();
 
-        // https://www.notion.so/cownation/Optimal-bidding-strategy-84b4c710466a4c56af9295015308452a
-        let score = {
-            if profit_obj_minus_cap >= zero() && profit_cap <= zero() {
-                // `objective - cap <= cap` due to monotonicity of the payout function and the
-                // zero of the payout function lies between `objective - cap`
-                // and `cap`. For such scores the cap in the payment is not
-                // binding, the profit function is just linear in the reference
-                // score and the zero of the function is at
+    // https://www.notion.so/cownation/Optimal-bidding-strategy-84b4c710466a4c56af9295015308452a
+    let score = {
+        if profit_obj_minus_cap >= zero() && profit_cap <= zero() {
+            // `objective - cap <= cap` due to monotonicity of the payout function and the
+            // zero of the payout function lies between `objective - cap`
+            // and `cap`. For such scores the cap in the payment is not
+            // binding, the profit function is just linear in the reference
+            // score and the zero of the function is at
 
-                // `probability_success * score - probability_fail * cost_fail`
-                let score = probability_success * objective.clone() - probability_fail * cost_fail;
-                Ok(score)
-            } else if profit_obj_minus_cap >= zero() && profit_cap > zero() {
-                // optimal score is larger than `objective - cap` and `cap` due to monotonicity
-                // of the profit function. For such reference scores the cap in the payment is
-                // always binding in case of reverts and never in case of success, and the zero
-                // of the function is at
+            // `probability_success * score - probability_fail * cost_fail`
+            let score = probability_success * objective.clone() - probability_fail * cost_fail;
+            Ok(score)
+        } else if profit_obj_minus_cap >= zero() && profit_cap > zero() {
+            // optimal score is larger than `objective - cap` and `cap` due to monotonicity
+            // of the profit function. For such reference scores the cap in the payment is
+            // always binding in case of reverts and never in case of success, and the zero
+            // of the function is at
 
-                //score - probability_fail / probability_success * (cap + cost_fail)
-                let score = objective.clone()
-                    - probability_fail
-                        .checked_div(&probability_success)
-                        .context("division by success")?
-                        * (self.score_cap.clone() + cost_fail);
-                Ok(score)
-            } else if profit_obj_minus_cap < zero() && profit_cap <= zero() {
-                // optimal score is smaller than `objective - cap` and `cap` due to monotonicity
-                // of the profit function. In that case, the `cap` is always
-                // binding in case of success and never binds for reverts. Thus
-                // in this range the profit function is again just linear in the
-                // reference score and the zero can be computed as
+            //score - probability_fail / probability_success * (cap + cost_fail)
+            let score = objective.clone()
+                - probability_fail
+                    .checked_div(&probability_success)
+                    .context("division by success")?
+                    * (score_cap + cost_fail);
+            Ok(score)
+        } else if profit_obj_minus_cap < zero() && profit_cap <= zero() {
+            // optimal score is smaller than `objective - cap` and `cap` due to monotonicity
+            // of the profit function. In that case, the `cap` is always
+            // binding in case of success and never binds for reverts. Thus
+            // in this range the profit function is again just linear in the
+            // reference score and the zero can be computed as
 
-                // probability_success / probability_fail * cap - cost_fail
-                let score = probability_success
-                    .checked_div(&probability_fail)
-                    .context("division by fail")?
-                    * self.score_cap.clone()
-                    - cost_fail;
-                Ok(score)
-            } else {
-                Err(anyhow!("Invalid bid"))
-            }
-        };
-
-        tracing::trace!(?score, "Optimal score");
-        if let Ok(score) = score.as_ref() {
-            ensure!(score <= &objective, "Optimal score higher than objective");
+            // probability_success / probability_fail * cap - cost_fail
+            let score = probability_success
+                .checked_div(&probability_fail)
+                .context("division by fail")?
+                * score_cap
+                - cost_fail;
+            Ok(score)
+        } else {
+            Err(anyhow!("Invalid bid"))
         }
-        score
+    };
+
+    tracing::trace!(?score, "Optimal score");
+    if let Ok(score) = score.as_ref() {
+        ensure!(score <= &objective, "Optimal score higher than objective");
     }
+    score
+}
 
-    // amount that should be payed out to solver or penalized from solver
-    fn profit(
-        &self,
-        score_reference: BigRational,
-        objective: BigRational,
-        probability_success: BigRational,
-        cost_fail: BigRational,
-    ) -> BigRational {
-        tracing::trace!(
-            ?score_reference,
-            ?objective,
-            ?probability_success,
-            ?cost_fail,
-            "Computing profit"
-        );
+fn profit(
+    score_reference: BigRational,
+    objective: BigRational,
+    probability_success: BigRational,
+    cost_fail: BigRational,
+    score_cap: BigRational,
+) -> BigRational {
+    tracing::trace!(
+        ?score_reference,
+        ?objective,
+        ?probability_success,
+        ?cost_fail,
+        ?score_cap,
+        "Computing profit"
+    );
 
-        // this much is payed out to the solver if the transaction succeeds
-        let reward = min(objective - score_reference.clone(), self.score_cap.clone());
-        // this much is solver penalized if the transaction fails
-        let penalty = min(score_reference, self.score_cap.clone()) + cost_fail;
+    // this much is payed out to the solver if the transaction succeeds
+    let reward = min(objective - score_reference.clone(), score_cap.clone());
+    // this much is solver penalized if the transaction fails
+    let penalty = min(score_reference, score_cap) + cost_fail;
 
-        tracing::trace!(?reward, ?penalty, "Reward and penalty");
+    tracing::trace!(?reward, ?penalty, "Reward and penalty");
 
-        // final profit is the combination of the two above
-        let probability_fail = BigRational::one() - probability_success.clone();
-        let profit = probability_success * reward - probability_fail * penalty;
+    // final profit is the combination of the two above
+    let probability_fail = BigRational::one() - probability_success.clone();
+    let profit = probability_success * reward - probability_fail * penalty;
 
-        tracing::trace!(?profit, "Final profit");
-        profit
-    }
+    tracing::trace!(?profit, "Final profit");
+    profit
 }
 
 #[cfg(test)]
