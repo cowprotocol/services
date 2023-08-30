@@ -316,6 +316,9 @@ impl ScoreCalculator {
                 .submission_config
                 .disable_high_risk_public_mempool_transactions
         {
+            // The cost in case of a revert can deviate non-deterministically from the cost
+            // in case of success and it is often significantly smaller. Thus, we go with
+            // the full cost as a safe assumption.
             gas_cost.clone()
         } else {
             zero()
@@ -372,6 +375,11 @@ fn compute_optimal_score(
         )
     };
 
+    // For reference scores larger than `objective - cap` , payments are capped from
+    // above. For reference scores larger than `cap`, payment are capped from
+    // below. The profit function is linear before, between, and after those
+    // values. Where zeros of the profit function lie is determined by the sign of
+    // the profit at those reference scores.
     let profit_cap = profit(score_cap.clone());
     let profit_obj_minus_cap = profit(objective.clone() - score_cap.clone());
     tracing::trace!(
@@ -422,6 +430,11 @@ fn compute_optimal_score(
                 - cost_fail;
             Ok(score)
         } else {
+            // the remaining case where profit_obj_minus_cap is negative and profit_cap is
+            // positive cannot happen: The optimal score would lie between `cap` and
+            // `objective - cap`. This implies that `cap` is binding from below and above.
+            // The profit thus is constant in the reference score in that range which is a
+            // contradiction to having a zero.
             Err(anyhow!("Invalid bid"))
         }
     };
