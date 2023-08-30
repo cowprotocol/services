@@ -352,9 +352,10 @@ fn compute_optimal_score(
         ?cost_fail,
         "Computing optimal score"
     );
+    let probability_fail = BigRational::one() - probability_success.clone();
 
-    // Computes the amount payed out to solver or penalized from solver given the
-    // second highest score. The optimal bidding is such that in the worst case
+    // Computes the solvers' payoff (positive or negative) given the second
+    // highest score. The optimal bidding is such that in the worst case
     // (reference score == winning score) the winning solver still breaks even
     // (profit(winning_score) = 0)
     let profit = |score_reference: BigRational| {
@@ -367,11 +368,30 @@ fn compute_optimal_score(
         )
     };
 
-    // For reference scores larger than `objective - cap` , payments are capped from
-    // above. For reference scores larger than `cap`, payment are capped from
-    // below. The profit function is linear before, between, and after those
-    // values. Where zeros of the profit function lie is determined by the sign of
-    // the profit at those reference scores.
+    // The profit function is monotonically decreasing (a higher reference score
+    // means smaller payout for the winner). In order to compute the zero value,
+    // we need to evaluate the payoff function at two important points (`cap` and
+    // `objective - cap`).
+    // To see why, we draw the two additive ingredients of the
+    // profit function separately (reward in the success case, penalty in the
+    // failure case):
+    //
+    // Rewards                             Penalties
+    // ▲                                   ▲
+    // │____◄───profit(obj-cap)            ┌───────────────►
+    // │    \                              │\            ref_score
+    // │     \                             │ \
+    // └──────\───────────►                │  \
+    //         \  ref_score                    \__________
+    //                          profit(cap)───►
+    //
+    // Success rewards are capped from above and thus constant until the reference
+    // score reaches the `obj - cap`, then the profits shrink.
+    // Failure penalties are capped from below and thus fall from zero until they
+    // reach `cap`, then constant.
+    // It's now important to know if we have already passed the zero point of the
+    // payoff function at these two points as they influence the shape of the
+    // curve.
     let profit_cap = profit(score_cap.clone());
     let profit_obj_minus_cap = profit(objective.clone() - score_cap.clone());
     tracing::trace!(
@@ -380,27 +400,25 @@ fn compute_optimal_score(
         "profit score minus cap and profit cap"
     );
 
-    let probability_fail = BigRational::one() - probability_success.clone();
-
-    // https://www.notion.so/cownation/Optimal-bidding-strategy-84b4c710466a4c56af9295015308452a
     let score = {
         if profit_obj_minus_cap >= zero() && profit_cap <= zero() {
-            // `objective - cap <= cap` due to monotonicity of the payout function and the
-            // zero of the payout function lies between `objective - cap`
-            // and `cap`. For such scores the cap in the payment is not
-            // binding, the profit function is just linear in the reference
-            // score and the zero of the function is at
-
-            // `probability_success * score - probability_fail * cost_fail`
+            // The optimal score lies between `objective - cap` and `cap`. The cap is
+            // therefore not affecting the optimal score in any way:
+            //
+            // `payoff(score) = probability_success * (objective - score) - probability_fail
+            // * (score + cost_fail)`
+            //
+            // Solving for score when `payoff(score) = 0`, we get
             let score = probability_success * objective.clone() - probability_fail * cost_fail;
             Ok(score)
         } else if profit_obj_minus_cap >= zero() && profit_cap > zero() {
-            // optimal score is larger than `objective - cap` and `cap` due to monotonicity
-            // of the profit function. For such reference scores the cap in the payment is
-            // always binding in case of reverts and never in case of success, and the zero
-            // of the function is at
-
-            //score - probability_fail / probability_success * (cap + cost_fail)
+            // Optimal score is larger than `objective - cap` and `cap`. The penalty cap is
+            // therefore affecting payoff in case of reverts:
+            //
+            // payoff(score) = probability_success * (objective - score) - probability_fail
+            // * (cap + cost_fail)
+            //
+            // Solving for score when `payoff(score) = 0`, we get
             let score = objective.clone()
                 - probability_fail
                     .checked_div(&probability_success)
@@ -408,13 +426,13 @@ fn compute_optimal_score(
                     * (score_cap + cost_fail);
             Ok(score)
         } else if profit_obj_minus_cap < zero() && profit_cap <= zero() {
-            // optimal score is smaller than `objective - cap` and `cap` due to monotonicity
-            // of the profit function. In that case, the `cap` is always
-            // binding in case of success and never binds for reverts. Thus
-            // in this range the profit function is again just linear in the
-            // reference score and the zero can be computed as
-
-            // probability_success / probability_fail * cap - cost_fail
+            // Optimal score is smaller than `objective - cap` and `cap`. The reward cap is
+            // therefore affecting payoff in case of success:
+            //
+            // payoff(score) = probability_success * cap - probability_fail * (score +
+            // cost_fail)
+            //
+            // Solving for score when `payoff(score) = 0`, we get
             let score = probability_success
                 .checked_div(&probability_fail)
                 .context("division by fail")?
@@ -422,12 +440,11 @@ fn compute_optimal_score(
                 - cost_fail;
             Ok(score)
         } else {
-            // the remaining case where profit_obj_minus_cap is negative and profit_cap is
-            // positive cannot happen: The optimal score would lie between `cap` and
-            // `objective - cap`. This implies that `cap` is binding from below and above.
-            // The profit thus is constant in the reference score in that range which is a
+            // The optimal score would lie between `cap` and `objective - cap`.
+            // This implies that cap is binding from below and above. The payoff would have
+            // to be constant in the reference score, which is a
             // contradiction to having a zero.
-            Err(anyhow!("Invalid bid"))
+            Err(anyhow!("Unreachable branch in optimal score computation"))
         }
     };
 
