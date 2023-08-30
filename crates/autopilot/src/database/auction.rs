@@ -4,6 +4,7 @@ use {
     database::auction::AuctionId,
     futures::{StreamExt, TryStreamExt},
     model::{auction::Auction, order::Order},
+    std::ops::DerefMut,
 };
 
 pub struct SolvableOrders {
@@ -78,6 +79,12 @@ impl Postgres {
             .start_timer();
 
         let mut ex = self.0.begin().await?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(ex.deref_mut())
+            .await?;
         let orders = database::orders::solvable_orders(
             &mut ex,
             min_valid_to as i64,
