@@ -341,6 +341,7 @@ pub async fn run(args: Arguments) {
         score_calculator: ScoreCalculator::new(
             u256_to_big_rational(&args.score_cap),
             args.transaction_strategy.clone(),
+            args.disable_high_risk_public_mempool_transactions,
         ),
     });
 

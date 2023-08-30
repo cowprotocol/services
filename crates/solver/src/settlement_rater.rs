@@ -17,7 +17,7 @@ use {
     ethcontract::{errors::ExecutionError, Account},
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
-    num::{zero, BigRational, CheckedDiv, One, Zero},
+    num::{zero, BigRational, CheckedDiv, One},
     number_conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
@@ -280,24 +280,45 @@ impl SettlementRating for SettlementRater {
     }
 }
 
+/// Contains a subset of the configuration options for the submission of a
+/// settlement, needed for the score calculation.
+pub struct SubmissionConfig {
+    pub strategies: Vec<TransactionStrategyArg>,
+    pub disable_high_risk_public_mempool_transactions: bool,
+}
+
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    submission_strategies: Vec<TransactionStrategyArg>,
+    submission_config: SubmissionConfig,
 }
 
 impl ScoreCalculator {
-    pub fn new(score_cap: BigRational, submission_strategies: Vec<TransactionStrategyArg>) -> Self {
+    pub fn new(
+        score_cap: BigRational,
+        strategies: Vec<TransactionStrategyArg>,
+        disable_high_risk_public_mempool_transactions: bool,
+    ) -> Self {
         Self {
             score_cap,
-            submission_strategies,
+            submission_config: SubmissionConfig {
+                strategies,
+                disable_high_risk_public_mempool_transactions,
+            },
         }
     }
 
     pub fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
-        if self.submission_strategies == vec![TransactionStrategyArg::Flashbots] {
-            BigRational::zero()
-        } else {
+        if self
+            .submission_config
+            .strategies
+            .contains(&TransactionStrategyArg::PublicMempool)
+            && !self
+                .submission_config
+                .disable_high_risk_public_mempool_transactions
+        {
             gas_cost.clone()
+        } else {
+            zero()
         }
     }
 
@@ -444,8 +465,14 @@ mod tests {
         success_probability: f64,
     ) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator =
-            super::ScoreCalculator::new(score_cap, vec![TransactionStrategyArg::Flashbots]);
+        let score_calculator = super::ScoreCalculator::new(
+            score_cap,
+            vec![
+                TransactionStrategyArg::Flashbots,
+                TransactionStrategyArg::PublicMempool,
+            ],
+            true,
+        );
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()
