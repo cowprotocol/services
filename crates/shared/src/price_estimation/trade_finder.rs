@@ -5,6 +5,7 @@ use {
     super::{
         rate_limited,
         Estimate,
+        EstimatorPriceEstimationError,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
@@ -101,7 +102,11 @@ impl Inner {
     async fn estimate(self: Arc<Self>, query: Query) -> Result<Estimate, PriceEstimationError> {
         match (&self.verifier, &query.verification) {
             (Some(verifier), Some(verification)) => {
-                let trade = self.finder.get_trade(&query).await?;
+                let trade = self
+                    .finder
+                    .get_trade(&query)
+                    .await
+                    .map_err(|e| PriceEstimationError::Estimator(e.into()))?;
                 let price_query = PriceQuery {
                     sell_token: query.sell_token,
                     buy_token: query.buy_token,
@@ -111,7 +116,9 @@ impl Inner {
                 verifier
                     .verify(&price_query, verification, trade)
                     .await
-                    .map_err(PriceEstimationError::EstimatorInternal)
+                    .map_err(|e| {
+                        PriceEstimationError::Estimator(EstimatorPriceEstimationError::Other(e))
+                    })
             }
             (_, verification) => {
                 if verification.is_some() {
@@ -120,7 +127,11 @@ impl Inner {
                         "verified quote was requested but no verification scheme was configured"
                     );
                 }
-                let quote = self.finder.get_quote(&query).await?;
+                let quote = self
+                    .finder
+                    .get_quote(&query)
+                    .await
+                    .map_err(|e| PriceEstimationError::Estimator(e.into()))?;
                 Ok(Estimate {
                     out_amount: quote.out_amount,
                     gas: quote.gas_estimate,
@@ -372,14 +383,14 @@ impl PriceEstimating for TradeEstimator {
     }
 }
 
-impl From<TradeError> for PriceEstimationError {
+impl From<TradeError> for EstimatorPriceEstimationError {
     fn from(err: TradeError) -> Self {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
             TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
-            TradeError::DeadlineExceeded => Self::EstimatorInternal(anyhow!("timeout")),
+            TradeError::DeadlineExceeded => Self::DeadlineExceeded,
             TradeError::RateLimited => Self::RateLimited,
-            TradeError::Other(err) => Self::EstimatorInternal(err),
+            TradeError::Other(err) => Self::Other(err),
         }
     }
 }

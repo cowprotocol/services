@@ -1,5 +1,9 @@
 use {
-    crate::price_estimation::PriceEstimationError,
+    crate::price_estimation::{
+        EstimatorPriceEstimationError,
+        PriceEstimationError,
+        ProtocolPriceEstimationError,
+    },
     anyhow::Result,
     serde::{de::DeserializeOwned, Serialize},
     std::{convert::Infallible, fmt::Debug, time::Instant},
@@ -230,29 +234,36 @@ pub fn finalize_router(
 impl IntoWarpReply for PriceEstimationError {
     fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
-            Self::UnsupportedToken { token, reason } => with_status(
-                error(
-                    "UnsupportedToken",
-                    format!("Token {token:?} is unsupported: {reason:}"),
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::ZeroAmount => with_status(
+            Self::Protocol(ProtocolPriceEstimationError::UnsupportedToken { token, reason }) => {
+                with_status(
+                    error(
+                        "UnsupportedToken",
+                        format!("Token {token:?} is unsupported: {reason:}"),
+                    ),
+                    StatusCode::BAD_REQUEST,
+                )
+            }
+            Self::Protocol(ProtocolPriceEstimationError::ZeroAmount) => with_status(
                 error("ZeroAmount", "Please use non-zero amount field"),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::UnsupportedOrderType(order_type) => with_status(
-                error(
-                    "UnsupportedOrderType",
-                    format!("{order_type} not supported"),
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::NoLiquidity | Self::RateLimited | Self::EstimatorInternal(_) => with_status(
+            Self::Estimator(EstimatorPriceEstimationError::UnsupportedOrderType(order_type)) => {
+                with_status(
+                    error(
+                        "UnsupportedOrderType",
+                        format!("{order_type} not supported"),
+                    ),
+                    StatusCode::BAD_REQUEST,
+                )
+            }
+            Self::Estimator(EstimatorPriceEstimationError::NoLiquidity)
+            | Self::Estimator(EstimatorPriceEstimationError::RateLimited)
+            | Self::Estimator(EstimatorPriceEstimationError::DeadlineExceeded)
+            | Self::Estimator(EstimatorPriceEstimationError::Other(_)) => with_status(
                 error("NoLiquidity", "no route found"),
                 StatusCode::NOT_FOUND,
             ),
-            Self::ProtocolInternal(err) => {
+            Self::Protocol(ProtocolPriceEstimationError::Other(err)) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
             }

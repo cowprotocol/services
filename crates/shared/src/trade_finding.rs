@@ -1,6 +1,8 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
 
+use {crate::price_estimation::EstimatorPriceEstimationError, anyhow::anyhow};
+
 pub mod external;
 pub mod oneinch;
 pub mod paraswap;
@@ -141,17 +143,16 @@ pub enum TradeError {
 impl From<PriceEstimationError> for TradeError {
     fn from(err: PriceEstimationError) -> Self {
         match err {
-            PriceEstimationError::NoLiquidity => Self::NoLiquidity,
-            PriceEstimationError::UnsupportedOrderType(order_type) => {
-                Self::UnsupportedOrderType(order_type)
-            }
-            PriceEstimationError::UnsupportedToken { token, .. } => {
-                Self::UnsupportedOrderType(format!("{token:#x}"))
-            }
-            PriceEstimationError::ZeroAmount => Self::UnsupportedOrderType("zero amount".into()),
-            PriceEstimationError::RateLimited => Self::RateLimited,
-            PriceEstimationError::EstimatorInternal(err)
-            | PriceEstimationError::ProtocolInternal(err) => Self::Other(err),
+            PriceEstimationError::Estimator(estimator_err) => match estimator_err {
+                EstimatorPriceEstimationError::NoLiquidity => Self::NoLiquidity,
+                EstimatorPriceEstimationError::UnsupportedOrderType(order_type) => {
+                    Self::UnsupportedOrderType(order_type)
+                }
+                EstimatorPriceEstimationError::DeadlineExceeded => Self::DeadlineExceeded,
+                EstimatorPriceEstimationError::RateLimited => Self::RateLimited,
+                EstimatorPriceEstimationError::Other(err) => Self::Other(err),
+            },
+            PriceEstimationError::Protocol(err) => Self::Other(anyhow!("ProtocolError: {}", err)),
         }
     }
 }

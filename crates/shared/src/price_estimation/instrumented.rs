@@ -1,4 +1,5 @@
 use {
+    super::EstimatorPriceEstimationError,
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     futures::stream::StreamExt,
     prometheus::{HistogramVec, IntCounterVec},
@@ -46,7 +47,12 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         self.inner
             .estimates(queries)
             .inspect(move |result| {
-                let success = !matches!(&result.1, Err(PriceEstimationError::EstimatorInternal(_)));
+                let success = !matches!(
+                    &result.1,
+                    Err(PriceEstimationError::Estimator(
+                        EstimatorPriceEstimationError::Other(_)
+                    ))
+                );
                 let result = if success { "success" } else { "failure" };
                 self.metrics
                     .price_estimates

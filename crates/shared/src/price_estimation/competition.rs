@@ -1,9 +1,11 @@
 use {
     crate::price_estimation::{
         Estimate,
+        EstimatorPriceEstimationError,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
+        ProtocolPriceEstimationError,
         Query,
     },
     futures::stream::StreamExt,
@@ -332,13 +334,18 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
             // highest priority (prefer)
-            PriceEstimationError::RateLimited => 6,
-            PriceEstimationError::ProtocolInternal(_) => 5,
-            PriceEstimationError::EstimatorInternal(_) => 4,
-            PriceEstimationError::UnsupportedToken { .. } => 3,
-            PriceEstimationError::ZeroAmount => 2,
-            PriceEstimationError::NoLiquidity => 1,
-            PriceEstimationError::UnsupportedOrderType(_) => 0,
+            PriceEstimationError::Estimator(EstimatorPriceEstimationError::RateLimited) => 7,
+            PriceEstimationError::Estimator(EstimatorPriceEstimationError::DeadlineExceeded) => 6,
+            PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(_)) => 5,
+            PriceEstimationError::Estimator(EstimatorPriceEstimationError::Other(_)) => 4,
+            PriceEstimationError::Protocol(ProtocolPriceEstimationError::UnsupportedToken {
+                ..
+            }) => 3,
+            PriceEstimationError::Protocol(ProtocolPriceEstimationError::ZeroAmount) => 2,
+            PriceEstimationError::Estimator(EstimatorPriceEstimationError::NoLiquidity) => 1,
+            PriceEstimationError::Estimator(
+                EstimatorPriceEstimationError::UnsupportedOrderType(_),
+            ) => 0,
             // lowest priority
         }
     }

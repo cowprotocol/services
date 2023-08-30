@@ -14,7 +14,7 @@ use {
         account_balances::{BalanceFetching, Query},
         db_order_conversions::sell_token_source_from,
         order_quoting::{CalculateQuoteError, OrderQuoting, Quote, QuoteParameters},
-        price_estimation::PriceEstimationError,
+        price_estimation::{PriceEstimationError, ProtocolPriceEstimationError},
     },
     std::{collections::HashMap, sync::Arc, time::Duration},
     tracing::Instrument as _,
@@ -114,8 +114,9 @@ impl LimitOrderQuoter {
             }
             Err(
                 CalculateQuoteError::Other(err)
-                | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err))
-                | CalculateQuoteError::Price(PriceEstimationError::EstimatorInternal(err)),
+                | CalculateQuoteError::Price(PriceEstimationError::Protocol(
+                    ProtocolPriceEstimationError::Other(err),
+                )),
             ) => {
                 tracing::warn!(?order_spec, ?err, "limit order quote error");
                 Metrics::get()

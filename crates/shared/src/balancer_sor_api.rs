@@ -4,7 +4,7 @@
 //! https://dev.balancer.fi/resources/smart-order-router
 
 use {
-    crate::price_estimation::PriceEstimationError,
+    crate::price_estimation::EstimatorPriceEstimationError,
     anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
     model::{order::OrderKind, u256_decimal},
@@ -45,11 +45,11 @@ pub enum Error {
     RateLimited,
 }
 
-impl From<Error> for PriceEstimationError {
+impl From<Error> for EstimatorPriceEstimationError {
     fn from(err: Error) -> Self {
         match err {
             Error::RateLimited => Self::RateLimited,
-            Error::Other(err) => Self::EstimatorInternal(err),
+            Error::Other(err) => Self::Other(err),
         }
     }
 }

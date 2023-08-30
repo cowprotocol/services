@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        price_estimation::{PriceEstimationError, Query},
+        price_estimation::{EstimatorPriceEstimationError, PriceEstimationError, Query},
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
@@ -60,24 +60,26 @@ impl ExternalTradeFinder {
         }
 
         let future = async {
-            let response = request
-                .send()
-                .await
-                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+            let response = request.send().await.map_err(|err| {
+                PriceEstimationError::Estimator(EstimatorPriceEstimationError::Other(anyhow!(err)))
+            })?;
             if response.status() == 429 {
-                return Err(PriceEstimationError::RateLimited);
+                return Err(PriceEstimationError::Estimator(
+                    EstimatorPriceEstimationError::RateLimited,
+                ));
             }
-            let text = response
-                .text()
-                .await
-                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
+            let text = response.text().await.map_err(|err| {
+                PriceEstimationError::Estimator(EstimatorPriceEstimationError::Other(anyhow!(err)))
+            })?;
             serde_json::from_str::<dto::Quote>(&text)
                 .map(Trade::from)
                 .map_err(|err| {
                     if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
-                        PriceEstimationError::from(err)
+                        PriceEstimationError::from(EstimatorPriceEstimationError::from(err))
                     } else {
-                        PriceEstimationError::EstimatorInternal(anyhow!(err))
+                        PriceEstimationError::Estimator(EstimatorPriceEstimationError::Other(
+                            anyhow!(err),
+                        ))
                     }
                 })
         };
@@ -123,11 +125,11 @@ impl From<dto::Quote> for Trade {
     }
 }
 
-impl From<dto::Error> for PriceEstimationError {
+impl From<dto::Error> for EstimatorPriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
-            _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
+            _ => Self::Other(anyhow!("{}", value.description)),
         }
     }
 }

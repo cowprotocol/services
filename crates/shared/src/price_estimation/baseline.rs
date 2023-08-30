@@ -1,4 +1,5 @@
 use {
+    super::EstimatorPriceEstimationError,
     crate::{
         baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
         conversions::U256Ext,
@@ -9,6 +10,7 @@ use {
             PriceEstimateResult,
             PriceEstimating,
             PriceEstimationError,
+            ProtocolPriceEstimationError,
             Query,
         },
         rate_limiter::RateLimiter,
@@ -70,17 +72,15 @@ impl PriceEstimating for BaselinePriceEstimator {
         }));
 
         let gas_price = async {
-            let gas_price = self
-                .gas_estimator
-                .estimate()
-                .await
-                .map_err(PriceEstimationError::ProtocolInternal)?;
+            let gas_price = self.gas_estimator.estimate().await.map_err(|e| {
+                PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(e))
+            })?;
             Ok(gas_price.effective_gas_price())
         };
         let pools = async {
             self.pools_for_queries(queries)
                 .await
-                .map_err(PriceEstimationError::ProtocolInternal)
+                .map_err(|e| PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(e)))
         };
 
         type Init = Result<(f64, Pools), PriceEstimationError>;
@@ -131,7 +131,9 @@ impl BaselinePriceEstimator {
             return Ok((Vec::new(), query.in_amount));
         }
         if query.in_amount.is_zero() {
-            return Err(PriceEstimationError::ZeroAmount);
+            return Err(PriceEstimationError::Protocol(
+                ProtocolPriceEstimationError::ZeroAmount,
+            ));
         }
         match query.kind {
             OrderKind::Buy => {
@@ -154,7 +156,9 @@ impl BaselinePriceEstimator {
                             self.native_token_price_estimation_amount,
                             buy_amount,
                         )
-                        .ok_or(PriceEstimationError::NoLiquidity)?
+                        .ok_or(PriceEstimationError::Estimator(
+                            EstimatorPriceEstimationError::NoLiquidity,
+                        ))?
                     })
                 } else {
                     None
@@ -189,7 +193,9 @@ impl BaselinePriceEstimator {
                             self.native_token_price_estimation_amount,
                             buy_amount,
                         )
-                        .ok_or(PriceEstimationError::NoLiquidity)?
+                        .ok_or(PriceEstimationError::Estimator(
+                            EstimatorPriceEstimationError::NoLiquidity,
+                        ))?
                     })
                 } else {
                     None
@@ -310,9 +316,12 @@ impl BaselinePriceEstimator {
         let best_path = path_candidates
             .iter()
             .max_by_key(|path| comparison(amount, path, pools))
-            .ok_or(PriceEstimationError::NoLiquidity)?;
-        let resulting_amount =
-            resulting_amount(amount, best_path, pools).ok_or(PriceEstimationError::NoLiquidity)?;
+            .ok_or(PriceEstimationError::Estimator(
+                EstimatorPriceEstimationError::NoLiquidity,
+            ))?;
+        let resulting_amount = resulting_amount(amount, best_path, pools).ok_or(
+            PriceEstimationError::Estimator(EstimatorPriceEstimationError::NoLiquidity),
+        )?;
         Ok((best_path.clone(), resulting_amount))
     }
 }

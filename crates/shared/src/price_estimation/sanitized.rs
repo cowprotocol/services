@@ -1,4 +1,5 @@
 use {
+    super::ProtocolPriceEstimationError,
     crate::{
         bad_token::{BadTokenDetecting, TokenQuality},
         price_estimation::{
@@ -56,12 +57,17 @@ impl SanitizedPriceEstimator {
 
             match self.bad_token_detector.detect(token).await {
                 Err(err) => {
-                    token_quality_errors.insert(token, PriceEstimationError::ProtocolInternal(err));
+                    token_quality_errors.insert(
+                        token,
+                        PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(err)),
+                    );
                 }
                 Ok(TokenQuality::Bad { reason }) => {
                     token_quality_errors.insert(
                         token,
-                        PriceEstimationError::UnsupportedToken { token, reason },
+                        PriceEstimationError::Protocol(
+                            ProtocolPriceEstimationError::UnsupportedToken { token, reason },
+                        ),
                     );
                 }
                 _ => (),
@@ -89,7 +95,12 @@ impl SanitizedPriceEstimator {
             }
 
             if query.in_amount.is_zero() {
-                results.push((*index, Err(PriceEstimationError::ZeroAmount)));
+                results.push((
+                    *index,
+                    Err(PriceEstimationError::Protocol(
+                        ProtocolPriceEstimationError::ZeroAmount,
+                    )),
+                ));
                 return false;
             }
 
@@ -195,9 +206,9 @@ impl PriceEstimating for SanitizedPriceEstimator {
                         estimate.gas = match estimate.gas.checked_add(gas) {
                             Some(gas) => gas,
                             None => {
-                                let err = PriceEstimationError::ProtocolInternal(anyhow!(
+                                let err = PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(anyhow!(
                                     "cost of converting native asset would overflow gas price"
-                                ));
+                                )));
                                 yield (query.original_query_index, Err(err));
                                 continue;
                             }

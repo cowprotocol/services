@@ -2,9 +2,11 @@ use {
     super::{
         gas::{GAS_PER_BALANCER_SWAP, SETTLEMENT_SINGLE_TRADE},
         Estimate,
+        EstimatorPriceEstimationError,
         PriceEstimateResult,
         PriceEstimating,
         PriceEstimationError,
+        ProtocolPriceEstimationError,
         Query,
     },
     crate::{
@@ -47,11 +49,10 @@ impl BalancerSor {
     }
 
     async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-        let gas_price = self
-            .gas
-            .estimate()
-            .await
-            .map_err(PriceEstimationError::ProtocolInternal)?;
+        let gas_price =
+            self.gas.estimate().await.map_err(|e| {
+                PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(e))
+            })?;
         let query_ = balancer_sor_api::Query {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
@@ -63,8 +64,8 @@ impl BalancerSor {
         let future = async move {
             match api.quote(query_).await {
                 Ok(Some(quote)) => Ok(quote),
-                Ok(None) => Err(PriceEstimationError::NoLiquidity),
-                Err(err) => Err(PriceEstimationError::from(err)),
+                Ok(None) => Err(EstimatorPriceEstimationError::NoLiquidity.into()),
+                Err(err) => Err(EstimatorPriceEstimationError::from(err).into()),
             }
         };
         let future = super::rate_limited(self.rate_limiter.clone(), future);

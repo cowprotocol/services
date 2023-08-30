@@ -326,45 +326,73 @@ impl Display for Arguments {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum PriceEstimationError {
+    #[error("EstimatorPriceEstimationError: {0}")]
+    Estimator(#[from] EstimatorPriceEstimationError),
+    #[error("ProtocolPriceEstimationError: {0}")]
+    Protocol(#[from] ProtocolPriceEstimationError),
+}
+
+/// Error that is "on the protocol side" of the price estimation
+/// logic (e.g. gas estimator failing, etc.). It's in our power
+/// to deal with and fix those errors.
+#[derive(Error, Debug)]
+pub enum ProtocolPriceEstimationError {
     #[error("token {token:?} is not supported: {reason:}")]
     UnsupportedToken { token: H160, reason: String },
-
-    #[error("No liquidity")]
-    NoLiquidity,
 
     #[error("Zero Amount")]
     ZeroAmount,
 
-    #[error("Unsupported Order Type")]
-    UnsupportedOrderType(String),
+    #[error(transparent)]
+    Other(anyhow::Error),
+}
+
+/// Error that is "on the external estimator side" of the price estimation
+/// logic (e.g. individual rate limits, execution failures, etc.). It's not in
+/// our power to deal with and fix those errors.
+#[derive(Error, Debug)]
+pub enum EstimatorPriceEstimationError {
+    #[error("No liquidity")]
+    NoLiquidity,
 
     #[error("Rate limited")]
     RateLimited,
 
-    #[error(transparent)]
-    EstimatorInternal(anyhow::Error),
+    #[error("Deadline Exceeded")]
+    DeadlineExceeded,
+
+    #[error("Unsupported Order Type: {0}")]
+    UnsupportedOrderType(String),
 
     #[error(transparent)]
-    ProtocolInternal(anyhow::Error),
+    Other(anyhow::Error),
 }
 
-impl Clone for PriceEstimationError {
+impl Clone for ProtocolPriceEstimationError {
     fn clone(&self) -> Self {
         match self {
             Self::UnsupportedToken { token, reason } => Self::UnsupportedToken {
                 token: *token,
                 reason: reason.clone(),
             },
-            Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
+            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+        }
+    }
+}
+
+impl Clone for EstimatorPriceEstimationError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::NoLiquidity => Self::NoLiquidity,
             Self::UnsupportedOrderType(order_type) => {
                 Self::UnsupportedOrderType(order_type.clone())
             }
+            Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::RateLimited => Self::RateLimited,
-            Self::EstimatorInternal(err) => Self::EstimatorInternal(crate::clone_anyhow_error(err)),
-            Self::ProtocolInternal(err) => Self::ProtocolInternal(crate::clone_anyhow_error(err)),
+            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
 }
@@ -523,7 +551,12 @@ pub async fn rate_limited<T>(
     let rate_limited_estimation =
         rate_limiter.execute(timed_estimation, |(estimation_time, result)| {
             let too_slow = *estimation_time > HEALTHY_PRICE_ESTIMATION_TIME;
-            let api_rate_limited = matches!(result, Err(PriceEstimationError::RateLimited));
+            let api_rate_limited = matches!(
+                result,
+                Err(PriceEstimationError::Estimator(
+                    EstimatorPriceEstimationError::RateLimited
+                ))
+            );
             too_slow || api_rate_limited
         });
     match rate_limited_estimation.await {
@@ -531,7 +564,7 @@ pub async fn rate_limited<T>(
         // return original PriceEstimationError
         Ok((_estimation_time, Err(err))) => Err(err),
         // convert the RateLimiterError to a PriceEstimationError
-        Err(_) => Err(PriceEstimationError::RateLimited),
+        Err(_) => Err(EstimatorPriceEstimationError::RateLimited.into()),
     }
 }
 
@@ -557,9 +590,7 @@ pub mod mocks {
             futures::stream::iter((0..queries.len()).map(|i| {
                 (
                     i,
-                    Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                        "always fail"
-                    ))),
+                    Err(EstimatorPriceEstimationError::Other(anyhow!("always fail")).into()),
                 )
             }))
             .boxed()

@@ -1,5 +1,5 @@
 use {
-    super::PriceEstimationError,
+    super::{EstimatorPriceEstimationError, PriceEstimationError, ProtocolPriceEstimationError},
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
     futures::stream::StreamExt,
     itertools::{Either, Itertools},
@@ -199,17 +199,24 @@ impl Inner {
 fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     // We don't want to cache errors that we consider transient
     match result {
-        Ok(_)
-        | Err(PriceEstimationError::NoLiquidity { .. })
-        | Err(PriceEstimationError::UnsupportedToken { .. }) => true,
-        Err(PriceEstimationError::EstimatorInternal(_))
-        | Err(PriceEstimationError::ProtocolInternal(_))
-        | Err(PriceEstimationError::RateLimited) => false,
-        Err(PriceEstimationError::ZeroAmount)
-        | Err(PriceEstimationError::UnsupportedOrderType(_)) => {
-            tracing::error!(?result, "Unexpected error in native price cache");
-            false
-        }
+        Ok(_) => true,
+        Err(e) => match e {
+            PriceEstimationError::Protocol(protocol_error) => match protocol_error {
+                ProtocolPriceEstimationError::UnsupportedToken { .. } => true,
+                ProtocolPriceEstimationError::Other(_) => false,
+                ProtocolPriceEstimationError::ZeroAmount => {
+                    tracing::error!(?result, "Unexpected error in native price cache");
+                    false
+                }
+            },
+            PriceEstimationError::Estimator(estimate_err) => match estimate_err {
+                EstimatorPriceEstimationError::NoLiquidity => true,
+                EstimatorPriceEstimationError::RateLimited
+                | EstimatorPriceEstimationError::DeadlineExceeded
+                | EstimatorPriceEstimationError::UnsupportedOrderType(_)
+                | EstimatorPriceEstimationError::Other(_) => false,
+            },
+        },
     }
 }
 

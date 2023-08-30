@@ -12,7 +12,7 @@ use {
             QuoteParameters,
             QuoteSearchParameters,
         },
-        price_estimation::{PriceEstimationError, Verification},
+        price_estimation::{PriceEstimationError, ProtocolPriceEstimationError, Verification},
         signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
         trade_finding,
     },
@@ -203,19 +203,18 @@ impl From<FindQuoteError> for ValidationError {
 impl From<CalculateQuoteError> for ValidationError {
     fn from(err: CalculateQuoteError) -> Self {
         match err {
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken {
-                token,
-                reason,
-            }) => {
+            CalculateQuoteError::Price(PriceEstimationError::Protocol(
+                ProtocolPriceEstimationError::UnsupportedToken { token, reason },
+            )) => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
-                ValidationError::ZeroAmount
-            }
+            CalculateQuoteError::Price(PriceEstimationError::Protocol(
+                ProtocolPriceEstimationError::ZeroAmount,
+            )) => ValidationError::ZeroAmount,
             CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
-                ValidationError::Other(err)
-            }
+            | CalculateQuoteError::Price(PriceEstimationError::Protocol(
+                ProtocolPriceEstimationError::Other(err),
+            )) => ValidationError::Other(err),
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not

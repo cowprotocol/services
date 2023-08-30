@@ -15,7 +15,7 @@ use {
             PartialValidationError,
             PreOrderData,
         },
-        price_estimation::Verification,
+        price_estimation::{ProtocolPriceEstimationError, Verification},
         trade_finding,
     },
     anyhow::{Context, Result},
@@ -544,7 +544,9 @@ impl OrderQuoter {
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .estimate()
-                .map_err(PriceEstimationError::ProtocolInternal),
+                .map_err(
+                    |e| PriceEstimationError::Protocol(ProtocolPriceEstimationError::Other(e))
+                ),
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it
