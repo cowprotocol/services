@@ -358,6 +358,10 @@ fn compute_optimal_score(
         "Computing optimal score"
     );
 
+    // Computes the amount payed out to solver or penalized from solver given the
+    // second highest score. The optimal bidding is such that in the worst case
+    // (reference score == winning score) the winning solver still breaks even
+    // (profit(winning_score) = 0)
     let profit = |score_reference: BigRational| {
         profit(
             score_reference,
