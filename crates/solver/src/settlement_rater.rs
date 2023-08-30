@@ -1,7 +1,7 @@
 use {
     crate::{
         arguments::TransactionStrategyArg,
-        driver::solver_settlements::{GasCost, RatedSettlement},
+        driver::solver_settlements::RatedSettlement,
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
@@ -228,13 +228,12 @@ impl SettlementRating for SettlementRater {
         }
 
         let earned_fees = settlement.total_earned_fees(prices);
-        let inputs = {
-            let gas_cost = match settlement.gas_cost.as_ref() {
-                Some(gas_cost) => gas_cost.to_big_rational(),
-                None => simulation.gas_estimate.to_big_rational() * effective_gas_price.clone(),
-            };
-            crate::objective_value::Inputs::from_settlement(&settlement, prices, gas_cost)
-        };
+        let gas_estimate = settlement.gas_amount.unwrap_or(simulation.gas_estimate);
+        let inputs = crate::objective_value::Inputs::from_settlement(
+            &settlement,
+            prices,
+            &gas_estimate.to_big_rational() * &effective_gas_price,
+        );
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
             Some(score) => match score {
@@ -247,7 +246,6 @@ impl SettlementRating for SettlementRater {
             },
             None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
         };
-
         // recalculate score if success probability is provided
         let score = match settlement.success_probability {
             Some(success_probability) => {
@@ -266,23 +264,14 @@ impl SettlementRating for SettlementRater {
             None => score,
         };
 
-        let gas_cost = match settlement.gas_cost.as_ref() {
-            Some(gas_cost) => GasCost::SolverEstimated(gas_cost.to_big_rational()),
-            None => {
-                let gas_cost = &simulation.gas_estimate.to_big_rational() * &effective_gas_price;
-                GasCost::ProtocolEstimated(gas_cost)
-            }
-        };
-
         let rated_settlement = RatedSettlement {
             id,
             settlement,
             surplus: inputs.surplus_given,
             earned_fees,
             solver_fees: inputs.solver_fees,
-            gas_estimate: simulation.gas_estimate,
+            gas_estimate,
             gas_price: effective_gas_price,
-            gas_cost,
             objective_value,
             score,
             ranking: Default::default(),

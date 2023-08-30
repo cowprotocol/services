@@ -109,27 +109,12 @@ pub struct SolverSettlement {
     pub uninternalized_call_data: Option<Vec<u8>>,
 }
 
-#[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum Cost {
-    ProtocolEstimated(f64),
-    SolverEstimated(f64),
-}
-
-impl Default for Cost {
-    fn default() -> Self {
-        Self::ProtocolEstimated(Default::default())
-    }
-}
-
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Objective {
     pub total: f64,
     pub surplus: f64,
     pub fees: f64,
-    pub cost: Cost,
-    // protocol estimated
     pub gas: u64,
 }
 
@@ -220,7 +205,6 @@ mod tests {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
                         "fees": 5.0f64,
-                        "cost": { "ProtocolEstimated": 6.0f64 },
                         "gas": 7u64,
                     },
                     "score": "1",
@@ -269,7 +253,6 @@ mod tests {
                         total: 3.,
                         surplus: 4.,
                         fees: 5.,
-                        cost: Cost::ProtocolEstimated(6.),
                         gas: 7,
                     },
                     score: Some(Score::Solver(1.into())),

@@ -25,7 +25,6 @@ use {
         solver_competition::{
             self,
             CompetitionAuction,
-            Cost,
             Execution,
             Objective,
             SolverCompetitionDB,
@@ -382,10 +381,6 @@ impl Driver {
                             .unwrap_or(f64::NAN),
                         surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
                         fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
-                        cost: match &rated_settlement.gas_cost {
-                            solver_settlements::GasCost::ProtocolEstimated(gas_cost) => Cost::ProtocolEstimated(gas_cost.to_f64().unwrap_or(f64::NAN)),
-                            solver_settlements::GasCost::SolverEstimated(gas_cost) => Cost::SolverEstimated(gas_cost.to_f64().unwrap_or(f64::NAN)),
-                        },
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
                     score: Some(rated_settlement.score),

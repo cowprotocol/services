@@ -228,7 +228,7 @@ pub struct SettledBatchAuctionModel {
     /// Expected values [0..1]
     pub success_probability: Option<f64>,
     /// Estimated gas usage of the settlement transaction.
-    pub gas_cost: Option<U256>,
+    pub gas_amount: Option<U256>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 

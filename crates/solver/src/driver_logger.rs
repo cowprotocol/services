@@ -227,8 +227,7 @@ impl DriverLogger {
             write!(
                 text,
                 "\nid={} solver={} objective={:.2e} score={:.2e} surplus={:.2e} \
-                 gas_estimate={:.2e} gas_price={:.2e}  gas_cost={:.2e} solver_fees={:.2e} \
-                 earned_fees={:.2e}",
+                 gas_estimate={:.2e} gas_price={:.2e} solver_fees={:.2e} earned_fees={:.2e}",
                 settlement.id,
                 solver.name(),
                 settlement.objective_value.to_f64().unwrap_or(f64::NAN),
@@ -236,7 +235,6 @@ impl DriverLogger {
                 settlement.surplus.to_f64().unwrap_or(f64::NAN),
                 settlement.gas_estimate.to_f64_lossy(),
                 settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                settlement.gas_cost.cost().to_f64().unwrap_or(f64::NAN),
                 &settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
                 settlement.earned_fees.to_f64().unwrap_or(f64::NAN),
             )
@@ -292,7 +290,6 @@ mod tests {
                     solver_fees: BigRational::new(3u8.into(), 1u8.into()),
                     gas_estimate: 4.into(),
                     gas_price: BigRational::new(5u8.into(), 1u8.into()),
-                    gas_cost: Default::default(),
                     objective_value: BigRational::new(6u8.into(), 1u8.into()),
                     score: Score::Solver(6.into()),
                     ranking: 1,
@@ -308,7 +305,6 @@ mod tests {
                     solver_fees: BigRational::new(9u8.into(), 1u8.into()),
                     gas_estimate: 10.into(),
                     gas_price: BigRational::new(11u8.into(), 1u8.into()),
-                    gas_cost: Default::default(),
                     objective_value: BigRational::new(12u8.into(), 1u8.into()),
                     score: Score::Solver(12.into()),
                     ranking: 2,
