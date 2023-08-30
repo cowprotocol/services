@@ -225,10 +225,7 @@ impl Trade {
 
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
-use shared::{
-    external_prices::ExternalPrices,
-    http_solver::model::{Risk, Score},
-};
+use shared::{external_prices::ExternalPrices, http_solver::model::Score};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -483,17 +480,25 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(Score::Solver(left)), Some(Score::Solver(right))) => {
-                    Some(Score::Solver(left + right))
+                (Some(Score::Solver { score: left }), Some(Score::Solver { score: right })) => {
+                    Some(Score::Solver {
+                        score: left + right,
+                    })
                 }
-                (Some(Score::RiskAdjusted(left)), Some(Score::RiskAdjusted(right))) => {
-                    Some(Score::RiskAdjusted(Risk {
-                        success_probability: left.success_probability * right.success_probability,
-                        gas_amount: left.gas_amount.and_then(|left| {
-                            right.gas_amount.and_then(|right| left.checked_add(right))
-                        }),
-                    }))
-                }
+                (
+                    Some(Score::RiskAdjusted {
+                        success_probability: p_left,
+                        gas_amount: gas_left,
+                    }),
+                    Some(Score::RiskAdjusted {
+                        success_probability: p_right,
+                        gas_amount: gas_right,
+                    }),
+                ) => Some(Score::RiskAdjusted {
+                    success_probability: p_left * p_right,
+                    gas_amount: gas_left
+                        .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
+                }),
                 _ => None,
             },
         })

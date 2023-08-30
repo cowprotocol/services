@@ -236,20 +236,24 @@ impl SettlementRating for SettlementRater {
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
             Some(score) => match score {
-                shared::http_solver::model::Score::Solver(score) => Score::Solver(*score),
-                shared::http_solver::model::Score::Discount(discount) => Score::Discounted(
-                    big_rational_to_u256(&objective_value)
-                        .unwrap_or_default()
-                        .saturating_sub(*discount),
-                ),
-                shared::http_solver::model::Score::RiskAdjusted(risk) => {
-                    let solver_gas_cost = risk
-                        .gas_amount
+                shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
+                shared::http_solver::model::Score::Discount { score_discount } => {
+                    Score::Discounted(
+                        big_rational_to_u256(&objective_value)
+                            .unwrap_or_default()
+                            .saturating_sub(*score_discount),
+                    )
+                }
+                shared::http_solver::model::Score::RiskAdjusted {
+                    success_probability,
+                    gas_amount,
+                } => {
+                    let solver_gas_cost = gas_amount
                         .map(|amount| amount.to_big_rational() * effective_gas_price.clone());
                     self.score_calculator.compute_score(
                         &objective_value,
                         &solver_gas_cost.unwrap_or(inputs.gas_cost),
-                        risk.success_probability,
+                        *success_probability,
                     )?
                 }
             },

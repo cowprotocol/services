@@ -1,4 +1,4 @@
-use shared::http_solver::model::{Risk, Score};
+use shared::http_solver::model::Score;
 
 mod optimize_buffer_usage;
 mod optimize_score;
@@ -143,10 +143,10 @@ impl PostProcessing for PostProcessingPipeline {
             .await
             {
                 Ok(success_probability) => Settlement {
-                    score: Some(Score::RiskAdjusted(Risk {
+                    score: Some(Score::RiskAdjusted {
                         success_probability,
                         gas_amount: None,
-                    })),
+                    }),
                     ..optimized_solution
                 },
                 Err(err) => {

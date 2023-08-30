@@ -185,34 +185,33 @@ impl Interaction for InteractionData {
     }
 }
 
+#[serde_as]
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 #[serde(untagged)]
 pub enum Score {
     /// The score value is provided as is from solver.
     /// Success probability is not incorporated into this value.
-    #[serde(with = "u256_decimal")]
-    #[serde(rename = "score")]
-    Solver(U256),
+    Solver {
+        #[serde(with = "u256_decimal")]
+        score: U256,
+    },
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol.
     /// To have more flexibility, the protocol score can be tweaked by the
     /// solver by providing a discount.
-    #[serde(with = "u256_decimal")]
-    #[serde(rename = "scoreDiscount")]
-    Discount(U256),
+    Discount {
+        #[serde(with = "u256_decimal")]
+        #[serde(rename = "scoreDiscount")]
+        score_discount: U256,
+    },
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol given the success
     /// probability and optionally the amount of gas this settlement will take.
-    RiskAdjusted(Risk),
-}
-
-#[serde_as]
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct Risk {
-    pub success_probability: f64,
-    #[serde_as(as = "Option<DecimalU256>")]
-    pub gas_amount: Option<U256>,
+    RiskAdjusted {
+        success_probability: f64,
+        #[serde_as(as = "Option<DecimalU256>")]
+        gas_amount: Option<U256>,
+    },
 }
 
 #[serde_as]
@@ -901,7 +900,9 @@ mod tests {
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(
             deserialized.score,
-            Some(Score::Solver(20_000_000_000_000_000u128.into()))
+            Some(Score::Solver {
+                score: 20_000_000_000_000_000u128.into()
+            })
         );
     }
 
@@ -918,12 +919,17 @@ mod tests {
             }
         "#;
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(deserialized.score, Some(Score::Discount(1337.into())));
+        assert_eq!(
+            deserialized.score,
+            Some(Score::Discount {
+                score_discount: 1337.into()
+            })
+        );
     }
 
     #[test]
-    fn decode_score_risak_adjusted() {
-        let solution = r#"
+    fn decode_score_risk_adjusted() {
+        let solution_with_gas = r#"
             {
                 "tokens": {},
                 "orders": {},
@@ -934,13 +940,34 @@ mod tests {
                 "prices": {}
             }
         "#;
-        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(
-            deserialized.score,
-            Some(Score::RiskAdjusted(Risk {
+            serde_json::from_str::<SettledBatchAuctionModel>(solution_with_gas)
+                .unwrap()
+                .score,
+            Some(Score::RiskAdjusted {
                 success_probability: 0.9,
                 gas_amount: Some(4269.into())
-            }))
+            })
+        );
+
+        let solution_without_gas = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "success_probability": 0.9,
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        assert_eq!(
+            serde_json::from_str::<SettledBatchAuctionModel>(solution_without_gas)
+                .unwrap()
+                .score,
+            Some(Score::RiskAdjusted {
+                success_probability: 0.9,
+                gas_amount: None
+            })
         );
     }
 
