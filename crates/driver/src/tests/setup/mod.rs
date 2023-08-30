@@ -93,6 +93,7 @@ pub struct Order {
     // TODO For now I'll always set these to zero. But I think they should be tested as well.
     // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
+    // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
