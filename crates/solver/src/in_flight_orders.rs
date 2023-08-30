@@ -94,15 +94,15 @@ impl InFlightOrders {
             }
         });
 
-        tracing::debug!(
+        tracing::trace!(
             auction_block = %auction.block,
             latest_settlement_block = %auction.latest_settlement_block,
-            inflight_before = %inflight_before.len(),
+            inflight_before_count = %inflight_before.len(),
+            inflight_after_count = %in_flight.len(),
+            orders_before_count = %orders_before,
+            orders_after_count = %auction.orders.len(),
             inflight_before = ?inflight_before,
-            inflight_after = %in_flight.len(),
             inflight_after = ?in_flight,
-            orders_before = %orders_before,
-            orders_after = %auction.orders.len(),
             "inflight stats"
         );
 
