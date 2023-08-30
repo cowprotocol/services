@@ -175,7 +175,7 @@ pub async fn main(args: arguments::Arguments) {
         simulation_web3.clone(),
         args.shared
             .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
+            .get_api_instance(&http_factory, "signature_validating".into())
             .unwrap(),
     );
 
