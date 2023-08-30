@@ -66,6 +66,7 @@ tracing = { workspace = true }
 warp = { workspace = true }
 
 [dev-dependencies]
+ethers = "2.0.9"
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

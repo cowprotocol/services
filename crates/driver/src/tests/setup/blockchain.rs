@@ -14,10 +14,6 @@ use {
     std::collections::HashMap,
 };
 
-/// The URL to which a post request can be made to start and stop geth
-/// instances. See the `dev-geth` crate.
-const DEV_GETH_PORT: &str = "8547";
-
 // TODO Possibly might be a good idea to use an enum for tokens instead of
 // &'static str
 
@@ -43,7 +39,7 @@ pub struct Blockchain {
     pub settlement: contracts::GPv2Settlement,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
-    pub geth: Geth,
+    pub node: Node,
     pub pairs: Vec<Pair>,
 }
 
@@ -151,17 +147,17 @@ pub struct Config {
 }
 
 impl Blockchain {
-    /// Start a local geth node using the `dev-geth` crate and deploy the
+    /// Start a local node and deploy the
     /// settlement contract, token contracts, and all supporting contracts
     /// for the settlement.
     pub async fn new(config: Config) -> Self {
         // TODO All these various deployments that are happening from the trader account
-        // should be happening from the primary_account of the geth node, will do this
+        // should be happening from the primary_account of the node, will do this
         // later
 
-        let geth = Geth::new().await;
+        let node = Node::new();
         let web3 = Web3::new(DynTransport::new(
-            web3::transports::Http::new(&geth.url()).expect("valid URL"),
+            web3::transports::Http::new(&node.url()).expect("valid URL"),
         ));
 
         let trader_account = ethcontract::Account::Offline(
@@ -169,7 +165,7 @@ impl Blockchain {
             None,
         );
 
-        // Use the geth account to fund the trader and the solver with ETH.
+        // Use the primary account to fund the trader and the solver with ETH.
         let balance = web3
             .eth()
             .balance(primary_address(&web3).await, None)
@@ -202,7 +198,7 @@ impl Blockchain {
             .unwrap();
         }
 
-        // Deploy WETH and wrap some funds in the primary account of the geth node.
+        // Deploy WETH and wrap some funds in the primary account of the node.
         let weth = wait_for(
             &web3,
             contracts::WETH9::builder(&web3)
@@ -478,8 +474,8 @@ impl Blockchain {
             weth,
             ethflow: None,
             web3,
-            web3_url: geth.url(),
-            geth,
+            web3_url: node.url(),
+            node,
             pairs,
         }
     }
@@ -688,55 +684,30 @@ async fn primary_account(web3: &DynWeb3) -> ethcontract::Account {
     ethcontract::Account::Local(web3.eth().accounts().await.unwrap()[0], None)
 }
 
-/// An instance of geth managed by the `dev-geth` crate. When this type is
-/// dropped, the geth instance gets shut down.
-#[derive(Debug)]
-pub struct Geth {
-    port: String,
-}
+/// A blockchain node for development purposes. Dropping this type will
+/// terminate the node.
+pub struct Node(ethers::utils::AnvilInstance);
 
-impl Geth {
-    /// Setup a new geth instance.
-    async fn new() -> Self {
-        let http = reqwest::Client::new();
-        let res = http
-            .post(format!("http://localhost:{DEV_GETH_PORT}"))
-            .send()
-            .await
-            .unwrap();
-        let port = res.text().await.unwrap();
-        Self { port }
-    }
-
-    pub fn url(&self) -> String {
-        format!("http://localhost:{}", self.port)
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("url", &self.0.endpoint())
+            .finish()
     }
 }
 
-// What we really want here is "AsyncDrop", which is an unsolved problem in the
-// async ecosystem. As a workaround we create a new runtime so that we can block
-// on the delete request. Spawning a task for this isn't enough because tokio
-// runtimes when they exit drop background tasks, like when a #[tokio::test]
-// function returns.
-impl Drop for Geth {
-    fn drop(&mut self) {
-        let port = std::mem::take(&mut self.port);
-        let task = async move {
-            let client = reqwest::Client::new();
-            client
-                .delete(&format!("http://localhost:{DEV_GETH_PORT}/{port}"))
-                .send()
-                .await
-                .unwrap();
-        };
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        // block_on must be called in a new thread because tokio forbids nesting
-        // runtimes.
-        let handle = std::thread::spawn(move || runtime.block_on(task));
-        handle.join().unwrap();
+impl Node {
+    /// Spawn a new node instance.
+    fn new() -> Self {
+        let node = ethers::utils::Anvil::new()
+            .arg("--balance")
+            .arg("1000000")
+            .spawn();
+        Self(node)
+    }
+
+    fn url(&self) -> String {
+        self.0.endpoint()
     }
 }
 
@@ -750,6 +721,7 @@ impl Drop for Geth {
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
 pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
+    // tracing::error!(bt = ?std::backtrace::Backtrace::force_capture());
     let block = web3.eth().block_number().await.unwrap();
     let result = fut.await;
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
