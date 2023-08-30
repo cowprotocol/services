@@ -115,6 +115,7 @@ pub struct Objective {
     pub total: f64,
     pub surplus: f64,
     pub fees: f64,
+    pub cost: f64,
     pub gas: u64,
 }
 
@@ -131,9 +132,9 @@ pub enum Score {
     Protocol(U256),
     /// The score is calculated by the protocol and success_probability provided
     /// by solver is taken into account
-    #[serde(rename = "scoreProtocolRisk")]
+    #[serde(rename = "scoreProtocolWithSolverRisk")]
     #[serde(with = "u256_decimal")]
-    ProtocolWithRisk(U256),
+    ProtocolWithSolverRisk(U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
     #[serde(rename = "scoreDiscounted")]
@@ -152,7 +153,7 @@ impl Score {
         match self {
             Self::Solver(score) => *score,
             Self::Protocol(score) => *score,
-            Self::ProtocolWithRisk(score) => *score,
+            Self::ProtocolWithSolverRisk(score) => *score,
             Self::Discounted(score) => *score,
         }
     }
@@ -205,6 +206,7 @@ mod tests {
                         "total": 3.0f64,
                         "surplus": 4.0f64,
                         "fees": 5.0f64,
+                        "cost": 6.0f64,
                         "gas": 7u64,
                     },
                     "score": "1",
@@ -253,6 +255,7 @@ mod tests {
                         total: 3.,
                         surplus: 4.,
                         fees: 5.,
+                        cost: 6.,
                         gas: 7,
                     },
                     score: Some(Score::Solver(1.into())),

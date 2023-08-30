@@ -316,7 +316,7 @@ impl ScoreCalculator {
         let optimal_score =
             self.compute_optimal_score(objective_value.clone(), success_probability, cost_fail)?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
-        Ok(Score::ProtocolWithRisk(score))
+        Ok(Score::ProtocolWithSolverRisk(score))
     }
 
     fn compute_optimal_score(
