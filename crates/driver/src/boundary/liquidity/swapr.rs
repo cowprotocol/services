@@ -4,9 +4,10 @@ use {
         domain::liquidity::{self, swapr},
         infra::{self, blockchain::Ethereum},
     },
-    shared::{
-        current_block::CurrentBlockStream,
-        sources::{swapr::reader::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader},
+    ethrpc::current_block::CurrentBlockStream,
+    shared::sources::{
+        swapr::reader::SwaprPoolReader,
+        uniswap_v2::pool_fetching::DefaultPoolReader,
     },
     solver::{liquidity::ConstantProductOrder, liquidity_collector::LiquidityCollecting},
 };

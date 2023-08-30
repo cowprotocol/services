@@ -32,6 +32,7 @@ struct Inner {
     cache: Cache,
     referrer_address: Option<H160>,
     solver: H160,
+    settlement_contract: H160,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -46,6 +47,7 @@ impl OneInchTradeFinder {
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self {
             inner: Arc::new(Inner::new(
@@ -53,6 +55,7 @@ impl OneInchTradeFinder {
                 disabled_protocols,
                 referrer_address,
                 solver,
+                settlement_contract,
             )),
             sharing: RequestSharing::labelled("oneinch".into()),
         }
@@ -109,6 +112,7 @@ impl Inner {
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self {
             api,
@@ -116,6 +120,7 @@ impl Inner {
             referrer_address,
             cache: Default::default(),
             solver,
+            settlement_contract,
         }
     }
 
@@ -171,11 +176,7 @@ impl Inner {
                 query.sell_token,
                 query.buy_token,
                 query.in_amount,
-                query
-                    .verification
-                    .as_ref()
-                    .map(|v| v.from)
-                    .unwrap_or_default(),
+                self.settlement_contract,
                 allowed_protocols,
                 Slippage::ONE_PERCENT,
                 self.referrer_address,
@@ -225,7 +226,13 @@ mod tests {
     };
 
     fn create_trade_finder<T: OneInchClient>(api: T) -> OneInchTradeFinder {
-        OneInchTradeFinder::new(Arc::new(api), Vec::default(), None, H160([1; 20]))
+        OneInchTradeFinder::new(
+            Arc::new(api),
+            Vec::default(),
+            None,
+            H160([1; 20]),
+            H160([2; 20]),
+        )
     }
 
     #[tokio::test]
@@ -490,7 +497,13 @@ mod tests {
             .expect_get_swap()
             .return_once(|_| async { Ok(Default::default()) }.boxed());
 
-        let trader = OneInchTradeFinder::new(Arc::new(oneinch), Vec::new(), None, H160([1; 20]));
+        let trader = OneInchTradeFinder::new(
+            Arc::new(oneinch),
+            Vec::new(),
+            None,
+            H160([1; 20]),
+            H160([1; 20]),
+        );
 
         let query = Query {
             kind: OrderKind::Sell,
@@ -546,7 +559,13 @@ mod tests {
 
         let mut inner = Inner {
             cache: Cache::new(MAX_AGE),
-            ..Inner::new(Arc::new(mock_api(1)), vec![], None, H160([1; 20]))
+            ..Inner::new(
+                Arc::new(mock_api(1)),
+                vec![],
+                None,
+                H160([1; 20]),
+                H160([1; 20]),
+            )
         };
 
         // Calling `Inner::spender()` twice within `MAX_AGE` will return

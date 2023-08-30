@@ -9,11 +9,13 @@ use {
         OrderUid,
     },
     ethcontract::{Account, H160, H256},
-    futures::{stream, StreamExt},
-    shared::{
+    ethrpc::{
         current_block::timestamp_of_current_block_in_seconds,
-        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+        Web3,
+        Web3CallBatch,
+        MAX_BATCH_SIZE,
     },
+    futures::{stream, StreamExt},
     sqlx::PgPool,
 };
 

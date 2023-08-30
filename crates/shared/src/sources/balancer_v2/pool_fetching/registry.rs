@@ -4,9 +4,7 @@
 use {
     super::{internal::InternalPoolFetching, pool_storage::PoolStorage},
     crate::{
-        current_block::{BlockNumberHash, BlockRetrieving},
         ethcontract_error::EthcontractErrorType,
-        ethrpc::{Web3, Web3CallBatch, Web3Transport, MAX_BATCH_SIZE},
         event_handling::{EventHandler, EventRetrieving},
         maintenance::Maintaining,
         recent_block_cache::Block,
@@ -20,6 +18,13 @@ use {
     anyhow::Result,
     contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
+    ethrpc::{
+        current_block::{BlockNumberHash, BlockRetrieving},
+        Web3,
+        Web3CallBatch,
+        Web3Transport,
+        MAX_BATCH_SIZE,
+    },
     futures::future,
     hex_literal::hex,
     model::TokenPair,

@@ -15,6 +15,7 @@ contracts = { path = "../contracts" }
 database = { path = "../database" }
 driver = { path = "../driver" }
 ethcontract = { workspace = true }
+ethrpc = { path = "../ethrpc" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { path = "../model" }

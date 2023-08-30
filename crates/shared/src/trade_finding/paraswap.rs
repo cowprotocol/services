@@ -174,7 +174,11 @@ impl From<ParaswapResponseError> for TradeError {
     fn from(err: ParaswapResponseError) -> Self {
         match err {
             ParaswapResponseError::InsufficientLiquidity(_) => Self::NoLiquidity,
-            _ => Self::Other(err.into()),
+            ParaswapResponseError::RateLimited => Self::RateLimited,
+            ParaswapResponseError::Request(_)
+            | ParaswapResponseError::Json(_)
+            | ParaswapResponseError::Retryable(_)
+            | ParaswapResponseError::Other(_) => Self::Other(err.into()),
         }
     }
 }

@@ -4,14 +4,16 @@ use {
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
     crate::{
-        current_block::{BlockRetrieving, RangeInclusive},
-        ethrpc::Web3,
         event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
         recent_block_cache::Block,
     },
     anyhow::{Context, Result},
     ethcontract::{Event, H160, U256},
+    ethrpc::{
+        current_block::{BlockRetrieving, RangeInclusive},
+        Web3,
+    },
     itertools::{Either, Itertools},
     model::{u256_decimal, TokenPair},
     num::{rational::Ratio, BigInt, Zero},

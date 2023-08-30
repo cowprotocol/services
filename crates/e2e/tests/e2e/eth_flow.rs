@@ -5,6 +5,7 @@ use {
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
+    ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
     hex_literal::hex,
     model::{
         order::{
@@ -36,11 +37,7 @@ use {
         refund_service::{INVALIDATED_OWNER, NO_OWNER},
     },
     reqwest::Client,
-    shared::{
-        current_block::timestamp_of_current_block_in_seconds,
-        ethrpc::Web3,
-        signature_validator::check_erc1271_result,
-    },
+    shared::signature_validator::check_erc1271_result,
 };
 
 const DAI_PER_ETH: u32 = 1_000;

@@ -1,6 +1,6 @@
 use {
-    crate::current_block::{self, BlockInfo, CurrentBlockStream},
     anyhow::{ensure, Result},
+    ethrpc::current_block::{self, BlockInfo, CurrentBlockStream},
     futures::{future::join_all, Stream, StreamExt as _},
     std::{sync::Arc, time::Duration},
     tokio::time,

@@ -19,7 +19,6 @@
 
 use {
     crate::{
-        current_block::RangeInclusive,
         event_handling::EventStoring,
         sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
     },
@@ -29,6 +28,7 @@ use {
         Event as BasePoolFactoryEvent,
     },
     ethcontract::{Event, H160, H256},
+    ethrpc::current_block::RangeInclusive,
     model::TokenPair,
     std::{
         cmp,

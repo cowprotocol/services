@@ -25,10 +25,10 @@
 //! could simplify this module if it was only used by by the former.
 
 use {
-    crate::current_block::CurrentBlockStream,
     anyhow::Result,
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
+    ethrpc::current_block::CurrentBlockStream,
     prometheus::IntCounterVec,
     std::{
         cmp,
@@ -359,7 +359,7 @@ where
 mod tests {
     use {
         super::*,
-        crate::current_block::{self, BlockInfo},
+        ethrpc::current_block::{mock_single_block, BlockInfo},
         futures::FutureExt,
         std::sync::Arc,
     };
@@ -410,7 +410,7 @@ mod tests {
     fn marks_recently_used() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -463,7 +463,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -510,7 +510,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -566,7 +566,7 @@ mod tests {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -632,7 +632,7 @@ mod tests {
     fn evicts_old_blocks_from_cache() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });
@@ -672,7 +672,7 @@ mod tests {
     fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
-        let block_stream = current_block::mock_single_block(BlockInfo {
+        let block_stream = mock_single_block(BlockInfo {
             number: block_number,
             ..Default::default()
         });

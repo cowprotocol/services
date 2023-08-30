@@ -3,11 +3,10 @@ use {
     crate::{
         arguments::{display_option, CodeSimulatorKind},
         code_simulation::{CodeSimulating, TenderlyCodeSimulator, Web3ThenTenderly},
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
         tenderly_api::TenderlyApi,
     },
     ethcontract::H160,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     std::{
         fmt::{self, Display, Formatter},
         sync::Arc,

@@ -21,6 +21,10 @@ use {
         PgTransaction,
     },
     ethcontract::{Event as EthContractEvent, H160},
+    ethrpc::{
+        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
+        Web3,
+    },
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
@@ -31,14 +35,12 @@ use {
     },
     number_conversions::u256_to_big_decimal,
     shared::{
-        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
         db_order_conversions::{
             buy_token_destination_into,
             order_kind_into,
             sell_token_source_into,
             signing_scheme_into,
         },
-        ethrpc::Web3,
         event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
