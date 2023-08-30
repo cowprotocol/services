@@ -526,6 +526,9 @@ fn main() {
     // Support contract used for balance simulation.
     generate_contract("Balances");
 
+    // Support contract used for ERC-1271 signature verification simulation.
+    generate_contract("Signatures");
+
     // Support contract used for global block stream.
     generate_contract("FetchBlock");
 
