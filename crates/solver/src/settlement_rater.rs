@@ -228,11 +228,10 @@ impl SettlementRating for SettlementRater {
         }
 
         let earned_fees = settlement.total_earned_fees(prices);
-        let gas_estimate = settlement.gas_amount.unwrap_or(simulation.gas_estimate);
         let inputs = crate::objective_value::Inputs::from_settlement(
             &settlement,
             prices,
-            &gas_estimate.to_big_rational() * &effective_gas_price,
+            &simulation.gas_estimate.to_big_rational() * &effective_gas_price,
         );
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
@@ -243,25 +242,18 @@ impl SettlementRating for SettlementRater {
                         .unwrap_or_default()
                         .saturating_sub(*discount),
                 ),
+                shared::http_solver::model::Score::RiskAdjusted(risk) => {
+                    let solver_gas_cost = risk
+                        .gas_amount
+                        .map(|amount| amount.to_big_rational() * effective_gas_price.clone());
+                    self.score_calculator.compute_score(
+                        &objective_value,
+                        &solver_gas_cost.unwrap_or(inputs.gas_cost),
+                        risk.success_probability,
+                    )?
+                }
             },
             None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
-        };
-        // recalculate score if success probability is provided
-        let score = match settlement.success_probability {
-            Some(success_probability) => {
-                match self.score_calculator.compute_score(
-                    &objective_value,
-                    &inputs.gas_cost,
-                    success_probability,
-                ) {
-                    Ok(score) => score,
-                    Err(err) => {
-                        tracing::warn!(?err, "Failed to compute score with success probability");
-                        score
-                    }
-                }
-            }
-            None => score,
         };
 
         let rated_settlement = RatedSettlement {
@@ -270,7 +262,7 @@ impl SettlementRating for SettlementRater {
             surplus: inputs.surplus_given,
             earned_fees,
             solver_fees: inputs.solver_fees,
-            gas_estimate,
+            gas_estimate: simulation.gas_estimate,
             gas_price: effective_gas_price,
             objective_value,
             score,

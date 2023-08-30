@@ -225,7 +225,10 @@ impl Trade {
 
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
-use shared::{external_prices::ExternalPrices, http_solver::model::Score};
+use shared::{
+    external_prices::ExternalPrices,
+    http_solver::model::{Risk, Score},
+};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -242,11 +245,9 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
                                           * struct */
-    /// TODO remove this field once all solvers conform to sending the
+    /// TODO(#1821) remove this field once all solvers conform to sending the
     /// success_probability
     pub score: Option<Score>,
-    pub success_probability: Option<f64>,
-    pub gas_amount: Option<U256>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -295,8 +296,6 @@ impl Settlement {
             encoder,
             submitter: self.submitter.clone(),
             score: self.score,
-            success_probability: self.success_probability,
-            gas_amount: self.gas_amount,
         }
     }
 
@@ -487,14 +486,14 @@ impl Settlement {
                 (Some(Score::Solver(left)), Some(Score::Solver(right))) => {
                     Some(Score::Solver(left + right))
                 }
-                _ => None,
-            },
-            success_probability: match (self.success_probability, other.success_probability) {
-                (Some(left), Some(right)) => Some(left * right),
-                _ => None,
-            },
-            gas_amount: match (self.gas_amount, other.gas_amount) {
-                (Some(left), Some(right)) => Some(left + right),
+                (Some(Score::RiskAdjusted(left)), Some(Score::RiskAdjusted(right))) => {
+                    Some(Score::RiskAdjusted(Risk {
+                        success_probability: left.success_probability * right.success_probability,
+                        gas_amount: left.gas_amount.and_then(|left| {
+                            right.gas_amount.and_then(|right| left.checked_add(right))
+                        }),
+                    }))
+                }
                 _ => None,
             },
         })

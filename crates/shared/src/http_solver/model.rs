@@ -187,6 +187,7 @@ impl Interaction for InteractionData {
 
 #[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum Score {
     /// The score value is provided as is from solver.
     /// Success probability is not incorporated into this value.
@@ -200,6 +201,18 @@ pub enum Score {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "scoreDiscount")]
     Discount(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol given the success
+    /// probability and optionally the amount of gas this settlement will take.
+    RiskAdjusted(Risk),
+}
+
+#[serde_as]
+#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Risk {
+    pub success_probability: f64,
+    #[serde_as(as = "Option<DecimalU256>")]
+    pub gas_amount: Option<U256>,
 }
 
 #[serde_as]
@@ -224,11 +237,6 @@ pub struct SettledBatchAuctionModel {
     /// TODO remove this field once all solvers conform to sending the
     /// success_probability
     pub score: Option<Score>,
-    /// The probability of the settlement to be mined successfully.
-    /// Expected values [0..1]
-    pub success_probability: Option<f64>,
-    /// Estimated gas usage of the settlement transaction.
-    pub gas_amount: Option<U256>,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -898,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_score_factor() {
+    fn decode_score_discount() {
         let solution = r#"
             {
                 "tokens": {},
@@ -911,6 +919,29 @@ mod tests {
         "#;
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(deserialized.score, Some(Score::Discount(1337.into())));
+    }
+
+    #[test]
+    fn decode_score_risak_adjusted() {
+        let solution = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "success_probability": 0.9,
+                "gas_amount": "4269",
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {}
+            }
+        "#;
+        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
+        assert_eq!(
+            deserialized.score,
+            Some(Score::RiskAdjusted(Risk {
+                success_probability: 0.9,
+                gas_amount: Some(4269.into())
+            }))
+        );
     }
 
     #[test]

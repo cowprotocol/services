@@ -1,3 +1,5 @@
+use shared::http_solver::model::{Risk, Score};
+
 mod optimize_buffer_usage;
 mod optimize_score;
 mod optimize_unwrapping;
@@ -130,24 +132,27 @@ impl PostProcessing for PostProcessingPipeline {
         )
         .await;
 
-        match (optimized_solution.success_probability, risk_calculator) {
-            (None, Some(risk_calculator)) => Settlement {
-                success_probability: compute_success_probability(
-                    &optimized_solution,
-                    &simulator,
-                    risk_calculator,
-                    gas_price,
-                    &solver_account.address(),
-                )
-                .await
-                .map_or_else(
-                    |err| {
-                        tracing::warn!(?err, "failed to compute success probability");
-                        None
-                    },
-                    Some,
-                ),
-                ..optimized_solution
+        match (optimized_solution.score, risk_calculator) {
+            (None, Some(risk_calculator)) => match compute_success_probability(
+                &optimized_solution,
+                &simulator,
+                risk_calculator,
+                gas_price,
+                &solver_account.address(),
+            )
+            .await
+            {
+                Ok(success_probability) => Settlement {
+                    score: Some(Score::RiskAdjusted(Risk {
+                        success_probability,
+                        gas_amount: None,
+                    })),
+                    ..optimized_solution
+                },
+                Err(err) => {
+                    tracing::warn!(?err, "failed to compute success probability");
+                    optimized_solution
+                }
             },
             _ => optimized_solution,
         }

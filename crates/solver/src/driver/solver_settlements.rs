@@ -17,8 +17,7 @@ pub struct RatedSettlement {
     pub surplus: BigRational,     // In wei.
     pub earned_fees: BigRational, // In wei.
     pub solver_fees: BigRational, // In wei.
-    // solver estimated gas usage
-    pub gas_estimate: U256, // In gas units.
+    pub gas_estimate: U256,       // In gas units.
     // protocol estimated gas price
     pub gas_price: BigRational, // In wei per gas unit.
     pub objective_value: BigRational,
