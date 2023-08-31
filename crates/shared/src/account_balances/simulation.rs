@@ -6,6 +6,7 @@ use {
     super::{BalanceFetching, Query, TransferSimulationError},
     crate::code_simulation::CodeSimulating,
     anyhow::{Context, Result},
+    contracts::{deployed_bytecode, dummy_contract},
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::extensions::StateOverride,
     futures::future,

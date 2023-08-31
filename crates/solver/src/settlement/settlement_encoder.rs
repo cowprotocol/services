@@ -751,14 +751,11 @@ pub mod tests {
     use {
         super::*,
         crate::settlement::NoopInteraction,
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::Bytes,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
-        shared::{
-            dummy_contract,
-            interaction::{EncodedInteraction, Interaction},
-        },
+        shared::interaction::{EncodedInteraction, Interaction},
     };
 
     #[test]
