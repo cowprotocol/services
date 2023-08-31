@@ -26,7 +26,6 @@ use {
         swap::fixed_point::Bfp,
     },
     crate::{
-        current_block::{BlockRetrieving, CurrentBlockStream},
         ethrpc::{Web3, Web3Transport},
         maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig},
@@ -49,6 +48,7 @@ use {
         BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
+    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
     model::TokenPair,
     reqwest::Client,
     std::{
@@ -500,7 +500,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            ethrpc,
             sources::balancer_v2::{
                 graph_api::{BalancerSubgraphClient, PoolData, PoolType},
                 pool_init::EmptyPoolInitializer,
@@ -535,7 +534,7 @@ mod tests {
             Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
                 web3: web3.clone(),
             })));
-        let block_stream = crate::current_block::current_block_stream(
+        let block_stream = ethrpc::current_block::current_block_stream(
             Arc::new(web3.clone()),
             Duration::from_secs(1000),
         )

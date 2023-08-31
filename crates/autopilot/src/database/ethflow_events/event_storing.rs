@@ -4,7 +4,8 @@ use {
     crate::database::{events::bytes_to_order_uid, Postgres},
     anyhow::Result,
     database::ethflow_orders::Refund,
-    shared::{current_block::RangeInclusive, event_handling::EventStoring},
+    ethrpc::current_block::RangeInclusive,
+    shared::event_handling::EventStoring,
 };
 
 fn get_refunds(events: Vec<ethcontract::Event<EthFlowEvent>>) -> Result<Vec<Refund>> {

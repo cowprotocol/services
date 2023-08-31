@@ -14,6 +14,7 @@ use {
     },
     contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
     ethcontract::{errors::DeployError, BlockNumber},
+    ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
@@ -26,7 +27,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        current_block::block_number_to_block_number_hash,
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,

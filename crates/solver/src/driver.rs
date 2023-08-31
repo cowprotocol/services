@@ -17,6 +17,7 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::Account,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     futures::future::join_all,
     gas_estimation::GasPriceEstimating,
     model::{
@@ -36,8 +37,6 @@ use {
     primitive_types::{H160, U256},
     shared::{
         account_balances::BalanceFetching,
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
         external_prices::ExternalPrices,
         http_solver::model::{
             AuctionResult,
@@ -263,18 +262,7 @@ impl Driver {
 
         let current_block_during_liquidity_fetch = self.block_stream.borrow().number;
 
-        let before_count = auction.orders.len();
-        let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
-        if before_count != auction.orders.len() {
-            tracing::debug!(
-                "reduced {} orders to {} because in flight at last seen block {}, orders in \
-                 flight: {:?}",
-                before_count,
-                auction.orders.len(),
-                auction.latest_settlement_block,
-                inflight_order_uids
-            );
-        }
+        self.in_flight_orders.update_and_filter(&mut auction);
 
         let auction_start_block = auction.block;
         let competition_auction = CompetitionAuction {

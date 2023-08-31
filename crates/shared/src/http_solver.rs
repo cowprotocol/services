@@ -22,6 +22,8 @@ const SOLVER_RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 pub enum Error {
     #[error("rate limited")]
     RateLimited,
+    #[error("timeout")]
+    DeadlineExceeded,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -196,7 +198,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             timeout,
             model
         );
-        let mut response = request.send().await.context("failed to send request")?;
+        let mut response = request.send().await.map_err(|err| {
+            if err.is_timeout() {
+                Error::DeadlineExceeded
+            } else {
+                anyhow!(err).context("failed to send request").into()
+            }
+        })?;
         let status = response.status();
         let response_body =
             response_body_with_size_limit(&mut response, SOLVER_RESPONSE_SIZE_LIMIT)
