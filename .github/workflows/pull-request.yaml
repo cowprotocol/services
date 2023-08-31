@@ -85,7 +85,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v3
-      - uses: engineerd/configurator@v0.0.1
+      - uses: engineerd/configurator@v0.0.5
         with:
           name: "anvil"
           url: "https://github.com/foundry-rs/foundry/releases/download/nightly/foundry_nightly_linux_amd64.tar.gz"
