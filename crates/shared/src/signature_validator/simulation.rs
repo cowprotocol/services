@@ -55,7 +55,7 @@ impl Validator {
 
         let call = contracts::reader::call(
             self.settlement,
-            contracts::bytecode!(contracts::support::Balances),
+            contracts::bytecode!(contracts::support::Signatures),
             tx.data.unwrap(),
         );
 
@@ -121,7 +121,7 @@ impl Simulation {
     fn decode(output: &[u8]) -> Result<Self> {
         let function = contracts::support::Signatures::raw_contract()
             .abi
-            .function("balance")
+            .function("validate")
             .unwrap();
         let tokens = function.decode_output(output).context("decode")?;
         let (result, gas_used) = Tokenize::from_token(Token::Tuple(tokens))?;
