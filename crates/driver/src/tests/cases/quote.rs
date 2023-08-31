@@ -2,7 +2,6 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::DEFAULT_SURPLUS_FEE,
         setup::{ab_order, ab_pool, ab_solution},
     },
 };
@@ -13,12 +12,7 @@ use crate::{
 #[ignore]
 async fn matrix() {
     for side in [order::Side::Buy, order::Side::Sell] {
-        for kind in [
-            order::Kind::Market,
-            order::Kind::Limit {
-                surplus_fee: order::SellAmount(DEFAULT_SURPLUS_FEE.into()),
-            },
-        ] {
+        for kind in [order::Kind::Market, order::Kind::Limit] {
             let test = tests::setup()
                 .name(format!("{side:?} {kind:?}"))
                 .pool(ab_pool())

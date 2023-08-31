@@ -10,7 +10,6 @@ use {
             Postgres,
         },
         event_updater::{EventUpdater, GPv2SettlementContract},
-        fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
     contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
@@ -63,18 +62,9 @@ pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
-pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
 pub mod run_loop;
 pub mod solvable_orders;
-
-/// To never get to the state where a limit order can not be considered usable
-/// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
-/// than its update interval. This factor controls how much longer it's
-/// considered valid. If the `surplus_fee` gets updated every 5 minutes and the
-/// factor is 2 we consider limit orders valid where the `surplus_fee` was
-/// computed up to 10 minutes ago.
-const SURPLUS_FEE_EXPIRATION_FACTOR: u8 = 2;
 
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -529,7 +519,6 @@ pub async fn main(args: arguments::Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
-        args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -559,26 +548,6 @@ pub async fn main(args: arguments::Arguments) {
             .run_forever()
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
-
-    if args.process_fill_or_kill_limit_orders {
-        let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
-        LimitOrderQuoter {
-            limit_order_age,
-            quoter,
-            database: db.clone(),
-            parallelism: args.limit_order_quoter_parallelism,
-            balance_fetcher: balance_fetcher.clone(),
-            strategies: args.quoting_strategies,
-            batch_size: args.limit_order_quoter_batch_size,
-        }
-        .spawn();
-        LimitOrderMetrics {
-            quoting_age: limit_order_age,
-            validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-            database: db.clone(),
-        }
-        .spawn();
-    }
 
     if args.enable_colocation {
         if args.drivers.is_empty() {
