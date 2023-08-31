@@ -71,7 +71,7 @@ impl Validator {
         let output = self.simulator.simulate(call, overrides).await?;
         let simulation = Simulation::decode(&output)?;
 
-        tracing::trace!(?check, ?simulation, "simulated balances");
+        tracing::trace!(?check, ?simulation, "simulated signatures");
         match simulation.result {
             SimulationResult::Ok => Ok(simulation.verification),
             result => {
@@ -128,7 +128,7 @@ enum SimulationResult {
 
 impl Simulation {
     fn decode(output: &[u8]) -> Result<Self> {
-        let function = contracts::support::Balances::raw_contract()
+        let function = contracts::support::Signatures::raw_contract()
             .abi
             .function("balance")
             .unwrap();
