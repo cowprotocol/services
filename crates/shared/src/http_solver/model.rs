@@ -214,6 +214,45 @@ pub enum Score {
     },
 }
 
+impl Score {
+    // Returns a new merged score, if possible. Currently only supports merging
+    // scores of same variant.
+    pub fn merge(&self, other: &Score) -> Option<Self> {
+        match (self, other) {
+            (Score::Solver { score: left }, Score::Solver { score: right }) => {
+                Some(Score::Solver {
+                    score: left.checked_add(*right)?,
+                })
+            }
+            (
+                Score::RiskAdjusted {
+                    success_probability: p_left,
+                    gas_amount: gas_left,
+                },
+                Score::RiskAdjusted {
+                    success_probability: p_right,
+                    gas_amount: gas_right,
+                },
+            ) => Some(Score::RiskAdjusted {
+                success_probability: p_left * p_right,
+                gas_amount: gas_left
+                    .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
+            }),
+            (
+                Score::Discount {
+                    score_discount: left,
+                },
+                Score::Discount {
+                    score_discount: right,
+                },
+            ) => Some(Score::Discount {
+                score_discount: left.checked_add(*right)?,
+            }),
+            _ => None,
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {

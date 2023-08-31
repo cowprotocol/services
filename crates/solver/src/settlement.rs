@@ -478,25 +478,7 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(Score::Solver { score: left }), Some(Score::Solver { score: right })) => {
-                    Some(Score::Solver {
-                        score: left + right,
-                    })
-                }
-                (
-                    Some(Score::RiskAdjusted {
-                        success_probability: p_left,
-                        gas_amount: gas_left,
-                    }),
-                    Some(Score::RiskAdjusted {
-                        success_probability: p_right,
-                        gas_amount: gas_right,
-                    }),
-                ) => Some(Score::RiskAdjusted {
-                    success_probability: p_left * p_right,
-                    gas_amount: gas_left
-                        .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
-                }),
+                (Some(left), Some(right)) => left.merge(&right),
                 _ => None,
             },
         })

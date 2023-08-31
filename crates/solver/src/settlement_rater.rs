@@ -18,7 +18,7 @@ use {
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
     num::{zero, BigRational, CheckedDiv, One},
-    number_conversions::{big_rational_to_u256, u256_to_big_rational},
+    number_conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
         code_fetching::CodeFetching,
@@ -248,13 +248,20 @@ impl SettlementRating for SettlementRater {
                     success_probability,
                     gas_amount,
                 } => {
-                    let gas_cost = gas_amount
-                        .map(|amount| u256_to_big_rational(&amount))
-                        .unwrap_or(inputs.gas_amount)
-                        * inputs.gas_price;
+                    let inputs = if let Some(amount) = gas_amount {
+                        // recompute the objective value based on the solver provided gas amount
+                        crate::objective_value::Inputs::from_settlement(
+                            &settlement,
+                            prices,
+                            effective_gas_price.clone(),
+                            amount,
+                        )
+                    } else {
+                        inputs.clone()
+                    };
                     self.score_calculator.compute_score(
-                        &objective_value,
-                        &gas_cost,
+                        &inputs.objective_value(),
+                        &inputs.gas_cost(),
                         *success_probability,
                     )?
                 }
