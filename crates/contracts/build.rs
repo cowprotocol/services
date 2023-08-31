@@ -429,6 +429,7 @@ fn main() {
         builder.add_method_alias("isValidSignature(bytes,bytes)", "is_valid_signature_legacy")
     });
     generate_contract("GnosisSafeProxy");
+    generate_contract("GnosisSafeProxyFactory");
     generate_contract_with_config("HoneyswapRouter", |builder| {
         builder.add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });

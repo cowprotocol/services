@@ -135,7 +135,7 @@ where
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TestAccount {
     account: Account,
     private_key: [u8; 32],
@@ -152,6 +152,19 @@ impl TestAccount {
 
     pub fn private_key(&self) -> &[u8; 32] {
         &self.private_key
+    }
+
+    pub fn sign_typed_data(
+        &self,
+        domain_separator: &DomainSeparator,
+        struct_hash: &[u8; 32],
+    ) -> EcdsaSignature {
+        EcdsaSignature::sign(
+            EcdsaSigningScheme::Eip712,
+            domain_separator,
+            struct_hash,
+            SecretKeyRef::from(&SecretKey::from_slice(self.private_key()).unwrap()),
+        )
     }
 }
 
@@ -232,12 +245,7 @@ impl CowToken {
             signing::keccak256(&buffer)
         };
 
-        let signature = EcdsaSignature::sign(
-            EcdsaSigningScheme::Eip712,
-            &DomainSeparator(domain.0),
-            &struct_hash,
-            SecretKeyRef::from(&SecretKey::from_slice(owner.private_key()).unwrap()),
-        );
+        let signature = owner.sign_typed_data(&DomainSeparator(domain.0), &struct_hash);
 
         let permit = self.contract.permit(
             owner.address(),
@@ -258,6 +266,106 @@ impl Deref for CowToken {
 
     fn deref(&self) -> &Self::Target {
         &self.contract
+    }
+}
+
+/// Wrapper over a deployed Safe.
+pub struct Safe {
+    chain_id: U256,
+    contract: GnosisSafe,
+    owner: TestAccount,
+}
+
+impl Safe {
+    /// Return a wrapper at the deployed address.
+    pub fn deployed(chain_id: U256, contract: GnosisSafe, owner: TestAccount) -> Self {
+        Self {
+            chain_id,
+            contract,
+            owner,
+        }
+    }
+
+    /// Returns the address of the Safe.
+    pub fn address(&self) -> H160 {
+        self.contract.address()
+    }
+
+    /// Returns the domain separator for the Safe.
+    fn domain_separator(&self) -> DomainSeparator {
+        let mut buffer = [0_u8; 96];
+        buffer[0..32].copy_from_slice(&hex!(
+            "47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218"
+        ));
+        self.chain_id.to_big_endian(&mut buffer[32..64]);
+        buffer[76..96].copy_from_slice(self.contract.address().as_bytes());
+
+        DomainSeparator(signing::keccak256(&buffer))
+    }
+
+    /// Returns a signed transaction ready for execution.
+    pub fn sign_transaction(
+        &self,
+        to: H160,
+        data: Vec<u8>,
+        nonce: U256,
+    ) -> ethcontract::dyns::DynMethodBuilder<bool> {
+        // First, we need to compute the signature.
+        let struct_hash = {
+            let mut buffer = [0_u8; 352];
+            buffer[0..32].copy_from_slice(&hex!(
+                "bb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8"
+            ));
+            buffer[44..64].copy_from_slice(to.as_bytes());
+            buffer[96..128].copy_from_slice(&signing::keccak256(&data));
+            nonce.to_big_endian(&mut buffer[320..352]);
+            // Note that we don't need to write to 0-ed fields...
+
+            signing::keccak256(&buffer)
+        };
+        let signature = {
+            let sig = self
+                .owner
+                .sign_typed_data(&self.domain_separator(), &struct_hash);
+            [sig.r.as_bytes(), sig.s.as_bytes(), &[sig.v]].concat()
+        };
+
+        self.contract.exec_transaction(
+            to,
+            Default::default(), // value
+            Bytes(data),
+            Default::default(), // operation
+            Default::default(), // safe tx gas
+            Default::default(), // base gas
+            Default::default(), // gas price
+            Default::default(), // gas token
+            Default::default(), // refund receiver
+            Bytes(signature),
+        )
+    }
+
+    /// Returns the ERC-1271 signature bytes for the specified message.
+    pub fn sign_message(&self, message: &[u8; 32]) -> Vec<u8> {
+        let struct_hash = {
+            let mut buffer = [0_u8; 64];
+            buffer[0..32].copy_from_slice(&hex!(
+                "60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca"
+            ));
+            buffer[32..64].copy_from_slice(&signing::keccak256(message));
+
+            signing::keccak256(&buffer)
+        };
+
+        let signature = self
+            .owner
+            .sign_typed_data(&self.domain_separator(), &struct_hash);
+
+        [
+            signature.r.as_bytes(),
+            signature.s.as_bytes(),
+            &[signature.v],
+        ]
+        .concat()
     }
 }
 

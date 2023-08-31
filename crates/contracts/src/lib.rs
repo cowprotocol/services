@@ -49,6 +49,7 @@ include_contracts! {
     GnosisSafe;
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
+    GnosisSafeProxyFactory;
     HoneyswapRouter;
     HooksTrampoline;
     ISwaprPair;
