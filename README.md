@@ -143,28 +143,24 @@ flyway -user=$USER -password="" -locations="filesystem:database/sql/" -url=jdbc:
 
 ### Local Test Network
 
-In order to run the `e2e` tests you have to have a testnet running locally.
-Due to the RPC calls the services issue `Ganache` is incompatible, so we will use `hardhat`.
+In order to run the `e2e` tests you have to have an EVM compatible testnet running locally.
+We make use of [anvil](https://github.com/foundry-rs/foundry) from the Foundry project to spin up a local testnet.
 
-1. Install [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
-2. Install hardhat with `npm install --save-dev hardhat`
-3. Create `hardhat.config.js` in the directory you installed `hardhat` in with following content:
-   ```javascript
-   module.exports = {
-       networks: {
-           hardhat: {
-               initialBaseFeePerGas: 0,
-               initialDate: "2000-01-01T00:00:00.000+00:00",
-               accounts: {
-                   accountsBalance: "1000000000000000000000000"
-                  },
-                  gas: 1e7,
-                  gasPrice: 1
-           }
-       }
-   };
-   ```
-4. Run local testnet with `npx hardhat node`
+`anvil` supports all the RPC methods we need to run the services and tests.
+
+1. Install [foundryup](https://book.getfoundry.sh/getting-started/installation).
+2. Install foundry with `foundryup`.
+3. Run `anvil` with the following configuration:
+
+```bash
+ANVIL_IP_ADDR=0.0.0.0 anvil \
+  --gas-price 1 \
+  --gas-limit 10000000 \
+  --base-fee 0 \
+  --balance 1000000 \
+  --chain-id 1 \
+  --timestamp 1577836800
+```
 
 ## Running the Services Locally
 
