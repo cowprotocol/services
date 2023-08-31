@@ -227,46 +227,40 @@ impl SettlementRating for SettlementRater {
         }
 
         let earned_fees = settlement.total_earned_fees(prices);
-        let inputs = crate::objective_value::Inputs::from_settlement(
-            &settlement,
-            prices,
-            effective_gas_price.clone(),
-            &simulation.gas_estimate,
-        );
+        let inputs = {
+            let gas_amount = match settlement.score {
+                Some(shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. }) => {
+                    gas_amount.unwrap_or(simulation.gas_estimate)
+                }
+                _ => simulation.gas_estimate,
+            };
+            crate::objective_value::Inputs::from_settlement(
+                &settlement,
+                prices,
+                effective_gas_price.clone(),
+                &gas_amount,
+            )
+        };
+
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
             Some(score) => match score {
                 shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
                 shared::http_solver::model::Score::Discount { score_discount } => {
                     Score::Discounted(
-                        big_rational_to_u256(&objective_value)
-                            .unwrap_or_default()
-                            .saturating_sub(*score_discount),
+                        big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
                     )
                 }
                 shared::http_solver::model::Score::RiskAdjusted {
                     success_probability,
-                    gas_amount,
-                } => {
-                    let inputs = if let Some(amount) = gas_amount {
-                        // recompute the objective value based on the solver provided gas amount
-                        crate::objective_value::Inputs::from_settlement(
-                            &settlement,
-                            prices,
-                            effective_gas_price.clone(),
-                            amount,
-                        )
-                    } else {
-                        inputs.clone()
-                    };
-                    self.score_calculator.compute_score(
-                        &inputs.objective_value(),
-                        &inputs.gas_cost(),
-                        *success_probability,
-                    )?
-                }
+                    ..
+                } => self.score_calculator.compute_score(
+                    &inputs.objective_value(),
+                    &inputs.gas_cost(),
+                    *success_probability,
+                )?,
             },
-            None => Score::Protocol(big_rational_to_u256(&objective_value).unwrap_or_default()),
+            None => Score::Protocol(big_rational_to_u256(&objective_value)?),
         };
 
         let rated_settlement = RatedSettlement {
@@ -275,6 +269,8 @@ impl SettlementRating for SettlementRater {
             surplus: inputs.surplus_given,
             earned_fees,
             solver_fees: inputs.solver_fees,
+            // save simulation gas estimate even if the solver provided gas amount
+            // it's safer and more accurate since simulation gas estimate includes pre/post hooks
             gas_estimate: simulation.gas_estimate,
             gas_price: effective_gas_price,
             objective_value,
