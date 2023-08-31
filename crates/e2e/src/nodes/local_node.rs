@@ -1,7 +1,7 @@
 use {
     super::TestNode,
     chrono::{DateTime, Utc},
-    ethcontract::{U256, H160},
+    ethcontract::{H160, U256},
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
