@@ -172,11 +172,6 @@ pub async fn main(args: arguments::Arguments) {
             vault_relayer,
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "signature_validating".into())
-            .unwrap(),
     );
 
     let balance_fetcher = args.shared.balances.cached(
@@ -187,11 +182,6 @@ pub async fn main(args: arguments::Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
         current_block_stream.clone(),
     );
 

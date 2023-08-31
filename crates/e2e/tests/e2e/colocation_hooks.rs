@@ -51,14 +51,14 @@ async fn test(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--account-balances-optimistic-pre-interaction-handling=true".to_string(),
+        "--account-balances=simulation".to_string(),
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
     services
         .start_api(vec![
+            "--account-balances=simulation".to_string(),
             "--enable-custom-interactions=true".to_string(),
-            "--account-balances-optimistic-pre-interaction-handling=true".to_string(),
         ])
         .await;
 

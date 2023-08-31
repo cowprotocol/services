@@ -116,11 +116,6 @@ pub async fn run(args: Arguments) {
             vault_relayer,
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "signature_validating".into())
-            .unwrap(),
     );
 
     let vault = match args.shared.balancer_v2_vault_address {
@@ -158,11 +153,6 @@ pub async fn run(args: Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(

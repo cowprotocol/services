@@ -523,10 +523,9 @@ fn main() {
     generate_contract("Trader");
     generate_contract("Solver");
 
-    // Support contract used for balance simulation.
+    // Support contract used for various order simulations.
     generate_contract("Balances");
-
-    // Support contract used for ERC-1271 signature verification simulation.
+    generate_contract("Reader");
     generate_contract("Signatures");
 
     // Support contract used for global block stream.

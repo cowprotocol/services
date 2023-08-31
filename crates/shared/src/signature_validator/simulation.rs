@@ -5,27 +5,23 @@
 
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    crate::code_simulation::{CodeSimulating, SimulationError},
     anyhow::{Context, Result},
     ethcontract::{common::abi::Token, tokens::Tokenize, Bytes},
-    ethrpc::extensions::StateOverride,
+    ethrpc::Web3,
     futures::future,
-    maplit::hashmap,
     primitive_types::{H160, U256},
-    std::sync::Arc,
-    web3::types::CallRequest,
 };
 
 pub struct Validator {
-    simulator: Arc<dyn CodeSimulating>,
+    web3: Web3,
     settlement: H160,
     vault_relayer: H160,
 }
 
 impl Validator {
-    pub fn new(simulator: Arc<dyn CodeSimulating>, settlement: H160, vault_relayer: H160) -> Self {
+    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160) -> Self {
         Self {
-            simulator,
+            web3,
             settlement,
             vault_relayer,
         }
@@ -57,20 +53,14 @@ impl Validator {
             )
             .tx;
 
-        let call = CallRequest {
-            to: tx.to,
-            data: tx.data,
-            ..Default::default()
-        };
-        let overrides = hashmap! {
-            signatures.address() => StateOverride {
-                code: Some(contracts::deployed_bytecode!(contracts::support::Signatures)),
-                ..Default::default()
-            },
-        };
+        let call = contracts::reader::call(
+            self.settlement,
+            contracts::bytecode!(contracts::support::Balances),
+            tx.data.unwrap(),
+        );
 
-        let output = self.simulator.simulate(call, overrides).await?;
-        let simulation = Simulation::decode(&output)?;
+        let output = self.web3.eth().call(call, None).await?;
+        let simulation = Simulation::decode(&output.0)?;
 
         tracing::trace!(?check, ?simulation, "simulated signatures");
         match simulation.result {
@@ -154,8 +144,8 @@ impl SimulationResult {
     }
 }
 
-impl From<SimulationError> for SignatureValidationError {
-    fn from(err: SimulationError) -> Self {
+impl From<web3::error::Error> for SignatureValidationError {
+    fn from(err: web3::error::Error) -> Self {
         Self::Other(err.into())
     }
 }
