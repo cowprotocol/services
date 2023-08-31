@@ -85,13 +85,15 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p driver --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
+      - uses: engineerd/configurator@v0.0.1
         with:
-          file: docker-compose.yaml
+          name: "anvil"
+          url: "https://github.com/foundry-rs/foundry/releases/download/nightly/foundry_nightly_linux_amd64.tar.gz"
+          pathInArchive: "anvil"
+      - uses: Swatinem/rust-cache@v2
+      # Build the driver's tests.
+      - run: cargo build -p driver --tests
+      # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: cargo test -p driver -- --ignored
 
   openapi:
