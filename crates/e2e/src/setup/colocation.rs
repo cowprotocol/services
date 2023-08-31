@@ -38,7 +38,7 @@ pub fn start_driver(
 ) -> JoinHandle<()> {
     let config_file = config_tmp_file(format!(
         r#"
-# CI e2e tests run with hardhat, which doesn't support access lists.
+# CI e2e tests run with anvil, which does support access lists.
 disable-access-list-simulation = true
 
 [contracts]
