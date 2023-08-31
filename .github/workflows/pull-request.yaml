@@ -73,7 +73,7 @@ jobs:
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
-          up-opts: -d db migrations hardhat
+          up-opts: -d db migrations chain
       - run: cargo test -p e2e local_node -- --ignored --test-threads 1 --nocapture
 
   test-driver:
