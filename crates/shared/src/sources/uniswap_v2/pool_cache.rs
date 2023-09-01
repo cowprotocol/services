@@ -1,11 +1,11 @@
 use {
     crate::{
-        current_block::CurrentBlockStream,
         maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
     anyhow::Result,
+    ethrpc::current_block::CurrentBlockStream,
     model::TokenPair,
     std::{collections::HashSet, sync::Arc},
 };

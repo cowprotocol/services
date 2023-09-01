@@ -1,8 +1,8 @@
 use {
     anyhow::Result,
     contracts::gpv2_settlement,
+    ethrpc::current_block::{BlockNumberHash, BlockRetrieving},
     shared::{
-        current_block::{BlockNumberHash, BlockRetrieving},
         event_handling::{EventHandler, EventRetrieving, EventStoring},
         impl_event_retrieving,
         maintenance::Maintaining,

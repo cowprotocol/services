@@ -4,8 +4,6 @@
 use {
     crate::{
         account_balances,
-        current_block,
-        ethrpc,
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
@@ -140,10 +138,10 @@ logging_args_with_default_filter!(
 #[group(skip)]
 pub struct Arguments {
     #[clap(flatten)]
-    pub ethrpc: ethrpc::Arguments,
+    pub ethrpc: crate::ethrpc::Arguments,
 
     #[clap(flatten)]
-    pub current_block: current_block::Arguments,
+    pub current_block: crate::current_block::Arguments,
 
     #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,

@@ -6,13 +6,13 @@
 use {
     super::internal::InternalPoolFetching,
     crate::{
-        current_block::CurrentBlockStream,
         maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
         sources::balancer_v2::pools::Pool,
     },
     anyhow::Result,
     ethcontract::H256,
+    ethrpc::current_block::CurrentBlockStream,
     std::{collections::HashSet, sync::Arc},
 };
 

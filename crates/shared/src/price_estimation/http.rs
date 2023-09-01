@@ -218,6 +218,7 @@ impl HttpPriceEstimator {
             .await
             .map_err(|err| match err {
                 ApiError::RateLimited => PriceEstimationError::RateLimited,
+                ApiError::DeadlineExceeded => PriceEstimationError::DeadlineExceeded,
                 ApiError::Other(err) => PriceEstimationError::Other(err),
             })
         };
@@ -416,7 +417,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            current_block::current_block_stream,
             gas_price_estimation::FakeGasPriceEstimator,
             http_solver::{
                 model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
@@ -445,7 +445,7 @@ mod tests {
         anyhow::anyhow,
         clap::ValueEnum,
         ethcontract::dyns::DynTransport,
-        ethrpc::{http::HttpTransport, Web3},
+        ethrpc::{current_block::current_block_stream, http::HttpTransport, Web3},
         gas_estimation::GasPrice1559,
         maplit::hashmap,
         model::order::OrderKind,

@@ -253,15 +253,6 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_surplus_fee(mut self, surplus_fee: U256) -> Self {
-        if let OrderClass::Limit(limit) = &mut self.0.metadata.class {
-            limit.surplus_fee = Some(surplus_fee);
-        } else {
-            panic!("not a limit order");
-        }
-        self
-    }
-
     pub fn with_solver_fee(mut self, fee: U256) -> Self {
         self.0.metadata.solver_fee = fee;
         self
@@ -916,9 +907,6 @@ impl OrderClass {
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
     #[serde_as(as = "Option<DecimalU256>")]
-    pub surplus_fee: Option<U256>,
-    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
-    #[serde_as(as = "Option<DecimalU256>")]
     pub executed_surplus_fee: Option<U256>,
 }
 
@@ -1076,8 +1064,6 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "surplusFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "surplusFeeTimestamp": "1970-01-01T00:00:00Z",
             "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
@@ -1102,8 +1088,6 @@ mod tests {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
                 class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: Some(U256::MAX),
-                    surplus_fee_timestamp: Some(Default::default()),
                     executed_surplus_fee: Some(1.into()),
                 }),
                 owner: H160::from_low_u64_be(1),

@@ -53,9 +53,7 @@ impl Auction {
                         },
                         kind: match order.class {
                             Class::Market => competition::order::Kind::Market,
-                            Class::Limit => competition::order::Kind::Limit {
-                                surplus_fee: eth::U256::zero().into(),
-                            },
+                            Class::Limit => competition::order::Kind::Limit,
                             Class::Liquidity => competition::order::Kind::Liquidity,
                         },
                         app_data: order.app_data.into(),

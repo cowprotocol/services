@@ -250,7 +250,7 @@ impl IntoWarpReply for PriceEstimationError {
                 StatusCode::BAD_REQUEST,
             ),
             Self::UnsupportedOrderType => {
-                tracing::error!("PriceEstimaton::UnsupportedOrderType");
+                tracing::error!("PriceEstimation::UnsupportedOrderType");
                 internal_error_reply()
             }
             Self::RateLimited => internal_error_reply(),

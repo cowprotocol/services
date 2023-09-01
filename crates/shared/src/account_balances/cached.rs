@@ -1,9 +1,7 @@
 use {
-    crate::{
-        account_balances::{BalanceFetching, Query, TransferSimulationError},
-        current_block::{into_stream, CurrentBlockStream},
-    },
+    crate::account_balances::{BalanceFetching, Query, TransferSimulationError},
     anyhow::Result,
+    ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::StreamExt,
     itertools::Itertools,
     primitive_types::U256,
@@ -202,8 +200,9 @@ impl BalanceFetching for CachingBalanceFetcher {
 mod tests {
     use {
         super::*,
-        crate::{account_balances::MockBalanceFetching, current_block::BlockInfo},
+        crate::account_balances::MockBalanceFetching,
         ethcontract::H160,
+        ethrpc::current_block::BlockInfo,
         model::order::SellTokenSource,
     };
 

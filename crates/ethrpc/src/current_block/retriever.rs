@@ -1,6 +1,6 @@
 use {
     super::{BlockInfo, BlockNumberHash, BlockRetrieving, RangeInclusive},
-    crate::ethrpc::Web3,
+    crate::Web3,
     anyhow::{bail, Context, Result},
     contracts::support::FetchBlock,
     primitive_types::{H256, U256},
@@ -30,9 +30,10 @@ impl BlockRetrieving for BlockRetriever {
         let (return_data, block) = {
             let batch = web3::Web3::new(Batch::new(self.0.transport().clone()));
 
+            let bytecode = <FetchBlock>::raw_contract().bytecode.to_bytes().unwrap();
             let return_data = batch.eth().call(
                 CallRequest {
-                    data: Some(bytecode!(FetchBlock)),
+                    data: Some(bytecode),
                     ..Default::default()
                 },
                 Some(BlockNumber::Latest.into()),
@@ -107,7 +108,7 @@ fn decode(return_data: [u8; 96]) -> Result<BlockInfo> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::ethrpc::create_env_test_transport};
+    use {super::*, crate::create_env_test_transport};
 
     #[ignore]
     #[tokio::test]

@@ -1479,7 +1479,6 @@ pub mod tests {
             .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
             .with_buy_token(usdc)
             .with_buy_amount(U256::exp10(9)) // 1_000 USDC
-            .with_surplus_fee(U256::exp10(16)) // 0.01 WETH
             .with_fee_amount(0.into())
             .with_kind(OrderKind::Sell)
             .build();
@@ -1534,7 +1533,6 @@ pub mod tests {
             .with_buy_amount(U256::exp10(18)) // 1 WETH
             .with_sell_token(usdc)
             .with_sell_amount(1_010_000_000u128.into()) // 1_010 USDC
-            .with_surplus_fee(U256::exp10(7)) // 10 USDC
             .with_fee_amount(0.into())
             .with_kind(OrderKind::Buy)
             .build();
