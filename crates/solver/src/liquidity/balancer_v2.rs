@@ -218,13 +218,13 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{Approval, MockAllowanceManaging},
+        contracts::dummy_contract,
         maplit::{btreemap, hashmap, hashset},
         mockall::predicate::*,
         model::TokenPair,
         primitive_types::H160,
         shared::{
             baseline_solver::BaseTokens,
-            dummy_contract,
             http_solver::model::{InternalizationStrategy, TokenAmount},
             interaction::Interaction,
             sources::balancer_v2::{

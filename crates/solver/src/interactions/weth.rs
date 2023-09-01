@@ -41,7 +41,7 @@ impl Interaction for UnwrapWethInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex, shared::dummy_contract};
+    use {super::*, contracts::dummy_contract, hex_literal::hex};
 
     #[test]
     fn encode_unwrap_weth() {

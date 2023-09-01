@@ -203,7 +203,7 @@ mod tests {
             solver::ExternalPrices,
             test::account,
         },
-        contracts::{GPv2Settlement, WETH9},
+        contracts::{dummy_contract, GPv2Settlement, WETH9},
         ethcontract::{Web3, H160, U256},
         futures::FutureExt as _,
         maplit::hashmap,
@@ -211,7 +211,6 @@ mod tests {
         model::order::{Order, OrderData, OrderKind},
         shared::{
             conversions::U256Ext,
-            dummy_contract,
             ethrpc::create_env_test_transport,
             oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
         },

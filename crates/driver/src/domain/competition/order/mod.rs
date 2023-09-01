@@ -264,11 +264,7 @@ pub enum Kind {
     /// surplus instead. (The order surplus is the additional money that the
     /// solver managed to solve for, above what the user specified in the
     /// order.)
-    Limit {
-        /// The fee to be taken from the order surplus. The surplus is always
-        /// taken from the sell amount.
-        surplus_fee: SellAmount,
-    },
+    Limit,
     /// An order submitted by a privileged user, which provides liquidity for
     /// our settlement contract.
     Liquidity,

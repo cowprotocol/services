@@ -50,18 +50,22 @@ impl InFlightOrders {
     /// amounts. Returns the set of order uids that are considered in
     /// flight.
     pub fn update_and_filter(&mut self, auction: &mut Auction) -> HashSet<OrderUid> {
+        let uids = |in_flight: &BTreeMap<u64, Vec<OrderUid>>| {
+            in_flight
+                .values()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>()
+        };
+        let inflight_before = uids(&self.in_flight);
+        let orders_before = auction.orders.len();
+
         // If api has seen block X then trades starting at X + 1 are still in flight.
         self.in_flight = self
             .in_flight
             .split_off(&(auction.latest_settlement_block + 1));
 
-        let in_flight = self
-            .in_flight
-            .values()
-            .flatten()
-            .copied()
-            .collect::<HashSet<_>>();
-
+        let in_flight = uids(&self.in_flight);
         self.in_flight_trades
             .retain(|uid, _| in_flight.contains(uid));
 
@@ -89,6 +93,19 @@ impl InFlightOrders {
                 u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
             }
         });
+
+        tracing::trace!(
+            auction_block = %auction.block,
+            latest_settlement_block = %auction.latest_settlement_block,
+            inflight_before_count = %inflight_before.len(),
+            inflight_after_count = %in_flight.len(),
+            orders_before_count = %orders_before,
+            orders_after_count = %auction.orders.len(),
+            inflight_before = ?inflight_before,
+            inflight_after = ?in_flight,
+            "inflight stats"
+        );
+
         in_flight
     }
 

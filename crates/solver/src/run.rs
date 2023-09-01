@@ -14,7 +14,7 @@ use {
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
         settlement_post_processing::PostProcessingPipeline,
-        settlement_rater::SettlementRater,
+        settlement_rater::{ScoreCalculator, SettlementRater},
         settlement_submission::{
             submitter::{
                 eden_api::EdenApi,
@@ -38,6 +38,7 @@ use {
     futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
+    number_conversions::u256_to_big_rational,
     shared::{
         account_balances,
         baseline_solver::BaseTokens,
@@ -337,6 +338,11 @@ pub async fn run(args: Arguments) {
         settlement_contract: settlement_contract.clone(),
         web3: web3.clone(),
         code_fetcher: code_fetcher.clone(),
+        score_calculator: ScoreCalculator::new(
+            u256_to_big_rational(&args.score_cap),
+            args.transaction_strategy.clone(),
+            args.disable_high_risk_public_mempool_transactions,
+        ),
     });
 
     let solver = crate::solver::create(
@@ -375,7 +381,7 @@ pub async fn run(args: Arguments) {
         post_processing_pipeline,
         &domain,
         s3_instance_uploader,
-        &args.score_params,
+        &args.risk_params,
         settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,

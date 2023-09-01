@@ -36,7 +36,7 @@ pub struct Funds {
 
 impl Vault {
     pub fn new(address: eth::ContractAddress) -> Self {
-        Self(shared::dummy_contract!(BalancerV2Vault, address.0))
+        Self(contracts::dummy_contract!(BalancerV2Vault, address.0))
     }
 
     pub fn address(&self) -> eth::ContractAddress {

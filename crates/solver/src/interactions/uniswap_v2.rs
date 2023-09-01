@@ -39,10 +39,9 @@ impl UniswapInteraction {
 mod tests {
     use {
         super::*,
-        contracts::IUniswapLikeRouter,
+        contracts::{dummy_contract, IUniswapLikeRouter},
         ethrpc::dummy,
         hex_literal::hex,
-        shared::dummy_contract,
     };
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {

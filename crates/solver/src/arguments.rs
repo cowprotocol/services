@@ -4,7 +4,7 @@ use {
         s3_instance_upload_arguments::S3UploadArguments,
         settlement_access_list::AccessListEstimatorType,
         solver::{
-            score_computation,
+            risk_computation,
             single_order_solver,
             ExternalSolverArg,
             SolverAccountArg,
@@ -314,8 +314,14 @@ pub struct Arguments {
     )]
     pub additional_mining_deadline: Duration,
 
+    /// Parameters used to calculate the success/revert posibility of a
+    /// settlement. Currently used for gnosis solvers.
     #[clap(flatten)]
-    pub score_params: score_computation::Arguments,
+    pub risk_params: risk_computation::Arguments,
+
+    /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
+    #[clap(long, env, default_value = "10000000000000000")]
+    pub score_cap: U256,
 
     /// Should we skip settlements with non-positive score for solver
     /// competition?
@@ -467,7 +473,8 @@ impl std::fmt::Display for Arguments {
             "additional_mining_deadline: {:?}",
             self.additional_mining_deadline
         )?;
-        writeln!(f, "{}", self.score_params)?;
+        writeln!(f, "{}", self.risk_params)?;
+        writeln!(f, "score_cap {}", self.score_cap)?;
         writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
         writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
         writeln!(
@@ -495,7 +502,7 @@ impl std::fmt::Display for Arguments {
     }
 }
 
-#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+#[derive(Copy, Clone, Debug, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum TransactionStrategyArg {
     PublicMempool,

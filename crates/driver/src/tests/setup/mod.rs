@@ -16,7 +16,6 @@ use {
                 DEFAULT_SCORE_MAX,
                 DEFAULT_SCORE_MIN,
                 DEFAULT_SURPLUS_FACTOR,
-                DEFAULT_SURPLUS_FEE,
                 ETH_ORDER_AMOUNT,
             },
             setup::blockchain::Blockchain,
@@ -94,6 +93,7 @@ pub struct Order {
     // TODO For now I'll always set these to zero. But I think they should be tested as well.
     // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
+    // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
@@ -170,9 +170,7 @@ impl Order {
     /// Make this a limit order.
     pub fn limit(self) -> Self {
         Self {
-            kind: order::Kind::Limit {
-                surplus_fee: eth::U256::from(DEFAULT_SURPLUS_FEE).into(),
-            },
+            kind: order::Kind::Limit,
             ..self
         }
     }
@@ -216,7 +214,7 @@ impl Order {
 
     fn surplus_fee(&self) -> eth::U256 {
         match self.kind {
-            order::Kind::Limit { surplus_fee: _ } => self.solver_fee.unwrap_or_default(),
+            order::Kind::Limit => self.solver_fee.unwrap_or_default(),
             _ => 0.into(),
         }
     }

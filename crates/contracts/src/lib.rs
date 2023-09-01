@@ -2,6 +2,9 @@
 
 pub use ethcontract;
 
+#[macro_use]
+mod macros;
+
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;
