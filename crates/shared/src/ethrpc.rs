@@ -68,5 +68,5 @@ pub fn web3(
     name: impl ToString,
 ) -> Web3 {
     let http_builder = http_factory.builder();
-    ethrpc::web3(args.ethrpc(), http_builder, url, name)
+    ethrpc::with_config(args.ethrpc(), http_builder, url, name)
 }

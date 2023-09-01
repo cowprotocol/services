@@ -517,7 +517,10 @@ fn main() {
             .add_network_str(GNOSIS, "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
     });
     generate_contract_with_config("SolverTrampoline", |builder| {
-        builder.add_network_str("5", "0xd29ae121Ad58479c9Eb8C4F235c618fcF42eCba0")
+        builder.add_network_str(GOERLI, "0xd29ae121Ad58479c9Eb8C4F235c618fcF42eCba0")
+    });
+    generate_contract_with_config("OneInchOffchainOracle", |builder| {
+        builder.add_network_str(MAINNET, "0x52cbE0f49CcdD4Dc6E9C13BAb024EABD2842045B")
     });
 
     // Support contracts used for trade and token simulations.

@@ -57,6 +57,7 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    OneInchOffchainOracle;
     PancakeRouter;
     SolverTrampoline;
     SushiSwapRouter;

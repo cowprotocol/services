@@ -201,6 +201,11 @@ fn run() -> Result<()> {
         .github(
             "ISwaprPair",
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
+        )?
+        .github(
+            "OneInchOffchainOracle",
+            "1inch/spot-price-aggregator/541f0cdadd05ca4a6f7a91124ae4764a3f4af7eb/\
+             deployments/mainnet/OffchainOracle.json"
         )?;
 
     Ok(())

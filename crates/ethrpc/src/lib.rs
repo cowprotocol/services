@@ -62,16 +62,21 @@ impl Default for Config {
     }
 }
 
+/// Creates a new Web3 instance with default configuration.
+pub fn web3(name: &str, url: &Url) -> Web3 {
+    with_config(Default::default(), Default::default(), url, name)
+}
+
 /// Create a Web3 instance.
-pub fn web3(
-    args: Config,
+pub fn with_config(
+    config: Config,
     http_factory: reqwest::ClientBuilder,
     url: &Url,
     name: impl ToString,
 ) -> Web3 {
     let http = http_factory.cookie_store(true).build().unwrap();
     let http = HttpTransport::new(http, url.clone(), name.to_string());
-    let transport = match args.into_buffered_configuration() {
+    let transport = match config.into_buffered_configuration() {
         Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
         None => Web3Transport::new(http),
     };
