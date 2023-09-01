@@ -1,5 +1,5 @@
 use {
-    super::score_computation::ScoreCalculator,
+    super::risk_computation::RiskCalculator,
     crate::{
         settlement::Settlement,
         settlement_post_processing::PostProcessing,
@@ -18,7 +18,7 @@ use {
 pub struct OptimizingSolver {
     pub inner: Arc<dyn Solver>,
     pub post_processing_pipeline: Arc<dyn PostProcessing>,
-    pub score_calculator: Option<ScoreCalculator>,
+    pub risk_calculator: Option<RiskCalculator>,
 }
 
 #[async_trait::async_trait]
@@ -29,15 +29,13 @@ impl Solver for OptimizingSolver {
             max_fee_per_gas: auction.gas_price,
             max_priority_fee_per_gas: 0.,
         };
-        let external_prices = auction.external_prices.clone();
         let results = self.inner.solve(auction).await?;
         let optimizations = results.into_iter().map(|settlement| {
             self.post_processing_pipeline.optimize_settlement(
                 settlement,
                 self.account().clone(),
                 gas_price,
-                self.score_calculator.as_ref(),
-                &external_prices,
+                self.risk_calculator.as_ref(),
             )
         });
         let optimized = futures::future::join_all(optimizations).await;
@@ -86,14 +84,14 @@ mod tests {
         let mut post_processing = MockPostProcessing::new();
         post_processing
             .expect_optimize_settlement()
-            .withf(|settlement, _, gas_price, _, _| {
+            .withf(|settlement, _, gas_price, _| {
                 gas_price.effective_gas_price() == 9_999.
                     && settlement
                         .encoder
                         .amount_to_unwrap(H160([0x42; 20]))
                         .is_zero()
             })
-            .returning(|_, _, _, _, _| {
+            .returning(|_, _, _, _| {
                 async {
                     let mut settlement = Settlement::default();
                     settlement.encoder.add_unwrap(UnwrapWethInteraction {
@@ -109,7 +107,7 @@ mod tests {
         let optimizing_solver = OptimizingSolver {
             inner: Arc::new(inner),
             post_processing_pipeline: Arc::new(post_processing),
-            score_calculator: None,
+            risk_calculator: None,
         };
 
         let auction = Auction {

@@ -71,7 +71,7 @@ pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
-pub mod score_computation;
+pub mod risk_computation;
 pub mod single_order_solver;
 mod zeroex_solver;
 
@@ -393,7 +393,7 @@ pub async fn create(
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
-    score_configuration: &score_computation::Arguments,
+    risk_configuration: &risk_computation::Arguments,
     settlement_rater: Arc<dyn SettlementRating>,
     enforce_correct_fees: bool,
     ethflow_contract: Option<H160>,
@@ -481,7 +481,7 @@ pub async fn create(
                 "configured slippage",
             );
 
-            let score_calculator = score_configuration.get_calculator(solver_type);
+            let risk_calculator = risk_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
                 SolverType::None => return None,
@@ -573,7 +573,7 @@ pub async fn create(
             Some(shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
-                score_calculator,
+                risk_calculator,
             }))
         })
         .collect();
