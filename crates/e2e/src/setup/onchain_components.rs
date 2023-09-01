@@ -291,18 +291,6 @@ impl Safe {
         self.contract.address()
     }
 
-    /// Returns the domain separator for the Safe.
-    fn domain_separator(&self) -> DomainSeparator {
-        let mut buffer = [0_u8; 96];
-        buffer[0..32].copy_from_slice(&hex!(
-            "47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218"
-        ));
-        self.chain_id.to_big_endian(&mut buffer[32..64]);
-        buffer[76..96].copy_from_slice(self.contract.address().as_bytes());
-
-        DomainSeparator(signing::keccak256(&buffer))
-    }
-
     /// Returns a signed transaction ready for execution.
     pub fn sign_transaction(
         &self,
@@ -310,31 +298,33 @@ impl Safe {
         data: Vec<u8>,
         nonce: U256,
     ) -> ethcontract::dyns::DynMethodBuilder<bool> {
-        // First, we need to compute the signature.
-        let struct_hash = {
+        let signature = self.sign({
+            // `SafeTx` struct hash computation ported from the Safe Solidity code:
+            // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L377>
+
             let mut buffer = [0_u8; 352];
             buffer[0..32].copy_from_slice(&hex!(
+                // `SafeTx` type hash:
+                // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L43>
                 "bb8310d486368db6bd6f849402fdd73ad53d316b5a4b2644ad6efe0f941286d8"
             ));
             buffer[44..64].copy_from_slice(to.as_bytes());
             buffer[96..128].copy_from_slice(&signing::keccak256(&data));
             nonce.to_big_endian(&mut buffer[320..352]);
-            // Note that we don't need to write to 0-ed fields...
+
+            // Since the [`sign_transaction`] transaction method only accepts
+            // a limited number of parameters and defaults to 0 for the others,
+            // We can leave the rest of the buffer 0-ed out (as we have 0
+            // values for those fields).
 
             signing::keccak256(&buffer)
-        };
-        let signature = {
-            let sig = self
-                .owner
-                .sign_typed_data(&self.domain_separator(), &struct_hash);
-            [sig.r.as_bytes(), sig.s.as_bytes(), &[sig.v]].concat()
-        };
+        });
 
         self.contract.exec_transaction(
             to,
             Default::default(), // value
             Bytes(data),
-            Default::default(), // operation
+            Default::default(), // operation (= CALL)
             Default::default(), // safe tx gas
             Default::default(), // base gas
             Default::default(), // gas price
@@ -346,20 +336,46 @@ impl Safe {
 
     /// Returns the ERC-1271 signature bytes for the specified message.
     pub fn sign_message(&self, message: &[u8; 32]) -> Vec<u8> {
-        let struct_hash = {
+        self.sign({
+            // `SafeMessage` struct hash computation ported from the Safe Solidity code:
+            // <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L52>
+
             let mut buffer = [0_u8; 64];
             buffer[0..32].copy_from_slice(&hex!(
+                // `SafeMessage` type hash:
+                // <https://etherscan.io/address/0xf48f2b2d2a534e402487b3ee7c18c33aec0fe5e4#code#F1#L14>
                 "60b3cbf8b4a223d68d641b3b6ddf9a298e7f33710cf3d3a9d1146b5a6150fbca"
             ));
             buffer[32..64].copy_from_slice(&signing::keccak256(message));
 
             signing::keccak256(&buffer)
-        };
+        })
+    }
 
-        let signature = self
-            .owner
-            .sign_typed_data(&self.domain_separator(), &struct_hash);
+    /// Returns the domain separator for the Safe.
+    fn domain_separator(&self) -> DomainSeparator {
+        // Domain separator computation ported from the Safe Solidity code:
+        // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L350>
 
+        let mut buffer = [0_u8; 96];
+        buffer[0..32].copy_from_slice(&hex!(
+            // The domain separator type hash:
+            // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F1#L38>
+            "47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218"
+        ));
+        self.chain_id.to_big_endian(&mut buffer[32..64]);
+        buffer[76..96].copy_from_slice(self.contract.address().as_bytes());
+
+        DomainSeparator(signing::keccak256(&buffer))
+    }
+
+    /// Creates an ECDSA signature with the [`Safe`]'s `owner` and encodes to
+    /// bytes in the format expected by the Safe contract.
+    fn sign(&self, hash: [u8; 32]) -> Vec<u8> {
+        let signature = self.owner.sign_typed_data(&self.domain_separator(), &hash);
+
+        // Signature format specified here:
+        // <https://etherscan.io/address/0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552#code#F11#L20>
         [
             signature.r.as_bytes(),
             signature.s.as_bytes(),
