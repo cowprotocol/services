@@ -2,6 +2,9 @@
 
 pub use ethcontract;
 
+#[macro_use]
+mod macros;
+
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;
@@ -69,6 +72,7 @@ pub mod support {
         FetchBlock;
         Multicall;
         Trader;
+        Signatures;
         Solver;
     }
 }

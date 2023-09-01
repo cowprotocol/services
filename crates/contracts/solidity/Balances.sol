@@ -8,7 +8,7 @@ import { Transfer, IVaultRelayer } from "./interfaces/IVaultRelayer.sol";
 
 /// @title A contract for simulating available balances for settlements.
 contract Balances {
-    /// The on-chain 
+    /// @dev The on-chain contracts required for the simulation.
     struct Contracts {
         ISettlement settlement;
         IVaultRelayer vaultRelayer;

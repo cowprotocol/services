@@ -124,6 +124,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
+        contracts::dummy_contract,
         ethcontract::{H160, H256},
         ethcontract_mock::Mock,
         futures::future,

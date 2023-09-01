@@ -9,7 +9,7 @@ pub mod zeroex;
 use {
     crate::price_estimation::{PriceEstimationError, Query},
     anyhow::Result,
-    contracts::ERC20,
+    contracts::{dummy_contract, ERC20},
     ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256},
     model::interaction::InteractionData,
     serde::Serialize,

@@ -413,9 +413,10 @@ mod tests {
             order_balance_filter::max_balance,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
+        contracts::dummy_contract,
         maplit::hashmap,
         model::{order::OrderData, TokenPair},
-        shared::{dummy_contract, externalprices, token_info::MockTokenInfoFetching},
+        shared::{externalprices, token_info::MockTokenInfoFetching},
     };
 
     #[tokio::test]

@@ -209,7 +209,7 @@ impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, num::rational::Ratio, shared::dummy_contract, std::collections::HashMap};
+    use {super::*, contracts::dummy_contract, num::rational::Ratio, std::collections::HashMap};
 
     impl UniswapV3SettlementHandler {
         fn new_dummy(allowances: HashMap<H160, U256>, fee: u32) -> Self {

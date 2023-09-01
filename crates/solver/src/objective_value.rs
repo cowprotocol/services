@@ -6,7 +6,7 @@ use {
     shared::external_prices::ExternalPrices,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Inputs {
     pub surplus_given: BigRational,
     pub solver_fees: BigRational,
@@ -33,6 +33,10 @@ impl Inputs {
 
     pub fn objective_value(&self) -> BigRational {
         &self.surplus_given + &self.solver_fees - &self.gas_price * &self.gas_amount
+    }
+
+    pub fn gas_cost(&self) -> BigRational {
+        &self.gas_price * &self.gas_amount
     }
 }
 

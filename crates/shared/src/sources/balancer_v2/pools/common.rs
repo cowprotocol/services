@@ -347,7 +347,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfo},
         },
         anyhow::bail,
-        contracts::BalancerV2WeightedPool,
+        contracts::{dummy_contract, BalancerV2WeightedPool},
         ethcontract::U256,
         ethcontract_mock::Mock,
         futures::future,

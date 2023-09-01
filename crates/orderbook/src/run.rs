@@ -38,7 +38,7 @@ use {
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
-        signature_validator::Web3SignatureValidator,
+        signature_validator,
         sources::{
             self,
             balancer_v2::{
@@ -109,7 +109,19 @@ pub async fn run(args: Arguments) {
         .expect("Failed to retrieve network version ID");
     let network_name = network_name(&network, chain_id);
 
-    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = args.shared.signatures.validator(
+        signature_validator::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+        },
+        web3.clone(),
+        simulation_web3.clone(),
+        args.shared
+            .tenderly
+            .get_api_instance(&http_factory, "signature_validating".into())
+            .unwrap(),
+    );
 
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(

@@ -126,13 +126,10 @@ mod tests {
     use {
         super::*,
         crate::solver::http_solver::buffers::MockBufferRetrieving,
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         model::order::{Order, OrderData},
         primitive_types::U256,
-        shared::{
-            dummy_contract,
-            token_info::{MockTokenInfoFetching, TokenInfo},
-        },
+        shared::token_info::{MockTokenInfoFetching, TokenInfo},
     };
 
     #[tokio::test]

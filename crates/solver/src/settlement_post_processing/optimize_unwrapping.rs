@@ -86,8 +86,8 @@ mod tests {
             settlement_post_processing::MockSettlementSimulating,
             solver::http_solver::buffers::MockBufferRetrieving,
         },
+        contracts::dummy_contract,
         maplit::hashmap,
-        shared::dummy_contract,
         std::collections::HashMap,
     };
 

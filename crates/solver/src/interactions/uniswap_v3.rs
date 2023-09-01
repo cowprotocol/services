@@ -42,7 +42,11 @@ impl Interaction for UniswapV3Interaction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, contracts::UniswapV3SwapRouter, hex_literal::hex, shared::dummy_contract};
+    use {
+        super::*,
+        contracts::{dummy_contract, UniswapV3SwapRouter},
+        hex_literal::hex,
+    };
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];

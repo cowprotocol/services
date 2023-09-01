@@ -64,7 +64,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, primitive_types::H160, shared::dummy_contract};
+    use {super::*, contracts::dummy_contract, primitive_types::H160};
 
     #[test]
     fn encode_unwrap_weth() {
