@@ -13,7 +13,6 @@ use {
             chrono::{DateTime, Utc},
             BigDecimal,
         },
-        FromRow,
         PgConnection,
     },
 };
@@ -99,8 +98,6 @@ pub struct Order {
     pub full_fee_amount: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     pub class: OrderClass,
-    pub surplus_fee: Option<BigDecimal>,
-    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
 }
 
 pub async fn insert_orders_and_ignore_conflicts(
@@ -135,11 +132,9 @@ INSERT INTO orders (
     buy_token_balance,
     full_fee_amount,
     cancellation_timestamp,
-    class,
-    surplus_fee,
-    surplus_fee_timestamp
+    class
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     "#;
 
 pub async fn insert_order_and_ignore_conflicts(
@@ -181,8 +176,6 @@ async fn insert_order_execute_sqlx(
         .bind(&order.full_fee_amount)
         .bind(order.cancellation_timestamp)
         .bind(order.class)
-        .bind(&order.surplus_fee)
-        .bind(order.surplus_fee_timestamp)
         .execute(ex)
         .await?;
     Ok(())
@@ -462,8 +455,6 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub surplus_fee: Option<BigDecimal>,
-    pub surplus_fee_timestamp: Option<DateTime<Utc>>,
     pub executed_surplus_fee: Option<BigDecimal>,
     pub executed_solver_fee: Option<BigDecimal>,
     pub full_app_data: Option<Vec<u8>>,
@@ -506,7 +497,7 @@ const ORDERS_SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class, o.surplus_fee, o.surplus_fee_timestamp,
+o.class,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -724,17 +715,8 @@ WHERE
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
-    min_surplus_fee_timestamp: DateTime<Utc>,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
-    const QUERY: &str = const_format::concatcp!(
-        OPEN_ORDERS,
-        " AND (class <> 'limit' OR partially_fillable OR (surplus_fee IS NOT NULL AND \
-         surplus_fee_timestamp > $2))"
-    );
-    sqlx::query_as(QUERY)
-        .bind(min_valid_to)
-        .bind(min_surplus_fee_timestamp)
-        .fetch(ex)
+    sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
 }
 
 pub async fn latest_settlement_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
@@ -762,131 +744,6 @@ pub async fn count_limit_orders_by_owner(
     sqlx::query_scalar(QUERY)
         .bind(min_valid_to)
         .bind(owner)
-        .fetch_one(ex)
-        .await
-}
-
-/// These parameters have to match in an order for a [`FeeUpdate`] update to
-/// apply to it.
-#[derive(Clone, Debug, FromRow, PartialEq, Eq, Hash)]
-pub struct OrderFeeSpecifier {
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount: BigDecimal,
-}
-
-pub struct FeeUpdate {
-    pub surplus_fee: Option<BigDecimal>,
-    pub surplus_fee_timestamp: DateTime<Utc>,
-    pub full_fee_amount: BigDecimal,
-}
-
-/// Updates the `surplus_fee` of multiple orders and returns their `uid`s.
-pub async fn update_fok_limit_order_fees(
-    ex: &mut PgConnection,
-    order_spec: &OrderFeeSpecifier,
-    update: &FeeUpdate,
-) -> Result<Vec<OrderUid>, sqlx::Error> {
-    const QUERY: &str = "
-        UPDATE orders
-        SET
-            surplus_fee = $1,
-            surplus_fee_timestamp = $2,
-            full_fee_amount = $3
-        WHERE
-            sell_token = $4
-            AND buy_token = $5
-            AND sell_amount = $6
-            AND NOT partially_fillable
-        RETURNING
-            uid
-    ";
-    sqlx::query_scalar(QUERY)
-        .bind(&update.surplus_fee)
-        .bind(update.surplus_fee_timestamp)
-        .bind(&update.full_fee_amount)
-        .bind(order_spec.sell_token)
-        .bind(order_spec.buy_token)
-        .bind(&order_spec.sell_amount)
-        .fetch_all(ex)
-        .await
-}
-
-/// All data required to filter, select and update orders to update the
-/// `surplus_fee` for.
-#[derive(Debug, Clone, sqlx::FromRow, PartialEq, Eq, Default)]
-pub struct OrderQuotingData {
-    pub uid: OrderUid,
-    pub owner: Address,
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub sell_amount: BigDecimal,
-    pub sell_token_balance: SellTokenSource,
-    pub pre_interactions: i32,
-}
-
-/// Returns all fill or kill limit orders that are currently waiting to be
-/// filled sorted by `surplus_fee_timestamp` with the most outdated ones coming
-/// first.
-pub fn open_fok_limit_orders(
-    ex: &mut PgConnection,
-    max_fee_timestamp: DateTime<Utc>,
-    min_valid_to: i64,
-) -> BoxStream<'_, Result<OrderQuotingData, sqlx::Error>> {
-    const QUERY: &str = const_format::concatcp!(
-        " SELECT sell_token, buy_token, sell_amount, uid, owner, sell_token_balance, \
-         cardinality(pre_interactions) as pre_interactions",
-        " FROM (",
-        OPEN_ORDERS,
-        "     AND class = 'limit'",
-        "     AND NOT partially_fillable",
-        "     AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
-        "     ORDER BY surplus_fee_timestamp ASC NULLS FIRST",
-        " ) as subquery"
-    );
-
-    sqlx::query_as(QUERY)
-        .bind(min_valid_to)
-        .bind(max_fee_timestamp)
-        .fetch(ex)
-}
-
-/// Count the number of open limit orders. Used for metrics.
-pub async fn count_fok_limit_orders(
-    ex: &mut PgConnection,
-    min_valid_to: i64,
-) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT (*) FROM (",
-        OPEN_ORDERS,
-        " AND class = 'limit'",
-        " AND NOT partially_fillable",
-        ") AS subquery"
-    );
-    sqlx::query_scalar(QUERY)
-        .bind(min_valid_to)
-        .fetch_one(ex)
-        .await
-}
-
-/// Count the number of open fok limit orders with outdated fee as would be
-/// returned by `open_fok_limit_orders`.
-pub async fn count_fok_limit_orders_with_outdated_fees(
-    ex: &mut PgConnection,
-    max_fee_timestamp: DateTime<Utc>,
-    min_valid_to: i64,
-) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = const_format::concatcp!(
-        "SELECT COUNT (*) FROM (",
-        OPEN_ORDERS,
-        " AND class = 'limit'",
-        " AND NOT partially_fillable",
-        " AND COALESCE(surplus_fee_timestamp, 'epoch') < $2",
-        ") AS subquery"
-    );
-    sqlx::query_scalar(QUERY)
-        .bind(min_valid_to)
-        .bind(max_fee_timestamp)
         .fetch_one(ex)
         .await
 }
@@ -972,11 +829,6 @@ mod tests {
         assert_eq!(order.settlement_contract, full_order.settlement_contract);
         assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
         assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
-        assert_eq!(order.surplus_fee, full_order.surplus_fee);
-        assert_eq!(
-            order.surplus_fee_timestamp,
-            full_order.surplus_fee_timestamp
-        );
     }
 
     #[tokio::test]
@@ -1464,11 +1316,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_orders(ex, 0, Utc::now())
-                .next()
-                .await
-                .transpose()
-                .unwrap()
+            solvable_orders(ex, 0).next().await.transpose().unwrap()
         }
 
         async fn pre_signature_event(
@@ -1558,7 +1406,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_orders(ex, min_valid_to, Utc::now())
+            solvable_orders(ex, min_valid_to)
                 .next()
                 .await
                 .transpose()
@@ -1953,225 +1801,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_update_multiple_identical_limit_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        for id in 1..3 {
-            insert_order(
-                &mut db,
-                &Order {
-                    uid: ByteArray([id; 56]),
-                    sell_token: ByteArray([1; 20]),
-                    buy_token: ByteArray([2; 20]),
-                    sell_amount: 1_000.into(),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-        }
-
-        let order_spec = OrderFeeSpecifier {
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 1_000.into(),
-        };
-        let update = FeeUpdate {
-            surplus_fee: Some(42.into()),
-            surplus_fee_timestamp: Utc.timestamp_opt(1234567890, 0).unwrap(),
-            full_fee_amount: 1337.into(),
-        };
-        let updated_uids = update_fok_limit_order_fees(&mut db, &order_spec, &update)
-            .await
-            .unwrap();
-        assert_eq!(updated_uids, vec![ByteArray([1; 56]), ByteArray([2; 56])]);
-
-        for id in 1..3 {
-            let order = read_order(&mut db, &ByteArray([id; 56]))
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(order.surplus_fee, update.surplus_fee);
-            assert_eq!(
-                order.surplus_fee_timestamp,
-                Some(update.surplus_fee_timestamp)
-            );
-            assert_eq!(order.full_fee_amount, update.full_fee_amount);
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_limit_orders_with_outdated_fees() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let timestamp = Utc.timestamp_opt(1234567890, 0).unwrap();
-        // Valid limit order with an outdated surplus fee.
-        let order = Order {
-            uid: ByteArray([1; 56]),
-            class: OrderClass::Limit,
-            valid_to: 3,
-            surplus_fee: Some(0.into()),
-            surplus_fee_timestamp: Some(timestamp - chrono::Duration::seconds(1)),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 1.into(),
-            buy_amount: 1.into(),
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-
-        // Like previous order but partially fillable so shouldn't get included.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([8; 56]),
-                partially_fillable: true,
-                ..order
-            },
-        )
-        .await
-        .unwrap();
-
-        // Give the order a pre-interaction to test that the query finds it.
-        insert_or_overwrite_interaction(&mut db, &Default::default(), &ByteArray([1; 56]))
-            .await
-            .unwrap();
-
-        // Expired limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([2; 56]),
-                class: OrderClass::Limit,
-                valid_to: 1,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Cancelled limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([3; 56]),
-                class: OrderClass::Limit,
-                valid_to: 1,
-                cancellation_timestamp: Some(Utc::now()),
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Limit order with a recent surplus fee timestamp.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([4; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(timestamp),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Limit order that was never estimated.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([5; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: None,
-                surplus_fee_timestamp: None,
-                sell_token: ByteArray([3; 20]),
-                buy_token: ByteArray([4; 20]),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Limit order that was recently unsuccessfully estimated.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([6; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: None,
-                surplus_fee_timestamp: Some(timestamp),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Not a limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([7; 56]),
-                valid_to: 3,
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let orders: Vec<_> = open_fok_limit_orders(&mut db, timestamp, 2)
-            .try_collect()
-            .await
-            .unwrap();
-
-        assert_eq!(orders.len(), 2);
-        assert_eq!(orders[0].uid, ByteArray([5; 56]));
-        assert_eq!(orders[1].uid, ByteArray([1; 56]),);
-        assert_eq!(orders[1].pre_interactions, 1);
-
-        // Invalidate one of the orders through a trade.
-        crate::events::insert_trade(
-            &mut db,
-            &EventIndex::default(),
-            &Trade {
-                order_uid: ByteArray([1; 56]),
-                sell_amount_including_fee: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let orders: Vec<_> = open_fok_limit_orders(&mut db, timestamp, 2)
-            .try_collect()
-            .await
-            .unwrap();
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].uid, ByteArray([5; 56]));
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn postgres_limit_order_executed() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
@@ -2207,110 +1836,6 @@ mod tests {
             .unwrap();
         assert_eq!(order.executed_surplus_fee, Some(fee));
         assert_eq!(order.executed_solver_fee, Some(solver_fee));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_limit_order_counting() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let timestamp = Utc.timestamp_opt(1234567890, 0).unwrap();
-        let order_uid = ByteArray([1; 56]);
-        // Valid limit order with an outdated surplus fee.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: order_uid,
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Expired limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([2; 56]),
-                class: OrderClass::Limit,
-                valid_to: 1,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Cancelled limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([3; 56]),
-                class: OrderClass::Limit,
-                valid_to: 1,
-                cancellation_timestamp: Some(Utc::now()),
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(Default::default()),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Limit order with a recent surplus fee timestamp.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([4; 56]),
-                class: OrderClass::Limit,
-                valid_to: 3,
-                surplus_fee: Some(0.into()),
-                surplus_fee_timestamp: Some(timestamp),
-                owner: ByteArray([7u8; 20]),
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        // Not a limit order.
-        insert_order(
-            &mut db,
-            &Order {
-                uid: ByteArray([5; 56]),
-                valid_to: 3,
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(count_fok_limit_orders(&mut db, 2).await.unwrap(), 2);
-        assert_eq!(
-            count_fok_limit_orders_with_outdated_fees(&mut db, timestamp, 2)
-                .await
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            count_limit_orders_by_owner(&mut db, 2, &ByteArray([7u8; 20]))
-                .await
-                .unwrap(),
-            1
-        );
     }
 
     #[tokio::test]

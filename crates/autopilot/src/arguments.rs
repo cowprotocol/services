@@ -1,5 +1,4 @@
 use {
-    crate::fok_limit_orders::QuotingStrategy,
     primitive_types::H160,
     shared::{
         arguments::{display_list, display_option},
@@ -108,38 +107,12 @@ pub struct Arguments {
     )]
     pub max_auction_age: Duration,
 
-    /// If a limit order surplus fee is older than this, it will get refreshed.
-    /// Expects a value in seconds.
-    #[clap(
-        long,
-        env,
-        default_value = "180",
-        value_parser = shared::arguments::duration_from_seconds,
-    )]
-    pub max_surplus_fee_age: Duration,
-
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
-
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub process_fill_or_kill_limit_orders: bool,
-
-    /// How many quotes the limit order quoter updates in parallel.
-    #[clap(long, env, default_value = "5")]
-    pub limit_order_quoter_parallelism: usize,
-
-    /// How many quotes the limit order quoter updates per update cycle.
-    #[clap(long, env, default_value = "25")]
-    pub limit_order_quoter_batch_size: usize,
 
     /// The time between auction updates.
     #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
     pub auction_update_interval: Duration,
-
-    /// Defines which strategies to apply when updating the `surplus_fee` of
-    /// limit orders.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub quoting_strategies: Vec<QuotingStrategy>,
 
     /// Fee scaling factor for objective value. This controls the constant
     /// factor by which order fees are multiplied with. Setting this to a value
@@ -225,28 +198,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
-        writeln!(f, "max_surplus_fee_age: {:?}", self.max_surplus_fee_age)?;
         writeln!(
             f,
             "limit_order_price_factor: {:?}",
             self.limit_order_price_factor
         )?;
-        writeln!(
-            f,
-            "process_fill_or_kill_limit_orders: {:?}",
-            self.process_fill_or_kill_limit_orders
-        )?;
-        writeln!(
-            f,
-            "limit_order_quoter_parallelism: {:?}",
-            self.limit_order_quoter_parallelism
-        )?;
-        writeln!(
-            f,
-            "limit_order_quoter_batch_size: {:?}",
-            self.limit_order_quoter_batch_size,
-        )?;
-        writeln!(f, "quoting_strategies: {:?}", self.quoting_strategies)?;
         writeln!(
             f,
             "fee_objective_scaling_factor: {}",

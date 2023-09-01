@@ -478,9 +478,7 @@ impl Settlement {
             encoder: merged,
             submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(Score::Score(left)), Some(Score::Score(right))) => {
-                    Some(Score::Score(left + right))
-                }
+                (Some(left), Some(right)) => left.merge(&right),
                 _ => None,
             },
         })
@@ -588,7 +586,7 @@ pub mod tests {
         super::*,
         crate::liquidity::SettlementHandling,
         maplit::hashmap,
-        model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
+        model::order::{OrderClass, OrderData, OrderKind, OrderMetadata},
         num::FromPrimitive,
         shared::{addr, externalprices},
     };
@@ -1556,10 +1554,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: Some(1_000_u128.into()),
-                                ..Default::default()
-                            }),
+                            class: OrderClass::Limit(Default::default()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1590,10 +1585,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: Some(1_000_u128.into()),
-                                ..Default::default()
-                            }),
+                            class: OrderClass::Limit(Default::default()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1635,10 +1627,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        class: OrderClass::Limit(LimitOrderClass {
-                            surplus_fee: Some(1_000_u128.into()),
-                            ..Default::default()
-                        }),
+                        class: OrderClass::Limit(Default::default()),
                         ..Default::default()
                     },
                     ..Default::default()

@@ -4,6 +4,7 @@ use {
     database::auction::AuctionId,
     futures::{StreamExt, TryStreamExt},
     model::{auction::Auction, order::Order},
+    std::ops::DerefMut,
 };
 
 pub struct SolvableOrders {
@@ -67,28 +68,26 @@ impl QuoteStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn solvable_orders(
-        &self,
-        min_valid_to: u32,
-        min_surplus_fee_timestamp: DateTime<Utc>,
-    ) -> Result<SolvableOrders> {
+    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["solvable_orders"])
             .start_timer();
 
         let mut ex = self.0.begin().await?;
-        let orders = database::orders::solvable_orders(
-            &mut ex,
-            min_valid_to as i64,
-            min_surplus_fee_timestamp,
-        )
-        .map(|result| match result {
-            Ok(order) => full_order_into_model_order(order),
-            Err(err) => Err(anyhow::Error::from(err)),
-        })
-        .try_collect()
-        .await?;
+        // Set the transaction isolation level to REPEATABLE READ
+        // so the both SELECT queries below are executed in the same database snapshot
+        // taken at the moment before the first query is executed.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(ex.deref_mut())
+            .await?;
+        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+            .map(|result| match result {
+                Ok(order) => full_order_into_model_order(order),
+                Err(err) => Err(anyhow::Error::from(err)),
+            })
+            .try_collect()
+            .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
         Ok(SolvableOrders {

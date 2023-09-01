@@ -5,15 +5,7 @@ use {
     },
     ethereum_types::H160,
     itertools::Itertools,
-    model::order::{
-        LimitOrderClass,
-        Order,
-        OrderClass,
-        OrderData,
-        OrderKind,
-        OrderMetadata,
-        OrderUid,
-    },
+    model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
     num::{BigRational, One},
     shared::external_prices::ExternalPrices,
     solver::{
@@ -80,10 +72,7 @@ pub fn solve(
                         uid: OrderUid(order.uid.0),
                         class: match order.class {
                             order::Class::Market => OrderClass::Market,
-                            order::Class::Limit => OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: Some(order.fee().amount),
-                                ..Default::default()
-                            }),
+                            order::Class::Limit => OrderClass::Limit(Default::default()),
                             order::Class::Liquidity => OrderClass::Liquidity,
                         },
                         solver_fee: order.fee().amount,

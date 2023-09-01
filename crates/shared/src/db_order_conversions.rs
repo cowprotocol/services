@@ -208,11 +208,6 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            surplus_fee: order
-                .surplus_fee
-                .as_ref()
-                .map(|fee| big_decimal_to_u256(fee).unwrap()),
-            surplus_fee_timestamp: order.surplus_fee_timestamp,
             executed_surplus_fee: order
                 .executed_surplus_fee
                 .as_ref()

@@ -38,10 +38,7 @@ impl Fulfillment {
             let surplus_fee = match order.side {
                 order::Side::Buy => order::TargetAmount::default(),
                 order::Side::Sell => order::TargetAmount(match fee {
-                    Fee::Static => match order.kind {
-                        order::Kind::Limit { surplus_fee } => surplus_fee.0,
-                        _ => eth::U256::default(),
-                    },
+                    Fee::Static => eth::U256::default(),
                     Fee::Dynamic(fee) => fee.0,
                 }),
             };
@@ -152,7 +149,7 @@ impl Trade {
         if let &Self::Fulfillment(Fulfillment {
             order:
                 competition::Order {
-                    kind: order::Kind::Limit { surplus_fee: _ },
+                    kind: order::Kind::Limit,
                     ..
                 },
             fee: Fee::Dynamic(fee),

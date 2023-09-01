@@ -137,7 +137,7 @@ pub mod tests {
         contracts::dummy_contract,
         ethcontract::H160,
         maplit::hashmap,
-        model::order::{LimitOrderClass, OrderData, OrderKind, OrderMetadata},
+        model::order::{OrderData, OrderKind, OrderMetadata},
         primitive_types::U256,
     };
 
@@ -241,11 +241,7 @@ pub mod tests {
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
         for class in [
             OrderClass::Market,
-            OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
-                executed_surplus_fee: None,
-            }),
+            OrderClass::Limit(Default::default()),
             OrderClass::Liquidity,
         ] {
             let native_token_address = H160([0x42; 20]);
