@@ -34,30 +34,6 @@ macro_rules! json_map {
 }
 
 #[macro_export]
-macro_rules! dummy_contract {
-    ($contract:ty, $addr:expr) => {
-        <$contract>::at(&ethrpc::dummy::web3(), $addr.into())
-    };
-}
-
-#[macro_export]
-macro_rules! bytecode {
-    ($contract:ty) => {
-        <$contract>::raw_contract().bytecode.to_bytes().unwrap()
-    };
-}
-
-#[macro_export]
-macro_rules! deployed_bytecode {
-    ($contract:ty) => {
-        <$contract>::raw_contract()
-            .deployed_bytecode
-            .to_bytes()
-            .unwrap()
-    };
-}
-
-#[macro_export]
 macro_rules! externalprices {
     (native_token: $nt:expr $(, $($t:tt)*)?) => {
         $crate::external_prices::ExternalPrices::new(

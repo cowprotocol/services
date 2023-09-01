@@ -5,12 +5,11 @@
 use {
     crate::interactions::Erc20ApproveInteraction,
     anyhow::{anyhow, bail, ensure, Context as _, Result},
-    contracts::ERC20,
+    contracts::{dummy_contract, ERC20},
     ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256},
     ethrpc::Web3,
     maplit::hashmap,
     shared::{
-        dummy_contract,
         http_solver::model::TokenAmount,
         interaction::{EncodedInteraction, Interaction},
     },

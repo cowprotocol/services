@@ -64,11 +64,10 @@ mod tests {
             settlement_post_processing::MockPostProcessing,
             solver::MockSolver,
         },
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::PrivateKey,
         futures::FutureExt,
         primitive_types::H160,
-        shared::dummy_contract,
     };
 
     #[tokio::test]

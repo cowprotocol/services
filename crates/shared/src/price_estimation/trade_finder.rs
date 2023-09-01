@@ -22,6 +22,8 @@ use {
     },
     anyhow::{Context, Result},
     contracts::{
+        deployed_bytecode,
+        dummy_contract,
         support::{Solver, Trader},
         GPv2Settlement,
         WETH9,
