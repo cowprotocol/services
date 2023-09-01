@@ -7,10 +7,8 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     clap::Parser,
-    model::{
-        order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
-        u256_decimal,
-    },
+    model::order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    number::u256_decimal,
     primitive_types::{H160, U256},
     prometheus::IntGauge,
     reqwest::Client,

@@ -14,7 +14,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
-    model::u256_decimal,
+    number::u256_decimal,
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Client,

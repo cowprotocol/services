@@ -200,6 +200,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
         maplit::hashmap,
+        number::NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };
@@ -263,7 +264,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::COW,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await

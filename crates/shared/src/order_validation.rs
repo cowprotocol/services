@@ -1012,6 +1012,7 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
+        number::NonZeroU256,
         serde_json::json,
         std::str::FromStr,
     };
@@ -2221,7 +2222,7 @@ mod tests {
                 buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: quote_search_parameters.sell_amount,
+                        value: NonZeroU256::try_from(quote_search_parameters.sell_amount).unwrap(),
                     },
                 },
                 verification,
@@ -2367,10 +2368,6 @@ mod tests {
                 reason: Default::default()
             }),
             ValidationError::Partial(PartialValidationError::UnsupportedToken { .. })
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount),
-            ValidationError::ZeroAmount
         );
         assert_calc_error_matches!(
             CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),

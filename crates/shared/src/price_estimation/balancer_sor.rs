@@ -97,6 +97,7 @@ mod tests {
         crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate},
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
+        number::NonZeroU256,
         std::time::Duration,
     };
 
@@ -128,7 +129,7 @@ mod tests {
             verification: None,
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::DAI,
-            in_amount: U256::from_f64_lossy(1e18),
+            in_amount: NonZeroU256::try_from(U256::from_f64_lossy(1e18)).unwrap(),
             kind: OrderKind::Sell,
         };
         let result = single_estimate(&estimator, &query).await;

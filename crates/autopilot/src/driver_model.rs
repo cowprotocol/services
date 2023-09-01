@@ -5,7 +5,7 @@
 
 pub mod quote {
     use {
-        model::u256_decimal,
+        number::u256_decimal,
         primitive_types::{H160, U256},
         serde::{Deserialize, Serialize},
     };
@@ -52,8 +52,8 @@ pub mod solve {
             bytes_hex::BytesHex,
             order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,
-            u256_decimal::DecimalU256,
         },
+        number::u256_decimal::DecimalU256,
         primitive_types::{H160, U256},
         serde::{Deserialize, Serialize},
         serde_with::{serde_as, DisplayFromStr},

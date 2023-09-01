@@ -56,6 +56,7 @@ dependencies = [
  "chrono",
  "clap",
  "model",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -264,6 +265,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number",
  "number-conversions",
  "observe",
  "primitive-types",
@@ -1690,6 +1692,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "model",
+ "number",
  "observe",
  "orderbook",
  "rand",
@@ -2827,6 +2830,7 @@ dependencies = [
  "lazy_static",
  "maplit",
  "num",
+ "number",
  "primitive-types",
  "secp256k1",
  "serde",
@@ -3005,6 +3009,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "number"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "number-conversions",
+ "primitive-types",
+ "serde",
+ "serde_with",
+]
+
+[[package]]
 name = "number-conversions"
 version = "0.1.0"
 dependencies = [
@@ -3117,6 +3132,7 @@ dependencies = [
  "model",
  "multibase",
  "num",
+ "number",
  "number-conversions",
  "observe",
  "primitive-types",
@@ -3988,6 +4004,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number",
  "number-conversions",
  "observe",
  "primitive-types",

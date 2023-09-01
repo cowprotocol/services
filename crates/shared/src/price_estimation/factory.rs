@@ -42,7 +42,7 @@ use {
     anyhow::{Context as _, Result},
     ethcontract::H160,
     gas_estimation::GasPriceEstimating,
-    model::nonzero_u256::NonZeroU256,
+    number::NonZeroU256,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };

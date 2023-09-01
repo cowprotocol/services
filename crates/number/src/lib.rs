@@ -1,12 +1,13 @@
+pub mod u256_decimal;
+
 use {
     anyhow::anyhow,
     primitive_types::U256,
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize, Serializer},
 };
 
-#[derive(Copy, Clone, Deserialize, Serialize, Debug, Hash, Eq, PartialEq)]
-#[serde(try_from = "U256", into = "U256")]
-pub struct NonZeroU256(#[serde(with = "u256_decimal")] U256);
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct NonZeroU256(U256);
 impl TryFrom<U256> for NonZeroU256 {
     type Error = anyhow::Error;
 
@@ -16,6 +17,26 @@ impl TryFrom<U256> for NonZeroU256 {
         } else {
             Ok(Self(value))
         }
+    }
+}
+
+impl Serialize for NonZeroU256 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for NonZeroU256 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let u256_val = U256::from_dec_str(&s).map_err(serde::de::Error::custom)?;
+        NonZeroU256::try_from(u256_val).map_err(serde::de::Error::custom)
     }
 }
 

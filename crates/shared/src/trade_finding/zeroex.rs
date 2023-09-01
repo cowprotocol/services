@@ -133,6 +133,7 @@ mod tests {
         super::*,
         crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         hex_literal::hex,
+        number::NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };
@@ -180,7 +181,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -258,7 +259,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await
@@ -303,7 +304,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await

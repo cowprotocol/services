@@ -1,8 +1,9 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     futures::{stream::BoxStream, StreamExt},
-    model::{nonzero_u256::NonZeroU256, order::OrderKind},
+    model::{order::OrderKind},
     primitive_types::{H160, U256},
+    number::NonZeroU256,
     std::sync::Arc,
 };
 
@@ -135,7 +136,7 @@ mod tests {
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
             native_token: H160::from_low_u64_be(7),
-            price_estimation_amount: U256::exp10(18),
+            price_estimation_amount: NonZeroU256::try_from(U256::exp10(18)).unwrap(),
         };
 
         let result = native_price_estimator
@@ -163,7 +164,7 @@ mod tests {
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
             native_token: H160::from_low_u64_be(7),
-            price_estimation_amount: U256::exp10(18),
+            price_estimation_amount: NonZeroU256::try_from(U256::exp10(18)).unwrap(),
         };
 
         let result = native_price_estimator

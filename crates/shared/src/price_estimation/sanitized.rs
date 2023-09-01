@@ -221,6 +221,7 @@ mod tests {
         },
         futures::StreamExt,
         model::order::OrderKind,
+        number::NonZeroU256,
         primitive_types::{H160, U256},
     };
 
@@ -248,7 +249,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(2),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             // `sanitized_estimator` will replace `buy_token` with `native_token` before querying
@@ -258,7 +259,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BUY_ETH_ADDRESS,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             // Will cause buffer overflow of gas price in `sanitized_estimator`.
@@ -266,7 +267,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BUY_ETH_ADDRESS,
-                in_amount: U256::MAX,
+                in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
                 kind: OrderKind::Buy,
             },
             // `sanitized_estimator` will replace `sell_token` with `native_token` before querying
@@ -276,7 +277,7 @@ mod tests {
                 verification: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
@@ -285,7 +286,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             // Can be estimated by `sanitized_estimator` because both tokens are the native token.
@@ -293,7 +294,7 @@ mod tests {
                 verification: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: BUY_ETH_ADDRESS,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
@@ -301,7 +302,7 @@ mod tests {
                 verification: None,
                 sell_token: native_token,
                 buy_token: BUY_ETH_ADDRESS,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             // Can be estimated by `sanitized_estimator` because it is a native token wrap.
@@ -309,7 +310,7 @@ mod tests {
                 verification: None,
                 sell_token: BUY_ETH_ADDRESS,
                 buy_token: native_token,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
@@ -317,7 +318,7 @@ mod tests {
                 verification: None,
                 sell_token: BAD_TOKEN,
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
@@ -325,15 +326,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BAD_TOKEN,
-                in_amount: 1.into(),
-                kind: OrderKind::Buy,
-            },
-            // Will throw `ZeroAmount` error in `sanitized_estimator`.
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(1),
-                buy_token: H160::from_low_u64_le(2),
-                in_amount: 0.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
         ];
@@ -473,10 +466,6 @@ mod tests {
             result[9].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken { .. }
         ));
-        assert!(matches!(
-            result[10].as_ref().unwrap_err(),
-            PriceEstimationError::ZeroAmount,
-        ));
     }
 
     #[tokio::test]
@@ -492,7 +481,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(2),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             //easy
@@ -500,7 +489,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
         ];

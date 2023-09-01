@@ -752,7 +752,8 @@ mod tests {
         futures::StreamExt as _,
         gas_estimation::GasPrice1559,
         mockall::{predicate::eq, Sequence},
-        model::{nonzero_u256::NonZeroU256, quote::Validity, time},
+        model::{quote::Validity, time},
+        number::NonZeroU256,
         std::sync::Mutex,
     };
 
@@ -816,7 +817,7 @@ mod tests {
                     }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
-                    in_amount: 100.into(),
+                    in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                 }]
             })
@@ -916,7 +917,9 @@ mod tests {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: 100.into() },
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
             },
             verification: Some(Verification {
                 from: H160([3; 20]),
@@ -945,7 +948,7 @@ mod tests {
                     }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
-                    in_amount: 100.into(),
+                    in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
                 }]
             })
@@ -1048,7 +1051,7 @@ mod tests {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             side: OrderQuoteSide::Buy {
-                buy_amount_after_fee: 42.into(),
+                buy_amount_after_fee: NonZeroU256::try_from(42).unwrap(),
             },
             verification: Some(Verification {
                 from: H160([3; 20]),
@@ -1074,7 +1077,7 @@ mod tests {
                     }),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
-                    in_amount: 42.into(),
+                    in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
                 }]
             })
@@ -1177,7 +1180,9 @@ mod tests {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: 100.into() },
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
             },
             verification: Some(Verification {
                 from: H160([3; 20]),
@@ -1245,7 +1250,7 @@ mod tests {
             buy_token: H160([2; 20]),
             side: OrderQuoteSide::Sell {
                 sell_amount: SellAmount::BeforeFee {
-                    value: 100_000.into(),
+                    value: NonZeroU256::try_from(100_000).unwrap(),
                 },
             },
             verification: Some(Verification {

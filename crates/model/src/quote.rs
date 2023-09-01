@@ -1,14 +1,13 @@
 use {
     crate::{
         app_data::AppDataHash,
-        nonzero_u256::NonZeroU256,
         order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
-        u256_decimal,
     },
     anyhow::bail,
     chrono::{DateTime, Utc},
+    number::{u256_decimal, NonZeroU256},
     primitive_types::{H160, U256},
     serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::serde_as,

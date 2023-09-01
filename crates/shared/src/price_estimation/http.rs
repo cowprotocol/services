@@ -461,6 +461,7 @@ mod tests {
         gas_estimation::GasPrice1559,
         maplit::hashmap,
         model::order::OrderKind,
+        number::NonZeroU256,
         reqwest::Client,
         std::collections::HashMap,
         url::Url,
@@ -513,7 +514,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -525,7 +526,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await
@@ -566,7 +567,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -612,7 +613,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -707,7 +708,7 @@ mod tests {
             verification: None,
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
-            in_amount: 100.into(),
+            in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
         let result = estimator.estimate(&query).await.unwrap();
@@ -839,7 +840,7 @@ mod tests {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount1,
+                in_amount: NonZeroU256::try_from(amount1).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -860,7 +861,7 @@ mod tests {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount2,
+                in_amount: NonZeroU256::try_from(amount2).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await;

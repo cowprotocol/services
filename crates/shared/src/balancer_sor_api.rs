@@ -7,8 +7,9 @@ use {
     crate::price_estimation::PriceEstimationError,
     anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
-    model::{order::OrderKind, u256_decimal},
+    model::order::OrderKind,
     num::BigInt,
+    number::u256_decimal,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
@@ -248,7 +249,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
-                amount: NonZeroU256::try_from(1_000_000_000_000_000_000_u128).unwrap(),
+                amount: 1_000_000_000_000_000_000_u128.into(),
                 gas_price: 10_000_000.into(),
             })
             .unwrap(),
@@ -387,7 +388,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
-                amount: NonZeroU256::try_from(1_000_000_000_000_000_000_u128).unwrap(),
+                amount: 1_000_000_000_000_000_000_u128.into(),
                 gas_price: 10_000_000.into(),
             })
             .await
@@ -400,7 +401,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Buy,
-                amount: NonZeroU256::try_from(100_000_000_000_000_000_000_u128).unwrap(),
+                amount: 100_000_000_000_000_000_000_u128.into(),
                 gas_price: 10_000_000.into(),
             })
             .await

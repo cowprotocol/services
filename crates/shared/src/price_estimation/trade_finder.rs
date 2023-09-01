@@ -36,10 +36,10 @@ use {
     },
     maplit::hashmap,
     model::{
-        nonzero_u256::NonZeroU256,
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
+    number::NonZeroU256,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };

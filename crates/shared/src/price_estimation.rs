@@ -9,9 +9,9 @@ use {
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
     model::{
-        nonzero_u256::NonZeroU256,
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
     },
+    number::NonZeroU256,
     num::BigRational,
     reqwest::Url,
     serde::{Deserialize, Serialize},

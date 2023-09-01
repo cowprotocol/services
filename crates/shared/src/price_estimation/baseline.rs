@@ -19,8 +19,9 @@ use {
     ethcontract::{H160, U256},
     futures::stream::StreamExt,
     gas_estimation::GasPriceEstimating,
-    model::{nonzero_u256::NonZeroU256, order::OrderKind, TokenPair},
+    model::{order::OrderKind, TokenPair},
     num::BigRational,
+    number::NonZeroU256,
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -366,7 +367,7 @@ mod tests {
             gas_estimator,
             base_tokens,
             token_a,
-            1.into(),
+            NonZeroU256::try_from(1).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -377,7 +378,7 @@ mod tests {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
             }
         )
@@ -406,7 +407,7 @@ mod tests {
             gas_estimator,
             base_tokens,
             token_a,
-            1.into(),
+            NonZeroU256::try_from(1).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -417,7 +418,7 @@ mod tests {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
             }
         )
@@ -450,7 +451,7 @@ mod tests {
             gas_estimator,
             base_tokens,
             token_b,
-            1.into(),
+            NonZeroU256::try_from(1).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -461,7 +462,7 @@ mod tests {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell
             }
         )
@@ -473,7 +474,7 @@ mod tests {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy
             }
         )
@@ -525,7 +526,7 @@ mod tests {
             gas_estimator,
             base_tokens,
             token_a,
-            10.into(),
+            NonZeroU256::try_from(10).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -534,7 +535,7 @@ mod tests {
             verification: None,
             sell_token: token_a,
             buy_token: token_b,
-            in_amount: 100.into(),
+            in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
         let estimate = single_estimate(&estimator, &query).await.unwrap();
@@ -548,7 +549,7 @@ mod tests {
             verification: None,
             sell_token: token_b,
             buy_token: token_a,
-            in_amount: 100.into(),
+            in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
         let estimate = single_estimate(&estimator, &query).await.unwrap();
@@ -594,7 +595,7 @@ mod tests {
             gas_estimator,
             base_tokens,
             intermediate,
-            10.into(),
+            NonZeroU256::try_from(10).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -606,7 +607,7 @@ mod tests {
                     verification: None,
                     sell_token: token_a,
                     buy_token: token_b,
-                    in_amount: 1.into(),
+                    in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: *kind,
                 },
             )
@@ -620,7 +621,7 @@ mod tests {
                     verification: None,
                     sell_token: token_b,
                     buy_token: token_a,
-                    in_amount: 10.into(),
+                    in_amount: NonZeroU256::try_from(10).unwrap(),
                     kind: *kind,
                 },
             )
@@ -684,7 +685,7 @@ mod tests {
             gas_estimator.clone(),
             base_tokens,
             native,
-            1_000_000_000.into(),
+            NonZeroU256::try_from(1_000_000_000).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -698,7 +699,7 @@ mod tests {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
-                        in_amount: 10.into(),
+                        in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
                     }
                 )
@@ -725,7 +726,7 @@ mod tests {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
-                        in_amount: 10.into(),
+                        in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
                     }
                 )
@@ -769,7 +770,7 @@ mod tests {
             Arc::new(FakeGasPriceEstimator::default()),
             base_tokens,
             token_a,
-            10u128.pow(18).into(),
+            NonZeroU256::try_from(10u128.pow(18)).unwrap(),
             default_rate_limiter(),
             H160([1; 20]),
         );
@@ -779,7 +780,7 @@ mod tests {
             verification: None,
             sell_token: token_a,
             buy_token: token_c,
-            in_amount: 10u128.pow(19).into(),
+            in_amount: NonZeroU256::try_from(10u128.pow(19)).unwrap(),
             kind: OrderKind::Sell,
         };
         let out_amount_considering_gas_costs = estimator
