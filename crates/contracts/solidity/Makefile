@@ -11,8 +11,8 @@ CONTRACTS := \
 	Balances.sol \
 	FetchBlock.sol \
 	Multicall.sol \
-	Reader.sol \
 	Signatures.sol \
+	SimulateCode.sol \
 	Solver.sol \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))

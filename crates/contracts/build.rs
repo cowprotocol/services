@@ -525,8 +525,8 @@ fn main() {
 
     // Support contract used for various order simulations.
     generate_contract("Balances");
-    generate_contract("Reader");
     generate_contract("Signatures");
+    generate_contract("SimulateCode");
 
     // Support contract used for global block stream.
     generate_contract("FetchBlock");

@@ -7,7 +7,7 @@ mod macros;
 
 #[cfg(feature = "bin")]
 pub mod paths;
-pub mod reader;
+pub mod storage_accessible;
 pub mod vault;
 pub mod web3;
 
@@ -72,8 +72,8 @@ pub mod support {
         Balances;
         FetchBlock;
         Multicall;
-        Reader;
         Signatures;
+        SimulateCode;
         Solver;
         Trader;
     }

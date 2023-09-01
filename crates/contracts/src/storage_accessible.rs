@@ -1,7 +1,7 @@
-//! Module to help encoding `eth_call`s for the `Reader.sol` contract.
+//! Module to help encoding `eth_call`s for the `StorageAccessible` contracts.
 
 use {
-    crate::support::Reader,
+    crate::support::SimulateCode,
     ethcontract::{
         common::abi,
         tokens::Tokenize,
@@ -10,6 +10,8 @@ use {
     },
 };
 
+/// Encode a call to a `StorageAccessible` `target` to execute `call` with the
+/// contract created with `code`
 pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
     // Unfortunately, the `ethcontract` crate does not expose the logic to build
     // creation code for a contract. Luckily, it isn't complicated - you just
@@ -23,7 +25,7 @@ pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
     CallRequest {
         data: Some(
             [
-                Reader::raw_contract()
+                SimulateCode::raw_contract()
                     .bytecode
                     .to_bytes()
                     .unwrap()

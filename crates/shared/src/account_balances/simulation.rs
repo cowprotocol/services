@@ -62,7 +62,7 @@ impl Balances {
             )
             .tx;
 
-        let call = contracts::reader::call(
+        let call = contracts::storage_accessible::call(
             self.settlement,
             contracts::bytecode!(contracts::support::Balances),
             tx.data.unwrap(),
