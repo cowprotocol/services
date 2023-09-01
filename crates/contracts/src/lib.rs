@@ -72,6 +72,7 @@ pub mod support {
         FetchBlock;
         Multicall;
         Trader;
+        Signatures;
         Solver;
     }
 }
