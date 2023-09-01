@@ -147,7 +147,7 @@ impl Inner {
                 query.data.sell_token,
                 query.data.buy_token,
                 query.allowed_protocols,
-                query.data.in_amount,
+                query.data.in_amount.get(),
                 self.referrer_address,
             ))
             .await?;
@@ -175,7 +175,7 @@ impl Inner {
             .get_swap(SwapQuery::with_default_options(
                 query.sell_token,
                 query.buy_token,
-                query.in_amount,
+                query.in_amount.get(),
                 self.settlement_contract,
                 allowed_protocols,
                 Slippage::ONE_PERCENT,

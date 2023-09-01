@@ -8,7 +8,10 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
-    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    model::{
+        nonzero_u256::NonZeroU256,
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    },
     num::BigRational,
     reqwest::Url,
     serde::{Deserialize, Serialize},
@@ -334,8 +337,13 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
+<<<<<<< HEAD
     #[error("Zero Amount")]
     ZeroAmount,
+=======
+    #[error("Deadline exceeded")]
+    DeadlineExceeded,
+>>>>>>> 236c0fe6 (Introducting NonZeroU256 and killing ZeroAmount error)
 
     #[error("Unsupported Order Type")]
     UnsupportedOrderType(String),
@@ -358,7 +366,6 @@ impl Clone for PriceEstimationError {
                 reason: reason.clone(),
             },
             Self::NoLiquidity => Self::NoLiquidity,
-            Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType(order_type) => {
                 Self::UnsupportedOrderType(order_type.clone())
             }
@@ -375,7 +382,7 @@ pub struct Query {
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
-    pub in_amount: U256,
+    pub in_amount: NonZeroU256,
     pub kind: OrderKind,
     /// If this is `Some` the quotes are expected to pass simulations using the
     /// contained parameters.
@@ -413,8 +420,8 @@ impl Estimate {
     /// Returns (sell_amount, buy_amount).
     pub fn amounts(&self, query: &Query) -> (U256, U256) {
         match query.kind {
-            OrderKind::Buy => (self.out_amount, query.in_amount),
-            OrderKind::Sell => (query.in_amount, self.out_amount),
+            OrderKind::Buy => (self.out_amount, query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), self.out_amount),
         }
     }
 

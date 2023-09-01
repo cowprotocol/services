@@ -1,7 +1,7 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     futures::{stream::BoxStream, StreamExt},
-    model::order::OrderKind,
+    model::{nonzero_u256::NonZeroU256, order::OrderKind},
     primitive_types::{H160, U256},
     std::sync::Arc,
 };
@@ -35,14 +35,14 @@ pub trait NativePriceEstimating: Send + Sync {
 pub struct NativePriceEstimator {
     inner: Arc<dyn PriceEstimating>,
     native_token: H160,
-    price_estimation_amount: U256,
+    price_estimation_amount: NonZeroU256,
 }
 
 impl NativePriceEstimator {
     pub fn new(
         inner: Arc<dyn PriceEstimating>,
         native_token: H160,
-        price_estimation_amount: U256,
+        price_estimation_amount: NonZeroU256,
     ) -> Self {
         Self {
             inner,

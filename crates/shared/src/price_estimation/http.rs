@@ -116,8 +116,8 @@ impl HttpPriceEstimator {
         .max(1.into()); // flooring at 1 to avoid division by zero error
 
         let (sell_amount, buy_amount) = match query.kind {
-            OrderKind::Buy => (U256::max_value(), query.in_amount),
-            OrderKind::Sell => (query.in_amount, U256::one()),
+            OrderKind::Buy => (U256::max_value(), query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), U256::one()),
         };
 
         let orders = maplit::btreemap! {

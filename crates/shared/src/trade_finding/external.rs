@@ -42,7 +42,7 @@ impl ExternalTradeFinder {
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             kind: query.kind,
             deadline,
         };

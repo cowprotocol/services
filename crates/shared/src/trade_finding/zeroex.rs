@@ -69,8 +69,8 @@ impl Inner {
             .get_swap(SwapQuery {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
-                sell_amount,
-                buy_amount,
+                sell_amount: sell_amount.map(|amount| amount.get()),
+                buy_amount: buy_amount.map(|amount| amount.get()),
                 slippage_percentage: None,
                 taker_address: None,
                 excluded_sources: self.excluded_sources.clone(),

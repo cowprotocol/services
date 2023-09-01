@@ -88,14 +88,9 @@ impl SanitizedPriceEstimator {
                 }
             }
 
-            if query.in_amount.is_zero() {
-                results.push((*index, Err(PriceEstimationError::ZeroAmount)));
-                return false;
-            }
-
             if query.buy_token == query.sell_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount,
+                    out_amount: query.in_amount.get(),
                     gas: 0,
                     solver: Default::default(),
                 };
@@ -106,7 +101,7 @@ impl SanitizedPriceEstimator {
 
             if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 let estimation = Estimate {
-                    out_amount: query.in_amount,
+                    out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
                 };
@@ -117,7 +112,7 @@ impl SanitizedPriceEstimator {
 
             if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                 let estimation = Estimate {
-                    out_amount: query.in_amount,
+                    out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
                 };

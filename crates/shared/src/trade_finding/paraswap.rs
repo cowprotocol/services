@@ -92,7 +92,7 @@ impl Inner {
             dest_token: query.buy_token,
             src_decimals: decimals(&tokens, &query.sell_token)?,
             dest_decimals: decimals(&tokens, &query.buy_token)?,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             side: match query.kind {
                 OrderKind::Buy => Side::Buy,
                 OrderKind::Sell => Side::Sell,
@@ -123,11 +123,11 @@ impl Inner {
             dest_token: query.buy_token,
             trade_amount: match query.kind {
                 OrderKind::Buy => TradeAmount::Buy {
-                    dest_amount: query.in_amount,
+                    dest_amount: query.in_amount.get(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
                 OrderKind::Sell => TradeAmount::Sell {
-                    src_amount: query.in_amount,
+                    src_amount: query.in_amount.get(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
             },

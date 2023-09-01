@@ -248,7 +248,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
-                amount: 1_000_000_000_000_000_000_u128.into(),
+                amount: NonZeroU256::try_from(1_000_000_000_000_000_000_u128).unwrap(),
                 gas_price: 10_000_000.into(),
             })
             .unwrap(),
@@ -387,7 +387,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Sell,
-                amount: 1_000_000_000_000_000_000_u128.into(),
+                amount: NonZeroU256::try_from(1_000_000_000_000_000_000_u128).unwrap(),
                 gas_price: 10_000_000.into(),
             })
             .await
@@ -400,7 +400,7 @@ mod tests {
                 sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                 order_kind: OrderKind::Buy,
-                amount: 100_000_000_000_000_000_000_u128.into(),
+                amount: NonZeroU256::try_from(100_000_000_000_000_000_000_u128).unwrap(),
                 gas_price: 10_000_000.into(),
             })
             .await

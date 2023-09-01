@@ -56,7 +56,7 @@ impl BalancerSor {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
             order_kind: query.kind,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             gas_price: U256::from_f64_lossy(gas_price.effective_gas_price()),
         };
         let api = self.api.clone();

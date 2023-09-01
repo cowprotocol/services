@@ -559,10 +559,10 @@ impl OrderQuoter {
             }
             | OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: sell_amount },
-            } => (*sell_amount, trade_estimate.out_amount),
+            } => (sell_amount.get(), trade_estimate.out_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee: buy_amount,
-            } => (trade_estimate.out_amount, *buy_amount),
+            } => (trade_estimate.out_amount, buy_amount.get()),
         };
         let fee_parameters = FeeParameters {
             gas_amount: trade_estimate.gas as _,
@@ -618,7 +618,8 @@ impl OrderQuoting for OrderQuoter {
                 },
         } = &parameters.side
         {
-            let sell_amount = sell_amount_before_fee.saturating_sub(quote.fee_amount);
+            let sell_amount =
+                Into::<U256>::into(*sell_amount_before_fee).saturating_sub(quote.fee_amount);
             if sell_amount == U256::zero() {
                 // We want a sell_amount of at least 1!
                 return Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
@@ -751,7 +752,7 @@ mod tests {
         futures::StreamExt as _,
         gas_estimation::GasPrice1559,
         mockall::{predicate::eq, Sequence},
-        model::{quote::Validity, time},
+        model::{nonzero_u256::NonZeroU256, quote::Validity, time},
         std::sync::Mutex,
     };
 
@@ -787,7 +788,9 @@ mod tests {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: 100.into() },
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(100).unwrap(),
+                },
             },
             verification: Some(Verification {
                 from: H160([3; 20]),

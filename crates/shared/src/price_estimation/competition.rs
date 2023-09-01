@@ -332,11 +332,10 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
             // highest priority (prefer)
-            PriceEstimationError::RateLimited => 6,
-            PriceEstimationError::ProtocolInternal(_) => 5,
-            PriceEstimationError::EstimatorInternal(_) => 4,
-            PriceEstimationError::UnsupportedToken { .. } => 3,
-            PriceEstimationError::ZeroAmount => 2,
+            PriceEstimationError::RateLimited => 5,
+            PriceEstimationError::ProtocolInternal(_) => 4,
+            PriceEstimationError::EstimatorInternal(_) => 3,
+            PriceEstimationError::UnsupportedToken { .. } => 2,
             PriceEstimationError::NoLiquidity => 1,
             PriceEstimationError::UnsupportedOrderType(_) => 0,
             // lowest priority

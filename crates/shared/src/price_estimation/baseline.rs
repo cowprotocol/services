@@ -19,7 +19,7 @@ use {
     ethcontract::{H160, U256},
     futures::stream::StreamExt,
     gas_estimation::GasPriceEstimating,
-    model::{order::OrderKind, TokenPair},
+    model::{nonzero_u256::NonZeroU256, order::OrderKind, TokenPair},
     num::BigRational,
     std::{collections::HashMap, sync::Arc},
 };
@@ -29,7 +29,7 @@ pub struct BaselinePriceEstimator {
     gas_estimator: Arc<dyn GasPriceEstimating>,
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
-    native_token_price_estimation_amount: U256,
+    native_token_price_estimation_amount: NonZeroU256,
     rate_limiter: Arc<RateLimiter>,
     solver: H160,
 }
@@ -40,7 +40,7 @@ impl BaselinePriceEstimator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         base_tokens: Arc<BaseTokens>,
         native_token: H160,
-        native_token_price_estimation_amount: U256,
+        native_token_price_estimation_amount: NonZeroU256,
         rate_limiter: Arc<RateLimiter>,
         solver: H160,
     ) -> Self {
@@ -128,10 +128,7 @@ impl BaselinePriceEstimator {
         gas_price: f64,
     ) -> Result<(Vec<H160>, U256), PriceEstimationError> {
         if query.sell_token == query.buy_token {
-            return Ok((Vec::new(), query.in_amount));
-        }
-        if query.in_amount.is_zero() {
-            return Err(PriceEstimationError::ZeroAmount);
+            return Ok((Vec::new(), query.in_amount.get()));
         }
         match query.kind {
             OrderKind::Buy => {
@@ -151,7 +148,7 @@ impl BaselinePriceEstimator {
                             )?
                             .1;
                         super::amounts_to_price(
-                            self.native_token_price_estimation_amount,
+                            self.native_token_price_estimation_amount.get(),
                             buy_amount,
                         )
                         .ok_or(PriceEstimationError::NoLiquidity)?
@@ -186,7 +183,7 @@ impl BaselinePriceEstimator {
                             )?
                             .1;
                         super::amounts_to_price(
-                            self.native_token_price_estimation_amount,
+                            self.native_token_price_estimation_amount.get(),
                             buy_amount,
                         )
                         .ok_or(PriceEstimationError::NoLiquidity)?
@@ -214,7 +211,7 @@ impl BaselinePriceEstimator {
         &self,
         sell_token: H160,
         buy_token: H160,
-        sell_amount: U256,
+        sell_amount: NonZeroU256,
         gas_price: f64,
         buy_token_price_in_native_token: Option<BigRational>,
         pools: &Pools,
@@ -255,7 +252,7 @@ impl BaselinePriceEstimator {
         &self,
         sell_token: H160,
         buy_token: H160,
-        buy_amount: U256,
+        buy_amount: NonZeroU256,
         gas_price: f64,
         sell_token_price_in_native_token: Option<BigRational>,
         pools: &Pools,
@@ -293,7 +290,7 @@ impl BaselinePriceEstimator {
         &self,
         sell_token: H160,
         buy_token: H160,
-        amount: U256,
+        amount: NonZeroU256,
         comparison: CompareFn,
         resulting_amount: AmountFn,
         pools: &Pools,
@@ -304,15 +301,14 @@ impl BaselinePriceEstimator {
         O: Ord,
     {
         debug_assert!(sell_token != buy_token);
-        debug_assert!(!amount.is_zero());
 
         let path_candidates = self.base_tokens.path_candidates(sell_token, buy_token);
         let best_path = path_candidates
             .iter()
-            .max_by_key(|path| comparison(amount, path, pools))
+            .max_by_key(|path| comparison(amount.get(), path, pools))
             .ok_or(PriceEstimationError::NoLiquidity)?;
-        let resulting_amount =
-            resulting_amount(amount, best_path, pools).ok_or(PriceEstimationError::NoLiquidity)?;
+        let resulting_amount = resulting_amount(amount.get(), best_path, pools)
+            .ok_or(PriceEstimationError::NoLiquidity)?;
         Ok((best_path.clone(), resulting_amount))
     }
 }

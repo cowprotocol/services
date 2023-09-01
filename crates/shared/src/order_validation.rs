@@ -209,9 +209,6 @@ impl From<CalculateQuoteError> for ValidationError {
             }) => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
-                ValidationError::ZeroAmount
-            }
             CalculateQuoteError::Other(err)
             | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
                 ValidationError::Other(err)
@@ -926,11 +923,17 @@ pub async fn get_quote_and_check_fee(
                 buy_token: quote_search_parameters.buy_token,
                 side: match quote_search_parameters.kind {
                     OrderKind::Buy => OrderQuoteSide::Buy {
-                        buy_amount_after_fee: quote_search_parameters.buy_amount,
+                        buy_amount_after_fee: quote_search_parameters
+                            .buy_amount
+                            .try_into()
+                            .map_err(|_| ValidationError::ZeroAmount)?,
                     },
                     OrderKind::Sell => OrderQuoteSide::Sell {
                         sell_amount: SellAmount::AfterFee {
-                            value: quote_search_parameters.sell_amount,
+                            value: quote_search_parameters
+                                .sell_amount
+                                .try_into()
+                                .map_err(|_| ValidationError::ZeroAmount)?,
                         },
                     },
                 },

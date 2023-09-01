@@ -1,6 +1,7 @@
 use {
     crate::{
         app_data::AppDataHash,
+        nonzero_u256::NonZeroU256,
         order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
@@ -151,16 +152,13 @@ pub enum OrderQuoteSide {
         sell_amount: SellAmount,
     },
     #[serde(rename_all = "camelCase")]
-    Buy {
-        #[serde(with = "u256_decimal")]
-        buy_amount_after_fee: U256,
-    },
+    Buy { buy_amount_after_fee: NonZeroU256 },
 }
 
 impl Default for OrderQuoteSide {
     fn default() -> Self {
         Self::Buy {
-            buy_amount_after_fee: U256::one(),
+            buy_amount_after_fee: NonZeroU256::one(),
         }
     }
 }
@@ -263,12 +261,12 @@ where
 #[serde(untagged)]
 pub enum SellAmount {
     BeforeFee {
-        #[serde(rename = "sellAmountBeforeFee", with = "u256_decimal")]
-        value: U256,
+        #[serde(rename = "sellAmountBeforeFee")]
+        value: NonZeroU256,
     },
     AfterFee {
-        #[serde(rename = "sellAmountAfterFee", with = "u256_decimal")]
-        value: U256,
+        #[serde(rename = "sellAmountAfterFee")]
+        value: NonZeroU256,
     },
 }
 

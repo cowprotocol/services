@@ -4,6 +4,7 @@ pub mod app_data;
 pub mod auction;
 pub mod bytes_hex;
 pub mod interaction;
+pub mod nonzero_u256;
 pub mod order;
 pub mod quote;
 pub mod ratio_as_decimal;
