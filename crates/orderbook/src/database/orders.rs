@@ -15,10 +15,6 @@ use {
         order::{
             EthflowData,
             Interactions,
-<<<<<<< HEAD
-=======
-            LimitOrderClass,
->>>>>>> 62fe20ea (revert weird formatting)
             OnchainOrderData,
             Order,
             OrderClass,
