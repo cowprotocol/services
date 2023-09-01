@@ -155,7 +155,7 @@ impl Blockchain {
         // should be happening from the primary_account of the node, will do this
         // later
 
-        let node = Node::new();
+        let node = Node::new().await;
         let web3 = Web3::new(DynTransport::new(
             web3::transports::Http::new(&node.url()).expect("valid URL"),
         ));
@@ -686,28 +686,53 @@ async fn primary_account(web3: &DynWeb3) -> ethcontract::Account {
 
 /// A blockchain node for development purposes. Dropping this type will
 /// terminate the node.
-pub struct Node(ethers::utils::AnvilInstance);
+pub struct Node {
+    #[allow(dead_code)] // store `process` to later run its `Drop` handler
+    process: tokio::process::Child,
+    url: String,
+}
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node")
-            .field("url", &self.0.endpoint())
-            .finish()
+        f.debug_struct("Node").field("url", &self.url).finish()
     }
 }
 
 impl Node {
     /// Spawn a new node instance.
-    fn new() -> Self {
-        let node = ethers::utils::Anvil::new()
+    async fn new() -> Self {
+        use tokio::io::AsyncBufReadExt as _;
+
+        let mut process = tokio::process::Command::new("anvil")
+            .arg("--port")
+            .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
             .arg("1000000")
-            .spawn();
-        Self(node)
+            .kill_on_drop(true)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let parse_url_from_logs = async {
+            const NEEDLE: &str = "Listening on ";
+            let mut reader = tokio::io::BufReader::new(process.stdout.take().unwrap()).lines();
+            while let Some(line) = reader.next_line().await? {
+                if let Some(addr) = line.strip_prefix(NEEDLE) {
+                    return Ok(format!("http://{addr}"));
+                }
+            }
+            anyhow::bail!("could not find \"{NEEDLE}.*\" in anvil logs")
+        };
+
+        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), parse_url_from_logs)
+            .await
+            .expect("finding anvil URL timed out")
+            .unwrap();
+        Self { process, url }
     }
 
     fn url(&self) -> String {
-        self.0.endpoint()
+        self.url.clone()
     }
 }
 
