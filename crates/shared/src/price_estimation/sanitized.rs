@@ -56,7 +56,7 @@ impl SanitizedPriceEstimator {
 
             match self.bad_token_detector.detect(token).await {
                 Err(err) => {
-                    token_quality_errors.insert(token, PriceEstimationError::Other(err));
+                    token_quality_errors.insert(token, PriceEstimationError::ProtocolInternal(err));
                 }
                 Ok(TokenQuality::Bad { reason }) => {
                     token_quality_errors.insert(
@@ -195,7 +195,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                         estimate.gas = match estimate.gas.checked_add(gas) {
                             Some(gas) => gas,
                             None => {
-                                let err = PriceEstimationError::Other(anyhow!(
+                                let err = PriceEstimationError::ProtocolInternal(anyhow!(
                                     "cost of converting native asset would overflow gas price"
                                 ));
                                 yield (query.original_query_index, Err(err));
@@ -423,7 +423,7 @@ mod tests {
         );
         assert!(matches!(
             result[2].as_ref().unwrap_err(),
-            PriceEstimationError::Other(err)
+            PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "cost of converting native asset would overflow gas price",
         ));
         assert_eq!(

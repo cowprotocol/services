@@ -334,32 +334,20 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
-    #[error("Deadline exceeded")]
-    DeadlineExceeded,
-
     #[error("Zero Amount")]
     ZeroAmount,
 
     #[error("Unsupported Order Type")]
-    UnsupportedOrderType,
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    UnsupportedOrderType(String),
 
     #[error("Rate limited")]
     RateLimited,
-}
 
-impl From<reqwest::Error> for PriceEstimationError {
-    fn from(error: reqwest::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
-    }
-}
+    #[error(transparent)]
+    EstimatorInternal(anyhow::Error),
 
-impl From<serde_json::Error> for PriceEstimationError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
-    }
+    #[error(transparent)]
+    ProtocolInternal(anyhow::Error),
 }
 
 impl Clone for PriceEstimationError {
@@ -370,11 +358,13 @@ impl Clone for PriceEstimationError {
                 reason: reason.clone(),
             },
             Self::NoLiquidity => Self::NoLiquidity,
-            Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::ZeroAmount => Self::ZeroAmount,
-            Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::UnsupportedOrderType(order_type) => {
+                Self::UnsupportedOrderType(order_type.clone())
+            }
             Self::RateLimited => Self::RateLimited,
-            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+            Self::EstimatorInternal(err) => Self::EstimatorInternal(crate::clone_anyhow_error(err)),
+            Self::ProtocolInternal(err) => Self::ProtocolInternal(crate::clone_anyhow_error(err)),
         }
     }
 }
@@ -564,7 +554,15 @@ pub mod mocks {
             &'a self,
             queries: &'a [Query],
         ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-            futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
+            futures::stream::iter((0..queries.len()).map(|i| {
+                (
+                    i,
+                    Err(PriceEstimationError::EstimatorInternal(anyhow!(
+                        "always fail"
+                    ))),
+                )
+            }))
+            .boxed()
         }
     }
 }

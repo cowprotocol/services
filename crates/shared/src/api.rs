@@ -237,24 +237,22 @@ impl IntoWarpReply for PriceEstimationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::NoLiquidity => with_status(
-                error("NoLiquidity", "not enough liquidity"),
-                StatusCode::NOT_FOUND,
-            ),
-            Self::DeadlineExceeded => with_status(
-                error("DeadlineExceeded", "quoting deadline exceeded"),
-                StatusCode::NOT_FOUND,
-            ),
             Self::ZeroAmount => with_status(
                 error("ZeroAmount", "Please use non-zero amount field"),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::UnsupportedOrderType => {
-                tracing::error!("PriceEstimation::UnsupportedOrderType");
-                internal_error_reply()
-            }
-            Self::RateLimited => internal_error_reply(),
-            Self::Other(err) => {
+            Self::UnsupportedOrderType(order_type) => with_status(
+                error(
+                    "UnsupportedOrderType",
+                    format!("{order_type} not supported"),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::NoLiquidity | Self::RateLimited | Self::EstimatorInternal(_) => with_status(
+                error("NoLiquidity", "no route found"),
+                StatusCode::NOT_FOUND,
+            ),
+            Self::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
             }

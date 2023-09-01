@@ -213,7 +213,7 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::ZeroAmount
             }
             CalculateQuoteError::Other(err)
-            | CalculateQuoteError::Price(PriceEstimationError::Other(err)) => {
+            | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
@@ -2374,7 +2374,7 @@ mod tests {
             ValidationError::PriceForQuote(_)
         );
         assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType),
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType("test".into())),
             ValidationError::PriceForQuote(_)
         );
         assert_calc_error_matches!(

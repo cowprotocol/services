@@ -20,7 +20,7 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Trade, TradeError, TradeFinding},
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::{
         deployed_bytecode,
         dummy_contract,
@@ -113,7 +113,7 @@ impl Inner {
                 verifier
                     .verify(&price_query, verification, trade)
                     .await
-                    .map_err(PriceEstimationError::Other)
+                    .map_err(PriceEstimationError::EstimatorInternal)
             }
             (_, verification) => {
                 if verification.is_some() {
@@ -378,10 +378,10 @@ impl From<TradeError> for PriceEstimationError {
     fn from(err: TradeError) -> Self {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
-            TradeError::UnsupportedOrderType => Self::UnsupportedOrderType,
-            TradeError::DeadlineExceeded => Self::DeadlineExceeded,
+            TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
+            TradeError::DeadlineExceeded => Self::EstimatorInternal(anyhow!("timeout")),
             TradeError::RateLimited => Self::RateLimited,
-            TradeError::Other(err) => Self::Other(err),
+            TradeError::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }

@@ -151,7 +151,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 
@@ -186,7 +186,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string().contains("Internal Server Error")
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string().contains("Internal Server Error")
         ));
     }
 
@@ -212,7 +212,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string() == "malformed JSON"
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string() == "malformed JSON"
         ));
     }
 

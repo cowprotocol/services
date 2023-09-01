@@ -46,7 +46,7 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         self.inner
             .estimates(queries)
             .inspect(move |result| {
-                let success = !matches!(&result.1, Err(PriceEstimationError::Other(_)));
+                let success = !matches!(&result.1, Err(PriceEstimationError::EstimatorInternal(_)));
                 let result = if success { "success" } else { "failure" };
                 self.metrics
                     .price_estimates
@@ -113,7 +113,7 @@ mod tests {
             .returning(|_| {
                 futures::stream::iter([
                     Ok(Estimate::default()),
-                    Err(PriceEstimationError::Other(anyhow!(""))),
+                    Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),
                 ])
                 .enumerate()
                 .boxed()

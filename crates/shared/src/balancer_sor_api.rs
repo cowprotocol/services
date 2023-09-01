@@ -49,7 +49,7 @@ impl From<Error> for PriceEstimationError {
     fn from(err: Error) -> Self {
         match err {
             Error::RateLimited => Self::RateLimited,
-            Error::Other(err) => Self::Other(err),
+            Error::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }

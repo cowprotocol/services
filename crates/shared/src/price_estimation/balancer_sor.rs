@@ -47,7 +47,11 @@ impl BalancerSor {
     }
 
     async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-        let gas_price = self.gas.estimate().await?;
+        let gas_price = self
+            .gas
+            .estimate()
+            .await
+            .map_err(PriceEstimationError::ProtocolInternal)?;
         let query_ = balancer_sor_api::Query {
             sell_token: query.sell_token,
             buy_token: query.buy_token,

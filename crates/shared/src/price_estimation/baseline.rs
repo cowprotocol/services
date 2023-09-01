@@ -74,13 +74,13 @@ impl PriceEstimating for BaselinePriceEstimator {
                 .gas_estimator
                 .estimate()
                 .await
-                .map_err(PriceEstimationError::Other)?;
+                .map_err(PriceEstimationError::ProtocolInternal)?;
             Ok(gas_price.effective_gas_price())
         };
         let pools = async {
             self.pools_for_queries(queries)
                 .await
-                .map_err(PriceEstimationError::Other)
+                .map_err(PriceEstimationError::ProtocolInternal)
         };
 
         type Init = Result<(f64, Pools), PriceEstimationError>;

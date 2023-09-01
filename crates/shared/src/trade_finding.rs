@@ -125,8 +125,8 @@ pub enum TradeError {
     #[error("No liquidity")]
     NoLiquidity,
 
-    #[error("Unsupported Order Type")]
-    UnsupportedOrderType,
+    #[error("Unsupported Order Type {0}")]
+    UnsupportedOrderType(String),
 
     #[error("Deadline exceeded")]
     DeadlineExceeded,
@@ -142,11 +142,16 @@ impl From<PriceEstimationError> for TradeError {
     fn from(err: PriceEstimationError) -> Self {
         match err {
             PriceEstimationError::NoLiquidity => Self::NoLiquidity,
-            PriceEstimationError::UnsupportedOrderType => Self::UnsupportedOrderType,
-            PriceEstimationError::DeadlineExceeded => Self::DeadlineExceeded,
+            PriceEstimationError::UnsupportedOrderType(order_type) => {
+                Self::UnsupportedOrderType(order_type)
+            }
+            PriceEstimationError::UnsupportedToken { token, .. } => {
+                Self::UnsupportedOrderType(format!("{token:#x}"))
+            }
+            PriceEstimationError::ZeroAmount => Self::UnsupportedOrderType("zero amount".into()),
             PriceEstimationError::RateLimited => Self::RateLimited,
-            PriceEstimationError::Other(err) => Self::Other(err),
-            _ => Self::Other(anyhow::anyhow!(err.to_string())),
+            PriceEstimationError::EstimatorInternal(err)
+            | PriceEstimationError::ProtocolInternal(err) => Self::Other(err),
         }
     }
 }
@@ -155,7 +160,9 @@ impl Clone for TradeError {
     fn clone(&self) -> Self {
         match self {
             Self::NoLiquidity => Self::NoLiquidity,
-            Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::UnsupportedOrderType(order_type) => {
+                Self::UnsupportedOrderType(order_type.clone())
+            }
             Self::DeadlineExceeded => Self::DeadlineExceeded,
             Self::RateLimited => Self::RateLimited,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
