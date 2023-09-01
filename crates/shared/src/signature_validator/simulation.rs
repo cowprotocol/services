@@ -40,7 +40,8 @@ impl Validator {
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let signatures = dummy_contract!(contracts::support::Signatures, self.settlement);
+        let signatures =
+            contracts::dummy_contract!(contracts::support::Signatures, self.settlement);
         let tx = signatures
             .methods()
             .validate(
@@ -63,7 +64,7 @@ impl Validator {
         };
         let overrides = hashmap! {
             signatures.address() => StateOverride {
-                code: Some(deployed_bytecode!(contracts::support::Signatures)),
+                code: Some(contracts::deployed_bytecode!(contracts::support::Signatures)),
                 ..Default::default()
             },
         };
