@@ -1,9 +1,9 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     futures::{stream::BoxStream, StreamExt},
-    model::{order::OrderKind},
+    model::order::OrderKind,
+    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
-    number::NonZeroU256,
     std::sync::Arc,
 };
 

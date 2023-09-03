@@ -97,7 +97,7 @@ mod tests {
         crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate},
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         std::time::Duration,
     };
 

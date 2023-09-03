@@ -5,7 +5,7 @@ use {
     ethcontract::{H160, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
     sqlx::PgPool,
 };

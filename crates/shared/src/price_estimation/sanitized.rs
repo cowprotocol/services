@@ -221,7 +221,7 @@ mod tests {
         },
         futures::StreamExt,
         model::order::OrderKind,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         primitive_types::{H160, U256},
     };
 

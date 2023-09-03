@@ -83,7 +83,7 @@ mod tests {
         ethcontract::H160,
         futures::StreamExt,
         model::order::OrderKind,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
     };
 
     #[tokio::test]

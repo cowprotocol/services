@@ -39,7 +39,7 @@ use {
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };

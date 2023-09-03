@@ -37,7 +37,7 @@ use {
             SellAmount,
         },
     },
-    number_conversions::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     std::sync::Arc,
     thiserror::Error,
 };
@@ -753,7 +753,7 @@ mod tests {
         gas_estimation::GasPrice1559,
         mockall::{predicate::eq, Sequence},
         model::{quote::Validity, time},
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         std::sync::Mutex,
     };
 

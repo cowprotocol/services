@@ -8,11 +8,9 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::{stream::BoxStream, StreamExt},
-    model::{
-        order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    },
-    number::NonZeroU256,
+    model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
+    number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{

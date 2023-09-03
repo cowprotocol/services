@@ -7,7 +7,7 @@ use {
     },
     anyhow::bail,
     chrono::{DateTime, Utc},
-    number::{u256_decimal, NonZeroU256},
+    number::{nonzero::U256 as NonZeroU256, u256_decimal},
     primitive_types::{H160, U256},
     serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::serde_as,

@@ -16,7 +16,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,

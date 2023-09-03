@@ -221,7 +221,7 @@ mod tests {
             Transaction,
         },
         hex_literal::hex,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };

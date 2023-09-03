@@ -36,7 +36,6 @@ model = { path = "../model" }
 multibase = "0.9"
 num = { workspace = true }
 number = { path = "../number" }
-number-conversions = { path = "../number-conversions" }
 observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }

@@ -1,7 +1,7 @@
 use {
     anyhow::Context,
     database::auction::AuctionId,
-    number_conversions::big_decimal_to_u256,
+    number::conversions::big_decimal_to_u256,
     primitive_types::{H160, U256},
     sqlx::PgConnection,
     std::collections::BTreeMap,

@@ -21,7 +21,7 @@ use {
     gas_estimation::GasPriceEstimating,
     model::{order::OrderKind, TokenPair},
     num::BigRational,
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     std::{collections::HashMap, sync::Arc},
 };
 

@@ -200,7 +200,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
         maplit::hashmap,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };

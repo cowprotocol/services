@@ -92,7 +92,7 @@ mod tests {
                 Validity,
             },
         },
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
         shared::{

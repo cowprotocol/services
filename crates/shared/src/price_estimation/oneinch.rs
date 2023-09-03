@@ -62,7 +62,7 @@ mod tests {
         },
         futures::FutureExt as _,
         model::order::OrderKind,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
     };
 

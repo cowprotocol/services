@@ -62,7 +62,7 @@ mod tests {
             token_info::TokenInfoFetcher,
         },
         model::order::OrderKind,
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
     };
 

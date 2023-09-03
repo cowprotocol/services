@@ -32,7 +32,7 @@ use {
         trade::Trade,
         DomainSeparator,
     },
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     refunder::{
         ethflow_order::EthflowOrder,
         refund_service::{INVALIDATED_OWNER, NO_OWNER},

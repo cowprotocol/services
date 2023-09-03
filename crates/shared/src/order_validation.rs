@@ -1012,7 +1012,7 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
-        number::NonZeroU256,
+        number::nonzero::U256 as NonZeroU256,
         serde_json::json,
         std::str::FromStr,
     };

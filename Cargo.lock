@@ -266,7 +266,6 @@ dependencies = [
  "model",
  "num",
  "number",
- "number-conversions",
  "observe",
  "primitive-types",
  "prometheus",
@@ -3013,20 +3012,11 @@ name = "number"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "number-conversions",
- "primitive-types",
- "serde",
- "serde_with",
-]
-
-[[package]]
-name = "number-conversions"
-version = "0.1.0"
-dependencies = [
- "anyhow",
  "bigdecimal",
  "num",
  "primitive-types",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
@@ -3133,7 +3123,6 @@ dependencies = [
  "multibase",
  "num",
  "number",
- "number-conversions",
  "observe",
  "primitive-types",
  "prometheus",
@@ -3506,7 +3495,7 @@ dependencies = [
  "gas-estimation",
  "lazy_static",
  "model",
- "number-conversions",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -4005,7 +3994,6 @@ dependencies = [
  "model",
  "num",
  "number",
- "number-conversions",
  "observe",
  "primitive-types",
  "prometheus",
@@ -4115,7 +4103,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
+ "number",
  "observe",
  "once_cell",
  "primitive-types",

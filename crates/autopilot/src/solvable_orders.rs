@@ -12,7 +12,7 @@ use {
         time::now_in_epoch_seconds,
     },
     num::{BigRational, FromPrimitive},
-    number_conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
+    number::conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{

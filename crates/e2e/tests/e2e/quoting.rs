@@ -5,7 +5,7 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
     },
-    number::NonZeroU256,
+    number::nonzero::U256 as NonZeroU256,
     serde_json::json,
     shared::ethrpc::Web3,
 };
