@@ -2206,6 +2206,7 @@ mod tests {
         let quote_search_parameters = QuoteSearchParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
+            sell_amount: 3.into(),
             kind: OrderKind::Sell,
             verification: verification.clone(),
             ..Default::default()
@@ -2313,7 +2314,11 @@ mod tests {
                     .returning(|_, _| Err($find_err));
                 let err = get_quote_and_check_fee(
                     &order_quoter,
-                    &Default::default(),
+                    &QuoteSearchParameters {
+                        sell_amount: 1.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
                     Default::default(),
                     Default::default(),
                 )
@@ -2345,7 +2350,11 @@ mod tests {
 
                 let err = get_quote_and_check_fee(
                     &order_quoter,
-                    &Default::default(),
+                    &QuoteSearchParameters {
+                        sell_amount: 1.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
                     Default::default(),
                     U256::zero(),
                 )

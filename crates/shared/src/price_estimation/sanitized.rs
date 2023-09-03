@@ -390,7 +390,7 @@ mod tests {
         };
 
         let result = vec_estimates(&sanitized_estimator, &queries).await;
-        assert_eq!(result.len(), 11);
+        assert_eq!(result.len(), 10);
         assert_eq!(
             result[0].as_ref().unwrap(),
             &Estimate {
