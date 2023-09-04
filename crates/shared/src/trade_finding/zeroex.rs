@@ -295,7 +295,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::default();
+        let zeroex_api = DefaultZeroExApi::test();
         let trader = create_trader(Arc::new(zeroex_api));
 
         let trade = trader

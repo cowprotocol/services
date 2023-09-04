@@ -248,7 +248,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::default();
+        let zeroex_api = DefaultZeroExApi::test();
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = single_estimate(
