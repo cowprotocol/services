@@ -52,9 +52,9 @@ impl Default for U256 {
     }
 }
 
-impl Into<ZeroU256> for U256 {
-    fn into(self) -> ZeroU256 {
-        self.0
+impl From<U256> for ZeroU256 {
+    fn from(val: U256) -> Self {
+        val.0
     }
 }
 
