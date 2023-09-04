@@ -139,10 +139,10 @@ impl<'a> PriceEstimatorFactory<'a> {
                     CodeSimulatorKind::Web3 => {
                         Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
                     }
-                    CodeSimulatorKind::Tenderly => Arc::new(
-                        tenderly_simulator()?
-                            .save(false, args.tenderly_save_failed_trade_simulations),
-                    ),
+                    CodeSimulatorKind::Tenderly => Arc::new(tenderly_simulator()?.save(
+                        args.tenderly_save_successful_trade_simulations,
+                        args.tenderly_save_failed_trade_simulations,
+                    )),
                     CodeSimulatorKind::Web3ThenTenderly => {
                         Arc::new(code_simulation::Web3ThenTenderly::new(
                             web3_simulator()?,

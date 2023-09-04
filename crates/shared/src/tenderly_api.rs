@@ -26,13 +26,16 @@ use {
 #[async_trait::async_trait]
 pub trait TenderlyApi: Send + Sync + 'static {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse>;
+    fn simulation_url(&self, id: &str) -> Url;
 }
 
-const BASE_URL: &str = "https://api.tenderly.co/api";
+const API_URL: &str = "https://api.tenderly.co";
+const DASHBOARD_URL: &str = "https://dashboard.tenderly.co";
 
 /// Tenderly HTTP API.
 pub struct TenderlyHttpApi {
-    url: Url,
+    api: Url,
+    dashboard: Url,
     client: reqwest::Client,
 }
 
@@ -51,7 +54,10 @@ impl TenderlyHttpApi {
         headers.insert("x-access-key", api_key);
 
         Ok(Self {
-            url: Url::parse(&format!("{BASE_URL}/v1/account/{user}/project/{project}/"))?,
+            api: Url::parse(&format!(
+                "{API_URL}/api/v1/account/{user}/project/{project}/"
+            ))?,
+            dashboard: Url::parse(&format!("{DASHBOARD_URL}/{user}/{project}/"))?,
             client: http_factory.configure(|builder| builder.default_headers(headers)),
         })
     }
@@ -73,15 +79,31 @@ impl TenderlyHttpApi {
 #[async_trait::async_trait]
 impl TenderlyApi for TenderlyHttpApi {
     async fn simulate(&self, simulation: SimulationRequest) -> Result<SimulationResponse> {
-        Ok(self
+        let url = crate::url::join(&self.api, "simulate");
+        let body = serde_json::to_string(&simulation)?;
+        tracing::trace!(%url, %body, "simulating");
+
+        let response = self
             .client
-            .post(crate::url::join(&self.url, "simulate"))
-            .json(&simulation)
+            .post(url)
+            .header("content-type", "application/json")
+            .body(body)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .await?;
+
+        let ok = response.error_for_status_ref().map(|_| ());
+        let status = response.status();
+        let body = response.text().await?;
+        // NOTE: Turn these logs on at your own risk... The Tenderly response
+        // objects are huge (order of ~3M).
+        tracing::trace!(status =% status.as_u16(), %body, "simulated");
+
+        ok?;
+        Ok(serde_json::from_str(&body)?)
+    }
+
+    fn simulation_url(&self, id: &str) -> Url {
+        crate::url::join(&self.dashboard, &format!("simulator/{id}"))
     }
 }
 
@@ -108,6 +130,10 @@ impl TenderlyApi for Instrumented {
             .inc();
 
         result
+    }
+
+    fn simulation_url(&self, id: &str) -> Url {
+        self.inner.simulation_url(id)
     }
 }
 
@@ -169,6 +195,7 @@ pub struct StateObject {
 pub struct SimulationResponse {
     pub transaction: Transaction,
     pub generated_access_list: Option<Vec<AccessListItem>>,
+    pub simulation: Simulation,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -206,6 +233,11 @@ impl From<AccessListItem> for web3::types::AccessListItem {
             storage_keys: item.storage_keys,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Simulation {
+    pub id: String,
 }
 
 /// Tenderly API arguments.

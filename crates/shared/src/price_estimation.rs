@@ -232,9 +232,14 @@ pub struct Arguments {
     #[clap(long, env)]
     pub trade_simulator: Option<CodeSimulatorKind>,
 
+    /// Flag to enable saving Tenderly simulations in the dashboard for
+    /// successful trade simulations.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub tenderly_save_successful_trade_simulations: bool,
+
     /// Flag to enable saving Tenderly simulations in the dashboard for failed
     /// trade simulations. This helps debugging reverted quote simulations.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub tenderly_save_failed_trade_simulations: bool,
 
     /// Controls if we try to predict the winning price estimator for a given
@@ -306,6 +311,11 @@ impl Display for Arguments {
                 .trade_simulator
                 .as_ref()
                 .map(|value| format!("{value:?}")),
+        )?;
+        writeln!(
+            f,
+            "tenderly_save_successful_trade_simulations: {}",
+            self.tenderly_save_successful_trade_simulations
         )?;
         writeln!(
             f,
