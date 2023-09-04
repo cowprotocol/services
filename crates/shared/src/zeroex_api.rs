@@ -390,14 +390,6 @@ impl DefaultZeroExApi {
         })
     }
 
-    /// Create a new 0x HTTP API client using the default URL.
-    pub fn with_default_url(client: Client) -> Self {
-        Self {
-            client,
-            base_url: Self::DEFAULT_URL.parse().unwrap(),
-        }
-    }
-
     /// Create a 0x HTTP API client using the default URL and HTTP client.
     pub fn test() -> Self {
         Self::new(&HttpClientFactory::default(), Self::DEFAULT_URL, None).unwrap()
@@ -418,9 +410,15 @@ impl DefaultZeroExApi {
     }
 }
 
+#[cfg(test)]
 impl Default for DefaultZeroExApi {
     fn default() -> Self {
-        Self::with_default_url(Client::new())
+        Self::new(
+            &HttpClientFactory::default(),
+            std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
+            std::env::var("ZEROEX_API_KEY").ok(),
+        )
+        .unwrap()
     }
 }
 
