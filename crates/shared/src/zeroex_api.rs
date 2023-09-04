@@ -390,17 +390,18 @@ impl DefaultZeroExApi {
         })
     }
 
-    /// Create a new 0x HTTP API client using the default URL.
-    pub fn with_default_url(client: Client) -> Self {
-        Self {
-            client,
-            base_url: Self::DEFAULT_URL.parse().unwrap(),
-        }
-    }
-
-    /// Create a 0x HTTP API client using the default URL and HTTP client.
+    /// Create a 0x HTTP API client for testing using the default HTTP client.
+    ///
+    /// This method will attempt to read the `ZEROEX_URL` (falling back to the
+    /// default URL) and `ZEROEX_API_KEY` (falling back to no API key) from the
+    /// local environment when creating the API client.
     pub fn test() -> Self {
-        Self::new(&HttpClientFactory::default(), Self::DEFAULT_URL, None).unwrap()
+        Self::new(
+            &HttpClientFactory::default(),
+            std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
+            std::env::var("ZEROEX_API_KEY").ok(),
+        )
+        .unwrap()
     }
 
     /// Retrieves specific page of current limit orders.
@@ -415,12 +416,6 @@ impl DefaultZeroExApi {
             .append_pair("page", &page.to_string())
             .append_pair("perPage", &results_per_page.to_string());
         self.request(url).await
-    }
-}
-
-impl Default for DefaultZeroExApi {
-    fn default() -> Self {
-        Self::with_default_url(Client::new())
     }
 }
 
@@ -586,7 +581,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn zeroex_swap() {
-        let zeroex_client = DefaultZeroExApi::default();
+        let zeroex_client = DefaultZeroExApi::test();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
@@ -626,7 +621,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn excluded_sources() {
-        let zeroex = DefaultZeroExApi::default();
+        let zeroex = DefaultZeroExApi::test();
         let query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
@@ -652,7 +647,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders() {
-        let api = DefaultZeroExApi::default();
+        let api = DefaultZeroExApi::test();
         let result = api.get_orders(&OrdersQuery::default()).await;
         dbg!(&result);
         assert!(result.is_ok());
@@ -661,7 +656,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders_paginated_with_empty_result() {
-        let api = DefaultZeroExApi::default();
+        let api = DefaultZeroExApi::test();
         // `get_orders()` relies on `get_orders_with_pagination()` not producing and
         // error instead of an response with 0 records. To test that we request
         // a page which should never have a any records and check that it

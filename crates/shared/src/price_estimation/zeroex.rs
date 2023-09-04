@@ -61,7 +61,6 @@ mod tests {
         ethcontract::futures::FutureExt as _,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
-        reqwest::Client,
     };
 
     fn create_estimator(api: Arc<dyn ZeroExApi>, buy_only: bool) -> ZeroExPriceEstimator {
@@ -249,7 +248,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let zeroex_api = DefaultZeroExApi::test();
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = single_estimate(
