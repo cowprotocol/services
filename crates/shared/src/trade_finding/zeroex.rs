@@ -134,7 +134,6 @@ mod tests {
         crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         hex_literal::hex,
         number::nonzero::U256 as NonZeroU256,
-        reqwest::Client,
         std::time::Duration,
     };
 
@@ -296,7 +295,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let zeroex_api = DefaultZeroExApi::test();
         let trader = create_trader(Arc::new(zeroex_api));
 
         let trade = trader
