@@ -18,7 +18,7 @@ use {
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
     num::{zero, BigRational, CheckedDiv, One},
-    number_conversions::big_rational_to_u256,
+    number::conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
         code_fetching::CodeFetching,

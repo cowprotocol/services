@@ -17,7 +17,7 @@ use {
     itertools::Itertools,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt},
-    number_conversions::big_rational_to_u256,
+    number::conversions::big_rational_to_u256,
     rand::prelude::SliceRandom,
     shared::{
         external_prices::ExternalPrices,

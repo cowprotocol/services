@@ -147,7 +147,7 @@ impl Inner {
                 query.data.sell_token,
                 query.data.buy_token,
                 query.allowed_protocols,
-                query.data.in_amount,
+                query.data.in_amount.get(),
                 self.referrer_address,
             ))
             .await?;
@@ -175,7 +175,7 @@ impl Inner {
             .get_swap(SwapQuery::with_default_options(
                 query.sell_token,
                 query.buy_token,
-                query.in_amount,
+                query.in_amount.get(),
                 self.settlement_contract,
                 allowed_protocols,
                 Slippage::ONE_PERCENT,
@@ -221,6 +221,7 @@ mod tests {
             Transaction,
         },
         hex_literal::hex,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };
@@ -271,7 +272,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -357,7 +358,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -410,7 +411,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await;
@@ -441,7 +442,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -469,7 +470,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -529,7 +530,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;

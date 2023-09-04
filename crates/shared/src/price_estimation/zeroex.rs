@@ -60,6 +60,7 @@ mod tests {
         },
         ethcontract::futures::FutureExt as _,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
     };
 
@@ -114,7 +115,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
             },
         )
@@ -163,7 +164,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
             },
         )
@@ -206,21 +207,21 @@ mod tests {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Sell,
                 },
                 Query {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Buy,
                 },
                 Query {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Sell,
                 },
             ],
@@ -257,7 +258,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             },
         )
