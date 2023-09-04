@@ -238,11 +238,16 @@ pub struct Arguments {
     #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
     pub disabled_paraswap_dexs: Vec<String>,
 
+    /// The 0x HTTP API URL.
     #[clap(long, env)]
     pub zeroex_url: Option<String>,
 
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
+
+    /// The 0x Websocket API URL.
+    #[clap(long, env)]
+    pub zeroex_ws_url: Option<String>,
 
     /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -434,6 +439,7 @@ impl Display for Arguments {
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
         display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
+        display_option(f, "zeroex_ws_url", &self.zeroex_ws_url)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         display_list(

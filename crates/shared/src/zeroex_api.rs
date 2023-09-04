@@ -620,7 +620,8 @@ pub mod websocket {
             // all numbers are at most u128::MAX so none of these operations can overflow
             let scaled_maker_amount = U256::from(self.order.maker_amount)
                 * U256::from(self.metadata.remaining_fillable_taker_amount)
-                / U256::from(self.order.taker_amount);
+                    .checked_div(self.order.taker_amount.into())
+                    .context("taker_amount is zero")?;
 
             // `scaled_maker_amount` is at most as big as `maker_amount` which already fits
             // in an u128
@@ -636,7 +637,7 @@ pub mod websocket {
                     remaining_fillable_taker_amount: order_record
                         .metadata
                         .remaining_fillable_taker_amount,
-                    state: Default::default(),
+                    state: OrderState::Added,
                 },
                 order: order_record.order,
             }

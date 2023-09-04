@@ -397,6 +397,7 @@ pub async fn run(args: Arguments) {
             zeroex_api,
             contracts::IZeroEx::deployed(&web3).await.unwrap(),
             settlement_contract.clone(),
+            args.shared.zeroex_ws_url.unwrap_or_default(),
         )));
     }
 
