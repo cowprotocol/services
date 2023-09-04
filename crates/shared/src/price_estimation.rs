@@ -335,14 +335,6 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
-<<<<<<< HEAD
-    #[error("Zero Amount")]
-    ZeroAmount,
-=======
-    #[error("Deadline exceeded")]
-    DeadlineExceeded,
->>>>>>> 236c0fe6 (Introducting NonZeroU256 and killing ZeroAmount error)
-
     #[error("Unsupported Order Type")]
     UnsupportedOrderType(String),
 
