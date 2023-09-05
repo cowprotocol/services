@@ -119,7 +119,7 @@ impl Mempool {
             .await?;
         let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: self.gas_price_estimator.as_ref(),
+            inner: self.gas_price_estimator.clone(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
             max_additional_tip: match self.config.kind {

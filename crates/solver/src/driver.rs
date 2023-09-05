@@ -11,7 +11,11 @@ use {
         settlement_ranker::SettlementRanker,
         settlement_rater::SettlementRating,
         settlement_simulation,
-        settlement_submission::{SolutionSubmitter, SubmissionError},
+        settlement_submission::{
+            submitter::SubmitterGasPriceEstimator,
+            SolutionSubmitter,
+            SubmissionError,
+        },
         solver::{Auction, Solver, Solvers},
     },
     anyhow::{anyhow, Context, Result},
@@ -64,6 +68,8 @@ pub struct Driver {
     liquidity_collector: LiquidityCollector,
     solvers: Solvers,
     gas_price_estimator: gas::Estimator,
+    additional_tip_percentage_of_max_fee: f64,
+    max_additional_tip: f64,
     settle_interval: Duration,
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
@@ -92,6 +98,8 @@ impl Driver {
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         gas_price_cap: f64,
+        additional_tip_percentage_of_max_fee: f64,
+        max_additional_tip: f64,
         settle_interval: Duration,
         native_token: H160,
         metrics: Arc<dyn SolverMetrics>,
@@ -137,6 +145,8 @@ impl Driver {
             liquidity_collector,
             solvers,
             gas_price_estimator,
+            additional_tip_percentage_of_max_fee,
+            max_additional_tip,
             settle_interval,
             native_token,
             metrics,
@@ -337,11 +347,23 @@ impl Driver {
             balances,
         };
 
+        let submitter_gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: self.gas_price_estimator.inner().clone(),
+            max_fee_per_gas: self.gas_price_estimator.gas_price_cap(),
+            additional_tip_percentage_of_max_fee: self.additional_tip_percentage_of_max_fee,
+            max_additional_tip: self.max_additional_tip,
+        };
+
         tracing::debug!(deadline =? auction.deadline, "solving auction");
         let run_solver_results = self.run_solvers(auction).await;
         let (mut rated_settlements, errors) = self
             .settlement_ranker
-            .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
+            .rank_legal_settlements(
+                run_solver_results,
+                &external_prices,
+                &submitter_gas_price_estimator,
+                auction_id,
+            )
             .await?;
 
         // We don't know the exact block because simulation can happen over multiple

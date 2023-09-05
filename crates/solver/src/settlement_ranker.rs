@@ -8,12 +8,12 @@ use {
         settlement::{PriceCheckTokens, Settlement},
         settlement_rater::{Rating, SettlementRating},
         settlement_simulation::call_data,
+        settlement_submission::submitter::SubmitterGasPriceEstimator,
         solver::{SimulationWithError, Solver, SolverInfo},
     },
     anyhow::Result,
     ethcontract::U256,
     futures::future::join_all,
-    gas_estimation::GasPrice1559,
     itertools::Itertools,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt},
@@ -150,7 +150,8 @@ impl SettlementRanker {
         &self,
         settlements: Vec<SolverResult>,
         external_prices: &ExternalPrices,
-        gas_price: GasPrice1559,
+        gas_price_estimator: &SubmitterGasPriceEstimator,
+        //gas_price: GasPrice1559,
         auction_id: AuctionId,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let solver_settlements =
@@ -179,19 +180,27 @@ impl SettlementRanker {
         let (mut rated_settlements, errors): (Vec<_>, Vec<_>) =
             join_all(solver_settlements.into_iter().enumerate().map(
                 |(i, (solver, settlement))| async move {
-                    let simulation = self
-                        .settlement_rater
-                        .rate_settlement(
-                            &SolverInfo {
-                                account: solver.account().clone(),
-                                name: solver.name().to_owned(),
-                            },
-                            settlement,
-                            external_prices,
-                            gas_price,
-                            i,
-                        )
-                        .await;
+                    let simulation =
+                        match gas_price_estimator.estimate(settlement.revertable()).await {
+                            Ok(gas_price) => {
+                                self.settlement_rater
+                                    .rate_settlement(
+                                        &SolverInfo {
+                                            account: solver.account().clone(),
+                                            name: solver.name().to_owned(),
+                                        },
+                                        settlement,
+                                        external_prices,
+                                        gas_price,
+                                        i,
+                                    )
+                                    .await
+                            }
+                            Err(err) => {
+                                tracing::warn!(?err, "failed gas price estimation");
+                                Err(err)
+                            }
+                        };
                     (solver, simulation)
                 },
             ))

@@ -322,7 +322,7 @@ impl SolutionSubmitter {
             use_soft_cancellations: strategy_args.use_soft_cancellations,
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: self.gas_price_estimator.as_ref(),
+            inner: self.gas_price_estimator.clone(),
             max_fee_per_gas,
             additional_tip_percentage_of_max_fee,
             max_additional_tip,

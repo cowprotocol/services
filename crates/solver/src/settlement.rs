@@ -245,7 +245,7 @@ pub struct Settlement {
     pub score: Option<Score>,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Revertable {
     NoRisk,
     HighRisk,

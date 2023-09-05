@@ -15,6 +15,12 @@
 // is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
+use {
+    crate::settlement::Revertable,
+    gas_estimation::{DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT},
+    std::sync::Arc,
+};
+
 mod common;
 pub mod eden_api;
 pub mod flashbots_api;
@@ -129,29 +135,53 @@ pub trait TransactionSubmitting: Send + Sync {
 
 /// Gas price estimator specialized for sending transactions to the network
 #[derive(Clone)]
-pub struct SubmitterGasPriceEstimator<'a> {
-    pub inner: &'a dyn GasPriceEstimating,
+pub struct SubmitterGasPriceEstimator {
+    pub inner: Arc<dyn GasPriceEstimating>,
+    /// Maximum max_fee_per_gas to pay for a transaction
+    pub max_fee_per_gas: f64,
     /// Additionally increase max_priority_fee_per_gas by percentage of
     /// max_fee_per_gas, in order to increase the chances of a transaction being
     /// mined
     pub additional_tip_percentage_of_max_fee: f64,
     /// Maximum max_priority_fee_per_gas additional increase
     pub max_additional_tip: f64,
-    /// Maximum max_fee_per_gas to pay for a transaction
-    pub max_fee_per_gas: f64,
 }
 
-impl SubmitterGasPriceEstimator<'_> {
+impl SubmitterGasPriceEstimator {
     pub fn with_additional_tip(&self, max_additional_tip: f64) -> Self {
         Self {
             max_additional_tip,
-            ..*self
+            ..self.clone()
         }
+    }
+
+    pub async fn estimate(&self, revertable: Revertable) -> Result<GasPrice1559> {
+        // No extra tip required if there is no revert risk
+        let (additional_tip_percentage_of_max_fee, max_additional_tip) =
+            if revertable == Revertable::NoRisk {
+                tracing::debug!("Disabling additional tip because of NoRisk settlement");
+                (0., 0.)
+            } else {
+                (
+                    self.additional_tip_percentage_of_max_fee,
+                    self.max_additional_tip,
+                )
+            };
+
+        let estimator = SubmitterGasPriceEstimator {
+            additional_tip_percentage_of_max_fee,
+            max_additional_tip,
+            ..self.clone()
+        };
+
+        estimator
+            .estimate_with_limits(DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT)
+            .await
     }
 }
 
 #[async_trait::async_trait]
-impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
+impl GasPriceEstimating for SubmitterGasPriceEstimator {
     async fn estimate_with_limits(
         &self,
         gas_limit: f64,
@@ -181,7 +211,7 @@ pub struct Submitter<'a> {
     account: &'a Account,
     nonce: U256,
     submit_api: &'a dyn TransactionSubmitting,
-    gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
+    gas_price_estimator: &'a SubmitterGasPriceEstimator,
     access_list_estimator: &'a dyn AccessListEstimating,
     code_fetcher: &'a dyn CodeFetching,
     submitted_transactions: SubTxPoolRef,
@@ -195,7 +225,7 @@ impl<'a> Submitter<'a> {
         account: &'a Account,
         nonce: U256,
         submit_api: &'a dyn TransactionSubmitting,
-        gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
+        gas_price_estimator: &'a SubmitterGasPriceEstimator,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
         web3: Web3,

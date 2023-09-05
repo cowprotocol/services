@@ -473,7 +473,7 @@ pub async fn run(args: Arguments) {
                     submit_api: Box::new(
                         EdenApi::new(http_factory.create(), args.eden_api_url.clone()).unwrap(),
                     ),
-                    max_additional_tip: args.max_additional_eden_tip,
+                    max_additional_tip: args.max_additional_flashbot_tip, // todo
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Eden),
                     use_soft_cancellations: false,
@@ -557,6 +557,8 @@ pub async fn run(args: Arguments) {
         solver,
         gas_price_estimator,
         args.gas_price_cap,
+        args.additional_tip_percentage,
+        args.max_additional_flashbot_tip,
         args.settle_interval,
         native_token.address(),
         metrics.clone(),

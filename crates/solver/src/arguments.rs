@@ -194,16 +194,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub use_soft_cancellations: bool,
 
-    /// Maximum additional tip in gwei that we are willing to give to eden above
-    /// regular gas price estimation
-    #[clap(
-        long,
-        env,
-        default_value = "3",
-        value_parser = shared::arguments::wei_from_gwei
-    )]
-    pub max_additional_eden_tip: f64,
-
     /// The maximum time in seconds we spend trying to settle a transaction
     /// through the ethereum network before going to back to solving.
     #[clap(
@@ -410,11 +400,6 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
         writeln!(f, "use_soft_cancellations: {}", self.use_soft_cancellations)?;
-        writeln!(
-            f,
-            "max_additional_eden_tip: {}",
-            self.max_additional_eden_tip
-        )?;
         writeln!(
             f,
             "max_submission_seconds: {:?}",
