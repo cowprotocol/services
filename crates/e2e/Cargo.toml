@@ -19,6 +19,7 @@ ethrpc = { path = "../ethrpc" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 model = { path = "../model" }
+number = { path = "../number" }
 observe = { path = "../observe" }
 orderbook = { path = "../orderbook" }
 reqwest = { workspace = true, features = ["blocking"] }

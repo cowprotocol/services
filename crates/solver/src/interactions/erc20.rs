@@ -30,7 +30,7 @@ impl Interaction for Erc20ApproveInteraction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, hex_literal::hex, shared::dummy_contract};
+    use {super::*, contracts::dummy_contract, hex_literal::hex};
 
     #[test]
     fn encode_erc20_approve() {

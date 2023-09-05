@@ -29,7 +29,7 @@ impl OrderConverter {
     #[cfg(test)]
     pub fn test(native_token: ethcontract::H160) -> Self {
         Self {
-            native_token: shared::dummy_contract!(WETH9, native_token),
+            native_token: contracts::dummy_contract!(WETH9, native_token),
         }
     }
 
@@ -134,11 +134,11 @@ pub mod tests {
     use {
         super::*,
         crate::settlement::tests::assert_settlement_encoded_with,
+        contracts::dummy_contract,
         ethcontract::H160,
         maplit::hashmap,
         model::order::{OrderData, OrderKind, OrderMetadata},
         primitive_types::U256,
-        shared::dummy_contract,
     };
 
     #[test]

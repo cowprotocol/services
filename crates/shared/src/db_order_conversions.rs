@@ -34,7 +34,7 @@ use {
         },
         signature::{Signature, SigningScheme},
     },
-    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {

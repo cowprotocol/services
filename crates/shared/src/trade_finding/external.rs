@@ -42,7 +42,7 @@ impl ExternalTradeFinder {
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             kind: query.kind,
             deadline,
         };
@@ -60,18 +60,24 @@ impl ExternalTradeFinder {
         }
 
         let future = async {
-            let response = request.send().await.map_err(PriceEstimationError::from)?;
+            let response = request
+                .send()
+                .await
+                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
             if response.status() == 429 {
                 return Err(PriceEstimationError::RateLimited);
             }
-            let text = response.text().await.map_err(PriceEstimationError::from)?;
+            let text = response
+                .text()
+                .await
+                .map_err(|err| PriceEstimationError::EstimatorInternal(anyhow!(err)))?;
             serde_json::from_str::<dto::Quote>(&text)
                 .map(Trade::from)
                 .map_err(|err| {
                     if let Ok(err) = serde_json::from_str::<dto::Error>(&text) {
                         PriceEstimationError::from(err)
                     } else {
-                        PriceEstimationError::from(err)
+                        PriceEstimationError::EstimatorInternal(anyhow!(err))
                     }
                 })
         };
@@ -121,8 +127,7 @@ impl From<dto::Error> for PriceEstimationError {
     fn from(value: dto::Error) -> Self {
         match value.kind.as_str() {
             "QuotingFailed" => Self::NoLiquidity,
-            "DeadlineExceeded" => Self::DeadlineExceeded,
-            _ => Self::Other(anyhow!("{}", value.description)),
+            _ => Self::EstimatorInternal(anyhow!("{}", value.description)),
         }
     }
 }
@@ -148,7 +153,8 @@ impl TradeFinding for ExternalTradeFinder {
 mod dto {
     use {
         ethcontract::{H160, U256},
-        model::{bytes_hex::BytesHex, order::OrderKind, u256_decimal::DecimalU256},
+        model::{bytes_hex::BytesHex, order::OrderKind},
+        number::u256_decimal::DecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };

@@ -19,7 +19,7 @@ use {
     gas_estimation::GasPrice1559,
     model::order::OrderKind,
     num::{CheckedDiv, ToPrimitive},
-    number_conversions::u256_to_big_rational,
+    number::conversions::u256_to_big_rational,
     primitive_types::{H160, U256},
     rand::prelude::SliceRandom,
     shared::{
@@ -501,10 +501,10 @@ impl SingleOrderSettlement {
         // Compute the surplus fee that needs to be incorporated into the prices
         // and solver fee which will be used for scoring.
         let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
-            let fee = number_conversions::big_rational_to_u256(
+            let fee = number::conversions::big_rational_to_u256(
                 &prices
                     .try_get_token_amount(
-                        &number_conversions::u256_to_big_rational(gas_cost),
+                        &number::conversions::u256_to_big_rational(gas_cost),
                         order.sell_token,
                     )
                     .context("failed to compute solver fee")?,

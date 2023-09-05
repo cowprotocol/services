@@ -222,7 +222,7 @@ mod tests {
             interactions::allowances::{Approval, MockAllowanceManaging},
             test::account,
         },
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::U256,
         futures::FutureExt as _,
         maplit::hashmap,
@@ -230,7 +230,6 @@ mod tests {
         model::order::{Order, OrderData, OrderKind},
         reqwest::Client,
         shared::{
-            dummy_contract,
             ethrpc::create_env_test_transport,
             paraswap_api::MockParaswapApi,
             token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},

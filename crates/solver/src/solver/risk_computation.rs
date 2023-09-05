@@ -5,15 +5,11 @@
 // which essentially is a function that computes the probability of the
 // settlement not reverting, and is a function of 3 parameters.
 // p (num_orders_in_sol, gas_used, gas_price).
-// So we compute this p, and then the score is equal to:
-// score = p * (surplus + fees) - gas_cost
 
 use {
     super::SolverType,
-    crate::objective_value,
     anyhow::{Context, Result},
     clap::{Parser, ValueEnum},
-    ethcontract::U256,
     num::ToPrimitive,
     std::{
         collections::HashMap,
@@ -24,55 +20,31 @@ use {
 };
 
 #[derive(Debug, Default, Clone)]
-pub struct ScoreCalculator {
+pub struct RiskCalculator {
     pub gas_amount_factor: f64,
     pub gas_price_factor: f64,
     pub nmb_orders_factor: f64,
     pub intercept: f64,
 }
 
-impl ScoreCalculator {
-    pub fn calculate(&self, inputs: &objective_value::Inputs, nmb_orders: usize) -> Result<U256> {
-        let surplus = inputs
-            .surplus_given
-            .to_f64()
-            .context("surplus_given conversion")?;
-        let fees = inputs
-            .solver_fees
-            .to_f64()
-            .context("solver_fees conversion")?;
-        let gas_amount = inputs
-            .gas_amount
-            .to_f64()
-            .context("gas_amount conversion")?;
-        let gas_price = inputs.gas_price.to_f64().context("gas_price conversion")?;
+impl RiskCalculator {
+    pub fn calculate(&self, gas_amount: f64, gas_price: f64, nmb_orders: usize) -> Result<f64> {
+        let gas_amount = gas_amount.to_f64().context("gas_amount conversion")?;
+        let gas_price = gas_price.to_f64().context("gas_price conversion")?;
         let exponent = self.intercept.neg()
             - self.gas_amount_factor * gas_amount / 1_000_000.
             - self.gas_price_factor * gas_price / 10_000_000_000.
             - self.nmb_orders_factor * nmb_orders as f64;
         let success_probability = 1. / (1. + exponent.exp());
-        let obj = surplus + fees - gas_amount * gas_price;
-        let cap = 10000000000000000.0;
-        let score = if success_probability * obj <= cap && (1.0 - success_probability) * obj <= cap
-        {
-            success_probability * obj
-        } else if success_probability * obj > cap && success_probability >= 0.5 {
-            obj - cap * (1.0 - success_probability) / success_probability
-        } else {
-            cap * success_probability / (1.0 - success_probability)
-        };
         tracing::trace!(
-            ?surplus,
-            ?fees,
             ?gas_amount,
             ?gas_price,
             ?nmb_orders,
             ?exponent,
             ?success_probability,
-            ?score,
-            "score calculation",
+            "risk calculation",
         );
-        Ok(U256::from_f64_lossy(score))
+        Ok(success_probability)
     }
 }
 
@@ -81,7 +53,7 @@ impl ScoreCalculator {
 // The data for each solver can be found here.
 // https://drive.google.com/drive/u/1/folders/19yoL808qkp_os3BpLIYQahI3mQrNyx5T
 #[rustfmt::skip]
-const DEFAULT_SCORE_PARAMETERS: &str = "\
+const DEFAULT_RISK_PARAMETERS: &str = "\
     Naive,0.5604082285267333,0.00285114179288399,0.06499875450001853,3.3987949311136787;\
     Baseline,-0.24391894879979226,-0.05809501139187965,-0.000013222507455295696,4.27946195371547;\
     OneInch,-0.32674185936325467,-0.05930446215554123,-0.33031769043234466,3.144609301500272;\
@@ -92,79 +64,79 @@ const DEFAULT_SCORE_PARAMETERS: &str = "\
 #[derive(Debug, Parser)]
 #[group(skip)]
 pub struct Arguments {
-    /// Parameters for the score computation for each solver.
+    /// Parameters for the risk computation for each solver.
     /// The format is a list of semicolon separated solver parameters.
     /// Each solver parameter is a comma separated list of parameters:
     /// [solver name],[gas amount factor],[gas price factor],[number of orders
     /// factor],[intercept parameter]
-    #[clap(long, env, default_value = DEFAULT_SCORE_PARAMETERS)]
-    score_parameters: ScoreParameters,
+    #[clap(long, env, default_value = DEFAULT_RISK_PARAMETERS)]
+    risk_parameters: RiskParameters,
 }
 
 impl Arguments {
-    pub fn get_calculator(&self, solver: SolverType) -> Option<ScoreCalculator> {
-        self.score_parameters.0.get(&solver).cloned()
+    pub fn get_calculator(&self, solver: SolverType) -> Option<RiskCalculator> {
+        self.risk_parameters.0.get(&solver).cloned()
     }
 }
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "score_parameters: {:?}", self.score_parameters)
+        write!(f, "risk_parameters: {:?}", self.risk_parameters)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ScoreParameters(HashMap<SolverType, ScoreCalculator>);
+pub struct RiskParameters(HashMap<SolverType, RiskCalculator>);
 
-impl FromStr for ScoreParameters {
+impl FromStr for RiskParameters {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // parse user provided parameters (or default if none are provided)
-        let user_score_parameters = parse_calculators(s)?;
+        let user_risk_parameters = parse_calculators(s)?;
         // parse default parameters and override them with the ones provided by the user
-        let score_parameters = parse_calculators(DEFAULT_SCORE_PARAMETERS)?
+        let risk_parameters = parse_calculators(DEFAULT_RISK_PARAMETERS)?
             .into_iter()
-            .map(|(solver, default_score_parameter)| {
+            .map(|(solver, default_risk_parameter)| {
                 (
                     solver,
-                    user_score_parameters
+                    user_risk_parameters
                         .get(&solver)
                         .cloned()
-                        .unwrap_or(default_score_parameter),
+                        .unwrap_or(default_risk_parameter),
                 )
             })
             .collect();
-        Ok(Self(score_parameters))
+        Ok(Self(risk_parameters))
     }
 }
 
-fn parse_calculators(s: &str) -> Result<HashMap<SolverType, ScoreCalculator>> {
+fn parse_calculators(s: &str) -> Result<HashMap<SolverType, RiskCalculator>> {
     s.split(';')
         .map(|part| {
             let (solver, parameters) = part
                 .split_once(',')
-                .context("malformed solver score parameters")?;
+                .context("malformed solver risk parameters")?;
             let mut parameters = parameters.split(',');
             let gas_amount_factor = parameters
                 .next()
-                .context("missing a parameter for score")?
+                .context("missing a parameter for risk")?
                 .parse()?;
             let gas_price_factor = parameters
                 .next()
-                .context("missing b parameter for score")?
+                .context("missing b parameter for risk")?
                 .parse()?;
             let nmb_orders_factor = parameters
                 .next()
-                .context("missing c parameter for score")?
+                .context("missing c parameter for risk")?
                 .parse()?;
             let intercept = parameters
                 .next()
-                .context("missing x parameter for score")?
+                .context("missing x parameter for risk")?
                 .parse()?;
             Ok((
                 SolverType::from_str(solver, true).map_err(|message| anyhow::anyhow!(message))?,
-                ScoreCalculator {
+                RiskCalculator {
                     gas_amount_factor,
                     gas_price_factor,
                     nmb_orders_factor,
@@ -177,33 +149,29 @@ fn parse_calculators(s: &str) -> Result<HashMap<SolverType, ScoreCalculator>> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, number_conversions::u256_to_big_rational};
+    use super::*;
 
     #[test]
-    fn score_parameters_test() {
-        let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
-        assert_eq!(score_parameters.0.len(), 6);
+    fn risk_parameters_test() {
+        let risk_parameters = RiskParameters::from_str(DEFAULT_RISK_PARAMETERS).unwrap();
+        assert_eq!(risk_parameters.0.len(), 6);
     }
 
     #[test]
-    fn compute_score_test() {
+    fn compute_success_probability_test() {
         // tx hash 0x201c948ad94d7f93ad2d3c13fa4b6bbd4270533fbfedcb8be60e68c8e709d2b6
         // objective_score = 251547381429604400
         // success_probability ends up being 0.9202405649482063
-        let score_parameters = ScoreParameters::from_str(DEFAULT_SCORE_PARAMETERS).unwrap();
-        let inputs = objective_value::Inputs {
-            surplus_given: u256_to_big_rational(&U256::from(237248548166961920u128)),
-            solver_fees: u256_to_big_rational(&U256::from(45972570277472210u128)),
-            gas_amount: u256_to_big_rational(&U256::from(765096u128)),
-            gas_price: u256_to_big_rational(&U256::from(41398382700u128)),
-        };
+        let risk_parameters = RiskParameters::from_str(DEFAULT_RISK_PARAMETERS).unwrap();
+        let gas_amount = 765096.;
+        let gas_price = 41398382700.;
         let nmb_orders = 1;
-        let score = score_parameters
+        let success_probability = risk_parameters
             .0
             .get(&SolverType::Paraswap)
             .unwrap()
-            .calculate(&inputs, nmb_orders)
+            .calculate(gas_amount, gas_price, nmb_orders)
             .unwrap();
-        assert_eq!(score, 250680657687276800u128.into());
+        assert_eq!(success_probability, 0.9202405649482063);
     }
 }

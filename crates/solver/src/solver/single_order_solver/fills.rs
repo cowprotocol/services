@@ -44,7 +44,7 @@ impl Fills {
     pub fn new(smallest_fill: U256) -> Self {
         Self {
             amounts: Default::default(),
-            smallest_fill: number_conversions::u256_to_big_rational(&smallest_fill),
+            smallest_fill: number::conversions::u256_to_big_rational(&smallest_fill),
         }
     }
 
@@ -63,7 +63,7 @@ impl Fills {
         let smallest_fill = prices
             .try_get_token_amount(&self.smallest_fill, token)
             .ok_or(Error::MissingPrice)?;
-        let smallest_fill = number_conversions::big_rational_to_u256(&smallest_fill)
+        let smallest_fill = number::conversions::big_rational_to_u256(&smallest_fill)
             .map_err(|_| Error::SmallestFillU256Conversion)?;
 
         let now = Instant::now();

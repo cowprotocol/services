@@ -49,7 +49,7 @@ There are additional crates that live in the cargo workspace.
 - `e2e` end-to-end tests
 - `ethrpc` ethrpc client with a few extensions
 - `model` provides the serialization model for orders in the order book api
-- `number_conversions` numerical conversions between 256-bit integers and various arbitrarily sized integer types
+- `number` extensions to number types, such as numerical conversions between 256-bit integers, nonzero types and de/serialization implementations
 - `observe` initialization and helper functions for logging and metrics
 - `shared` provides other shared functionality between the solver and order book
 - `testlib` shared helpers for writing unit and end-to-end tests

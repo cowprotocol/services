@@ -7,6 +7,7 @@ use {
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
+        signature_validator,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -148,6 +149,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub balances: account_balances::Arguments,
+
+    #[clap(flatten)]
+    pub signatures: signature_validator::Arguments,
 
     #[clap(flatten)]
     pub logging: LoggingArguments,
@@ -403,6 +407,7 @@ impl Display for Arguments {
         write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.tenderly)?;
         write!(f, "{}", self.balances)?;
+        write!(f, "{}", self.signatures)?;
         writeln!(f, "log_filter: {}", self.logging.log_filter)?;
         writeln!(
             f,
@@ -519,7 +524,7 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
 pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
     let in_ether = s.parse::<BigDecimal>()?;
     let base = BigDecimal::new(1.into(), -18);
-    number_conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
+    number::conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
 }
 
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {

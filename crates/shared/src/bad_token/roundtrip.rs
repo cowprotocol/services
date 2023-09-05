@@ -4,7 +4,7 @@
 use {
     crate::trade_finding::{EncodedInteraction, Interaction},
     anyhow::Result,
-    contracts::support::Trader,
+    contracts::{deployed_bytecode, dummy_contract, support::Trader},
     ethcontract::{H160, U256},
     ethrpc::extensions::{StateOverride, StateOverrides},
     std::{collections::HashMap, iter},

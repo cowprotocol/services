@@ -1,3 +1,5 @@
+mod arguments;
+mod simulation;
 mod web3;
 
 use {
@@ -8,7 +10,11 @@ use {
     thiserror::Error,
 };
 
-pub use self::web3::Web3SignatureValidator;
+pub use self::{
+    arguments::*,
+    simulation::Validator as SimulationSignatureValidator,
+    web3::Web3SignatureValidator,
+};
 
 /// Structure used to represent a signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
