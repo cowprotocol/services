@@ -151,7 +151,8 @@ impl SubmitterGasPriceEstimator {
         }
     }
 
-    // Estimator works differently for each settlement depending on the settlement revert risk
+    // Estimator works differently for each settlement depending on the settlement
+    // revert risk
     pub fn with_revertable_risk(&self, revertable: Revertable) -> Self {
         let (additional_tip_percentage_of_max_fee, max_additional_tip) =
             if revertable == Revertable::NoRisk {
