@@ -703,7 +703,11 @@ impl Node {
     async fn new() -> Self {
         use tokio::io::AsyncBufReadExt as _;
 
-        let mut process = tokio::process::Command::new("anvil")
+        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
+        // For example if you set up a command that spins up a docker container.
+        let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
+
+        let mut process = tokio::process::Command::new(command)
             .arg("--port")
             .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
