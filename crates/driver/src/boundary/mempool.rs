@@ -1,7 +1,10 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{competition::solution::settlement::Settlement, eth},
+        domain::{
+            competition::solution::settlement::Settlement,
+            eth::{self},
+        },
         infra::{blockchain::Ethereum, solver::Solver},
     },
     async_trait::async_trait,
@@ -110,15 +113,11 @@ impl Mempool {
         })
     }
 
-    /// Publish the settlement and wait for it to be confirmed.
-    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<eth::TxId> {
-        let web3 = boundary::web3(&self.eth);
-        let nonce = web3
-            .eth()
-            .transaction_count(solver.address().into(), None)
-            .await?;
+    // Estimator has to be created for each settlement because it depends on the
+    // revertable risk
+    pub fn gas_price_estimator(&self, settlement: &Settlement) -> SubmitterGasPriceEstimator {
         let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
-        let gas_price_estimator = SubmitterGasPriceEstimator {
+        SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.clone(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
@@ -128,7 +127,18 @@ impl Mempool {
                     max_additional_tip, ..
                 } => max_additional_tip,
             },
-        };
+        }
+        .with_revertable_risk(settlement.boundary.inner.revertable())
+    }
+
+    /// Publish the settlement and wait for it to be confirmed.
+    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<eth::TxId> {
+        let web3 = boundary::web3(&self.eth);
+        let nonce = web3
+            .eth()
+            .transaction_count(solver.address().into(), None)
+            .await?;
+        let gas_price_estimator = self.gas_price_estimator(&settlement);
         let use_soft_cancellations = match self.config.kind {
             Kind::Public(_) => false,
             Kind::Flashbots {

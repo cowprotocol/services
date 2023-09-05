@@ -138,13 +138,18 @@ impl Competition {
         let settlements = results;
 
         // Score the settlements.
-        let scores = settlements
-            .into_iter()
-            .map(|settlement| {
-                observe::scoring(&settlement);
-                (settlement.score(&self.eth, auction), settlement)
-            })
-            .collect_vec();
+        let mut scores = Vec::new();
+        for settlement in settlements {
+            observe::scoring(&settlement);
+            // use the gas price that would be used for submission
+            scores.push((
+                self.mempools
+                    .gas_price(&settlement)
+                    .await
+                    .and_then(|gas_price| settlement.score(&self.eth, auction, gas_price)),
+                settlement,
+            ))
+        }
 
         // Filter out settlements which failed scoring.
         let scores = scores
