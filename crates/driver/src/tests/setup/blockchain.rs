@@ -713,18 +713,25 @@ impl Node {
             .spawn()
             .unwrap();
 
-        let parse_url_from_logs = async {
+        let stdout = process.stdout.take().unwrap();
+        let (sender, receiver) = tokio::sync::oneshot::channel::<String>();
+
+        tokio::task::spawn(async move {
+            let mut sender = Some(sender);
             const NEEDLE: &str = "Listening on ";
-            let mut reader = tokio::io::BufReader::new(process.stdout.take().unwrap()).lines();
-            while let Some(line) = reader.next_line().await? {
+            let mut reader = tokio::io::BufReader::new(stdout).lines();
+            while let Some(line) = reader.next_line().await.unwrap() {
+                tracing::trace!(line);
                 if let Some(addr) = line.strip_prefix(NEEDLE) {
-                    return Ok(format!("http://{addr}"));
+                    match sender.take() {
+                        Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
+                        None => tracing::error!(addr, "detected multiple anvil endpoints"),
+                    }
                 }
             }
-            anyhow::bail!("could not find \"{NEEDLE}.*\" in anvil logs")
-        };
+        });
 
-        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), parse_url_from_logs)
+        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
