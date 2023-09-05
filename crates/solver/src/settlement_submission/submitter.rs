@@ -15,10 +15,7 @@
 // is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
-use {
-    crate::settlement::Revertable,
-    std::sync::Arc,
-};
+use {crate::settlement::Revertable, std::sync::Arc};
 
 mod common;
 pub mod eden_api;
@@ -154,8 +151,8 @@ impl SubmitterGasPriceEstimator {
         }
     }
 
+    // Estimator works differently for each settlement depending on the settlement revert risk
     pub fn with_revertable_risk(&self, revertable: Revertable) -> Self {
-        // No extra tip required if there is no revert risk
         let (additional_tip_percentage_of_max_fee, max_additional_tip) =
             if revertable == Revertable::NoRisk {
                 tracing::debug!("Disabling additional tip because of NoRisk settlement");

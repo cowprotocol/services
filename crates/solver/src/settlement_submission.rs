@@ -4,7 +4,7 @@ pub mod submitter;
 use {
     crate::{
         metrics::SettlementSubmissionOutcome,
-        settlement::{Revertable, Settlement},
+        settlement::Settlement,
         settlement_access_list::AccessListEstimating,
     },
     anyhow::{anyhow, Result},
@@ -300,18 +300,6 @@ impl SolutionSubmitter {
 
         let strategy_args = strategy.strategy_args().expect("unreachable code executed");
 
-        // No extra tip required if there is no revert risk
-        let (additional_tip_percentage_of_max_fee, max_additional_tip) =
-            if settlement.revertable() == Revertable::NoRisk {
-                tracing::debug!("Disabling additional tip because of NoRisk settlement");
-                (0., 0.)
-            } else {
-                (
-                    strategy_args.additional_tip_percentage_of_max_fee,
-                    strategy_args.max_additional_tip,
-                )
-            };
-
         let params = SubmitterParams {
             target_confirm_time: self.target_confirm_time,
             gas_estimate,
@@ -324,9 +312,11 @@ impl SolutionSubmitter {
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.clone(),
             max_fee_per_gas,
-            additional_tip_percentage_of_max_fee,
-            max_additional_tip,
-        };
+            additional_tip_percentage_of_max_fee: strategy_args
+                .additional_tip_percentage_of_max_fee,
+            max_additional_tip: strategy_args.max_additional_tip,
+        }
+        .with_revertable_risk(settlement.revertable());
         let submitter = Submitter::new(
             &self.contract,
             account,
