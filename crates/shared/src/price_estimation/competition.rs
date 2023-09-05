@@ -52,6 +52,7 @@ struct Competition {
     winners: Vec<(EstimatorIndex, Wins)>,
 }
 
+#[derive(Debug, Clone)]
 struct Prediction {
     /// Which price estimator will probably provide the best quote.
     winner: EstimatorIndex,
@@ -125,12 +126,17 @@ impl HistoricalWinners {
     }
 }
 
+type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
+
 /// Price estimator that pulls estimates from various sources
-/// and competes on the best price. Returns a price estimation
-/// early if there is a configurable number of successful estimates
-/// for every query or if all price sources returned an estimate.
+/// and competes on the best price. Sources are provided as a list of lists, the
+/// outer list representing the sequential stage of the search, and the inner
+/// list representing all source that should be queried in parallel in the given
+/// stage Returns a price estimation early if there is a configurable number of
+/// successful estimates for every query or if all price sources returned an
+/// estimate.
 pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<(String, Arc<dyn PriceEstimating>)>,
+    inner: Vec<PriceEstimationStage>,
     successful_results_for_early_return: NonZeroUsize,
     competition: Option<HistoricalWinners>,
     /// The likelyhood of us including the winning price estimator based on
@@ -140,12 +146,12 @@ pub struct RacingCompetitionPriceEstimator {
 
 impl RacingCompetitionPriceEstimator {
     pub fn new(
-        inner: Vec<(String, Arc<dyn PriceEstimating>)>,
+        inner: PriceEstimationStage,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner,
+            inner: vec![inner],
             successful_results_for_early_return,
             competition: None,
             required_confidence: 1.,
@@ -212,7 +218,8 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                         .with_label_values(&["saved"])
                         .inc_by(requests - predictions.len() as u64);
                 }
-            }
+                // We have enough successes or there are no remaining estimators running for
+                // this query.
 
             result.clone()
         }
