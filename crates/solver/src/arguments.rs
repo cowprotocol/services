@@ -204,15 +204,15 @@ pub struct Arguments {
     )]
     pub max_submission_seconds: Duration,
 
-    /// Maximum additional tip in gwei that we are willing to give to flashbots
-    /// above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give above regular
+    /// gas price estimation, to a private submission network
     #[clap(
         long,
         env,
         default_value = "3",
         value_parser = shared::arguments::wei_from_gwei
     )]
-    pub max_additional_flashbot_tip: f64,
+    pub max_additional_tip: f64,
 
     /// Amount of time to wait before retrying to submit the tx to the ethereum
     /// network
@@ -405,11 +405,7 @@ impl std::fmt::Display for Arguments {
             "max_submission_seconds: {:?}",
             self.max_submission_seconds
         )?;
-        writeln!(
-            f,
-            "max_additional_flashbots_tip: {}",
-            self.max_additional_flashbot_tip
-        )?;
+        writeln!(f, "max_additional_tip: {}", self.max_additional_tip)?;
         writeln!(
             f,
             "submission_retry_interval_seconds: {:?}",

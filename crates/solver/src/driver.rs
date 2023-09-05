@@ -349,7 +349,7 @@ impl Driver {
 
         let submitter_gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.inner().clone(),
-            max_fee_per_gas: self.gas_price_estimator.gas_price_cap(),
+            max_fee_per_gas: gas_price.max_fee_per_gas,
             additional_tip_percentage_of_max_fee: self.additional_tip_percentage_of_max_fee,
             max_additional_tip: self.max_additional_tip,
         };

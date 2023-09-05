@@ -17,7 +17,6 @@
 
 use {
     crate::settlement::Revertable,
-    gas_estimation::{DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT},
     std::sync::Arc,
 };
 
@@ -155,7 +154,7 @@ impl SubmitterGasPriceEstimator {
         }
     }
 
-    pub async fn estimate(&self, revertable: Revertable) -> Result<GasPrice1559> {
+    pub fn with_revertable_risk(&self, revertable: Revertable) -> Self {
         // No extra tip required if there is no revert risk
         let (additional_tip_percentage_of_max_fee, max_additional_tip) =
             if revertable == Revertable::NoRisk {
@@ -168,15 +167,11 @@ impl SubmitterGasPriceEstimator {
                 )
             };
 
-        let estimator = SubmitterGasPriceEstimator {
+        Self {
             additional_tip_percentage_of_max_fee,
             max_additional_tip,
             ..self.clone()
-        };
-
-        estimator
-            .estimate_with_limits(DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT)
-            .await
+        }
     }
 }
 
@@ -782,7 +777,7 @@ mod tests {
         .await
         .unwrap();
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: &gas_price_estimator,
+            inner: Arc::new(gas_price_estimator),
             max_additional_tip: 3.0,
             max_fee_per_gas: 100e9,
             additional_tip_percentage_of_max_fee: 0.05,
@@ -849,11 +844,11 @@ mod tests {
     #[tokio::test]
     async fn gas_price_estimator_includes_additional_tip() {
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+            inner: Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
                 base_fee_per_gas: 100.,
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
-            }),
+            })),
             additional_tip_percentage_of_max_fee: 0.05,
             max_additional_tip: 1000.,
             max_fee_per_gas: 200.,
@@ -873,11 +868,11 @@ mod tests {
     async fn gas_price_estimator_additional_tip_gets_capped() {
         // Capped by `max_additional_tip`.
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+            inner: Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
                 base_fee_per_gas: 100.,
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
-            }),
+            })),
             additional_tip_percentage_of_max_fee: 0.5,
             max_additional_tip: 5.,
             max_fee_per_gas: 200.,
@@ -894,11 +889,11 @@ mod tests {
 
         // Capped by `max_fee_per_gas`.
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: &FakeGasPriceEstimator::new(GasPrice1559 {
+            inner: Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
                 base_fee_per_gas: 100.,
                 max_fee_per_gas: 500.,
                 max_priority_fee_per_gas: 1.,
-            }),
+            })),
             additional_tip_percentage_of_max_fee: 5.,
             max_additional_tip: 1000.,
             max_fee_per_gas: 200.,
@@ -917,7 +912,7 @@ mod tests {
     #[test]
     fn gas_price_estimator_no_tip_test() {
         let gas_price_estimator = SubmitterGasPriceEstimator {
-            inner: &FakeGasPriceEstimator::default(),
+            inner: Arc::new(FakeGasPriceEstimator::default()),
             additional_tip_percentage_of_max_fee: 5.,
             max_additional_tip: 10.,
             max_fee_per_gas: 0.,

@@ -14,6 +14,7 @@ use {
     anyhow::Result,
     ethcontract::U256,
     futures::future::join_all,
+    gas_estimation::{GasPriceEstimating, DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT},
     itertools::Itertools,
     model::auction::AuctionId,
     num::{rational::Ratio, BigInt},
@@ -151,7 +152,6 @@ impl SettlementRanker {
         settlements: Vec<SolverResult>,
         external_prices: &ExternalPrices,
         gas_price_estimator: &SubmitterGasPriceEstimator,
-        //gas_price: GasPrice1559,
         auction_id: AuctionId,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SimulationWithError>)> {
         let solver_settlements =
@@ -180,8 +180,9 @@ impl SettlementRanker {
         let (mut rated_settlements, errors): (Vec<_>, Vec<_>) =
             join_all(solver_settlements.into_iter().enumerate().map(
                 |(i, (solver, settlement))| async move {
+                    let gas_price_estimator = gas_price_estimator.with_revertable_risk(settlement.revertable());
                     let simulation =
-                        match gas_price_estimator.estimate(settlement.revertable()).await {
+                        match gas_price_estimator.estimate_with_limits(DEFAULT_GAS_LIMIT, DEFAULT_TIME_LIMIT).await {
                             Ok(gas_price) => {
                                 self.settlement_rater
                                     .rate_settlement(
@@ -197,7 +198,7 @@ impl SettlementRanker {
                                     .await
                             }
                             Err(err) => {
-                                tracing::warn!(?err, "failed gas price estimation");
+                                tracing::warn!(?err, i, solver_name = %solver.name(), "failed gas price estimation for settlement");
                                 Err(err)
                             }
                         };

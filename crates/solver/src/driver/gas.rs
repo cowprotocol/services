@@ -44,10 +44,6 @@ impl Estimator {
     pub fn inner(&self) -> Arc<dyn GasPriceEstimating> {
         self.inner.clone()
     }
-
-    pub fn gas_price_cap(&self) -> f64 {
-        self.gas_price_cap
-    }
 }
 
 #[async_trait::async_trait]
