@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use {
     crate::price_estimation::{
         Estimate,
@@ -13,7 +15,7 @@ use {
         cmp::Ordering,
         collections::HashMap,
         num::NonZeroUsize,
-        sync::{Arc, RwLock},
+        sync::{Arc, Mutex, RwLock},
     },
 };
 
@@ -127,6 +129,7 @@ impl HistoricalWinners {
 }
 
 type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
+type SingleEstimatorResult = (EstimatorIndex, PriceEstimateResult);
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Sources are provided as a list of lists, the
@@ -215,8 +218,70 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     competition.record_winner(trade, estimator);
                     metrics()
                         .requests
-                        .with_label_values(&["saved"])
-                        .inc_by(requests - predictions.len() as u64);
+                        .with_label_values(&["executed"])
+                        .inc_by(remaining_queries.len() as u64);
+                    tracing::trace!(?name, ?remaining_queries, "executing queries");
+                    estimator
+                        .estimates(&remaining_queries)
+                        .map(move |(remaining_query_index, result)|{
+                            (EstimatorIndex(estimator_index.clone()), remaining_query_index, result)
+                    })
+                });
+                // Execute all estimators of the current stage in parallel.
+                let mut combined_stream = futures::stream::select_all(streams);
+                while let Some((estimator_index, remaining_query_index, intermediate_result)) = combined_stream.next().await {
+                    let query_index = remaining_queries_original_indices[remaining_query_index];
+                    tracing::trace!(?query_index, ?remaining_query_index);
+
+                    if answered_queries.contains(&query_index) {
+                        //Already answered
+                        continue
+                    }
+
+                    let query = &queries[query_index];
+                    let estimator = stage[estimator_index.0].0.as_str();
+                    tracing::debug!(?query, ?intermediate_result, estimator, "new price estimate");
+
+                    let best_result = {
+                        // Store the new result in the vector for this query.
+                        results[query_index].push((estimator_index, intermediate_result.clone()));
+
+                        // Check if we have enough results to emit a result of our own.
+                        let successes = results[query_index].iter().filter(|result| result.1.is_ok()).count();
+                        let remaining = total_estimators - results[query_index].len();
+                        if successes < self.successful_results_for_early_return.get() && remaining > 0 {
+                            continue;
+                        }
+
+                        // Find the best result. Unwrap because there has to be at least one result.
+                        let best_index = best_result(query, results[query_index].iter().map(|(_, result)| result)).unwrap();
+                        let (estimator_index, best_result) = results[query_index].into_iter().nth(best_index).unwrap();
+                        let estimator = stage[estimator_index.0].0.as_str();
+                        tracing::debug!(?query, ?best_result, estimator, "winning price estimate");
+                        best_result.clone()
+                    };
+                    if best_result.is_ok() {
+                        // Collect stats for winner predictions.
+                        metrics()
+                            .queries_won
+                            .with_label_values(&[estimator, query.kind.label()])
+                            .inc();
+
+                        if let Some(competition) = &self.competition {
+                            let trade = Trade::from(query);
+                            if let Some(predictions) = predictions.get(&trade) {
+                                let was_correct = predictions.iter().any(|p| p.winner == estimator_index);
+                                metrics().record_prediction(&trade, was_correct);
+                            }
+                            competition.record_winner(trade, estimator_index);
+                            metrics()
+                                .requests
+                                .with_label_values(&["saved"])
+                                .inc_by((total_estimators - predictions.len()) as u64);
+                        }
+                    }
+                    answered_queries.insert(query_index);
+                    yield (query_index, best_result.clone());
                 }
                 // We have enough successes or there are no remaining estimators running for
                 // this query.
@@ -377,6 +442,7 @@ mod tests {
 
     #[tokio::test]
     async fn works() {
+        tracing_subscriber::fmt::init();
         let queries = [
             Arc::new(Query {
                 verification: None,
@@ -545,5 +611,101 @@ mod tests {
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
+    }
+
+    #[tokio::test]
+    async fn queries_stages_sequentially() {
+        let queries = [
+            Query {
+                verification: None,
+                sell_token: H160::from_low_u64_le(0),
+                buy_token: H160::from_low_u64_le(1),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
+                kind: OrderKind::Sell,
+            },
+            Query {
+                verification: None,
+                sell_token: H160::from_low_u64_le(2),
+                buy_token: H160::from_low_u64_le(3),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
+                kind: OrderKind::Sell,
+            },
+        ];
+        fn estimate(amount: u64) -> Estimate {
+            Estimate {
+                out_amount: amount.into(),
+                ..Default::default()
+            }
+        }
+
+        let mut first = MockPriceEstimating::new();
+        first.expect_estimates().times(1).returning(move |queries| {
+            assert_eq!(queries.len(), 2);
+            futures::stream::iter([Ok(estimate(1)), Err(PriceEstimationError::RateLimited)])
+                .enumerate()
+                .boxed()
+        });
+
+        let mut second = MockPriceEstimating::new();
+        second
+            .expect_estimates()
+            .times(1)
+            .returning(move |queries| {
+                assert_eq!(queries.len(), 2);
+                old_estimator_to_stream(async {
+                    sleep(Duration::from_millis(10)).await;
+                    [Ok(estimate(2)), Ok(estimate(2))]
+                })
+            });
+
+        let mut third = MockPriceEstimating::new();
+        third.expect_estimates().times(1).returning(move |queries| {
+            assert_eq!(queries.len(), 1);
+            old_estimator_to_stream(async { [Ok(estimate(3)), Ok(estimate(3))] })
+        });
+
+        let mut fourth = MockPriceEstimating::new();
+        fourth
+            .expect_estimates()
+            .times(1)
+            .returning(move |queries| {
+                assert_eq!(queries.len(), 1);
+                futures::stream::once(async {
+                    sleep(Duration::from_millis(10)).await;
+                    unreachable!(
+                        "This estimation gets canceled because the racing estimator already got \
+                         enough estimates to return early."
+                    )
+                })
+                .boxed()
+            });
+
+        let racing = RacingCompetitionPriceEstimator {
+            inner: vec![
+                vec![
+                    ("first".to_owned(), Arc::new(first)),
+                    ("second".to_owned(), Arc::new(second)),
+                ],
+                vec![
+                    ("third".to_owned(), Arc::new(third)),
+                    ("fourth".to_owned(), Arc::new(fourth)),
+                ],
+            ],
+            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            competition: None,
+            required_confidence: 0.,
+        };
+
+        let mut stream = racing.estimates(&queries);
+
+        // First query answered in first stage
+        let (i, result) = stream.next().await.unwrap();
+        assert_eq!(i, 0);
+        assert_eq!(result.as_ref().unwrap(), &estimate(2));
+
+        // second query answered in first stage
+        let (i, result) = stream.next().await.unwrap();
+        assert_eq!(i, 1);
+        assert_eq!(result.as_ref().unwrap(), &estimate(3));
     }
 }
