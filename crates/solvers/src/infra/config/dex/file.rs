@@ -5,7 +5,7 @@ use {
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::path::Path,
+    std::{fmt::Debug, path::Path},
     tokio::fs,
 };
 
@@ -50,13 +50,9 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
     // Not printing detailed error because it could potentially leak secrets.
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
 
-    let dex: T = config
-        .dex
-        .try_into()
-        .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
+    let dex: T = unwrap_or_log(config.dex.try_into(), &path);
 
     let config = super::Config {
         slippage: slippage::Limits::new(
@@ -68,4 +64,22 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
     };
 
     (config, dex)
+}
+
+/// Unwraps result or logs a `TOML` parsing error.
+fn unwrap_or_log<T, E, P>(result: Result<T, E>, path: &P) -> T
+where
+    E: Debug,
+    P: Debug,
+{
+    result.unwrap_or_else(|err| {
+        if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+            panic!("failed to parse TOML config at {path:?}: {err:#?}")
+        } else {
+            panic!(
+                "failed to parse TOML config at: {path:?}. Set TOML_TRACE_ERROR=1 to print \
+                 parsing error but this may leak secrets."
+            )
+        }
+    })
 }
