@@ -1,5 +1,9 @@
 use {
-    crate::{domain::eth, infra::contracts, util::serialize},
+    crate::{
+        domain::eth,
+        infra::{config::unwrap_or_log, contracts},
+        util::serialize,
+    },
     ethereum_types::H160,
     serde::Deserialize,
     serde_with::serde_as,
@@ -45,8 +49,7 @@ pub async fn load(path: &Path) -> super::Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
     // Not printing detailed error because it could potentially leak secrets.
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
     let weth = match (config.chain_id, config.weth) {
         (Some(chain_id), None) => contracts::Contracts::for_chain(chain_id).weth,
         (None, Some(weth)) => eth::WethAddress(weth),
