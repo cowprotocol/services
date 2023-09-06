@@ -8,7 +8,7 @@ import { IStorageAccessible } from "./interfaces/IStorageAccessible.sol";
 contract SimulateCode {
     /// @dev This looks like a constructor but it is not... In fact, nodes
     /// support `eth_call`s for contract creation and **return the code of the
-    /// contract that would be created**. This means we can use contructors to
+    /// contract that would be created**. This means we can use constructors to
     /// execute arbitrary code on the current state of the EVM, and "manually"
     /// return with some inline assembly that data (as this is the mechanism
     /// used for contract creation). See the `FetchBlock.sol` contract for

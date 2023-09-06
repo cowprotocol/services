@@ -523,7 +523,7 @@ fn main() {
     generate_contract("Trader");
     generate_contract("Solver");
 
-    // Support contract used for various order simulations.
+    // Support contracts used for various order simulations.
     generate_contract("Balances");
     generate_contract("Signatures");
     generate_contract("SimulateCode");
