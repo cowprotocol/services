@@ -2,14 +2,14 @@ mod settlement_encoder;
 
 use {
     crate::liquidity::Settleable,
-    anyhow::{ensure, Result},
+    anyhow::Result,
     model::order::{Order, OrderKind},
     num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero},
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext as _,
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
-        http_solver::model::{InternalizationStrategy, SubmissionPreference},
+        http_solver::model::InternalizationStrategy,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -240,8 +240,6 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
-                                          * struct */
     pub score: Option<Score>,
 }
 
@@ -289,7 +287,6 @@ impl Settlement {
         let encoder = self.encoder.without_onchain_liquidity();
         Self {
             encoder,
-            submitter: self.submitter.clone(),
             score: self.score,
         }
     }
@@ -472,11 +469,9 @@ impl Settlement {
 
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
-        ensure!(self.submitter == other.submitter, "different submitters");
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self {
             encoder: merged,
-            submitter: self.submitter,
             score: match (self.score, other.score) {
                 (Some(left), Some(right)) => left.merge(&right),
                 _ => None,
