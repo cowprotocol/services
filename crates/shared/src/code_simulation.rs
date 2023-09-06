@@ -133,6 +133,15 @@ impl CodeSimulating for TenderlyCodeSimulator {
             })
             .await?;
 
+        let saved = self.save.on_success && result.transaction.status
+            || self.save.on_failure && !result.transaction.status;
+        if saved {
+            tracing::debug!(
+                url =% self.tenderly.simulation_url(&result.simulation.id),
+                "saved simulation"
+            );
+        }
+
         let trace = result
             .transaction
             .call_trace

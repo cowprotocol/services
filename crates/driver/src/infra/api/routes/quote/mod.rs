@@ -12,12 +12,12 @@ mod dto;
 pub use dto::OrderError;
 
 pub(in crate::infra::api) fn quote(router: axum::Router<State>) -> axum::Router<State> {
-    router.route("/quote", axum::routing::post(route))
+    router.route("/quote", axum::routing::get(route))
 }
 
 async fn route(
     state: axum::extract::State<State>,
-    order: axum::Json<dto::Order>,
+    order: axum::extract::Query<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let handle_request = async {
         let order = order.0.into_domain().tap_err(|err| {

@@ -58,7 +58,7 @@ impl From<&ModelOrder> for Order {
                 // A real buy order cannot execute more than U256::MAX so in order to make this
                 // function infallible we treat a larger amount as a full execution.
                 OrderKind::Buy => {
-                    number_conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
+                    number::conversions::big_uint_to_u256(&o.metadata.executed_buy_amount)
                         .unwrap_or(o.data.buy_amount)
                 }
                 OrderKind::Sell => o.metadata.executed_sell_amount_before_fees,

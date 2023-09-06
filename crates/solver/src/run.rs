@@ -14,7 +14,7 @@ use {
         orderbook::OrderBookApi,
         s3_instance_upload::S3InstanceUploader,
         settlement_post_processing::PostProcessingPipeline,
-        settlement_rater::SettlementRater,
+        settlement_rater::{ScoreCalculator, SettlementRater},
         settlement_submission::{
             submitter::{
                 eden_api::EdenApi,
@@ -38,6 +38,7 @@ use {
     futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
+    number::conversions::u256_to_big_rational,
     shared::{
         account_balances,
         baseline_solver::BaseTokens,
@@ -77,9 +78,6 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
-    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
 
     let chain_id = web3
         .eth()
@@ -337,6 +335,11 @@ pub async fn run(args: Arguments) {
         settlement_contract: settlement_contract.clone(),
         web3: web3.clone(),
         code_fetcher: code_fetcher.clone(),
+        score_calculator: ScoreCalculator::new(
+            u256_to_big_rational(&args.score_cap),
+            args.transaction_strategy.clone(),
+            args.disable_high_risk_public_mempool_transactions,
+        ),
     });
 
     let solver = crate::solver::create(
@@ -375,7 +378,7 @@ pub async fn run(args: Arguments) {
         post_processing_pipeline,
         &domain,
         s3_instance_uploader,
-        &args.score_params,
+        &args.risk_params,
         settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,
@@ -530,7 +533,7 @@ pub async fn run(args: Arguments) {
         .or_else(|| shared::network::block_interval(&network_id, chain_id))
         .expect("unknown network block interval");
 
-    let balance_fetcher = args.shared.balances.fetcher(
+    let balance_fetcher = account_balances::fetcher(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -538,11 +541,6 @@ pub async fn run(args: Arguments) {
             vault: vault_contract.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
     );
 
     let mut driver = Driver::new(

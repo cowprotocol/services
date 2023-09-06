@@ -2,7 +2,7 @@ use crate::{
     domain::competition::order,
     tests::{
         self,
-        cases::{DEFAULT_SOLVER_FEE, DEFAULT_SURPLUS_FEE},
+        cases::DEFAULT_SOLVER_FEE,
         setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Solution},
     },
 };
@@ -17,15 +17,10 @@ async fn matrix() {
         ExecutionDiff::increase_sell(),
     ] {
         for side in [order::Side::Buy, order::Side::Sell] {
-            for kind in [
-                order::Kind::Market,
-                order::Kind::Limit {
-                    surplus_fee: order::SellAmount(DEFAULT_SURPLUS_FEE.into()),
-                },
-            ] {
+            for kind in [order::Kind::Market, order::Kind::Limit] {
                 let solver_fee = match kind {
                     order::Kind::Market => None,
-                    order::Kind::Limit { .. } => Some(DEFAULT_SOLVER_FEE.into()),
+                    order::Kind::Limit => Some(DEFAULT_SOLVER_FEE.into()),
                     order::Kind::Liquidity => None,
                 };
                 let test = tests::setup()

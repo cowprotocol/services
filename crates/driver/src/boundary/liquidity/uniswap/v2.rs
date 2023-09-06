@@ -9,10 +9,12 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::Web3,
+    ethrpc::{
+        current_block::{self, CurrentBlockStream},
+        Web3,
+    },
     futures::StreamExt,
     shared::{
-        current_block::{self, CurrentBlockStream},
         http_solver::model::TokenAmount,
         maintenance::Maintaining,
         sources::uniswap_v2::{

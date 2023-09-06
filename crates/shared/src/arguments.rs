@@ -3,9 +3,6 @@
 
 use {
     crate::{
-        account_balances,
-        current_block,
-        ethrpc,
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
@@ -140,16 +137,13 @@ logging_args_with_default_filter!(
 #[group(skip)]
 pub struct Arguments {
     #[clap(flatten)]
-    pub ethrpc: ethrpc::Arguments,
+    pub ethrpc: crate::ethrpc::Arguments,
 
     #[clap(flatten)]
-    pub current_block: current_block::Arguments,
+    pub current_block: crate::current_block::Arguments,
 
     #[clap(flatten)]
     pub tenderly: tenderly_api::Arguments,
-
-    #[clap(flatten)]
-    pub balances: account_balances::Arguments,
 
     #[clap(flatten)]
     pub logging: LoggingArguments,
@@ -404,7 +398,6 @@ impl Display for Arguments {
         write!(f, "{}", self.ethrpc)?;
         write!(f, "{}", self.current_block)?;
         write!(f, "{}", self.tenderly)?;
-        write!(f, "{}", self.balances)?;
         writeln!(f, "log_filter: {}", self.logging.log_filter)?;
         writeln!(
             f,
@@ -521,7 +514,7 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
 pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
     let in_ether = s.parse::<BigDecimal>()?;
     let base = BigDecimal::new(1.into(), -18);
-    number_conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
+    number::conversions::big_decimal_to_u256(&(in_ether * base)).context("invalid Ether value")
 }
 
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {

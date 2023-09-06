@@ -34,7 +34,7 @@ use {
         },
         signature::{Signature, SigningScheme},
     },
-    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256},
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
@@ -208,11 +208,6 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            surplus_fee: order
-                .surplus_fee
-                .as_ref()
-                .map(|fee| big_decimal_to_u256(fee).unwrap()),
-            surplus_fee_timestamp: order.surplus_fee_timestamp,
             executed_surplus_fee: order
                 .executed_surplus_fee
                 .as_ref()

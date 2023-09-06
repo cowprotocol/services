@@ -63,7 +63,7 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use model::u256_decimal::format_units;
+/// use number::u256_decimal::format_units;
 ///
 /// assert_eq!(format_units(42u64.into(), 0), "42");
 /// assert_eq!(format_units(1_337_000u64.into(), 6), "1.337000")

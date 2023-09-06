@@ -5,6 +5,7 @@ use {
         order::OrderCreationAppData,
         quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, SellAmount},
     },
+    number::nonzero::U256 as NonZeroU256,
     serde_json::json,
     shared::ethrpc::Web3,
 };
@@ -56,7 +57,9 @@ async fn test(web3: Web3) {
         sell_token: onchain.contracts().weth.address(),
         buy_token: token.address(),
         side: OrderQuoteSide::Sell {
-            sell_amount: SellAmount::BeforeFee { value: to_wei(1) },
+            sell_amount: SellAmount::BeforeFee {
+                value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+            },
         },
         ..Default::default()
     };

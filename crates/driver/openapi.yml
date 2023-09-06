@@ -6,14 +6,42 @@ info:
   version: 0.0.1
 paths:
   /quote:
-    post:
+    get:
       description: Get price estimation quote.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/QuoteRequest"
+      parameters:
+        - in: query
+          name: sellToken
+          description: The token to sell.
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - in: query
+          name: buyToken
+          description: The token to buy.
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - in: query
+          name: kind
+          description: |
+            - `buy`: amount is in buy_token, out_amount is in sell_token
+            - `sell`: amount is in sell_token, out_amount is in buy_token
+          schema:
+            type: string
+            enum: ["buy", "sell"]
+          required: true
+        - in: query
+          name: amount
+          description: The amount to buy or sell.
+          schema:
+            $ref: "#/components/schemas/TokenAmount"
+          required: true
+        - in: query
+          name: deadline
+          description: The time until which the caller expects a response.
+          schema:
+            $ref: "#/components/schemas/DateTime"
+          required: true
       responses:
         200:
           description: Quote successfully created.
@@ -202,22 +230,6 @@ components:
         and bytes 52..56 valid to,
       type: string
       example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
-    QuoteRequest:
-      description: Description of what price to estimate.
-      type: object
-      properties:
-        sellToken:
-          $ref: "#/components/schemas/Address"
-        buyToken:
-          $ref: "#/components/schemas/Address"
-        kind:
-          description: |
-            - `buy`: amount is in buy_token, out_amount is in sell_token
-            - `sell`: amount is in sell_token, out_amount is in buy_token
-          type: string
-          enum: ["buy", "sell"]
-        amount:
-          $ref: "#/components/schemas/TokenAmount"
     QuoteResponse:
       oneOf:
         - description: |
@@ -237,6 +249,10 @@ components:
               items:
                 $ref: "#/components/schemas/Interaction"
         - $ref: "#/components/schemas/Error"
+    DateTime:
+      description: An ISO 8601 UTC date time string.
+      type: string
+      example: "2020-12-03T18:35:18.814523Z"
     SolveRequest:
       description: Request to the solve endpoint.
       type: object
@@ -262,12 +278,7 @@ components:
           description: |
             Information about tokens used in the auction.
         deadline:
-          description: |
-            The time until which the caller expects a response.
-
-            Encoded as ISO 8601 UTC.
-          type: string
-          example: "2020-12-03T18:35:18.814523Z"
+          $ref: "#/components/schemas/DateTime"
     SolveResponse:
       description: |
         Response of the solve endpoint.

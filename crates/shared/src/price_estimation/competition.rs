@@ -332,13 +332,12 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
             // highest priority (prefer)
-            PriceEstimationError::RateLimited => 6,
-            PriceEstimationError::DeadlineExceeded => 5,
-            PriceEstimationError::Other(_) => 4,
-            PriceEstimationError::UnsupportedToken { .. } => 3,
-            PriceEstimationError::ZeroAmount => 2,
+            PriceEstimationError::RateLimited => 5,
+            PriceEstimationError::ProtocolInternal(_) => 4,
+            PriceEstimationError::EstimatorInternal(_) => 3,
+            PriceEstimationError::UnsupportedToken { .. } => 2,
             PriceEstimationError::NoLiquidity => 1,
-            PriceEstimationError::UnsupportedOrderType => 0,
+            PriceEstimationError::UnsupportedOrderType(_) => 0,
             // lowest priority
         }
     }
@@ -402,6 +401,7 @@ mod tests {
         anyhow::anyhow,
         futures::StreamExt,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
         std::time::Duration,
         tokio::time::sleep,
@@ -414,35 +414,35 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
         ];
@@ -464,7 +464,7 @@ mod tests {
                 Ok(estimates[0]),
                 Ok(estimates[0]),
                 Ok(estimates[0]),
-                Err(PriceEstimationError::Other(anyhow!("a"))),
+                Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
                 Err(PriceEstimationError::NoLiquidity),
             ])
             .enumerate()
@@ -477,10 +477,10 @@ mod tests {
             .returning(move |queries| {
                 assert_eq!(queries.len(), 5);
                 futures::stream::iter([
-                    Err(PriceEstimationError::Other(anyhow!(""))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
                     Ok(estimates[1]),
                     Ok(estimates[1]),
-                    Err(PriceEstimationError::Other(anyhow!("b"))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
                     Err(PriceEstimationError::UnsupportedToken {
                         token: H160([0; 20]),
                         reason: "".to_string(),
@@ -505,7 +505,7 @@ mod tests {
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
             result[3].as_ref().unwrap_err(),
-            PriceEstimationError::Other(err)
+            PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
         // unsupported token has higher priority than no liquidity
@@ -522,14 +522,14 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
         ];

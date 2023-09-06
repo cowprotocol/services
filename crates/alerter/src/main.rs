@@ -7,10 +7,8 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     clap::Parser,
-    model::{
-        order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
-        u256_decimal,
-    },
+    model::order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    number::u256_decimal,
     primitive_types::{H160, U256},
     prometheus::IntGauge,
     reqwest::Client,
@@ -44,23 +42,6 @@ struct Order {
 impl Order {
     fn is_liquidity_order(&self) -> bool {
         matches!(self.class, OrderClass::Liquidity)
-    }
-
-    fn effective_sell_amount(&self) -> Option<U256> {
-        let amount = match &self.class {
-            OrderClass::Limit(limit) => {
-                // Use wrapping arithmetic. The orderbook should guarantee that
-                // the effective sell amount fits in a `U256`.
-                self.sell_amount
-                    .overflowing_add(self.fee_amount)
-                    .0
-                    .overflowing_sub(limit.surplus_fee?)
-                    .0
-            }
-            OrderClass::Market | OrderClass::Liquidity => self.sell_amount,
-        };
-
-        Some(amount)
     }
 }
 
@@ -135,12 +116,9 @@ impl ZeroExApi {
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
         let mut url = shared::url::join(&self.base, "swap/v1/price");
 
-        let effective_sell_amount = order
-            .effective_sell_amount()
-            .context("surplus fee not computed")?;
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
-            OrderKind::Sell => ("sellAmount", effective_sell_amount),
+            OrderKind::Sell => ("sellAmount", order.sell_amount),
         };
 
         let buy_token = convert_eth_to_weth(order.buy_token);
@@ -169,8 +147,8 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        let can_settle = response.sell_amount <= effective_sell_amount
-            && response.buy_amount >= order.buy_amount;
+        let can_settle =
+            response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount;
         if can_settle {
             tracing::debug!(%order.uid, "marking order as settleable");
         }

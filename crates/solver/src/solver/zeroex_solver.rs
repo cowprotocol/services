@@ -225,7 +225,7 @@ mod tests {
             web3,
             settlement,
             chain_id,
-            Arc::new(DefaultZeroExApi::default()),
+            Arc::new(DefaultZeroExApi::test()),
             Default::default(),
             SlippageCalculator::default(),
         )
@@ -268,7 +268,7 @@ mod tests {
             web3,
             settlement,
             chain_id,
-            Arc::new(DefaultZeroExApi::default()),
+            Arc::new(DefaultZeroExApi::test()),
             Default::default(),
             SlippageCalculator::default(),
         )
@@ -425,7 +425,7 @@ mod tests {
             web3,
             settlement,
             chain_id,
-            Arc::new(DefaultZeroExApi::default()),
+            Arc::new(DefaultZeroExApi::test()),
             Default::default(),
             SlippageCalculator::default(),
         )

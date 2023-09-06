@@ -38,11 +38,11 @@ pub trait U256Ext: Sized {
 
 impl U256Ext for U256 {
     fn to_big_int(&self) -> BigInt {
-        number_conversions::u256_to_big_int(self)
+        number::conversions::u256_to_big_int(self)
     }
 
     fn to_big_rational(&self) -> BigRational {
-        number_conversions::u256_to_big_rational(self)
+        number::conversions::u256_to_big_rational(self)
     }
 
     fn checked_ceil_div(&self, other: &Self) -> Option<Self> {

@@ -9,7 +9,7 @@ use {
         settlement_scores::Score,
     },
     model::solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     primitive_types::H256,
 };
 

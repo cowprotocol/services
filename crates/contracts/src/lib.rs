@@ -2,8 +2,12 @@
 
 pub use ethcontract;
 
+#[macro_use]
+mod macros;
+
 #[cfg(feature = "bin")]
 pub mod paths;
+pub mod storage_accessible;
 pub mod vault;
 pub mod web3;
 
@@ -45,6 +49,7 @@ include_contracts! {
     GnosisSafe;
     GnosisSafeCompatibilityFallbackHandler;
     GnosisSafeProxy;
+    GnosisSafeProxyFactory;
     HoneyswapRouter;
     HooksTrampoline;
     ISwaprPair;
@@ -68,8 +73,10 @@ pub mod support {
         Balances;
         FetchBlock;
         Multicall;
-        Trader;
+        Signatures;
+        SimulateCode;
         Solver;
+        Trader;
     }
 }
 

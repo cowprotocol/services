@@ -29,7 +29,7 @@ impl OrderConverter {
     #[cfg(test)]
     pub fn test(native_token: ethcontract::H160) -> Self {
         Self {
-            native_token: shared::dummy_contract!(WETH9, native_token),
+            native_token: contracts::dummy_contract!(WETH9, native_token),
         }
     }
 
@@ -134,11 +134,11 @@ pub mod tests {
     use {
         super::*,
         crate::settlement::tests::assert_settlement_encoded_with,
+        contracts::dummy_contract,
         ethcontract::H160,
         maplit::hashmap,
-        model::order::{LimitOrderClass, OrderData, OrderKind, OrderMetadata},
+        model::order::{OrderData, OrderKind, OrderMetadata},
         primitive_types::U256,
-        shared::dummy_contract,
     };
 
     #[test]
@@ -241,11 +241,7 @@ pub mod tests {
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
         for class in [
             OrderClass::Market,
-            OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
-                executed_surplus_fee: None,
-            }),
+            OrderClass::Limit(Default::default()),
             OrderClass::Liquidity,
         ] {
             let native_token_address = H160([0x42; 20]);

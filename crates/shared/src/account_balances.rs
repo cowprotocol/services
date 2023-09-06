@@ -1,23 +1,16 @@
-mod arguments;
-mod cached;
-mod simulation;
-mod web3;
-
 use {
     anyhow::Result,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     model::{
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
     primitive_types::{H160, U256},
+    std::sync::Arc,
 };
 
-pub use self::{
-    arguments::{Arguments, Contracts, Strategy},
-    cached::CachingBalanceFetcher,
-    simulation::Balances as SimulationBalanceFetcher,
-    web3::Web3BalanceFetcher,
-};
+mod cached;
+mod simulation;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Query {
@@ -70,4 +63,33 @@ pub trait BalanceFetching: Send + Sync {
         query: &Query,
         amount: U256,
     ) -> Result<(), TransferSimulationError>;
+}
+
+/// Contracts required for balance simulation.
+pub struct Contracts {
+    pub chain_id: u64,
+    pub settlement: H160,
+    pub vault_relayer: H160,
+    pub vault: Option<H160>,
+}
+
+/// Create the default [`BalanceFetching`] instance.
+pub fn fetcher(contracts: Contracts, web3: Web3) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(
+        web3,
+        contracts.settlement,
+        contracts.vault_relayer,
+        contracts.vault,
+    ))
+}
+
+/// Create a cached [`BalanceFetching`] instance.
+pub fn cached(
+    contracts: Contracts,
+    web3: Web3,
+    blocks: CurrentBlockStream,
+) -> Arc<dyn BalanceFetching> {
+    let cached = Arc::new(cached::Balances::new(fetcher(contracts, web3)));
+    cached.spawn_background_task(blocks);
+    cached
 }

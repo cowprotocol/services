@@ -7,8 +7,9 @@ use {
     crate::price_estimation::PriceEstimationError,
     anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
-    model::{order::OrderKind, u256_decimal},
+    model::order::OrderKind,
     num::BigInt,
+    number::u256_decimal,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
@@ -49,7 +50,7 @@ impl From<Error> for PriceEstimationError {
     fn from(err: Error) -> Self {
         match err {
             Error::RateLimited => Self::RateLimited,
-            Error::Other(err) => Self::Other(err),
+            Error::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }

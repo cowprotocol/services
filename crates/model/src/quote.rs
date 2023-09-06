@@ -4,10 +4,10 @@ use {
         order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
-        u256_decimal,
     },
     anyhow::bail,
     chrono::{DateTime, Utc},
+    number::{nonzero::U256 as NonZeroU256, u256_decimal},
     primitive_types::{H160, U256},
     serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::serde_as,
@@ -151,16 +151,13 @@ pub enum OrderQuoteSide {
         sell_amount: SellAmount,
     },
     #[serde(rename_all = "camelCase")]
-    Buy {
-        #[serde(with = "u256_decimal")]
-        buy_amount_after_fee: U256,
-    },
+    Buy { buy_amount_after_fee: NonZeroU256 },
 }
 
 impl Default for OrderQuoteSide {
     fn default() -> Self {
         Self::Buy {
-            buy_amount_after_fee: U256::one(),
+            buy_amount_after_fee: NonZeroU256::one(),
         }
     }
 }
@@ -263,12 +260,12 @@ where
 #[serde(untagged)]
 pub enum SellAmount {
     BeforeFee {
-        #[serde(rename = "sellAmountBeforeFee", with = "u256_decimal")]
-        value: U256,
+        #[serde(rename = "sellAmountBeforeFee")]
+        value: NonZeroU256,
     },
     AfterFee {
-        #[serde(rename = "sellAmountAfterFee", with = "u256_decimal")]
-        value: U256,
+        #[serde(rename = "sellAmountAfterFee")]
+        value: NonZeroU256,
     },
 }
 
