@@ -11,7 +11,7 @@ use {
 
 #[serde_as]
 #[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Config {
     /// Chain ID used to automatically determine the address of the settlement
     /// contract and for metrics.
