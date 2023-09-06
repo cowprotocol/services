@@ -165,7 +165,7 @@ pub async fn main(args: arguments::Arguments) {
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
 
-    let signature_validator = args.shared.signatures.validator(
+    let signature_validator = signature_validator::validator(
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -174,7 +174,7 @@ pub async fn main(args: arguments::Arguments) {
         web3.clone(),
     );
 
-    let balance_fetcher = args.shared.balances.cached(
+    let balance_fetcher = account_balances::cached(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),

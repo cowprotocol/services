@@ -533,7 +533,7 @@ pub async fn run(args: Arguments) {
         .or_else(|| shared::network::block_interval(&network_id, chain_id))
         .expect("unknown network block interval");
 
-    let balance_fetcher = args.shared.balances.fetcher(
+    let balance_fetcher = account_balances::fetcher(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),

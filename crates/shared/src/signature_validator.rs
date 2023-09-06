@@ -1,20 +1,14 @@
-mod arguments;
-mod simulation;
-mod web3;
-
 use {
     ethcontract::Bytes,
+    ethrpc::Web3,
     hex_literal::hex,
     model::interaction::InteractionData,
     primitive_types::H160,
+    std::sync::Arc,
     thiserror::Error,
 };
 
-pub use self::{
-    arguments::*,
-    simulation::Validator as SimulationSignatureValidator,
-    web3::Web3SignatureValidator,
-};
+mod simulation;
 
 /// Structure used to represent a signature.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -62,4 +56,20 @@ pub fn check_erc1271_result(result: Bytes<[u8; 4]>) -> Result<(), SignatureValid
     } else {
         Err(SignatureValidationError::Invalid)
     }
+}
+
+/// Contracts required for signature verification simulation.
+pub struct Contracts {
+    pub chain_id: u64,
+    pub settlement: H160,
+    pub vault_relayer: H160,
+}
+
+/// Creates the default [`SignatureValidating`] instance.
+pub fn validator(contracts: Contracts, web3: Web3) -> Arc<dyn SignatureValidating> {
+    Arc::new(simulation::Validator::new(
+        web3,
+        contracts.settlement,
+        contracts.vault_relayer,
+    ))
 }
