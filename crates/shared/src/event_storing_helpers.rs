@@ -8,7 +8,7 @@ use {
         byte_array::ByteArray,
         quotes::{Quote as DbQuote, QuoteSearchParameters as DbQuoteSearchParameters},
     },
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
 };
 
 pub fn create_quote_row(data: QuoteData) -> DbQuote {

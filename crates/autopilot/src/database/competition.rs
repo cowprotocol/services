@@ -10,7 +10,7 @@ use {
     },
     derivative::Derivative,
     model::{order::OrderUid, solver_competition::SolverCompetitionDB},
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };

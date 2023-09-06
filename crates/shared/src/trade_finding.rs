@@ -148,7 +148,6 @@ impl From<PriceEstimationError> for TradeError {
             PriceEstimationError::UnsupportedToken { token, .. } => {
                 Self::UnsupportedOrderType(format!("{token:#x}"))
             }
-            PriceEstimationError::ZeroAmount => Self::UnsupportedOrderType("zero amount".into()),
             PriceEstimationError::RateLimited => Self::RateLimited,
             PriceEstimationError::EstimatorInternal(err)
             | PriceEstimationError::ProtocolInternal(err) => Self::Other(err),

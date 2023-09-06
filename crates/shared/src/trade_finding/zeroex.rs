@@ -69,8 +69,8 @@ impl Inner {
             .get_swap(SwapQuery {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
-                sell_amount,
-                buy_amount,
+                sell_amount: sell_amount.map(|amount| amount.get()),
+                buy_amount: buy_amount.map(|amount| amount.get()),
                 slippage_percentage: None,
                 taker_address: None,
                 excluded_sources: self.excluded_sources.clone(),
@@ -133,7 +133,7 @@ mod tests {
         super::*,
         crate::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         hex_literal::hex,
-        reqwest::Client,
+        number::nonzero::U256 as NonZeroU256,
         std::time::Duration,
     };
 
@@ -180,7 +180,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -258,7 +258,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await
@@ -295,7 +295,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let zeroex_api = DefaultZeroExApi::test();
         let trader = create_trader(Arc::new(zeroex_api));
 
         let trade = trader
@@ -303,7 +303,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await

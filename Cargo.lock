@@ -56,6 +56,7 @@ dependencies = [
  "chrono",
  "clap",
  "model",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -264,7 +265,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -1690,6 +1691,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "model",
+ "number",
  "observe",
  "orderbook",
  "rand",
@@ -2827,6 +2829,7 @@ dependencies = [
  "lazy_static",
  "maplit",
  "num",
+ "number",
  "primitive-types",
  "secp256k1",
  "serde",
@@ -3005,13 +3008,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "number-conversions"
+name = "number"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
  "num",
  "primitive-types",
+ "serde",
+ "serde_with",
 ]
 
 [[package]]
@@ -3117,7 +3122,7 @@ dependencies = [
  "model",
  "multibase",
  "num",
- "number-conversions",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -3490,7 +3495,7 @@ dependencies = [
  "gas-estimation",
  "lazy_static",
  "model",
- "number-conversions",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -3816,18 +3821,18 @@ checksum = "b0293b4b29daaf487284529cc2f5675b8e57c61f70167ba415a463651fd6a918"
 
 [[package]]
 name = "serde"
-version = "1.0.183"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32ac8da02677876d532745a130fc9d8e6edfa81a269b107c5b00829b91d8eb3c"
+checksum = "cf9e0fcba69a370eed61bcf2b728575f726b50b55cba78064753d708ddc7549e"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.183"
+version = "1.0.188"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aafe972d60b0b9bee71a91b92fee2d4fb3c9d7e8f6b179aa99f27203d99a4816"
+checksum = "4eca7ac642d82aa35b60049a6eccb4be6be75e599bd2e9adb5f875a737654af2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3988,7 +3993,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -4098,7 +4103,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number-conversions",
+ "number",
  "observe",
  "once_cell",
  "primitive-types",

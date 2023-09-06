@@ -39,6 +39,7 @@ use {
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
+    number::nonzero::U256 as NonZeroU256,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -151,7 +152,7 @@ fn encode_settlement(
         // ourselves here.
         let buy_amount = match query.kind {
             OrderKind::Sell => trade.out_amount,
-            OrderKind::Buy => query.in_amount,
+            OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
         let calldata = weth.methods().withdraw(buy_amount).tx.data.unwrap().0;
@@ -161,8 +162,8 @@ fn encode_settlement(
 
     let tokens = vec![query.sell_token, query.buy_token];
     let clearing_prices = match query.kind {
-        OrderKind::Sell => vec![trade.out_amount, query.in_amount],
-        OrderKind::Buy => vec![query.in_amount, trade.out_amount],
+        OrderKind::Sell => vec![trade.out_amount, query.in_amount.get()],
+        OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
     };
 
     // Configure the most disadvantageous trade possible (while taking possible
@@ -170,8 +171,11 @@ fn encode_settlement(
     // the [`Trade`] the simulation will still work and we can compute the actual
     // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount, 0.into()),
-        OrderKind::Buy => (trade.out_amount.max(U256::from(u128::MAX)), query.in_amount),
+        OrderKind::Sell => (query.in_amount.get(), 0.into()),
+        OrderKind::Buy => (
+            trade.out_amount.max(U256::from(u128::MAX)),
+            query.in_amount.get(),
+        ),
     };
     let fake_order = OrderData {
         sell_token: query.sell_token,
@@ -195,7 +199,7 @@ fn encode_settlement(
         verification.from,
         0,
         1,
-        &query.in_amount,
+        &query.in_amount.get(),
     );
 
     EncodedSettlement {
@@ -278,7 +282,7 @@ impl TradeVerifier {
             .tx;
 
         let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount,
+            OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => trade.out_amount,
         };
 
@@ -392,7 +396,7 @@ pub struct PriceQuery {
     // This should be `BUY_ETH_ADDRESS` if you actually want to trade `ETH`
     pub buy_token: H160,
     pub kind: OrderKind,
-    pub in_amount: U256,
+    pub in_amount: NonZeroU256,
 }
 
 /// Output of `Trader::settle` smart contract call.

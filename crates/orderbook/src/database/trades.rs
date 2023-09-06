@@ -5,7 +5,7 @@ use {
     ethcontract::H160,
     futures::{stream::TryStreamExt, StreamExt},
     model::{order::OrderUid, trade::Trade},
-    number_conversions::big_decimal_to_big_uint,
+    number::conversions::big_decimal_to_big_uint,
     primitive_types::H256,
     std::convert::TryInto,
 };

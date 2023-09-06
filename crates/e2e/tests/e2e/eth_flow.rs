@@ -32,6 +32,7 @@ use {
         trade::Trade,
         DomainSeparator,
     },
+    number::nonzero::U256 as NonZeroU256,
     refunder::{
         ethflow_order::EthflowOrder,
         refund_service::{INVALIDATED_OWNER, NO_OWNER},
@@ -217,7 +218,7 @@ async fn test_submit_quote(
         panic!("untested!");
     };
 
-    assert_eq!(response.quote.sell_amount, sell_amount_after_fees);
+    assert_eq!(response.quote.sell_amount, sell_amount_after_fees.get());
 
     response
 }
@@ -592,7 +593,7 @@ impl EthFlowTradeIntent {
             },
             side: OrderQuoteSide::Sell {
                 sell_amount: model::quote::SellAmount::AfterFee {
-                    value: self.sell_amount,
+                    value: NonZeroU256::try_from(self.sell_amount).unwrap(),
                 },
             },
             buy_token_balance: BuyTokenDestination::Erc20,

@@ -83,6 +83,7 @@ mod tests {
         ethcontract::H160,
         futures::StreamExt,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
     };
 
     #[tokio::test]
@@ -92,14 +93,14 @@ mod tests {
                 verification: None,
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
-                in_amount: 3.into(),
+                in_amount: NonZeroU256::try_from(3).unwrap(),
                 kind: OrderKind::Sell,
             },
             Query {
                 verification: None,
                 sell_token: H160([4; 20]),
                 buy_token: H160([5; 20]),
-                in_amount: 6.into(),
+                in_amount: NonZeroU256::try_from(6).unwrap(),
                 kind: OrderKind::Buy,
             },
         ];

@@ -8,7 +8,7 @@ use {
         order::{Order, OrderClass, OrderKind},
     },
     num::{BigRational, One},
-    number_conversions::big_rational_to_u256,
+    number::conversions::big_rational_to_u256,
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext,
