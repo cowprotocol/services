@@ -71,12 +71,12 @@ struct BalanceEntry {
     balance: U256,
 }
 
-pub struct CachingBalanceFetcher {
+pub struct Balances {
     inner: Arc<dyn BalanceFetching>,
     balance_cache: Arc<Mutex<BalanceCache>>,
 }
 
-impl CachingBalanceFetcher {
+impl Balances {
     pub fn new(inner: Arc<dyn BalanceFetching>) -> Self {
         Self {
             inner,
@@ -93,7 +93,7 @@ struct CacheResponse {
     requested_at: BlockNumber,
 }
 
-impl CachingBalanceFetcher {
+impl Balances {
     fn get_cached_balances(&self, queries: &[Query]) -> CacheResponse {
         let mut cache = self.balance_cache.lock().unwrap();
         let (cached, missing) = queries
@@ -156,7 +156,7 @@ impl CachingBalanceFetcher {
 }
 
 #[async_trait::async_trait]
-impl BalanceFetching for CachingBalanceFetcher {
+impl BalanceFetching for Balances {
     async fn get_balances(&self, queries: &[Query]) -> Vec<Result<U256>> {
         let CacheResponse {
             mut cached,
@@ -224,7 +224,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(1.into())]);
 
-        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &1.into());
@@ -242,7 +242,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Err(anyhow::anyhow!("some error"))]);
 
-        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner`.
         assert!(fetcher.get_balances(&[query(1)]).await[0].is_err());
         // 2nd call to `inner`.
@@ -261,7 +261,7 @@ mod tests {
             .withf(|arg| arg == [query(1)])
             .returning(|_| vec![Ok(U256::one())]);
 
-        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
         // 1st call to `inner`. Balance gets cached.
@@ -298,7 +298,7 @@ mod tests {
             .withf(|arg| arg == [query(2)])
             .returning(|_| vec![Ok(2.into())]);
 
-        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner));
         // 1st call to `inner` putting balance 1 into the cache.
         let result = fetcher.get_balances(&[query(1)]).await;
         assert_eq!(result[0].as_ref().unwrap(), &1.into());
@@ -324,7 +324,7 @@ mod tests {
             .times(7)
             .returning(|_| vec![Ok(U256::one())]);
 
-        let fetcher = CachingBalanceFetcher::new(Arc::new(inner));
+        let fetcher = Balances::new(Arc::new(inner));
         fetcher.spawn_background_task(receiver);
 
         let cached_entry = || {

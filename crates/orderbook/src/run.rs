@@ -109,7 +109,7 @@ pub async fn run(args: Arguments) {
         .expect("Failed to retrieve network version ID");
     let network_name = network_name(&network, chain_id);
 
-    let signature_validator = args.shared.signatures.validator(
+    let signature_validator = signature_validator::validator(
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -145,7 +145,7 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
 
-    let balance_fetcher = args.shared.balances.fetcher(
+    let balance_fetcher = account_balances::fetcher(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
