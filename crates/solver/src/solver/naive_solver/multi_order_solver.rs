@@ -7,7 +7,7 @@ use {
     liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
     model::order::OrderKind,
     num::{rational::Ratio, BigInt, BigRational, CheckedDiv},
-    number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int},
+    number::conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int},
     primitive_types::U256,
     shared::{
         conversions::{RatioExt, U256Ext},

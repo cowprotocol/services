@@ -56,7 +56,7 @@ impl BalancerSor {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
             order_kind: query.kind,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             gas_price: U256::from_f64_lossy(gas_price.effective_gas_price()),
         };
         let api = self.api.clone();
@@ -97,6 +97,7 @@ mod tests {
         crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate},
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         std::time::Duration,
     };
 
@@ -128,7 +129,7 @@ mod tests {
             verification: None,
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::DAI,
-            in_amount: U256::from_f64_lossy(1e18),
+            in_amount: NonZeroU256::try_from(U256::from_f64_lossy(1e18)).unwrap(),
             kind: OrderKind::Sell,
         };
         let result = single_estimate(&estimator, &query).await;

@@ -209,9 +209,6 @@ impl From<CalculateQuoteError> for ValidationError {
             }) => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken { token, reason })
             }
-            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
-                ValidationError::ZeroAmount
-            }
             CalculateQuoteError::Other(err)
             | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err)) => {
                 ValidationError::Other(err)
@@ -926,11 +923,17 @@ pub async fn get_quote_and_check_fee(
                 buy_token: quote_search_parameters.buy_token,
                 side: match quote_search_parameters.kind {
                     OrderKind::Buy => OrderQuoteSide::Buy {
-                        buy_amount_after_fee: quote_search_parameters.buy_amount,
+                        buy_amount_after_fee: quote_search_parameters
+                            .buy_amount
+                            .try_into()
+                            .map_err(|_| ValidationError::ZeroAmount)?,
                     },
                     OrderKind::Sell => OrderQuoteSide::Sell {
                         sell_amount: SellAmount::AfterFee {
-                            value: quote_search_parameters.sell_amount,
+                            value: quote_search_parameters
+                                .sell_amount
+                                .try_into()
+                                .map_err(|_| ValidationError::ZeroAmount)?,
                         },
                     },
                 },
@@ -1009,6 +1012,7 @@ mod tests {
             quote::default_verification_gas_limit,
             signature::{EcdsaSignature, EcdsaSigningScheme},
         },
+        number::nonzero::U256 as NonZeroU256,
         serde_json::json,
         std::str::FromStr,
     };
@@ -2202,6 +2206,7 @@ mod tests {
         let quote_search_parameters = QuoteSearchParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
+            sell_amount: 3.into(),
             kind: OrderKind::Sell,
             verification: verification.clone(),
             ..Default::default()
@@ -2218,7 +2223,7 @@ mod tests {
                 buy_token: quote_search_parameters.buy_token,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
-                        value: quote_search_parameters.sell_amount,
+                        value: NonZeroU256::try_from(quote_search_parameters.sell_amount).unwrap(),
                     },
                 },
                 verification,
@@ -2309,7 +2314,11 @@ mod tests {
                     .returning(|_, _| Err($find_err));
                 let err = get_quote_and_check_fee(
                     &order_quoter,
-                    &Default::default(),
+                    &QuoteSearchParameters {
+                        sell_amount: 1.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
                     Default::default(),
                     Default::default(),
                 )
@@ -2341,7 +2350,11 @@ mod tests {
 
                 let err = get_quote_and_check_fee(
                     &order_quoter,
-                    &Default::default(),
+                    &QuoteSearchParameters {
+                        sell_amount: 1.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
                     Default::default(),
                     U256::zero(),
                 )
@@ -2364,10 +2377,6 @@ mod tests {
                 reason: Default::default()
             }),
             ValidationError::Partial(PartialValidationError::UnsupportedToken { .. })
-        );
-        assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount),
-            ValidationError::ZeroAmount
         );
         assert_calc_error_matches!(
             CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),

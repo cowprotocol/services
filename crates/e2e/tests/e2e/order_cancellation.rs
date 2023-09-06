@@ -16,6 +16,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::{EcdsaSignature, EcdsaSigningScheme},
     },
+    number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -58,7 +59,9 @@ async fn order_cancellation(web3: Web3) {
             sell_token: token.address(),
             buy_token: onchain.contracts().weth.address(),
             side: OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: to_wei(1) },
+                sell_amount: SellAmount::AfterFee {
+                    value: NonZeroU256::try_from(to_wei(1)).unwrap(),
+                },
             },
             app_data: AppDataHash([salt; 32]).into(),
             ..Default::default()

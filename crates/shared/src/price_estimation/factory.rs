@@ -40,8 +40,9 @@ use {
         zeroex_api::ZeroExApi,
     },
     anyhow::{Context as _, Result},
-    ethcontract::{H160, U256},
+    ethcontract::H160,
     gas_estimation::GasPriceEstimating,
+    number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
@@ -138,10 +139,10 @@ impl<'a> PriceEstimatorFactory<'a> {
                     CodeSimulatorKind::Web3 => {
                         Arc::new(web3_simulator()?) as Arc<dyn CodeSimulating>
                     }
-                    CodeSimulatorKind::Tenderly => Arc::new(
-                        tenderly_simulator()?
-                            .save(false, args.tenderly_save_failed_trade_simulations),
-                    ),
+                    CodeSimulatorKind::Tenderly => Arc::new(tenderly_simulator()?.save(
+                        args.tenderly_save_successful_trade_simulations,
+                        args.tenderly_save_failed_trade_simulations,
+                    )),
                     CodeSimulatorKind::Web3ThenTenderly => {
                         Arc::new(code_simulation::Web3ThenTenderly::new(
                             web3_simulator()?,
@@ -170,13 +171,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         })
     }
 
-    fn native_token_price_estimation_amount(&self) -> Result<U256> {
-        self.args
-            .amount_to_estimate_prices_with
-            .or_else(|| {
-                native::default_amount_to_estimate_native_prices_with(self.network.chain_id)
-            })
-            .context("No amount to estimate prices with set.")
+    fn native_token_price_estimation_amount(&self) -> Result<NonZeroU256> {
+        NonZeroU256::try_from(
+            self.args
+                .amount_to_estimate_prices_with
+                .or_else(|| {
+                    native::default_amount_to_estimate_native_prices_with(self.network.chain_id)
+                })
+                .context("No amount to estimate prices with set.")?,
+        )
     }
 
     fn rate_limiter(&self, name: &str) -> Arc<RateLimiter> {

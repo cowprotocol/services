@@ -38,7 +38,7 @@ use {
     futures::{future, future::join_all, StreamExt},
     model::DomainSeparator,
     num::rational::Ratio,
-    number_conversions::u256_to_big_rational,
+    number::conversions::u256_to_big_rational,
     shared::{
         account_balances,
         baseline_solver::BaseTokens,

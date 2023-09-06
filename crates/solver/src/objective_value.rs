@@ -1,7 +1,7 @@
 use {
     crate::settlement::Settlement,
     num::BigRational,
-    number_conversions::u256_to_big_rational,
+    number::conversions::u256_to_big_rational,
     primitive_types::U256,
     shared::external_prices::ExternalPrices,
 };

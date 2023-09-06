@@ -6,6 +6,7 @@ use {
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
+    number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
@@ -55,7 +56,9 @@ async fn eth_integration(web3: Web3) {
                 buy_token,
                 from: Address::default(),
                 side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::AfterFee { value: to_wei(43) },
+                    sell_amount: SellAmount::AfterFee {
+                        value: NonZeroU256::try_from(to_wei(43)).unwrap(),
+                    },
                 },
                 ..Default::default()
             };

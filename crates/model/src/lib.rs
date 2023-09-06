@@ -11,7 +11,6 @@ pub mod signature;
 pub mod solver_competition;
 pub mod time;
 pub mod trade;
-pub mod u256_decimal;
 
 use {
     hex::{FromHex, FromHexError},

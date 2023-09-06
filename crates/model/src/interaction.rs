@@ -1,4 +1,5 @@
 use {
+    number::u256_decimal,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     std::fmt::{self, Debug, Formatter},
@@ -8,7 +9,7 @@ use {
 #[serde(rename_all = "camelCase")]
 pub struct InteractionData {
     pub target: H160,
-    #[serde(with = "crate::u256_decimal")]
+    #[serde(with = "u256_decimal")]
     pub value: U256,
     #[serde(with = "crate::bytes_hex")]
     pub call_data: Vec<u8>,
