@@ -1,10 +1,5 @@
 use {
     super::{BalanceFetching, CachingBalanceFetcher, SimulationBalanceFetcher, Web3BalanceFetcher},
-    crate::{
-        arguments::{display_option, CodeSimulatorKind},
-        code_simulation::{CodeSimulating, TenderlyCodeSimulator, Web3ThenTenderly},
-        tenderly_api::TenderlyApi,
-    },
     ethcontract::H160,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     std::{
@@ -20,11 +15,6 @@ pub struct Arguments {
     /// The account balance simulation strategy to use.
     #[clap(long, env, default_value = "web3", value_enum)]
     pub account_balances: Strategy,
-
-    /// The code simulation implementation to use. Can be one of `Web3`,
-    /// `Tenderly` or `Web3ThenTenderly`.
-    #[clap(long, env, value_enum)]
-    pub account_balances_simulator: Option<CodeSimulatorKind>,
 
     /// Whether or not to optimistically treat account balance queries with
     /// pre-interactions as if sufficient token balance and allowance is always
@@ -60,13 +50,7 @@ pub struct Contracts {
 }
 
 impl Arguments {
-    pub fn fetcher(
-        &self,
-        contracts: Contracts,
-        web3: Web3,
-        simulation_web3: Option<Web3>,
-        tenderly: Option<Arc<dyn TenderlyApi>>,
-    ) -> Arc<dyn BalanceFetching> {
+    pub fn fetcher(&self, contracts: Contracts, web3: Web3) -> Arc<dyn BalanceFetching> {
         match self.account_balances {
             Strategy::Web3 => Arc::new(Web3BalanceFetcher::new(
                 web3,
@@ -75,37 +59,12 @@ impl Arguments {
                 contracts.settlement,
                 self.account_balances_optimistic_pre_interaction_handling,
             )),
-            Strategy::Simulation => {
-                let web3_simulator =
-                    move || simulation_web3.expect("simulation web3 not configured");
-                let tenderly_simulator = move || {
-                    TenderlyCodeSimulator::new(
-                        tenderly.expect("tenderly api not configured"),
-                        contracts.chain_id,
-                    )
-                };
-
-                let simulator = match self
-                    .account_balances_simulator
-                    .expect("account balances simulator not configured")
-                {
-                    CodeSimulatorKind::Web3 => {
-                        Arc::new(web3_simulator()) as Arc<dyn CodeSimulating>
-                    }
-                    CodeSimulatorKind::Tenderly => Arc::new(tenderly_simulator()),
-                    CodeSimulatorKind::Web3ThenTenderly => Arc::new(Web3ThenTenderly::new(
-                        web3_simulator(),
-                        tenderly_simulator(),
-                    )),
-                };
-
-                Arc::new(SimulationBalanceFetcher::new(
-                    simulator,
-                    contracts.settlement,
-                    contracts.vault_relayer,
-                    contracts.vault,
-                ))
-            }
+            Strategy::Simulation => Arc::new(SimulationBalanceFetcher::new(
+                web3,
+                contracts.settlement,
+                contracts.vault_relayer,
+                contracts.vault,
+            )),
         }
     }
 
@@ -113,16 +72,9 @@ impl Arguments {
         &self,
         contracts: Contracts,
         web3: Web3,
-        simulation_web3: Option<Web3>,
-        tenderly: Option<Arc<dyn TenderlyApi>>,
         blocks: CurrentBlockStream,
     ) -> Arc<CachingBalanceFetcher> {
-        let cached = Arc::new(CachingBalanceFetcher::new(self.fetcher(
-            contracts,
-            web3,
-            simulation_web3,
-            tenderly,
-        )));
+        let cached = Arc::new(CachingBalanceFetcher::new(self.fetcher(contracts, web3)));
         cached.spawn_background_task(blocks);
         cached
     }
@@ -131,14 +83,6 @@ impl Arguments {
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "account_balances: {:?}", self.account_balances)?;
-        display_option(
-            f,
-            "account_balances_simulator",
-            &self
-                .account_balances_simulator
-                .as_ref()
-                .map(|value| format!("{value:?}")),
-        )?;
 
         Ok(())
     }

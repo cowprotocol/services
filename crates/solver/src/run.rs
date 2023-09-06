@@ -78,9 +78,6 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
-    let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
-        shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
-    });
 
     let chain_id = web3
         .eth()
@@ -544,11 +541,6 @@ pub async fn run(args: Arguments) {
             vault: vault_contract.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
     );
 
     let mut driver = Driver::new(
