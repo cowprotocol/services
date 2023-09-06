@@ -679,12 +679,12 @@ impl Test {
 
         let res = self
             .client
-            .post(format!(
+            .get(format!(
                 "http://{}/{}/quote",
                 self.driver.addr,
                 solver::NAME
             ))
-            .json(&driver::quote_req(self))
+            .query(&driver::quote_req(self))
             .send()
             .await
             .unwrap();
