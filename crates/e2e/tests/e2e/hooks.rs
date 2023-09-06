@@ -46,12 +46,9 @@ async fn test(web3: Web3) {
     .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec!["--account-balances=simulation".to_string()]);
+    services.start_autopilot(vec![]);
     services
-        .start_api(vec![
-            "--account-balances=simulation".to_string(),
-            "--enable-custom-interactions=true".to_string(),
-        ])
+        .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;
 
     let order = OrderCreation {
@@ -86,10 +83,7 @@ async fn test(web3: Web3) {
     assert_eq!(balance, to_wei(5));
 
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(
-        solver.private_key(),
-        vec!["--account-balances=simulation".to_string()],
-    );
+    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened = || async {
         cow.balance_of(trader.address())
             .call()

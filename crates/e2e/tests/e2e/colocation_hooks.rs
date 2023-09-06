@@ -58,15 +58,11 @@ async fn allowance(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--account-balances=simulation".to_string(),
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
     services
-        .start_api(vec![
-            "--account-balances=simulation".to_string(),
-            "--enable-custom-interactions=true".to_string(),
-        ])
+        .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;
 
     let order = OrderCreation {
@@ -248,17 +244,11 @@ async fn signature(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--account-balances=simulation".to_string(),
-        "--eip1271-signature-validator=simulation".to_string(),
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
     services
-        .start_api(vec![
-            "--account-balances=simulation".to_string(),
-            "--eip1271-signature-validator=simulation".to_string(),
-            "--enable-custom-interactions=true".to_string(),
-        ])
+        .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;
 
     // Place Orders
