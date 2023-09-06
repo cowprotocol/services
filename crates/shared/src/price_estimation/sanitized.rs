@@ -4,20 +4,16 @@ use {
         price_estimation::{
             gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
             Estimate,
-            PriceEstimateResult,
             PriceEstimating,
             PriceEstimationError,
             Query,
         },
     },
     anyhow::anyhow,
-    futures::StreamExt,
+    futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     primitive_types::H160,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::Arc,
-    },
+    std::sync::Arc,
 };
 
 /// Verifies that buy and sell tokens are supported and handles
@@ -41,53 +37,30 @@ impl SanitizedPriceEstimator {
         }
     }
 
-    async fn get_token_quality_errors(
-        &self,
-        queries: impl Iterator<Item = &Query>,
-    ) -> HashMap<H160, PriceEstimationError> {
-        let mut token_quality_errors: HashMap<H160, PriceEstimationError> = Default::default();
-        let mut checked_tokens = HashSet::<H160>::default();
-
-        // TODO should this be parallelised?
-        for token in queries.flat_map(|query| [query.buy_token, query.sell_token]) {
-            if checked_tokens.contains(&token) {
-                continue;
-            }
-
+    /// Checks if the traded tokens are supported by the protocol.
+    async fn handle_bad_tokens(&self, query: &Query) -> Result<(), PriceEstimationError> {
+        for token in [query.sell_token, query.buy_token] {
             match self.bad_token_detector.detect(token).await {
-                Err(err) => {
-                    token_quality_errors.insert(token, PriceEstimationError::ProtocolInternal(err));
-                }
+                Err(err) => return Err(PriceEstimationError::ProtocolInternal(err)),
                 Ok(TokenQuality::Bad { reason }) => {
-                    token_quality_errors.insert(
-                        token,
-                        PriceEstimationError::UnsupportedToken { token, reason },
-                    );
+                    return Err(PriceEstimationError::UnsupportedToken { token, reason })
                 }
                 _ => (),
-            };
-            checked_tokens.insert(token);
-        }
-        token_quality_errors
-    }
-
-    /// Removes easy queries from the input and returns their estimates.
-    async fn estimate_easy_queries(
-        &self,
-        queries: &mut Vec<(usize, Query)>,
-    ) -> Vec<(usize, PriceEstimateResult)> {
-        let token_quality_errors = self
-            .get_token_quality_errors(queries.iter().map(|(_, query)| query))
-            .await;
-        let mut results = Vec::new();
-        queries.retain(|(index, query)| {
-            for token in [&query.buy_token, &query.sell_token] {
-                if let Some(err) = token_quality_errors.get(token) {
-                    results.push((*index, Err(err.clone())));
-                    return false;
-                }
             }
+        }
+        Ok(())
+    }
+}
 
+impl PriceEstimating for SanitizedPriceEstimator {
+    fn estimates<'a>(
+        &'a self,
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
+        async move {
+            self.handle_bad_tokens(query).await?;
+
+            // buy_token == sell_token => 1 to 1 conversion
             if query.buy_token == query.sell_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
@@ -95,10 +68,10 @@ impl SanitizedPriceEstimator {
                     solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial price estimation");
-                results.push((*index, Ok(estimation)));
-                return false;
+                return Ok(estimation);
             }
 
+            // sell WETH for ETH => 1 to 1 conversion with cost for unwrapping
             if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
@@ -106,10 +79,10 @@ impl SanitizedPriceEstimator {
                     solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
-                results.push((*index, Ok(estimation)));
-                return false;
+                return Ok(estimation);
             }
 
+            // sell ETH for WETH => 1 to 1 conversion with cost for wrapping
             if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                 let estimation = Estimate {
                     out_amount: query.in_amount.get(),
@@ -117,97 +90,48 @@ impl SanitizedPriceEstimator {
                     solver: Default::default(),
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
-                results.push((*index, Ok(estimation)));
-                return false;
-            }
-
-            true
-        });
-
-        results
-    }
-}
-
-impl PriceEstimating for SanitizedPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
-        let stream = async_stream::stream! {
-            // Handle easy estimates first.
-            let mut queries: Vec<(usize, Query)> = queries.iter().cloned().enumerate().collect();
-            for easy in self.estimate_easy_queries(&mut queries).await {
-                yield easy;
-            }
-
-            // The remaining queries are difficult and need to be forwarded to the inner estimator. Some
-            // of the queries need to be changed to handle BUY_ETH_ADDRESS.
-
-            struct DifficultQuery {
-                original_query_index: usize,
-                query: Query,
-                modification: Option<Modification>,
+                return Ok(estimation);
             }
 
             enum Modification {
                 AddGas(u64),
             }
 
-            let difficult_queries: Vec<DifficultQuery> = queries
-                .into_iter()
-                .map(|(index, mut query)| {
-                    let modification = if query.sell_token != self.native_token
-                        && query.buy_token == BUY_ETH_ADDRESS
-                    {
-                        tracing::debug!(?query, "estimate price for buying native asset");
-                        query.buy_token = self.native_token;
-                        Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
-                    } else if query.sell_token == BUY_ETH_ADDRESS
-                        && query.buy_token != self.native_token
-                    {
-                        tracing::debug!(?query, "estimate price for selling native asset");
-                        query.sell_token = self.native_token;
-                        Some(Modification::AddGas(GAS_PER_WETH_WRAP))
-                    } else {
-                        None
-                    };
-                    DifficultQuery {
-                        original_query_index: index,
-                        query,
-                        modification,
-                    }
-                })
-                .collect();
+            let mut adjusted_query = query.clone();
+            let modification = if query.sell_token != self.native_token
+                && query.buy_token == BUY_ETH_ADDRESS
+            {
+                tracing::debug!(?query, "estimate price for buying native asset");
+                adjusted_query.buy_token = self.native_token;
+                Some(Modification::AddGas(GAS_PER_WETH_UNWRAP))
+            } else if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
+                tracing::debug!(?query, "estimate price for selling native asset");
+                adjusted_query.sell_token = self.native_token;
+                Some(Modification::AddGas(GAS_PER_WETH_WRAP))
+            } else {
+                None
+            };
 
-            let inner_queries: Vec<Query> =
-                difficult_queries.iter().map(|query| query.query.clone()).collect();
-            let mut stream = self.inner.estimates(&inner_queries);
+            let mut estimate = self.inner.estimates(&adjusted_query).await?;
 
-            while let Some((i, mut estimate)) = stream.next().await {
-                let query = &difficult_queries[i];
-                if let Some(Modification::AddGas(gas)) = query.modification {
-                    if let Ok(estimate) = &mut estimate {
-                        estimate.gas = match estimate.gas.checked_add(gas) {
-                            Some(gas) => gas,
-                            None => {
-                                let err = PriceEstimationError::ProtocolInternal(anyhow!(
-                                    "cost of converting native asset would overflow gas price"
-                                ));
-                                yield (query.original_query_index, Err(err));
-                                continue;
-                            }
-                        };
-                        tracing::debug!(
-                            query = ?query.query,
-                            ?estimate,
-                            "added cost of converting native asset to price estimation"
-                        );
-                    }
+            match modification {
+                Some(Modification::AddGas(gas)) => {
+                    estimate.gas = estimate.gas.checked_add(gas).ok_or_else(|| {
+                        PriceEstimationError::ProtocolInternal(anyhow!(
+                            "cost of converting native asset would overflow gas price"
+                        ))
+                    })?;
+                    tracing::debug!(
+                        ?query,
+                        ?estimate,
+                        "added cost of converting native asset to price estimation"
+                    );
+                    Ok(estimate)
                 }
-                yield (query.original_query_index, estimate);
+                None => Ok(estimate),
             }
-        };
-        stream.boxed()
+        }
+        .boxed()
     }
 }
 

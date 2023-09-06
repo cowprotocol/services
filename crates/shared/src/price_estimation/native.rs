@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::{stream::BoxStream, StreamExt},
+    futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
@@ -27,8 +27,8 @@ pub trait NativePriceEstimating: Send + Sync {
     /// that is needed to buy 1 unit of the specified token).
     fn estimate_native_prices<'a>(
         &'a self,
-        tokens: &'a [H160],
-    ) -> BoxStream<'_, (usize, NativePriceEstimateResult)>;
+        token: &'a H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
 
 /// Wrapper around price estimators specialized to estimate a token's price
@@ -67,17 +67,14 @@ impl NativePriceEstimator {
 impl NativePriceEstimating for NativePriceEstimator {
     fn estimate_native_prices<'a>(
         &'a self,
-        tokens: &'a [H160],
-    ) -> BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        let stream = async_stream::stream!({
-            let queries: Vec<_> = tokens.iter().map(|token| self.query(token)).collect();
-            let mut inner = self.inner.estimates(&queries);
-            while let Some((i, result)) = inner.next().await {
-                let result = result.map(|estimate| estimate.price_in_buy_token_f64(&queries[i]));
-                yield (i, result)
-            }
-        });
-        stream.boxed()
+        token: &'a H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async {
+            let query = self.query(token);
+            let estimate = self.inner.estimates(&query).await?;
+            Ok(estimate.price_in_buy_token_f64(&query))
+        }
+        .boxed()
     }
 }
 
@@ -85,26 +82,18 @@ pub async fn native_single_estimate(
     estimator: &dyn NativePriceEstimating,
     token: &H160,
 ) -> NativePriceEstimateResult {
-    estimator
-        .estimate_native_prices(std::slice::from_ref(token))
-        .next()
-        .await
-        .unwrap()
-        .1
+    estimator.estimate_native_prices(token).await
 }
 
 pub async fn native_vec_estimates(
     estimator: &dyn NativePriceEstimating,
-    queries: &[H160],
+    tokens: &[H160],
 ) -> Vec<NativePriceEstimateResult> {
-    let mut results = vec![None; queries.len()];
-    let mut stream = estimator.estimate_native_prices(queries);
-    while let Some((index, result)) = stream.next().await {
-        results[index] = Some(result);
+    let mut results = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        let result = estimator.estimate_native_prices(token).await;
+        results.push(result);
     }
-    let results = results.into_iter().flatten().collect::<Vec<_>>();
-    // Check that every query has a result.
-    debug_assert_eq!(results.len(), queries.len());
     results
 }
 

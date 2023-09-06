@@ -6,7 +6,7 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::stream::StreamExt,
+    futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
     std::{
@@ -156,63 +156,39 @@ impl RacingCompetitionPriceEstimator {
 impl PriceEstimating for RacingCompetitionPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'a, PriceEstimateResult> {
+        async move {
+            let predictions = match &self.competition {
+                Some(competition) => competition
+                    .predict_best_candidates(&Trade::from(query), self.required_confidence),
+                None => vec![],
+            };
 
-        let predictions: HashMap<_, _> = match &self.competition {
-            Some(competition) => queries
+            let mut results = vec![];
+            let mut futures: Vec<_> = self
+                .inner
                 .iter()
-                .map(|query| {
-                    let trade = Trade::from(query);
-                    let prediction =
-                        competition.predict_best_candidates(&trade, self.required_confidence);
-                    (trade, prediction)
-                })
-                .collect(),
-            None => Default::default(),
-        };
+                .map(|(_, estimator)| estimator.estimates(query))
+                .collect();
+            loop {
+                let (result, index, rest) = futures::future::select_all(futures).await;
+                futures = rest;
+                results.push((index, result.clone()));
+                let estimator = &self.inner[index].0;
+                tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-        // Turn the streams from all inner price estimators into a single stream.
-        let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
-            |(i, (_, estimator))| estimator.estimates(queries).map(move |result| (i, result)),
-        ));
-        // Stores the estimates for each query and estimator. When we have collected
-        // enough results to produce a result of our own the corresponding
-        // element is set to None.
-        let mut estimates: Vec<Option<Vec<(usize, PriceEstimateResult)>>> =
-            vec![Some(Vec::with_capacity(self.inner.len())); queries.len()];
-        // Receives items from the combined stream.
-        let mut handle_single_result = move |estimator_index: usize, query_index: usize, result| {
-            let query = &queries[query_index];
-            let estimator = self.inner[estimator_index].0.as_str();
-            tracing::debug!(?query, ?result, estimator, "new price estimate");
-
-            // Store the new result in the vector for this query.
-            let results = estimates.get_mut(query_index).unwrap().as_mut()?;
-            results.push((estimator_index, result));
-
-            // Check if we have enough results to emit a result of our own.
-            let successes = results.iter().filter(|result| result.1.is_ok()).count();
-            let remaining = self.inner.len() - results.len();
-            if successes < self.successful_results_for_early_return.get() && remaining > 0 {
-                return None;
+                let successes = results.iter().filter(|(_, result)| result.is_ok()).count();
+                if successes >= self.successful_results_for_early_return.get()
+                    || results.len() >= self.inner.len()
+                {
+                    break;
+                }
             }
-            // We have enough successes or there are no remaining estimators running for
-            // this query.
 
-            // Find the best result.
-            let results = estimates.get_mut(query_index).unwrap().take().unwrap();
-            // Unwrap because there has to be at least one result.
             let best_index = best_result(query, results.iter().map(|(_, result)| result)).unwrap();
-
-            // Log and collect metrics.
-            let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
-            let estimator = self.inner[estimator_index].0.as_str();
+            let (estimator_index, result) = &results[best_index];
+            let (estimator, _) = &self.inner[*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
             let requests = self.inner.len() as u64;
@@ -230,11 +206,9 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
                 if let Some(competition) = &self.competition {
                     let trade = Trade::from(query);
-                    let estimator = EstimatorIndex(estimator_index);
-                    if let Some(predictions) = predictions.get(&trade) {
-                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                        metrics().record_prediction(&trade, was_correct);
-                    }
+                    let estimator = EstimatorIndex(*estimator_index);
+                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
+                    metrics().record_prediction(&trade, was_correct);
                     competition.record_winner(trade, estimator);
                     metrics()
                         .requests
@@ -243,15 +217,9 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 }
             }
 
-            Some((query_index, result))
-        };
-
-        combined_stream
-            .filter_map(move |(estimator_index, (query_index, result))| {
-                let result = handle_single_result(estimator_index, query_index, result);
-                futures::future::ready(result)
-            })
-            .boxed()
+            result.clone()
+        }
+        .boxed()
     }
 }
 
@@ -282,9 +250,9 @@ impl CompetitionPriceEstimator {
 impl PriceEstimating for CompetitionPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.inner.estimates(queries)
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.inner.estimates(query)
     }
 }
 

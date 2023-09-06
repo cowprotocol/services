@@ -13,7 +13,7 @@ use {
         request_sharing::RequestSharing,
     },
     anyhow::Result,
-    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
+    futures::{future::BoxFuture, FutureExt},
     gas_estimation::GasPriceEstimating,
     primitive_types::{H160, U256},
     std::sync::Arc,
@@ -79,14 +79,8 @@ impl BalancerSor {
 }
 
 impl PriceEstimating for BalancerSor {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-        futures::stream::iter(queries)
-            .then(|query| self.estimate(query))
-            .enumerate()
-            .boxed()
+    fn estimates<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+        self.estimate(query).boxed()
     }
 }
 

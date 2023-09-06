@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::stream::StreamExt,
+    futures::future::FutureExt,
     prometheus::{HistogramVec, IntCounterVec},
     std::time::Instant,
 };
@@ -34,27 +34,26 @@ impl InstrumentedPriceEstimator {
 impl PriceEstimating for InstrumentedPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
-        let start = Instant::now();
-        let measure_time = async move {
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
+        async {
+            let start = Instant::now();
+            let estimate = self.inner.estimates(query).await;
             self.metrics
                 .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
                 .observe(start.elapsed().as_secs_f64());
-        };
-        self.inner
-            .estimates(queries)
-            .inspect(move |result| {
-                let success = !matches!(&result.1, Err(PriceEstimationError::EstimatorInternal(_)));
-                let result = if success { "success" } else { "failure" };
-                self.metrics
-                    .price_estimates
-                    .with_label_values(&[self.name.as_str(), result])
-                    .inc();
-            })
-            .chain(futures::stream::once(measure_time).filter_map(|_| async { None }))
-            .boxed()
+
+            let success = !matches!(&estimate, Err(PriceEstimationError::EstimatorInternal(_)));
+            let result = if success { "success" } else { "failure" };
+            self.metrics
+                .price_estimates
+                .with_label_values(&[self.name.as_str(), result])
+                .inc();
+
+            estimate
+        }
+        .boxed()
     }
 }
 

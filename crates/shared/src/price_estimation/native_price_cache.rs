@@ -1,8 +1,7 @@
 use {
     super::PriceEstimationError,
     crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEstimating},
-    futures::stream::StreamExt,
-    itertools::{Either, Itertools},
+    futures::{FutureExt, StreamExt},
     primitive_types::H160,
     prometheus::{IntCounter, IntCounterVec, IntGauge},
     std::{
@@ -73,7 +72,7 @@ impl Inner {
         cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
-    ) -> Option<Result<f64, PriceEstimationError>> {
+    ) -> Option<CacheEntry> {
         match cache.entry(*token) {
             Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
@@ -97,27 +96,6 @@ impl Inner {
                 None
             }
         }
-    }
-
-    /// Returns cached prices and uncached indices.
-    fn get_cached_prices(
-        &self,
-        tokens: &[H160],
-        max_age: &Duration,
-        create_missing_entry: bool,
-    ) -> (Vec<(usize, CacheEntry)>, Vec<usize>) {
-        if tokens.is_empty() {
-            return Default::default();
-        }
-
-        let now = Instant::now();
-        let mut cache = self.cache.lock().unwrap();
-        tokens.iter().enumerate().partition_map(|(i, token)| {
-            match Self::get_cached_price(token, now, &mut cache, max_age, create_missing_entry) {
-                Some(price) => Either::Left((i, price)),
-                _ => Either::Right(i),
-            }
-        })
     }
 
     /// Checks cache for the given tokens one by one. If the price is already
@@ -145,13 +123,7 @@ impl Inner {
                     }
                 }
 
-                // fetch single price estimate
-                let (_, result) = self
-                    .estimator
-                    .estimate_native_prices(&[*token])
-                    .next()
-                    .await
-                    .expect("stream yields exactly 1 item");
+                let result = self.estimator.estimate_native_prices(token).await;
 
                 // update price in cache
                 if should_cache(&result) {
@@ -300,17 +272,21 @@ impl CachingNativePriceEstimator {
         &self,
         tokens: &[H160],
     ) -> HashMap<H160, Result<f64, PriceEstimationError>> {
-        let (cached_prices, missing_indices) =
-            self.0.get_cached_prices(tokens, &self.0.max_age, true);
-        Metrics::get()
-            .native_price_cache_access
-            .with_label_values(&["misses"])
-            .inc_by(missing_indices.len() as u64);
-        let result = cached_prices
-            .iter()
-            .map(|(index, price)| (tokens[*index], price.clone()))
-            .collect();
-        result
+        let now = Instant::now();
+        let mut cache = self.0.cache.lock().unwrap();
+        let mut results = HashMap::default();
+        for token in tokens {
+            let cached = Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, true);
+            let label = if cached.is_some() { "hits" } else { "misses" };
+            Metrics::get()
+                .native_price_cache_access
+                .with_label_values(&[label])
+                .inc_by(1);
+            if let Some(result) = cached {
+                results.insert(*token, result);
+            }
+        }
+        results
     }
 
     pub fn replace_high_priority(&self, tokens: HashSet<H160>) {
@@ -322,36 +298,37 @@ impl CachingNativePriceEstimator {
 impl NativePriceEstimating for CachingNativePriceEstimator {
     fn estimate_native_prices<'a>(
         &'a self,
-        tokens: &'a [H160],
-    ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        let stream = async_stream::stream!({
-            let (cached_prices, missing_indices) =
-                self.0.get_cached_prices(tokens, &self.0.max_age, false);
+        token: &'a H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async {
+            let cached_price = {
+                let now = Instant::now();
+                let mut cache = self.0.cache.lock().unwrap();
+                Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, false)
+            };
+
+            let label = if cached_price.is_some() {
+                "hits"
+            } else {
+                "misses"
+            };
             Metrics::get()
                 .native_price_cache_access
-                .with_label_values(&["misses"])
-                .inc_by(missing_indices.len() as u64);
-            Metrics::get()
-                .native_price_cache_access
-                .with_label_values(&["hits"])
-                .inc_by(cached_prices.len() as u64);
+                .with_label_values(&[label])
+                .inc_by(1);
 
-            for (index, price) in cached_prices {
-                yield (index, price);
+            if let Some(price) = cached_price {
+                return price;
             }
 
-            if missing_indices.is_empty() {
-                return;
-            }
-            let missing_tokens: Vec<H160> = missing_indices.iter().map(|i| tokens[*i]).collect();
-            let mut stream =
-                self.0
-                    .estimate_prices_and_update_cache(&missing_tokens, self.0.max_age, 1);
-            while let Some((i, result)) = stream.next().await {
-                yield (missing_indices[i], result);
-            }
-        });
-        stream.boxed()
+            self.0
+                .estimate_prices_and_update_cache(std::slice::from_ref(token), self.0.max_age, 1)
+                .next()
+                .await
+                .unwrap()
+                .1
+        }
+        .boxed()
     }
 }
 

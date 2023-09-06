@@ -11,6 +11,7 @@ use {
         token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
+    futures::FutureExt,
     primitive_types::H160,
     std::sync::Arc,
 };
@@ -45,9 +46,9 @@ impl ParaswapPriceEstimator {
 impl PriceEstimating for ParaswapPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimates(query).boxed()
     }
 }
 

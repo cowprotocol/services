@@ -7,7 +7,7 @@ use {
     },
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
-    futures::{stream::BoxStream, StreamExt},
+    futures::{future::BoxFuture, stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -457,11 +457,7 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 pub trait PriceEstimating: Send + Sync + 'static {
     // The '_ lifetime in the return value is the same as 'a but we need to write it
     // as underscore because of a mockall limitation.
-
-    /// Returns one result for each query in arbitrary order. The usize is the
-    /// index into the queries slice.
-    fn estimates<'a>(&'a self, queries: &'a [Query])
-        -> BoxStream<'_, (usize, PriceEstimateResult)>;
+    fn estimates<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult>;
 }
 
 /// Use a PriceEstimating with a single query.
@@ -469,12 +465,7 @@ pub async fn single_estimate(
     estimator: &dyn PriceEstimating,
     query: &Query,
 ) -> PriceEstimateResult {
-    estimator
-        .estimates(std::slice::from_ref(query))
-        .next()
-        .await
-        .unwrap()
-        .1
+    estimator.estimates(query).await
 }
 
 /// Use a streaming PriceEstimating with the old Vec based interface.
@@ -482,14 +473,10 @@ pub async fn vec_estimates(
     estimator: &dyn PriceEstimating,
     queries: &[Query],
 ) -> Vec<PriceEstimateResult> {
-    let mut results = vec![None; queries.len()];
-    let mut stream = estimator.estimates(queries);
-    while let Some((index, result)) = stream.next().await {
-        results[index] = Some(result);
+    let mut results = Vec::with_capacity(queries.len());
+    for query in queries {
+        results.push(estimator.estimates(query).await);
     }
-    let results = results.into_iter().flatten().collect::<Vec<_>>();
-    // Check that every query has a result.
-    debug_assert_eq!(results.len(), queries.len());
     results
 }
 
@@ -543,32 +530,23 @@ pub async fn rate_limited<T>(
 }
 
 pub mod mocks {
-    use {super::*, anyhow::anyhow};
+    use {super::*, anyhow::anyhow, futures::FutureExt};
 
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
-        fn estimates<'a>(
-            &'a self,
-            queries: &'a [Query],
-        ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-            futures::stream::iter((0..queries.len()).map(|i| (i, Ok(self.0)))).boxed()
+        fn estimates<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+            async { Ok(self.0) }.boxed()
         }
     }
 
     pub struct FailingPriceEstimator;
     impl PriceEstimating for FailingPriceEstimator {
-        fn estimates<'a>(
-            &'a self,
-            queries: &'a [Query],
-        ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-            futures::stream::iter((0..queries.len()).map(|i| {
-                (
-                    i,
-                    Err(PriceEstimationError::EstimatorInternal(anyhow!(
-                        "always fail"
-                    ))),
-                )
-            }))
+        fn estimates<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+            async {
+                Err(PriceEstimationError::EstimatorInternal(anyhow!(
+                    "always fail"
+                )))
+            }
             .boxed()
         }
     }

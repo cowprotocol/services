@@ -29,8 +29,8 @@ impl ExternalPriceEstimator {
 impl PriceEstimating for ExternalPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimates(query)
     }
 }

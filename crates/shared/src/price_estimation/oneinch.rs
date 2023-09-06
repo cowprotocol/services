@@ -10,6 +10,7 @@ use {
         rate_limiter::RateLimiter,
         trade_finding::oneinch::OneInchTradeFinder,
     },
+    futures::FutureExt as _,
     primitive_types::H160,
     std::sync::Arc,
 };
@@ -46,9 +47,9 @@ impl OneInchPriceEstimator {
 impl PriceEstimating for OneInchPriceEstimator {
     fn estimates<'a>(
         &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimates(query).boxed()
     }
 }
 
