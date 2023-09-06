@@ -21,11 +21,11 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
 
 #[mockall::automock]
 pub trait NativePriceEstimating: Send + Sync {
-    /// Like `PriceEstimating::estimates`.
+    /// Like `PriceEstimating::estimate`.
     ///
     /// Prices are denominated in native token (i.e. the amount of native token
     /// that is needed to buy 1 unit of the specified token).
-    fn estimate_native_prices<'a>(
+    fn estimate_native_price<'a>(
         &'a self,
         token: &'a H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
@@ -65,13 +65,13 @@ impl NativePriceEstimator {
 
 #[async_trait::async_trait]
 impl NativePriceEstimating for NativePriceEstimator {
-    fn estimate_native_prices<'a>(
+    fn estimate_native_price<'a>(
         &'a self,
         token: &'a H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async {
             let query = self.query(token);
-            let estimate = self.inner.estimates(&query).await?;
+            let estimate = self.inner.estimate(&query).await?;
             Ok(estimate.price_in_buy_token_f64(&query))
         }
         .boxed()
@@ -82,7 +82,7 @@ pub async fn native_single_estimate(
     estimator: &dyn NativePriceEstimating,
     token: &H160,
 ) -> NativePriceEstimateResult {
-    estimator.estimate_native_prices(token).await
+    estimator.estimate_native_price(token).await
 }
 
 pub async fn native_vec_estimates(
@@ -91,7 +91,7 @@ pub async fn native_vec_estimates(
 ) -> Vec<NativePriceEstimateResult> {
     let mut results = Vec::with_capacity(tokens.len());
     for token in tokens {
-        let result = estimator.estimate_native_prices(token).await;
+        let result = estimator.estimate_native_price(token).await;
         results.push(result);
     }
     results
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn prices_dont_get_modified() {
         let mut inner = MockPriceEstimating::new();
-        inner.expect_estimates().times(1).returning(|queries| {
+        inner.estimate().times(1).returning(|queries| {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 3);
@@ -129,7 +129,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_prices(&[H160::from_low_u64_be(3)])
+            .estimate_native_price(&[H160::from_low_u64_be(3)])
             .next()
             .now_or_never()
             .unwrap()
@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn errors_get_propagated() {
         let mut inner = MockPriceEstimating::new();
-        inner.expect_estimates().times(1).returning(|queries| {
+        inner.estimate().times(1).returning(|queries| {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 2);
@@ -157,7 +157,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_prices(&[H160::from_low_u64_be(2)])
+            .estimate_native_price(&[H160::from_low_u64_be(2)])
             .next()
             .now_or_never()
             .unwrap()

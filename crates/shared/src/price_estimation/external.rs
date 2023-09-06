@@ -27,10 +27,10 @@ impl ExternalPriceEstimator {
 }
 
 impl PriceEstimating for ExternalPriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        self.0.estimates(query)
+        self.0.estimate(query)
     }
 }

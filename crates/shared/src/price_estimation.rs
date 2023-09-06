@@ -457,7 +457,7 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 pub trait PriceEstimating: Send + Sync + 'static {
     // The '_ lifetime in the return value is the same as 'a but we need to write it
     // as underscore because of a mockall limitation.
-    fn estimates<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult>;
+    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult>;
 }
 
 /// Use a PriceEstimating with a single query.
@@ -465,7 +465,7 @@ pub async fn single_estimate(
     estimator: &dyn PriceEstimating,
     query: &Query,
 ) -> PriceEstimateResult {
-    estimator.estimates(query).await
+    estimator.estimate(query).await
 }
 
 /// Use a streaming PriceEstimating with the old Vec based interface.
@@ -475,7 +475,7 @@ pub async fn vec_estimates(
 ) -> Vec<PriceEstimateResult> {
     let mut results = Vec::with_capacity(queries.len());
     for query in queries {
-        results.push(estimator.estimates(query).await);
+        results.push(estimator.estimate(query).await);
     }
     results
 }
@@ -534,14 +534,14 @@ pub mod mocks {
 
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
-        fn estimates<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+        fn estimate<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
             async { Ok(self.0) }.boxed()
         }
     }
 
     pub struct FailingPriceEstimator;
     impl PriceEstimating for FailingPriceEstimator {
-        fn estimates<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+        fn estimate<'a>(&'a self, _query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
             async {
                 Err(PriceEstimationError::EstimatorInternal(anyhow!(
                     "always fail"

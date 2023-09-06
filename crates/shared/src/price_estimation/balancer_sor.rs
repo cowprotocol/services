@@ -79,7 +79,7 @@ impl BalancerSor {
 }
 
 impl PriceEstimating for BalancerSor {
-    fn estimates<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
         self.estimate(query).boxed()
     }
 }

@@ -53,7 +53,7 @@ impl SanitizedPriceEstimator {
 }
 
 impl PriceEstimating for SanitizedPriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
@@ -112,7 +112,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                 None
             };
 
-            let mut estimate = self.inner.estimates(&adjusted_query).await?;
+            let mut estimate = self.inner.estimate(&adjusted_query).await?;
 
             match modification {
                 Some(Modification::AddGas(gas)) => {
@@ -277,7 +277,7 @@ mod tests {
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
-            .expect_estimates()
+            .estimate()
             .times(1)
             .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
             .returning(|_| {
@@ -422,7 +422,7 @@ mod tests {
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
-            .expect_estimates()
+            .estimate()
             .times(1)
             .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
             .returning(|_| {
@@ -436,7 +436,7 @@ mod tests {
             bad_token_detector: Arc::new(bad_token_detector),
             native_token: H160::from_low_u64_le(42),
         };
-        let mut stream = sanitized_estimator.estimates(&queries);
+        let mut stream = sanitized_estimator.estimate(&queries);
 
         let (index, result) = stream.next().await.unwrap();
         assert_eq!(index, 1);

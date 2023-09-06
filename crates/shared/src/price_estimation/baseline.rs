@@ -55,7 +55,7 @@ impl BaselinePriceEstimator {
 type Pools = HashMap<TokenPair, Vec<Pool>>;
 
 impl PriceEstimating for BaselinePriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {

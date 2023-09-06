@@ -154,7 +154,7 @@ impl RacingCompetitionPriceEstimator {
 }
 
 impl PriceEstimating for RacingCompetitionPriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'a, PriceEstimateResult> {
@@ -169,7 +169,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let mut futures: Vec<_> = self
                 .inner
                 .iter()
-                .map(|(_, estimator)| estimator.estimates(query))
+                .map(|(_, estimator)| estimator.estimate(query))
                 .collect();
             loop {
                 let (result, index, rest) = futures::future::select_all(futures).await;
@@ -248,11 +248,11 @@ impl CompetitionPriceEstimator {
 }
 
 impl PriceEstimating for CompetitionPriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        self.inner.estimates(query)
+        self.inner.estimate(query)
     }
 }
 
@@ -426,7 +426,7 @@ mod tests {
         ];
 
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
+        first.estimate().times(1).returning(move |queries| {
             assert_eq!(queries.len(), 5);
             futures::stream::iter([
                 Ok(estimates[0]),
@@ -439,24 +439,21 @@ mod tests {
             .boxed()
         });
         let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 5);
-                futures::stream::iter([
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
-                    Ok(estimates[1]),
-                    Ok(estimates[1]),
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
-                    Err(PriceEstimationError::UnsupportedToken {
-                        token: H160([0; 20]),
-                        reason: "".to_string(),
-                    }),
-                ])
-                .enumerate()
-                .boxed()
-            });
+        second.estimate().times(1).returning(move |queries| {
+            assert_eq!(queries.len(), 5);
+            futures::stream::iter([
+                Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
+                Ok(estimates[1]),
+                Ok(estimates[1]),
+                Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
+                Err(PriceEstimationError::UnsupportedToken {
+                    token: H160([0; 20]),
+                    reason: "".to_string(),
+                }),
+            ])
+            .enumerate()
+            .boxed()
+        });
 
         let priority = CompetitionPriceEstimator::new(vec![
             ("first".to_owned(), Arc::new(first)),
@@ -509,7 +506,7 @@ mod tests {
         }
 
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
+        first.estimate().times(1).returning(move |queries| {
             assert_eq!(queries.len(), 2);
             futures::stream::iter([Ok(estimate(1)), Err(PriceEstimationError::NoLiquidity)])
                 .enumerate()
@@ -517,19 +514,16 @@ mod tests {
         });
 
         let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 2);
-                old_estimator_to_stream(async {
-                    sleep(Duration::from_millis(10)).await;
-                    [Err(PriceEstimationError::NoLiquidity), Ok(estimate(2))]
-                })
-            });
+        second.estimate().times(1).returning(move |queries| {
+            assert_eq!(queries.len(), 2);
+            old_estimator_to_stream(async {
+                sleep(Duration::from_millis(10)).await;
+                [Err(PriceEstimationError::NoLiquidity), Ok(estimate(2))]
+            })
+        });
 
         let mut third = MockPriceEstimating::new();
-        third.expect_estimates().times(1).returning(move |queries| {
+        third.estimate().times(1).returning(move |queries| {
             assert_eq!(queries.len(), 2);
             futures::stream::once(async {
                 sleep(Duration::from_millis(20)).await;
@@ -550,7 +544,7 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        let mut stream = racing.estimates(&queries);
+        let mut stream = racing.estimate(&queries);
 
         let (i, result) = stream.next().await.unwrap();
         assert_eq!(i, 0);
@@ -570,11 +564,11 @@ mod tests {
             }
         }
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().returning(move |_| {
+        first.estimate().returning(move |_| {
             futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
         });
         let mut second = MockPriceEstimating::new();
-        second.expect_estimates().returning(move |_| {
+        second.estimate().returning(move |_| {
             futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
         });
         let estimator = CompetitionPriceEstimator::new(vec![
@@ -587,7 +581,7 @@ mod tests {
             ..Default::default()
         };
         let queries = &[query.clone(), query];
-        let mut stream = estimator.estimates(queries);
+        let mut stream = estimator.estimate(queries);
 
         let (i, result) = stream.next().await.unwrap();
         assert_eq!(i, 1);

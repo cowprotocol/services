@@ -407,7 +407,7 @@ impl HttpPriceEstimator {
 }
 
 impl PriceEstimating for HttpPriceEstimator {
-    fn estimates<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
         self.estimate(query).boxed()
     }
 }

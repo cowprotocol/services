@@ -32,13 +32,13 @@ impl InstrumentedPriceEstimator {
 
 #[async_trait::async_trait]
 impl PriceEstimating for InstrumentedPriceEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async {
             let start = Instant::now();
-            let estimate = self.inner.estimates(query).await;
+            let estimate = self.inner.estimate(query).await;
             self.metrics
                 .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
@@ -107,7 +107,7 @@ mod tests {
         let mut estimator = MockPriceEstimating::new();
         let expected_queries = queries.clone();
         estimator
-            .expect_estimates()
+            .estimate()
             .times(1)
             .withf(move |q| q == expected_queries)
             .returning(|_| {

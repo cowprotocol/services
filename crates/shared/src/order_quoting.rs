@@ -808,7 +808,7 @@ mod tests {
 
         let mut price_estimator = MockPriceEstimating::new();
         price_estimator
-            .expect_estimates()
+            .estimate()
             .withf(|q| {
                 q == [price_estimation::Query {
                     verification: Some(Verification {
@@ -833,14 +833,14 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
                 move |q| q == [buy_token]
@@ -939,7 +939,7 @@ mod tests {
 
         let mut price_estimator = MockPriceEstimating::new();
         price_estimator
-            .expect_estimates()
+            .estimate()
             .withf(|q| {
                 q == [price_estimation::Query {
                     verification: Some(Verification {
@@ -964,14 +964,14 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
                 move |q| q == [buy_token]
@@ -1068,7 +1068,7 @@ mod tests {
 
         let mut price_estimator = MockPriceEstimating::new();
         price_estimator
-            .expect_estimates()
+            .estimate()
             .withf(|q| {
                 q == [price_estimation::Query {
                     verification: Some(Verification {
@@ -1093,14 +1093,14 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
                 move |q| q == [buy_token]
@@ -1198,7 +1198,7 @@ mod tests {
         };
 
         let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimates().returning(|_| {
+        price_estimator.estimate().returning(|_| {
             futures::stream::iter([Ok(price_estimation::Estimate {
                 out_amount: 100.into(),
                 gas: 200,
@@ -1210,14 +1210,14 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
                 move |q| q == [buy_token]
@@ -1267,7 +1267,7 @@ mod tests {
         };
 
         let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimates().returning(|_| {
+        price_estimator.estimate().returning(|_| {
             futures::stream::iter([Ok(price_estimation::Estimate {
                 out_amount: 100.into(),
                 gas: 200,
@@ -1279,14 +1279,14 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .estimate_native_price()
             .withf({
                 let buy_token = parameters.buy_token;
                 move |q| q == [buy_token]

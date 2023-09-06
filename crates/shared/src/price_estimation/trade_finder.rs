@@ -358,7 +358,7 @@ impl Clone for TradeEstimator {
 }
 
 impl PriceEstimating for TradeEstimator {
-    fn estimates<'a>(
+    fn estimate<'a>(
         &'a self,
         query: &'a Query,
     ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
