@@ -151,7 +151,6 @@ struct IntermediateSettlement<'a> {
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
-    submitter: SubmissionPreference,
     score: Option<Score>,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
     enforce_correct_fees: bool,
@@ -238,7 +237,6 @@ impl<'a> IntermediateSettlement<'a> {
             settled.interaction_data,
             [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
-        let submitter = settled.submitter;
         let score = settled.score;
 
         if duplicate_coordinates(&executions) {
@@ -252,7 +250,6 @@ impl<'a> IntermediateSettlement<'a> {
             prices,
             approvals,
             slippage,
-            submitter,
             score,
             enforce_correct_fees,
         })
@@ -260,7 +257,6 @@ impl<'a> IntermediateSettlement<'a> {
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
-        settlement.submitter = self.submitter;
         settlement.score = self.score;
 
         // Make sure to always add approval interactions **before** any
