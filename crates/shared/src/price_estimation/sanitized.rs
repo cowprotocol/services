@@ -277,10 +277,10 @@ mod tests {
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
-            .estimate()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
-            .returning(|_| {
+            .withf(move |arg: &[Query], _| arg.iter().eq(expected_forwarded_queries.iter()))
+            .returning(|_, _| {
                 futures::stream::iter([
                     Ok(Estimate {
                         out_amount: 1.into(),
@@ -422,10 +422,10 @@ mod tests {
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
-            .estimate()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
-            .returning(|_| {
+            .withf(move |arg: &[Query], _| arg.iter().eq(expected_forwarded_queries.iter()))
+            .returning(|_, _| {
                 futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
                     .enumerate()
                     .boxed()
@@ -436,7 +436,7 @@ mod tests {
             bad_token_detector: Arc::new(bad_token_detector),
             native_token: H160::from_low_u64_le(42),
         };
-        let mut stream = sanitized_estimator.estimate(&queries);
+        let mut stream = sanitized_estimator.estimate_streaming(&queries, 1);
 
         let (index, result) = stream.next().await.unwrap();
         assert_eq!(index, 1);

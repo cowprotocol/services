@@ -788,27 +788,27 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .estimate_native_price()
-            .withf(move |tokens| *tokens == [token1])
-            .returning(|_| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
+            .expect_estimate_streaming()
+            .withf(move |tokens, _| *tokens == [token1])
+            .returning(|_, _| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
         native_price_estimator
-            .estimate_native_price()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |tokens| *tokens == [token2])
-            .returning(|_| {
+            .withf(move |tokens, _| *tokens == [token2])
+            .returning(|_, _| {
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter())
                     .boxed()
             });
         native_price_estimator
-            .estimate_native_price()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |tokens| *tokens == [token3])
-            .returning(|_| futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed());
+            .withf(move |tokens, _| *tokens == [token3])
+            .returning(|_, _| futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed());
         native_price_estimator
-            .estimate_native_price()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |tokens| *tokens == [token4])
-            .returning(|_| futures::stream::iter([(0, Ok(0.))].into_iter()).boxed());
+            .withf(move |tokens, _| *tokens == [token4])
+            .returning(|_, _| futures::stream::iter([(0, Ok(0.))].into_iter()).boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),

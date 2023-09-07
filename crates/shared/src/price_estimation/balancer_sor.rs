@@ -88,7 +88,7 @@ impl PriceEstimating for BalancerSor {
 mod tests {
     use {
         super::*,
-        crate::{balancer_sor_api::DefaultBalancerSorApi, price_estimation::single_estimate},
+        crate::balancer_sor_api::DefaultBalancerSorApi,
         gas_estimation::GasPrice1559,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
@@ -126,7 +126,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(U256::from_f64_lossy(1e18)).unwrap(),
             kind: OrderKind::Sell,
         };
-        let result = single_estimate(&estimator, &query).await;
+        let result = estimator.estimate(&query).await;
         println!("{result:?}");
         result.unwrap();
     }

@@ -127,25 +127,28 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{Estimate, MockPriceEstimating},
-        futures::{FutureExt, StreamExt},
+        futures::StreamExt,
         primitive_types::H160,
     };
 
     #[test]
     fn prices_dont_get_modified() {
         let mut inner = MockPriceEstimating::new();
-        inner.estimate().times(1).returning(|queries| {
-            assert!(queries.len() == 1);
-            assert!(queries[0].buy_token.to_low_u64_be() == 7);
-            assert!(queries[0].sell_token.to_low_u64_be() == 3);
-            futures::stream::iter([Ok(Estimate {
-                out_amount: 123_456_789_000_000_000u128.into(),
-                gas: 0,
-                solver: H160([1; 20]),
-            })])
-            .enumerate()
-            .boxed()
-        });
+        inner
+            .expect_estimate_streaming()
+            .times(1)
+            .returning(|queries, _| {
+                assert!(queries.len() == 1);
+                assert!(queries[0].buy_token.to_low_u64_be() == 7);
+                assert!(queries[0].sell_token.to_low_u64_be() == 3);
+                futures::stream::iter([Ok(Estimate {
+                    out_amount: 123_456_789_000_000_000u128.into(),
+                    gas: 0,
+                    solver: H160([1; 20]),
+                })])
+                .enumerate()
+                .boxed()
+            });
 
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
@@ -154,7 +157,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(&[H160::from_low_u64_be(3)])
+            .estimate_streaming(&[H160::from_low_u64_be(3)], 1)
             .next()
             .now_or_never()
             .unwrap()
@@ -166,14 +169,17 @@ mod tests {
     #[test]
     fn errors_get_propagated() {
         let mut inner = MockPriceEstimating::new();
-        inner.estimate().times(1).returning(|queries| {
-            assert!(queries.len() == 1);
-            assert!(queries[0].buy_token.to_low_u64_be() == 7);
-            assert!(queries[0].sell_token.to_low_u64_be() == 2);
-            futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
-                .enumerate()
-                .boxed()
-        });
+        inner
+            .expect_estimate_streaming()
+            .times(1)
+            .returning(|queries, _| {
+                assert!(queries.len() == 1);
+                assert!(queries[0].buy_token.to_low_u64_be() == 7);
+                assert!(queries[0].sell_token.to_low_u64_be() == 2);
+                futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
+                    .enumerate()
+                    .boxed()
+            });
 
         let native_price_estimator = NativePriceEstimator {
             inner: Arc::new(inner),
@@ -182,7 +188,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(&[H160::from_low_u64_be(2)])
+            .estimate_streaming(&[H160::from_low_u64_be(2)], 1)
             .next()
             .now_or_never()
             .unwrap()

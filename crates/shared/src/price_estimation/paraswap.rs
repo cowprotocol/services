@@ -59,7 +59,6 @@ mod tests {
         crate::{
             ethrpc::{create_env_test_transport, Web3},
             paraswap_api::DefaultParaswapApi,
-            price_estimation::single_estimate,
             token_info::TokenInfoFetcher,
         },
         model::order::OrderKind,
@@ -98,7 +97,7 @@ mod tests {
             kind: OrderKind::Sell,
         };
 
-        let result = single_estimate(&estimator, &query).await;
+        let result = estimator.estimate(&query).await;
         dbg!(&result);
         let estimate = result.unwrap();
         println!(

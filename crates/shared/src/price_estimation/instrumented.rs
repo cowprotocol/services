@@ -102,10 +102,10 @@ mod tests {
         let mut estimator = MockPriceEstimating::new();
         let expected_queries = queries.clone();
         estimator
-            .estimate()
+            .expect_estimate_streaming()
             .times(1)
-            .withf(move |q| q == expected_queries)
-            .returning(|_| {
+            .withf(move |q, _| q == expected_queries)
+            .returning(|_, _| {
                 futures::stream::iter([
                     Ok(Estimate::default()),
                     Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),

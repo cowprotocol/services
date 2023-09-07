@@ -59,9 +59,8 @@ mod tests {
         super::*,
         crate::{
             oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
-            price_estimation::{single_estimate, PriceEstimationError},
+            price_estimation::PriceEstimationError,
         },
-        futures::FutureExt as _,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
@@ -80,10 +79,6 @@ mod tests {
                 H160([1; 20]),
                 H160([2; 20]),
             )
-        }
-
-        async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-            single_estimate(self, query).await
         }
     }
 
