@@ -242,7 +242,7 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
     pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
                                           * struct */
-    pub score: Option<Score>,
+    pub score: Score,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -477,10 +477,10 @@ impl Settlement {
         Ok(Self {
             encoder: merged,
             submitter: self.submitter,
-            score: match (self.score, other.score) {
-                (Some(left), Some(right)) => left.merge(&right),
-                _ => None,
-            },
+            score: self
+                .score
+                .merge(&other.score)
+                .ok_or(anyhow::anyhow!("score merge failed"))?,
         })
     }
 

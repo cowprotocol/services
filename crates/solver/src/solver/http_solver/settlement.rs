@@ -261,7 +261,7 @@ impl<'a> IntermediateSettlement<'a> {
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
         settlement.submitter = self.submitter;
-        settlement.score = self.score;
+        settlement.score = self.score.unwrap_or_default();
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically

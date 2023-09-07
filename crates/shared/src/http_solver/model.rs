@@ -214,6 +214,15 @@ pub enum Score {
     },
 }
 
+impl Default for Score {
+    fn default() -> Self {
+        Score::RiskAdjusted {
+            success_probability: 1.0,
+            gas_amount: None,
+        }
+    }
+}
+
 impl Score {
     // Returns a new merged score, if possible. Currently only supports merging
     // scores of same variant.
