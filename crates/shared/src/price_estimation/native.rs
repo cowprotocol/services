@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::{FutureExt, StreamExt},
+    futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
@@ -29,50 +29,6 @@ pub trait NativePriceEstimating: Send + Sync {
         &'a self,
         token: &'a H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
-
-    /// Estimates multiple queries. It can be configured to execute queries
-    /// in a buffered manner. If `parallelism` is `0` or `1` queries are
-    /// executed sequentially. A number greater than `1` will result in that
-    /// many parallel requests.
-    fn estimate_all<'a>(
-        &'a self,
-        tokens: &'a [H160],
-        parallelism: usize,
-    ) -> futures::future::BoxFuture<'_, Vec<NativePriceEstimateResult>> {
-        async move {
-            let mut results: Vec<_> = self.estimate_streaming(tokens, parallelism).collect().await;
-            results.sort_by_key(|(index, _)| *index);
-            results.into_iter().map(|(_, result)| result).collect()
-        }
-        .boxed()
-    }
-
-    /// Estimates multiple queries in a streaming manner. It can be configured
-    /// to execute queries in a buffered manner. If `parallelism` is `0` or
-    /// `1` queries are executed sequentially. A number greater than `1`
-    /// will result in that many parallel requests.
-    fn estimate_streaming<'a>(
-        &'a self,
-        tokens: &'a [H160],
-        parallelism: usize,
-    ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        match parallelism {
-            0 | 1 => futures::stream::iter(tokens.iter().enumerate())
-                .then(move |(index, token)| async move {
-                    (index, self.estimate_native_price(token).await)
-                })
-                .boxed(),
-            parallelism => {
-                futures::stream::iter(tokens.iter().enumerate().map(
-                    move |(index, token)| async move {
-                        (index, self.estimate_native_price(token).await)
-                    },
-                ))
-                .buffered(parallelism)
-                .boxed()
-            }
-        }
-    }
 }
 
 /// Wrapper around price estimators specialized to estimate a token's price
@@ -127,7 +83,6 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{Estimate, MockPriceEstimating},
-        futures::StreamExt,
         primitive_types::H160,
     };
 
@@ -159,8 +114,8 @@ mod tests {
         assert_eq!(result.unwrap(), 1. / 0.123456789);
     }
 
-    #[test]
-    fn errors_get_propagated() {
+    #[tokio::test]
+    async fn errors_get_propagated() {
         let mut inner = MockPriceEstimating::new();
         inner.expect_estimate().times(1).returning(|query| {
             assert!(query.buy_token.to_low_u64_be() == 7);
@@ -175,12 +130,8 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_streaming(&[H160::from_low_u64_be(2)], 1)
-            .next()
-            .now_or_never()
-            .unwrap()
-            .unwrap()
-            .1;
+            .estimate_native_price(&H160::from_low_u64_be(2))
+            .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }
 }

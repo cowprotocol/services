@@ -115,7 +115,9 @@ mod tests {
             });
 
         let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
-        let _ = instrumented.estimate_all(&queries, 1).await;
+
+        let _ = instrumented.estimate(&queries[0]).await;
+        let _ = instrumented.estimate(&queries[1]).await;
 
         for result in &["success", "failure"] {
             let observed = instrumented

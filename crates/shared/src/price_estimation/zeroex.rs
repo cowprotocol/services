@@ -195,47 +195,34 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api), true);
 
-        let estimates = estimator
-            .estimate_all(
-                &[
-                    Query {
-                        verification: None,
-                        sell_token: weth,
-                        buy_token: gno,
-                        in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                        kind: OrderKind::Sell,
-                    },
-                    Query {
-                        verification: None,
-                        sell_token: weth,
-                        buy_token: gno,
-                        in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                        kind: OrderKind::Buy,
-                    },
-                    Query {
-                        verification: None,
-                        sell_token: weth,
-                        buy_token: gno,
-                        in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                        kind: OrderKind::Sell,
-                    },
-                ],
-                1,
-            )
+        let result = estimator
+            .estimate(&Query {
+                verification: None,
+                sell_token: weth,
+                buy_token: gno,
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
+                kind: OrderKind::Sell,
+            })
             .await;
 
-        assert_eq!(estimates.len(), 3);
         assert!(matches!(
-            &estimates[0],
+            &result,
             Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
+
+        let result = estimator
+            .estimate(&Query {
+                verification: None,
+                sell_token: weth,
+                buy_token: gno,
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
+                kind: OrderKind::Buy,
+            })
+            .await;
+
         assert!(matches!(
-            &estimates[1],
+            &result,
             Ok(est) if est.out_amount.as_u64() == 8986186353137488u64
-        ));
-        assert!(matches!(
-            &estimates[2],
-            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 

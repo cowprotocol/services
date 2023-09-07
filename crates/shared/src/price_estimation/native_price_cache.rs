@@ -507,17 +507,17 @@ mod tests {
         );
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
-        let results = estimator.estimate_all(&tokens, 1).await;
-        for price in &results {
-            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 1);
+        for token in &tokens {
+            let price = estimator.estimate_native_price(token).await.unwrap();
+            assert_eq!(price.to_i64().unwrap(), 1);
         }
 
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
 
-        let results = estimator.estimate_all(&tokens, 1).await;
-        for price in &results {
-            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 2);
+        for token in &tokens {
+            let price = estimator.estimate_native_price(token).await.unwrap();
+            assert_eq!(price.to_i64().unwrap(), 2);
         }
     }
 
@@ -552,9 +552,9 @@ mod tests {
         );
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
-        let prices = estimator.estimate_all(&tokens, 1).await;
-        for price in &prices {
-            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 1);
+        for token in &tokens {
+            let price = estimator.estimate_native_price(token).await.unwrap();
+            assert_eq!(price.to_i64().unwrap(), 1);
         }
 
         // wait for maintenance cycle
@@ -563,9 +563,9 @@ mod tests {
         // concurrently.
         tokio::time::sleep(Duration::from_millis(60 + WAIT_TIME_MS)).await;
 
-        let prices = estimator.estimate_all(&tokens, 1).await;
-        for price in &prices {
-            assert_eq!(price.as_ref().unwrap().to_i64().unwrap(), 2);
+        for token in &tokens {
+            let price = estimator.estimate_native_price(token).await.unwrap();
+            assert_eq!(price.to_i64().unwrap(), 2);
         }
     }
 
