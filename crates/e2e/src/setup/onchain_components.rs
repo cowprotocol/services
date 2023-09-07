@@ -17,9 +17,9 @@ use {
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
     web3::{
-        Transport,
         signing,
         signing::{Key, SecretKeyRef},
+        Transport,
     },
 };
 
