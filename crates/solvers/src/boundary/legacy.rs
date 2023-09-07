@@ -17,6 +17,7 @@ use {
                 ConstantProductPoolParameters,
                 MetadataModel,
                 OrderModel,
+                Score,
                 SettledBatchAuctionModel,
                 StablePoolParameters,
                 TokenAmount,
@@ -532,6 +533,17 @@ fn to_domain_solution(
             .into_iter()
             .map(|(interaction, _)| interaction)
             .collect(),
+        score: model.score.map(|score| match score {
+            Score::Solver { score } => solution::Score::Solver(score),
+            Score::Discount { score_discount } => solution::Score::Discount(score_discount),
+            Score::RiskAdjusted {
+                success_probability,
+                gas_amount,
+            } => solution::Score::RiskAdjusted {
+                success_probability,
+                gas_amount: gas_amount.map(eth::Gas),
+            },
+        }),
     })
 }
 

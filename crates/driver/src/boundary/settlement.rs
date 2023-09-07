@@ -5,10 +5,7 @@ use {
                 self,
                 auction,
                 order,
-                solution::{
-                    self,
-                    settlement::{self, Internalization},
-                },
+                solution::settlement::{self, Internalization},
             },
             eth,
             liquidity,
@@ -16,8 +13,7 @@ use {
         infra::Ethereum,
         util::conv::u256::U256Ext,
     },
-    anyhow::{anyhow, ensure, Context, Result},
-    bigdecimal::Signed,
+    anyhow::{anyhow, Context, Result},
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -58,7 +54,7 @@ use {
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     pub solver: eth::Address,
-    risk: solution::Risk,
+    //risk: solution::Risk,
 }
 
 impl Settlement {
@@ -160,10 +156,27 @@ impl Settlement {
             );
         }
 
+        settlement.score = solution.score().map(|score| match score {
+            competition::Score::Solver(score) => {
+                shared::http_solver::model::Score::Solver { score: *score }
+            }
+            competition::Score::Discount(score_discount) => {
+                shared::http_solver::model::Score::Discount {
+                    score_discount: *score_discount,
+                }
+            }
+            competition::Score::RiskAdjusted {
+                success_probability,
+                gas_amount,
+            } => shared::http_solver::model::Score::RiskAdjusted {
+                success_probability: *success_probability,
+                gas_amount: gas_amount.map(Into::into),
+            },
+        });
+
         Ok(Self {
             inner: settlement,
             solver: solution.solver().address(),
-            risk: solution.risk(),
         })
     }
 
@@ -216,26 +229,66 @@ impl Settlement {
                 .collect(),
         )?;
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let inputs = solver::objective_value::Inputs::from_settlement(
-            &self.inner,
-            &prices,
-            gas_price,
-            &gas.into(),
-        );
-        let score = eth::U256::from_big_rational(&inputs.objective_value())?;
-        // solver should start sending success probabilities very soon
-        let score = match self.
+        let inputs = {
+            let gas_amount = match self.inner.score {
+                Some(shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. }) => {
+                    gas_amount.unwrap_or(gas.into())
+                }
+                _ => gas.into(),
+            };
+            solver::objective_value::Inputs::from_settlement(
+                &self.inner,
+                &prices,
+                gas_price,
+                &gas_amount,
+            )
+        };
 
+        let objective_value = inputs.objective_value();
+        let score = match &self.inner.score {
+            Some(score) => match score {
+                shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
+                shared::http_solver::model::Score::Discount { score_discount } => {
+                    Score::Discounted(
+                        big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
+                    )
+                }
+                shared::http_solver::model::Score::RiskAdjusted {
+                    success_probability,
+                    ..
+                } => self.score_calculator.compute_score(
+                    &inputs.objective_value(),
+                    &inputs.gas_cost(),
+                    *success_probability,
+                )?,
+            },
+            None => Score::Protocol(big_rational_to_u256(&objective_value)?),
+        };
 
+        // let inputs = solver::objective_value::Inputs::from_settlement(
+        //     &self.inner,
+        //     &prices,
+        //     gas_price,
+        //     &gas.into(),
+        // );
+        // let score = eth::U256::from_big_rational(&inputs.objective_value())?;
+        // let score = match self.inner.score {
+        //     Some(score) => match score {
 
-        let score = match self.inner.score {
-            Some(score) => {
-                calculator.compute_score(&inputs.objective_value(), &inputs.gas_cost(), 100.)?
-                //todo success probability
-            }
-            None => Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
-        }
-        .score();
+        //     }
+        //     None =>
+        // Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
+        // }
+
+        // let score = match self.inner.score {
+        //     Some(score) => {
+        //         calculator.compute_score(&inputs.objective_value(),
+        // &inputs.gas_cost(), 100.)?         //todo success probability
+        //     }
+        //     None =>
+        // Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
+        // }
+        // .score();
         Ok(score.into())
         //let objective_value =
         // eth::U256::from_big_rational(&inputs.objective_value())?;

@@ -37,7 +37,7 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    risk: Risk,
+    score: Option<Score>,
     weth: eth::WethAddress,
 }
 
@@ -48,7 +48,7 @@ impl Solution {
         prices: HashMap<eth::TokenAddress, eth::U256>,
         interactions: Vec<Interaction>,
         solver: Solver,
-        risk: Risk,
+        score: Option<Score>,
         weth: eth::WethAddress,
     ) -> Result<Self, InvalidClearingPrices> {
         let solution = Self {
@@ -57,7 +57,7 @@ impl Solution {
             prices,
             interactions,
             solver,
-            risk,
+            score,
             weth,
         };
 
@@ -92,9 +92,8 @@ impl Solution {
         &self.solver
     }
 
-    /// The risk of this solution.
-    pub fn risk(&self) -> Risk {
-        self.risk
+    pub fn score(&self) -> Option<&Score> {
+        self.score.as_ref()
     }
 
     /// Approval interactions necessary for encoding the settlement.
@@ -243,7 +242,7 @@ impl std::fmt::Debug for Solution {
             .field("prices", &self.prices)
             .field("interactions", &self.interactions)
             .field("solver", &self.solver.name())
-            .field("risk", &self.risk)
+            .field("score", &self.score)
             .finish()
     }
 }
@@ -284,46 +283,30 @@ impl SolverTimeout {
     }
 }
 
-/// The solution score. This is often referred to as the "objective value".
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub eth::U256);
+/// This score carries information about how the score should be calculated.
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+pub enum Score {
+    Solver(eth::U256),
+    Discount(eth::U256),
+    RiskAdjusted {
+        success_probability: f64,
+        gas_amount: Option<eth::U256>,
+    },
+}
 
-impl From<Score> for eth::U256 {
-    fn from(value: Score) -> Self {
+/// This score represents a single value which is used to compare two solutions.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct RankingScore(pub eth::U256);
+
+impl From<RankingScore> for eth::U256 {
+    fn from(value: RankingScore) -> Self {
         value.0
     }
 }
 
-impl From<eth::U256> for Score {
+impl From<eth::U256> for RankingScore {
     fn from(value: eth::U256) -> Self {
         Self(value)
-    }
-}
-
-/// Solver-estimated risk that the settlement might revert. This value is
-/// subtracted from the final score of the solution.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Risk(pub eth::U256);
-
-impl From<Risk> for eth::U256 {
-    fn from(value: Risk) -> Self {
-        value.0
-    }
-}
-
-impl From<eth::U256> for Risk {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-impl Risk {
-    // TODO(#1533) Improve the risk merging formula. For now it's OK to simply add
-    // the risks, since it causes the solvers to under-bid which is less
-    // dangerous than over-bidding.
-    /// Combine two risk values.
-    pub fn merge(self, other: Risk) -> Self {
-        Self(self.0 + other.0)
     }
 }
 

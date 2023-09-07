@@ -13,6 +13,9 @@ pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
+    // Solvers are not obligated to provide score. If they don't provide it, protocol will
+    // calculate it.
+    pub score: Option<Score>,
 }
 
 /// A solution for a settling a single order.
@@ -111,6 +114,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
+            score: None,
         })
     }
 }
@@ -284,4 +288,24 @@ pub struct CustomInteraction {
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
+}
+
+/// A score for a solution. The score is used to rank solutions.
+#[derive(Debug)]
+pub enum Score {
+    /// The score value is provided as is from solver.
+    /// Success probability is not incorporated into this value.
+    Solver(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol.
+    /// To have more flexibility, the protocol score can be tweaked by the
+    /// solver by providing a discount.
+    Discount(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol given the success
+    /// probability and optionally the amount of gas this settlement will take.
+    RiskAdjusted {
+        success_probability: f64,
+        gas_amount: Option<eth::Gas>,
+    },
 }

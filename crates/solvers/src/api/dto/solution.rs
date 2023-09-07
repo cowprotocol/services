@@ -133,6 +133,17 @@ impl Solutions {
                             }
                         })
                         .collect(),
+                    score: solution.score.as_ref().map(|score| match score {
+                        solution::Score::Solver(score) => Score::Solver(*score),
+                        solution::Score::Discount(discount) => Score::Discount(*discount),
+                        solution::Score::RiskAdjusted {
+                            success_probability,
+                            gas_amount,
+                        } => Score::RiskAdjusted {
+                            success_probability: *success_probability,
+                            gas_amount: gas_amount.map(|gas_amount| gas_amount.0),
+                        },
+                    }),
                 })
                 .collect(),
         }
@@ -154,6 +165,7 @@ struct Solution {
     prices: HashMap<H160, U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    score: Option<Score>,
 }
 
 #[derive(Debug, Serialize)]
@@ -312,4 +324,16 @@ enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+/// A score for a solution. The score is used to rank solutions.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Score {
+    Solver(U256),
+    Discount(U256),
+    RiskAdjusted {
+        success_probability: f64,
+        gas_amount: Option<U256>,
+    },
 }
