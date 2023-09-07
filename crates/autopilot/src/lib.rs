@@ -165,21 +165,16 @@ pub async fn main(args: arguments::Arguments) {
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
 
-    let signature_validator = args.shared.signatures.validator(
+    let signature_validator = signature_validator::validator(
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "signature_validating".into())
-            .unwrap(),
     );
 
-    let balance_fetcher = args.shared.balances.cached(
+    let balance_fetcher = account_balances::cached(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -187,11 +182,6 @@ pub async fn main(args: arguments::Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
         current_block_stream.clone(),
     );
 

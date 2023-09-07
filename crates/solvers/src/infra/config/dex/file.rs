@@ -1,11 +1,14 @@
 //! Configuration parameters that get shared across all dex solvers.
 
 use {
-    crate::domain::{dex::slippage, eth},
+    crate::{
+        domain::{dex::slippage, eth},
+        infra::config::unwrap_or_log,
+    },
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::path::Path,
+    std::{fmt::Debug, path::Path},
     tokio::fs,
 };
 
@@ -50,13 +53,9 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
     // Not printing detailed error because it could potentially leak secrets.
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
 
-    let dex: T = config
-        .dex
-        .try_into()
-        .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
+    let dex: T = unwrap_or_log(config.dex.try_into(), &path);
 
     let config = super::Config {
         slippage: slippage::Limits::new(

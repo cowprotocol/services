@@ -4,31 +4,22 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    crate::code_simulation::CodeSimulating,
     anyhow::{Context, Result},
-    contracts::{deployed_bytecode, dummy_contract},
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
-    ethrpc::extensions::StateOverride,
+    ethrpc::Web3,
     futures::future,
-    maplit::hashmap,
-    std::sync::Arc,
-    web3::{ethabi::Token, types::CallRequest},
+    web3::ethabi::Token,
 };
 
 pub struct Balances {
-    simulator: Arc<dyn CodeSimulating>,
+    web3: Web3,
     settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
 
 impl Balances {
-    pub fn new(
-        simulator: Arc<dyn CodeSimulating>,
-        settlement: H160,
-        vault_relayer: H160,
-        vault: Option<H160>,
-    ) -> Self {
+    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -39,7 +30,7 @@ impl Balances {
         let vault = vault.unwrap_or_default();
 
         Self {
-            simulator,
+            web3,
             settlement,
             vault_relayer,
             vault,
@@ -54,7 +45,7 @@ impl Balances {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balances = dummy_contract!(contracts::support::Balances, self.settlement);
+        let balances = contracts::dummy_contract!(contracts::support::Balances, self.settlement);
         let tx = balances
             .methods()
             .balance(
@@ -71,20 +62,14 @@ impl Balances {
             )
             .tx;
 
-        let call = CallRequest {
-            to: tx.to,
-            data: tx.data,
-            ..Default::default()
-        };
-        let overrides = hashmap! {
-            balances.address() => StateOverride {
-                code: Some(deployed_bytecode!(contracts::support::Balances)),
-                ..Default::default()
-            },
-        };
+        let call = contracts::storage_accessible::call(
+            self.settlement,
+            contracts::bytecode!(contracts::support::Balances),
+            tx.data.unwrap(),
+        );
 
-        let output = self.simulator.simulate(call, overrides).await?;
-        let simulation = Simulation::decode(&output)?;
+        let output = self.web3.eth().call(call, None).await?;
+        let simulation = Simulation::decode(&output.0)?;
 
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
@@ -170,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn test_for_user() {
         let balances = Balances::new(
-            Arc::new(Web3::new(ethrpc::create_env_test_transport())),
+            Web3::new(ethrpc::create_env_test_transport()),
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
@@ -193,6 +178,6 @@ mod tests {
             )
             .await
             .unwrap();
-        println!("{owner} can transfer {amount} {token}!");
+        println!("{owner:?} can transfer {amount} {token:?}!");
     }
 }
