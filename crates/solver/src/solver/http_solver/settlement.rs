@@ -152,7 +152,7 @@ struct IntermediateSettlement<'a> {
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
     submitter: SubmissionPreference,
-    score: Option<Score>,
+    score: Score,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
     enforce_correct_fees: bool,
 }
@@ -261,7 +261,7 @@ impl<'a> IntermediateSettlement<'a> {
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
         settlement.submitter = self.submitter;
-        settlement.score = self.score.unwrap_or_default();
+        settlement.score = self.score;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
