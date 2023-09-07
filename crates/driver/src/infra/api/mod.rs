@@ -22,6 +22,7 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
+    pub score_calculator: ScoreCalculator,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -68,6 +69,7 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
+                    score_calculator: self.score_calculator.clone(),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

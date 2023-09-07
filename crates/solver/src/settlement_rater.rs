@@ -283,11 +283,13 @@ impl SettlementRating for SettlementRater {
 
 /// Contains a subset of the configuration options for the submission of a
 /// settlement, needed for the score calculation.
+#[derive(Debug, Clone)]
 pub struct SubmissionConfig {
     pub strategies: Vec<TransactionStrategyArg>,
     pub disable_high_risk_public_mempool_transactions: bool,
 }
 
+#[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
     submission_config: SubmissionConfig,

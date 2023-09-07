@@ -12,6 +12,7 @@ use {
         },
         util::Bytes,
     },
+    ::solver::settlement_rater::ScoreCalculator,
     futures::future::join_all,
     itertools::Itertools,
     rand::seq::SliceRandom,
@@ -42,6 +43,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
+    pub score_calculator: ScoreCalculator,
 }
 
 impl Competition {
@@ -142,7 +144,10 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (settlement.score(&self.eth, auction), settlement)
+                (
+                    settlement.score(&self.eth, auction, self.score_calculator),
+                    settlement,
+                )
             })
             .collect_vec();
 
