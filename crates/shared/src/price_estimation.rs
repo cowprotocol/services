@@ -7,7 +7,7 @@ use {
     },
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
-    futures::{future::BoxFuture, stream::BoxStream, StreamExt},
+    futures::{future::BoxFuture, stream::BoxStream, FutureExt, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -458,6 +458,50 @@ pub trait PriceEstimating: Send + Sync + 'static {
     // The '_ lifetime in the return value is the same as 'a but we need to write it
     // as underscore because of a mockall limitation.
     fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult>;
+
+    /// Estimates multiple queries. It can be configured to execute queries
+    /// in a buffered manner. If `parallelism` is `0` or `1` queries are
+    /// executed sequentially. A number greater than `1` will result in that
+    /// many parallel requests.
+    fn estimate_all<'a>(
+        &'a self,
+        queries: &'a [Query],
+        parallelism: usize,
+    ) -> BoxFuture<'_, Vec<PriceEstimateResult>> {
+        async move {
+            let mut results: Vec<_> = self
+                .estimate_streaming(queries, parallelism)
+                .collect()
+                .await;
+            results.sort_by_key(|(index, _)| *index);
+            results.into_iter().map(|(_, result)| result).collect()
+        }
+        .boxed()
+    }
+
+    /// Estimates multiple queries in a streaming manner. It can be configured
+    /// to execute queries in a buffered manner. If `parallelism` is `0` or
+    /// `1` queries are executed sequentially. A number greater than `1`
+    /// will result in that many parallel requests.
+    fn estimate_streaming<'a>(
+        &'a self,
+        queries: &'a [Query],
+        parallelism: usize,
+    ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
+        match parallelism {
+            0 | 1 => futures::stream::iter(queries.iter().enumerate())
+                .then(move |(index, query)| async move { (index, self.estimate(query).await) })
+                .boxed(),
+            parallelism => futures::stream::iter(
+                queries
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, query)| async move { (index, self.estimate(query).await) }),
+            )
+            .buffer_unordered(parallelism)
+            .boxed(),
+        }
+    }
 }
 
 /// Use a PriceEstimating with a single query.
