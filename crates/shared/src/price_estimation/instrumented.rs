@@ -75,7 +75,6 @@ mod tests {
         crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimationError},
         anyhow::anyhow,
         ethcontract::H160,
-        futures::StreamExt,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
     };
@@ -100,18 +99,19 @@ mod tests {
         ];
 
         let mut estimator = MockPriceEstimating::new();
-        let expected_queries = queries.clone();
+        let expected_query = queries[0].clone();
         estimator
-            .expect_estimate_streaming()
+            .expect_estimate()
             .times(1)
-            .withf(move |q, _| q == expected_queries)
-            .returning(|_, _| {
-                futures::stream::iter([
-                    Ok(Estimate::default()),
-                    Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),
-                ])
-                .enumerate()
-                .boxed()
+            .withf(move |q| q == &expected_query)
+            .returning(|_| async { Ok(Estimate::default()) }.boxed());
+        let expected_query = queries[1].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| q == &expected_query)
+            .returning(|_| {
+                async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
             });
 
         let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
@@ -130,6 +130,6 @@ mod tests {
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed, 1);
+        assert_eq!(observed, 2);
     }
 }

@@ -143,7 +143,6 @@ mod tests {
             bad_token::{MockBadTokenDetecting, TokenQuality},
             price_estimation::MockPriceEstimating,
         },
-        futures::StreamExt,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::{H160, U256},
@@ -255,55 +254,79 @@ mod tests {
             },
         ];
 
-        let expected_forwarded_queries = [
-            // SanitizedPriceEstimator will simply forward the Query in the common case
-            queries[0].clone(),
-            Query {
-                // SanitizedPriceEstimator replaces ETH buy token with native token
-                buy_token: native_token,
-                ..queries[1].clone()
-            },
-            Query {
-                // SanitizedPriceEstimator replaces ETH buy token with native token
-                buy_token: native_token,
-                ..queries[2].clone()
-            },
-            Query {
-                // SanitizedPriceEstimator replaces ETH sell token with native token
-                sell_token: native_token,
-                ..queries[3].clone()
-            },
-        ];
+        // SanitizedPriceEstimator will simply forward the Query in the common case
+        let first_forwarded_query = queries[0].clone();
+        // SanitizedPriceEstimator replaces ETH buy token with native token
+        let second_forwarded_query = Query {
+            buy_token: native_token,
+            ..queries[1].clone()
+        };
+        // SanitizedPriceEstimator replaces ETH buy token with native token
+        let third_forwarded_query = Query {
+            buy_token: native_token,
+            ..queries[2].clone()
+        };
+        // SanitizedPriceEstimator replaces ETH sell token with native token
+        let forth_forwarded_query = Query {
+            sell_token: native_token,
+            ..queries[3].clone()
+        };
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
-            .expect_estimate_streaming()
+            .expect_estimate()
             .times(1)
-            .withf(move |arg: &[Query], _| arg.iter().eq(expected_forwarded_queries.iter()))
-            .returning(|_, _| {
-                futures::stream::iter([
+            .withf(move |query| query == &first_forwarded_query)
+            .returning(|_| {
+                async {
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
-                    }),
+                    })
+                }
+                .boxed()
+            });
+        wrapped_estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |query| query == &second_forwarded_query)
+            .returning(|_| {
+                async {
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
-                    }),
+                    })
+                }
+                .boxed()
+            });
+        wrapped_estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |query| query == &third_forwarded_query)
+            .returning(|_| {
+                async {
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: u64::MAX,
                         solver: Default::default(),
-                    }),
+                    })
+                }
+                .boxed()
+            });
+        wrapped_estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |query| query == &forth_forwarded_query)
+            .returning(|_| {
+                async {
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
-                    }),
-                ])
-                .enumerate()
+                    })
+                }
                 .boxed()
             });
 
@@ -390,62 +413,5 @@ mod tests {
             result[9].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken { .. }
         ));
-    }
-
-    #[tokio::test]
-    async fn easy_queries_come_first() {
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-
-        let queries = [
-            // difficult
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(1),
-                buy_token: H160::from_low_u64_le(2),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy,
-            },
-            //easy
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(1),
-                buy_token: H160::from_low_u64_le(1),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy,
-            },
-        ];
-
-        let expected_forwarded_queries = [queries[0].clone()];
-
-        let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
-        wrapped_estimator
-            .expect_estimate_streaming()
-            .times(1)
-            .withf(move |arg: &[Query], _| arg.iter().eq(expected_forwarded_queries.iter()))
-            .returning(|_, _| {
-                futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
-                    .enumerate()
-                    .boxed()
-            });
-
-        let sanitized_estimator = SanitizedPriceEstimator {
-            inner: wrapped_estimator,
-            bad_token_detector: Arc::new(bad_token_detector),
-            native_token: H160::from_low_u64_le(42),
-        };
-        let mut stream = sanitized_estimator.estimate_streaming(&queries, 1);
-
-        let (index, result) = stream.next().await.unwrap();
-        assert_eq!(index, 1);
-        assert!(result.is_ok());
-
-        let (index, result) = stream.next().await.unwrap();
-        assert_eq!(index, 0);
-        assert!(result.is_err());
-
-        assert!(stream.next().await.is_none());
     }
 }

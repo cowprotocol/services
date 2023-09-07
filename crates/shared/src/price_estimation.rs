@@ -498,23 +498,10 @@ pub trait PriceEstimating: Send + Sync + 'static {
                     .enumerate()
                     .map(move |(index, query)| async move { (index, self.estimate(query).await) }),
             )
-            .buffer_unordered(parallelism)
+            .buffered(parallelism)
             .boxed(),
         }
     }
-}
-
-/// Convert an old Vec based PriceEstimating implementation to a stream.
-pub fn old_estimator_to_stream<'a, IntoIter>(
-    estimator: impl Future<Output = IntoIter> + Send + 'a,
-) -> BoxStream<'a, (usize, PriceEstimateResult)>
-where
-    IntoIter: IntoIterator<Item = PriceEstimateResult> + Send + 'a,
-    IntoIter::IntoIter: Send + 'a,
-{
-    futures::stream::once(estimator)
-        .flat_map(|iter| futures::stream::iter(iter.into_iter().enumerate()))
-        .boxed()
 }
 
 pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
