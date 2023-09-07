@@ -33,6 +33,7 @@ use {
             SellTokenSource,
         },
         signature::EcdsaSignature,
+        solver_competition::Score,
         DomainSeparator,
     },
     shared::{
@@ -47,6 +48,7 @@ use {
             AmmOrderExecution,
             LimitOrderExecution,
         },
+        settlement_rater::ScoreCalculator,
         settlement_simulation::settle_method_builder,
     },
     std::sync::Arc,
@@ -199,6 +201,7 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
+        calculator: &ScoreCalculator,
     ) -> Result<competition::solution::Score> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
@@ -219,9 +222,24 @@ impl Settlement {
             gas_price,
             &gas.into(),
         );
-        ensure!(!inputs.objective_value().is_negative(), "negative score");
-        let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
-        Ok((objective_value - self.risk.0).into())
+        let score = eth::U256::from_big_rational(&inputs.objective_value())?;
+        // solver should start sending success probabilities very soon
+        let score = match self.
+
+
+
+        let score = match self.inner.score {
+            Some(score) => {
+                calculator.compute_score(&inputs.objective_value(), &inputs.gas_cost(), 100.)?
+                //todo success probability
+            }
+            None => Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
+        }
+        .score();
+        Ok(score.into())
+        //let objective_value =
+        // eth::U256::from_big_rational(&inputs.objective_value())?;
+        // Ok((objective_value - self.risk.0).into())
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
