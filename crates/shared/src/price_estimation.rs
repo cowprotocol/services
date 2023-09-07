@@ -512,18 +512,6 @@ pub async fn single_estimate(
     estimator.estimate(query).await
 }
 
-/// Use a streaming PriceEstimating with the old Vec based interface.
-pub async fn vec_estimates(
-    estimator: &dyn PriceEstimating,
-    queries: &[Query],
-) -> Vec<PriceEstimateResult> {
-    let mut results = Vec::with_capacity(queries.len());
-    for query in queries {
-        results.push(estimator.estimate(query).await);
-    }
-    results
-}
-
 /// Convert an old Vec based PriceEstimating implementation to a stream.
 pub fn old_estimator_to_stream<'a, IntoIter>(
     estimator: impl Future<Output = IntoIter> + Send + 'a,

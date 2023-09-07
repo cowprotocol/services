@@ -365,7 +365,7 @@ fn metrics() -> &'static Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{old_estimator_to_stream, vec_estimates, MockPriceEstimating},
+        crate::price_estimation::{old_estimator_to_stream, MockPriceEstimating},
         anyhow::anyhow,
         futures::StreamExt,
         model::order::OrderKind,
@@ -460,7 +460,7 @@ mod tests {
             ("second".to_owned(), Arc::new(second)),
         ]);
 
-        let result = vec_estimates(&priority, &queries).await;
+        let result = priority.estimate_all(&queries, 1).await;
         assert_eq!(result.len(), 5);
         assert_eq!(result[0].as_ref().unwrap(), &estimates[0]);
         // buy 2 is better than buy 1

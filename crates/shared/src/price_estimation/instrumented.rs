@@ -73,7 +73,6 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{
-            vec_estimates,
             Estimate,
             MockPriceEstimating,
             PriceEstimationError,
@@ -120,7 +119,7 @@ mod tests {
             });
 
         let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
-        let _ = vec_estimates(&instrumented, &queries).await;
+        let _ = instrumented.estimate_all(&queries, 1).await;
 
         for result in &["success", "failure"] {
             let observed = instrumented

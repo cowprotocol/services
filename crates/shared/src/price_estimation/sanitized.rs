@@ -141,7 +141,7 @@ mod tests {
         super::*,
         crate::{
             bad_token::{MockBadTokenDetecting, TokenQuality},
-            price_estimation::{vec_estimates, MockPriceEstimating},
+            price_estimation::MockPriceEstimating,
         },
         futures::StreamExt,
         model::order::OrderKind,
@@ -313,7 +313,7 @@ mod tests {
             native_token,
         };
 
-        let result = vec_estimates(&sanitized_estimator, &queries).await;
+        let result = sanitized_estimator.estimate_all(&queries, 1).await;
         assert_eq!(result.len(), 10);
         assert_eq!(
             result[0].as_ref().unwrap(),

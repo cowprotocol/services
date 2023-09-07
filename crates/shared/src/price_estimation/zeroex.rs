@@ -55,7 +55,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            price_estimation::{single_estimate, vec_estimates, PriceEstimationError},
+            price_estimation::{single_estimate, PriceEstimationError},
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
         ethcontract::futures::FutureExt as _,
@@ -199,8 +199,7 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api), true);
 
-        let estimates = vec_estimates(
-            &estimator,
+        let estimates = estimator.estimate_all(
             &[
                 Query {
                     verification: None,
@@ -224,8 +223,8 @@ mod tests {
                     kind: OrderKind::Sell,
                 },
             ],
-        )
-        .await;
+            1
+        ).await;
 
         assert_eq!(estimates.len(), 3);
         assert!(matches!(
