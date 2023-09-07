@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::FutureExt,
+    futures::{FutureExt, StreamExt},
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
@@ -29,6 +29,50 @@ pub trait NativePriceEstimating: Send + Sync {
         &'a self,
         token: &'a H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
+
+    /// Estimates multiple queries. It can be configured to execute queries
+    /// in a buffered manner. If `parallelism` is `0` or `1` queries are
+    /// executed sequentially. A number greater than `1` will result in that
+    /// many parallel requests.
+    fn estimate_all<'a>(
+        &'a self,
+        tokens: &'a [H160],
+        parallelism: usize,
+    ) -> futures::future::BoxFuture<'_, Vec<NativePriceEstimateResult>> {
+        async move {
+            let mut results: Vec<_> = self.estimate_streaming(tokens, parallelism).collect().await;
+            results.sort_by_key(|(index, _)| *index);
+            results.into_iter().map(|(_, result)| result).collect()
+        }
+        .boxed()
+    }
+
+    /// Estimates multiple queries in a streaming manner. It can be configured
+    /// to execute queries in a buffered manner. If `parallelism` is `0` or
+    /// `1` queries are executed sequentially. A number greater than `1`
+    /// will result in that many parallel requests.
+    fn estimate_streaming<'a>(
+        &'a self,
+        tokens: &'a [H160],
+        parallelism: usize,
+    ) -> futures::stream::BoxStream<'_, (usize, NativePriceEstimateResult)> {
+        match parallelism {
+            0 | 1 => futures::stream::iter(tokens.iter().enumerate())
+                .then(move |(index, token)| async move {
+                    (index, self.estimate_native_price(token).await)
+                })
+                .boxed(),
+            parallelism => {
+                futures::stream::iter(tokens.iter().enumerate().map(
+                    move |(index, token)| async move {
+                        (index, self.estimate_native_price(token).await)
+                    },
+                ))
+                .buffer_unordered(parallelism)
+                .boxed()
+            }
+        }
+    }
 }
 
 /// Wrapper around price estimators specialized to estimate a token's price
