@@ -314,7 +314,6 @@ mod tests {
         crate::{
             baseline_solver::BaselineSolvable,
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::single_estimate,
             sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
         },
         gas_estimation::gas_price::GasPrice1559,
@@ -339,18 +338,16 @@ mod tests {
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(&Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_err());
+            })
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -378,18 +375,16 @@ mod tests {
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(&Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_err());
+            })
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -421,30 +416,26 @@ mod tests {
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(&Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell
-            }
-        )
-        .await
-        .is_ok());
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+            })
+            .await
+            .is_ok());
+        assert!(estimator
+            .estimate(&Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_ok());
+            })
+            .await
+            .is_ok());
     }
 
     fn pool_price(
@@ -502,7 +493,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
-        let estimate = single_estimate(&estimator, &query).await.unwrap();
+        let estimate = estimator.estimate(&query).await.unwrap();
         // Pool 0 is more favourable for buying token B.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -516,7 +507,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
-        let estimate = single_estimate(&estimator, &query).await.unwrap();
+        let estimate = estimator.estimate(&query).await.unwrap();
         // Pool 1 is more favourable for buying token A.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -564,33 +555,29 @@ mod tests {
         );
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
-            let intermediate = single_estimate(
-                &estimator,
-                &Query {
+            let intermediate = estimator
+                .estimate(&Query {
                     verification: None,
                     sell_token: token_a,
                     buy_token: token_b,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: *kind,
-                },
-            )
-            .await
-            .unwrap()
-            .gas;
+                })
+                .await
+                .unwrap()
+                .gas;
             assert_eq!(intermediate, estimate_gas(3));
-            let direct = single_estimate(
-                &estimator,
-                &Query {
+            let direct = estimator
+                .estimate(&Query {
                     verification: None,
                     sell_token: token_b,
                     buy_token: token_a,
                     in_amount: NonZeroU256::try_from(10).unwrap(),
                     kind: *kind,
-                },
-            )
-            .await
-            .unwrap()
-            .gas;
+                })
+                .await
+                .unwrap()
+                .gas;
             assert_eq!(direct, estimate_gas(2));
             assert!(direct < intermediate);
         }
@@ -655,19 +642,17 @@ mod tests {
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                single_estimate(
-                    &estimator,
-                    &Query {
+                estimator
+                    .estimate(&Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    }
-                )
-                .await
-                .unwrap()
-                .gas,
+                    })
+                    .await
+                    .unwrap()
+                    .gas,
                 estimate_gas(2),
             );
         }
@@ -682,19 +667,17 @@ mod tests {
         // Lower gas price does make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                single_estimate(
-                    &estimator,
-                    &Query {
+                estimator
+                    .estimate(&Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    }
-                )
-                .await
-                .unwrap()
-                .gas,
+                    })
+                    .await
+                    .unwrap()
+                    .gas,
                 estimate_gas(3)
             );
         }

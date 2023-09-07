@@ -72,11 +72,7 @@ struct Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
-            Estimate,
-            MockPriceEstimating,
-            PriceEstimationError,
-        },
+        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimationError},
         anyhow::anyhow,
         ethcontract::H160,
         futures::StreamExt,

@@ -504,14 +504,6 @@ pub trait PriceEstimating: Send + Sync + 'static {
     }
 }
 
-/// Use a PriceEstimating with a single query.
-pub async fn single_estimate(
-    estimator: &dyn PriceEstimating,
-    query: &Query,
-) -> PriceEstimateResult {
-    estimator.estimate(query).await
-}
-
 /// Convert an old Vec based PriceEstimating implementation to a stream.
 pub fn old_estimator_to_stream<'a, IntoIter>(
     estimator: impl Future<Output = IntoIter> + Send + 'a,

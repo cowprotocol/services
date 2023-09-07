@@ -2,7 +2,6 @@ use {
     super::price_estimation::{
         self,
         native::{native_single_estimate, NativePriceEstimating},
-        single_estimate,
         PriceEstimating,
         PriceEstimationError,
     },
@@ -545,7 +544,7 @@ impl OrderQuoter {
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::ProtocolInternal),
-            single_estimate(self.price_estimator.as_ref(), &trade_query),
+            self.price_estimator.estimate(&trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
