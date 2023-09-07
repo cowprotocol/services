@@ -17,6 +17,7 @@ use {
     shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
     web3::{
+        Transport,
         signing,
         signing::{Key, SecretKeyRef},
     },
@@ -579,7 +580,6 @@ impl OnchainComponents {
     /// before calling this function are old enough to be indexed.
     pub async fn mint_blocks_past_reorg_threshold(&self) {
         tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
-        use web3::Transport;
 
         let current_block = || async { self.web3.eth().block_number().await.unwrap() };
         let target = current_block().await + 65;
