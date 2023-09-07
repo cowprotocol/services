@@ -687,8 +687,12 @@ async fn primary_account(web3: &DynWeb3) -> ethcontract::Account {
 /// A blockchain node for development purposes. Dropping this type will
 /// terminate the node.
 pub struct Node {
-    #[allow(dead_code)] // store `process` to later run its `Drop` handler
-    process: tokio::process::Child,
+    // Using `Command::kill_on_drop(true)` is not 100% reliable and might result
+    // in zombie processes which will cause a test to never terminate.
+    // To work around this we use an `Option` here such that we can take the process
+    // on `drop` and spawn a task that handles process termination since async `drop`
+    // implementations are not a thing.
+    process: Option<tokio::process::Child>,
     url: String,
 }
 
@@ -712,7 +716,6 @@ impl Node {
             .arg("0") // use 0 to let `anvil` use any open port
             .arg("--balance")
             .arg("1000000")
-            .kill_on_drop(true)
             .stdout(std::process::Stdio::piped())
             .spawn()
             .unwrap();
@@ -739,11 +742,25 @@ impl Node {
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
-        Self { process, url }
+        Self {
+            process: Some(process),
+            url,
+        }
     }
 
     fn url(&self) -> String {
         self.url.clone()
+    }
+}
+
+impl Drop for Node {
+    fn drop(&mut self) {
+        let mut process = self.process.take().unwrap();
+        tokio::task::spawn(async move {
+            tracing::debug!("terminate node process");
+            process.kill().await.unwrap();
+            tracing::debug!("node process terminate successfully");
+        });
     }
 }
 
