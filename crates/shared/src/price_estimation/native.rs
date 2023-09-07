@@ -122,25 +122,6 @@ impl NativePriceEstimating for NativePriceEstimator {
     }
 }
 
-pub async fn native_single_estimate(
-    estimator: &dyn NativePriceEstimating,
-    token: &H160,
-) -> NativePriceEstimateResult {
-    estimator.estimate_native_price(token).await
-}
-
-pub async fn native_vec_estimates(
-    estimator: &dyn NativePriceEstimating,
-    tokens: &[H160],
-) -> Vec<NativePriceEstimateResult> {
-    let mut results = Vec::with_capacity(tokens.len());
-    for token in tokens {
-        let result = estimator.estimate_native_price(token).await;
-        results.push(result);
-    }
-    results
-}
-
 #[cfg(test)]
 mod tests {
     use {

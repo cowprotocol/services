@@ -1,7 +1,7 @@
 use {
     super::price_estimation::{
         self,
-        native::{native_single_estimate, NativePriceEstimating},
+        native::NativePriceEstimating,
         PriceEstimating,
         PriceEstimationError,
     },
@@ -545,11 +545,13 @@ impl OrderQuoter {
                 .estimate()
                 .map_err(PriceEstimationError::ProtocolInternal),
             self.price_estimator.estimate(&trade_query),
-            native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
+            self.native_price_estimator
+                .estimate_native_price(&parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
-            native_single_estimate(self.native_price_estimator.as_ref(), &parameters.buy_token),
+            self.native_price_estimator
+                .estimate_native_price(&parameters.buy_token),
         )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
