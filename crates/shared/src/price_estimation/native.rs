@@ -63,7 +63,6 @@ impl NativePriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl NativePriceEstimating for NativePriceEstimator {
     fn estimate_native_price<'a>(
         &'a self,

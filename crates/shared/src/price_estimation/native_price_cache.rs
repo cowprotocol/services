@@ -294,7 +294,6 @@ impl CachingNativePriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl NativePriceEstimating for CachingNativePriceEstimator {
     fn estimate_native_price<'a>(
         &'a self,

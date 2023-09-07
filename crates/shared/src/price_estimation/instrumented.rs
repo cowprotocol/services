@@ -30,7 +30,6 @@ impl InstrumentedPriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for InstrumentedPriceEstimator {
     fn estimate<'a>(
         &'a self,
