@@ -33,7 +33,7 @@ use {
         signature::SigningScheme,
         DomainSeparator,
     },
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     shared::{
         db_order_conversions::{
             buy_token_destination_into,
@@ -735,7 +735,7 @@ mod test {
             signature::SigningScheme,
             DomainSeparator,
         },
-        number_conversions::u256_to_big_decimal,
+        number::conversions::u256_to_big_decimal,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,

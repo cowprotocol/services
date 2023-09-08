@@ -9,7 +9,7 @@ use {
     ethcontract::U256,
     lazy_static::lazy_static,
     num::{BigInt, BigRational},
-    number_conversions::{big_int_to_u256, u256_to_big_int},
+    number::conversions::{big_int_to_u256, u256_to_big_int},
     std::{
         convert::TryFrom,
         fmt::{self, Debug, Formatter},

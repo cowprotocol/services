@@ -1,10 +1,6 @@
 use {
-    crate::{
-        auction::AuctionId,
-        bytes_hex::BytesHex,
-        order::OrderUid,
-        u256_decimal::{self, DecimalU256},
-    },
+    crate::{auction::AuctionId, bytes_hex::BytesHex, order::OrderUid},
+    number::u256_decimal::{self, DecimalU256},
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,

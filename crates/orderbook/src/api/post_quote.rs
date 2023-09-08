@@ -78,7 +78,7 @@ mod tests {
         super::*,
         anyhow::anyhow,
         chrono::{TimeZone, Utc},
-        ethcontract::{H160, U256},
+        ethcontract::H160,
         model::{
             app_data::AppDataHash,
             order::{BuyTokenDestination, SellTokenSource},
@@ -92,6 +92,7 @@ mod tests {
                 Validity,
             },
         },
+        number::nonzero::U256 as NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
         shared::{
@@ -124,7 +125,9 @@ mod tests {
                 buy_token: H160([0x03; 20]),
                 receiver: None,
                 side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::AfterFee { value: 1337.into() },
+                    sell_amount: SellAmount::AfterFee {
+                        value: NonZeroU256::try_from(1337).unwrap()
+                    },
                 },
                 validity: Validity::To(0x12345678),
                 app_data: AppDataHash([0x90; 32]).into(),
@@ -161,7 +164,9 @@ mod tests {
                 buy_token: H160([0x03; 20]),
                 receiver: None,
                 side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::BeforeFee { value: 1337.into() },
+                    sell_amount: SellAmount::BeforeFee {
+                        value: NonZeroU256::try_from(1337).unwrap()
+                    },
                 },
                 validity: Validity::For(1000),
                 app_data: AppDataHash([0x90; 32]).into(),
@@ -194,7 +199,7 @@ mod tests {
                 buy_token: H160([0x03; 20]),
                 receiver: Some(H160([0x04; 20])),
                 side: OrderQuoteSide::Buy {
-                    buy_amount_after_fee: U256::from(1337),
+                    buy_amount_after_fee: NonZeroU256::try_from(1337).unwrap(),
                 },
                 validity: Validity::To(0x12345678),
                 app_data: AppDataHash([0x90; 32]).into(),
@@ -220,7 +225,9 @@ mod tests {
                 sell_token: H160([0x02; 20]),
                 buy_token: H160([0x03; 20]),
                 side: OrderQuoteSide::Sell {
-                    sell_amount: SellAmount::AfterFee { value: 1337.into() },
+                    sell_amount: SellAmount::AfterFee {
+                        value: NonZeroU256::try_from(1337).unwrap()
+                    },
                 },
                 ..Default::default()
             }

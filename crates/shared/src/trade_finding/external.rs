@@ -6,7 +6,7 @@ use {
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
-    anyhow::{anyhow, Context},
+    anyhow::anyhow,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
     url::Url,
@@ -42,18 +42,17 @@ impl ExternalTradeFinder {
         let order = dto::Order {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             kind: query.kind,
             deadline,
         };
 
-        let body = serde_json::to_string(&order).context("failed to encode body")?;
         let mut request = self
             .client
-            .post(self.quote_endpoint.clone())
+            .get(self.quote_endpoint.clone())
+            .query(&order)
             .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json")
-            .body(body);
+            .header(header::ACCEPT, "application/json");
 
         if let Some(id) = observe::request_id::get_task_local_storage() {
             request = request.header("X-REQUEST-ID", id);
@@ -153,7 +152,8 @@ impl TradeFinding for ExternalTradeFinder {
 mod dto {
     use {
         ethcontract::{H160, U256},
-        model::{bytes_hex::BytesHex, order::OrderKind, u256_decimal::DecimalU256},
+        model::{bytes_hex::BytesHex, order::OrderKind},
+        number::u256_decimal::DecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };

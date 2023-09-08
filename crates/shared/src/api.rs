@@ -237,10 +237,6 @@ impl IntoWarpReply for PriceEstimationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::ZeroAmount => with_status(
-                error("ZeroAmount", "Please use non-zero amount field"),
-                StatusCode::BAD_REQUEST,
-            ),
             Self::UnsupportedOrderType(order_type) => with_status(
                 error(
                     "UnsupportedOrderType",

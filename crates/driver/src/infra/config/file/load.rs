@@ -18,9 +18,17 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
     let data = fs::read_to_string(path)
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
-    // Not printing detailed error because it could leak private keys.
-    let config: file::Config = toml::de::from_str(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+
+    let config: file::Config = toml::de::from_str(&data).unwrap_or_else(|err| {
+        if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+            panic!("failed to parse TOML config at {path:?}: {err:#?}")
+        } else {
+            panic!(
+                "failed to parse TOML config at: {path:?}. Set TOML_TRACE_ERROR=1 to print \
+                 parsing error but this may leak secrets."
+            )
+        }
+    });
 
     assert_eq!(
         config.chain_id.map(eth::ChainId).unwrap_or(network.chain),

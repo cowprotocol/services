@@ -299,16 +299,13 @@ impl Trade {
                     },
                 }
             }
-            order::Kind::Limit { .. } => {
-                // Warning: calculating executed amounts for limit orders is complex and
-                // confusing. To understand why the calculations work, it is important to note
-                // that the solver doesn't receive limit orders with the same amounts that were
-                // specified by the users when placing the orders. Instead, the limit order sell
-                // amount is reduced by the surplus fee, which is the fee taken
-                // by the network to settle the order. These are referred to as
-                // "synthetic" limit orders. The surplus fees are calculated by the autopilot
-                // when cutting the auction. This is implemented in
-                // [`competition::Order::solver_sell`].
+            order::Kind::Limit => {
+                // Warning: calculating executed amounts for limit orders is confusing. To
+                // understand why the calculations work, it is important to note that the
+                // order execution specified in the solution **does not contain the solver
+                // computed surplus fee**. Therefore, in order to compute the real execution
+                // input/output amounts, we need to add the surplus fee to the final
+                // execution sell amount.
                 //
                 // See also [`order::Kind::Limit`].
                 //
@@ -339,10 +336,6 @@ impl Trade {
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_div(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
-                                // Because of how "synthetic" limit orders are constructed as
-                                // explained above, we need to simply increase the executed sell
-                                // amount by the surplus fee. We know that the user placed an order
-                                // big enough to cover the surplus fee.
                                 .checked_add(surplus_fee.into())
                                 .ok_or(ExecutionError::Overflow)?
                                 .into(),
@@ -351,19 +344,16 @@ impl Trade {
                     },
                     order::Side::Sell => Execution {
                         sell: eth::Asset {
-                            amount: executed.into(),
+                            amount: executed
+                                .0
+                                .checked_add(surplus_fee.into())
+                                .ok_or(ExecutionError::Overflow)?
+                                .into(),
                             token: sell.token,
                         },
                         buy: eth::Asset {
                             amount: executed
                                 .0
-                                // Because of how "synthetic" limit orders are constructed as
-                                // explained above, the solver received the sell amount
-                                // reduced by the surplus fee. That's why we have to reduce the
-                                // executed amount by the surplus fee when calculating the
-                                // executed buy amount.
-                                .checked_sub(surplus_fee.into())
-                                .ok_or(ExecutionError::Overflow)?
                                 .checked_mul(sell_price)
                                 .ok_or(ExecutionError::Overflow)?
                                 .checked_ceil_div(&buy_price)

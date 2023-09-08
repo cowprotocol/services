@@ -94,8 +94,13 @@ fn run() -> Result<()> {
         )?
         .npm(
             "GnosisSafeProxy",
-            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/proxies/GnosisSafeProxy.\
-             sol/GnosisSafeProxy.json",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
+             proxies/GnosisSafeProxy.sol/GnosisSafeProxy.json",
+        )?
+        .npm(
+            "GnosisSafeProxyFactory",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
+             proxies/GnosisSafeProxyFactory.sol/GnosisSafeProxyFactory.json",
         )?
         .manual(
             "HooksTrampoline",

@@ -10,6 +10,7 @@ use {
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
+    number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -231,9 +232,14 @@ pub struct Arguments {
     #[clap(long, env)]
     pub trade_simulator: Option<CodeSimulatorKind>,
 
+    /// Flag to enable saving Tenderly simulations in the dashboard for
+    /// successful trade simulations.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub tenderly_save_successful_trade_simulations: bool,
+
     /// Flag to enable saving Tenderly simulations in the dashboard for failed
     /// trade simulations. This helps debugging reverted quote simulations.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub tenderly_save_failed_trade_simulations: bool,
 
     /// Controls if we try to predict the winning price estimator for a given
@@ -308,6 +314,11 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
+            "tenderly_save_successful_trade_simulations: {}",
+            self.tenderly_save_successful_trade_simulations
+        )?;
+        writeln!(
+            f,
             "tenderly_save_failed_trade_simulations: {}",
             self.tenderly_save_failed_trade_simulations
         )?;
@@ -334,9 +345,6 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
-    #[error("Zero Amount")]
-    ZeroAmount,
-
     #[error("Unsupported Order Type")]
     UnsupportedOrderType(String),
 
@@ -358,7 +366,6 @@ impl Clone for PriceEstimationError {
                 reason: reason.clone(),
             },
             Self::NoLiquidity => Self::NoLiquidity,
-            Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType(order_type) => {
                 Self::UnsupportedOrderType(order_type.clone())
             }
@@ -375,7 +382,7 @@ pub struct Query {
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
-    pub in_amount: U256,
+    pub in_amount: NonZeroU256,
     pub kind: OrderKind,
     /// If this is `Some` the quotes are expected to pass simulations using the
     /// contained parameters.
@@ -413,8 +420,8 @@ impl Estimate {
     /// Returns (sell_amount, buy_amount).
     pub fn amounts(&self, query: &Query) -> (U256, U256) {
         match query.kind {
-            OrderKind::Buy => (self.out_amount, query.in_amount),
-            OrderKind::Sell => (query.in_amount, self.out_amount),
+            OrderKind::Buy => (self.out_amount, query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), self.out_amount),
         }
     }
 

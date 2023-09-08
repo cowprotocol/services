@@ -27,7 +27,7 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::H160,
     shared::{
         db_order_conversions::{

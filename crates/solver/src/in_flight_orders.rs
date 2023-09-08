@@ -5,7 +5,7 @@ use {
         auction::Auction,
         order::{Order, OrderKind, OrderUid},
     },
-    number_conversions::u256_to_big_uint,
+    number::conversions::u256_to_big_uint,
     std::collections::{BTreeMap, HashMap, HashSet},
 };
 

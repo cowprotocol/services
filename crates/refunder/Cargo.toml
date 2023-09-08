@@ -18,7 +18,7 @@ futures = {workspace = true}
 gas-estimation = { workspace = true }
 lazy_static = { workspace = true }
 model = { path = "../model" }
-number-conversions = { path = "../number-conversions" }
+number = { path = "../number" }
 observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }

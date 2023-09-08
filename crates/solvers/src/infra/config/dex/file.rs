@@ -1,11 +1,14 @@
 //! Configuration parameters that get shared across all dex solvers.
 
 use {
-    crate::domain::{dex::slippage, eth},
+    crate::{
+        domain::{dex::slippage, eth},
+        infra::config::unwrap_or_log,
+    },
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::path::Path,
+    std::{fmt::Debug, num::NonZeroUsize, path::Path},
     tokio::fs,
 };
 
@@ -22,6 +25,10 @@ struct Config {
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     absolute_slippage: Option<eth::U256>,
 
+    /// The number of concurrent requests to make to the DEX aggregator API.
+    #[serde(default = "default_concurrent_requests")]
+    concurrent_requests: NonZeroUsize,
+
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
@@ -33,6 +40,10 @@ struct Config {
 
 fn default_relative_slippage() -> BigDecimal {
     BigDecimal::new(1.into(), 2) // 1%
+}
+
+fn default_concurrent_requests() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
 }
 
 fn default_smallest_partial_fill() -> eth::U256 {
@@ -50,13 +61,9 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
     // Not printing detailed error because it could potentially leak secrets.
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
 
-    let dex: T = config
-        .dex
-        .try_into()
-        .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
+    let dex: T = unwrap_or_log(config.dex.try_into(), &path);
 
     let config = super::Config {
         slippage: slippage::Limits::new(
@@ -64,6 +71,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             config.absolute_slippage.map(eth::Ether),
         )
         .expect("invalid slippage limits"),
+        concurrent_requests: config.concurrent_requests,
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
     };
 
