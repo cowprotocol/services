@@ -229,17 +229,7 @@ where
     D: Deserializer<'de>,
 {
     let value: Value = Deserialize::deserialize(deserializer)?;
-    match &value {
-        Value::Object(map)
-            if !map.contains_key("score")
-                && !map.contains_key("scoreDiscount")
-                && !map.contains_key("success_probability")
-                && !map.contains_key("gas_amount") =>
-        {
-            Ok(Score::default())
-        }
-        _ => serde_json::from_value(value).map_err(serde::de::Error::custom),
-    }
+    Ok(serde_json::from_value(value).unwrap_or(Score::default()))
 }
 
 impl Score {
