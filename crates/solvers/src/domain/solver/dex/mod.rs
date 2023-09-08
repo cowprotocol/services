@@ -34,7 +34,6 @@ impl Dex {
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         // TODO:
-        // * order prioritization
         // * skip liquidity orders
         // * concurrency
 
@@ -51,11 +50,7 @@ impl Dex {
                 }
             }
         };
-        let deadline = auction
-            .deadline
-            .signed_duration_since(chrono::offset::Utc::now())
-            .to_std()
-            .unwrap_or_default();
+        let deadline = auction.deadline.remaining().unwrap_or_default();
         if tokio::time::timeout(deadline, solve_orders).await.is_err() {
             tracing::debug!("reached deadline; stopping to solve");
         }
