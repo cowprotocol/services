@@ -73,7 +73,7 @@ impl Legacy {
 
     pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
         let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
-        let solving_time = (auction.deadline - chrono::Utc::now()).to_std()?;
+        let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
     }

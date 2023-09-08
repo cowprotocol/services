@@ -50,11 +50,12 @@ impl Baseline {
         auction
             .orders
             .iter()
+            .take_while(|_| auction.deadline.remaining().is_some())
             .filter_map(|order| {
                 let sell_token = auction.tokens.reference_price(&order.sell.token);
                 self.requests_for_order(UserOrder::new(order)?)
                     .find_map(|request| {
-                        tracing::trace!(?request, "finding route");
+                        tracing::trace!(order =% order.uid, ?request, "finding route");
 
                         let route = boundary_solver.route(request, self.max_hops)?;
                         let interactions = route
