@@ -34,13 +34,12 @@ impl Dex {
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         // TODO:
-        // * skip liquidity orders
         // * concurrency
 
         let mut solutions = Vec::new();
         let solve_orders = async {
-            for order in auction.orders.iter().cloned() {
-                let span = tracing::info_span!("solve", order = %order.uid);
+            for order in auction.orders.iter().filter_map(order::UserOrder::new) {
+                let span = tracing::info_span!("solve", order = %order.get().uid);
                 if let Some(solution) = self
                     .solve_order(order, &auction.tokens, auction.gas_price)
                     .instrument(span)
@@ -62,12 +61,13 @@ impl Dex {
 
     async fn solve_order(
         &self,
-        order: order::Order,
+        order: order::UserOrder<'_>,
         tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
     ) -> Option<solution::Solution> {
+        let order = order.get();
         let swap = {
-            let order = self.fills.dex_order(&order, tokens)?;
+            let order = self.fills.dex_order(order, tokens)?;
             let slippage = self.slippage.relative(&order.amount(), tokens);
             self.dex.swap(&order, &slippage, tokens, gas_price).await
         };
@@ -96,7 +96,7 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let Some(solution) = swap.into_solution(order, gas_price, sell) else {
+        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell) else {
             tracing::debug!("no solution for swap");
             return None;
         };
