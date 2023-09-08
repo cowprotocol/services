@@ -13,9 +13,7 @@ pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
-    // Solvers are not obligated to provide score. If they don't provide it, protocol will
-    // calculate it.
-    pub score: Option<Score>,
+    pub score: Score,
 }
 
 /// A solution for a settling a single order.
@@ -114,7 +112,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
-            score: None,
+            score: Default::default(),
         })
     }
 }
@@ -308,4 +306,13 @@ pub enum Score {
         success_probability: f64,
         gas_amount: Option<eth::Gas>,
     },
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted {
+            success_probability: 1.0,
+            gas_amount: None,
+        }
+    }
 }

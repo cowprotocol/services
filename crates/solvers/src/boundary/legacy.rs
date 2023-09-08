@@ -533,7 +533,7 @@ fn to_domain_solution(
             .into_iter()
             .map(|(interaction, _)| interaction)
             .collect(),
-        score: model.score.map(|score| match score {
+        score: match model.score {
             Score::Solver { score } => solution::Score::Solver(score),
             Score::Discount { score_discount } => solution::Score::Discount(score_discount),
             Score::RiskAdjusted {
@@ -543,7 +543,7 @@ fn to_domain_solution(
                 success_probability,
                 gas_amount: gas_amount.map(eth::Gas),
             },
-        }),
+        },
     })
 }
 

@@ -37,7 +37,7 @@ pub struct Solution {
     prices: HashMap<eth::TokenAddress, eth::U256>,
     interactions: Vec<Interaction>,
     solver: Solver,
-    score: Option<Score>,
+    score: Score,
     weth: eth::WethAddress,
 }
 
@@ -48,7 +48,7 @@ impl Solution {
         prices: HashMap<eth::TokenAddress, eth::U256>,
         interactions: Vec<Interaction>,
         solver: Solver,
-        score: Option<Score>,
+        score: Score,
         weth: eth::WethAddress,
     ) -> Result<Self, InvalidClearingPrices> {
         let solution = Self {
@@ -92,8 +92,8 @@ impl Solution {
         &self.solver
     }
 
-    pub fn score(&self) -> Option<&Score> {
-        self.score.as_ref()
+    pub fn score(&self) -> &Score {
+        &self.score
     }
 
     /// Approval interactions necessary for encoding the settlement.

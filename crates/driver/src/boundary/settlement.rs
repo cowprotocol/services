@@ -155,7 +155,7 @@ impl Settlement {
             );
         }
 
-        settlement.score = solution.score().map(|score| match score {
+        settlement.score = match solution.score() {
             competition::Score::Solver(score) => {
                 shared::http_solver::model::Score::Solver { score: *score }
             }
@@ -171,7 +171,7 @@ impl Settlement {
                 success_probability: *success_probability,
                 gas_amount: gas_amount.map(Into::into),
             },
-        });
+        };
 
         Ok(Self {
             inner: settlement,
@@ -230,7 +230,7 @@ impl Settlement {
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
         let inputs = {
             let gas_amount = match self.inner.score {
-                Some(shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. }) => {
+                shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas.into())
                 }
                 _ => gas.into(),
@@ -245,24 +245,18 @@ impl Settlement {
 
         let objective_value = inputs.objective_value();
         let score = match &self.inner.score {
-            Some(score) => match score {
-                shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
-                shared::http_solver::model::Score::Discount { score_discount } => {
-                    Score::Discounted(
-                        eth::U256::from_big_rational(&objective_value)?
-                            .saturating_sub(*score_discount),
-                    )
-                }
-                shared::http_solver::model::Score::RiskAdjusted {
-                    success_probability,
-                    ..
-                } => calculator.compute_score(
-                    &inputs.objective_value(),
-                    &inputs.gas_cost(),
-                    *success_probability,
-                )?,
-            },
-            None => Score::Protocol(eth::U256::from_big_rational(&objective_value)?),
+            shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
+            shared::http_solver::model::Score::Discount { score_discount } => Score::Discounted(
+                eth::U256::from_big_rational(&objective_value)?.saturating_sub(*score_discount),
+            ),
+            shared::http_solver::model::Score::RiskAdjusted {
+                success_probability,
+                ..
+            } => calculator.compute_score(
+                &inputs.objective_value(),
+                &inputs.gas_cost(),
+                *success_probability,
+            )?,
         };
         Ok(score.score().into())
     }

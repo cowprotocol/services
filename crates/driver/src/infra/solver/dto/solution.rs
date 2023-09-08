@@ -196,7 +196,7 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    solution.score.map(|score| match score {
+                    match solution.score {
                         Score::Solver(score) => competition::solution::Score::Solver(score),
                         Score::Discount(score) => competition::solution::Score::Discount(score),
                         Score::RiskAdjusted {
@@ -206,7 +206,7 @@ impl Solutions {
                             success_probability,
                             gas_amount,
                         },
-                    }),
+                    },
                     weth,
                 )
                 .map_err(|competition::solution::InvalidClearingPrices| {
@@ -233,7 +233,7 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
-    score: Option<Score>,
+    score: Score,
 }
 
 #[derive(Debug, Deserialize)]

@@ -16,6 +16,7 @@ use {
     },
     clap::Parser,
     futures::future::join_all,
+    solver::settlement_rater::ScoreCalculator,
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
 };
@@ -63,6 +64,7 @@ pub async fn run(
         eth,
         addr: args.addr,
         addr_sender,
+        score_calculator: ScoreCalculator::new(Default::default(), vec![], true),
     }
     .serve(async {
         let _ = shutdown_receiver.await;

@@ -133,17 +133,17 @@ impl Solutions {
                             }
                         })
                         .collect(),
-                    score: solution.score.as_ref().map(|score| match score {
-                        solution::Score::Solver(score) => Score::Solver(*score),
-                        solution::Score::Discount(discount) => Score::Discount(*discount),
+                    score: match solution.score {
+                        solution::Score::Solver(score) => Score::Solver(score),
+                        solution::Score::Discount(discount) => Score::Discount(discount),
                         solution::Score::RiskAdjusted {
                             success_probability,
                             gas_amount,
                         } => Score::RiskAdjusted {
-                            success_probability: *success_probability,
+                            success_probability,
                             gas_amount: gas_amount.map(|gas_amount| gas_amount.0),
                         },
-                    }),
+                    },
                 })
                 .collect(),
         }
@@ -165,7 +165,7 @@ struct Solution {
     prices: HashMap<H160, U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
-    score: Option<Score>,
+    score: Score,
 }
 
 #[derive(Debug, Serialize)]

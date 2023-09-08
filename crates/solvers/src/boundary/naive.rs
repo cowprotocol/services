@@ -143,7 +143,7 @@ pub fn solve(
                 })
             })
             .collect(),
-        score: None,
+        score: Default::default(),
     })
 }
 
