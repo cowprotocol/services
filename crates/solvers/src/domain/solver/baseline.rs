@@ -17,6 +17,7 @@ use {
         },
     },
     ethereum_types::U256,
+    rayon::prelude::*,
     std::{cmp, collections::HashSet},
 };
 
@@ -49,8 +50,8 @@ impl Baseline {
 
         auction
             .orders
-            .iter()
-            .take_while(|_| auction.deadline.remaining().is_some())
+            .par_iter()
+            .take_any_while(|_| auction.deadline.remaining().is_some())
             .filter_map(|order| {
                 let sell_token = auction.tokens.reference_price(&order.sell.token);
                 self.requests_for_order(UserOrder::new(order)?)

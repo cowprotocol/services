@@ -1,15 +1,17 @@
 //! A simple solver that matches orders directly with swaps from the external
 //! DEX and DEX aggregator APIs.
 
-mod fills;
-
 use {
     crate::{
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
+    futures::future,
+    std::num::NonZeroUsize,
     tracing::Instrument,
 };
+
+mod fills;
 
 pub struct Dex {
     /// The DEX API client.
@@ -17,6 +19,9 @@ pub struct Dex {
 
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
+
+    /// The number of concurrent requests to make.
+    concurrent_requests: NonZeroUsize,
 
     /// Helps to manage the strategy to fill orders (especially partially
     /// fillable orders).
@@ -28,27 +33,35 @@ impl Dex {
         Self {
             dex,
             slippage: config.slippage,
+            concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
         }
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        // TODO:
-        // * concurrency
-
         let mut solutions = Vec::new();
         let solve_orders = async {
-            for order in auction.orders.iter().filter_map(order::UserOrder::new) {
-                let span = tracing::info_span!("solve", order = %order.get().uid);
-                if let Some(solution) = self
-                    .solve_order(order, &auction.tokens, auction.gas_price)
-                    .instrument(span)
-                    .await
-                {
-                    solutions.push(solution);
-                }
+            // Collect user orders into a vector for chunking. Note that we
+            // cannot use [`itertools::Itertools::chunks`] because it is not
+            // [`Send`] (which we require for [`tokio`] and [`axum`]).
+            let orders = auction
+                .orders
+                .iter()
+                .filter_map(order::UserOrder::new)
+                .collect::<Vec<_>>();
+
+            for chunk in orders.chunks(self.concurrent_requests.get()) {
+                let chunk_solutions = future::join_all(chunk.iter().map(|&order| {
+                    let span = tracing::info_span!("solve", order = %order.get().uid);
+                    self.solve_order(order, &auction.tokens, auction.gas_price)
+                        .instrument(span)
+                }))
+                .await;
+
+                solutions.extend(chunk_solutions.into_iter().flatten())
             }
         };
+
         let deadline = auction.deadline.remaining().unwrap_or_default();
         if tokio::time::timeout(deadline, solve_orders).await.is_err() {
             tracing::debug!("reached deadline; stopping to solve");
