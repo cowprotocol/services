@@ -1,15 +1,17 @@
 //! A simple solver that matches orders directly with swaps from the external
 //! DEX and DEX aggregator APIs.
 
-mod fills;
-
 use {
     crate::{
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
+    futures::{future, stream, StreamExt},
+    std::num::NonZeroUsize,
     tracing::Instrument,
 };
+
+mod fills;
 
 pub struct Dex {
     /// The DEX API client.
@@ -17,6 +19,9 @@ pub struct Dex {
 
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
+
+    /// The number of concurrent requests to make.
+    concurrent_requests: NonZeroUsize,
 
     /// Helps to manage the strategy to fill orders (especially partially
     /// fillable orders).
@@ -28,27 +33,20 @@ impl Dex {
         Self {
             dex,
             slippage: config.slippage,
+            concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
         }
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        // TODO:
-        // * concurrency
-
         let mut solutions = Vec::new();
         let solve_orders = async {
-            for order in auction.orders.iter().filter_map(order::UserOrder::new) {
-                let span = tracing::info_span!("solve", order = %order.get().uid);
-                if let Some(solution) = self
-                    .solve_order(order, &auction.tokens, auction.gas_price)
-                    .instrument(span)
-                    .await
-                {
-                    solutions.push(solution);
-                }
+            let mut stream = self.solution_stream(&auction);
+            while let Some(solution) = stream.next().await {
+                solutions.push(solution);
             }
         };
+
         let deadline = auction.deadline.remaining().unwrap_or_default();
         if tokio::time::timeout(deadline, solve_orders).await.is_err() {
             tracing::debug!("reached deadline; stopping to solve");
@@ -57,6 +55,20 @@ impl Dex {
         self.fills.collect_garbage();
 
         solutions
+    }
+
+    fn solution_stream<'a>(
+        &'a self,
+        auction: &'a auction::Auction,
+    ) -> impl stream::Stream<Item = solution::Solution> + 'a {
+        stream::iter(auction.orders.iter().filter_map(order::UserOrder::new))
+            .map(|order| {
+                let span = tracing::info_span!("solve", order = %order.get().uid);
+                self.solve_order(order, &auction.tokens, auction.gas_price)
+                    .instrument(span)
+            })
+            .buffer_unordered(self.concurrent_requests.get())
+            .filter_map(future::ready)
     }
 
     async fn solve_order(

@@ -94,7 +94,7 @@ pub enum Class {
 /// the other hand, liquidity orders are CoW Protocol orders, meaning that they
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct UserOrder<'a>(&'a Order);
 
 impl<'a> UserOrder<'a> {
