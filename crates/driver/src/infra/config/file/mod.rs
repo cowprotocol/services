@@ -47,6 +47,9 @@ struct Config {
 
     #[serde(default)]
     liquidity: LiquidityConfig,
+
+    #[serde(default = "default_score_cap")]
+    score_cap: eth::U256,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -139,6 +142,10 @@ fn default_max_additional_flashbots_tip() -> f64 {
 
 fn default_soft_cancellations_flag() -> bool {
     false
+}
+
+fn default_score_cap() -> eth::U256 {
+    10_000_000_000_000_000u128.into() // 0.01 ETH
 }
 
 #[serde_as]

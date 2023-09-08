@@ -279,47 +279,47 @@ impl SettlementRating for SettlementRater {
 /// Contains a subset of the configuration options for the submission of a
 /// settlement, needed for the score calculation.
 #[derive(Debug, Clone)]
-pub struct SubmissionConfig {
-    pub strategies: Vec<TransactionStrategyArg>,
+pub struct SubmissionStrategy {
+    pub strategy: TransactionStrategyArg,
     pub disable_high_risk_public_mempool_transactions: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    submission_config: SubmissionConfig,
+    submission_strategies: Vec<SubmissionStrategy>,
 }
 
 impl ScoreCalculator {
-    pub fn new(
-        score_cap: BigRational,
-        strategies: Vec<TransactionStrategyArg>,
-        disable_high_risk_public_mempool_transactions: bool,
-    ) -> Self {
+    pub fn new(score_cap: BigRational, strategies: Vec<(TransactionStrategyArg, bool)>) -> Self {
         Self {
             score_cap,
-            submission_config: SubmissionConfig {
-                strategies,
-                disable_high_risk_public_mempool_transactions,
-            },
+            submission_strategies: strategies
+                .into_iter()
+                .map(
+                    |(strategy, disable_high_risk_public_mempool_transactions)| {
+                        SubmissionStrategy {
+                            strategy,
+                            disable_high_risk_public_mempool_transactions,
+                        }
+                    },
+                )
+                .collect(),
         }
     }
 
     pub fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
-        if self
-            .submission_config
-            .strategies
-            .contains(&TransactionStrategyArg::PublicMempool)
-            && !self
-                .submission_config
-                .disable_high_risk_public_mempool_transactions
-        {
-            // The cost in case of a revert can deviate non-deterministically from the cost
-            // in case of success and it is often significantly smaller. Thus, we go with
-            // the full cost as a safe assumption.
-            gas_cost.clone()
-        } else {
-            zero()
+        match self.submission_strategies.iter().find(|s| {
+            s.strategy == TransactionStrategyArg::PublicMempool
+                && !s.disable_high_risk_public_mempool_transactions
+        }) {
+            Some(_) => {
+                // The cost in case of a revert can deviate non-deterministically from the cost
+                // in case of success and it is often significantly smaller. Thus, we go with
+                // the full cost as a safe assumption.
+                gas_cost.clone()
+            }
+            None => zero(),
         }
     }
 
@@ -510,10 +510,9 @@ mod tests {
         let score_calculator = super::ScoreCalculator::new(
             score_cap,
             vec![
-                TransactionStrategyArg::Flashbots,
-                TransactionStrategyArg::PublicMempool,
+                (TransactionStrategyArg::Flashbots, true),
+                (TransactionStrategyArg::PublicMempool, true),
             ],
-            true,
         );
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
