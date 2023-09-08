@@ -20,13 +20,8 @@ pub async fn run(
 
     let solver = match args.command {
         cli::Command::Baseline { config } => {
-            let baseline = config::baseline::file::load(&config).await;
-            Solver::Baseline(solver::Baseline {
-                weth: baseline.weth,
-                base_tokens: baseline.base_tokens.into_iter().collect(),
-                max_hops: baseline.max_hops,
-                max_partial_attempts: baseline.max_partial_attempts,
-            })
+            let config = config::baseline::file::load(&config).await;
+            Solver::Baseline(solver::Baseline::new(config))
         }
         cli::Command::Naive => Solver::Naive(solver::Naive),
         cli::Command::Legacy { config } => {
