@@ -15,17 +15,22 @@ use {
             order::{self, UserOrder},
             solution,
         },
+        infra::config,
     },
     ethereum_types::U256,
-    std::{cmp, collections::HashSet},
+    std::{cmp, collections::HashSet, sync::Arc},
 };
 
-pub struct Baseline {
-    pub weth: eth::WethAddress,
+pub struct Baseline(Arc<Inner>);
+
+struct Inner {
+    weth: eth::WethAddress,
+
     /// Set of tokens to additionally consider as intermediary hops when
     /// path-finding. This allows paths of the kind `TOKEN1 -> WETH -> TOKEN2`
     /// to be considered.
-    pub base_tokens: HashSet<eth::TokenAddress>,
+    base_tokens: HashSet<eth::TokenAddress>,
+
     /// Maximum number of hops that can be considered in a trading path. A hop
     /// is an intermediary token within a trading path. For example:
     /// - A value of 0 indicates that only a direct trade is allowed: `A -> B`
@@ -33,17 +38,41 @@ pub struct Baseline {
     ///   within a trading path: `A -> B -> C`
     /// - A value of 2 indicates: `A -> B -> C -> D`
     /// - etc.
-    pub max_hops: usize,
+    max_hops: usize,
+
     /// The maximum number of attempts to solve a partially fillable order.
     /// Basically we continuously halve the amount to execute until we find a
     /// valid solution or exceed this count.
-    pub max_partial_attempts: usize,
+    max_partial_attempts: usize,
 }
 
 impl Baseline {
+    /// Creates a new baseline solver for the specified configuration.
+    pub fn new(config: config::baseline::Config) -> Self {
+        Self(Arc::new(Inner {
+            weth: config.weth,
+            base_tokens: config.base_tokens.into_iter().collect(),
+            max_hops: config.max_hops,
+            max_partial_attempts: config.max_partial_attempts,
+        }))
+    }
+
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
-    pub fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+    pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        // Make sure to push the CPU-heavy code to a separate thread in order to
+        // not lock up the [`tokio`] runtime and cause it to slow down handling
+        // the real async things. For larger settlements, this can block in the
+        // 100s of ms.
+        let inner = self.0.clone();
+        tokio::task::spawn_blocking(move || inner.solve(auction))
+            .await
+            .expect("baseline solver unexpected panic")
+    }
+}
+
+impl Inner {
+    fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
