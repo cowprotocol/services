@@ -27,7 +27,7 @@ struct Config {
 
     /// The number of concurrent requests to make to the DEX aggregator API.
     #[serde(default = "default_concurrent_requests")]
-    concurrent_requests: usize,
+    concurrent_requests: NonZeroUsize,
 
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
@@ -42,8 +42,8 @@ fn default_relative_slippage() -> BigDecimal {
     BigDecimal::new(1.into(), 2) // 1%
 }
 
-fn default_concurrent_requests() -> usize {
-    1
+fn default_concurrent_requests() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
 }
 
 fn default_smallest_partial_fill() -> eth::U256 {
@@ -71,8 +71,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             config.absolute_slippage.map(eth::Ether),
         )
         .expect("invalid slippage limits"),
-        concurrent_requests: NonZeroUsize::new(config.concurrent_requests)
-            .expect("invalid concurrent requests values"),
+        concurrent_requests: config.concurrent_requests,
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
     };
 

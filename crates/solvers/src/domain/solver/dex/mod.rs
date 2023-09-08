@@ -6,7 +6,7 @@ use {
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
-    futures::future,
+    futures::{future, stream, StreamExt},
     std::num::NonZeroUsize,
     tracing::Instrument,
 };
@@ -41,24 +41,9 @@ impl Dex {
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         let mut solutions = Vec::new();
         let solve_orders = async {
-            // Collect user orders into a vector for chunking. Note that we
-            // cannot use [`itertools::Itertools::chunks`] because it is not
-            // [`Send`] (which we require for [`tokio`] and [`axum`]).
-            let orders = auction
-                .orders
-                .iter()
-                .filter_map(order::UserOrder::new)
-                .collect::<Vec<_>>();
-
-            for chunk in orders.chunks(self.concurrent_requests.get()) {
-                let chunk_solutions = future::join_all(chunk.iter().map(|&order| {
-                    let span = tracing::info_span!("solve", order = %order.get().uid);
-                    self.solve_order(order, &auction.tokens, auction.gas_price)
-                        .instrument(span)
-                }))
-                .await;
-
-                solutions.extend(chunk_solutions.into_iter().flatten())
+            let mut stream = self.solution_stream(&auction);
+            while let Some(solution) = stream.next().await {
+                solutions.push(solution);
             }
         };
 
@@ -70,6 +55,20 @@ impl Dex {
         self.fills.collect_garbage();
 
         solutions
+    }
+
+    fn solution_stream<'a>(
+        &'a self,
+        auction: &'a auction::Auction,
+    ) -> impl stream::Stream<Item = solution::Solution> + 'a {
+        stream::iter(auction.orders.iter().filter_map(order::UserOrder::new))
+            .map(|order| {
+                let span = tracing::info_span!("solve", order = %order.get().uid);
+                self.solve_order(order, &auction.tokens, auction.gas_price)
+                    .instrument(span)
+            })
+            .buffer_unordered(self.concurrent_requests.get())
+            .filter_map(future::ready)
     }
 
     async fn solve_order(
