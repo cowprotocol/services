@@ -14,7 +14,8 @@ use {
     num::BigRational,
     number::u256_decimal::{self, DecimalU256},
     primitive_types::{H256, U256},
-    serde::{Deserialize, Serialize},
+    serde::{Deserialize, Deserializer, Serialize},
+    serde_json::Value,
     serde_with::serde_as,
     std::collections::{BTreeMap, BTreeSet, HashMap},
     web3::types::AccessList,
@@ -214,6 +215,33 @@ pub enum Score {
     },
 }
 
+impl Default for Score {
+    fn default() -> Self {
+        Score::RiskAdjusted {
+            success_probability: 1.0,
+            gas_amount: None,
+        }
+    }
+}
+
+fn deserialize_optional_score<'de, D>(deserializer: D) -> Result<Score, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: Value = Deserialize::deserialize(deserializer)?;
+    match &value {
+        Value::Object(map)
+            if !map.contains_key("score")
+                && !map.contains_key("scoreDiscount")
+                && !map.contains_key("success_probability")
+                && !map.contains_key("gas_amount") =>
+        {
+            Ok(Score::default())
+        }
+        _ => serde_json::from_value(value).map_err(serde::de::Error::custom),
+    }
+}
+
 impl Score {
     // Returns a new merged score, if possible. Currently only supports merging
     // scores of same variant.
@@ -268,11 +296,8 @@ pub struct SettledBatchAuctionModel {
     pub approvals: Vec<ApprovalModel>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
-    #[serde(default)]
-    pub submitter: SubmissionPreference,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(flatten)]
-    pub score: Option<Score>,
+    #[serde(flatten, deserialize_with = "deserialize_optional_score")]
+    pub score: Score,
     pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
@@ -520,15 +545,6 @@ pub enum InternalizationStrategy {
     EncodeAllInteractions,
     #[serde(rename = "Enabled")]
     SkipInternalizableInteraction,
-}
-
-/// Searchers can override submission strategy of the protocol
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub enum SubmissionPreference {
-    #[default]
-    ProtocolDefault,
-    Flashbots,
-    PublicMempool,
 }
 
 #[cfg(test)]
@@ -937,9 +953,9 @@ mod tests {
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(
             deserialized.score,
-            Some(Score::Solver {
+            Score::Solver {
                 score: 20_000_000_000_000_000u128.into()
-            })
+            }
         );
     }
 
@@ -958,9 +974,9 @@ mod tests {
         let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
         assert_eq!(
             deserialized.score,
-            Some(Score::Discount {
+            Score::Discount {
                 score_discount: 1337.into()
-            })
+            }
         );
     }
 
@@ -981,10 +997,10 @@ mod tests {
             serde_json::from_str::<SettledBatchAuctionModel>(solution_with_gas)
                 .unwrap()
                 .score,
-            Some(Score::RiskAdjusted {
+            Score::RiskAdjusted {
                 success_probability: 0.9,
                 gas_amount: Some(4269.into())
-            })
+            }
         );
 
         let solution_without_gas = r#"
@@ -1001,10 +1017,10 @@ mod tests {
             serde_json::from_str::<SettledBatchAuctionModel>(solution_without_gas)
                 .unwrap()
                 .score,
-            Some(Score::RiskAdjusted {
+            Score::RiskAdjusted {
                 success_probability: 0.9,
                 gas_amount: None
-            })
+            }
         );
     }
 
@@ -1023,25 +1039,6 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
-    }
-
-    #[test]
-    fn decode_submitter_flashbots() {
-        let solution = r#"
-            {
-                "tokens": {},
-                "orders": {},
-                "metadata": {
-                    "environment": null
-                },
-                "ref_token": null,
-                "prices": {},
-                "uniswaps": {},
-                "submitter": "Flashbots"
-            }
-        "#;
-        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(deserialized.submitter, SubmissionPreference::Flashbots);
     }
 
     #[test]
