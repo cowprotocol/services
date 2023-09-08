@@ -151,7 +151,7 @@ struct IntermediateSettlement<'a> {
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
     slippage: SlippageContext<'a>,
-    score: Option<Score>,
+    score: Score,
     // Causes either an error or a fee of 0 whenever a fee is expected but none was provided.
     enforce_correct_fees: bool,
 }
