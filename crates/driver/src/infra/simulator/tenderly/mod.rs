@@ -89,7 +89,7 @@ impl Tenderly {
             .error_for_status()?
             .json()
             .await?;
-        Ok(res.into())
+        res.into()
     }
 }
 
@@ -107,4 +107,20 @@ pub(super) enum GenerateAccessList {
 
 #[derive(Debug, Error)]
 #[error("tenderly error")]
-pub struct Error(#[from] reqwest::Error);
+pub enum Error {
+    Http(#[from] reqwest::Error),
+    Revert,
+}
+
+impl From<dto::Response> for Result<Simulation, Error> {
+    fn from(res: dto::Response) -> Self {
+        if res.transaction.status {
+            Ok(Simulation {
+                gas: res.transaction.gas_used.into(),
+                access_list: res.generated_access_list.unwrap_or_default().into(),
+            })
+        } else {
+            Err(Error::Revert)
+        }
+    }
+}

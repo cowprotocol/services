@@ -25,22 +25,14 @@ pub struct Request {
 
 #[derive(Debug, Deserialize)]
 pub struct Response {
-    transaction: Transaction,
-    generated_access_list: Option<AccessList>,
-}
-
-impl From<Response> for super::Simulation {
-    fn from(res: Response) -> Self {
-        Self {
-            gas: res.transaction.gas_used.into(),
-            access_list: res.generated_access_list.unwrap_or_default().into(),
-        }
-    }
+    pub transaction: Transaction,
+    pub generated_access_list: Option<AccessList>,
 }
 
 #[derive(Debug, Deserialize)]
-struct Transaction {
-    gas_used: u64,
+pub struct Transaction {
+    pub status: bool,
+    pub gas_used: u64,
 }
 
 /// Tenderly requires access lists to be serialized with `snake_case` instead
