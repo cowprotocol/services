@@ -43,7 +43,7 @@ impl Sor {
         gas_price: auction::GasPrice,
     ) -> Result<dex::Swap, Error> {
         let query = dto::Query::from_domain(order, gas_price, self.settlement);
-        tracing::error!(?query);
+        tracing::trace!(?query);
         let quote = {
             // Set up a tracing span to make debugging of API requests easier.
             // Historically, debugging API requests to external DEXs was a bit
@@ -103,7 +103,7 @@ impl Sor {
             .error_for_status()?
             .text()
             .await?;
-        tracing::error!(%response, "quoted");
+        tracing::trace!(%response, "quoted");
         let quote = serde_json::from_str(&response)?;
 
         Ok(quote)
