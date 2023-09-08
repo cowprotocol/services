@@ -54,7 +54,6 @@ use {
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     pub solver: eth::Address,
-    //risk: solution::Risk,
 }
 
 impl Settlement {
@@ -215,7 +214,7 @@ impl Settlement {
         auction: &competition::Auction,
         gas: eth::Gas,
         calculator: &ScoreCalculator,
-    ) -> Result<competition::solution::Score> {
+    ) -> Result<competition::solution::RankingScore> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
@@ -250,56 +249,28 @@ impl Settlement {
                 shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
                 shared::http_solver::model::Score::Discount { score_discount } => {
                     Score::Discounted(
-                        big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
+                        eth::U256::from_big_rational(&objective_value)?
+                            .saturating_sub(*score_discount),
                     )
                 }
                 shared::http_solver::model::Score::RiskAdjusted {
                     success_probability,
                     ..
-                } => self.score_calculator.compute_score(
+                } => calculator.compute_score(
                     &inputs.objective_value(),
                     &inputs.gas_cost(),
                     *success_probability,
                 )?,
             },
-            None => Score::Protocol(big_rational_to_u256(&objective_value)?),
+            None => Score::Protocol(eth::U256::from_big_rational(&objective_value)?),
         };
-
-        // let inputs = solver::objective_value::Inputs::from_settlement(
-        //     &self.inner,
-        //     &prices,
-        //     gas_price,
-        //     &gas.into(),
-        // );
-        // let score = eth::U256::from_big_rational(&inputs.objective_value())?;
-        // let score = match self.inner.score {
-        //     Some(score) => match score {
-
-        //     }
-        //     None =>
-        // Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
-        // }
-
-        // let score = match self.inner.score {
-        //     Some(score) => {
-        //         calculator.compute_score(&inputs.objective_value(),
-        // &inputs.gas_cost(), 100.)?         //todo success probability
-        //     }
-        //     None =>
-        // Score::Protocol(eth::U256::from_big_rational(&inputs.objective_value())?),
-        // }
-        // .score();
-        Ok(score.into())
-        //let objective_value =
-        // eth::U256::from_big_rational(&inputs.objective_value())?;
-        // Ok((objective_value - self.risk.0).into())
+        Ok(score.score().into())
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
         self.inner.merge(other.inner).map(|inner| Self {
             inner,
             solver: self.solver,
-            risk: self.risk.merge(other.risk),
         })
     }
 }

@@ -1,5 +1,5 @@
 use {
-    self::solution::settlement,
+    self::solution::{settlement, RankingScore},
     super::Mempools,
     crate::{
         domain::{competition::solution::Settlement, liquidity},
@@ -145,7 +145,7 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.score(&self.eth, auction, self.score_calculator),
+                    settlement.score(&self.eth, auction, &self.score_calculator),
                     settlement,
                 )
             })
@@ -243,7 +243,7 @@ impl Competition {
 /// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
-    pub score: Score,
+    pub score: RankingScore,
 }
 
 /// Winning solution information revealed to the protocol by the driver before

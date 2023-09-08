@@ -283,7 +283,8 @@ impl SolverTimeout {
     }
 }
 
-/// This score carries information about how the score should be calculated.
+/// This score carries information about how the RankingScore should be
+/// calculated.
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum Score {
     Solver(eth::U256),

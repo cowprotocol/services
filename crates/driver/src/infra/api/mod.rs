@@ -6,6 +6,7 @@ use {
     },
     error::Error,
     futures::Future,
+    solver::settlement_rater::ScoreCalculator,
     std::{net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
 };
