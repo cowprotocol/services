@@ -13,11 +13,14 @@ pub struct IpfsAppData {
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "api")]
+#[metric(subsystem = "ipfs")]
 struct Metrics {
     /// Number of completed IPFS app data fetches.
     #[metric(labels("outcome", "source"))]
-    ipfs_app_data: prometheus::IntCounterVec,
+    app_data: prometheus::IntCounterVec,
+
+    /// Timing of IPFS app data fetches.
+    fetches: prometheus::Histogram,
 }
 
 impl IpfsAppData {
@@ -26,7 +29,7 @@ impl IpfsAppData {
         // Initialize metrics.
         for outcome in &["error", "found", "missing"] {
             for source in &["cache", "node"] {
-                metrics.ipfs_app_data.with_label_values(&[outcome, source]);
+                metrics.app_data.with_label_values(&[outcome, source]);
             }
         }
         Self {
@@ -82,7 +85,9 @@ impl IpfsAppData {
     }
 
     pub async fn fetch(&self, contract_app_data: &AppDataHash) -> Result<Option<String>> {
-        let metric = &self.metrics.ipfs_app_data;
+        let outcome = |data: &Option<String>| if data.is_some() { "found" } else { "missing" };
+
+        let metric = &self.metrics.app_data;
         if let Some(cached) = self
             .cache
             .lock()
@@ -90,25 +95,26 @@ impl IpfsAppData {
             .cache_get(contract_app_data)
             .cloned()
         {
-            metric
-                .with_label_values(&[if cached.is_some() { "found" } else { "missing" }, "cache"])
-                .inc();
+            metric.with_label_values(&[outcome(&cached), "cache"]).inc();
             return Ok(cached);
         }
-        let result = match self.fetch_raw(contract_app_data).await {
+
+        let result = match {
+            let _timer = self.metrics.fetches.start_timer();
+            self.fetch_raw(contract_app_data).await
+        } {
             Ok(result) => result,
             Err(err) => {
                 metric.with_label_values(&["error", "node"]).inc();
                 return Err(err);
             }
         };
+
         self.cache
             .lock()
             .unwrap()
             .cache_set(*contract_app_data, result.clone());
-        metric
-            .with_label_values(&[if result.is_some() { "found" } else { "missing" }, "node"])
-            .inc();
+        metric.with_label_values(&[outcome(&result), "node"]).inc();
         Ok(result)
     }
 }
