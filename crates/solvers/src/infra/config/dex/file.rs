@@ -3,12 +3,12 @@
 use {
     crate::{
         domain::{dex::slippage, eth},
-        util::conv,
+        infra::config::unwrap_or_log,
     },
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::path::Path,
+    std::{fmt::Debug, path::Path},
     tokio::fs,
 };
 
@@ -23,7 +23,7 @@ struct Config {
 
     /// The absolute slippage allowed by the solver.
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
-    absolute_slippage: Option<BigDecimal>,
+    absolute_slippage: Option<eth::U256>,
 
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
@@ -53,20 +53,14 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
     // Not printing detailed error because it could potentially leak secrets.
-    let config = toml::de::from_str::<Config>(&data)
-        .unwrap_or_else(|_| panic!("TOML syntax error while reading {path:?}"));
+    let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
 
-    let dex: T = config
-        .dex
-        .try_into()
-        .unwrap_or_else(|e| panic!("failed to parse dex config: {e:?}"));
+    let dex: T = unwrap_or_log(config.dex.try_into(), &path);
 
     let config = super::Config {
         slippage: slippage::Limits::new(
             config.relative_slippage,
-            config.absolute_slippage.map(|value| {
-                conv::decimal_to_ether(&value).expect("invalid absolute slippage Ether value")
-            }),
+            config.absolute_slippage.map(eth::Ether),
         )
         .expect("invalid slippage limits"),
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),

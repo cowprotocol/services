@@ -10,10 +10,11 @@ use {
         },
         infra::{self, blockchain::Ethereum},
     },
+    anyhow::Context,
     contracts::{GPv2Settlement, UniswapV3SwapRouter},
+    ethrpc::current_block::BlockRetrieving,
     itertools::Itertools,
     shared::{
-        current_block::BlockRetrieving,
         http_solver::model::TokenAmount,
         interaction::Interaction,
         sources::uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
@@ -24,7 +25,7 @@ use {
             uniswap_v3::{self, UniswapV3Liquidity, UniswapV3SettlementHandler},
             ConcentratedLiquidity,
         },
-        liquidity_collector::LiquidityCollecting,
+        liquidity_collector::{BackgroundInitLiquiditySource, LiquidityCollecting},
     },
     std::{
         collections::BTreeMap,
@@ -77,7 +78,7 @@ pub fn to_interaction(
     output: &liquidity::ExactOutput,
     receiver: &eth::Address,
 ) -> eth::Interaction {
-    let web3 = shared::ethrpc::dummy::web3();
+    let web3 = ethrpc::dummy::web3();
 
     let handler = UniswapV3SettlementHandler::new(
         UniswapV3SwapRouter::at(&web3, pool.router.0),
@@ -103,27 +104,48 @@ pub fn to_interaction(
         .unwrap()
 }
 
-pub async fn collector(
+pub fn collector(
     eth: &Ethereum,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::UniswapV3,
 ) -> Box<dyn LiquidityCollecting> {
+    let eth = Arc::new(eth.clone());
+    let config = Arc::new(Clone::clone(config));
+    let init = move || {
+        let eth = eth.clone();
+        let block_retriever = block_retriever.clone();
+        let config = config.clone();
+        async move { init_liquidity(&eth, block_retriever.clone(), &config).await }
+    };
+    const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+    Box::new(BackgroundInitLiquiditySource::new(
+        "uniswap-v3",
+        init,
+        TEN_MINUTES,
+    )) as Box<_>
+}
+
+async fn init_liquidity(
+    eth: &Ethereum,
+    block_retriever: Arc<dyn BlockRetrieving>,
+    config: &infra::liquidity::config::UniswapV3,
+) -> anyhow::Result<impl LiquidityCollecting> {
     let web3 = boundary::web3(eth);
     let router = UniswapV3SwapRouter::at(&web3, config.router.0);
 
     let pool_fetcher = Arc::new(
         UniswapV3PoolFetcher::new(
-            eth.chain_id().0.as_u64(),
+            eth.network().chain.into(),
             web3.clone(),
             boundary::liquidity::http_client(),
             block_retriever,
             config.max_pools_to_initialize,
         )
         .await
-        .unwrap(),
+        .context("failed to initialise UniswapV3 liquidity")?,
     );
 
-    Box::new(UniswapV3Liquidity::new(
+    Ok(UniswapV3Liquidity::new(
         router,
         eth.contracts().settlement().clone(),
         web3,

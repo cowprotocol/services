@@ -178,7 +178,7 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, primitive_types::U256, shared::dummy_contract, std::collections::HashMap};
+    use {super::*, contracts::dummy_contract, primitive_types::U256, std::collections::HashMap};
 
     impl Inner {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {

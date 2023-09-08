@@ -15,7 +15,6 @@ use {
         order::{
             EthflowData,
             Interactions,
-            LimitOrderClass,
             OnchainOrderData,
             Order,
             OrderClass,
@@ -28,7 +27,7 @@ use {
         time::now_in_epoch_seconds,
     },
     num::Zero,
-    number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
+    number::conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     primitive_types::H160,
     shared::{
         db_order_conversions::{
@@ -177,19 +176,6 @@ async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), Insert
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         cancellation_timestamp: None,
-        surplus_fee: match order.metadata.class {
-            OrderClass::Limit(LimitOrderClass { surplus_fee, .. }) => {
-                surplus_fee.as_ref().map(u256_to_big_decimal)
-            }
-            _ => None,
-        },
-        surplus_fee_timestamp: match order.metadata.class {
-            OrderClass::Limit(LimitOrderClass {
-                surplus_fee_timestamp,
-                ..
-            }) => surplus_fee_timestamp,
-            _ => None,
-        },
     };
 
     database::orders::insert_order(ex, &order)
@@ -582,8 +568,6 @@ mod tests {
             ethflow_data: None,
             onchain_user: None,
             onchain_placement_error: None,
-            surplus_fee: Default::default(),
-            surplus_fee_timestamp: Default::default(),
             executed_surplus_fee: Default::default(),
             executed_solver_fee: Default::default(),
             full_app_data: Default::default(),

@@ -10,7 +10,11 @@ use {
         },
     },
     anyhow::{anyhow, Result},
-    contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory},
+    contracts::{
+        BalancerV2WeightedPool,
+        BalancerV2WeightedPoolFactory,
+        BalancerV2WeightedPoolFactoryV3,
+    },
     ethcontract::{BlockId, H160},
     futures::{future::BoxFuture, FutureExt as _},
     std::collections::BTreeMap,
@@ -26,12 +30,20 @@ pub struct PoolInfo {
 pub struct PoolState {
     pub tokens: BTreeMap<H160, TokenState>,
     pub swap_fee: Bfp,
+    pub version: Version,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenState {
     pub common: common::TokenState,
     pub weight: Bfp,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Version {
+    #[default]
+    V0,
+    V3Plus,
 }
 
 impl PoolIndexing for PoolInfo {
@@ -84,21 +96,53 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
         _: &mut Web3CallBatch,
         _: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_info = pool_info.clone();
-        async move {
-            let common = common_pool_state.await;
-            let tokens = common
-                .tokens
-                .into_iter()
-                .zip(&pool_info.weights)
-                .map(|((address, common), &weight)| (address, TokenState { common, weight }))
-                .collect();
-            let swap_fee = common.swap_fee;
-
-            Ok(Some(PoolState { tokens, swap_fee }))
-        }
-        .boxed()
+        pool_state(Version::V0, pool_info.clone(), common_pool_state)
     }
+}
+
+#[async_trait::async_trait]
+impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
+    type PoolInfo = <BalancerV2WeightedPoolFactory as FactoryIndexing>::PoolInfo;
+    type PoolState = <BalancerV2WeightedPoolFactory as FactoryIndexing>::PoolState;
+
+    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        let v0 = BalancerV2WeightedPoolFactory::at(&self.raw_instance().web3(), self.address());
+        v0.specialize_pool_info(pool).await
+    }
+
+    fn fetch_pool_state(
+        &self,
+        pool_info: &Self::PoolInfo,
+        common_pool_state: BoxFuture<'static, common::PoolState>,
+        _: &mut Web3CallBatch,
+        _: BlockId,
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
+        pool_state(Version::V3Plus, pool_info.clone(), common_pool_state)
+    }
+}
+
+fn pool_state(
+    version: Version,
+    info: PoolInfo,
+    common: BoxFuture<'static, common::PoolState>,
+) -> BoxFuture<'static, Result<Option<PoolState>>> {
+    async move {
+        let common = common.await;
+        let tokens = common
+            .tokens
+            .into_iter()
+            .zip(&info.weights)
+            .map(|((address, common), &weight)| (address, TokenState { common, weight }))
+            .collect();
+        let swap_fee = common.swap_fee;
+
+        Ok(Some(PoolState {
+            tokens,
+            swap_fee,
+            version,
+        }))
+    }
+    .boxed()
 }
 
 #[cfg(test)]
@@ -106,6 +150,7 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
+        contracts::dummy_contract,
         ethcontract::{H160, H256},
         ethcontract_mock::Mock,
         futures::future,
@@ -141,7 +186,7 @@ mod tests {
                     id: H256([2; 32]),
                     address: H160([1; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                    scaling_exponents: vec![17, 16],
+                    scaling_factors: vec![Bfp::exp10(17), Bfp::exp10(16)],
                     block_created: 42,
                 },
                 weights: vec![
@@ -194,7 +239,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 address: pool.address(),
-                scaling_exponents: vec![0, 0, 0],
+                scaling_factors: vec![Bfp::exp10(0), Bfp::exp10(0), Bfp::exp10(0)],
                 block_created: 42,
             })
             .await
@@ -208,11 +253,11 @@ mod tests {
         let tokens = btreemap! {
             H160([1; 20]) => common::TokenState {
                 balance: bfp!("1000.0").as_uint256(),
-                scaling_exponent: 0,
+                scaling_factor: Bfp::exp10(0),
             },
             H160([2; 20]) => common::TokenState {
                 balance: 10_000_000.into(),
-                scaling_exponent: 12,
+                scaling_factor: Bfp::exp10(12),
             },
         };
         let weights = [bfp!("0.8"), bfp!("0.2")];
@@ -227,10 +272,7 @@ mod tests {
                 id: H256([0x90; 32]),
                 address: H160([0x90; 20]),
                 tokens: tokens.keys().copied().collect(),
-                scaling_exponents: tokens
-                    .values()
-                    .map(|token| token.scaling_exponent)
-                    .collect(),
+                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
                 block_created: 1337,
             },
             weights: weights.to_vec(),
@@ -267,6 +309,7 @@ mod tests {
             Some(PoolState {
                 tokens: weighted_tokens,
                 swap_fee,
+                version: Version::V0,
             })
         );
     }

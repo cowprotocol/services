@@ -5,7 +5,7 @@ use {
             competition::{auction, order},
             eth,
         },
-        infra::Ethereum,
+        infra::{tokens, Ethereum},
         util::serialize,
     },
     itertools::Itertools,
@@ -14,7 +14,18 @@ use {
 };
 
 impl Auction {
-    pub async fn into_domain(self, eth: &Ethereum) -> Result<competition::Auction, Error> {
+    pub async fn into_domain(
+        self,
+        eth: &Ethereum,
+        tokens: &tokens::Fetcher,
+    ) -> Result<competition::Auction, Error> {
+        let token_addresses: Vec<_> = self
+            .tokens
+            .iter()
+            .map(|token| token.address.into())
+            .collect();
+        let token_infos = tokens.get(&token_addresses).await;
+
         competition::Auction::new(
             Some(self.id.try_into()?),
             self.orders
@@ -42,9 +53,7 @@ impl Auction {
                         },
                         kind: match order.class {
                             Class::Market => competition::order::Kind::Market,
-                            Class::Limit => competition::order::Kind::Limit {
-                                surplus_fee: eth::U256::zero().into(),
-                            },
+                            Class::Limit => competition::order::Kind::Limit,
                             Class::Liquidity => competition::order::Kind::Liquidity,
                         },
                         app_data: order.app_data.into(),
@@ -109,20 +118,21 @@ impl Auction {
                     })
                 })
                 .try_collect::<_, Vec<_>, Error>()?,
-            self.tokens
-                .into_iter()
-                .map(|token| competition::auction::Token {
-                    decimals: token.decimals,
-                    symbol: token.symbol,
+            self.tokens.into_iter().map(|token| {
+                let info = token_infos.get(&token.address.into());
+                competition::auction::Token {
+                    decimals: info.and_then(|i| i.decimals),
+                    symbol: info.and_then(|i| i.symbol.clone()),
                     address: token.address.into(),
                     price: token.price.map(Into::into),
-                    available_balance: Default::default(),
+                    available_balance: info.map(|i| i.balance).unwrap_or(0.into()).into(),
                     trusted: token.trusted,
-                }),
-            eth.gas_price().await.map_err(Error::GasPrice)?,
+                }
+            }),
             self.deadline.into(),
-            eth.contracts().weth_address(),
+            eth,
         )
+        .await
         .map_err(Into::into)
     }
 }
@@ -135,8 +145,8 @@ pub enum Error {
     MissingSurplusFee,
     #[error("invalid tokens in auction")]
     InvalidTokens,
-    #[error("error getting gas price")]
-    GasPrice(#[source] crate::infra::blockchain::Error),
+    #[error("blockchain error: {0:?}")]
+    Blockchain(#[source] crate::infra::blockchain::Error),
 }
 
 impl From<auction::InvalidId> for Error {
@@ -145,9 +155,12 @@ impl From<auction::InvalidId> for Error {
     }
 }
 
-impl From<auction::InvalidTokens> for Error {
-    fn from(_value: auction::InvalidTokens) -> Self {
-        Self::InvalidTokens
+impl From<auction::Error> for Error {
+    fn from(value: auction::Error) -> Self {
+        match value {
+            auction::Error::InvalidTokens => Self::InvalidTokens,
+            auction::Error::Blockchain(err) => Self::Blockchain(err),
+        }
     }
 }
 
@@ -176,8 +189,6 @@ struct Token {
     #[serde_as(as = "Option<serialize::U256>")]
     pub price: Option<eth::U256>,
     pub trusted: bool,
-    pub decimals: Option<u8>,
-    pub symbol: Option<String>,
 }
 
 #[serde_as]

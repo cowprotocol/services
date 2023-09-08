@@ -32,6 +32,7 @@ impl ZeroExPriceEstimator {
                 solver,
             )),
             rate_limiter,
+            "zeroex".into(),
         ))
     }
 
@@ -59,7 +60,7 @@ mod tests {
         },
         ethcontract::futures::FutureExt as _,
         model::order::OrderKind,
-        reqwest::Client,
+        number::nonzero::U256 as NonZeroU256,
     };
 
     fn create_estimator(api: Arc<dyn ZeroExApi>, buy_only: bool) -> ZeroExPriceEstimator {
@@ -113,7 +114,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
             },
         )
@@ -162,7 +163,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
             },
         )
@@ -205,21 +206,21 @@ mod tests {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Sell,
                 },
                 Query {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Buy,
                 },
                 Query {
                     verification: None,
                     sell_token: weth,
                     buy_token: gno,
-                    in_amount: 100000000000000000u64.into(),
+                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                     kind: OrderKind::Sell,
                 },
             ],
@@ -229,7 +230,7 @@ mod tests {
         assert_eq!(estimates.len(), 3);
         assert!(matches!(
             &estimates[0],
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
         assert!(matches!(
             &estimates[1],
@@ -237,7 +238,7 @@ mod tests {
         ));
         assert!(matches!(
             &estimates[2],
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 
@@ -247,7 +248,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let zeroex_api = DefaultZeroExApi::test();
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = single_estimate(
@@ -256,7 +257,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             },
         )

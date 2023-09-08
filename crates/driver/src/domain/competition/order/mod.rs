@@ -1,7 +1,7 @@
 use crate::{
     domain::eth,
     infra::{blockchain, Ethereum},
-    util::{self, conv, Bytes},
+    util::{self, conv::u256::U256Ext, Bytes},
 };
 
 pub mod signature;
@@ -103,6 +103,10 @@ impl Order {
         }
     }
 
+    pub fn trader(&self) -> Trader {
+        Trader(self.signature.signer)
+    }
+
     pub fn is_partial(&self) -> bool {
         matches!(self.partial, Partial::Yes { .. })
     }
@@ -163,8 +167,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                conv::u256::to_big_rational(buy.0)
-                    .checked_div(&conv::u256::to_big_rational(sell.0))
+                buy.0
+                    .to_big_rational()
+                    .checked_div(&sell.0.to_big_rational())
                     .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),
@@ -259,11 +264,7 @@ pub enum Kind {
     /// surplus instead. (The order surplus is the additional money that the
     /// solver managed to solve for, above what the user specified in the
     /// order.)
-    Limit {
-        /// The fee to be taken from the order surplus. The surplus is always
-        /// taken from the sell amount.
-        surplus_fee: SellAmount,
-    },
+    Limit,
     /// An order submitted by a privileged user, which provides liquidity for
     /// our settlement contract.
     Liquidity,
@@ -282,6 +283,16 @@ pub enum SellTokenBalance {
 pub enum BuyTokenBalance {
     Erc20,
     Internal,
+}
+
+/// The address which placed the order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Trader(eth::Address);
+
+impl From<Trader> for eth::Address {
+    fn from(value: Trader) -> Self {
+        value.0
+    }
 }
 
 /// A just-in-time order. JIT orders are added at solving time by the solver to

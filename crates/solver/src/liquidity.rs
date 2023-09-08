@@ -22,14 +22,19 @@ use {
         http_solver::model::TokenAmount,
         sources::{
             balancer_v2::{
-                pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+                pool_fetching::{
+                    AmplificationParameter,
+                    TokenState,
+                    WeightedPoolVersion,
+                    WeightedTokenState,
+                },
                 swap::fixed_point::Bfp,
             },
             uniswap_v2::pool_fetching::Pool,
             uniswap_v3::pool_fetching::PoolInfo,
         },
     },
-    std::{collections::HashMap, sync::Arc},
+    std::{collections::BTreeMap, sync::Arc},
     strum::{EnumVariantNames, IntoStaticStr},
 };
 
@@ -316,8 +321,9 @@ impl From<Pool> for ConstantProductOrder {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct WeightedProductOrder {
     pub address: H160,
-    pub reserves: HashMap<H160, WeightedTokenState>,
+    pub reserves: BTreeMap<H160, WeightedTokenState>,
     pub fee: Bfp,
+    pub version: WeightedPoolVersion,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
@@ -333,11 +339,24 @@ impl std::fmt::Debug for WeightedProductOrder {
 #[cfg_attr(test, derivative(PartialEq))]
 pub struct StablePoolOrder {
     pub address: H160,
-    pub reserves: HashMap<H160, TokenState>,
+    pub reserves: BTreeMap<H160, TokenState>,
     pub fee: Bfp,
     pub amplification_parameter: AmplificationParameter,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl StablePoolOrder {
+    /// See [`shared::sources::balancer_v2::swap::StablePoolRef::reserves_without_bpt`].
+    pub fn reserves_without_bpt(&self) -> impl Iterator<Item = (H160, TokenState)> + '_ {
+        shared::sources::balancer_v2::swap::StablePoolRef {
+            address: self.address,
+            reserves: &self.reserves,
+            swap_fee: self.fee,
+            amplification_parameter: self.amplification_parameter,
+        }
+        .reserves_without_bpt()
+    }
 }
 
 impl std::fmt::Debug for StablePoolOrder {
@@ -346,18 +365,13 @@ impl std::fmt::Debug for StablePoolOrder {
     }
 }
 
-pub fn token_pairs<T>(reserves: &HashMap<H160, T>) -> Vec<TokenPair> {
-    // The `HashMap` docs specifically say that we can't rely on ordering
-    // of keys (even across multiple calls). So, first collect all tokens
-    // into a collection and then use it to make the final enumeration with
-    // all token pair permutations.
-    let tokens = reserves.keys().collect::<Vec<_>>();
-    tokens
-        .iter()
-        .enumerate()
-        .flat_map(|(i, &token_a)| {
-            tokens[i + 1..].iter().map(move |&token_b| {
-                TokenPair::new(*token_a, *token_b).expect("unexpected duplicate key in hash map")
+pub fn token_pairs<T>(reserves: &BTreeMap<H160, T>) -> Vec<TokenPair> {
+    reserves
+        .keys()
+        .flat_map(|&token_a| {
+            reserves.keys().filter_map(move |&token_b| {
+                let pair = TokenPair::new(token_a, token_b)?;
+                (pair.get().0 == token_a).then_some(pair)
             })
         })
         .collect()
@@ -445,6 +459,7 @@ impl Default for WeightedProductOrder {
             address: Default::default(),
             reserves: Default::default(),
             fee: Bfp::zero(),
+            version: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
         }
     }
@@ -465,7 +480,7 @@ impl Default for StablePoolOrder {
 
 #[cfg(test)]
 pub mod tests {
-    use {super::*, maplit::hashmap, std::sync::Mutex};
+    use {super::*, maplit::btreemap, std::sync::Mutex};
 
     pub struct CapturingSettlementHandler<L>
     where
@@ -543,7 +558,7 @@ pub mod tests {
 
     #[test]
     fn enumerate_token_pairs() {
-        let token_map: HashMap<_, Option<u32>> = hashmap! {
+        let token_map: BTreeMap<_, Option<u32>> = btreemap! {
             H160([0x11; 20]) => None,
             H160([0x22; 20]) => None,
             H160([0x33; 20]) => None,

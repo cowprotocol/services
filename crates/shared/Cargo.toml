@@ -13,7 +13,6 @@ anyhow = { workspace = true }
 app-data-hash = { path = "../app-data-hash" }
 async-stream = "0.3"
 async-trait = { workspace = true }
-atty = "0.2"
 bigdecimal = { workspace = true }
 cached = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
@@ -23,10 +22,11 @@ database = { path = "../database" }
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethcontract-mock = { workspace = true }
+ethrpc = { path = "../ethrpc"}
 flate2 = "1"
 futures = { workspace = true }
 gas-estimation = { workspace = true }
-global-metrics = { path = "../global-metrics" }
+observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
@@ -35,12 +35,11 @@ maplit = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }
 num = { workspace = true }
-number-conversions = { path = "../number-conversions" }
+number = { path = "../number" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
-scopeguard = "1"
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

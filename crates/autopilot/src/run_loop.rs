@@ -14,6 +14,7 @@ use {
     anyhow::{anyhow, ensure, Context, Result},
     chrono::Utc,
     database::order_events::OrderEventLabel,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId},
@@ -29,13 +30,7 @@ use {
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
-    shared::{
-        current_block::CurrentBlockStream,
-        ethrpc::Web3,
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        token_info::TokenInfoFetching,
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::{event_handling::MAX_REORG_BLOCK_COUNT, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
@@ -57,7 +52,6 @@ pub struct RunLoop {
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
-    pub token_info: Arc<dyn TokenInfoFetching>,
 }
 
 impl RunLoop {
@@ -271,15 +265,6 @@ impl RunLoop {
             return Default::default();
         }
 
-        let addresses = auction
-            .prices
-            .keys()
-            .copied()
-            .chain(self.market_makable_token_list.all().into_iter())
-            .unique()
-            .collect_vec();
-        let token_infos = self.token_info.get_token_infos(&addresses).await;
-
         let request = &solve::Request {
             id,
             orders: auction
@@ -330,10 +315,6 @@ impl RunLoop {
                 .prices
                 .iter()
                 .map(|(address, price)| solve::Token {
-                    decimals: token_infos.get(address).and_then(|info| info.decimals),
-                    symbol: token_infos
-                        .get(address)
-                        .and_then(|info| info.symbol.clone()),
                     address: address.to_owned(),
                     price: Some(price.to_owned()),
                     trusted: self.market_makable_token_list.contains(address),
@@ -343,10 +324,6 @@ impl RunLoop {
                         .all()
                         .into_iter()
                         .map(|address| solve::Token {
-                            decimals: token_infos.get(&address).and_then(|info| info.decimals),
-                            symbol: token_infos
-                                .get(&address)
-                                .and_then(|info| info.symbol.clone()),
                             address,
                             price: None,
                             trusted: true,

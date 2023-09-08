@@ -481,8 +481,8 @@ impl<'a> Submitter<'a> {
                     || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
                     tracing::debug!(
-                        ?gas_price,
-                        ?replacement_price,
+                        %gas_price,
+                        %replacement_price,
                         sleep = ?params.retry_interval,
                         "keep waiting for gas price to increase enough"
                     );
@@ -491,13 +491,8 @@ impl<'a> Submitter<'a> {
                 }
             }
 
-            tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas \
-                 estimate {}",
-                gas_price.base_fee_per_gas,
-                gas_price.max_fee_per_gas,
-                gas_price.max_priority_fee_per_gas,
-                params.gas_estimate,
+            tracing::debug!(%gas_price, gas_estimate=%params.gas_estimate,
+                "creating transaction with gas price"
             );
 
             // execute transaction
@@ -688,7 +683,7 @@ struct Metrics {
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
     let result = if was_successful { "success" } else { "error" };
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .submissions
         .with_label_values(&[submitter, result])
@@ -696,7 +691,7 @@ pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
 }
 
 fn track_mined_transactions(submitter: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .mined_transactions
         .with_label_values(&[submitter])
@@ -704,7 +699,7 @@ fn track_mined_transactions(submitter: &str) {
 }
 
 fn track_strategy_outcome(strategy: &str, outcome: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .strategy_outcomes
         .with_label_values(&[strategy, outcome])
@@ -730,7 +725,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn flashbots_mainnet_settlement() {
-        shared::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
+        observe::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
 
         let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();

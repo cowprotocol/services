@@ -13,7 +13,7 @@ use {
             SwapQuery,
         },
         price_estimation::gas,
-        request_sharing::{BoxRequestSharing, BoxShared},
+        request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
     },
     futures::FutureExt as _,
     model::order::OrderKind,
@@ -32,6 +32,7 @@ struct Inner {
     cache: Cache,
     referrer_address: Option<H160>,
     solver: H160,
+    settlement_contract: H160,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -46,6 +47,7 @@ impl OneInchTradeFinder {
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self {
             inner: Arc::new(Inner::new(
@@ -53,8 +55,9 @@ impl OneInchTradeFinder {
                 disabled_protocols,
                 referrer_address,
                 solver,
+                settlement_contract,
             )),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("oneinch".into()),
         }
     }
 
@@ -109,6 +112,7 @@ impl Inner {
         disabled_protocols: Vec<String>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self {
             api,
@@ -116,6 +120,7 @@ impl Inner {
             referrer_address,
             cache: Default::default(),
             solver,
+            settlement_contract,
         }
     }
 
@@ -124,7 +129,7 @@ impl Inner {
         query: &Query,
     ) -> Result<Option<Vec<String>>, TradeError> {
         if query.kind == OrderKind::Buy {
-            return Err(TradeError::UnsupportedOrderType);
+            return Err(TradeError::UnsupportedOrderType("buy order".to_string()));
         }
 
         let allowed_protocols = self
@@ -142,7 +147,7 @@ impl Inner {
                 query.data.sell_token,
                 query.data.buy_token,
                 query.allowed_protocols,
-                query.data.in_amount,
+                query.data.in_amount.get(),
                 self.referrer_address,
             ))
             .await?;
@@ -170,12 +175,8 @@ impl Inner {
             .get_swap(SwapQuery::with_default_options(
                 query.sell_token,
                 query.buy_token,
-                query.in_amount,
-                query
-                    .verification
-                    .as_ref()
-                    .map(|v| v.from)
-                    .unwrap_or_default(),
+                query.in_amount.get(),
+                self.settlement_contract,
                 allowed_protocols,
                 Slippage::ONE_PERCENT,
                 self.referrer_address,
@@ -220,12 +221,19 @@ mod tests {
             Transaction,
         },
         hex_literal::hex,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };
 
     fn create_trade_finder<T: OneInchClient>(api: T) -> OneInchTradeFinder {
-        OneInchTradeFinder::new(Arc::new(api), Vec::default(), None, H160([1; 20]))
+        OneInchTradeFinder::new(
+            Arc::new(api),
+            Vec::default(),
+            None,
+            H160([1; 20]),
+            H160([2; 20]),
+        )
     }
 
     #[tokio::test]
@@ -264,7 +272,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -350,7 +358,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -403,12 +411,12 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await;
 
-        assert!(matches!(est, Err(TradeError::UnsupportedOrderType)));
+        assert!(matches!(est, Err(TradeError::UnsupportedOrderType(_))));
     }
 
     #[tokio::test]
@@ -434,7 +442,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -462,7 +470,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -490,7 +498,13 @@ mod tests {
             .expect_get_swap()
             .return_once(|_| async { Ok(Default::default()) }.boxed());
 
-        let trader = OneInchTradeFinder::new(Arc::new(oneinch), Vec::new(), None, H160([1; 20]));
+        let trader = OneInchTradeFinder::new(
+            Arc::new(oneinch),
+            Vec::new(),
+            None,
+            H160([1; 20]),
+            H160([1; 20]),
+        );
 
         let query = Query {
             kind: OrderKind::Sell,
@@ -516,7 +530,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -546,7 +560,13 @@ mod tests {
 
         let mut inner = Inner {
             cache: Cache::new(MAX_AGE),
-            ..Inner::new(Arc::new(mock_api(1)), vec![], None, H160([1; 20]))
+            ..Inner::new(
+                Arc::new(mock_api(1)),
+                vec![],
+                None,
+                H160([1; 20]),
+                H160([1; 20]),
+            )
         };
 
         // Calling `Inner::spender()` twice within `MAX_AGE` will return

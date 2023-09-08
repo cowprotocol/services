@@ -11,7 +11,7 @@ use {
             TransactionBuilderQuery,
         },
         price_estimation::gas,
-        request_sharing::{BoxRequestSharing, BoxShared},
+        request_sharing::{BoxRequestSharing, BoxShared, RequestSharing},
         token_info::{TokenInfo, TokenInfoFetching},
         trade_finding::{Interaction, Trade},
     },
@@ -56,7 +56,7 @@ impl ParaswapTradeFinder {
                 disabled_paraswap_dexs,
                 solver,
             },
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("paraswap".into()),
         }
     }
 
@@ -92,7 +92,7 @@ impl Inner {
             dest_token: query.buy_token,
             src_decimals: decimals(&tokens, &query.sell_token)?,
             dest_decimals: decimals(&tokens, &query.buy_token)?,
-            amount: query.in_amount,
+            amount: query.in_amount.get(),
             side: match query.kind {
                 OrderKind::Buy => Side::Buy,
                 OrderKind::Sell => Side::Sell,
@@ -123,11 +123,11 @@ impl Inner {
             dest_token: query.buy_token,
             trade_amount: match query.kind {
                 OrderKind::Buy => TradeAmount::Buy {
-                    dest_amount: query.in_amount,
+                    dest_amount: query.in_amount.get(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
                 OrderKind::Sell => TradeAmount::Sell {
-                    src_amount: query.in_amount,
+                    src_amount: query.in_amount.get(),
                     slippage: Self::DEFAULT_SLIPPAGE,
                 },
             },
@@ -174,7 +174,11 @@ impl From<ParaswapResponseError> for TradeError {
     fn from(err: ParaswapResponseError) -> Self {
         match err {
             ParaswapResponseError::InsufficientLiquidity(_) => Self::NoLiquidity,
-            _ => Self::Other(err.into()),
+            ParaswapResponseError::RateLimited => Self::RateLimited,
+            ParaswapResponseError::Request(_)
+            | ParaswapResponseError::Json(_)
+            | ParaswapResponseError::Retryable(_)
+            | ParaswapResponseError::Other(_) => Self::Other(err.into()),
         }
     }
 }
@@ -196,6 +200,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         },
         maplit::hashmap,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::time::Duration,
     };
@@ -244,6 +249,7 @@ mod tests {
         let tokens = TokenInfoFetcher { web3 };
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
+            base_url: "https://apiv5.paraswap.io".to_string(),
             partner: "Test".to_string(),
         };
         let finder = ParaswapTradeFinder::new(
@@ -258,7 +264,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::COW,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await

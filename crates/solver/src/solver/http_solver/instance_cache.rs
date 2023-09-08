@@ -109,7 +109,7 @@ impl Metrics {
     fn get() -> &'static Self {
         static INIT: OnceCell<&'static Metrics> = OnceCell::new();
         INIT.get_or_init(|| {
-            let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+            let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
             for result in ["success", "failure"] {
                 metrics
                     .instance_cache_uploads
@@ -126,13 +126,10 @@ mod tests {
     use {
         super::*,
         crate::solver::http_solver::buffers::MockBufferRetrieving,
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         model::order::{Order, OrderData},
         primitive_types::U256,
-        shared::{
-            dummy_contract,
-            token_info::{MockTokenInfoFetching, TokenInfo},
-        },
+        shared::token_info::{MockTokenInfoFetching, TokenInfo},
     };
 
     #[tokio::test]

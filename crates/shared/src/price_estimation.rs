@@ -1,7 +1,6 @@
 use {
     crate::{
         arguments::{display_option, CodeSimulatorKind},
-        bad_token::{BadTokenDetecting, TokenQuality},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
@@ -11,6 +10,7 @@ use {
     futures::{stream::BoxStream, StreamExt},
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
+    number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -232,9 +232,14 @@ pub struct Arguments {
     #[clap(long, env)]
     pub trade_simulator: Option<CodeSimulatorKind>,
 
+    /// Flag to enable saving Tenderly simulations in the dashboard for
+    /// successful trade simulations.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    pub tenderly_save_successful_trade_simulations: bool,
+
     /// Flag to enable saving Tenderly simulations in the dashboard for failed
     /// trade simulations. This helps debugging reverted quote simulations.
-    #[clap(long, env)]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub tenderly_save_failed_trade_simulations: bool,
 
     /// Controls if we try to predict the winning price estimator for a given
@@ -309,6 +314,11 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
+            "tenderly_save_successful_trade_simulations: {}",
+            self.tenderly_save_successful_trade_simulations
+        )?;
+        writeln!(
+            f,
             "tenderly_save_failed_trade_simulations: {}",
             self.tenderly_save_failed_trade_simulations
         )?;
@@ -335,29 +345,17 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
-    #[error("Zero Amount")]
-    ZeroAmount,
-
     #[error("Unsupported Order Type")]
-    UnsupportedOrderType,
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    UnsupportedOrderType(String),
 
     #[error("Rate limited")]
     RateLimited,
-}
 
-impl From<reqwest::Error> for PriceEstimationError {
-    fn from(error: reqwest::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
-    }
-}
+    #[error(transparent)]
+    EstimatorInternal(anyhow::Error),
 
-impl From<serde_json::Error> for PriceEstimationError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Other(anyhow::anyhow!(error.to_string()))
-    }
+    #[error(transparent)]
+    ProtocolInternal(anyhow::Error),
 }
 
 impl Clone for PriceEstimationError {
@@ -368,10 +366,12 @@ impl Clone for PriceEstimationError {
                 reason: reason.clone(),
             },
             Self::NoLiquidity => Self::NoLiquidity,
-            Self::ZeroAmount => Self::ZeroAmount,
-            Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::UnsupportedOrderType(order_type) => {
+                Self::UnsupportedOrderType(order_type.clone())
+            }
             Self::RateLimited => Self::RateLimited,
-            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+            Self::EstimatorInternal(err) => Self::EstimatorInternal(crate::clone_anyhow_error(err)),
+            Self::ProtocolInternal(err) => Self::ProtocolInternal(crate::clone_anyhow_error(err)),
         }
     }
 }
@@ -382,7 +382,7 @@ pub struct Query {
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in
     /// buy_token.
-    pub in_amount: U256,
+    pub in_amount: NonZeroU256,
     pub kind: OrderKind,
     /// If this is `Some` the quotes are expected to pass simulations using the
     /// contained parameters.
@@ -420,8 +420,8 @@ impl Estimate {
     /// Returns (sell_amount, buy_amount).
     pub fn amounts(&self, query: &Query) -> (U256, U256) {
         match query.kind {
-            OrderKind::Buy => (self.out_amount, query.in_amount),
-            OrderKind::Sell => (query.in_amount, self.out_amount),
+            OrderKind::Buy => (self.out_amount, query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), self.out_amount),
         }
     }
 
@@ -506,19 +506,6 @@ where
         .boxed()
 }
 
-pub async fn ensure_token_supported(
-    token: H160,
-    bad_token_detector: &dyn BadTokenDetecting,
-) -> Result<(), PriceEstimationError> {
-    match bad_token_detector.detect(token).await {
-        Ok(TokenQuality::Good) => Ok(()),
-        Ok(TokenQuality::Bad { reason }) => {
-            Err(PriceEstimationError::UnsupportedToken { token, reason })
-        }
-        Err(err) => Err(PriceEstimationError::Other(err)),
-    }
-}
-
 pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
     if buy_amount.is_zero() {
         return None;
@@ -574,7 +561,15 @@ pub mod mocks {
             &'a self,
             queries: &'a [Query],
         ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
-            futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
+            futures::stream::iter((0..queries.len()).map(|i| {
+                (
+                    i,
+                    Err(PriceEstimationError::EstimatorInternal(anyhow!(
+                        "always fail"
+                    ))),
+                )
+            }))
+            .boxed()
         }
     }
 }

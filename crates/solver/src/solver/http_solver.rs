@@ -236,7 +236,7 @@ mod tests {
             },
         },
         ::model::TokenPair,
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::Address,
         maplit::hashmap,
         model::order::{Order, OrderData, OrderKind},
@@ -244,7 +244,6 @@ mod tests {
         primitive_types::U256,
         reqwest::Client,
         shared::{
-            dummy_contract,
             http_solver::{
                 model::{ExecutionPlan, TokenAmount},
                 SolverConfig,

@@ -20,7 +20,7 @@ pub fn serve_metrics(liveness: Arc<dyn LivenessChecking>, address: SocketAddr) -
 
 // `/metrics` route exposing encoded prometheus data to monitoring system
 pub fn handle_metrics() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let registry = global_metrics::get_metrics_registry();
+    let registry = observe::metrics::get_registry();
     warp::path("metrics").map(move || {
         let encoder = prometheus::TextEncoder::new();
         let mut buffer = Vec::new();

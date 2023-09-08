@@ -1,14 +1,12 @@
 use {
-    crate::{
-        eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
-        local_node::TestNodeApi,
-        setup::*,
-    },
+    crate::eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     chrono::{TimeZone, Utc},
+    e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
+    ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
+    number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
-    shared::{current_block::timestamp_of_current_block_in_seconds, ethrpc::Web3},
     sqlx::PgPool,
 };
 
@@ -46,7 +44,9 @@ async fn refunder_tx(web3: Web3) {
             verification_gas_limit: 0,
         },
         side: OrderQuoteSide::Sell {
-            sell_amount: model::quote::SellAmount::AfterFee { value: sell_amount },
+            sell_amount: model::quote::SellAmount::AfterFee {
+                value: NonZeroU256::try_from(sell_amount).unwrap(),
+            },
         },
         ..Default::default()
     };

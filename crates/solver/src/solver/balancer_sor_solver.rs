@@ -246,6 +246,7 @@ mod tests {
     use {
         super::*,
         crate::interactions::allowances::{AllowanceManager, MockAllowanceManaging},
+        contracts::dummy_contract,
         ethcontract::{H160, H256},
         mockall::predicate::*,
         model::order::{Order, OrderData},
@@ -253,7 +254,6 @@ mod tests {
         shared::{
             addr,
             balancer_sor_api::{DefaultBalancerSorApi, MockBalancerSorApi, Swap},
-            dummy_contract,
             ethrpc::{create_env_test_transport, Web3},
         },
         std::env,

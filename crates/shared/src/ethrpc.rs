@@ -1,27 +1,20 @@
-pub mod buffered;
-pub mod dummy;
-pub mod extensions;
-pub mod http;
-pub mod mock;
-pub mod multicall;
-
+pub use ethrpc::{
+    create_env_test_transport,
+    create_test_transport,
+    Web3,
+    Web3CallBatch,
+    Web3Transport,
+};
 use {
-    self::{buffered::BufferedTransport, http::HttpTransport},
     crate::{arguments::duration_from_seconds, http_client::HttpClientFactory},
-    ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
-    reqwest::{Client, Url},
+    reqwest::Url,
     std::{
         fmt::{self, Display, Formatter},
-        num::NonZeroUsize,
         time::Duration,
     },
 };
 
 pub const MAX_BATCH_SIZE: usize = 100;
-
-pub type Web3 = DynWeb3;
-pub type Web3Transport = DynTransport;
-pub type Web3CallBatch = CallBatch<Web3Transport>;
 
 /// Command line arguments for the common Ethereum RPC connections.
 #[derive(clap::Parser)]
@@ -43,24 +36,6 @@ pub struct Arguments {
     pub ethrpc_batch_delay: Duration,
 }
 
-impl Arguments {
-    /// Returns the buffered transport configuration or `None` if batching is
-    /// disabled.
-    fn buffered_configuration(&self) -> Option<buffered::Configuration> {
-        match (
-            self.ethrpc_max_batch_size,
-            self.ethrpc_max_concurrent_requests,
-        ) {
-            (0 | 1, 0) => None,
-            _ => Some(buffered::Configuration {
-                max_concurrent_requests: NonZeroUsize::new(self.ethrpc_max_concurrent_requests),
-                max_batch_len: self.ethrpc_max_batch_size.max(1),
-                batch_delay: self.ethrpc_batch_delay,
-            }),
-        }
-    }
-}
-
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "ethrpc_max_batch_size: {}", self.ethrpc_max_batch_size)?;
@@ -69,8 +44,19 @@ impl Display for Arguments {
             "ethrpc_max_concurrent_requests: {}",
             self.ethrpc_max_concurrent_requests
         )?;
+        writeln!(f, "ethrpc_batch_delay: {:?}", self.ethrpc_batch_delay)?;
 
         Ok(())
+    }
+}
+
+impl Arguments {
+    fn ethrpc(&self) -> ethrpc::Config {
+        ethrpc::Config {
+            ethrpc_max_batch_size: self.ethrpc_max_batch_size,
+            ethrpc_max_concurrent_requests: self.ethrpc_max_concurrent_requests,
+            ethrpc_batch_delay: self.ethrpc_batch_delay,
+        }
     }
 }
 
@@ -81,32 +67,6 @@ pub fn web3(
     url: &Url,
     name: impl ToString,
 ) -> Web3 {
-    let http = HttpTransport::new(
-        http_factory.configure(|builder| builder.cookie_store(true)),
-        url.clone(),
-        name.to_string(),
-    );
-    let transport = match args.buffered_configuration() {
-        Some(config) => Web3Transport::new(BufferedTransport::with_config(http, config)),
-        None => Web3Transport::new(http),
-    };
-
-    Web3::new(transport)
-}
-
-/// Convenience method to create a transport from a URL.
-pub fn create_test_transport(url: &str) -> Web3Transport {
-    Web3Transport::new(HttpTransport::new(
-        Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()
-            .unwrap(),
-        url.try_into().unwrap(),
-        "".to_string(),
-    ))
-}
-
-/// Like above but takes url from the environment NODE_URL.
-pub fn create_env_test_transport() -> Web3Transport {
-    create_test_transport(&std::env::var("NODE_URL").unwrap())
+    let http_builder = http_factory.builder();
+    ethrpc::web3(args.ethrpc(), http_builder, url, name)
 }

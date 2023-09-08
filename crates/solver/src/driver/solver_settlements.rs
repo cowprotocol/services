@@ -30,7 +30,7 @@ mod tests {
         super::*,
         crate::settlement::Trade,
         chrono::{offset::Utc, DateTime},
-        model::order::{LimitOrderClass, Order, OrderClass, OrderData, OrderMetadata, OrderUid},
+        model::order::{Order, OrderClass, OrderData, OrderMetadata, OrderUid},
     };
 
     fn trade(created_at: DateTime<Utc>, uid: u8, class: OrderClass) -> Trade {
@@ -62,11 +62,7 @@ mod tests {
         assert!(!has_user_order(&settlement));
 
         let settlement =
-            Settlement::with_default_prices(vec![order(OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
-                executed_surplus_fee: None,
-            }))]);
+            Settlement::with_default_prices(vec![order(OrderClass::Limit(Default::default()))]);
         assert!(has_user_order(&settlement));
 
         let settlement = Settlement::with_default_prices(vec![order(OrderClass::Liquidity)]);
@@ -83,11 +79,7 @@ mod tests {
 
         let settlement = Settlement::with_default_prices(vec![
             order(OrderClass::Liquidity),
-            order(OrderClass::Limit(LimitOrderClass {
-                surplus_fee: Some(Default::default()),
-                surplus_fee_timestamp: Some(Default::default()),
-                executed_surplus_fee: None,
-            })),
+            order(OrderClass::Limit(Default::default())),
         ]);
         assert!(has_user_order(&settlement));
     }

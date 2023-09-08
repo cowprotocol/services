@@ -1,25 +1,18 @@
 use {
     super::SettlementSimulating,
-    crate::{
-        objective_value::Inputs,
-        settlement::Settlement,
-        solver::score_computation::ScoreCalculator,
-    },
-    anyhow::{anyhow, Result},
+    crate::{settlement::Settlement, solver::risk_computation::RiskCalculator},
+    anyhow::Result,
     ethcontract::Address,
     gas_estimation::GasPrice1559,
-    num::{BigRational, FromPrimitive},
-    shared::{external_prices::ExternalPrices, http_solver::model::Score},
 };
 
-pub async fn compute_score(
+pub async fn compute_success_probability(
     settlement: &Settlement,
     settlement_simulator: &impl SettlementSimulating,
-    score_calculator: &ScoreCalculator,
+    risk_calculator: &RiskCalculator,
     gas_price: GasPrice1559,
-    prices: &ExternalPrices,
     solver: &Address,
-) -> Result<Score> {
+) -> Result<f64> {
     let gas_amount = settlement_simulator
         .estimate_gas(settlement.clone())
         .await
@@ -27,30 +20,18 @@ pub async fn compute_score(
             // Multiply by 0.9 to get more realistic gas amount.
             // This is because the gas estimation is not accurate enough and does not take
             // the EVM gas refund into account.
-            gas_amount * 9 / 10
+            gas_amount.to_f64_lossy() * 0.9
         })?;
-
-    let inputs = Inputs::from_settlement(
-        settlement,
-        prices,
-        BigRational::from_f64(gas_price.effective_gas_price()).ok_or_else(|| {
-            anyhow!(
-                "gas price {} fails conversion to BigRational",
-                gas_price.effective_gas_price()
-            )
-        })?,
-        &gas_amount,
-    );
+    let gas_price = gas_price.effective_gas_price();
     let nmb_orders = settlement.trades().count();
 
-    let score = score_calculator
-        .calculate(&inputs, nmb_orders)
-        .map(Score::Score);
+    let success_probability = risk_calculator.calculate(gas_amount, gas_price, nmb_orders)?;
 
     tracing::debug!(
-        ?solver, ?score, objective_value = %inputs.objective_value(),
-        "computed score",
+        ?solver,
+        ?success_probability,
+        "computed success_probability",
     );
 
-    score
+    Ok(success_probability)
 }

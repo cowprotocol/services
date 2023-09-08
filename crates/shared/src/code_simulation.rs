@@ -3,14 +3,14 @@
 use {
     crate::{
         ethcontract_error::EthcontractErrorType,
-        ethrpc::{
-            extensions::{EthExt as _, StateOverride, StateOverrides},
-            Web3,
-        },
         tenderly_api::{SimulationKind, SimulationRequest, StateObject, TenderlyApi},
     },
     anyhow::{ensure, Context as _, Result},
     ethcontract::{errors::ExecutionError, H256},
+    ethrpc::{
+        extensions::{EthExt as _, StateOverride, StateOverrides},
+        Web3,
+    },
     std::sync::Arc,
     thiserror::Error,
     web3::types::{BlockNumber, CallRequest},
@@ -132,6 +132,15 @@ impl CodeSimulating for TenderlyCodeSimulator {
                 ..Default::default()
             })
             .await?;
+
+        let saved = self.save.on_success && result.transaction.status
+            || self.save.on_failure && !result.transaction.status;
+        if saved {
+            tracing::debug!(
+                url =% self.tenderly.simulation_url(&result.simulation.id),
+                "saved simulation"
+            );
+        }
 
         let trace = result
             .transaction

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
-        maintenance::Maintaining,
-    },
+    crate::maintenance::Maintaining,
     anyhow::{Context, Error, Result},
     ethcontract::{
         contract::{AllEventsBuilder, ParseLog},
@@ -11,6 +8,7 @@ use {
         Event as EthcontractEvent,
         EventMetadata,
     },
+    ethrpc::current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     futures::{future, Stream, StreamExt, TryStreamExt},
     std::sync::Arc,
     tokio::sync::Mutex,
@@ -563,7 +561,7 @@ struct Metrics {
 }
 
 fn track_block_range(range: &str) {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
         .block_ranges
         .with_label_values(&[range])
@@ -574,12 +572,13 @@ fn track_block_range(range: &str) {
 mod tests {
     use {
         super::*,
-        crate::{
-            current_block::block_number_to_block_number_hash,
-            ethrpc::{create_env_test_transport, Web3},
-        },
         contracts::{gpv2_settlement, GPv2Settlement},
         ethcontract::{BlockNumber, H256},
+        ethrpc::{
+            create_env_test_transport,
+            current_block::block_number_to_block_number_hash,
+            Web3,
+        },
         std::str::FromStr,
     };
 
@@ -609,7 +608,7 @@ mod tests {
         }
 
         async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()> {
-            self.events.extend(events.into_iter());
+            self.events.extend(events);
             Ok(())
         }
 

@@ -42,7 +42,7 @@ pub fn serve_api(
     .boxed();
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
-    let warp_svc = shared::make_service_with_task_local_storage!(warp_svc);
+    let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
     let server = hyper::Server::bind(&address)
         .serve(warp_svc)
         .with_graceful_shutdown(shutdown_receiver)

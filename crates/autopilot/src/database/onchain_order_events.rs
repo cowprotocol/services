@@ -21,6 +21,10 @@ use {
         PgTransaction,
     },
     ethcontract::{Event as EthContractEvent, H160},
+    ethrpc::{
+        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
+        Web3,
+    },
     futures::{stream, StreamExt},
     itertools::multiunzip,
     model::{
@@ -29,16 +33,14 @@ use {
         signature::SigningScheme,
         DomainSeparator,
     },
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     shared::{
-        current_block::{timestamp_of_block_in_seconds, RangeInclusive},
         db_order_conversions::{
             buy_token_destination_into,
             order_kind_into,
             sell_token_source_into,
             signing_scheme_into,
         },
-        ethrpc::Web3,
         event_handling::EventStoring,
         order_quoting::{OrderQuoting, Quote, QuoteSearchParameters},
         order_validation::{
@@ -648,8 +650,6 @@ fn convert_onchain_order_placement(
         full_fee_amount: u256_to_big_decimal(&full_fee_amount),
         cancellation_timestamp: None,
         class,
-        surplus_fee: Default::default(),
-        surplus_fee_timestamp: Default::default(),
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -709,7 +709,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Self::instance(global_metrics::get_metric_storage_registry())
+        Self::instance(observe::metrics::get_storage_registry())
             .expect("unexpected error getting metrics instance")
     }
 
@@ -735,7 +735,7 @@ mod test {
             signature::SigningScheme,
             DomainSeparator,
         },
-        number_conversions::u256_to_big_decimal,
+        number::conversions::u256_to_big_decimal,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -957,7 +957,6 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
             cancellation_timestamp: None,
-            ..Default::default()
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1070,7 +1069,6 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
             cancellation_timestamp: None,
-            ..Default::default()
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1183,8 +1181,6 @@ mod test {
             buy_token_balance: buy_token_destination_into(expected_order_data.buy_token_balance),
             full_fee_amount: u256_to_big_decimal(&U256::zero()),
             cancellation_timestamp: None,
-            surplus_fee: Default::default(),
-            ..Default::default()
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import { IERC20, IPhonyERC20, INativeERC20 } from "./interfaces/IERC20.sol";
+import { IERC20, INativeERC20 } from "./interfaces/IERC20.sol";
 import { Interaction, Trade, SETTLEMENT } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";

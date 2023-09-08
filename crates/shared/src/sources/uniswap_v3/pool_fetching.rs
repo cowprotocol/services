@@ -4,17 +4,20 @@ use {
         graph_api::{PoolData, Token, UniV3SubgraphClient},
     },
     crate::{
-        current_block::{BlockRetrieving, RangeInclusive},
-        ethrpc::Web3,
         event_handling::{EventHandler, EventStoring, MAX_REORG_BLOCK_COUNT},
         maintenance::Maintaining,
         recent_block_cache::Block,
     },
     anyhow::{Context, Result},
     ethcontract::{Event, H160, U256},
+    ethrpc::{
+        current_block::{BlockRetrieving, RangeInclusive},
+        Web3,
+    },
     itertools::{Either, Itertools},
-    model::{u256_decimal, TokenPair},
+    model::TokenPair,
     num::{rational::Ratio, BigInt, Zero},
+    number::u256_decimal,
     reqwest::Client,
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -132,9 +135,7 @@ impl PoolsCheckpointHandler {
         max_pools_to_initialize_cache: usize,
     ) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
-        let registered_pools = graph_api
-            .get_registered_pools(Some(max_pools_to_initialize_cache))
-            .await?;
+        let mut registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
             block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
             "initialized registered pools",
@@ -147,10 +148,21 @@ impl PoolsCheckpointHandler {
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 
+        // can't fetch the state of all pools in constructor for performance reasons,
+        // so let's fetch the top `max_pools_to_initialize_cache` pools with the highest
+        // liquidity
+        registered_pools.pools.sort_unstable_by(|a, b| {
+            a.total_value_locked_eth
+                .partial_cmp(&b.total_value_locked_eth)
+                .unwrap()
+        });
         let pool_ids = registered_pools
             .pools
-            .iter()
+            .clone()
+            .into_iter()
             .map(|pool| pool.id)
+            .rev()
+            .take(max_pools_to_initialize_cache)
             .collect::<Vec<_>>();
         let pools = graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, registered_pools.fetched_block_number)
@@ -196,9 +208,7 @@ impl PoolsCheckpointHandler {
                     existing_pools.keys(),
                     missing_pools
                 );
-                pools_checkpoint
-                    .missing_pools
-                    .extend(missing_pools.into_iter());
+                pools_checkpoint.missing_pools.extend(missing_pools);
                 (existing_pools, pools_checkpoint.block_number)
             }
             None => Default::default(),

@@ -215,30 +215,33 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let estimator = self.inner[estimator_index].0.as_str();
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
-            // Collect stats for winner predictions.
             let requests = self.inner.len() as u64;
-            if let (Some(competition), Ok(_)) = (&self.competition, &result) {
-                let trade = Trade::from(query);
-                let estimator = EstimatorIndex(estimator_index);
-                if let Some(predictions) = predictions.get(&trade) {
-                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                    metrics().record_prediction(&trade, was_correct);
-                }
-                competition.record_winner(trade, estimator);
-                metrics()
-                    .requests
-                    .with_label_values(&["saved"])
-                    .inc_by(requests - predictions.len() as u64);
-            }
-
             metrics()
                 .requests
                 .with_label_values(&["executed"])
                 .inc_by(requests);
-            metrics()
-                .queries_won
-                .with_label_values(&[estimator, query.kind.label()])
-                .inc();
+
+            if result.is_ok() {
+                // Collect stats for winner predictions.
+                metrics()
+                    .queries_won
+                    .with_label_values(&[estimator, query.kind.label()])
+                    .inc();
+
+                if let Some(competition) = &self.competition {
+                    let trade = Trade::from(query);
+                    let estimator = EstimatorIndex(estimator_index);
+                    if let Some(predictions) = predictions.get(&trade) {
+                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
+                        metrics().record_prediction(&trade, was_correct);
+                    }
+                    competition.record_winner(trade, estimator);
+                    metrics()
+                        .requests
+                        .with_label_values(&["saved"])
+                        .inc_by(requests - predictions.len() as u64);
+                }
+            }
 
             Some((query_index, result))
         };
@@ -322,21 +325,23 @@ fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bo
 }
 
 fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
-    // NOTE(nlordell): How errors are joined is kind of arbitrary. I decided to
-    // just order them in the following priority.
+    // Errors are sorted by recoverability. E.g. a rate-limited estimation may
+    // succeed if tried again, whereas unsupported order types can never recover
+    // unless code changes. This can be used to decide which errors we want to
+    // cache
     fn error_to_integer_priority(err: &PriceEstimationError) -> u8 {
         match err {
-            // highest priority
-            PriceEstimationError::ZeroAmount => 0,
-            PriceEstimationError::UnsupportedToken { .. } => 1,
-            PriceEstimationError::NoLiquidity => 2,
-            PriceEstimationError::Other(_) => 3,
-            PriceEstimationError::UnsupportedOrderType => 4,
+            // highest priority (prefer)
             PriceEstimationError::RateLimited => 5,
+            PriceEstimationError::ProtocolInternal(_) => 4,
+            PriceEstimationError::EstimatorInternal(_) => 3,
+            PriceEstimationError::UnsupportedToken { .. } => 2,
+            PriceEstimationError::NoLiquidity => 1,
+            PriceEstimationError::UnsupportedOrderType(_) => 0,
             // lowest priority
         }
     }
-    error_to_integer_priority(b) < error_to_integer_priority(a)
+    error_to_integer_priority(b) > error_to_integer_priority(a)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -384,7 +389,7 @@ impl Metrics {
 }
 
 fn metrics() -> &'static Metrics {
-    Metrics::instance(global_metrics::get_metric_storage_registry())
+    Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
 }
 
@@ -396,6 +401,7 @@ mod tests {
         anyhow::anyhow,
         futures::StreamExt,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
         std::time::Duration,
         tokio::time::sleep,
@@ -408,35 +414,35 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
         ];
@@ -458,7 +464,7 @@ mod tests {
                 Ok(estimates[0]),
                 Ok(estimates[0]),
                 Ok(estimates[0]),
-                Err(PriceEstimationError::Other(anyhow!("a"))),
+                Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
                 Err(PriceEstimationError::NoLiquidity),
             ])
             .enumerate()
@@ -471,10 +477,10 @@ mod tests {
             .returning(move |queries| {
                 assert_eq!(queries.len(), 5);
                 futures::stream::iter([
-                    Err(PriceEstimationError::Other(anyhow!(""))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
                     Ok(estimates[1]),
                     Ok(estimates[1]),
-                    Err(PriceEstimationError::Other(anyhow!("b"))),
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
                     Err(PriceEstimationError::UnsupportedToken {
                         token: H160([0; 20]),
                         reason: "".to_string(),
@@ -499,13 +505,13 @@ mod tests {
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
             result[3].as_ref().unwrap_err(),
-            PriceEstimationError::Other(err)
+            PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. },
+            PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 
@@ -516,14 +522,14 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
             },
             Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
-                in_amount: 1.into(),
+                in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
             },
         ];

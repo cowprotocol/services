@@ -10,11 +10,11 @@ use {
             Postgres,
         },
         event_updater::{EventUpdater, GPv2SettlementContract},
-        fok_limit_orders::{LimitOrderMetrics, LimitOrderQuoter},
         solvable_orders::SolvableOrdersCache,
     },
     contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
     ethcontract::{errors::DeployError, BlockNumber},
+    ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
     model::DomainSeparator,
     shared::{
@@ -27,7 +27,6 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        current_block::block_number_to_block_number_hash,
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
@@ -37,7 +36,7 @@ use {
         order_quoting::OrderQuoter,
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
-        signature_validator::Web3SignatureValidator,
+        signature_validator,
         sources::{
             balancer_v2::{
                 pool_fetching::BalancerContracts,
@@ -63,18 +62,9 @@ pub mod decoded_settlement;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
-pub mod fok_limit_orders;
 pub mod on_settlement_event_updater;
 pub mod run_loop;
 pub mod solvable_orders;
-
-/// To never get to the state where a limit order can not be considered usable
-/// because the `surplus_fee` is too old the `surplus_fee` is valid for longer
-/// than its update interval. This factor controls how much longer it's
-/// considered valid. If the `surplus_fee` gets updated every 5 minutes and the
-/// factor is 2 we consider limit orders valid where the `surplus_fee` was
-/// computed up to 10 minutes ago.
-const SURPLUS_FEE_EXPIRATION_FACTOR: u8 = 2;
 
 struct Liveness {
     solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -175,9 +165,16 @@ pub async fn main(args: arguments::Arguments) {
         .or_else(|| shared::network::block_interval(&network, chain_id))
         .expect("unknown network block interval");
 
-    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = signature_validator::validator(
+        signature_validator::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+        },
+        web3.clone(),
+    );
 
-    let balance_fetcher = args.shared.balances.cached(
+    let balance_fetcher = account_balances::cached(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -185,11 +182,6 @@ pub async fn main(args: arguments::Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
         current_block_stream.clone(),
     );
 
@@ -315,7 +307,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.balancer_pool_deny_list.clone(),
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         Some(balancer_pool_fetcher)
     } else {
@@ -331,7 +327,11 @@ pub async fn main(args: arguments::Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         ))
     } else {
         None
@@ -521,7 +521,6 @@ pub async fn main(args: arguments::Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
-        args.max_surplus_fee_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -552,26 +551,6 @@ pub async fn main(args: arguments::Arguments) {
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
-    if args.process_fill_or_kill_limit_orders {
-        let limit_order_age = chrono::Duration::from_std(args.max_surplus_fee_age).unwrap();
-        LimitOrderQuoter {
-            limit_order_age,
-            quoter,
-            database: db.clone(),
-            parallelism: args.limit_order_quoter_parallelism,
-            balance_fetcher: balance_fetcher.clone(),
-            strategies: args.quoting_strategies,
-            batch_size: args.limit_order_quoter_batch_size,
-        }
-        .spawn();
-        LimitOrderMetrics {
-            quoting_age: limit_order_age,
-            validity_age: limit_order_age * SURPLUS_FEE_EXPIRATION_FACTOR.into(),
-            database: db.clone(),
-        }
-        .spawn();
-    }
-
     if args.enable_colocation {
         if args.drivers.is_empty() {
             panic!("colocation is enabled but no drivers are configured");
@@ -601,7 +580,6 @@ pub async fn main(args: arguments::Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-            token_info: token_info_fetcher,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

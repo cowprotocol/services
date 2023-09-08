@@ -242,8 +242,6 @@ Column                    | Type                         | Nullable | Details
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  full\_fee\_amount        | numeric                      | not null | estimated execution cost in sell\_token of this order
  class                    | [enum](#orderclass)          | not null | determines which special trade semantics will apply to the execution of this order
- surplus\_fee             | numeric                      | nullable | dynamic fee in sell\_token that gets regularly computed by the protocol for fill-or-kill limit orders, if this is null no surplus\_fee has been computed yet and this order will not be part of our auctions
- surplus\_fee\_timestamp  | timestamptz                  | nullable | last time the backend attempted to update the surplus\_fee for this order, order with too old surplus\_fees will not be put in auctions because it is likely very inaccurate
 
 
 Indexes:

@@ -33,6 +33,7 @@ impl ParaswapPriceEstimator {
                 solver,
             )),
             rate_limiter,
+            "paraswap".into(),
         ))
     }
 
@@ -61,6 +62,7 @@ mod tests {
             token_info::TokenInfoFetcher,
         },
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
     };
 
@@ -71,6 +73,7 @@ mod tests {
         let tokens = TokenInfoFetcher { web3 };
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
+            base_url: "https://apiv5.paraswap.io".to_string(),
             partner: "Test".to_string(),
         };
         let estimator = ParaswapPriceEstimator::new(
@@ -90,7 +93,7 @@ mod tests {
             verification: None,
             sell_token: weth,
             buy_token: gno,
-            in_amount: 10u128.pow(18).into(),
+            in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
             kind: OrderKind::Sell,
         };
 

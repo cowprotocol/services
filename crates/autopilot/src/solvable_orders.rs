@@ -2,8 +2,8 @@ use {
     crate::database::Postgres,
     anyhow::Result,
     bigdecimal::BigDecimal,
-    chrono::Utc,
     database::order_events::OrderEventLabel,
+    ethrpc::current_block::CurrentBlockStream,
     itertools::Itertools,
     model::{
         auction::Auction,
@@ -12,13 +12,12 @@ use {
         time::now_in_epoch_seconds,
     },
     num::{BigRational, FromPrimitive},
-    number_conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
+    number::conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
     primitive_types::{H160, H256, U256},
-    prometheus::{IntCounter, IntGauge, IntGaugeVec},
+    prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        current_block::CurrentBlockStream,
         price_estimation::native_price_cache::CachingNativePriceEstimator,
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
@@ -36,6 +35,10 @@ use {
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
+    /// Tracks success and failure of the solvable orders cache update task.
+    #[metric(labels("result"))]
+    auction_update: IntCounterVec,
+
     /// Auction creations.
     auction_creations: IntCounter,
 
@@ -72,7 +75,6 @@ pub struct SolvableOrdersCache {
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     ethflow_contract_address: Option<H160>,
-    surplus_fee_age: Duration,
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
@@ -108,7 +110,6 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         ethflow_contract_address: Option<H160>,
-        surplus_fee_age: Duration,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
         fee_objective_scaling_factor: f64,
@@ -131,9 +132,8 @@ impl SolvableOrdersCache {
             }),
             native_price_estimator,
             signature_validator,
-            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             ethflow_contract_address,
-            surplus_fee_age,
             limit_order_price_factor,
             store_in_db,
             fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
@@ -158,13 +158,7 @@ impl SolvableOrdersCache {
     /// other's results.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let db_solvable_orders = self
-            .database
-            .solvable_orders(
-                min_valid_to,
-                Utc::now() - chrono::Duration::from_std(self.surplus_fee_age).unwrap(),
-            )
-            .await?;
+        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
         let mut order_events = vec![];
@@ -272,6 +266,13 @@ impl SolvableOrdersCache {
 
     pub fn last_update_time(&self) -> Instant {
         self.cache.lock().unwrap().orders.update_time
+    }
+
+    pub fn track_auction_update(&self, result: &str) {
+        self.metrics
+            .auction_update
+            .with_label_values(&[result])
+            .inc();
     }
 }
 
@@ -473,17 +474,23 @@ async fn update_task(
         };
         let block = current_block.borrow().number;
         match cache.update(block).await {
-            Ok(()) => tracing::debug!(
-                %block,
-                "updated solvable orders in {}s",
-                start.elapsed().as_secs_f32()
-            ),
-            Err(err) => tracing::error!(
-                ?err,
-                %block,
-                "failed to update solvable orders in {}s",
-                start.elapsed().as_secs_f32()
-            ),
+            Ok(()) => {
+                cache.track_auction_update("success");
+                tracing::debug!(
+                    %block,
+                    "updated solvable orders in {}s",
+                    start.elapsed().as_secs_f32()
+                )
+            }
+            Err(err) => {
+                cache.track_auction_update("failure");
+                tracing::warn!(
+                    ?err,
+                    %block,
+                    "failed to update solvable orders in {}s",
+                    start.elapsed().as_secs_f32()
+                )
+            }
         }
         tokio::time::sleep_until(start + update_interval).await;
     }
@@ -504,7 +511,10 @@ fn get_orders_with_native_prices(
     let prices: HashMap<_, _> = native_price_estimator
         .get_cached_prices(&traded_tokens)
         .into_iter()
-        .flat_map(|(token, price)| to_normalized_price(price).map(|price| (token, price)))
+        .flat_map(|(token, result)| {
+            let price = to_normalized_price(result.ok()?)?;
+            Some((token, price))
+        })
         .collect();
 
     let high_priority_tokens = orders
@@ -708,14 +718,7 @@ mod tests {
         mockall::predicate::eq,
         model::{
             interaction::InteractionData,
-            order::{
-                Interactions,
-                LimitOrderClass,
-                OrderBuilder,
-                OrderData,
-                OrderMetadata,
-                OrderUid,
-            },
+            order::{Interactions, OrderBuilder, OrderData, OrderMetadata, OrderUid},
         },
         primitive_types::H160,
         shared::{
@@ -815,7 +818,7 @@ mod tests {
             Default::default(),
             1,
         );
-        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
 
         // We'll have no native prices in this call. But this call will cause a
         // background task to fetch the missing prices so we'll have them in the
@@ -1042,10 +1045,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                class: OrderClass::Limit(LimitOrderClass {
-                    surplus_fee: None,
-                    ..Default::default()
-                }),
+                class: OrderClass::Limit(Default::default()),
                 ..Default::default()
             },
             ..Default::default()

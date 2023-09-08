@@ -9,8 +9,9 @@ license = "MIT OR Apache-2.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
-global-metrics = { path = "../global-metrics" }
+observe = { path = "../observe" }
 model = { path = "../model" }
+number = { path = "../number" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

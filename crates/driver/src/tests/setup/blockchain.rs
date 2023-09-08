@@ -1,7 +1,10 @@
 use {
     super::{Asset, Order},
     crate::{
-        domain::{competition::order, eth},
+        domain::{
+            competition::order,
+            eth::{self, ContractAddress},
+        },
         infra::time,
         tests::{self, boundary},
     },
@@ -38,6 +41,7 @@ pub struct Blockchain {
     pub tokens: HashMap<&'static str, contracts::ERC20Mintable>,
     pub weth: contracts::WETH9,
     pub settlement: contracts::GPv2Settlement,
+    pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
     pub geth: Geth,
     pub pairs: Vec<Pair>,
@@ -472,6 +476,7 @@ impl Blockchain {
             settlement,
             domain_separator,
             weth,
+            ethflow: None,
             web3,
             web3_url: geth.url(),
             geth,
@@ -545,7 +550,7 @@ impl Blockchain {
             );
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
-            } else {
+            } else if order.funded {
                 wait_for(
                     &self.web3,
                     self.tokens
@@ -553,7 +558,7 @@ impl Blockchain {
                         .unwrap()
                         .mint(
                             self.trader_address,
-                            eth::U256::from(2) * quote.sell + order.user_fee,
+                            eth::U256::from(100000000000u64) * quote.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
                         .send(),

@@ -112,7 +112,7 @@ fn settle_pair(
             return None;
         }
     };
-    multi_order_solver::solve(slippage, orders.into_iter(), uniswap)
+    multi_order_solver::solve(slippage, orders, uniswap)
 }
 
 fn organize_orders_by_token_pair(orders: Vec<LimitOrder>) -> HashMap<TokenPair, Vec<LimitOrder>> {
@@ -164,7 +164,6 @@ mod tests {
         ethcontract::H160,
         maplit::hashmap,
         model::order::{
-            LimitOrderClass,
             Order,
             OrderClass,
             OrderData,
@@ -420,10 +419,7 @@ mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    class: OrderClass::Limit(LimitOrderClass {
-                        surplus_fee: Some(4834012_u128.into()),
-                        ..Default::default()
-                    }),
+                    class: OrderClass::Limit(Default::default()),
                     ..Default::default()
                 },
                 ..Default::default()

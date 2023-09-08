@@ -114,7 +114,8 @@ impl LimitOrderQuoter {
             }
             Err(
                 CalculateQuoteError::Other(err)
-                | CalculateQuoteError::Price(PriceEstimationError::Other(err)),
+                | CalculateQuoteError::Price(PriceEstimationError::ProtocolInternal(err))
+                | CalculateQuoteError::Price(PriceEstimationError::EstimatorInternal(err)),
             ) => {
                 tracing::warn!(?order_spec, ?err, "limit order quote error");
                 Metrics::get()
@@ -267,7 +268,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Self::instance(global_metrics::get_metric_storage_registry()).unwrap()
+        Self::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
 

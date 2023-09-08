@@ -71,7 +71,7 @@ pub mod naive_solver;
 mod oneinch_solver;
 pub mod optimizing_solver;
 mod paraswap_solver;
-pub mod score_computation;
+pub mod risk_computation;
 pub mod single_order_solver;
 mod zeroex_solver;
 
@@ -212,6 +212,7 @@ pub enum SimulationError {
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {
+    None,
     Naive,
     Baseline,
     OneInch,
@@ -371,6 +372,7 @@ pub async fn create(
     disabled_one_inch_protocols: Vec<String>,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
+    paraswap_api_url: String,
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
@@ -391,7 +393,7 @@ pub async fn create(
     post_processing_pipeline: Arc<dyn PostProcessing>,
     domain: &DomainSeparator,
     s3_instance_uploader: Option<Arc<S3InstanceUploader>>,
-    score_configuration: &score_computation::Arguments,
+    risk_configuration: &risk_computation::Arguments,
     settlement_rater: Arc<dyn SettlementRating>,
     enforce_correct_fees: bool,
     ethflow_contract: Option<H160>,
@@ -458,7 +460,7 @@ pub async fn create(
 
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
-        .map(|(account, solver_type)| {
+        .filter_map(|(account, solver_type)| {
             let single_order = |inner: Box<dyn SingleOrderSolving>| {
                 SingleOrderSolver::new(
                     inner,
@@ -479,9 +481,10 @@ pub async fn create(
                 "configured slippage",
             );
 
-            let score_calculator = score_configuration.get_calculator(solver_type);
+            let risk_calculator = risk_configuration.get_calculator(solver_type);
 
             let solver = match solver_type {
+                SolverType::None => return None,
                 SolverType::Naive => shared(NaiveSolver::new(
                     account,
                     slippage_calculator,
@@ -545,6 +548,7 @@ pub async fn create(
                     disabled_paraswap_dexs.clone(),
                     http_factory.create(),
                     paraswap_partner.clone(),
+                    paraswap_api_url.clone(),
                     slippage_calculator,
                 )))),
                 SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(
@@ -565,11 +569,12 @@ pub async fn create(
                     slippage_calculator,
                 )))),
             };
-            shared(OptimizingSolver {
+
+            Some(shared(OptimizingSolver {
                 inner: solver,
                 post_processing_pipeline: post_processing_pipeline.clone(),
-                score_calculator,
-            })
+                risk_calculator,
+            }))
         })
         .collect();
 
@@ -589,6 +594,10 @@ pub async fn create(
     }))
     .await;
     solvers.extend(external_solvers);
+
+    if solvers.is_empty() {
+        return Err(anyhow!("no solvers configured"));
+    }
 
     for solver in &solvers {
         tracing::info!(

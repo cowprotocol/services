@@ -9,12 +9,14 @@ pub use crate::boundary::contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20, 
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
+    ethflow: Option<eth::ContractAddress>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
+    pub ethflow: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -32,7 +34,16 @@ impl Contracts {
             .unwrap()
             .into();
         let weth = contracts::WETH9::at(web3, address);
-        Self { settlement, weth }
+
+        // Not doing deployment information because there are separate Ethflow contracts
+        // for staging and production.
+        let ethflow = addresses.ethflow;
+
+        Self {
+            settlement,
+            weth,
+            ethflow,
+        }
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
@@ -45,6 +56,10 @@ impl Contracts {
 
     pub fn weth_address(&self) -> eth::WethAddress {
         self.weth.address().into()
+    }
+
+    pub fn ethflow_address(&self) -> Option<eth::ContractAddress> {
+        self.ethflow
     }
 }
 

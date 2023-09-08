@@ -9,13 +9,14 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
+    ethrpc::{
+        current_block::{self, CurrentBlockStream},
+        Web3,
+    },
     futures::StreamExt,
     shared::{
-        current_block::{self, CurrentBlockStream},
-        ethrpc::Web3,
         http_solver::model::TokenAmount,
         maintenance::Maintaining,
-        price_estimation,
         sources::uniswap_v2::{
             pair_provider::PairProvider,
             pool_cache::PoolCache,
@@ -34,6 +35,10 @@ use {
     tracing::Instrument,
 };
 
+/// Median gas used per UniswapInteraction (v2).
+// estimated with https://dune.com/queries/640717
+const GAS_PER_SWAP: u64 = 90_171;
+
 pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquidity::Liquidity> {
     assert!(
         *pool.fee.numer() == 3 && *pool.fee.denom() == 1000,
@@ -42,7 +47,7 @@ pub fn to_domain(id: liquidity::Id, pool: ConstantProductOrder) -> Result<liquid
 
     Ok(liquidity::Liquidity {
         id,
-        gas: price_estimation::gas::GAS_PER_UNISWAP.into(),
+        gas: GAS_PER_SWAP.into(),
         kind: liquidity::Kind::UniswapV2(to_domain_pool(pool)?),
     })
 }
@@ -92,8 +97,8 @@ pub fn to_interaction(
     receiver: &eth::Address,
 ) -> eth::Interaction {
     let handler = uniswap_v2::Inner::new(
-        IUniswapLikeRouter::at(&shared::ethrpc::dummy::web3(), pool.router.into()),
-        GPv2Settlement::at(&shared::ethrpc::dummy::web3(), receiver.0),
+        IUniswapLikeRouter::at(&ethrpc::dummy::web3(), pool.router.into()),
+        GPv2Settlement::at(&ethrpc::dummy::web3(), receiver.0),
         Mutex::new(Allowances::empty(receiver.0)),
     );
 

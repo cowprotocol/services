@@ -47,9 +47,10 @@ There are additional crates that live in the cargo workspace.
 - `database` provides the shared database and storage layer logic shared between the `autopilot` and `orderbook`
 - `driver` an in-development binary that intends to replace the `solver`; it has a slightly different design that allows co-location with external solvers
 - `e2e` end-to-end tests
-- `global-metrics` metrics initialization shared across all crates
+- `ethrpc` ethrpc client with a few extensions
 - `model` provides the serialization model for orders in the order book api
-- `number_conversions` numerical conversions between 256-bit integers and various arbitrarily sized integer types
+- `number` extensions to number types, such as numerical conversions between 256-bit integers, nonzero types and de/serialization implementations
+- `observe` initialization and helper functions for logging and metrics
 - `shared` provides other shared functionality between the solver and order book
 - `testlib` shared helpers for writing unit and end-to-end tests
 
@@ -69,7 +70,7 @@ The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
 
 ### E2E Tests
 
-`cargo test -p e2e`.
+`cargo test -p e2e -- --ignored`.
 
 **Note:** Requires postgres database and local test network with smart contracts deployed (see below).
 

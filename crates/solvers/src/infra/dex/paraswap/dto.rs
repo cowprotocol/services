@@ -109,7 +109,7 @@ pub struct TransactionBody {
     pub user_address: H160,
 
     /// The partner name.
-    pub partner: Option<String>,
+    pub partner: String,
 }
 
 impl TransactionBody {

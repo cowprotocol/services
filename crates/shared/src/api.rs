@@ -20,7 +20,7 @@ pub type ApiReply = WithStatus<Json>;
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let response = err.default_response();
 
-    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics
         .requests_rejected
         .with_label_values(&[response.status().as_str()])
@@ -183,7 +183,7 @@ pub fn finalize_router(
     routes: Vec<(&'static str, BoxedRoute)>,
     log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
     metrics.reset_requests_rejected();
     for (method, _) in &routes {
         metrics.reset_requests_complete(method);
@@ -237,20 +237,18 @@ impl IntoWarpReply for PriceEstimationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::NoLiquidity => with_status(
-                error("NoLiquidity", "not enough liquidity"),
-                StatusCode::NOT_FOUND,
-            ),
-            Self::ZeroAmount => with_status(
-                error("ZeroAmount", "Please use non-zero amount field"),
+            Self::UnsupportedOrderType(order_type) => with_status(
+                error(
+                    "UnsupportedOrderType",
+                    format!("{order_type} not supported"),
+                ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::UnsupportedOrderType => {
-                tracing::error!("PriceEstimaton::UnsupportedOrderType");
-                internal_error_reply()
-            }
-            Self::RateLimited => internal_error_reply(),
-            Self::Other(err) => {
+            Self::NoLiquidity | Self::RateLimited | Self::EstimatorInternal(_) => with_status(
+                error("NoLiquidity", "no route found"),
+                StatusCode::NOT_FOUND,
+            ),
+            Self::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
             }

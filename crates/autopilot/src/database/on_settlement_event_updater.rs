@@ -3,7 +3,7 @@ use {
     database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::{H160, U256},
     model::order::OrderUid,
-    number_conversions::u256_to_big_decimal,
+    number::conversions::u256_to_big_decimal,
     sqlx::PgConnection,
 };
 

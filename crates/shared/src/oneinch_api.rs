@@ -10,7 +10,7 @@ use {
     anyhow::{ensure, Result},
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
-    model::u256_decimal,
+    number::u256_decimal,
     reqwest::{Client, IntoUrl, Url},
     serde::{de::DeserializeOwned, Deserialize},
     std::{

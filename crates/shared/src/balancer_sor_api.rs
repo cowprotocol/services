@@ -5,10 +5,11 @@
 
 use {
     crate::price_estimation::PriceEstimationError,
-    anyhow::{ensure, Context, Result},
+    anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
-    model::{order::OrderKind, u256_decimal},
+    model::order::OrderKind,
     num::BigInt,
+    number::u256_decimal,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
@@ -31,8 +32,6 @@ pub struct DefaultBalancerSorApi {
 impl DefaultBalancerSorApi {
     /// Creates a new Balancer SOR API instance.
     pub fn new(client: Client, base_url: impl IntoUrl, chain_id: u64) -> Result<Self> {
-        ensure!(chain_id == 1, "Balancer SOR API only supported on Mainnet",);
-
         let url = crate::url::join(&base_url.into_url()?, &chain_id.to_string());
         Ok(Self { client, url })
     }
@@ -51,7 +50,7 @@ impl From<Error> for PriceEstimationError {
     fn from(err: Error) -> Self {
         match err {
             Error::RateLimited => Self::RateLimited,
-            Error::Other(err) => Self::Other(err),
+            Error::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }

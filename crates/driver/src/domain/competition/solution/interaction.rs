@@ -39,7 +39,7 @@ impl Interaction {
         }
     }
 
-    /// Returns the ERC20 allowances required for executing this interaction
+    /// Returns the ERC20 approvals required for executing this interaction
     /// onchain.
     pub fn allowances(&self) -> Vec<eth::allowance::Required> {
         match self {
@@ -54,10 +54,8 @@ impl Interaction {
                     liquidity::Kind::ZeroEx(_) => todo!(),
                 };
                 vec![eth::Allowance {
-                    spender: eth::allowance::Spender {
-                        address,
-                        token: interaction.input.token,
-                    },
+                    token: interaction.input.token,
+                    spender: address,
                     amount: interaction.input.amount.into(),
                 }
                 .into()]

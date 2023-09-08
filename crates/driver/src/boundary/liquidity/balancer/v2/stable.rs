@@ -6,14 +6,17 @@ use {
             liquidity::{self, balancer},
         },
     },
-    shared::price_estimation,
     solver::liquidity::{balancer_v2, StablePoolOrder},
 };
+
+/// Median gas used per BalancerSwapGivenOutInteraction.
+// estimated with https://dune.com/queries/639857
+const GAS_PER_SWAP: u64 = 88_892;
 
 pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::Liquidity> {
     Ok(liquidity::Liquidity {
         id,
-        gas: price_estimation::gas::GAS_PER_BALANCER_SWAP.into(),
+        gas: GAS_PER_SWAP.into(),
         kind: liquidity::Kind::BalancerV2Stable(balancer::v2::stable::Pool {
             vault: vault(&pool),
             id: pool_id(&pool),
@@ -26,8 +29,8 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                                 token: token.into(),
                                 amount: reserve.balance.into(),
                             },
-                            scale: balancer::v2::ScalingFactor::from_exponent(
-                                reserve.scaling_exponent,
+                            scale: balancer::v2::ScalingFactor::from_raw(
+                                reserve.scaling_factor.as_uint256(),
                             )?,
                         })
                     })
@@ -37,7 +40,7 @@ pub fn to_domain(id: liquidity::Id, pool: StablePoolOrder) -> Result<liquidity::
                 pool.amplification_parameter.factor(),
                 pool.amplification_parameter.precision(),
             )?,
-            fee: pool.fee.as_uint256().into(),
+            fee: balancer::v2::Fee::from_raw(pool.fee.as_uint256()),
         }),
     })
 }

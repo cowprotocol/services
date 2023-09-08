@@ -2,14 +2,14 @@ mod settlement_encoder;
 
 use {
     crate::liquidity::Settleable,
-    anyhow::{ensure, Result},
+    anyhow::Result,
     model::order::{Order, OrderKind},
     num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero},
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext as _,
         encoded_settlement::{encode_trade, EncodedSettlement, EncodedTrade},
-        http_solver::model::{InternalizationStrategy, SubmissionPreference},
+        http_solver::model::InternalizationStrategy,
     },
     std::{
         collections::{HashMap, HashSet},
@@ -240,8 +240,6 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub submitter: SubmissionPreference, /* todo - extract submitter and score into a separate
-                                          * struct */
     pub score: Option<Score>,
 }
 
@@ -259,7 +257,7 @@ pub enum PriceCheckTokens {
 impl From<Option<Vec<H160>>> for PriceCheckTokens {
     fn from(token_list: Option<Vec<H160>>) -> Self {
         if let Some(tokens) = token_list {
-            PriceCheckTokens::Tokens(HashSet::from_iter(tokens.into_iter()))
+            PriceCheckTokens::Tokens(HashSet::from_iter(tokens))
         } else {
             PriceCheckTokens::All
         }
@@ -289,7 +287,6 @@ impl Settlement {
         let encoder = self.encoder.without_onchain_liquidity();
         Self {
             encoder,
-            submitter: self.submitter.clone(),
             score: self.score,
         }
     }
@@ -472,15 +469,11 @@ impl Settlement {
 
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
-        ensure!(self.submitter == other.submitter, "different submitters");
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self {
             encoder: merged,
-            submitter: self.submitter,
             score: match (self.score, other.score) {
-                (Some(Score::Score(left)), Some(Score::Score(right))) => {
-                    Some(Score::Score(left + right))
-                }
+                (Some(left), Some(right)) => left.merge(&right),
                 _ => None,
             },
         })
@@ -588,7 +581,7 @@ pub mod tests {
         super::*,
         crate::liquidity::SettlementHandling,
         maplit::hashmap,
-        model::order::{LimitOrderClass, OrderClass, OrderData, OrderKind, OrderMetadata},
+        model::order::{OrderClass, OrderData, OrderKind, OrderMetadata},
         num::FromPrimitive,
         shared::{addr, externalprices},
     };
@@ -1556,10 +1549,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: Some(1_000_u128.into()),
-                                ..Default::default()
-                            }),
+                            class: OrderClass::Limit(Default::default()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1590,10 +1580,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(LimitOrderClass {
-                                surplus_fee: Some(1_000_u128.into()),
-                                ..Default::default()
-                            }),
+                            class: OrderClass::Limit(Default::default()),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1635,10 +1622,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        class: OrderClass::Limit(LimitOrderClass {
-                            surplus_fee: Some(1_000_u128.into()),
-                            ..Default::default()
-                        }),
+                        class: OrderClass::Limit(Default::default()),
                         ..Default::default()
                     },
                     ..Default::default()

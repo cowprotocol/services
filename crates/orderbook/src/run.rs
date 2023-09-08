@@ -38,7 +38,7 @@ use {
             PriceEstimating,
         },
         recent_block_cache::CacheConfig,
-        signature_validator::Web3SignatureValidator,
+        signature_validator,
         sources::{
             self,
             balancer_v2::{
@@ -109,7 +109,14 @@ pub async fn run(args: Arguments) {
         .expect("Failed to retrieve network version ID");
     let network_name = network_name(&network, chain_id);
 
-    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = signature_validator::validator(
+        signature_validator::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+        },
+        web3.clone(),
+    );
 
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
@@ -138,7 +145,7 @@ pub async fn run(args: Arguments) {
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
 
-    let balance_fetcher = args.shared.balances.fetcher(
+    let balance_fetcher = account_balances::fetcher(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -146,11 +153,6 @@ pub async fn run(args: Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
-        simulation_web3.clone(),
-        args.shared
-            .tenderly
-            .get_api_instance(&http_factory, "balance_fetching".into())
-            .unwrap(),
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
@@ -286,7 +288,11 @@ pub async fn run(args: Arguments) {
                 args.shared.balancer_pool_deny_list.clone(),
             )
             .await
-            .expect("failed to create Balancer pool fetcher"),
+            .expect(
+                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         );
         Some(balancer_pool_fetcher)
     } else {
@@ -302,7 +308,11 @@ pub async fn run(args: Arguments) {
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
-            .expect("error innitializing Uniswap V3 pool fetcher"),
+            .expect(
+                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
+                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
+                 from the --baseline-sources until the graph recovers)",
+            ),
         ))
     } else {
         None

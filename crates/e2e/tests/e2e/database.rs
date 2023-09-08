@@ -2,8 +2,8 @@
 //! during a test.
 
 use {
-    crate::setup::Db,
     database::{byte_array::ByteArray, order_events, Address, TransactionHash},
+    e2e::setup::Db,
     futures::TryStreamExt,
     model::order::OrderUid,
     std::ops::DerefMut,

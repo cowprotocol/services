@@ -40,7 +40,7 @@ use {
         },
         token_info::TokenInfoFetching,
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     ethcontract::{H160, U256},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     gas_estimation::GasPriceEstimating,
@@ -90,7 +90,7 @@ impl HttpPriceEstimator {
     ) -> Self {
         Self {
             api,
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("http_estimator".into()),
             pools,
             balancer_pools,
             uniswap_v3_pools,
@@ -106,12 +106,18 @@ impl HttpPriceEstimator {
     }
 
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price())
-            .max(1.into()); // flooring at 1 to avoid division by zero error
+        let gas_price = U256::from_f64_lossy(
+            self.gas_info
+                .estimate()
+                .await
+                .map_err(PriceEstimationError::ProtocolInternal)?
+                .effective_gas_price(),
+        )
+        .max(1.into()); // flooring at 1 to avoid division by zero error
 
         let (sell_amount, buy_amount) = match query.kind {
-            OrderKind::Buy => (U256::max_value(), query.in_amount),
-            OrderKind::Sell => (query.in_amount, U256::one()),
+            OrderKind::Buy => (U256::max_value(), query.in_amount.get()),
+            OrderKind::Sell => (query.in_amount.get(), U256::one()),
         };
 
         let orders = maplit::btreemap! {
@@ -152,7 +158,8 @@ impl HttpPriceEstimator {
                 self.uniswap_pools(pairs.clone(), &gas_model),
                 self.balancer_pools(pairs.clone(), &gas_model),
                 self.uniswap_v3_pools(pairs.clone(), &gas_model)
-            )?;
+            )
+            .map_err(PriceEstimationError::ProtocolInternal)?;
             for pools in [uniswap_pools, balancer_pools, uniswap_v3_pools] {
                 for pool in pools {
                     amms.insert(pool.address, pool);
@@ -218,7 +225,10 @@ impl HttpPriceEstimator {
             .await
             .map_err(|err| match err {
                 ApiError::RateLimited => PriceEstimationError::RateLimited,
-                ApiError::Other(err) => PriceEstimationError::Other(err),
+                ApiError::DeadlineExceeded => {
+                    PriceEstimationError::EstimatorInternal(anyhow!("timeout"))
+                }
+                ApiError::Other(err) => PriceEstimationError::EstimatorInternal(err),
             })
         };
         let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
@@ -355,15 +365,13 @@ impl HttpPriceEstimator {
                 Ok(AmmModel {
                     parameters: AmmParameters::Stable(StablePoolParameters {
                         reserves: pool
-                            .reserves
-                            .iter()
-                            .map(|(token, state)| (*token, state.balance))
+                            .reserves_without_bpt()
+                            .map(|(token, state)| (token, state.balance))
                             .collect(),
                         scaling_rates: pool
-                            .reserves
-                            .into_iter()
+                            .reserves_without_bpt()
                             .map(|(token, state)| {
-                                Ok((token, compute_scaling_rate(state.scaling_exponent)?))
+                                Ok((token, compute_scaling_rate(state.scaling_factor)?))
                             })
                             .collect::<Result<_>>()
                             .with_context(|| "convert stable pool to solver model".to_string())?,
@@ -385,7 +393,10 @@ impl HttpPriceEstimator {
     fn extract_cost(&self, cost: &Option<TokenAmount>) -> Result<U256, PriceEstimationError> {
         if let Some(cost) = cost {
             if cost.token != self.native_token {
-                Err(anyhow::anyhow!("cost specified as an unknown token {}", cost.token).into())
+                Err(PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
+                    "cost specified as an unknown token {}",
+                    cost.token
+                )))
             } else {
                 Ok(cost.amount)
             }
@@ -418,8 +429,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            current_block::current_block_stream,
-            ethrpc::{http::HttpTransport, Web3},
             gas_price_estimation::FakeGasPriceEstimator,
             http_solver::{
                 model::{ExecutedAmmModel, ExecutedOrderModel, InteractionData, UpdatedAmmModel},
@@ -448,9 +457,11 @@ mod tests {
         anyhow::anyhow,
         clap::ValueEnum,
         ethcontract::dyns::DynTransport,
+        ethrpc::{current_block::current_block_stream, http::HttpTransport, Web3},
         gas_estimation::GasPrice1559,
         maplit::hashmap,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
         std::collections::HashMap,
         url::Url,
@@ -503,7 +514,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -515,7 +526,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await
@@ -556,12 +567,12 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
             .unwrap_err();
-        assert!(matches!(err, PriceEstimationError::Other(_)));
+        assert!(matches!(err, PriceEstimationError::EstimatorInternal(_)));
     }
 
     #[tokio::test]
@@ -602,7 +613,7 @@ mod tests {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
-                in_amount: 100.into(),
+                in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -697,7 +708,7 @@ mod tests {
             verification: None,
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
-            in_amount: 100.into(),
+            in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
         };
         let result = estimator.estimate(&query).await.unwrap();
@@ -804,7 +815,7 @@ mod tests {
                     ..Default::default()
                 },
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled("test".into()),
             pools,
             balancer_pools: Some(balancer_pool_fetcher),
             token_info,
@@ -829,7 +840,7 @@ mod tests {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount1,
+                in_amount: NonZeroU256::try_from(amount1).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
@@ -850,7 +861,7 @@ mod tests {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount2,
+                in_amount: NonZeroU256::try_from(amount2).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await;

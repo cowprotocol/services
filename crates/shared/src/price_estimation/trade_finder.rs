@@ -15,19 +15,21 @@ use {
         code_fetching::CodeFetching,
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
-        ethrpc::extensions::StateOverride,
         interaction::EncodedInteraction,
         rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Trade, TradeError, TradeFinding},
     },
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::{
+        deployed_bytecode,
+        dummy_contract,
         support::{Solver, Trader},
         GPv2Settlement,
         WETH9,
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    ethrpc::extensions::StateOverride,
     futures::{
         future::{BoxFuture, FutureExt as _},
         stream::StreamExt as _,
@@ -37,6 +39,7 @@ use {
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
         signature::{Signature, SigningScheme},
     },
+    number::nonzero::U256 as NonZeroU256,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -65,13 +68,17 @@ pub struct TradeVerifier {
 }
 
 impl TradeEstimator {
-    pub fn new(finder: Arc<dyn TradeFinding>, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        finder: Arc<dyn TradeFinding>,
+        rate_limiter: Arc<RateLimiter>,
+        label: String,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 finder,
                 verifier: None,
             }),
-            sharing: Default::default(),
+            sharing: RequestSharing::labelled(format!("estimator_{}", label)),
             rate_limiter,
         }
     }
@@ -107,13 +114,13 @@ impl Inner {
                 verifier
                     .verify(&price_query, verification, trade)
                     .await
-                    .map_err(PriceEstimationError::Other)
+                    .map_err(PriceEstimationError::EstimatorInternal)
             }
             (_, verification) => {
                 if verification.is_some() {
                     // TODO turn this into a hard error when everything else is set up
                     tracing::warn!(
-                        "verified quote was requested by no verification scheme was configured"
+                        "verified quote was requested but no verification scheme was configured"
                     );
                 }
                 let quote = self.finder.get_quote(&query).await?;
@@ -145,7 +152,7 @@ fn encode_settlement(
         // ourselves here.
         let buy_amount = match query.kind {
             OrderKind::Sell => trade.out_amount,
-            OrderKind::Buy => query.in_amount,
+            OrderKind::Buy => query.in_amount.get(),
         };
         let weth = dummy_contract!(WETH9, native_token);
         let calldata = weth.methods().withdraw(buy_amount).tx.data.unwrap().0;
@@ -155,8 +162,8 @@ fn encode_settlement(
 
     let tokens = vec![query.sell_token, query.buy_token];
     let clearing_prices = match query.kind {
-        OrderKind::Sell => vec![trade.out_amount, query.in_amount],
-        OrderKind::Buy => vec![query.in_amount, trade.out_amount],
+        OrderKind::Sell => vec![trade.out_amount, query.in_amount.get()],
+        OrderKind::Buy => vec![query.in_amount.get(), trade.out_amount],
     };
 
     // Configure the most disadvantageous trade possible (while taking possible
@@ -164,8 +171,11 @@ fn encode_settlement(
     // the [`Trade`] the simulation will still work and we can compute the actual
     // [`Trade::out_amount`] afterwards.
     let (sell_amount, buy_amount) = match query.kind {
-        OrderKind::Sell => (query.in_amount, 0.into()),
-        OrderKind::Buy => (trade.out_amount.max(U256::from(u128::MAX)), query.in_amount),
+        OrderKind::Sell => (query.in_amount.get(), 0.into()),
+        OrderKind::Buy => (
+            trade.out_amount.max(U256::from(u128::MAX)),
+            query.in_amount.get(),
+        ),
     };
     let fake_order = OrderData {
         sell_token: query.sell_token,
@@ -189,7 +199,7 @@ fn encode_settlement(
         verification.from,
         0,
         1,
-        &query.in_amount,
+        &query.in_amount.get(),
     );
 
     EncodedSettlement {
@@ -272,7 +282,7 @@ impl TradeVerifier {
             .tx;
 
         let sell_amount = match query.kind {
-            OrderKind::Sell => query.in_amount,
+            OrderKind::Sell => query.in_amount.get(),
             OrderKind::Buy => trade.out_amount,
         };
 
@@ -344,7 +354,7 @@ impl Clone for TradeEstimator {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
-            sharing: Default::default(),
+            sharing: self.sharing.clone(),
             rate_limiter: self.rate_limiter.clone(),
         }
     }
@@ -372,9 +382,10 @@ impl From<TradeError> for PriceEstimationError {
     fn from(err: TradeError) -> Self {
         match err {
             TradeError::NoLiquidity => Self::NoLiquidity,
-            TradeError::UnsupportedOrderType => Self::UnsupportedOrderType,
+            TradeError::UnsupportedOrderType(order_type) => Self::UnsupportedOrderType(order_type),
+            TradeError::DeadlineExceeded => Self::EstimatorInternal(anyhow!("timeout")),
             TradeError::RateLimited => Self::RateLimited,
-            TradeError::Other(err) => Self::Other(err),
+            TradeError::Other(err) => Self::EstimatorInternal(err),
         }
     }
 }
@@ -385,7 +396,7 @@ pub struct PriceQuery {
     // This should be `BUY_ETH_ADDRESS` if you actually want to trade `ETH`
     pub buy_token: H160,
     pub kind: OrderKind,
-    pub in_amount: U256,
+    pub in_amount: NonZeroU256,
 }
 
 /// Output of `Trader::settle` smart contract call.

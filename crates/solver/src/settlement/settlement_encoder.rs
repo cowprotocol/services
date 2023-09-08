@@ -8,7 +8,7 @@ use {
         order::{Order, OrderClass, OrderKind},
     },
     num::{BigRational, One},
-    number_conversions::big_rational_to_u256,
+    number::conversions::big_rational_to_u256,
     primitive_types::{H160, U256},
     shared::{
         conversions::U256Ext,
@@ -292,8 +292,8 @@ impl SettlementEncoder {
                 )?
             }
         };
-        self.pre_interactions.extend(interactions.pre.into_iter());
-        self.post_interactions.extend(interactions.post.into_iter());
+        self.pre_interactions.extend(interactions.pre);
+        self.post_interactions.extend(interactions.post);
         Ok(execution)
     }
 
@@ -484,8 +484,8 @@ impl SettlementEncoder {
     /// Returns the total surplus denominated in the native asset for this
     /// solution.
     pub fn total_surplus(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
-        self.user_trades().fold(Some(num::zero()), |acc, trade| {
-            Some(acc? + trade.surplus_in_native_token(external_prices)?)
+        self.user_trades().try_fold(num::zero(), |acc, trade| {
+            Some(acc + trade.surplus_in_native_token(external_prices)?)
         })
     }
 
@@ -751,14 +751,11 @@ pub mod tests {
     use {
         super::*,
         crate::settlement::NoopInteraction,
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::Bytes,
         maplit::hashmap,
         model::order::{Interactions, OrderBuilder, OrderData},
-        shared::{
-            dummy_contract,
-            interaction::{EncodedInteraction, Interaction},
-        },
+        shared::interaction::{EncodedInteraction, Interaction},
     };
 
     #[test]
@@ -1479,7 +1476,6 @@ pub mod tests {
             .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
             .with_buy_token(usdc)
             .with_buy_amount(U256::exp10(9)) // 1_000 USDC
-            .with_surplus_fee(U256::exp10(16)) // 0.01 WETH
             .with_fee_amount(0.into())
             .with_kind(OrderKind::Sell)
             .build();
@@ -1534,7 +1530,6 @@ pub mod tests {
             .with_buy_amount(U256::exp10(18)) // 1 WETH
             .with_sell_token(usdc)
             .with_sell_amount(1_010_000_000u128.into()) // 1_010 USDC
-            .with_surplus_fee(U256::exp10(7)) // 10 USDC
             .with_fee_amount(0.into())
             .with_kind(OrderKind::Buy)
             .build();

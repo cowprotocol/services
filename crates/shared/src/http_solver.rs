@@ -22,6 +22,8 @@ const SOLVER_RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 pub enum Error {
     #[error("rate limited")]
     RateLimited,
+    #[error("timeout")]
+    DeadlineExceeded,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -160,7 +162,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
-        let request_id = crate::request_id::get_task_local_storage();
+        let request_id = observe::request_id::get_task_local_storage();
         if let Some(id) = &request_id {
             url.query_pairs_mut().append_pair("request_id", id);
         }
@@ -196,7 +198,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             timeout,
             model
         );
-        let mut response = request.send().await.context("failed to send request")?;
+        let mut response = request.send().await.map_err(|err| {
+            if err.is_timeout() {
+                Error::DeadlineExceeded
+            } else {
+                anyhow!(err).context("failed to send request").into()
+            }
+        })?;
         let status = response.status();
         let response_body =
             response_body_with_size_limit(&mut response, SOLVER_RESPONSE_SIZE_LIMIT)

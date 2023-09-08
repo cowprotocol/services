@@ -4,12 +4,6 @@
 //! returns all up-to-date `Weighted` and `Stable` pools to be consumed by
 //! external users (e.g. Price Estimators and Solvers).
 
-mod aggregate;
-mod cache;
-mod internal;
-mod pool_storage;
-mod registry;
-
 use {
     self::{
         aggregate::Aggregate,
@@ -32,7 +26,6 @@ use {
         swap::fixed_point::Bfp,
     },
     crate::{
-        current_block::{BlockRetrieving, CurrentBlockStream},
         ethrpc::{Web3, Web3Transport},
         maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig},
@@ -41,9 +34,12 @@ use {
     anyhow::{Context, Result},
     clap::ValueEnum,
     contracts::{
+        BalancerV2ComposableStablePoolFactory,
+        BalancerV2ComposableStablePoolFactoryV3,
+        BalancerV2ComposableStablePoolFactoryV4,
+        BalancerV2ComposableStablePoolFactoryV5,
         BalancerV2LiquidityBootstrappingPoolFactory,
         BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
-        BalancerV2StablePoolFactory,
         BalancerV2StablePoolFactoryV2,
         BalancerV2Vault,
         BalancerV2WeightedPool2TokensFactory,
@@ -52,18 +48,26 @@ use {
         BalancerV2WeightedPoolFactoryV4,
     },
     ethcontract::{dyns::DynInstance, BlockId, Instance, H160, H256},
+    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
     model::TokenPair,
     reqwest::Client,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         sync::Arc,
     },
 };
 pub use {
     common::TokenState,
     stable::AmplificationParameter,
-    weighted::TokenState as WeightedTokenState,
+    weighted::{TokenState as WeightedTokenState, Version as WeightedPoolVersion},
 };
+
+mod aggregate;
+mod cache;
+mod internal;
+mod pool_storage;
+mod registry;
+
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
 }
@@ -79,7 +83,8 @@ pub struct CommonPoolState {
 #[derive(Clone, Debug)]
 pub struct WeightedPool {
     pub common: CommonPoolState,
-    pub reserves: HashMap<H160, WeightedTokenState>,
+    pub reserves: BTreeMap<H160, WeightedTokenState>,
+    pub version: WeightedPoolVersion,
 }
 
 impl WeightedPool {
@@ -92,6 +97,7 @@ impl WeightedPool {
                 paused: false,
             },
             reserves: weighted_state.tokens.into_iter().collect(),
+            version: weighted_state.version,
         }
     }
 }
@@ -99,7 +105,7 @@ impl WeightedPool {
 #[derive(Clone, Debug)]
 pub struct StablePool {
     pub common: CommonPoolState,
-    pub reserves: HashMap<H160, TokenState>,
+    pub reserves: BTreeMap<H160, TokenState>,
     pub amplification_parameter: AmplificationParameter,
 }
 
@@ -168,10 +174,13 @@ pub enum BalancerFactoryKind {
     WeightedV3,
     WeightedV4,
     Weighted2Token,
-    Stable,
     StableV2,
     LiquidityBootstrapping,
     NoProtocolFeeLiquidityBootstrapping,
+    ComposableStable,
+    ComposableStableV3,
+    ComposableStableV4,
+    ComposableStableV5,
 }
 
 impl BalancerFactoryKind {
@@ -184,10 +193,20 @@ impl BalancerFactoryKind {
                 Self::WeightedV3,
                 Self::WeightedV4,
                 Self::Weighted2Token,
-                Self::Stable,
                 Self::StableV2,
+                Self::ComposableStable,
+                Self::ComposableStableV3,
+                Self::ComposableStableV4,
+                Self::ComposableStableV5,
             ],
-            100 => vec![Self::WeightedV3, Self::WeightedV4, Self::StableV2],
+            100 => vec![
+                Self::WeightedV3,
+                Self::WeightedV4,
+                Self::StableV2,
+                Self::ComposableStableV3,
+                Self::ComposableStableV4,
+                Self::ComposableStableV5,
+            ],
             _ => Default::default(),
         }
     }
@@ -227,13 +246,24 @@ impl BalancerContracts {
                 BalancerFactoryKind::Weighted2Token => {
                     instance!(BalancerV2WeightedPool2TokensFactory)
                 }
-                BalancerFactoryKind::Stable => instance!(BalancerV2StablePoolFactory),
                 BalancerFactoryKind::StableV2 => instance!(BalancerV2StablePoolFactoryV2),
                 BalancerFactoryKind::LiquidityBootstrapping => {
                     instance!(BalancerV2LiquidityBootstrappingPoolFactory)
                 }
                 BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
                     instance!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory)
+                }
+                BalancerFactoryKind::ComposableStable => {
+                    instance!(BalancerV2ComposableStablePoolFactory)
+                }
+                BalancerFactoryKind::ComposableStableV3 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV3)
+                }
+                BalancerFactoryKind::ComposableStableV4 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV4)
+                }
+                BalancerFactoryKind::ComposableStableV5 => {
+                    instance!(BalancerV2ComposableStablePoolFactoryV5)
                 }
             };
 
@@ -380,18 +410,24 @@ async fn create_aggregate_pool_fetcher(
     let mut fetchers = Vec::new();
     for (kind, instance) in &contracts.factories {
         let registry = match kind {
-            BalancerFactoryKind::Weighted
-            | BalancerFactoryKind::WeightedV3
-            | BalancerFactoryKind::WeightedV4
-            | BalancerFactoryKind::Weighted2Token => {
+            BalancerFactoryKind::Weighted | BalancerFactoryKind::Weighted2Token => {
                 registry!(BalancerV2WeightedPoolFactory, instance)
             }
-            BalancerFactoryKind::Stable | BalancerFactoryKind::StableV2 => {
-                registry!(BalancerV2StablePoolFactory, instance)
+            BalancerFactoryKind::WeightedV3 | BalancerFactoryKind::WeightedV4 => {
+                registry!(BalancerV2WeightedPoolFactoryV3, instance)
+            }
+            BalancerFactoryKind::StableV2 => {
+                registry!(BalancerV2StablePoolFactoryV2, instance)
             }
             BalancerFactoryKind::LiquidityBootstrapping
             | BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
                 registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
+            }
+            BalancerFactoryKind::ComposableStable
+            | BalancerFactoryKind::ComposableStableV3
+            | BalancerFactoryKind::ComposableStableV4
+            | BalancerFactoryKind::ComposableStableV5 => {
+                registry!(BalancerV2ComposableStablePoolFactory, instance)
             }
         };
         fetchers.push(registry);
@@ -464,7 +500,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            ethrpc,
             sources::balancer_v2::{
                 graph_api::{BalancerSubgraphClient, PoolData, PoolType},
                 pool_init::EmptyPoolInitializer,
@@ -499,7 +534,7 @@ mod tests {
             Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
                 web3: web3.clone(),
             })));
-        let block_stream = crate::current_block::current_block_stream(
+        let block_stream = ethrpc::current_block::current_block_stream(
             Arc::new(web3.clone()),
             Duration::from_secs(1000),
         )
@@ -546,7 +581,7 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
         println!("Indexing events for chain {chain_id}");
-        crate::tracing::initialize_reentrant("warn,shared=debug,shared::ethrpc=trace");
+        observe::tracing::initialize_reentrant("warn,shared=debug,ethrpc=trace");
 
         let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
@@ -606,7 +641,10 @@ mod tests {
                 PoolKind::Weighted(state) => {
                     for token in &subgraph_pool.tokens {
                         let token_state = &state.tokens[&token.address];
-                        assert_eq!(token_state.common.scaling_exponent, 18 - token.decimals);
+                        assert_eq!(
+                            token_state.common.scaling_factor,
+                            Bfp::exp10(18 - token.decimals as i32)
+                        );
 
                         // Don't check weights for LBPs because they may be out
                         // of date in the subgraph. See:
@@ -619,7 +657,10 @@ mod tests {
                 PoolKind::Stable(state) => {
                     for token in &subgraph_pool.tokens {
                         let token_state = &state.tokens[&token.address];
-                        assert_eq!(token_state.scaling_exponent, 18 - token.decimals);
+                        assert_eq!(
+                            token_state.scaling_factor,
+                            Bfp::exp10(18 - token.decimals as i32)
+                        );
                     }
                 }
             };

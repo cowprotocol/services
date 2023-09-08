@@ -61,6 +61,7 @@ impl ParaswapSolver {
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
+        base_url: String,
         slippage_calculator: SlippageCalculator,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
@@ -72,6 +73,7 @@ impl ParaswapSolver {
             allowance_fetcher: Box::new(allowance_fetcher),
             client: Box::new(DefaultParaswapApi {
                 client,
+                base_url,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
             }),
             disabled_paraswap_dexs,
@@ -220,7 +222,7 @@ mod tests {
             interactions::allowances::{Approval, MockAllowanceManaging},
             test::account,
         },
-        contracts::WETH9,
+        contracts::{dummy_contract, WETH9},
         ethcontract::U256,
         futures::FutureExt as _,
         maplit::hashmap,
@@ -228,7 +230,6 @@ mod tests {
         model::order::{Order, OrderData, OrderKind},
         reqwest::Client,
         shared::{
-            dummy_contract,
             ethrpc::create_env_test_transport,
             paraswap_api::MockParaswapApi,
             token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
@@ -564,6 +565,7 @@ mod tests {
             vec![],
             Client::new(),
             None,
+            "https://apiv5.paraswap.io".into(),
             SlippageCalculator::default(),
         );
 

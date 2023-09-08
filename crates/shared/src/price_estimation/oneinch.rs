@@ -23,6 +23,7 @@ impl OneInchPriceEstimator {
         rate_limiter: Arc<RateLimiter>,
         referrer_address: Option<H160>,
         solver: H160,
+        settlement_contract: H160,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(OneInchTradeFinder::new(
@@ -30,8 +31,10 @@ impl OneInchPriceEstimator {
                 disabled_protocols,
                 referrer_address,
                 solver,
+                settlement_contract,
             )),
             rate_limiter,
+            "oneinch".into(),
         ))
     }
 
@@ -59,6 +62,7 @@ mod tests {
         },
         futures::FutureExt as _,
         model::order::OrderKind,
+        number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
     };
 
@@ -73,6 +77,7 @@ mod tests {
                 )),
                 None,
                 H160([1; 20]),
+                H160([2; 20]),
             )
         }
 
@@ -117,7 +122,7 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await
@@ -140,14 +145,14 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
             })
             .await;
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::UnsupportedOrderType)
+            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 
@@ -175,14 +180,14 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string().contains("Internal Server Error")
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string().contains("Internal Server Error")
         ));
     }
 
@@ -201,14 +206,14 @@ mod tests {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
-                in_amount: 1_000_000_000_000_000_000u128.into(),
+                in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string() == "malformed JSON"
+            Err(PriceEstimationError::EstimatorInternal(e)) if e.to_string() == "malformed JSON"
         ));
     }
 
@@ -227,7 +232,7 @@ mod tests {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
-                in_amount: 10u128.pow(18).into(),
+                in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
             })
             .await;

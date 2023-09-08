@@ -25,6 +25,7 @@ pub struct Pool {
     pub id: Id,
     pub reserves: Reserves,
     pub fee: Fee,
+    pub version: Version,
 }
 
 impl Pool {
@@ -114,25 +115,36 @@ pub struct Reserve {
 }
 
 /// A Balancer token weight.
-///
-/// This is a weight represented as (value / 1e18).
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Weight(pub eth::U256);
 
 impl Weight {
+    /// Creates a new token weight for the specified raw [`eth::U256`] value.
+    /// This method expects a weight represented as `w * 1e18`. That is, a
+    /// weight of 1 is created with `Weight::new(U256::exp10(18))`.
+    pub fn from_raw(weight: eth::U256) -> Self {
+        Self(weight)
+    }
+
+    /// Returns the weight as a raw [`eth::U256`] value as it is represented
+    /// on-chain.
+    pub fn as_raw(&self) -> eth::U256 {
+        self.0
+    }
+
     fn base() -> eth::U256 {
-        1_000_000_000_000_000_000_u128.into()
+        eth::U256::exp10(18)
     }
 }
 
-impl From<eth::U256> for Weight {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Weight> for eth::U256 {
-    fn from(value: Weight) -> Self {
-        value.0
-    }
+/// The weighted pool version. Different Balancer V2 weighted pool versions use
+/// slightly different math.
+#[derive(Clone, Copy, Debug)]
+pub enum Version {
+    /// Weighted pool math from the original Balancer V2 weighted pool
+    /// implementation.
+    V0,
+    /// Weighted pool math for Balancer V2 weighted pools versions 3+. This uses
+    /// a "shortcut" when computing exponentiation for 50/50 and 20/80 pools.
+    V3Plus,
 }
