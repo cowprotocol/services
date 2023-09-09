@@ -89,15 +89,20 @@ impl Tenderly {
             .error_for_status()?
             .json()
             .await?;
-        Ok(res.into())
+
+        res.into()
     }
 }
 
 #[derive(Debug)]
 pub struct Simulation {
+    pub id: SimulationId,
     pub gas: eth::Gas,
     pub access_list: eth::AccessList,
 }
+
+#[derive(Debug)]
+pub struct SimulationId(String);
 
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum GenerateAccessList {
@@ -107,4 +112,22 @@ pub(super) enum GenerateAccessList {
 
 #[derive(Debug, Error)]
 #[error("tenderly error")]
-pub struct Error(#[from] reqwest::Error);
+pub enum Error {
+    Http(#[from] reqwest::Error),
+    Revert(SimulationId),
+}
+
+impl From<dto::Response> for Result<Simulation, Error> {
+    fn from(res: dto::Response) -> Self {
+        let id = SimulationId(res.simulation.id);
+        if res.transaction.status {
+            Ok(Simulation {
+                id,
+                gas: res.transaction.gas_used.into(),
+                access_list: res.generated_access_list.unwrap_or_default().into(),
+            })
+        } else {
+            Err(Error::Revert(id))
+        }
+    }
+}
