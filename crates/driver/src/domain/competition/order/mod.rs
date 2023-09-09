@@ -133,11 +133,12 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
-    /// The available sell amount for the order.
+    /// The sell asset to pass to the solver.
     ///
-    /// This returns the maximum partial sell amount that can be used given past
-    /// partial executions and available balance.
-    pub fn available_sell(&self) -> eth::Asset {
+    /// In order to simplify solver logic, we scale the remaining sell amount
+    /// for orders that have been partially filled to simplify computations on
+    /// the solver side. This is so the solvers only see "whats left".
+    pub fn solver_sell(&self) -> eth::Asset {
         match self.partial {
             Partial::Yes { available } => eth::Asset {
                 token: self.sell.token,
@@ -149,36 +150,30 @@ impl Order {
         }
     }
 
-    /// The available buy amount for the order.
+    /// The buy asset to pass to the solver. This is a special case in two ways:
     ///
-    /// This returns the minimum partial buy amount that can be used given past
-    /// partial executions and available balance.
-    pub fn available_buy(&self) -> eth::Asset {
+    /// 1. orders which buy ETH: The settlement contract only works with ERC20
+    ///    tokens, but unfortunately ETH is not an ERC20 token. We still want to
+    ///    provide a seamless user experience for ETH trades, so the driver will
+    ///    encode the settlement to automatically unwrap the WETH into ETH after
+    ///    the trade is done. For this reason, we want the solvers to solve the
+    ///    orders which buy ETH as if they were buying WETH, and then add our
+    ///    unwrap interaction to that solution.
+    /// 2. partial fill orders: The driver will scale the remaining amounts for
+    ///    orders that have been partially filled to simplify computations on
+    ///    the solver side. This is so the solvers only see "whats left".
+    pub fn solver_buy(&self, weth: eth::WethAddress) -> eth::Asset {
         match self.partial {
             Partial::Yes { available } => eth::Asset {
-                token: self.buy.token,
+                token: self.buy.token.wrap(weth),
                 amount: util::math::mul_ratio_ceil(self.buy.amount.0, available.0, self.target().0)
                     .unwrap_or_default()
                     .into(),
             },
-            Partial::No => self.buy,
-        }
-    }
-
-    /// The buy asset to pass to the solver. This is a special case due to
-    /// orders which buy ETH. The settlement contract only works with ERC20
-    /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
-    /// provide a seamless user experience for ETH trades, so the driver
-    /// will encode the settlement to automatically unwrap the WETH into ETH
-    /// after the trade is done.
-    ///
-    /// For this reason, we want the solvers to solve the orders which buy ETH
-    /// as if they were buying WETH, and then add our unwrap interaction to that
-    /// solution.
-    pub fn solver_buy(&self, weth: eth::WethAddress) -> eth::Asset {
-        eth::Asset {
-            amount: self.buy.amount,
-            token: self.buy.token.wrap(weth),
+            Partial::No => eth::Asset {
+                token: self.buy.token.wrap(weth),
+                amount: self.buy.amount,
+            },
         }
     }
 

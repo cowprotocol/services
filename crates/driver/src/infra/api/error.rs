@@ -17,6 +17,7 @@ enum Kind {
     InvalidAuctionId,
     MissingSurplusFee,
     InvalidTokens,
+    InvalidAmounts,
     QuoteSameTokens,
 }
 
@@ -40,6 +41,10 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
             Kind::InvalidTokens => {
                 "Invalid tokens specified in the auction, the tokens for some orders are missing"
+            }
+            Kind::InvalidAmounts => {
+                "Invalid order specified in the auction, some orders have either a 0 remaining buy \
+                 or sell amount"
             }
         };
         (
@@ -84,6 +89,7 @@ impl From<api::routes::AuctionError> for (hyper::StatusCode, axum::Json<Error>) 
             api::routes::AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
             api::routes::AuctionError::InvalidTokens => Kind::InvalidTokens,
+            api::routes::AuctionError::InvalidAmounts => Kind::InvalidAmounts,
             api::routes::AuctionError::Blockchain(_) => Kind::Unknown,
         };
         error.into()

@@ -44,9 +44,16 @@ impl Auction {
         let weth = eth.contracts().weth_address();
         if !orders.iter().all(|order| {
             tokens.0.contains_key(&order.buy.token.wrap(weth))
-                && tokens.0.contains_key(&order.sell.token.wrap(weth))
+                && tokens.0.contains_key(&order.sell.token)
         }) {
             return Err(Error::InvalidTokens);
+        }
+
+        // Ensure that there are no orders with 0 amounts.
+        if orders.iter().any(|order| {
+            order.solver_sell().amount.0.is_zero() || order.solver_buy(weth).amount.0.is_zero()
+        }) {
+            return Err(Error::InvalidAmounts);
         }
 
         Ok(Self {
@@ -191,7 +198,12 @@ impl Auction {
                 available.0 =
                     util::math::mul_ratio(available.0, used_sell, max_sell).unwrap_or_default();
             }
-            if order.available_sell().amount.0.is_zero() || order.available_buy().amount.0.is_zero()
+            if order.solver_sell().amount.0.is_zero()
+                || order
+                    .solver_buy(eth.contracts().weth_address())
+                    .amount
+                    .0
+                    .is_zero()
             {
                 observe::order_excluded_from_auction(
                     order,
@@ -357,6 +369,8 @@ pub struct InvalidPrice;
 pub enum Error {
     #[error("invalid auction tokens")]
     InvalidTokens,
+    #[error("invalid order amounts")]
+    InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
 }
