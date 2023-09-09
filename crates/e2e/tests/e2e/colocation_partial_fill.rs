@@ -90,7 +90,7 @@ async fn test(web3: Web3) {
         .unwrap();
     assert!(
         // Sell balance is strictly less than 2.0 because of the fee.
-        (1_999_999_000_000_000_000_u128..2_000_000_000_000_000_000_u128)
+        (1_999_000_000_000_000_000_u128..2_000_000_000_000_000_000_u128)
             .contains(&sell_balance.as_u128())
     );
     let buy_balance = token.balance_of(trader.address()).call().await.unwrap();

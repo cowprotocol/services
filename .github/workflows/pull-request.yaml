@@ -73,7 +73,7 @@ jobs:
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
-          up-opts: -d db migrations hardhat
+          up-opts: -d db migrations chain
       - run: cargo test -p e2e local_node -- --ignored --test-threads 1 --nocapture
 
   test-driver:
@@ -85,14 +85,11 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v3
+      - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p driver --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
-        with:
-          file: docker-compose.yaml
-          up-opts: -d dev-geth
+      # Build the driver's tests.
+      - run: cargo build -p driver --tests
+      # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: cargo test -p driver -- --ignored
 
   openapi:
