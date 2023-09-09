@@ -27,6 +27,7 @@ pub struct Request {
 pub struct Response {
     pub transaction: Transaction,
     pub generated_access_list: Option<AccessList>,
+    pub simulation: Simulation,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,4 +75,9 @@ impl From<AccessList> for eth::AccessList {
             .collect_vec()
             .into()
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Simulation {
+    pub id: String,
 }
