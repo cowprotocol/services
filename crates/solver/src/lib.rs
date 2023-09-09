@@ -24,3 +24,5 @@ pub mod settlement_submission;
 pub mod solver;
 #[cfg(test)]
 mod test;
+
+pub use self::run::{run, start};

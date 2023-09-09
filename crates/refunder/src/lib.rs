@@ -4,6 +4,8 @@ pub mod refund_service;
 pub mod submitter;
 
 use {
+    crate::arguments::Arguments,
+    clap::Parser,
     contracts::CoWSwapEthFlow,
     ethcontract::{Account, PrivateKey},
     refund_service::RefundService,
@@ -18,7 +20,19 @@ use {
 const LOOP_INTERVAL: Duration = Duration::from_secs(30);
 const DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY: Duration = LOOP_INTERVAL.saturating_mul(4);
 
-pub async fn main(args: arguments::Arguments) {
+pub async fn start(args: impl Iterator<Item = String>) {
+    let args = Arguments::parse_from(args);
+    observe::tracing::initialize(
+        args.logging.log_filter.as_str(),
+        args.logging.log_stderr_threshold,
+    );
+    observe::panic_hook::install();
+    tracing::info!("running refunder with validated arguments:\n{}", args);
+    observe::metrics::setup_registry(Some("refunder".into()), None);
+    run(args).await;
+}
+
+pub async fn run(args: arguments::Arguments) {
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(&args.ethrpc, &http_factory, &args.node_url, "base");
     if let Some(expected_chain_id) = args.chain_id {

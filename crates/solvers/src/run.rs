@@ -10,11 +10,21 @@ use {
     tokio::sync::oneshot,
 };
 
+pub async fn start(args: impl IntoIterator<Item = String>) {
+    observe::panic_hook::install();
+    let args = cli::Args::parse_from(args);
+    run_with(args, None).await;
+}
+
 pub async fn run(
     args: impl IntoIterator<Item = String>,
     bind: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
+    run_with(args, bind).await;
+}
+
+async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     observe::tracing::initialize_reentrant(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
