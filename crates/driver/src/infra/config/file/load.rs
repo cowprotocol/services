@@ -51,6 +51,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
                     ethcontract::Account::Kms(account, None)
                 }
+                file::Account::Address(address) => ethcontract::Account::Local(address, None),
             };
             solver::Config {
                 endpoint: config.endpoint,

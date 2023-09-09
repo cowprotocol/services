@@ -279,6 +279,7 @@ dependencies = [
  "sqlx",
  "strum",
  "testlib",
+ "thiserror",
  "tokio",
  "tracing",
  "url",
