@@ -1,19 +1,26 @@
 use {
     crate::{
-        api,
-        app_data,
         arguments::Arguments,
-        database::Postgres,
-        ipfs::Ipfs,
-        ipfs_app_data::IpfsAppData,
-        orderbook::Orderbook,
+        database::{
+            ethflow_events::event_retriever::EthFlowRefundRetriever,
+            onchain_order_events::{
+                ethflow_events::{determine_ethflow_indexing_start, EthFlowOnchainOrderParser},
+                event_retriever::CoWSwapOnchainOrdersContract,
+                OnchainOrderParser,
+            },
+            Postgres,
+        },
+        driver_api::Driver,
+        event_updater::{EventUpdater, GPv2SettlementContract},
+        run_loop::RunLoop,
+        solvable_orders::SolvableOrdersCache,
     },
-    anyhow::{anyhow, Context, Result},
     clap::Parser,
-    contracts::{BalancerV2Vault, GPv2Settlement, HooksTrampoline, IUniswapV3Factory, WETH9},
-    ethcontract::errors::DeployError,
-    futures::{FutureExt, StreamExt},
-    model::{order::BUY_ETH_ADDRESS, DomainSeparator},
+    contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
+    ethcontract::{errors::DeployError, BlockNumber},
+    ethrpc::current_block::block_number_to_block_number_hash,
+    futures::StreamExt,
+    model::DomainSeparator,
     shared::{
         account_balances,
         bad_token::{
@@ -24,25 +31,17 @@ use {
             trace_call::TraceCallDetector,
         },
         baseline_solver::BaseTokens,
-        code_fetching::CachedCodeFetcher,
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
-        metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-        network::network_name,
+        metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
-        order_quoting::{OrderQuoter, QuoteHandler},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
-        price_estimation::{
-            factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
-            native::NativePriceEstimating,
-            PriceEstimating,
-        },
+        order_quoting::OrderQuoter,
+        price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator,
         sources::{
-            self,
             balancer_v2::{
                 pool_fetching::BalancerContracts,
                 BalancerFactoryKind,
@@ -54,12 +53,25 @@ use {
             PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+        token_list::{AutoUpdatingTokenList, TokenListConfiguration},
         zeroex_api::DefaultZeroExApi,
     },
-    std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::{task, task::JoinHandle},
-    warp::Filter,
+    std::{collections::HashSet, sync::Arc, time::Duration},
+    tracing::Instrument,
 };
+
+struct Liveness {
+    solvable_orders_cache: Arc<SolvableOrdersCache>,
+    max_auction_age: Duration,
+}
+
+#[async_trait::async_trait]
+impl LivenessChecking for Liveness {
+    async fn is_alive(&self) -> bool {
+        let age = self.solvable_orders_cache.last_update_time().elapsed();
+        age <= self.max_auction_age
+    }
+}
 
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
@@ -67,15 +79,21 @@ pub async fn start(args: impl Iterator<Item = String>) {
         args.shared.logging.log_filter.as_str(),
         args.shared.logging.log_stderr_threshold,
     );
-    tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
-    observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
+    tracing::info!("running autopilot with validated arguments:\n{}", args);
+    observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
     run(args).await;
 }
 
+/// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments) {
-    let http_factory = HttpClientFactory::new(&args.http_client);
+    let db = Postgres::new(args.db_url.as_str()).await.unwrap();
+    tokio::task::spawn(
+        crate::database::database_metrics(db.clone())
+            .instrument(tracing::info_span!("database_metrics")),
+    );
 
+    let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
         &args.shared.ethrpc,
         &http_factory,
@@ -99,6 +117,13 @@ pub async fn run(args: Arguments) {
         );
     }
 
+    let current_block_stream = args
+        .shared
+        .current_block
+        .stream(web3.clone())
+        .await
+        .unwrap();
+
     let settlement_contract = match args.shared.settlement_contract_address {
         Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
         None => contracts::GPv2Settlement::deployed(&web3)
@@ -116,23 +141,6 @@ pub async fn run(args: Arguments) {
             .await
             .expect("load native token contract"),
     };
-
-    let network = web3
-        .net()
-        .version()
-        .await
-        .expect("Failed to retrieve network version ID");
-    let network_name = network_name(&network, chain_id);
-
-    let signature_validator = signature_validator::validator(
-        signature_validator::Contracts {
-            chain_id,
-            settlement: settlement_contract.address(),
-            vault_relayer,
-        },
-        web3.clone(),
-    );
-
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
             &web3, address, None,
@@ -146,21 +154,33 @@ pub async fn run(args: Arguments) {
             Err(err) => panic!("failed to get balancer vault contract: {err}"),
         },
     };
-
-    let hooks_contract = match args.hooks_contract_address {
-        Some(address) => HooksTrampoline::at(&web3, address),
-        None => HooksTrampoline::deployed(&web3)
-            .await
-            .expect("load hooks trampoline contract"),
+    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
     };
 
-    verify_deployed_contract_constants(&settlement_contract, chain_id)
+    let network = web3
+        .net()
+        .version()
         .await
-        .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
-    let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
+        .expect("Failed to retrieve network version ID");
+    let network_name = shared::network::network_name(&network, chain_id);
+    let network_time_between_blocks = args
+        .shared
+        .network_block_interval
+        .or_else(|| shared::network::block_interval(&network, chain_id))
+        .expect("unknown network block interval");
 
-    let balance_fetcher = account_balances::fetcher(
+    let signature_validator = signature_validator::validator(
+        signature_validator::Contracts {
+            chain_id,
+            settlement: settlement_contract.address(),
+            vault_relayer,
+        },
+        web3.clone(),
+    );
+
+    let balance_fetcher = account_balances::cached(
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
@@ -168,9 +188,10 @@ pub async fn run(args: Arguments) {
             vault: vault.as_ref().map(|contract| contract.address()),
         },
         web3.clone(),
+        current_block_stream.clone(),
     );
 
-    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+    let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
             &http_factory,
             &web3,
@@ -179,10 +200,11 @@ pub async fn run(args: Arguments) {
         )
         .await
         .expect("failed to create gas price estimator"),
-    ));
+    );
 
     let baseline_sources = args.shared.baseline_sources.clone().unwrap_or_else(|| {
-        sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
+        shared::sources::defaults_for_chain(chain_id)
+            .expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
     let univ2_sources = baseline_sources
@@ -208,13 +230,8 @@ pub async fn run(args: Arguments) {
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
     allowed_tokens.extend(base_tokens.tokens().iter().copied());
-    allowed_tokens.push(BUY_ETH_ADDRESS);
+    allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
-
-    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
-        Err(DeployError::NotFound(_)) => None,
-        other => Some(other.unwrap()),
-    };
 
     let finder = token_owner_finder::init(
         &args.token_owner_finder,
@@ -255,13 +272,6 @@ pub async fn run(args: Arguments) {
         .instrumented(),
     );
 
-    let current_block_stream = args
-        .shared
-        .current_block
-        .stream(web3.clone())
-        .await
-        .unwrap();
-
     let pool_aggregator = PoolAggregator { pool_fetchers };
 
     let cache_config = CacheConfig {
@@ -279,7 +289,7 @@ pub async fn run(args: Arguments) {
         )
         .expect("failed to create pool cache"),
     );
-    let block_retriver = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -293,7 +303,7 @@ pub async fn run(args: Arguments) {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
-                block_retriver.clone(),
+                block_retriever.clone(),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
@@ -319,7 +329,7 @@ pub async fn run(args: Arguments) {
                 chain_id,
                 web3.clone(),
                 http_factory.create(),
-                block_retriver,
+                block_retriever,
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
@@ -388,16 +398,6 @@ pub async fn run(args: Arguments) {
             &args.order_quoting.price_estimation_legacy_solvers,
         ))
         .unwrap();
-    let fast_price_estimator = price_estimator_factory
-        .fast_price_estimator(
-            &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
-            args.fast_price_estimation_results_required,
-        )
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(&PriceEstimatorSource::for_args(
             args.native_price_estimators.as_slice(),
@@ -406,93 +406,103 @@ pub async fn run(args: Arguments) {
         ))
         .unwrap();
 
+    let skip_event_sync_start = if args.skip_event_sync {
+        block_number_to_block_number_hash(&web3, BlockNumber::Latest).await
+    } else {
+        None
+    };
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
+    let event_updater = Arc::new(EventUpdater::new(
+        GPv2SettlementContract::new(settlement_contract.clone()),
+        db.clone(),
+        block_retriever.clone(),
+        skip_event_sync_start,
+    ));
+    let mut maintainers: Vec<Arc<dyn Maintaining>> =
+        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+
+    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            &http_factory,
+            &web3,
+            args.shared.gas_estimators.as_slice(),
+            args.shared.blocknative_api_key.clone(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    ));
+    let liquidity_order_owners: HashSet<_> = args
+        .order_quoting
+        .liquidity_order_owners
+        .iter()
+        .copied()
+        .collect();
     let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
         fee_discount: args.order_quoting.fee_discount,
         min_discounted_fee: args.order_quoting.min_discounted_fee,
         fee_factor: args.order_quoting.fee_factor,
-        liquidity_order_owners: args
-            .order_quoting
-            .liquidity_order_owners
-            .iter()
-            .copied()
-            .collect(),
+        liquidity_order_owners: liquidity_order_owners.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
-    let validity_configuration = OrderValidPeriodConfiguration {
-        min: args.min_order_validity_period,
-        max_market: args.max_order_validity_period,
-        max_limit: args.max_limit_order_validity_period,
-    };
-    let signature_configuration = SignatureConfiguration {
-        eip1271: args.enable_eip1271_orders,
-        eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
-        presign: args.enable_presign_orders,
-    };
-
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
-        Arc::new(OrderQuoter::new(
-            price_estimator,
-            native_price_estimator.clone(),
-            gas_price_estimator.clone(),
-            fee_subsidy.clone(),
-            Arc::new(postgres.clone()),
-            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
-                .unwrap(),
-            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
-                .unwrap(),
-        ))
-    };
-    let optimal_quoter = create_quoter(price_estimator.clone());
-    let fast_quoter = create_quoter(fast_price_estimator.clone());
-
-    let app_data_validator = shared::app_data::Validator::new(args.app_data_size_limit);
-    let order_validator = Arc::new(
-        OrderValidator::new(
-            native_token.clone(),
-            args.banned_users.iter().copied().collect(),
-            args.order_quoting
-                .liquidity_order_owners
-                .iter()
-                .copied()
-                .collect(),
-            validity_configuration,
-            signature_configuration,
-            bad_token_detector.clone(),
-            hooks_contract,
-            optimal_quoter.clone(),
-            balance_fetcher,
-            signature_validator,
-            Arc::new(postgres.clone()),
-            args.max_limit_orders_per_user,
-            Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
-            app_data_validator.clone(),
-        )
-        .with_fill_or_kill_limit_orders(args.allow_placing_fill_or_kill_limit_orders)
-        .with_partially_fillable_limit_orders(args.allow_placing_partially_fillable_limit_orders)
-        .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments)
-        .with_custom_interactions(args.enable_custom_interactions)
-        .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
-    );
-    let ipfs = args
-        .ipfs_gateway
-        .map(|url| {
-            Ipfs::new(
-                http_factory.builder(),
-                url,
-                args.ipfs_pinata_auth
-                    .map(|auth| format!("pinataGatewayToken={auth}")),
-            )
-        })
-        .map(IpfsAppData::new);
-    let orderbook = Arc::new(Orderbook::new(
-        domain_separator,
-        settlement_contract.address(),
-        postgres.clone(),
-        order_validator.clone(),
-        ipfs,
+    let quoter = Arc::new(OrderQuoter::new(
+        price_estimator,
+        native_price_estimator.clone(),
+        gas_price_estimator,
+        fee_subsidy,
+        Arc::new(db.clone()),
+        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+            .unwrap(),
+        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            .unwrap(),
     ));
 
-    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
+    if let Some(ethflow_contract) = args.ethflow_contract {
+        let start_block = determine_ethflow_indexing_start(
+            &skip_event_sync_start,
+            args.ethflow_indexing_start,
+            &web3,
+            chain_id,
+        )
+        .await;
+
+        let refund_event_handler = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // This cares only about ethflow refund events because all the other ethflow
+                // events are already indexed by the OnchainOrderParser.
+                EthFlowRefundRetriever::new(web3.clone(), ethflow_contract),
+                db.clone(),
+                block_retriever.clone(),
+                start_block,
+            )
+            .await
+            .unwrap(),
+        );
+        maintainers.push(refund_event_handler);
+
+        let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
+        let onchain_order_event_parser = OnchainOrderParser::new(
+            db.clone(),
+            web3.clone(),
+            quoter.clone(),
+            Box::new(custom_ethflow_order_parser),
+            DomainSeparator::new(chain_id, settlement_contract.address()),
+            settlement_contract.address(),
+            liquidity_order_owners,
+        );
+        let broadcaster_event_updater = Arc::new(
+            EventUpdater::new_skip_blocks_before(
+                // The events from the ethflow contract are read with the more generic contract
+                // interface called CoWSwapOnchainOrders.
+                CoWSwapOnchainOrdersContract::new(web3.clone(), ethflow_contract),
+                onchain_order_event_parser,
+                block_retriever,
+                start_block,
+            )
+            .await
+            .expect("Should be able to initialize event updater. Database read issues?"),
+        );
+        maintainers.push(broadcaster_event_updater);
+    }
     if let Some(balancer) = balancer_pool_fetcher {
         maintainers.push(balancer);
     }
@@ -500,140 +510,83 @@ pub async fn run(args: Arguments) {
         maintainers.push(uniswap_v3);
     }
 
-    check_database_connection(orderbook.as_ref()).await;
-    let quotes =
-        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
-    let app_data = Arc::new(app_data::Registry::new(
-        app_data_validator,
-        postgres.clone(),
-    ));
-
-    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = serve_api(
-        postgres,
-        orderbook.clone(),
-        quotes,
-        app_data,
-        args.bind_address,
-        async {
-            let _ = shutdown_receiver.await;
-        },
-        args.shared.solver_competition_auth,
-        native_price_estimator,
-    );
-
     let service_maintainer = ServiceMaintenance::new(maintainers);
-    task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-
-    let mut metrics_address = args.bind_address;
-    metrics_address.set_port(DEFAULT_METRICS_PORT);
-    tracing::info!(%metrics_address, "serving metrics");
-    let metrics_task = serve_metrics(orderbook, metrics_address);
-
-    futures::pin_mut!(serve_api);
-    tokio::select! {
-        result = &mut serve_api => panic!("API task exited {result:?}"),
-        result = metrics_task => panic!("metrics task exited {result:?}"),
-        _ = shutdown_signal() => {
-            tracing::info!("Gracefully shutting down API");
-            shutdown_sender.send(()).expect("failed to send shutdown signal");
-            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
-                Ok(inner) => inner.expect("API failed during shutdown"),
-                Err(_) => tracing::error!("API shutdown exceeded timeout"),
-            }
-            std::process::exit(0);
-        }
-    };
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .unwrap()
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // We don't support signal handling on windows
-    std::future::pending().await
-}
-
-async fn check_database_connection(orderbook: &Orderbook) {
-    orderbook
-        .get_order(&Default::default())
-        .await
-        .expect("failed to connect to database");
-}
-
-#[allow(clippy::too_many_arguments)]
-fn serve_api(
-    database: Postgres,
-    orderbook: Arc<Orderbook>,
-    quotes: Arc<QuoteHandler>,
-    app_data: Arc<app_data::Registry>,
-    address: SocketAddr,
-    shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    solver_competition_auth: Option<String>,
-    native_price_estimator: Arc<dyn NativePriceEstimating>,
-) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
-        database,
-        orderbook,
-        quotes,
-        app_data,
-        solver_competition_auth,
-        native_price_estimator,
-    )
-    .boxed();
-    tracing::info!(%address, "serving order book");
-    let warp_svc = warp::service(filter);
-    let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
-    let server = hyper::Server::bind(&address)
-        .serve(warp_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
-    task::spawn(server)
-}
-
-/// Check that important constants such as the EIP 712 Domain Separator and
-/// Order Type Hash used in this binary match the ones on the deployed
-/// contract instance. Signature inconsistencies due to a mismatch of these
-/// constants are hard to debug.
-async fn verify_deployed_contract_constants(
-    contract: &GPv2Settlement,
-    chain_id: u64,
-) -> Result<()> {
-    let web3 = contract.raw_instance().web3();
-    let bytecode = hex::encode(
-        web3.eth()
-            .code(contract.address(), None)
-            .await
-            .context("Could not load deployed bytecode")?
-            .0,
+    tokio::task::spawn(
+        service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
     );
 
-    let domain_separator = DomainSeparator::new(chain_id, contract.address());
-    if !bytecode.contains(&hex::encode(domain_separator.0)) {
-        return Err(anyhow!("Bytecode did not contain domain separator"));
-    }
+    let block = current_block_stream.borrow().number;
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        args.min_order_validity_period,
+        db.clone(),
+        args.banned_users.iter().copied().collect(),
+        balance_fetcher.clone(),
+        bad_token_detector.clone(),
+        current_block_stream.clone(),
+        native_price_estimator.clone(),
+        signature_validator.clone(),
+        args.auction_update_interval,
+        args.ethflow_contract,
+        args.limit_order_price_factor
+            .try_into()
+            .expect("limit order price factor can't be converted to BigDecimal"),
+        !args.enable_colocation,
+        args.fee_objective_scaling_factor,
+    );
+    solvable_orders_cache
+        .update(block)
+        .await
+        .expect("failed to perform initial solvable orders update");
+    let liveness = Liveness {
+        max_auction_age: args.max_auction_age,
+        solvable_orders_cache: solvable_orders_cache.clone(),
+    };
+    let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
-    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
-        return Err(anyhow!("Bytecode did not contain order type hash"));
+    let on_settlement_event_updater =
+        crate::on_settlement_event_updater::OnSettlementEventUpdater {
+            web3: web3.clone(),
+            contract: settlement_contract,
+            native_token: native_token.address(),
+            db: db.clone(),
+            current_block: current_block_stream.clone(),
+        };
+    tokio::task::spawn(
+        on_settlement_event_updater
+            .run_forever()
+            .instrument(tracing::info_span!("on_settlement_event_updater")),
+    );
+
+    if args.enable_colocation {
+        if args.drivers.is_empty() {
+            panic!("colocation is enabled but no drivers are configured");
+        }
+        let market_makable_token_list_configuration = TokenListConfiguration {
+            url: args.trusted_tokens_url,
+            update_interval: args.trusted_tokens_update_interval,
+            chain_id,
+            client: http_factory.create(),
+            hardcoded: args.trusted_tokens.unwrap_or_default(),
+        };
+        // updated in background task
+        let market_makable_token_list =
+            AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
+                .await;
+        let run = RunLoop {
+            solvable_orders_cache,
+            database: db,
+            drivers: args.drivers.into_iter().map(Driver::new).collect(),
+            current_block: current_block_stream,
+            web3,
+            network_block_interval: network_time_between_blocks,
+            market_makable_token_list,
+            submission_deadline: args.submission_deadline as u64,
+            additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+        };
+        run.run_forever().await;
+        unreachable!("run loop exited");
+    } else {
+        let result = serve_metrics.await;
+        unreachable!("serve_metrics exited {result:?}");
     }
-    Ok(())
 }

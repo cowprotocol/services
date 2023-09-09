@@ -1,7 +1,7 @@
 use {
     crate::domain::{eth, liquidity, order},
     ethereum_types::U256,
-    std::collections::HashMap,
+    std::{collections::HashMap, time::Duration},
 };
 
 /// The auction that the solvers need to find solutions to.
@@ -13,7 +13,7 @@ pub struct Auction {
     pub orders: Vec<order::Order>,
     pub liquidity: Vec<liquidity::Liquidity>,
     pub gas_price: GasPrice,
-    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub deadline: Deadline,
 }
 
 /// Information about tokens used in the auction.
@@ -67,3 +67,17 @@ impl Price {
 /// settlement transaction.
 #[derive(Clone, Copy, Debug)]
 pub struct GasPrice(pub eth::Ether);
+
+/// An auction deadline.
+#[derive(Clone, Debug)]
+pub struct Deadline(pub chrono::DateTime<chrono::Utc>);
+
+impl Deadline {
+    /// Returns the amount of time remaining to solve, or `None` if time's up.
+    pub fn remaining(&self) -> Option<Duration> {
+        self.0
+            .signed_duration_since(chrono::Utc::now())
+            .to_std()
+            .ok()
+    }
+}

@@ -132,28 +132,35 @@ impl PostProcessing for PostProcessingPipeline {
         )
         .await;
 
+        // although some solvers provided success probability, protocol will
+        // override the success probability if it has risk parameters for the solver.
+        // this is currently done for naive, baseline, gnosis solvers
+        // TODO: once we eliminate naive and baseline this logic should be moved to
+        // SingleOrderSettlement::into_settlement
         match (optimized_solution.score, risk_calculator) {
-            (None, Some(risk_calculator)) => match compute_success_probability(
-                &optimized_solution,
-                &simulator,
-                risk_calculator,
-                gas_price,
-                &solver_account.address(),
-            )
-            .await
-            {
-                Ok(success_probability) => Settlement {
-                    score: Some(Score::RiskAdjusted {
-                        success_probability,
-                        gas_amount: None,
-                    }),
-                    ..optimized_solution
-                },
-                Err(err) => {
-                    tracing::warn!(?err, "failed to compute success probability");
-                    optimized_solution
+            (Score::RiskAdjusted { gas_amount, .. }, Some(risk_calculator)) => {
+                match compute_success_probability(
+                    &optimized_solution,
+                    &simulator,
+                    risk_calculator,
+                    gas_price,
+                    &solver_account.address(),
+                )
+                .await
+                {
+                    Ok(success_probability) => Settlement {
+                        score: Score::RiskAdjusted {
+                            success_probability,
+                            gas_amount,
+                        },
+                        ..optimized_solution
+                    },
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to compute success probability");
+                        optimized_solution
+                    }
                 }
-            },
+            }
             _ => optimized_solution,
         }
     }

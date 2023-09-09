@@ -96,7 +96,7 @@ impl<'a> Services<'a> {
         .chain(extra_args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(autopilot::main(args));
+        tokio::task::spawn(autopilot::run(args));
     }
 
     /// Start the api service in a background tasks.
@@ -117,7 +117,7 @@ impl<'a> Services<'a> {
         .chain(extra_args.into_iter());
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(orderbook::run::run(args));
+        tokio::task::spawn(orderbook::run(args));
 
         Self::wait_for_api_to_come_up().await;
     }
@@ -167,7 +167,7 @@ impl<'a> Services<'a> {
         .chain(extra_args);
 
         let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(solver::run::run(args));
+        tokio::task::spawn(solver::run(args));
     }
 
     async fn wait_for_api_to_come_up() {

@@ -20,9 +20,12 @@ use {
     tokio::sync::oneshot,
 };
 
-pub async fn main() {
+/// The driver entry-point. This function exists in order to be able to run the
+/// driver from multiple binaries.
+pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
-    run(std::env::args(), None).await
+    let args = cli::Args::parse_from(args);
+    run_with(args, None).await
 }
 
 /// This function exists to enable running the driver for testing. The
@@ -35,6 +38,12 @@ pub async fn run(
     addr_sender: Option<oneshot::Sender<SocketAddr>>,
 ) {
     let args = cli::Args::parse_from(args);
+    run_with(args, addr_sender).await;
+}
+
+/// Run the driver. This function exists to avoid multiple monomorphizations of
+/// the `run` code, which bloats the binaries and increases compile times.
+async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
     crate::infra::observe::init(&args.log);
 
     let ethrpc = ethrpc(&args).await;

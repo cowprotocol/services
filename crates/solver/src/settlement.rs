@@ -240,7 +240,7 @@ impl Interaction for NoopInteraction {
 #[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
-    pub score: Option<Score>,
+    pub score: Score,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -472,10 +472,10 @@ impl Settlement {
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self {
             encoder: merged,
-            score: match (self.score, other.score) {
-                (Some(left), Some(right)) => left.merge(&right),
-                _ => None,
-            },
+            score: self
+                .score
+                .merge(&other.score)
+                .ok_or(anyhow::anyhow!("score merge failed"))?,
         })
     }
 

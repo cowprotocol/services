@@ -30,7 +30,11 @@ use {
     },
     primitive_types::{H160, H256},
     rand::seq::SliceRandom,
-    shared::{event_handling::MAX_REORG_BLOCK_COUNT, token_list::AutoUpdatingTokenList},
+    shared::{
+        event_handling::MAX_REORG_BLOCK_COUNT,
+        remaining_amounts,
+        token_list::AutoUpdatingTokenList,
+    },
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
@@ -276,6 +280,7 @@ impl RunLoop {
                         OrderClass::Liquidity => Class::Liquidity,
                         OrderClass::Limit(_) => Class::Limit,
                     };
+                    let remaining_order = remaining_amounts::Order::from(order);
                     let map_interactions =
                         |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
                             interactions
@@ -300,7 +305,7 @@ impl RunLoop {
                         receiver: order.data.receiver,
                         owner: order.metadata.owner,
                         partially_fillable: order.data.partially_fillable,
-                        executed: Default::default(),
+                        executed: remaining_order.executed_amount,
                         pre_interactions: map_interactions(&order.interactions.pre),
                         post_interactions: map_interactions(&order.interactions.post),
                         sell_token_balance: order.data.sell_token_balance,

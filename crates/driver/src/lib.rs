@@ -9,7 +9,7 @@ pub mod infra;
 mod run;
 pub mod util;
 
-pub use run::{main, run};
-
 #[cfg(test)]
 mod tests;
+
+pub use self::run::{run, start};
