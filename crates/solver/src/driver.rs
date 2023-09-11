@@ -418,7 +418,10 @@ impl Driver {
                 .user_trades()
                 .map(|trade| {
                     let execution = Execution {
-                        surplus_fee: trade.surplus_fee(),
+                        // No need to save the surplus_fee for limit orders before the settlement is
+                        // settled onchain. This is done in the autopilot once the transaction is
+                        // mined.
+                        surplus_fee: None,
                         solver_fee: trade.solver_fee,
                     };
                     (trade.order.metadata.uid, execution)

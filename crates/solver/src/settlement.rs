@@ -27,16 +27,6 @@ pub struct Trade {
     pub solver_fee: U256,
 }
 
-impl Trade {
-    /// Returns the fee taken from the surplus.
-    pub fn surplus_fee(&self) -> Option<U256> {
-        match self.order.solver_determines_fee() {
-            true => Some(self.solver_fee),
-            false => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TradeExecution {
     pub sell_token: H160,
