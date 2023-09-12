@@ -93,7 +93,7 @@ mod tests {
                 .unwrap(),
             GasPrice1559 {
                 base_fee_per_gas: 10.,
-                max_fee_per_gas: 33.,
+                max_fee_per_gas: 42.,
                 max_priority_fee_per_gas: 1.,
             }
         );
