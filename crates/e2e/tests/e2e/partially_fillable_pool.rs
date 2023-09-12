@@ -133,8 +133,7 @@ async fn test(web3: Web3) {
             }) => executed_surplus_fee,
             _ => unreachable!(),
         };
-        executed_surplus_fee.is_some()
-            && executed_surplus_fee.unwrap() != Default::default()
+        !executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
             && order.metadata.executed_sell_amount != Default::default()
     };

@@ -455,8 +455,8 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: Option<BigDecimal>,
-    pub executed_solver_fee: Option<BigDecimal>,
+    pub executed_surplus_fee: BigDecimal,
+    pub executed_solver_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -1822,7 +1822,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, Some(0.into()));
+        assert_eq!(order.executed_surplus_fee, 0.into());
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
@@ -1834,8 +1834,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, Some(fee));
-        assert_eq!(order.executed_solver_fee, Some(solver_fee));
+        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_solver_fee, solver_fee);
     }
 
     #[tokio::test]

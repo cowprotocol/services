@@ -906,8 +906,8 @@ impl OrderClass {
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
-    #[serde_as(as = "Option<DecimalU256>")]
-    pub executed_surplus_fee: Option<U256>,
+    #[serde_as(as = "DecimalU256")]
+    pub executed_surplus_fee: U256,
 }
 
 impl OrderKind {
@@ -1088,7 +1088,7 @@ mod tests {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
                 class: OrderClass::Limit(LimitOrderClass {
-                    executed_surplus_fee: Some(1.into()),
+                    executed_surplus_fee: 1.into(),
                 }),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
