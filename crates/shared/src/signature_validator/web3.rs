@@ -106,12 +106,3 @@ impl From<MethodError> for SignatureValidationError {
         }
     }
 }
-
-impl From<ExecutionError> for SignatureValidationError {
-    fn from(err: ExecutionError) -> Self {
-        match EthcontractErrorType::classify(&err) {
-            EthcontractErrorType::Contract => Self::Invalid,
-            _ => Self::Other(err.into()),
-        }
-    }
-}

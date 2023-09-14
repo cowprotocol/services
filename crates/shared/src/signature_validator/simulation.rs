@@ -6,7 +6,7 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     anyhow::{Context, Result},
-    ethcontract::{common::abi::Token, tokens::Tokenize, Bytes},
+    ethcontract::{common::abi::Token, errors::ExecutionError, tokens::Tokenize, Bytes},
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
@@ -59,7 +59,12 @@ impl Validator {
             tx.data.unwrap(),
         );
 
-        let output = self.web3.eth().call(call, None).await?;
+        let output = self
+            .web3
+            .eth()
+            .call(call, None)
+            .await
+            .map_err(ExecutionError::from)?;
         let simulation = Simulation::decode(&output.0)?;
 
         tracing::trace!(?check, ?simulation, "simulated signatures");

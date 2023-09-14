@@ -1,5 +1,6 @@
 use {
-    ethcontract::Bytes,
+    crate::ethcontract_error::EthcontractErrorType,
+    ethcontract::{errors::ExecutionError, Bytes},
     ethrpc::Web3,
     hex_literal::hex,
     model::interaction::InteractionData,
@@ -72,4 +73,13 @@ pub fn validator(contracts: Contracts, web3: Web3) -> Arc<dyn SignatureValidatin
         contracts.settlement,
         contracts.vault_relayer,
     ))
+}
+
+impl From<ExecutionError> for SignatureValidationError {
+    fn from(err: ExecutionError) -> Self {
+        match EthcontractErrorType::classify(&err) {
+            EthcontractErrorType::Contract => Self::Invalid,
+            _ => Self::Other(err.into()),
+        }
+    }
 }
