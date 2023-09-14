@@ -208,10 +208,9 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee: order
-                .executed_surplus_fee
-                .as_ref()
-                .and_then(big_decimal_to_u256),
+            executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee).expect(
+                "executed fees can't exceed sell_token amount which definitely fits into U256",
+            ),
         }),
     }
 }
