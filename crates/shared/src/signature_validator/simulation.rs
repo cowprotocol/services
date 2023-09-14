@@ -112,8 +112,19 @@ impl Simulation {
     }
 }
 
-impl From<web3::error::Error> for SignatureValidationError {
-    fn from(err: web3::error::Error) -> Self {
+impl From<web3::Error> for SignatureValidationError {
+    fn from(err: web3::Error) -> Self {
+        // TODO: This is needed to parse Hardhat revert errors, which
+        // `ethcontract` does not support currently.
+        if matches!(
+            &err,
+            web3::Error::Rpc(err)
+                if err.message.contains("VM Exception") ||
+                    err.message.contains("Transaction reverted")
+        ) {
+            return Self::Invalid;
+        }
+
         let err = ExecutionError::from(err);
         match EthcontractErrorType::classify(&err) {
             EthcontractErrorType::Contract => Self::Invalid,

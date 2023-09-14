@@ -99,8 +99,8 @@ async fn smart_contract_orders(web3: Web3) {
         },
     ];
     for order in &orders {
-        let (_, err) = services.create_order(order).await.unwrap_err();
-        assert!(err.contains("InvalidSignature"));
+        let (_, err) = dbg!(services.create_order(order).await.unwrap_err());
+        assert!(err.contains("InvalidEip1271Signature"));
     }
 
     // Place orders
