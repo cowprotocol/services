@@ -1,9 +1,18 @@
+//! This module implements the run-loop for the shadow autopilot.
+//!
+//! The shadow autopilot runs the solver competition using all configured
+//! drivers using a configured up-stream deployment (in other words, it queries
+//! the current `/api/v1/auction` from another CoW Protocol services deployment
+//! and runs a solver competition with that auction, instead of building one).
+//! The run-loop will report and log the winner **without** actually executing
+//! any settlements on-chain.
+
 use {
     crate::{
         driver_api::Driver,
         driver_model::{reveal, solve},
+        protocol,
         run_loop,
-        xapi,
     },
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
@@ -18,7 +27,7 @@ use {
 };
 
 pub struct RunLoop {
-    protocol: xapi::Cow,
+    orderbook: protocol::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: AuctionId,
@@ -27,12 +36,12 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub fn new(
-        protocol: xapi::Cow,
+        orderbook: protocol::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
     ) -> Self {
         Self {
-            protocol,
+            orderbook,
             drivers,
             trusted_tokens,
             auction: 0,
@@ -54,7 +63,7 @@ impl RunLoop {
     }
 
     async fn next_auction(&mut self) -> Option<AuctionWithId> {
-        let auction = match self.protocol.auction().await {
+        let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
             Err(err) => {
                 tracing::warn!(?err, "failed to retrieve auction");
@@ -131,20 +140,18 @@ impl RunLoop {
         for Participant { driver, solution } in participants {
             match solution {
                 Ok(solution) => {
+                    let uninternalized = (solution.calldata.internalized
+                        != solution.calldata.uninternalized)
+                        .then(|| hex(&solution.calldata.uninternalized));
+
                     tracing::debug!(
                         driver =% driver.url,
                         score =% solution.score,
                         account =? solution.account,
                         calldata =% hex(&solution.calldata.internalized),
+                        ?uninternalized,
                         "participant"
                     );
-                    if solution.calldata.internalized != solution.calldata.uninternalized {
-                        tracing::debug!(
-                            driver =% driver.url,
-                            uninternalized =% hex(&solution.calldata.uninternalized),
-                            "solver internalized interactions"
-                        );
-                    }
                     Metrics::get()
                         .results
                         .with_label_values(&[driver.url.as_str(), "ok"])

@@ -12,10 +12,10 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        protocol,
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
-        xapi,
     },
     clap::Parser,
     contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
@@ -606,7 +606,7 @@ pub async fn run(args: Arguments) {
 async fn shadow_mode(args: Arguments) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let protocol = xapi::Cow::new(
+    let orderbook = protocol::Orderbook::new(
         http_factory.create(),
         args.shadow.expect("missing shadow mode configuration"),
     );
@@ -644,6 +644,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let shadow = shadow::RunLoop::new(protocol, drivers, trusted_tokens);
+    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens);
     shadow.run_forever().await
 }

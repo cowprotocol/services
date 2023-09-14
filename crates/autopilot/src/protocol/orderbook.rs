@@ -2,12 +2,12 @@
 
 use {model::auction::AuctionWithId, reqwest::Url};
 
-pub struct Cow {
+pub struct Orderbook {
     client: reqwest::Client,
     url: Url,
 }
 
-impl Cow {
+impl Orderbook {
     /// Creates a new CoW Protocol client.
     pub fn new(client: reqwest::Client, url: Url) -> Self {
         Self { client, url }

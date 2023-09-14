@@ -10,11 +10,7 @@ pub struct U256(ZeroU256);
 
 impl U256 {
     pub fn new(value: ZeroU256) -> Option<Self> {
-        if !value.is_zero() {
-            Some(Self(value))
-        } else {
-            None
-        }
+        (!value.is_zero()).then_some(Self(value))
     }
 
     pub fn one() -> Self {
