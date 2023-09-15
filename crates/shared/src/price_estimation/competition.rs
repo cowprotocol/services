@@ -6,7 +6,7 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::stream::StreamExt,
+    futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
     std::{
@@ -154,65 +154,38 @@ impl RacingCompetitionPriceEstimator {
 }
 
 impl PriceEstimating for RacingCompetitionPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        async move {
+            let predictions = match &self.competition {
+                Some(competition) => competition
+                    .predict_best_candidates(&Trade::from(&*query), self.required_confidence),
+                None => vec![],
+            };
 
-        let predictions: HashMap<_, _> = match &self.competition {
-            Some(competition) => queries
+            let mut results = vec![];
+            let mut futures: Vec<_> = self
+                .inner
                 .iter()
-                .map(|query| {
-                    let trade = Trade::from(query);
-                    let prediction =
-                        competition.predict_best_candidates(&trade, self.required_confidence);
-                    (trade, prediction)
-                })
-                .collect(),
-            None => Default::default(),
-        };
+                .map(|(_, estimator)| estimator.estimate(query.clone()))
+                .collect();
+            loop {
+                let (result, index, rest) = futures::future::select_all(futures).await;
+                futures = rest;
+                results.push((index, result.clone()));
+                let estimator = &self.inner[index].0;
+                tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-        // Turn the streams from all inner price estimators into a single stream.
-        let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
-            |(i, (_, estimator))| estimator.estimates(queries).map(move |result| (i, result)),
-        ));
-        // Stores the estimates for each query and estimator. When we have collected
-        // enough results to produce a result of our own the corresponding
-        // element is set to None.
-        let mut estimates: Vec<Option<Vec<(usize, PriceEstimateResult)>>> =
-            vec![Some(Vec::with_capacity(self.inner.len())); queries.len()];
-        // Receives items from the combined stream.
-        let mut handle_single_result = move |estimator_index: usize, query_index: usize, result| {
-            let query = &queries[query_index];
-            let estimator = self.inner[estimator_index].0.as_str();
-            tracing::debug!(?query, ?result, estimator, "new price estimate");
-
-            // Store the new result in the vector for this query.
-            let results = estimates.get_mut(query_index).unwrap().as_mut()?;
-            results.push((estimator_index, result));
-
-            // Check if we have enough results to emit a result of our own.
-            let successes = results.iter().filter(|result| result.1.is_ok()).count();
-            let remaining = self.inner.len() - results.len();
-            if successes < self.successful_results_for_early_return.get() && remaining > 0 {
-                return None;
+                let successes = results.iter().filter(|(_, result)| result.is_ok()).count();
+                if successes >= self.successful_results_for_early_return.get()
+                    || results.len() >= self.inner.len()
+                {
+                    break;
+                }
             }
-            // We have enough successes or there are no remaining estimators running for
-            // this query.
 
-            // Find the best result.
-            let results = estimates.get_mut(query_index).unwrap().take().unwrap();
-            // Unwrap because there has to be at least one result.
-            let best_index = best_result(query, results.iter().map(|(_, result)| result)).unwrap();
-
-            // Log and collect metrics.
-            let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
-            let estimator = self.inner[estimator_index].0.as_str();
+            let best_index = best_result(&query, results.iter().map(|(_, result)| result)).unwrap();
+            let (estimator_index, result) = &results[best_index];
+            let (estimator, _) = &self.inner[*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
             let requests = self.inner.len() as u64;
@@ -229,12 +202,10 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     .inc();
 
                 if let Some(competition) = &self.competition {
-                    let trade = Trade::from(query);
-                    let estimator = EstimatorIndex(estimator_index);
-                    if let Some(predictions) = predictions.get(&trade) {
-                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                        metrics().record_prediction(&trade, was_correct);
-                    }
+                    let trade = Trade::from(&*query);
+                    let estimator = EstimatorIndex(*estimator_index);
+                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
+                    metrics().record_prediction(&trade, was_correct);
                     competition.record_winner(trade, estimator);
                     metrics()
                         .requests
@@ -243,15 +214,9 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 }
             }
 
-            Some((query_index, result))
-        };
-
-        combined_stream
-            .filter_map(move |(estimator_index, (query_index, result))| {
-                let result = handle_single_result(estimator_index, query_index, result);
-                futures::future::ready(result)
-            })
-            .boxed()
+            result.clone()
+        }
+        .boxed()
     }
 }
 
@@ -280,11 +245,8 @@ impl CompetitionPriceEstimator {
 }
 
 impl PriceEstimating for CompetitionPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.inner.estimates(queries)
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.inner.estimate(query)
     }
 }
 
@@ -397,9 +359,8 @@ fn metrics() -> &'static Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{old_estimator_to_stream, vec_estimates, MockPriceEstimating},
+        crate::price_estimation::MockPriceEstimating,
         anyhow::anyhow,
-        futures::StreamExt,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
@@ -410,41 +371,41 @@ mod tests {
     #[tokio::test]
     async fn works() {
         let queries = [
-            Query {
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
+            }),
         ];
         let estimates = [
             Estimate {
@@ -457,82 +418,80 @@ mod tests {
             },
         ];
 
-        let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 5);
-            futures::stream::iter([
-                Ok(estimates[0]),
-                Ok(estimates[0]),
-                Ok(estimates[0]),
-                Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
-                Err(PriceEstimationError::NoLiquidity),
-            ])
-            .enumerate()
-            .boxed()
-        });
-        let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 5);
-                futures::stream::iter([
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
-                    Ok(estimates[1]),
-                    Ok(estimates[1]),
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
-                    Err(PriceEstimationError::UnsupportedToken {
-                        token: H160([0; 20]),
-                        reason: "".to_string(),
-                    }),
-                ])
-                .enumerate()
-                .boxed()
-            });
+        let setup_estimator = |responses: Vec<PriceEstimateResult>| {
+            let mut estimator = MockPriceEstimating::new();
+            for response in responses {
+                estimator.expect_estimate().times(1).returning(move |_| {
+                    let response = response.clone();
+                    {
+                        async move { response }.boxed()
+                    }
+                });
+            }
+            estimator
+        };
+
+        let first = setup_estimator(vec![
+            Ok(estimates[0]),
+            Ok(estimates[0]),
+            Ok(estimates[0]),
+            Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
+            Err(PriceEstimationError::NoLiquidity),
+        ]);
+
+        let second = setup_estimator(vec![
+            Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
+            Ok(estimates[1]),
+            Ok(estimates[1]),
+            Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
+            Err(PriceEstimationError::UnsupportedToken {
+                token: H160([0; 20]),
+                reason: "".to_string(),
+            }),
+        ]);
 
         let priority = CompetitionPriceEstimator::new(vec![
             ("first".to_owned(), Arc::new(first)),
             ("second".to_owned(), Arc::new(second)),
         ]);
 
-        let result = vec_estimates(&priority, &queries).await;
-        assert_eq!(result.len(), 5);
-        assert_eq!(result[0].as_ref().unwrap(), &estimates[0]);
+        let result = priority.estimate(queries[0].clone()).await;
+        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+
+        let result = priority.estimate(queries[1].clone()).await;
         // buy 2 is better than buy 1
-        assert_eq!(result[1].as_ref().unwrap(), &estimates[1]);
+        assert_eq!(result.as_ref().unwrap(), &estimates[1]);
+
+        let result = priority.estimate(queries[2].clone()).await;
         // pay 1 is better than pay 2
-        assert_eq!(result[2].as_ref().unwrap(), &estimates[0]);
+        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+
+        let result = priority.estimate(queries[3].clone()).await;
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
-            result[3].as_ref().unwrap_err(),
+            result.as_ref().unwrap_err(),
             PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
+
+        let result = priority.estimate(queries[4].clone()).await;
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
-            result[4].as_ref().unwrap_err(),
+            result.as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 
     #[tokio::test]
     async fn racing_estimator_returns_early() {
-        let queries = [
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(0),
-                buy_token: H160::from_low_u64_le(1),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy,
-            },
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(2),
-                buy_token: H160::from_low_u64_le(3),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Sell,
-            },
-        ];
+        let query = Arc::new(Query {
+            verification: None,
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Buy,
+        });
+
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
@@ -541,35 +500,30 @@ mod tests {
         }
 
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 2);
-            futures::stream::iter([Ok(estimate(1)), Err(PriceEstimationError::NoLiquidity)])
-                .enumerate()
-                .boxed()
+        first.expect_estimate().times(1).returning(move |_| {
+            // immediately return an error (not enough to terminate price competition early)
+            async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 
         let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 2);
-                old_estimator_to_stream(async {
-                    sleep(Duration::from_millis(10)).await;
-                    [Err(PriceEstimationError::NoLiquidity), Ok(estimate(2))]
-                })
-            });
+        second.expect_estimate().times(1).returning(|_| {
+            async {
+                sleep(Duration::from_millis(10)).await;
+                // return good result after some time; now we can terminate early
+                Ok(estimate(1))
+            }
+            .boxed()
+        });
 
         let mut third = MockPriceEstimating::new();
-        third.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 2);
-            futures::stream::once(async {
+        third.expect_estimate().times(1).returning(move |_| {
+            async {
                 sleep(Duration::from_millis(20)).await;
                 unreachable!(
-                    "This estimation gets canceled because the racing estimatoralready got enough \
-                     estimates to return early."
+                    "This estimation gets canceled because the racing estimator already got \
+                     enough estimates to return early."
                 )
-            })
+            }
             .boxed()
         });
 
@@ -582,51 +536,7 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        let mut stream = racing.estimates(&queries);
-
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 0);
+        let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
-
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 1);
-        assert_eq!(result.as_ref().unwrap(), &estimate(2));
-    }
-
-    #[tokio::test]
-    async fn result_ordering() {
-        fn estimate(amount: u64) -> Estimate {
-            Estimate {
-                out_amount: amount.into(),
-                ..Default::default()
-            }
-        }
-        let mut first = MockPriceEstimating::new();
-        first.expect_estimates().returning(move |_| {
-            futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
-        });
-        let mut second = MockPriceEstimating::new();
-        second.expect_estimates().returning(move |_| {
-            futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
-        });
-        let estimator = CompetitionPriceEstimator::new(vec![
-            ("first".to_owned(), Arc::new(first)),
-            ("second".to_owned(), Arc::new(second)),
-        ]);
-        let query = Query {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            ..Default::default()
-        };
-        let queries = &[query.clone(), query];
-        let mut stream = estimator.estimates(queries);
-
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 1);
-        assert_eq!(result.as_ref().unwrap(), &estimate(1));
-
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 0);
-        assert_eq!(result.as_ref().unwrap(), &estimate(0));
     }
 }

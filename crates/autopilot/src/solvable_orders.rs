@@ -713,7 +713,7 @@ impl OrderFilterCounter {
 mod tests {
     use {
         super::*,
-        futures::{FutureExt, StreamExt},
+        futures::FutureExt,
         maplit::{btreemap, hashset},
         mockall::predicate::eq,
         model::{
@@ -788,27 +788,24 @@ mod tests {
 
         let mut native_price_estimator = MockNativePriceEstimating::new();
         native_price_estimator
-            .expect_estimate_native_prices()
-            .withf(move |tokens| *tokens == [token1])
-            .returning(|_| futures::stream::iter([(0, Ok(2.))].into_iter()).boxed());
+            .expect_estimate_native_price()
+            .withf(move |token| *token == token1)
+            .returning(|_| async { Ok(2.) }.boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .expect_estimate_native_price()
             .times(1)
-            .withf(move |tokens| *tokens == [token2])
-            .returning(|_| {
-                futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))].into_iter())
-                    .boxed()
-            });
+            .withf(move |token| *token == token2)
+            .returning(|_| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .expect_estimate_native_price()
             .times(1)
-            .withf(move |tokens| *tokens == [token3])
-            .returning(|_| futures::stream::iter([(0, Ok(0.25))].into_iter()).boxed());
+            .withf(move |token| *token == token3)
+            .returning(|_| async { Ok(0.25) }.boxed());
         native_price_estimator
-            .expect_estimate_native_prices()
+            .expect_estimate_native_price()
             .times(1)
-            .withf(move |tokens| *tokens == [token4])
-            .returning(|_| futures::stream::iter([(0, Ok(0.))].into_iter()).boxed());
+            .withf(move |token| *token == token4)
+            .returning(|_| async { Ok(0.) }.boxed());
 
         let native_price_estimator = CachingNativePriceEstimator::new(
             Box::new(native_price_estimator),
