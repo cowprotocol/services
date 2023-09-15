@@ -289,6 +289,7 @@ impl TradeVerifier {
         let simulation = solver
             .methods()
             .swap(
+                self.settlement,
                 verification.from,
                 query.sell_token,
                 sell_amount,
