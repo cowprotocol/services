@@ -3,7 +3,7 @@ use {
     ethcontract::prelude::{Address, U256},
     model::{
         order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
-        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+        quote::{OrderQuoteRequest, OrderQuoteSide, PriceQuality, SellAmount},
         signature::EcdsaSigningScheme,
     },
     number::nonzero::U256 as NonZeroU256,
@@ -44,9 +44,18 @@ async fn eth_integration(web3: Web3) {
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
     let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let quote = |sell_token, buy_token| {
         let services = &services;
@@ -60,6 +69,7 @@ async fn eth_integration(web3: Web3) {
                         value: NonZeroU256::try_from(to_wei(43)).unwrap(),
                     },
                 },
+                price_quality: PriceQuality::Verified,
                 ..Default::default()
             };
             services.submit_quote(&request).await

@@ -73,11 +73,14 @@ async fn test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![]);
     services
         .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 

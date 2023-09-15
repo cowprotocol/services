@@ -91,9 +91,18 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     // Place Orders
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let order = OrderCreation {
         sell_token: token_a.address(),

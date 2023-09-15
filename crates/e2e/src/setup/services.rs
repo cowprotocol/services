@@ -50,11 +50,10 @@ impl<'a> Services<'a> {
 
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
-            "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
-            "--native-price-estimators=Baseline|0x0000000000000000000000000000000000000001"
-                .to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval-seconds=1".to_string(),
+            "--simulation-node-url=http://127.0.0.1:8545".to_string(),
+            "--trade-simulator=Web3".to_string(),
         ]
         .into_iter()
     }
@@ -106,6 +105,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
+            "--enable-custom-interactions=true".to_string(),
+            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()

@@ -4,7 +4,7 @@ use {
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
-    model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
+    model::quote::{OrderQuoteRequest, OrderQuoteSide, PriceQuality, QuoteSigningScheme, Validity},
     number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
     sqlx::PgPool,
@@ -19,14 +19,24 @@ async fn local_node_refunder_tx() {
 async fn refunder_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     // Get quote id for order placement
     let buy_token = token.address();
@@ -48,6 +58,7 @@ async fn refunder_tx(web3: Web3) {
                 value: NonZeroU256::try_from(sell_amount).unwrap(),
             },
         },
+        price_quality: PriceQuality::Verified,
         ..Default::default()
     };
     let quote_response = services.submit_quote(&quote).await.unwrap();

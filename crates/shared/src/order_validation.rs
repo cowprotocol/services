@@ -714,7 +714,7 @@ impl OrderValidating for OrderValidator {
                 tracing::debug!("support for limit order enforced by verified quote");
                 // Quotes don't matter for limit orders. We only need to know it's supported.
                 None
-            },
+            }
             (OrderClass::Market, _) => Some(
                 get_quote_and_check_fee(
                     &*self.quoter,

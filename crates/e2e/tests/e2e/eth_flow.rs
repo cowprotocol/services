@@ -76,9 +76,18 @@ async fn eth_flow_tx(web3: Web3) {
         receiver,
     };
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
@@ -128,9 +137,18 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     // Create an order that only exists to be refunded, which triggers an event in
     // the eth-flow contract that is not included in the ABI of

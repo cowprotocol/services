@@ -43,7 +43,6 @@ async fn test(web3: Web3) {
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
-
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
@@ -51,7 +50,7 @@ async fn test(web3: Web3) {
     ]);
     services
         .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 

@@ -49,7 +49,11 @@ async fn test(web3: Web3) {
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
-    services.start_api(vec![]).await;
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     tracing::info!("Placing order");
     let order = OrderCreation {

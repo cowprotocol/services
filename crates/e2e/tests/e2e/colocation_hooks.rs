@@ -61,15 +61,12 @@ async fn allowance(web3: Web3) {
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
-
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
-    services
-        .start_api(vec!["--enable-custom-interactions=true".to_string()])
-        .await;
+    services.start_api(vec![]).await;
 
     let order = OrderCreation {
         sell_token: cow.address(),
@@ -247,14 +244,15 @@ async fn signature(web3: Web3) {
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
-
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=http://localhost:11088/test_solver".to_string(),
     ]);
     services
-        .start_api(vec!["--enable-custom-interactions=true".to_string()])
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
         .await;
 
     // Place Orders
