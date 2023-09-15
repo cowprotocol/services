@@ -44,10 +44,7 @@ impl ParaswapPriceEstimator {
 }
 
 impl PriceEstimating for ParaswapPriceEstimator {
-    fn estimate<'a>(
-        &'a self,
-        query: &'a Query,
-    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.0.estimate(query).boxed()
     }
 }
@@ -89,15 +86,15 @@ mod tests {
 
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: weth,
             buy_token: gno,
             in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
             kind: OrderKind::Sell,
-        };
+        });
 
-        let result = estimator.estimate(&query).await;
+        let result = estimator.estimate(query).await;
         dbg!(&result);
         let estimate = result.unwrap();
         println!(

@@ -22,7 +22,7 @@ use {
 pub struct BalancerSor {
     api: Arc<dyn BalancerSorApi>,
     sharing: RequestSharing<
-        Query,
+        Arc<Query>,
         BoxFuture<'static, Result<balancer_sor_api::Quote, PriceEstimationError>>,
     >,
     rate_limiter: Arc<RateLimiter>,
@@ -46,7 +46,7 @@ impl BalancerSor {
         }
     }
 
-    async fn estimate(&self, query: &Query) -> PriceEstimateResult {
+    async fn estimate(&self, query: Arc<Query>) -> PriceEstimateResult {
         let gas_price = self
             .gas
             .estimate()
@@ -79,7 +79,7 @@ impl BalancerSor {
 }
 
 impl PriceEstimating for BalancerSor {
-    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
         self.estimate(query).boxed()
     }
 }
@@ -119,14 +119,14 @@ mod tests {
         ));
         let gas = Arc::new(FixedGasPriceEstimator(1e7));
         let estimator = BalancerSor::new(api, rate_limiter, gas, Default::default());
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::DAI,
             in_amount: NonZeroU256::try_from(U256::from_f64_lossy(1e18)).unwrap(),
             kind: OrderKind::Sell,
-        };
-        let result = estimator.estimate(&query).await;
+        });
+        let result = estimator.estimate(query).await;
         println!("{result:?}");
         result.unwrap();
     }

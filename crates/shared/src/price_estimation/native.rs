@@ -69,8 +69,8 @@ impl NativePriceEstimating for NativePriceEstimator {
         token: &'a H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async {
-            let query = self.query(token);
-            let estimate = self.inner.estimate(&query).await?;
+            let query = Arc::new(self.query(token));
+            let estimate = self.inner.estimate(query.clone()).await?;
             Ok(estimate.price_in_buy_token_f64(&query))
         }
         .boxed()

@@ -42,10 +42,7 @@ impl ZeroExPriceEstimator {
 }
 
 impl PriceEstimating for ZeroExPriceEstimator {
-    fn estimate<'a>(
-        &'a self,
-        query: &'a Query,
-    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.0.estimate(query)
     }
 }
@@ -109,13 +106,13 @@ mod tests {
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await
             .unwrap();
 
@@ -156,13 +153,13 @@ mod tests {
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
-            })
+            }))
             .await
             .unwrap();
 
@@ -196,13 +193,13 @@ mod tests {
         let estimator = create_estimator(Arc::new(zeroex_api), true);
 
         let result = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await;
 
         assert!(matches!(
@@ -211,13 +208,13 @@ mod tests {
         ));
 
         let result = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
-            })
+            }))
             .await;
 
         assert!(matches!(
@@ -236,13 +233,13 @@ mod tests {
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
         let result = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await;
 
         dbg!(&result);

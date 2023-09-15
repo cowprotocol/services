@@ -55,11 +55,8 @@ impl BaselinePriceEstimator {
 type Pools = HashMap<TokenPair, Vec<Pool>>;
 
 impl PriceEstimating for BaselinePriceEstimator {
-    fn estimate<'a>(
-        &'a self,
-        query: &'a Query,
-    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        async {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        async move {
             let gas_price = async {
                 let gas_price = self
                     .gas_estimator
@@ -69,13 +66,13 @@ impl PriceEstimating for BaselinePriceEstimator {
                 Ok(gas_price.effective_gas_price())
             };
             let pools = async {
-                self.pools_for_query(query)
+                self.pools_for_query(&query)
                     .await
                     .map_err(PriceEstimationError::ProtocolInternal)
             };
 
             let (gas_price, pools) = futures::future::try_join(gas_price, pools).await?;
-            let (path, out_amount) = self.estimate_price_helper(query, true, &pools, gas_price)?;
+            let (path, out_amount) = self.estimate_price_helper(&query, true, &pools, gas_price)?;
             let gas = estimate_gas(path.len());
             Ok(Estimate {
                 out_amount,
@@ -339,13 +336,13 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            })
+            }))
             .await
             .is_err());
     }
@@ -376,13 +373,13 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            })
+            }))
             .await
             .is_err());
     }
@@ -417,23 +414,23 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell
-            })
+            }))
             .await
             .is_ok());
         assert!(estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy
-            })
+            }))
             .await
             .is_ok());
     }
@@ -486,28 +483,28 @@ mod tests {
             H160([1; 20]),
         );
 
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: token_a,
             buy_token: token_b,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
-        };
-        let estimate = estimator.estimate(&query).await.unwrap();
+        });
+        let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 0 is more favourable for buying token B.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
             pool_price(&pools[0], token_b, 100, token_a)
         );
 
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: token_b,
             buy_token: token_a,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
-        };
-        let estimate = estimator.estimate(&query).await.unwrap();
+        });
+        let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 1 is more favourable for buying token A.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -556,25 +553,25 @@ mod tests {
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
             let intermediate = estimator
-                .estimate(&Query {
+                .estimate(Arc::new(Query {
                     verification: None,
                     sell_token: token_a,
                     buy_token: token_b,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: *kind,
-                })
+                }))
                 .await
                 .unwrap()
                 .gas;
             assert_eq!(intermediate, estimate_gas(3));
             let direct = estimator
-                .estimate(&Query {
+                .estimate(Arc::new(Query {
                     verification: None,
                     sell_token: token_b,
                     buy_token: token_a,
                     in_amount: NonZeroU256::try_from(10).unwrap(),
                     kind: *kind,
-                })
+                }))
                 .await
                 .unwrap()
                 .gas;
@@ -643,13 +640,13 @@ mod tests {
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
                 estimator
-                    .estimate(&Query {
+                    .estimate(Arc::new(Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    })
+                    }))
                     .await
                     .unwrap()
                     .gas,
@@ -668,13 +665,13 @@ mod tests {
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
                 estimator
-                    .estimate(&Query {
+                    .estimate(Arc::new(Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    })
+                    }))
                     .await
                     .unwrap()
                     .gas,
