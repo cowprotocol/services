@@ -49,7 +49,9 @@ async fn order_cancellation(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),

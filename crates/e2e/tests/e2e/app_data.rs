@@ -1,5 +1,5 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{setup::*, tx, tx_value},
     ethcontract::prelude::U256,
     model::{
         app_data::AppDataHash,
@@ -21,28 +21,37 @@ async fn local_node_app_data() {
 // Test that orders can be placed with the new app data format.
 async fn app_data(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
-    let [trader] = onchain.make_accounts(to_wei(1)).await;
-    let [token_a, token_b] = onchain
+
+    let [solver] = onchain.make_solvers(to_wei(10)).await;
+    let [trader] = onchain.make_accounts(to_wei(10)).await;
+    let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    token_a.mint(trader.address(), to_wei(10)).await;
     tx!(
         trader.account(),
-        token_a.approve(onchain.contracts().allowance, to_wei(10))
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(3))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(3),
+        onchain.contracts().weth.deposit()
     );
 
     let mut valid_to: u32 = model::time::now_in_epoch_seconds() + 300;
     let mut create_order = |app_data| {
         let order = OrderCreation {
             app_data,
-            sell_token: token_a.address(),
+            sell_token: onchain.contracts().weth.address(),
             sell_amount: to_wei(2),
             fee_amount: to_wei(1),
-            buy_token: token_b.address(),
+            buy_token: token.address(),
             buy_amount: to_wei(1),
             valid_to,
-            kind: OrderKind::Sell,
+            kind: OrderKind::Buy,
             ..Default::default()
         }
         .sign(
@@ -55,8 +64,18 @@ async fn app_data(web3: Web3) {
         order
     };
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     // Temporarily custom hashes are still accepted.
     let order0 = create_order(OrderCreationAppData::Hash {

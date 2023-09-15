@@ -1,6 +1,6 @@
 use {
     e2e::{setup::*, tx},
-    ethcontract::prelude::{Address, U256},
+    ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
         quote::{OrderQuoteRequest, OrderQuoteSide, PriceQuality, SellAmount},
@@ -57,13 +57,13 @@ async fn eth_integration(web3: Web3) {
         ])
         .await;
 
-    let quote = |sell_token, buy_token| {
+    let quote = |from, sell_token, buy_token| {
         let services = &services;
         async move {
             let request = OrderQuoteRequest {
                 sell_token,
                 buy_token,
-                from: Address::default(),
+                from,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(to_wei(43)).unwrap(),
@@ -75,9 +75,13 @@ async fn eth_integration(web3: Web3) {
             services.submit_quote(&request).await
         }
     };
-    quote(token.address(), BUY_ETH_ADDRESS).await.unwrap();
+    quote(trader_a.address(), token.address(), BUY_ETH_ADDRESS)
+        .await
+        .unwrap();
     // Eth is only supported as the buy token
-    let (status, body) = quote(BUY_ETH_ADDRESS, token.address()).await.unwrap_err();
+    let (status, body) = quote(trader_a.address(), BUY_ETH_ADDRESS, token.address())
+        .await
+        .unwrap_err();
     assert_eq!(status, 400, "{body}");
 
     // Place Orders

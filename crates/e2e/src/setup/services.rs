@@ -54,6 +54,9 @@ impl<'a> Services<'a> {
             "--block-stream-poll-interval-seconds=1".to_string(),
             "--simulation-node-url=http://127.0.0.1:8545".to_string(),
             "--trade-simulator=Web3".to_string(),
+            // Disable old price estiamtors in favour of driver based price estimators
+            "--price-estimators=None".to_string(),
+            "--native-price-estimators=None".to_string(),
         ]
         .into_iter()
     }

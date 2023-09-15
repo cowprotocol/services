@@ -73,13 +73,23 @@ async fn test(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services
         .start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
+    // TODO the verified quote fails because the user doesn't have the requried sell balance.
+    // Either adjust the test such that the trade needs to be partially filled although the user
+    // has the required sell balance already.
+    // Or adjust the requirement that the user must have all the sell balance.
+    // I guess the option would be to:
+    // 1. have partial fill until the pool is imbalanced
+    // 2. rebalance the pool
+    // 3. fill remaining amount
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(100),

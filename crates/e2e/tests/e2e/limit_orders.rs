@@ -1,6 +1,6 @@
 use {
-    e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
+    e2e::{setup::*, tx, tx_value},
+    ethcontract::{prelude::U256, H160},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -32,6 +32,12 @@ async fn local_node_too_many_limit_orders() {
 #[ignore]
 async fn local_node_mixed_limit_and_market_orders() {
     run_test(mixed_limit_and_market_orders_test).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_unsupported_limit_order() {
+    run_test(unsupported_limit_order).await;
 }
 
 async fn single_limit_order_test(web3: Web3) {
@@ -203,9 +209,18 @@ async fn two_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -331,9 +346,18 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     );
 
     // Place Orders
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -401,6 +425,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 async fn too_many_limit_orders_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -414,9 +439,18 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
 
     // Place Orders
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services
-        .start_api(vec!["--max-limit-orders-per-user=1".into()])
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+            "--max-limit-orders-per-user=1".to_string(),
+        ])
         .await;
 
     let order = OrderCreation {
@@ -454,4 +488,59 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let (status, body) = services.create_order(&order).await.unwrap_err();
     assert_eq!(status, 400);
     assert!(body.contains("TooManyLimitOrders"));
+}
+
+/// Tests that requests to create limit orders for tokens that no solver
+/// supports get rejected.
+async fn unsupported_limit_order(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(10)).await;
+
+    tx!(
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(3))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(3),
+        onchain.contracts().weth.deposit()
+    );
+
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![
+        "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+
+    let order_a = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(2),
+        fee_amount: to_wei(1),
+        // Use some token for which no liquidity is deployed such that test Baseline solver will
+        // not be able to produce any solution.
+        buy_token: H160::from_low_u64_be(1),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Buy,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let (status_code, _) = services.create_order(&order_a).await.unwrap_err();
+    assert_eq!(status_code, 404);
 }
