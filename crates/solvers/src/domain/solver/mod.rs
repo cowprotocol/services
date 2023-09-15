@@ -20,8 +20,8 @@ impl Solver {
     /// solutions to get one big more gas efficient solution.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         match self {
-            Solver::Baseline(solver) => solver.solve(auction),
-            Solver::Naive(solver) => solver.solve(auction),
+            Solver::Baseline(solver) => solver.solve(auction).await,
+            Solver::Naive(solver) => solver.solve(auction).await,
             Solver::Legacy(solver) => solver.solve(auction).await,
             Solver::Dex(solver) => solver.solve(auction).await,
         }

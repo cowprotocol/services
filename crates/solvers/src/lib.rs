@@ -3,10 +3,12 @@
 #![recursion_limit = "256"]
 
 mod api;
-pub mod boundary;
+mod boundary;
 mod domain;
 mod infra;
-pub mod run;
+mod run;
 #[cfg(test)]
 mod tests;
 mod util;
+
+pub use self::run::{run, start};

@@ -33,21 +33,14 @@ services:
         source: database/sql/
         target: /flyway/sql
 
-  hardhat:
-    build: docker/hardhat
+  chain:
+    image: ghcr.io/foundry-rs/foundry:latest
     restart: always
-    command: npx hardhat node
+    entrypoint: /usr/local/bin/anvil --gas-price 1 --gas-limit 10000000 --base-fee 0 --balance 1000000 --chain-id 1 --timestamp 1577836800
+    environment:
+      - ANVIL_IP_ADDR=0.0.0.0
     ports:
       - 8545:8545
-
-  # The driver expects to be tested against a geth node in dev mode
-  # because it's the only dev environment which supports eth_createAccessList.
-  dev-geth:
-    image: ghcr.io/cowprotocol/dev-geth:latest
-    restart: on-failure
-    ports:
-      - 8547:8547
-      - 18545-19545:18545-19545
 
 volumes:
   postgres:

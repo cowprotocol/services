@@ -13,9 +13,6 @@ contract Signatures {
         IVaultRelayer vaultRelayer;
     }
 
-    /// @dev Signature validation result.
-    enum Result { OK, INVALID, REVERT }
-
     /// @dev Validates an ERC-1271 signature.
     ///
     /// @param contracts - On-chain contract addresses required for the
@@ -26,16 +23,14 @@ contract Signatures {
     /// @param interactions - A list of pre-interactions required for setting
     /// up signature requirements.
     ///
-    /// @return result - The signature validation result.
     /// @return gasUsed - The gas units used for verifying the signature.
     function validate(
         Contracts memory contracts,
-        address signer,
+        IERC1271 signer,
         bytes32 order,
         bytes calldata signature,
         Interaction[] calldata interactions
     ) external returns (
-        Result result,
         uint256 gasUsed
     ) {
         // Execute the interactions within the current context. This ensures
@@ -44,16 +39,10 @@ contract Signatures {
         executeInteractions(contracts, interactions);
 
         gasUsed = gasleft();
-        try IERC1271(signer).isValidSignature(order, signature) returns (bytes4 magicValue) {
-            gasUsed = gasUsed - gasleft();
-            result = magicValue == ERC1271_MAGICVALUE
-                ? Result.OK
-                : Result.INVALID;
-        }
-        catch {
-            gasUsed = gasUsed - gasleft();
-            result = Result.REVERT;
-        }
+        bytes4 magicValue = signer.isValidSignature(order, signature);
+        gasUsed = gasUsed - gasleft();
+
+        require(magicValue == ERC1271_MAGICVALUE, "didn't say the magic word");
     }
 
     /// @dev Execute a set of interactions. This code is ported from the CoW

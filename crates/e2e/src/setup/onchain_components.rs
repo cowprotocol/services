@@ -19,6 +19,7 @@ use {
     web3::{
         signing,
         signing::{Key, SecretKeyRef},
+        Transport,
     },
 };
 
@@ -578,8 +579,15 @@ impl OnchainComponents {
     /// This function executes enough transactions to ensure that all events
     /// before calling this function are old enough to be indexed.
     pub async fn mint_blocks_past_reorg_threshold(&self) {
-        for _ in 0..64 {
-            self.send_wei(H160::zero(), 0.into()).await;
+        tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
+
+        let current_block = || async { self.web3.eth().block_number().await.unwrap() };
+        let target = current_block().await + 65;
+        // Simply issuing n transactions may not result in n blocks being mined.
+        // Therefore we continually call `evm_mine` until we can confirm the block
+        // number increased the expected number of times.
+        while current_block().await <= target {
+            let _ = self.web3.transport().execute("evm_mine", vec![]).await;
         }
     }
 

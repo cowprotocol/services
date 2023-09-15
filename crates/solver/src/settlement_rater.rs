@@ -229,7 +229,7 @@ impl SettlementRating for SettlementRater {
         let earned_fees = settlement.total_earned_fees(prices);
         let inputs = {
             let gas_amount = match settlement.score {
-                Some(shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. }) => {
+                shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(simulation.gas_estimate)
                 }
                 _ => simulation.gas_estimate,
@@ -244,23 +244,18 @@ impl SettlementRating for SettlementRater {
 
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
-            Some(score) => match score {
-                shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
-                shared::http_solver::model::Score::Discount { score_discount } => {
-                    Score::Discounted(
-                        big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
-                    )
-                }
-                shared::http_solver::model::Score::RiskAdjusted {
-                    success_probability,
-                    ..
-                } => self.score_calculator.compute_score(
-                    &inputs.objective_value(),
-                    &inputs.gas_cost(),
-                    *success_probability,
-                )?,
-            },
-            None => Score::Protocol(big_rational_to_u256(&objective_value)?),
+            shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
+            shared::http_solver::model::Score::Discount { score_discount } => Score::Discounted(
+                big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
+            ),
+            shared::http_solver::model::Score::RiskAdjusted {
+                success_probability,
+                ..
+            } => self.score_calculator.compute_score(
+                &inputs.objective_value(),
+                &inputs.gas_cost(),
+                *success_probability,
+            )?,
         };
 
         let rated_settlement = RatedSettlement {
@@ -497,7 +492,12 @@ fn profit(
 
 #[cfg(test)]
 mod tests {
-    use {crate::arguments::TransactionStrategyArg, num::BigRational, primitive_types::U256};
+    use {
+        crate::arguments::TransactionStrategyArg,
+        num::BigRational,
+        primitive_types::U256,
+        shared::conversions::U256Ext,
+    };
 
     fn calculate_score(
         objective_value: &BigRational,
@@ -550,5 +550,16 @@ mod tests {
         let score =
             calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
         assert_eq!(score, 4999999999999999.);
+    }
+
+    #[test]
+    fn compute_score_with_success_probability_one() {
+        // if success_probability is 1.0, the score should be equal to the objective
+        // value
+        let objective_value = num::BigRational::from_float(1e16).unwrap();
+        let gas_cost = BigRational::from_float(1e16).unwrap();
+        let success_probability = 1.;
+        let score = calculate_score(&objective_value, &gas_cost, success_probability);
+        assert_eq!(score.to_big_rational(), objective_value);
     }
 }

@@ -74,11 +74,11 @@ pub enum Class {
 
 /// A user order, guaranteed to not be a liquidity order.
 ///
-/// Note that the concept of a user order is important enough to
-/// merit its own type. The reason for this is that these orders and liquidity
-/// orders differ in fundamental ways and we do not want to confuse them and
-/// accidentally use a liquidity order where it shouldn't be used. Some of the
-/// notable differences between the order types are:
+/// Note that the concept of a user order is important enough to merit its own
+/// type. The reason for this is that these orders and liquidity orders differ
+/// in fundamental ways and we do not want to confuse them and accidentally use
+/// a liquidity order where it shouldn't be used. Some of the notable
+/// differences between the order types are:
 ///
 /// - Liquidity orders can't be settled directly against on-chain liquidity.
 ///   They are meant to only be used in CoWs to facilitate the trading of other
@@ -94,7 +94,7 @@ pub enum Class {
 /// the other hand, liquidity orders are CoW Protocol orders, meaning that they
 /// first provide the tokens being swapped to and only get paid at the end of
 /// the settlement.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct UserOrder<'a>(&'a Order);
 
 impl<'a> UserOrder<'a> {

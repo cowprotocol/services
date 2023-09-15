@@ -8,7 +8,7 @@ use {
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::{fmt::Debug, path::Path},
+    std::{fmt::Debug, num::NonZeroUsize, path::Path},
     tokio::fs,
 };
 
@@ -25,6 +25,10 @@ struct Config {
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     absolute_slippage: Option<eth::U256>,
 
+    /// The number of concurrent requests to make to the DEX aggregator API.
+    #[serde(default = "default_concurrent_requests")]
+    concurrent_requests: NonZeroUsize,
+
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
@@ -36,6 +40,10 @@ struct Config {
 
 fn default_relative_slippage() -> BigDecimal {
     BigDecimal::new(1.into(), 2) // 1%
+}
+
+fn default_concurrent_requests() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
 }
 
 fn default_smallest_partial_fill() -> eth::U256 {
@@ -63,6 +71,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             config.absolute_slippage.map(eth::Ether),
         )
         .expect("invalid slippage limits"),
+        concurrent_requests: config.concurrent_requests,
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
     };
 

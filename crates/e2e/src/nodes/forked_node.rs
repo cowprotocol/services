@@ -20,12 +20,12 @@ impl<T: Transport> Forker<T> {
         forked_node_api
             .fork(&fork_url)
             .await
-            .expect("Test network must support hardhat_reset");
+            .expect("Test network must support anvil_reset");
 
         forked_node_api
             .impersonate(&solver_address)
             .await
-            .expect("Test network must support hardhat_impersonateAccount");
+            .expect("Test network must support anvil_impersonateAccount");
 
         Self {
             forked_node_api,
@@ -40,7 +40,7 @@ impl<T: Transport> TestNode for Forker<T> {
         self.forked_node_api
             .fork(&self.fork_url)
             .await
-            .expect("Test network must support hardhat_reset");
+            .expect("Test network must support anvil_reset");
     }
 }
 
@@ -64,21 +64,21 @@ impl<T: Transport> Namespace<T> for ForkedNodeApi<T> {
 
 /// Implements functions that are only available in a forked node.
 ///
-/// Relevant RPC calls for the Hardhat forked network can be found at:
-/// https://hardhat.org/hardhat-network/docs/reference#hardhat-network-methods
+/// Relevant RPC calls for the Anvil network can be found at:
+/// https://book.getfoundry.sh/reference/anvil/
 impl<T: Transport> ForkedNodeApi<T> {
-    pub fn fork(&self, fork_url: &Url) -> CallFuture<bool, T::Out> {
+    pub fn fork(&self, fork_url: &Url) -> CallFuture<(), T::Out> {
         CallFuture::new(self.transport.execute(
-            "hardhat_reset",
+            "anvil_reset",
             vec![json!({ "forking": {"jsonRpcUrl": fork_url.to_string()} })],
         ))
     }
 
-    pub fn impersonate(&self, address: &H160) -> CallFuture<bool, T::Out> {
+    pub fn impersonate(&self, address: &H160) -> CallFuture<(), T::Out> {
         let json_address = serde_json::json!(address);
         CallFuture::new(
             self.transport
-                .execute("hardhat_impersonateAccount", vec![json_address]),
+                .execute("anvil_impersonateAccount", vec![json_address]),
         )
     }
 }

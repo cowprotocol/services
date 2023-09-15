@@ -1,6 +1,6 @@
 use {
     e2e::{setup::*, tx},
-    ethcontract::{prelude::U256, H160},
+    ethcontract::prelude::U256,
     futures::StreamExt,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -13,7 +13,7 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_partially_fillable_balance() {
+async fn local_node_partially_fillable_observed_score() {
     run_test(test).await;
 }
 
@@ -124,10 +124,7 @@ async fn test(web3: Web3) {
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != balance };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
-    tracing::info!("mining blocks to get past the reorg safety threshold for indexing events");
-    for _ in 0..65 {
-        token_a.mint(H160::from_low_u64_be(42), 1.into()).await;
-    }
+    onchain.mint_blocks_past_reorg_threshold().await;
 
     let indexed_trades = || async { services.get_trades(&uid).await.unwrap().len() == 2 };
     wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
