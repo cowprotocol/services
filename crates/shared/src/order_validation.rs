@@ -40,7 +40,7 @@ use {
             VerificationError,
             BUY_ETH_ADDRESS,
         },
-        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
         signature::{self, hashed_eip712_message, Signature, SigningScheme},
         time,
         DomainSeparator,
@@ -430,6 +430,41 @@ impl OrderValidator {
             post: to_interactions(&hooks.post),
         }
     }
+
+    /// When verified quotes are enabled we want to enforce that limit orders
+    /// were created using a verified quote. If no verified quote exists it
+    /// means that not a single solver knows how to trade these tokens
+    /// meaning that this trade is effectively unsupported.
+    async fn ensure_limit_order_supported(
+        &self,
+        quote_id: Option<QuoteId>,
+        mut parameters: QuoteSearchParameters,
+    ) -> Result<(), ValidationError> {
+        // Because limit orders may have limit prices that are currently not achievable
+        // onchain we adjust the sell or buy amount such that finding any verified
+        // trade for the given tokens, no matter how bad, is enough to consider this
+        // order supported.
+        match parameters.kind {
+            OrderKind::Buy => parameters.sell_amount = U256::MAX,
+            OrderKind::Sell => parameters.buy_amount = 1.into(),
+        }
+
+        let found_quote = self.quoter.find_quote(quote_id, parameters.clone()).await;
+
+        if found_quote.is_err() && quote_id.is_some() {
+            // user provided some quote id so we expect to find it
+            return found_quote.map(|_| ()).map_err(ValidationError::from);
+        }
+
+        // user didn't provide a quote id so we try to compute a quote to see if the
+        // order should be considered supported
+        let parameters = QuoteParameters::try_from(&parameters)?;
+        self.quoter
+            .calculate_quote(parameters)
+            .await
+            .map(|_| ())
+            .map_err(ValidationError::from)
+    }
 }
 
 #[async_trait::async_trait]
@@ -665,23 +700,30 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-        let quote = if class == OrderClass::Market {
-            let quote = get_quote_and_check_fee(
-                &*self.quoter,
-                &quote_parameters,
-                order.quote_id,
-                data.fee_amount,
-            )
-            .await?;
-            Some(quote)
-        } else {
-            // We don't try to get quotes for liquidity and limit orders
-            // for two reasons:
-            // 1. They don't pay fees, meaning we don't need to know what the min fee amount
-            //    is.
-            // 2. We don't really care about the equivalent quote since they aren't expected
-            //    to follow regular order creation flow.
-            None
+
+        let quote = match (class, self.request_verified_quotes) {
+            // We don't try to get quotes for liquidity orders for two reasons:
+            // 1. They don't pay fees, meaning we don't need to know what the min fee amount is.
+            // 2. We don't really care about the equivalent quote since they aren't expected to
+            //    follow regular order creation flow.
+            (OrderClass::Liquidity, _) => None,
+            (OrderClass::Limit(_), false) => None,
+            (OrderClass::Limit(_), true) => {
+                self.ensure_limit_order_supported(order.quote_id, quote_parameters.clone())
+                    .await?;
+                tracing::debug!("support for limit order enforced by verified quote");
+                // Quotes don't matter for limit orders. We only need to know it's supported.
+                None
+            },
+            (OrderClass::Market, _) => Some(
+                get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    data.fee_amount,
+                )
+                .await?,
+            ),
         };
 
         let full_fee_amount = quote
@@ -987,6 +1029,36 @@ pub fn convert_signing_scheme_into_quote_signing_scheme(
             onchain_order: !order_placement_via_api,
             verification_gas_limit,
         }),
+    }
+}
+
+impl TryFrom<&QuoteSearchParameters> for QuoteParameters {
+    type Error = ValidationError;
+
+    fn try_from(parameters: &QuoteSearchParameters) -> Result<Self, Self::Error> {
+        Ok(QuoteParameters {
+            sell_token: parameters.sell_token,
+            buy_token: parameters.buy_token,
+            side: match parameters.kind {
+                OrderKind::Buy => OrderQuoteSide::Buy {
+                    buy_amount_after_fee: parameters
+                        .buy_amount
+                        .try_into()
+                        .map_err(|_| ValidationError::ZeroAmount)?,
+                },
+                OrderKind::Sell => OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee {
+                        value: parameters
+                            .sell_amount
+                            .try_into()
+                            .map_err(|_| ValidationError::ZeroAmount)?,
+                    },
+                },
+            },
+            verification: parameters.verification.clone(),
+            signing_scheme: parameters.signing_scheme,
+            additional_gas: parameters.additional_gas,
+        })
     }
 }
 
