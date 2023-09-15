@@ -364,7 +364,7 @@ impl Gas {
         //
         // This is computed as an approximation of:
         // MAX_FEE_FACTOR = MAX_INCREASE_PER_BLOCK ** (DEADLINE_IN_BLOCKS +
-        // SOLVING_TIME) = 1.125 ** (10 + 2) = 1.125 * 12
+        // SOLVING_TIME) = 1.125 ** (10 + 2) = 1.125 ** 12
         //
         // The value of `MAX_GAS_INCREASE_PER_BLOCK` comes from EIP-1559, which
         // dictates that the block base fee can increase by a maximum of 12.5%
