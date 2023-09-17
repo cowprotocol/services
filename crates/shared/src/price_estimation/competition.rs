@@ -34,10 +34,10 @@ impl From<&Query> for Trade {
     }
 }
 
-/// Index of an estimator stored in the [`CompetitionPriceEstimator`] used as an
-/// identifier.
+/// Stage index and index within stage of an estimator stored in the
+/// [`CompetitionPriceEstimator`] used as an identifier.
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
-struct EstimatorIndex(usize);
+struct EstimatorIndex(usize, usize);
 
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Wins(u64);
@@ -215,7 +215,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
                 if let Some(competition) = &self.competition {
                     let trade = Trade::from(&*query);
-                    let estimator = EstimatorIndex(*estimator_index);
+                    let estimator = EstimatorIndex(*stage_index, *estimator_index);
                     let was_correct = predictions.iter().any(|p| p.winner == estimator);
                     metrics().record_prediction(&trade, was_correct);
                     competition.record_winner(trade, estimator);
