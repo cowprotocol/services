@@ -21,6 +21,7 @@ use {
 };
 
 const BASE_URL: &str = "https://api.1inch.dev/";
+const REFRESH_INTERVAL: Duration = Duration::from_secs(12);
 
 struct OneInch {
     client: Client,
@@ -64,7 +65,7 @@ impl OneInch {
                         tracing::warn!(?err);
                     }
                 }
-                tokio::time::sleep(Duration::from_secs(12)).await;
+                tokio::time::sleep(REFRESH_INTERVAL).await;
             }
         });
     }
