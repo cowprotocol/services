@@ -7,6 +7,8 @@ use {
     std::sync::Arc,
 };
 
+mod oneinch;
+
 pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
 
 pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U256> {
