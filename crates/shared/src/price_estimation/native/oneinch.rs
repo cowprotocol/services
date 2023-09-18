@@ -1,71 +1,54 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
-    crate::price_estimation::{
-        Estimate,
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
-    },
+    crate::price_estimation::PriceEstimationError,
     anyhow::{anyhow, Result},
-    futures::{future::BoxFuture, FutureExt},
-    model::order::OrderKind,
-    number::nonzero::U256 as NonZeroU256,
+    ethrpc::current_block::{into_stream, CurrentBlockStream},
+    futures::{future::BoxFuture, FutureExt, StreamExt},
     primitive_types::{H160, U256},
     reqwest::Client,
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
-        time::Duration,
     },
 };
 
 const BASE_URL: &str = "https://api.1inch.dev/";
-const REFRESH_INTERVAL: Duration = Duration::from_secs(12);
 
 struct OneInch {
-    client: Client,
-    chain_id: u64,
     // Denominated in wei
     prices: Arc<Mutex<HashMap<H160, U256>>>,
-    native_price_estimation_amount: NonZeroU256,
-    native_token: H160,
 }
 
 impl OneInch {
     #[allow(dead_code)]
-    pub fn new(
-        client: Client,
-        chain_id: u64,
-        native_price_estimation_amount: NonZeroU256,
-        native_token: H160,
-    ) -> Self {
+    pub fn new(client: Client, chain_id: u64, current_block: CurrentBlockStream) -> Self {
         let instance = Self {
-            client,
-            chain_id,
             prices: Arc::new(Mutex::new(HashMap::new())),
-            native_price_estimation_amount,
-            native_token,
         };
-        instance.update_prices_in_background();
+        instance.update_prices_in_background(client, chain_id, current_block);
         instance
     }
 
-    fn update_prices_in_background(&self) {
-        let client = self.client.clone();
-        let chain = self.chain_id;
+    fn update_prices_in_background(
+        &self,
+        client: Client,
+        chain_id: u64,
+        current_block: CurrentBlockStream,
+    ) {
         let prices = self.prices.clone();
         tokio::task::spawn(async move {
+            let mut block_stream = into_stream(current_block);
             loop {
-                match update_prices(&client, chain).await {
+                match update_prices(&client, chain_id).await {
                     Ok(new_prices) => {
+                        tracing::debug!("OneInch spot prices updated");
                         *prices.lock().unwrap() = new_prices;
                     }
                     Err(err) => {
-                        tracing::warn!(?err);
+                        tracing::warn!(?err, "OneInch spot price update failed");
                     }
                 }
-                tokio::time::sleep(REFRESH_INTERVAL).await;
+                block_stream.next().await;
             }
         });
     }
@@ -82,34 +65,6 @@ impl NativePriceEstimating for OneInch {
                 .get(token)
                 .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
             Ok(price.to_f64_lossy() / 1e18)
-        }
-        .boxed()
-    }
-}
-
-impl PriceEstimating for OneInch {
-    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
-        async move {
-            if query.kind != OrderKind::Buy
-                || query.in_amount != self.native_price_estimation_amount
-                || query.buy_token != self.native_token
-            {
-                return Err(PriceEstimationError::UnsupportedOrderType(
-                    "Non native price quote".to_string(),
-                ));
-            }
-
-            let prices = self.prices.lock().unwrap();
-            let price = prices
-                .get(&query.sell_token)
-                .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
-            let reverse_price = 1. / (price.to_f64_lossy() / 1e18);
-            let in_amount: U256 = query.in_amount.into();
-            Ok(Estimate {
-                out_amount: U256::from_f64_lossy(in_amount.to_f64_lossy() * reverse_price),
-                gas: 0,
-                solver: H160([0; 20]),
-            })
         }
         .boxed()
     }
@@ -163,11 +118,7 @@ mod tests {
 
         let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
         let instance = OneInch {
-            chain_id: 1,
-            client,
             prices: Arc::new(Mutex::new(prices)),
-            native_price_estimation_amount: U256::exp10(18).try_into().unwrap(),
-            native_token,
         };
         assert_eq!(
             instance.estimate_native_price(&native_token).await.unwrap(),
@@ -185,53 +136,5 @@ mod tests {
                 .unwrap()
                 > 100.
         );
-    }
-
-    #[tokio::test]
-    async fn rejects_unsupported_quote_requests() {
-        let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
-        let native_price_estimation_amount = U256::exp10(18).try_into().unwrap();
-        let instance = OneInch {
-            native_price_estimation_amount,
-            native_token,
-            chain_id: 1,
-            client: Default::default(),
-            prices: Default::default(),
-        };
-
-        // This query is good (but since we have no prices it yields NoLiquidity)
-        let query = Query {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: native_token,
-            in_amount: native_price_estimation_amount,
-            kind: OrderKind::Buy,
-            verification: None,
-        };
-        assert!(matches!(
-            instance.estimate(Arc::new(query.clone())).await,
-            Err(PriceEstimationError::NoLiquidity)
-        ));
-
-        // These queries are no allowed
-        let mut sell_query = query.clone();
-        sell_query.kind = OrderKind::Sell;
-        assert!(matches!(
-            instance.estimate(Arc::new(sell_query)).await,
-            Err(PriceEstimationError::UnsupportedOrderType(_))
-        ));
-
-        let mut bad_amount_query = query.clone();
-        bad_amount_query.in_amount = NonZeroU256::default();
-        assert!(matches!(
-            instance.estimate(Arc::new(bad_amount_query)).await,
-            Err(PriceEstimationError::UnsupportedOrderType(_))
-        ));
-
-        let mut bad_buy_token_query = query.clone();
-        bad_buy_token_query.buy_token = H160::from_low_u64_be(2);
-        assert!(matches!(
-            instance.estimate(Arc::new(bad_buy_token_query)).await,
-            Err(PriceEstimationError::UnsupportedOrderType(_))
-        ));
     }
 }
