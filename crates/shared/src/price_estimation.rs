@@ -242,19 +242,6 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub tenderly_save_failed_trade_simulations: bool,
 
-    /// Controls if we try to predict the winning price estimator for a given
-    /// trade and enables metrics accordingly.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_quote_predictions: bool,
-
-    /// Determines the likelihood that the program returns the best possible
-    /// price for a given quote request. If the value is <1 the program is
-    /// allowed to not send requests to price estimators that historically
-    /// performed poorly for a given trade. The smaller the value the
-    /// more price estimators will not be asked for a quote.
-    #[clap(long, env, default_value = "1")]
-    pub quote_prediction_confidence: f64,
-
     /// Use 0x estimator for only buy orders. This flag can be enabled to reduce
     /// request pressure on the 0x API.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -321,11 +308,6 @@ impl Display for Arguments {
             f,
             "tenderly_save_failed_trade_simulations: {}",
             self.tenderly_save_failed_trade_simulations
-        )?;
-        writeln!(
-            f,
-            "enable_quote_predictions: {:?}",
-            self.enable_quote_predictions
         )?;
         writeln!(
             f,

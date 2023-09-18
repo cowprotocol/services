@@ -9,12 +9,7 @@ use {
     futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
-    std::{
-        cmp::Ordering,
-        collections::HashMap,
-        num::NonZeroUsize,
-        sync::{Arc, RwLock},
-    },
+    std::{cmp::Ordering, num::NonZeroUsize, sync::Arc},
 };
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -52,80 +47,6 @@ struct Competition {
     winners: Vec<(EstimatorIndex, Wins)>,
 }
 
-#[derive(Debug, Clone)]
-struct Prediction {
-    /// Which price estimator will probably provide the best quote.
-    winner: EstimatorIndex,
-    /// How confident we are in the pick.
-    _confidence: f64,
-}
-
-/// Collects historic data on which price estimator tends to give the best quote
-/// for what kind of trade.
-#[derive(Debug, Default)]
-struct HistoricalWinners(RwLock<HashMap<Trade, Competition>>);
-
-impl HistoricalWinners {
-    /// Updates the metrics for the given trade.
-    pub fn record_winner(&self, trade: Trade, winner: EstimatorIndex) {
-        let mut lock = self.0.write().unwrap();
-        let competition = lock.entry(trade).or_default();
-        competition.total_quotes += 1;
-        let winner_index = competition
-            .winners
-            .iter()
-            .enumerate()
-            .find_map(|(index, (estimator, _))| (*estimator == winner).then_some(index));
-        match winner_index {
-            Some(winner_index) => {
-                let (_, mut wins) = competition.winners[winner_index];
-                wins.0 += 1;
-                if winner_index != 0 {
-                    competition
-                        .winners
-                        .sort_by_key(|entry| std::cmp::Reverse(entry.1));
-                }
-            }
-            None => {
-                competition.winners.push((winner, Wins(1)));
-            }
-        }
-    }
-
-    /// Predicts based on historic data which price estimators should get asked
-    /// to return a quote for the given trade in order to be at least
-    /// `required_confidence` confident that we'll get the best possible
-    /// price.
-    pub fn predict_best_candidates(
-        &self,
-        quote: &Trade,
-        required_confidence: f64,
-    ) -> Vec<Prediction> {
-        let lock = self.0.read().unwrap();
-        let Some(competition) = lock.get(quote) else {
-            return vec![];
-        };
-        if competition.total_quotes < 100 {
-            // Not enough data to generate a meaningful prediction.
-            return vec![];
-        }
-        let mut total_confidence = 0.;
-        let mut predictions = vec![];
-        for (estimator, wins) in &competition.winners {
-            let confidence = wins.0 as f64 / competition.total_quotes as f64;
-            predictions.push(Prediction {
-                winner: *estimator,
-                _confidence: confidence,
-            });
-            total_confidence += confidence;
-            if total_confidence >= required_confidence {
-                break;
-            }
-        }
-        predictions
-    }
-}
-
 type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
 
 /// Price estimator that pulls estimates from various sources
@@ -138,10 +59,6 @@ type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
 pub struct RacingCompetitionPriceEstimator {
     inner: Vec<PriceEstimationStage>,
     successful_results_for_early_return: NonZeroUsize,
-    competition: Option<HistoricalWinners>,
-    /// The likelyhood of us including the winning price estimator based on
-    /// historic data.
-    required_confidence: f64,
 }
 
 impl RacingCompetitionPriceEstimator {
@@ -153,8 +70,6 @@ impl RacingCompetitionPriceEstimator {
         Self {
             inner: vec![inner],
             successful_results_for_early_return,
-            competition: None,
-            required_confidence: 1.,
         }
     }
 }
@@ -162,12 +77,6 @@ impl RacingCompetitionPriceEstimator {
 impl PriceEstimating for RacingCompetitionPriceEstimator {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async move {
-            let predictions = match &self.competition {
-                Some(competition) => competition
-                    .predict_best_candidates(&Trade::from(&*query), self.required_confidence),
-                None => vec![],
-            };
-
             let mut results = vec![];
             // Process stages sequentially
             'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
@@ -200,11 +109,16 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let (estimator, _) = &self.inner[*stage_index][*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
-            let requests = self.inner.len() as u64;
+            let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
+            let queried_estimators = results.len() as u64;
             metrics()
                 .requests
                 .with_label_values(&["executed"])
-                .inc_by(requests);
+                .inc_by(queried_estimators);
+            metrics()
+                .requests
+                .with_label_values(&["saved"])
+                .inc_by(total_estimators - queried_estimators);
 
             if result.is_ok() {
                 // Collect stats for winner predictions.
@@ -212,18 +126,6 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     .queries_won
                     .with_label_values(&[estimator, query.kind.label()])
                     .inc();
-
-                if let Some(competition) = &self.competition {
-                    let trade = Trade::from(&*query);
-                    let estimator = EstimatorIndex(*stage_index, *estimator_index);
-                    let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                    metrics().record_prediction(&trade, was_correct);
-                    competition.record_winner(trade, estimator);
-                    metrics()
-                        .requests
-                        .with_label_values(&["executed"])
-                        .inc_by(requests - predictions.len() as u64);
-                }
             }
             result.clone()
         }
@@ -244,14 +146,6 @@ impl CompetitionPriceEstimator {
         Self {
             inner: RacingCompetitionPriceEstimator::new(inner, number_of_estimators),
         }
-    }
-
-    /// Enables predicting the winning price estimator and gathering of related
-    /// metrics.
-    pub fn with_predictions(mut self, confidence: f64) -> Self {
-        self.inner.competition = Some(Default::default());
-        self.inner.required_confidence = confidence;
-        self
     }
 }
 
@@ -329,36 +223,10 @@ struct Metrics {
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
 
-    /// Number of quotes we (un)successfully predicted the winning price
-    /// estimator for.
-    #[metric(labels("result", "sell_token", "buy_token", "kind"))]
-    quote_predictions: prometheus::IntCounterVec,
-
     /// Number of requests we saved due to greedy selection based on historic
     /// data.
     #[metric(labels("status"))]
     requests: prometheus::IntCounterVec,
-}
-
-impl Metrics {
-    fn record_prediction(&self, trade: &Trade, correct: bool) {
-        let result = match correct {
-            true => "correct",
-            false => "incorrect",
-        };
-        let kind = match trade.kind {
-            OrderKind::Buy => "buy",
-            OrderKind::Sell => "sell",
-        };
-        self.quote_predictions
-            .with_label_values(&[
-                result,
-                hex::encode(trade.sell_token).as_str(),
-                hex::encode(trade.buy_token).as_str(),
-                kind,
-            ])
-            .inc();
-    }
 }
 
 fn metrics() -> &'static Metrics {
@@ -571,6 +439,8 @@ mod tests {
         let mut first = MockPriceEstimating::new();
         first.expect_estimate().times(1).returning(move |_| {
             async {
+                // First stage takes longer than second to test they are not executed in
+                // parallel
                 sleep(Duration::from_millis(20)).await;
                 Ok(estimate(1))
             }
@@ -616,8 +486,6 @@ mod tests {
                 ],
             ],
             successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            competition: None,
-            required_confidence: 0.,
         };
 
         let result = racing.estimate(query).await;
