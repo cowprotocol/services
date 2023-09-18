@@ -171,7 +171,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             .min(estimate.max_fee_per_gas);
         estimate = estimate.ceil();
 
-        ensure!(estimate.is_valid(), "gas estimate exceeds cap {estimate:?}");
+        ensure!(estimate.is_valid(), "gas estimate exceeds cap {estimate}");
         Ok(estimate)
     }
 }

@@ -62,17 +62,17 @@ impl GasPriceEstimating for Estimator {
             .min(estimate.max_fee_per_gas);
         estimate = estimate.ceil();
 
-        ensure!(estimate.is_valid(), "invalid gas estimate {estimate:?}");
+        ensure!(estimate.is_valid(), "invalid gas estimate {estimate}");
         Ok(estimate)
     }
 }
 
 /// The factor of `base_fee_per_gas` to use for the `max_fee_per_gas` for gas
 /// price estimates. This is chosen to be the maximum increase in the
-/// `base_fee_per_gas` possible over a period of 10 blocks (which roughly
+/// `base_fee_per_gas` possible over a period of 12 blocks (which roughly
 /// corresponds to the deadline a solver has for mining a transaction on
-/// Mainnet).
-const MAX_FEE_FACTOR: f64 = 3.25;
+/// Mainnet + solvers solving time).
+const MAX_FEE_FACTOR: f64 = 4.2;
 
 #[cfg(test)]
 mod tests {
@@ -93,7 +93,7 @@ mod tests {
                 .unwrap(),
             GasPrice1559 {
                 base_fee_per_gas: 10.,
-                max_fee_per_gas: 33.,
+                max_fee_per_gas: 42.,
                 max_priority_fee_per_gas: 1.,
             }
         );
