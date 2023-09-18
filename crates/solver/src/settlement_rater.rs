@@ -328,6 +328,10 @@ impl ScoreCalculator {
         success_probability: f64,
     ) -> Result<Score> {
         ensure!(
+            objective_value >= &zero(),
+            "objective value must be non-negative."
+        );
+        ensure!(
             (0.0..=1.0).contains(&success_probability),
             "success probability must be between 0 and 1."
         );
