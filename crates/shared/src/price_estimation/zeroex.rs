@@ -42,11 +42,8 @@ impl ZeroExPriceEstimator {
 }
 
 impl PriceEstimating for ZeroExPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimate(query)
     }
 }
 
@@ -55,7 +52,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            price_estimation::{single_estimate, vec_estimates, PriceEstimationError},
+            price_estimation::PriceEstimationError,
             zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
         },
         ethcontract::futures::FutureExt as _,
@@ -108,18 +105,16 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
-        let est = single_estimate(
-            &estimator,
-            &Query {
+        let est = estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
-            },
-        )
-        .await
-        .unwrap();
+            }))
+            .await
+            .unwrap();
 
         assert_eq!(est.out_amount, 1110165823572443613u64.into());
         assert!(est.gas > 111000);
@@ -157,18 +152,16 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
-        let est = single_estimate(
-            &estimator,
-            &Query {
+        let est = estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
-            },
-        )
-        .await
-        .unwrap();
+            }))
+            .await
+            .unwrap();
 
         assert_eq!(est.out_amount, 8986186353137488u64.into());
         assert!(est.gas > 111000);
@@ -199,46 +192,34 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api), true);
 
-        let estimates = vec_estimates(
-            &estimator,
-            &[
-                Query {
-                    verification: None,
-                    sell_token: weth,
-                    buy_token: gno,
-                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                    kind: OrderKind::Sell,
-                },
-                Query {
-                    verification: None,
-                    sell_token: weth,
-                    buy_token: gno,
-                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                    kind: OrderKind::Buy,
-                },
-                Query {
-                    verification: None,
-                    sell_token: weth,
-                    buy_token: gno,
-                    in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
-                    kind: OrderKind::Sell,
-                },
-            ],
-        )
-        .await;
+        let result = estimator
+            .estimate(Arc::new(Query {
+                verification: None,
+                sell_token: weth,
+                buy_token: gno,
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
+                kind: OrderKind::Sell,
+            }))
+            .await;
 
-        assert_eq!(estimates.len(), 3);
         assert!(matches!(
-            &estimates[0],
+            &result,
             Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
+
+        let result = estimator
+            .estimate(Arc::new(Query {
+                verification: None,
+                sell_token: weth,
+                buy_token: gno,
+                in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
+                kind: OrderKind::Buy,
+            }))
+            .await;
+
         assert!(matches!(
-            &estimates[1],
+            &result,
             Ok(est) if est.out_amount.as_u64() == 8986186353137488u64
-        ));
-        assert!(matches!(
-            &estimates[2],
-            Err(PriceEstimationError::UnsupportedOrderType(_))
         ));
     }
 
@@ -251,17 +232,15 @@ mod tests {
         let zeroex_api = DefaultZeroExApi::test();
         let estimator = create_estimator(Arc::new(zeroex_api), false);
 
-        let result = single_estimate(
-            &estimator,
-            &Query {
+        let result = estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
-            },
-        )
-        .await;
+            }))
+            .await;
 
         dbg!(&result);
         let estimate = result.unwrap();

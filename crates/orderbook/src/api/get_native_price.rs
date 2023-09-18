@@ -1,7 +1,6 @@
 use {
     anyhow::Result,
     ethcontract::H160,
-    futures::StreamExt,
     serde::Serialize,
     shared::{
         api::{ApiReply, IntoWarpReply},
@@ -32,12 +31,7 @@ pub fn get_native_price(
     get_native_prices_request().and_then(move |token: H160| {
         let estimator = estimator.clone();
         async move {
-            let result = estimator
-                .estimate_native_prices(std::slice::from_ref(&token))
-                .next()
-                .await
-                .unwrap()
-                .1;
+            let result = estimator.estimate_native_price(&token).await;
             let reply = match result {
                 Ok(price) => with_status(
                     warp::reply::json(&PriceResponse::from(price)),

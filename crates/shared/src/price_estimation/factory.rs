@@ -374,14 +374,13 @@ trait PriceEstimatorCreating: Sized {
 impl PriceEstimatorCreating for BaselinePriceEstimator {
     type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, _name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BaselinePriceEstimator::new(
             factory.components.uniswap_v2_pools.clone(),
             factory.components.gas_price.clone(),
             factory.network.base_tokens.clone(),
             factory.network.native_token,
             factory.native_token_price_estimation_amount()?,
-            factory.rate_limiter(name),
             solver,
         ))
     }

@@ -10,6 +10,7 @@ use {
         rate_limiter::RateLimiter,
         trade_finding::oneinch::OneInchTradeFinder,
     },
+    futures::FutureExt as _,
     primitive_types::H160,
     std::sync::Arc,
 };
@@ -44,11 +45,8 @@ impl OneInchPriceEstimator {
 }
 
 impl PriceEstimating for OneInchPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimate(query).boxed()
     }
 }
 
@@ -58,9 +56,8 @@ mod tests {
         super::*,
         crate::{
             oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
-            price_estimation::{single_estimate, PriceEstimationError},
+            price_estimation::PriceEstimationError,
         },
-        futures::FutureExt as _,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
@@ -79,10 +76,6 @@ mod tests {
                 H160([1; 20]),
                 H160([2; 20]),
             )
-        }
-
-        async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-            single_estimate(self, query).await
         }
     }
 
@@ -118,13 +111,13 @@ mod tests {
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await
             .unwrap();
 
@@ -141,13 +134,13 @@ mod tests {
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
-            })
+            }))
             .await;
 
         assert!(matches!(
@@ -176,13 +169,13 @@ mod tests {
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await;
 
         assert!(matches!(
@@ -202,13 +195,13 @@ mod tests {
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await;
 
         assert!(matches!(
@@ -228,13 +221,13 @@ mod tests {
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let result = estimator
-            .estimate(&Query {
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
-            })
+            }))
             .await;
 
         dbg!(&result);

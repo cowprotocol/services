@@ -455,8 +455,8 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: Option<BigDecimal>,
-    pub executed_solver_fee: Option<BigDecimal>,
+    pub executed_surplus_fee: BigDecimal,
+    pub executed_solver_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -519,8 +519,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-(SELECT surplus_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_surplus_fee,
-(SELECT solver_fee FROM order_execution oe WHERE oe.order_uid = o.uid ORDER BY oe.auction_id DESC LIMIT 1) as executed_solver_fee,
+COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
+COALESCE((SELECT SUM(solver_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_solver_fee,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -1822,7 +1822,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, None);
+        assert_eq!(order.executed_surplus_fee, 0.into());
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
@@ -1834,8 +1834,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, Some(fee));
-        assert_eq!(order.executed_solver_fee, Some(solver_fee));
+        assert_eq!(order.executed_surplus_fee, fee);
+        assert_eq!(order.executed_solver_fee, solver_fee);
     }
 
     #[tokio::test]

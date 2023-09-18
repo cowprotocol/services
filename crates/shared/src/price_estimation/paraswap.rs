@@ -11,6 +11,7 @@ use {
         token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
+    futures::FutureExt,
     primitive_types::H160,
     std::sync::Arc,
 };
@@ -43,11 +44,8 @@ impl ParaswapPriceEstimator {
 }
 
 impl PriceEstimating for ParaswapPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.0.estimates(queries)
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.0.estimate(query).boxed()
     }
 }
 
@@ -58,7 +56,6 @@ mod tests {
         crate::{
             ethrpc::{create_env_test_transport, Web3},
             paraswap_api::DefaultParaswapApi,
-            price_estimation::single_estimate,
             token_info::TokenInfoFetcher,
         },
         model::order::OrderKind,
@@ -89,15 +86,15 @@ mod tests {
 
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: weth,
             buy_token: gno,
             in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
             kind: OrderKind::Sell,
-        };
+        });
 
-        let result = single_estimate(&estimator, &query).await;
+        let result = estimator.estimate(query).await;
         dbg!(&result);
         let estimate = result.unwrap();
         println!(

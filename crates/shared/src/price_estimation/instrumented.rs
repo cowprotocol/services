@@ -1,8 +1,8 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::stream::StreamExt,
+    futures::future::FutureExt,
     prometheus::{HistogramVec, IntCounterVec},
-    std::time::Instant,
+    std::{sync::Arc, time::Instant},
 };
 
 /// An instrumented price estimator.
@@ -30,31 +30,29 @@ impl InstrumentedPriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for InstrumentedPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
-        let start = Instant::now();
-        let measure_time = async move {
+    fn estimate(
+        &self,
+        query: Arc<Query>,
+    ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
+        async {
+            let start = Instant::now();
+            let estimate = self.inner.estimate(query).await;
             self.metrics
                 .price_estimation_times
                 .with_label_values(&[self.name.as_str()])
                 .observe(start.elapsed().as_secs_f64());
-        };
-        self.inner
-            .estimates(queries)
-            .inspect(move |result| {
-                let success = !matches!(&result.1, Err(PriceEstimationError::EstimatorInternal(_)));
-                let result = if success { "success" } else { "failure" };
-                self.metrics
-                    .price_estimates
-                    .with_label_values(&[self.name.as_str(), result])
-                    .inc();
-            })
-            .chain(futures::stream::once(measure_time).filter_map(|_| async { None }))
-            .boxed()
+
+            let success = !matches!(&estimate, Err(PriceEstimationError::EstimatorInternal(_)));
+            let result = if success { "success" } else { "failure" };
+            self.metrics
+                .price_estimates
+                .with_label_values(&[self.name.as_str(), result])
+                .inc();
+
+            estimate
+        }
+        .boxed()
     }
 }
 
@@ -73,15 +71,9 @@ struct Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{
-            vec_estimates,
-            Estimate,
-            MockPriceEstimating,
-            PriceEstimationError,
-        },
+        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimationError},
         anyhow::anyhow,
         ethcontract::H160,
-        futures::StreamExt,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
     };
@@ -89,39 +81,42 @@ mod tests {
     #[tokio::test]
     async fn records_metrics_for_each_query() {
         let queries = [
-            Query {
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
                 in_amount: NonZeroU256::try_from(3).unwrap(),
                 kind: OrderKind::Sell,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160([4; 20]),
                 buy_token: H160([5; 20]),
                 in_amount: NonZeroU256::try_from(6).unwrap(),
                 kind: OrderKind::Buy,
-            },
+            }),
         ];
 
         let mut estimator = MockPriceEstimating::new();
-        let expected_queries = queries.clone();
+        let expected_query = queries[0].clone();
         estimator
-            .expect_estimates()
+            .expect_estimate()
             .times(1)
-            .withf(move |q| q == expected_queries)
+            .withf(move |q| *q == expected_query)
+            .returning(|_| async { Ok(Estimate::default()) }.boxed());
+        let expected_query = queries[1].clone();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .withf(move |q| *q == expected_query)
             .returning(|_| {
-                futures::stream::iter([
-                    Ok(Estimate::default()),
-                    Err(PriceEstimationError::EstimatorInternal(anyhow!(""))),
-                ])
-                .enumerate()
-                .boxed()
+                async { Err(PriceEstimationError::EstimatorInternal(anyhow!(""))) }.boxed()
             });
 
         let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
-        let _ = vec_estimates(&instrumented, &queries).await;
+
+        let _ = instrumented.estimate(queries[0].clone()).await;
+        let _ = instrumented.estimate(queries[1].clone()).await;
 
         for result in &["success", "failure"] {
             let observed = instrumented
@@ -136,6 +131,6 @@ mod tests {
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed, 1);
+        assert_eq!(observed, 2);
     }
 }

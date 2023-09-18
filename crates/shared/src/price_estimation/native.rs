@@ -1,6 +1,6 @@
 use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
-    futures::{stream::BoxStream, StreamExt},
+    futures::FutureExt,
     model::order::OrderKind,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
@@ -21,14 +21,14 @@ pub fn default_amount_to_estimate_native_prices_with(chain_id: u64) -> Option<U2
 
 #[mockall::automock]
 pub trait NativePriceEstimating: Send + Sync {
-    /// Like `PriceEstimating::estimates`.
+    /// Like `PriceEstimating::estimate`.
     ///
     /// Prices are denominated in native token (i.e. the amount of native token
     /// that is needed to buy 1 unit of the specified token).
-    fn estimate_native_prices<'a>(
+    fn estimate_native_price<'a>(
         &'a self,
-        tokens: &'a [H160],
-    ) -> BoxStream<'_, (usize, NativePriceEstimateResult)>;
+        token: &'a H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
 
 /// Wrapper around price estimators specialized to estimate a token's price
@@ -63,49 +63,18 @@ impl NativePriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl NativePriceEstimating for NativePriceEstimator {
-    fn estimate_native_prices<'a>(
+    fn estimate_native_price<'a>(
         &'a self,
-        tokens: &'a [H160],
-    ) -> BoxStream<'_, (usize, NativePriceEstimateResult)> {
-        let stream = async_stream::stream!({
-            let queries: Vec<_> = tokens.iter().map(|token| self.query(token)).collect();
-            let mut inner = self.inner.estimates(&queries);
-            while let Some((i, result)) = inner.next().await {
-                let result = result.map(|estimate| estimate.price_in_buy_token_f64(&queries[i]));
-                yield (i, result)
-            }
-        });
-        stream.boxed()
+        token: &'a H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        async {
+            let query = Arc::new(self.query(token));
+            let estimate = self.inner.estimate(query.clone()).await?;
+            Ok(estimate.price_in_buy_token_f64(&query))
+        }
+        .boxed()
     }
-}
-
-pub async fn native_single_estimate(
-    estimator: &dyn NativePriceEstimating,
-    token: &H160,
-) -> NativePriceEstimateResult {
-    estimator
-        .estimate_native_prices(std::slice::from_ref(token))
-        .next()
-        .await
-        .unwrap()
-        .1
-}
-
-pub async fn native_vec_estimates(
-    estimator: &dyn NativePriceEstimating,
-    queries: &[H160],
-) -> Vec<NativePriceEstimateResult> {
-    let mut results = vec![None; queries.len()];
-    let mut stream = estimator.estimate_native_prices(queries);
-    while let Some((index, result)) = stream.next().await {
-        results[index] = Some(result);
-    }
-    let results = results.into_iter().flatten().collect::<Vec<_>>();
-    // Check that every query has a result.
-    debug_assert_eq!(results.len(), queries.len());
-    results
 }
 
 #[cfg(test)]
@@ -113,23 +82,22 @@ mod tests {
     use {
         super::*,
         crate::price_estimation::{Estimate, MockPriceEstimating},
-        futures::{FutureExt, StreamExt},
         primitive_types::H160,
     };
 
-    #[test]
-    fn prices_dont_get_modified() {
+    #[tokio::test]
+    async fn prices_dont_get_modified() {
         let mut inner = MockPriceEstimating::new();
-        inner.expect_estimates().times(1).returning(|queries| {
-            assert!(queries.len() == 1);
-            assert!(queries[0].buy_token.to_low_u64_be() == 7);
-            assert!(queries[0].sell_token.to_low_u64_be() == 3);
-            futures::stream::iter([Ok(Estimate {
-                out_amount: 123_456_789_000_000_000u128.into(),
-                gas: 0,
-                solver: H160([1; 20]),
-            })])
-            .enumerate()
+        inner.expect_estimate().times(1).returning(|query| {
+            assert!(query.buy_token.to_low_u64_be() == 7);
+            assert!(query.sell_token.to_low_u64_be() == 3);
+            async {
+                Ok(Estimate {
+                    out_amount: 123_456_789_000_000_000u128.into(),
+                    gas: 0,
+                    solver: H160([1; 20]),
+                })
+            }
             .boxed()
         });
 
@@ -140,25 +108,18 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_prices(&[H160::from_low_u64_be(3)])
-            .next()
-            .now_or_never()
-            .unwrap()
-            .unwrap()
-            .1;
+            .estimate_native_price(&H160::from_low_u64_be(3))
+            .await;
         assert_eq!(result.unwrap(), 1. / 0.123456789);
     }
 
-    #[test]
-    fn errors_get_propagated() {
+    #[tokio::test]
+    async fn errors_get_propagated() {
         let mut inner = MockPriceEstimating::new();
-        inner.expect_estimates().times(1).returning(|queries| {
-            assert!(queries.len() == 1);
-            assert!(queries[0].buy_token.to_low_u64_be() == 7);
-            assert!(queries[0].sell_token.to_low_u64_be() == 2);
-            futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
-                .enumerate()
-                .boxed()
+        inner.expect_estimate().times(1).returning(|query| {
+            assert!(query.buy_token.to_low_u64_be() == 7);
+            assert!(query.sell_token.to_low_u64_be() == 2);
+            async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 
         let native_price_estimator = NativePriceEstimator {
@@ -168,12 +129,8 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_prices(&[H160::from_low_u64_be(2)])
-            .next()
-            .now_or_never()
-            .unwrap()
-            .unwrap()
-            .1;
+            .estimate_native_price(&H160::from_low_u64_be(2))
+            .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }
 }
