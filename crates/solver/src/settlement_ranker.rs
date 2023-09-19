@@ -6,7 +6,7 @@ use {
         },
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
-        settlement_rater::{Rating, SettlementRating},
+        settlement_rater::{Rating, RatingError, SettlementRating},
         settlement_simulation::call_data,
         solver::{SimulationWithError, Solver, SolverInfo},
     },
@@ -145,7 +145,7 @@ impl SettlementRanker {
 
     /// Determines legal settlements and ranks them by simulating them.
     /// Settlements get partitioned into simulation errors and a list
-    /// of `RatedSettlement`s sorted by ascending order of objective value.
+    /// of `RatedSettlement`s sorted by ascending order of score.
     pub async fn rank_legal_settlements(
         &self,
         settlements: Vec<SolverResult>,
@@ -198,11 +198,18 @@ impl SettlementRanker {
             .await
             .into_iter()
             .filter_map(|(solver, result)| match result {
-                Ok(res) => Some((solver, res)),
-                Err(err) => {
-                    tracing::warn!(?err, "error in settlement rating logic");
-                    None
-                }
+                Ok(res) => Some((solver, Rating::Ok(res))),
+                Err(err) => match err {
+                    RatingError::FailedSimulation(error) => Some((solver, Rating::Err(error))),
+                    RatingError::FailedScoring(_) => {
+                        //todo notify bad scoring
+                        None
+                    }
+                    RatingError::Internal(error) => {
+                        tracing::warn!(?error, "error in settlement rating logic");
+                        None
+                    }
+                },
             })
             .partition_map(|(solver, result)| match result {
                 Rating::Ok(r) => itertools::Either::Left((solver, r)),
@@ -227,23 +234,27 @@ impl SettlementRanker {
         }
 
         // Filter out settlements with non-positive score.
-        if self.skip_non_positive_score_settlements {
-            rated_settlements.retain(|(solver, settlement)| {
-                let positive_score = settlement.score.score() > 0.into();
-                if !positive_score {
-                    tracing::debug!(
-                        solver_name = %solver.name(),
-                        "settlement filtered for having non-positive score",
-                    );
-                    solver.notify_auction_result(
-                        auction_id,
-                        AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore),
-                    );
-                    self.metrics.settlement_non_positive_score(solver.name());
-                }
-                positive_score
-            });
-        }
+
+        // todo remove skip_non_positive_score_settlements
+
+        // if self.skip_non_positive_score_settlements {
+        //     rated_settlements.retain(|(solver, settlement)| {
+        //         let positive_score = settlement.score.score() > 0.into();
+        //         if !positive_score {
+        //             tracing::debug!(
+        //                 solver_name = %solver.name(),
+        //                 "settlement filtered for having non-positive score",
+        //             );
+        //             solver.notify_auction_result(
+        //                 auction_id,
+        //                 
+        // AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore),
+        //             );
+        //             self.metrics.settlement_non_positive_score(solver.name());
+        //         }
+        //         positive_score
+        //     });
+        // }
 
         // Filter out settlements with too high score.
         rated_settlements.retain(|(solver, settlement)| {
