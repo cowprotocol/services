@@ -1,7 +1,7 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
-    anyhow::{anyhow, Result},
+    anyhow::{Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     primitive_types::{H160, U256},
