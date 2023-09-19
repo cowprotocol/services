@@ -31,7 +31,7 @@ pub fn get_native_price(
     get_native_prices_request().and_then(move |token: H160| {
         let estimator = estimator.clone();
         async move {
-            let result = estimator.estimate_native_price(&token).await;
+            let result = estimator.estimate_native_price(token).await;
             let reply = match result {
                 Ok(price) => with_status(
                     warp::reply::json(&PriceResponse::from(price)),
