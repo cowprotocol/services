@@ -1,4 +1,5 @@
 use {
+    super::native::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::{
         Estimate,
         PriceEstimateResult,
@@ -9,7 +10,7 @@ use {
     futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
-    std::{cmp::Ordering, num::NonZeroUsize, sync::Arc},
+    std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc},
 };
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -37,7 +38,7 @@ struct EstimatorIndex(usize, usize);
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Wins(u64);
 
-type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
+type PriceEstimationStage<T> = Vec<(String, T)>;
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Sources are provided as a list of lists, the
@@ -46,14 +47,14 @@ type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
 /// stage Returns a price estimation early if there is a configurable number of
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
-pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<PriceEstimationStage>,
+pub struct RacingCompetitionPriceEstimator<T> {
+    inner: Vec<PriceEstimationStage<T>>,
     successful_results_for_early_return: NonZeroUsize,
 }
 
-impl RacingCompetitionPriceEstimator {
+impl<T: Send + Sync + 'static> RacingCompetitionPriceEstimator<T> {
     pub fn new(
-        inner: PriceEstimationStage,
+        inner: PriceEstimationStage<T>,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
@@ -62,10 +63,22 @@ impl RacingCompetitionPriceEstimator {
             successful_results_for_early_return,
         }
     }
-}
 
-impl PriceEstimating for RacingCompetitionPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate_generic<
+        Q: Clone + Debug + Send + 'static,
+        R: Clone + Debug + Send,
+        E: Clone + Debug + Send,
+    >(
+        &self,
+        query: Q,
+        kind: OrderKind,
+        get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
+            + Send
+            + 'static,
+        compare_results: impl FnMut(&(usize, &Result<R, E>), &(usize, &Result<R, E>)) -> Ordering
+            + Send
+            + 'static,
+    ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         async move {
             let mut results = vec![];
             // Process stages sequentially
@@ -73,7 +86,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 // Process estimators within each stage in parallel
                 let mut futures: Vec<_> = stage
                     .iter()
-                    .map(|(_, estimator)| estimator.estimate(query.clone()))
+                    .map(|(_, estimator)| get_single_result(estimator, query.clone()))
                     .collect();
                 while !futures.is_empty() {
                     let (result, estimator_index, rest) =
@@ -93,8 +106,13 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 }
             }
 
-            let best_index =
-                best_result(&query, results.iter().map(|(_, _, result)| result)).unwrap();
+            let best_index = results
+                .iter()
+                .map(|(_, _, result)| result)
+                .enumerate()
+                .max_by(compare_results)
+                .map(|(index, _)| index)
+                .unwrap();
             let (stage_index, estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[*stage_index][*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
@@ -114,7 +132,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 // Collect stats for winner predictions.
                 metrics()
                     .queries_won
-                    .with_label_values(&[estimator, query.kind.label()])
+                    .with_label_values(&[estimator, kind.label()])
                     .inc();
             }
             result.clone()
@@ -123,14 +141,51 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
     }
 }
 
-/// Price estimator that pulls estimates from various sources
-/// and competes on the best price.
-pub struct CompetitionPriceEstimator {
-    inner: RacingCompetitionPriceEstimator,
+impl PriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.estimate_generic(
+            query.clone(),
+            query.kind,
+            |estimator, query| estimator.estimate(query),
+            move |a, b| {
+                if is_second_quote_result_preferred(query.as_ref(), a.1, b.1) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+        )
+    }
 }
 
-impl CompetitionPriceEstimator {
-    pub fn new(inner: Vec<(String, Arc<dyn PriceEstimating>)>) -> Self {
+impl NativePriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn NativePriceEstimating>> {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        self.estimate_generic(
+            token,
+            OrderKind::Buy,
+            |estimator, token| estimator.estimate_native_price(token),
+            move |a, b| {
+                if is_second_native_result_preferred(a.1, b.1) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+        )
+    }
+}
+
+/// Price estimator that pulls estimates from various sources
+/// and competes on the best price.
+pub struct CompetitionPriceEstimator<T> {
+    inner: RacingCompetitionPriceEstimator<T>,
+}
+
+impl<T: Send + Sync + 'static> CompetitionPriceEstimator<T> {
+    pub fn new(inner: Vec<(String, T)>) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
         Self {
@@ -139,35 +194,31 @@ impl CompetitionPriceEstimator {
     }
 }
 
-impl PriceEstimating for CompetitionPriceEstimator {
+impl PriceEstimating for CompetitionPriceEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.inner.estimate(query)
     }
 }
 
-fn best_result<'a>(
-    query: &Query,
-    results: impl Iterator<Item = &'a PriceEstimateResult>,
-) -> Option<usize> {
-    results
-        .enumerate()
-        .max_by(|a, b| {
-            if is_second_result_preferred(query, a.1, b.1) {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        })
-        .map(|(index, _)| index)
-}
-
-fn is_second_result_preferred(
+fn is_second_quote_result_preferred(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
 ) -> bool {
     match (a, b) {
         (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b),
+        (Ok(_), Err(_)) => false,
+        (Err(_), Ok(_)) => true,
+        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+    }
+}
+
+fn is_second_native_result_preferred(
+    a: &Result<f64, PriceEstimationError>,
+    b: &Result<f64, PriceEstimationError>,
+) -> bool {
+    match (a, b) {
+        (Ok(a), Ok(b)) => b >= a,
         (Ok(_), Err(_)) => false,
         (Err(_), Ok(_)) => true,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
@@ -319,10 +370,11 @@ mod tests {
             }),
         ]);
 
-        let priority = CompetitionPriceEstimator::new(vec![
-            ("first".to_owned(), Arc::new(first)),
-            ("second".to_owned(), Arc::new(second)),
-        ]);
+        let priority: CompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
+            CompetitionPriceEstimator::new(vec![
+                ("first".to_owned(), Arc::new(first)),
+                ("second".to_owned(), Arc::new(second)),
+            ]);
 
         let result = priority.estimate(queries[0].clone()).await;
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
@@ -396,14 +448,15 @@ mod tests {
             .boxed()
         });
 
-        let racing = RacingCompetitionPriceEstimator::new(
-            vec![
-                ("first".to_owned(), Arc::new(first)),
-                ("second".to_owned(), Arc::new(second)),
-                ("third".to_owned(), Arc::new(third)),
-            ],
-            NonZeroUsize::new(1).unwrap(),
-        );
+        let racing: RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionPriceEstimator::new(
+                vec![
+                    ("first".to_owned(), Arc::new(first)),
+                    ("second".to_owned(), Arc::new(second)),
+                    ("third".to_owned(), Arc::new(third)),
+                ],
+                NonZeroUsize::new(1).unwrap(),
+            );
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
@@ -464,19 +517,20 @@ mod tests {
             .boxed()
         });
 
-        let racing = RacingCompetitionPriceEstimator {
-            inner: vec![
-                vec![
-                    ("first".to_owned(), Arc::new(first)),
-                    ("second".to_owned(), Arc::new(second)),
+        let racing: RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionPriceEstimator {
+                inner: vec![
+                    vec![
+                        ("first".to_owned(), Arc::new(first)),
+                        ("second".to_owned(), Arc::new(second)),
+                    ],
+                    vec![
+                        ("third".to_owned(), Arc::new(third)),
+                        ("fourth".to_owned(), Arc::new(fourth)),
+                    ],
                 ],
-                vec![
-                    ("third".to_owned(), Arc::new(third)),
-                    ("fourth".to_owned(), Arc::new(fourth)),
-                ],
-            ],
-            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-        };
+                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            };
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(3));
