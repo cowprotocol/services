@@ -7,7 +7,7 @@ use {
     std::sync::Arc,
 };
 
-mod oneinch;
+pub mod oneinch;
 
 pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
 

@@ -4,7 +4,7 @@ use {
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimators},
+        price_estimation::{self, NativePriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
     url::Url,
@@ -82,7 +82,7 @@ pub struct Arguments {
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
     #[clap(long, env, default_value_t)]
-    pub native_price_estimators: PriceEstimators,
+    pub native_price_estimators: NativePriceEstimators,
 
     /// How many successful price estimates for each order will cause a native
     /// price estimation to return its result early. It's possible to pass

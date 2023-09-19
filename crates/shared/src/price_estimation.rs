@@ -138,6 +138,85 @@ impl FromStr for PriceEstimator {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct NativePriceEstimators(Vec<NativePriceEstimator>);
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+pub enum NativePriceEstimator {
+    GenericPriceEstimator(PriceEstimatorKind),
+    OneInchSpotPriceApi,
+}
+
+impl NativePriceEstimators {
+    fn none() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn as_slice(&self) -> &[NativePriceEstimator] {
+        &self.0
+    }
+}
+
+impl Default for NativePriceEstimators {
+    fn default() -> Self {
+        Self(vec![NativePriceEstimator::GenericPriceEstimator(
+            PriceEstimatorKind::Baseline,
+        )])
+    }
+}
+
+impl Display for NativePriceEstimators {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut it = self.as_slice().iter();
+        if let Some(kind) = it.next() {
+            write!(f, "{kind:?}")?;
+            for kind in it {
+                write!(f, ",{kind:?}")?;
+            }
+            Ok(())
+        } else {
+            f.write_str("None")
+        }
+    }
+}
+
+impl FromStr for NativePriceEstimators {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "None" {
+            return Ok(Self::none());
+        }
+
+        Ok(Self(
+            s.split(',')
+                .map(NativePriceEstimator::from_str)
+                .collect::<Result<_>>()?,
+        ))
+    }
+}
+
+impl FromStr for NativePriceEstimator {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let kind = match s {
+            "Baseline" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::Baseline),
+            "Paraswap" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::Paraswap),
+            "ZeroEx" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::ZeroEx),
+            "OneInch" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::OneInch),
+            "BalancerSor" => {
+                NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::BalancerSor)
+            }
+            "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
+            estimator => {
+                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
+            }
+        };
+        Ok(kind)
+    }
+}
+
 /// Shared price estimation configuration arguments.
 #[derive(clap::Parser)]
 #[group(skip)]
@@ -246,6 +325,10 @@ pub struct Arguments {
     /// request pressure on the 0x API.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_only_estimate_buy_queries: bool,
+
+    /// The API key for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_key: Option<String>,
 }
 
 impl Display for Arguments {
