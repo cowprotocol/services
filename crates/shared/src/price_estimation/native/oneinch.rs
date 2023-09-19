@@ -87,7 +87,7 @@ async fn update_prices(
         .context("Failed to fetch Native 1inch prices")?
         .json::<HashMap<H160, String>>()
         .await
-        .map_err(|err| anyhow!("Failed to parse Native 1inch prices: {}", err))?
+        .context("Failed to parse Native 1inch prices")?
         .into_iter()
         .filter_map(|(key, value)| match U256::from_dec_str(&value) {
             Ok(value) => Some((key, value)),
