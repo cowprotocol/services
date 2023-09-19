@@ -397,6 +397,11 @@ impl Display for Arguments {
             "zeroex_only_estimate_buy_queries: {:?}",
             self.zeroex_only_estimate_buy_queries
         )?;
+        writeln!(
+            f,
+            "one_inch_spot_price_api_key: {:?}",
+            self.one_inch_spot_price_api_key
+        )?;
 
         Ok(())
     }
