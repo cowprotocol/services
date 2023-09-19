@@ -1,11 +1,11 @@
 use {
     super::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::PriceEstimationError,
-    anyhow::{Context, Result},
+    anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     primitive_types::{H160, U256},
-    reqwest::{header::AUTHORIZATION, Client},
+    reqwest::{header::AUTHORIZATION, Client, StatusCode},
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -81,13 +81,24 @@ async fn update_prices(
     if let Some(api_key) = api_key {
         builder = builder.header(AUTHORIZATION, api_key)
     }
-    let result = builder
+    let response = builder
         .send()
         .await
-        .context("Failed to fetch Native 1inch prices")?
-        .json::<HashMap<H160, String>>()
+        .context("Failed to send Native 1inch price request")?;
+    if response.status() != StatusCode::OK {
+        return Err(anyhow!(
+            "Native 1inch price request failed with status {}",
+            response.status()
+        ));
+    }
+    let response = response
+        .text()
         .await
-        .context("Failed to parse Native 1inch prices")?
+        .context("Failed to fetch Native 1Inch prices ")?;
+    let result = serde_json::from_str::<HashMap<H160, String>>(&response)
+        .context(format!(
+            "Failed to parse Native 1inch prices from {response:?}"
+        ))?
         .into_iter()
         .filter_map(|(key, value)| match U256::from_dec_str(&value) {
             Ok(value) => Some((key, value)),
