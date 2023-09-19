@@ -37,16 +37,6 @@ struct EstimatorIndex(usize, usize);
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Wins(u64);
 
-#[derive(Debug, Clone, Default)]
-struct Competition {
-    /// How many quotes were requested for this trade.
-    total_quotes: u64,
-    /// How often each price estimator managed to offer the best quote.
-    /// The list is always sorted based on the number of wins in descending
-    /// order.
-    winners: Vec<(EstimatorIndex, Wins)>,
-}
-
 type PriceEstimationStage = Vec<(String, Arc<dyn PriceEstimating>)>;
 
 /// Price estimator that pulls estimates from various sources
