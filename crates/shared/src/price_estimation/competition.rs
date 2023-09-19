@@ -73,10 +73,14 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 // Process estimators within each stage in parallel
                 let mut futures: Vec<_> = stage
                     .iter()
-                    .map(|(_, estimator)| estimator.estimate(query.clone()))
+                    .enumerate()
+                    .map(|(index, (_, estimator))| {
+                        let query = query.clone();
+                        async move { (index, estimator.estimate(query.clone()).await) }.boxed()
+                    })
                     .collect();
                 while !futures.is_empty() {
-                    let (result, estimator_index, rest) =
+                    let ((estimator_index, result), _, rest) =
                         futures::future::select_all(futures).await;
                     futures = rest;
                     results.push((stage_index, estimator_index, result.clone()));
