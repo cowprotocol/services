@@ -84,7 +84,7 @@ async fn update_prices(
     let result = builder
         .send()
         .await
-        .map_err(|err| anyhow!("Failed to fetch Native 1inch prices: {}", err))?
+        .context("Failed to fetch Native 1inch prices")?
         .json::<HashMap<H160, String>>()
         .await
         .map_err(|err| anyhow!("Failed to parse Native 1inch prices: {}", err))?
