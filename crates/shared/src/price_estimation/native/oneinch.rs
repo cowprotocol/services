@@ -55,14 +55,11 @@ impl OneInch {
 }
 
 impl NativePriceEstimating for OneInch {
-    fn estimate_native_price<'a>(
-        &'a self,
-        token: &'a H160,
-    ) -> BoxFuture<'_, NativePriceEstimateResult> {
+    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
         async move {
             let prices = self.prices.lock().unwrap();
             let price = prices
-                .get(token)
+                .get(&token)
                 .ok_or_else(|| PriceEstimationError::NoLiquidity)?;
             Ok(price.to_f64_lossy() / 1e18)
         }
@@ -121,7 +118,7 @@ mod tests {
             prices: Arc::new(Mutex::new(prices)),
         };
         assert_eq!(
-            instance.estimate_native_price(&native_token).await.unwrap(),
+            instance.estimate_native_price(native_token).await.unwrap(),
             1.
         );
 
@@ -130,7 +127,7 @@ mod tests {
         assert!(
             1. / instance
                 .estimate_native_price(
-                    &H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap()
+                    H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap()
                 )
                 .await
                 .unwrap()
