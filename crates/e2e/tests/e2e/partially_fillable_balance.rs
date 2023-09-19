@@ -1,6 +1,6 @@
 use {
     e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
+    ethcontract::prelude::{H160, U256},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -25,7 +25,7 @@ async fn test(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(10_000), to_wei(10_000))
         .await;
 
-    token_a.mint(trader_a.address(), to_wei(50)).await;
+    token_a.mint(trader_a.address(), to_wei(100)).await;
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
 
@@ -82,14 +82,6 @@ async fn test(web3: Web3) {
         ])
         .await;
 
-    // TODO the verified quote fails because the user doesn't have the requried sell balance.
-    // Either adjust the test such that the trade needs to be partially filled although the user
-    // has the required sell balance already.
-    // Or adjust the requirement that the user must have all the sell balance.
-    // I guess the option would be to:
-    // 1. have partial fill until the pool is imbalanced
-    // 2. rebalance the pool
-    // 3. fill remaining amount
     let order_a = OrderCreation {
         sell_token: token_a.address(),
         sell_amount: to_wei(100),
@@ -106,6 +98,14 @@ async fn test(web3: Web3) {
         SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
     );
     services.create_order(&order_a).await.unwrap();
+    // Creating an order only works with the required `sell_token` balance. But to
+    // test the partial fill logic we don't want the trader account to have all
+    // the balance when we try to solve the order. That's why we temporarily
+    // decrease their token balance.
+    tx!(
+        trader_a.account(),
+        token_a.transfer(H160::from_low_u64_be(1), to_wei(50))
+    );
 
     tracing::info!("Waiting for order to show up in auction.");
     let has_order = || async { services.get_auction().await.auction.orders.len() == 1 };
