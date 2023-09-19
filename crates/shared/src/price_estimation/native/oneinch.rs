@@ -5,7 +5,7 @@ use {
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
     primitive_types::{H160, U256},
-    reqwest::Client,
+    reqwest::{header::AUTHORIZATION, Client},
     std::{
         collections::HashMap,
         sync::{Arc, Mutex},
@@ -14,24 +14,29 @@ use {
 
 const BASE_URL: &str = "https://api.1inch.dev/";
 
-struct OneInch {
+pub struct OneInch {
     // Denominated in wei
     prices: Arc<Mutex<HashMap<H160, U256>>>,
 }
 
 impl OneInch {
-    #[allow(dead_code)]
-    pub fn new(client: Client, chain_id: u64, current_block: CurrentBlockStream) -> Self {
+    pub fn new(
+        client: Client,
+        api_key: Option<String>,
+        chain_id: u64,
+        current_block: CurrentBlockStream,
+    ) -> Self {
         let instance = Self {
             prices: Arc::new(Mutex::new(HashMap::new())),
         };
-        instance.update_prices_in_background(client, chain_id, current_block);
+        instance.update_prices_in_background(client, api_key, chain_id, current_block);
         instance
     }
 
     fn update_prices_in_background(
         &self,
         client: Client,
+        api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
     ) {
@@ -39,7 +44,7 @@ impl OneInch {
         tokio::task::spawn(async move {
             let mut block_stream = into_stream(current_block);
             loop {
-                match update_prices(&client, chain_id).await {
+                match update_prices(&client, api_key.clone(), chain_id).await {
                     Ok(new_prices) => {
                         tracing::debug!("OneInch spot prices updated");
                         *prices.lock().unwrap() = new_prices;
@@ -67,9 +72,16 @@ impl NativePriceEstimating for OneInch {
     }
 }
 
-async fn update_prices(client: &Client, chain: u64) -> Result<HashMap<H160, U256>> {
-    let result = client
-        .get(format!("{}/price/v1.1/{}", BASE_URL, chain))
+async fn update_prices(
+    client: &Client,
+    api_key: Option<String>,
+    chain: u64,
+) -> Result<HashMap<H160, U256>> {
+    let mut builder = client.get(format!("{}/price/v1.1/{}", BASE_URL, chain));
+    if let Some(api_key) = api_key {
+        builder = builder.header(AUTHORIZATION, api_key)
+    }
+    let result = builder
         .send()
         .await
         .map_err(|err| anyhow!("Failed to fetch Native 1inch prices: {}", err))?
@@ -92,25 +104,17 @@ async fn update_prices(client: &Client, chain: u64) -> Result<HashMap<H160, U256
 mod tests {
     use {
         super::*,
-        reqwest::header,
         std::{env, str::FromStr},
     };
 
     #[tokio::test]
     #[ignore]
     async fn works() {
-        let mut headers = header::HeaderMap::new();
         let auth_token = env::var("ONEINCH_AUTH_TOKEN").unwrap();
-        let mut auth_value = header::HeaderValue::from_str(&auth_token).unwrap();
-        auth_value.set_sensitive(true);
-        headers.insert(header::AUTHORIZATION, auth_value);
 
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
+        let prices = update_prices(&Client::default(), Some(auth_token), 1)
+            .await
             .unwrap();
-
-        let prices = update_prices(&client, 1).await.unwrap();
         assert!(prices.len() > 0);
 
         let native_token = H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap();
