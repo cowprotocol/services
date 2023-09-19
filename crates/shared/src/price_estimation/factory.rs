@@ -2,7 +2,7 @@ use {
     super::{
         balancer_sor::BalancerSor,
         baseline::BaselinePriceEstimator,
-        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        competition::{CompetitionEstimator, RacingCompetitionEstimator},
         external::ExternalPriceEstimator,
         http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -291,7 +291,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         sources: &[PriceEstimatorSource],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
+        let competition_estimator = CompetitionEstimator::new(estimators);
         Ok(Arc::new(self.sanitized(competition_estimator)))
     }
 
@@ -301,12 +301,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
-        Ok(Arc::new(self.sanitized(
-            RacingCompetitionPriceEstimator::new(
-                estimators,
-                fast_price_estimation_results_required,
-            ),
-        )))
+        Ok(Arc::new(self.sanitized(RacingCompetitionEstimator::new(
+            estimators,
+            fast_price_estimation_results_required,
+        ))))
     }
 
     pub fn native_price_estimator(
@@ -318,7 +316,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             "price cache prefetch time needs to be less than price cache max age"
         );
         let estimators = self.get_estimators(sources, |entry| &entry.native)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
+        let competition_estimator = CompetitionEstimator::new(estimators);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(NativePriceEstimator::new(
                 Arc::new(self.sanitized(competition_estimator)),

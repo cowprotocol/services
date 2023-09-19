@@ -31,7 +31,7 @@ impl From<&Query> for Trade {
 }
 
 /// Stage index and index within stage of an estimator stored in the
-/// [`CompetitionPriceEstimator`] used as an identifier.
+/// [`CompetitionEstimator`] used as an identifier.
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
 struct EstimatorIndex(usize, usize);
 
@@ -47,12 +47,12 @@ type PriceEstimationStage<T> = Vec<(String, T)>;
 /// stage Returns a price estimation early if there is a configurable number of
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
-pub struct RacingCompetitionPriceEstimator<T> {
+pub struct RacingCompetitionEstimator<T> {
     inner: Vec<PriceEstimationStage<T>>,
     successful_results_for_early_return: NonZeroUsize,
 }
 
-impl<T: Send + Sync + 'static> RacingCompetitionPriceEstimator<T> {
+impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     pub fn new(
         inner: PriceEstimationStage<T>,
         successful_results_for_early_return: NonZeroUsize,
@@ -141,7 +141,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionPriceEstimator<T> {
     }
 }
 
-impl PriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> {
+impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.estimate_generic(
             query.clone(),
@@ -158,7 +158,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating
     }
 }
 
-impl NativePriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn NativePriceEstimating>> {
+impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>> {
     fn estimate_native_price(
         &self,
         token: H160,
@@ -180,21 +180,21 @@ impl NativePriceEstimating for RacingCompetitionPriceEstimator<Arc<dyn NativePri
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
-pub struct CompetitionPriceEstimator<T> {
-    inner: RacingCompetitionPriceEstimator<T>,
+pub struct CompetitionEstimator<T> {
+    inner: RacingCompetitionEstimator<T>,
 }
 
-impl<T: Send + Sync + 'static> CompetitionPriceEstimator<T> {
+impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     pub fn new(inner: Vec<(String, T)>) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
         Self {
-            inner: RacingCompetitionPriceEstimator::new(inner, number_of_estimators),
+            inner: RacingCompetitionEstimator::new(inner, number_of_estimators),
         }
     }
 }
 
-impl PriceEstimating for CompetitionPriceEstimator<Arc<dyn PriceEstimating>> {
+impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.inner.estimate(query)
     }
@@ -370,8 +370,8 @@ mod tests {
             }),
         ]);
 
-        let priority: CompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionPriceEstimator::new(vec![
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
+            CompetitionEstimator::new(vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
             ]);
@@ -448,8 +448,8 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
-            RacingCompetitionPriceEstimator::new(
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator::new(
                 vec![
                     ("first".to_owned(), Arc::new(first)),
                     ("second".to_owned(), Arc::new(second)),
@@ -517,8 +517,8 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionPriceEstimator<Arc<dyn PriceEstimating>> =
-            RacingCompetitionPriceEstimator {
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator {
                 inner: vec![
                     vec![
                         ("first".to_owned(), Arc::new(first)),
