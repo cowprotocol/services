@@ -25,9 +25,9 @@ pub trait NativePriceEstimating: Send + Sync {
     ///
     /// Prices are denominated in native token (i.e. the amount of native token
     /// that is needed to buy 1 unit of the specified token).
-    fn estimate_native_price<'a>(
-        &'a self,
-        token: &'a H160,
+    fn estimate_native_price(
+        &self,
+        token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult>;
 }
 
@@ -64,12 +64,12 @@ impl NativePriceEstimator {
 }
 
 impl NativePriceEstimating for NativePriceEstimator {
-    fn estimate_native_price<'a>(
-        &'a self,
-        token: &'a H160,
+    fn estimate_native_price(
+        &self,
+        token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async {
-            let query = Arc::new(self.query(token));
+        async move {
+            let query = Arc::new(self.query(&token));
             let estimate = self.inner.estimate(query.clone()).await?;
             Ok(estimate.price_in_buy_token_f64(&query))
         }
@@ -108,7 +108,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(&H160::from_low_u64_be(3))
+            .estimate_native_price(H160::from_low_u64_be(3))
             .await;
         assert_eq!(result.unwrap(), 1. / 0.123456789);
     }
@@ -129,7 +129,7 @@ mod tests {
         };
 
         let result = native_price_estimator
-            .estimate_native_price(&H160::from_low_u64_be(2))
+            .estimate_native_price(H160::from_low_u64_be(2))
             .await;
         assert!(matches!(result, Err(PriceEstimationError::NoLiquidity)));
     }
