@@ -291,9 +291,9 @@ impl SettlementRating for SettlementRater {
 
 #[derive(Debug)]
 pub enum ScoringError {
-    ObjectiveValueNonPositive,
-    SuccessProbabilityOutOfRange,
-    ScoreHigherThanObjective,
+    ObjectiveValueNonPositive(BigRational),
+    SuccessProbabilityOutOfRange(f64),
+    ScoreHigherThanObjective(BigRational),
     InternalError(anyhow::Error),
 }
 
@@ -307,11 +307,15 @@ impl From<ScoringError> for anyhow::Error {
     fn from(error: ScoringError) -> Self {
         match error {
             ScoringError::InternalError(error) => error,
-            ScoringError::ObjectiveValueNonPositive => anyhow!("Objective value non-positive"),
-            ScoringError::SuccessProbabilityOutOfRange => {
-                anyhow!("Success probability out of range")
+            ScoringError::ObjectiveValueNonPositive(objective) => {
+                anyhow!("Objective value non-positive {}", objective)
             }
-            ScoringError::ScoreHigherThanObjective => anyhow!("Score higher than objective"),
+            ScoringError::SuccessProbabilityOutOfRange(success_probability) => {
+                anyhow!("Success probability out of range {}", success_probability)
+            }
+            ScoringError::ScoreHigherThanObjective(score) => {
+                anyhow!("Score {} higher than objective", score)
+            }
         }
     }
 }
@@ -368,10 +372,14 @@ impl ScoreCalculator {
         success_probability: f64,
     ) -> Result<Score, ScoringError> {
         if objective_value <= &zero() {
-            return Err(ScoringError::ObjectiveValueNonPositive);
+            return Err(ScoringError::ObjectiveValueNonPositive(
+                objective_value.clone(),
+            ));
         }
         if !(0.0..=1.0).contains(&success_probability) {
-            return Err(ScoringError::SuccessProbabilityOutOfRange);
+            return Err(ScoringError::SuccessProbabilityOutOfRange(
+                success_probability,
+            ));
         }
 
         let success_probability = BigRational::from_float(success_probability).unwrap();
@@ -383,7 +391,7 @@ impl ScoreCalculator {
             self.score_cap.clone(),
         )?;
         if optimal_score > *objective_value {
-            return Err(ScoringError::ScoreHigherThanObjective);
+            return Err(ScoringError::ScoreHigherThanObjective(optimal_score));
         }
         let score = big_rational_to_u256(&optimal_score).context("Bad conversion")?;
         Ok(Score::ProtocolWithSolverRisk(score))
