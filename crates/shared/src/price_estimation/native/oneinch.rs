@@ -29,7 +29,6 @@ pub struct OneInch {
 }
 
 impl OneInch {
-    #[allow(dead_code)]
     pub fn new(
         client: Client,
         base_url: Option<Url>,
