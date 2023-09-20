@@ -440,6 +440,13 @@ impl OrderValidator {
         quote_id: Option<QuoteId>,
         mut parameters: QuoteSearchParameters,
     ) -> Result<(), ValidationError> {
+        if parameters.verification.is_none() {
+            // We can only determine token support via verification if we have this data.
+            // If we don't have it we assume token support was checked via bad token
+            // detection. TODO: Remove this edge case when we migrated to 100%
+            // verified quotes.
+            return Ok(());
+        }
         // Because limit orders may have limit prices that are currently not achievable
         // onchain we adjust the sell or buy amount such that finding any verified
         // trade for the given tokens, no matter how bad, is enough to consider this
@@ -462,8 +469,9 @@ impl OrderValidator {
         self.quoter
             .calculate_quote(parameters)
             .await
-            .map(|_| ())
-            .map_err(ValidationError::from)
+            .map_err(ValidationError::from)?;
+        tracing::debug!("support for limit order enforced by verified quote");
+        Ok(())
     }
 }
 
@@ -701,21 +709,19 @@ impl OrderValidating for OrderValidator {
             verification,
         };
 
-        let quote = match (class, self.request_verified_quotes) {
+        let quote = match class {
             // We don't try to get quotes for liquidity orders for two reasons:
             // 1. They don't pay fees, meaning we don't need to know what the min fee amount is.
             // 2. We don't really care about the equivalent quote since they aren't expected to
             //    follow regular order creation flow.
-            (OrderClass::Liquidity, _) => None,
-            (OrderClass::Limit(_), false) => None,
-            (OrderClass::Limit(_), true) => {
+            OrderClass::Liquidity => None,
+            OrderClass::Limit(_) => {
                 self.ensure_limit_order_supported(order.quote_id, quote_parameters.clone())
                     .await?;
-                tracing::debug!("support for limit order enforced by verified quote");
                 // Quotes don't matter for limit orders. We only need to know it's supported.
                 None
             }
-            (OrderClass::Market, _) => Some(
+            OrderClass::Market => Some(
                 get_quote_and_check_fee(
                     &*self.quoter,
                     &quote_parameters,
