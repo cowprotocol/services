@@ -284,6 +284,7 @@ mod tests {
         super::*,
         crate::price_estimation::MockPriceEstimating,
         anyhow::anyhow,
+        futures::channel::oneshot::channel,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
@@ -537,5 +538,56 @@ mod tests {
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(3));
+    }
+
+    #[tokio::test]
+    async fn combines_stages_if_threshold_bigger_than_next_stage_length() {
+        let query = Arc::new(Query {
+            verification: None,
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+        });
+
+        fn estimate(amount: u64) -> Estimate {
+            Estimate {
+                out_amount: amount.into(),
+                ..Default::default()
+            }
+        }
+
+        let (sender, mut receiver) = channel();
+
+        let mut first = MockPriceEstimating::new();
+
+        first.expect_estimate().times(1).return_once(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                sender.send(()).unwrap();
+                Ok(estimate(1))
+            }
+            .boxed()
+        });
+
+        let mut second = MockPriceEstimating::new();
+        second.expect_estimate().times(1).return_once(move |_| {
+            async move {
+                // First stage hasn't finished yet
+                assert!(receiver.try_recv().is_err());
+                Err(PriceEstimationError::NoLiquidity)
+            }
+            .boxed()
+        });
+
+        let racing = RacingCompetitionPriceEstimator {
+            inner: vec![
+                vec![("first".to_owned(), Arc::new(first))],
+                vec![("second".to_owned(), Arc::new(second))],
+            ],
+            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+        };
+
+        racing.estimate(query).await.unwrap();
     }
 }
