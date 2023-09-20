@@ -451,13 +451,13 @@ mod tests {
         });
 
         let mut third = MockPriceEstimating::new();
-        third
-            .expect_estimate()
-            .times(1)
-            .returning(move |_| async {
+        third.expect_estimate().times(1).returning(move |_| {
+            async {
                 tokio::task::yield_now().await;
                 Ok(estimate(3))
-            }.boxed());
+            }
+            .boxed()
+        });
 
         let mut fourth = MockPriceEstimating::new();
         fourth.expect_estimate().times(1).returning(move |_| {
