@@ -338,7 +338,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         sources: &[PriceEstimatorSource],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(estimators);
+        let competition_estimator = CompetitionEstimator::new(vec![estimators]);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -349,13 +349,16 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
         Ok(Arc::new(self.sanitized(Arc::new(
-            RacingCompetitionEstimator::new(estimators, fast_price_estimation_results_required),
+            RacingCompetitionEstimator::new(
+                vec![estimators],
+                fast_price_estimation_results_required,
+            ),
         ))))
     }
 
     pub fn native_price_estimator(
         &mut self,
-        native: &[NativePriceEstimatorSource],
+        native: &[Vec<NativePriceEstimatorSource>],
         external: &[PriceEstimatorSource],
         results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {

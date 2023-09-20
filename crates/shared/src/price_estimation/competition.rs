@@ -57,12 +57,12 @@ pub struct RacingCompetitionEstimator<T> {
 
 impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     pub fn new(
-        inner: PriceEstimationStage<T>,
+        inner: Vec<PriceEstimationStage<T>>,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner: vec![inner],
+            inner,
             successful_results_for_early_return,
         }
     }
@@ -187,7 +187,7 @@ pub struct CompetitionEstimator<T> {
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(inner: Vec<(String, T)>) -> Self {
+    pub fn new(inner: Vec<Vec<(String, T)>>) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
         Self {
@@ -373,10 +373,10 @@ mod tests {
         ]);
 
         let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionEstimator::new(vec![
+            CompetitionEstimator::new(vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
-            ]);
+            ]]);
 
         let result = priority.estimate(queries[0].clone()).await;
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
@@ -452,11 +452,11 @@ mod tests {
 
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator::new(
-                vec![
+                vec![vec![
                     ("first".to_owned(), Arc::new(first)),
                     ("second".to_owned(), Arc::new(second)),
                     ("third".to_owned(), Arc::new(third)),
-                ],
+                ]],
                 NonZeroUsize::new(1).unwrap(),
             );
 
@@ -520,8 +520,8 @@ mod tests {
         });
 
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
-            RacingCompetitionEstimator {
-                inner: vec![
+            RacingCompetitionEstimator::new(
+                vec![
                     vec![
                         ("first".to_owned(), Arc::new(first)),
                         ("second".to_owned(), Arc::new(second)),
@@ -531,8 +531,8 @@ mod tests {
                         ("fourth".to_owned(), Arc::new(fourth)),
                     ],
                 ],
-                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            };
+                NonZeroUsize::new(2).unwrap(),
+            );
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(3));

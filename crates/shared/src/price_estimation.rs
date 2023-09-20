@@ -139,7 +139,7 @@ impl FromStr for PriceEstimator {
 }
 
 #[derive(Clone, Debug)]
-pub struct NativePriceEstimators(Vec<NativePriceEstimator>);
+pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
@@ -152,19 +152,19 @@ impl NativePriceEstimators {
         Self(Vec::new())
     }
 
-    pub fn as_slice(&self) -> &[NativePriceEstimator] {
+    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
     }
 }
 
 impl Default for NativePriceEstimators {
     fn default() -> Self {
-        Self(vec![NativePriceEstimator::GenericPriceEstimator(
+        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
             PriceEstimator {
                 kind: PriceEstimatorKind::Baseline,
                 address: H160::zero(),
             },
-        )])
+        )]])
     }
 }
 
@@ -192,9 +192,14 @@ impl FromStr for NativePriceEstimators {
         }
 
         Ok(Self(
-            s.split(',')
-                .map(NativePriceEstimator::from_str)
-                .collect::<Result<_>>()?,
+            s.split(';')
+                .map(|sub_list| {
+                    sub_list
+                        .split(',')
+                        .map(NativePriceEstimator::from_str)
+                        .collect::<Result<Vec<NativePriceEstimator>>>()
+                })
+                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
         ))
     }
 }
