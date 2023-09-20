@@ -484,7 +484,7 @@ pub enum SolverRejectionReason {
     /// Success probability is out of the allowed range [0, 1]
     SuccessProbabilityOutOfRange,
 
-    /// It is expected for a score to be less of equal to the objective value.
+    /// It is expected for a score to be less or equal to the objective value.
     ScoreHigherThanObjective,
 }
 

@@ -201,7 +201,18 @@ impl SettlementRanker {
         .filter_map(|(solver, result)| match result {
             Ok(res) => Some((solver, Rating::Ok(res))),
             Err(err) => match err {
-                RatingError::FailedSimulation(error) => Some((solver, Rating::Err(error))),
+                RatingError::FailedSimulation(error) => {
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
+                            TransactionWithError {
+                                transaction: error.simulation.transaction.clone(),
+                                error: error.error.to_string(),
+                            },
+                        )),
+                    );
+                    Some((solver, Rating::Err(error)))
+                }
                 RatingError::FailedScoring(error) => {
                     tracing::debug!(
                         solver_name = %solver.name(), ?error,
@@ -240,17 +251,6 @@ impl SettlementRanker {
             rated_settlements.len(),
             failed_simulations.len(),
         );
-        for (solver, failed) in &failed_simulations {
-            solver.notify_auction_result(
-                auction_id,
-                AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    TransactionWithError {
-                        transaction: failed.simulation.transaction.clone(),
-                        error: failed.error.to_string(),
-                    },
-                )),
-            );
-        }
 
         // Filter out settlements with non-positive score.
         if self.skip_non_positive_score_settlements {
