@@ -344,7 +344,7 @@ mod tests {
             ..queries[3].0.clone()
         };
 
-        let mut wrapped_estimator = Arc::new(MockPriceEstimating::new());
+        let mut wrapped_estimator = MockPriceEstimating::new();
         wrapped_estimator
             .expect_estimate()
             .times(1)
@@ -403,7 +403,7 @@ mod tests {
             });
 
         let sanitized_estimator = SanitizedPriceEstimator {
-            inner: wrapped_estimator,
+            inner: Arc::new(wrapped_estimator),
             bad_token_detector: Arc::new(bad_token_detector),
             native_token,
         };
