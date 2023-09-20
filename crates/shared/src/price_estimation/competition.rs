@@ -75,9 +75,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
             + Send
             + 'static,
-        compare_results: impl FnMut(&(usize, &Result<R, E>), &(usize, &Result<R, E>)) -> Ordering
-            + Send
-            + 'static,
+        compare_results: impl Fn(&Result<R, E>, &Result<R, E>) -> Ordering + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         async move {
             let mut results = vec![];
@@ -110,7 +108,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                 .iter()
                 .map(|(_, _, result)| result)
                 .enumerate()
-                .max_by(compare_results)
+                .max_by(|a, b| compare_results(a.1, b.1))
                 .map(|(index, _)| index)
                 .unwrap();
             let (stage_index, estimator_index, result) = &results[best_index];
@@ -148,7 +146,7 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             query.kind,
             |estimator, query| estimator.estimate(query),
             move |a, b| {
-                if is_second_quote_result_preferred(query.as_ref(), a.1, b.1) {
+                if is_second_quote_result_preferred(query.as_ref(), a, b) {
                     Ordering::Less
                 } else {
                     Ordering::Greater
@@ -168,7 +166,7 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
             OrderKind::Buy,
             |estimator, token| estimator.estimate_native_price(token),
             move |a, b| {
-                if is_second_native_result_preferred(a.1, b.1) {
+                if is_second_native_result_preferred(a, b) {
                     Ordering::Less
                 } else {
                     Ordering::Greater
