@@ -75,8 +75,13 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     .iter()
                     .enumerate()
                     .map(|(index, (_, estimator))| {
-                        let query = query.clone();
-                        async move { (index, estimator.estimate(query.clone()).await) }.boxed()
+                        // Return estimator `index` together with the result because `select_all()`
+                        // is allowed to shuffle around futures which makes the index return by
+                        // `select_all()` meaningless for our purposes.
+                        estimator
+                            .estimate(query.clone())
+                            .map(move |result| (index, result))
+                            .boxed()
                     })
                     .collect();
                 while !futures.is_empty() {
@@ -451,13 +456,10 @@ mod tests {
         });
 
         let mut third = MockPriceEstimating::new();
-        third.expect_estimate().times(1).returning(move |_| {
-            async {
-                tokio::task::yield_now().await;
-                Ok(estimate(3))
-            }
-            .boxed()
-        });
+        third
+            .expect_estimate()
+            .times(1)
+            .returning(move |_| async { Ok(estimate(3)) }.boxed());
 
         let mut fourth = MockPriceEstimating::new();
         fourth.expect_estimate().times(1).returning(move |_| {
