@@ -58,22 +58,7 @@ jobs:
       - uses: cowprotocol/autodeploy-action@v1
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
-          pods: "goerli-api-staging,\
-                 goerli-autopilot-staging,\
-                 goerli-baseline-staging,\
-                 goerli-driver-staging,\
-                 goerli-naive-staging,\
-                 goerli-quasimodo-staging,\
-                 goerli-refunder-staging,\
-                 mainnet-api-staging,\
-                 mainnet-autopilot-staging,\
-                 mainnet-refunder-staging,\
-                 mainnet-solver-staging,\
-                 shadow-solver,\
-                 xdai-api-staging,\
-                 xdai-autopilot-staging,\
-                 xdai-refunder-staging,\
-                 xdai-solver-staging"
+          images: ghcr.io/cowprotocol/services:main
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}

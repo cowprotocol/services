@@ -18,12 +18,19 @@ pub struct Naive;
 impl Naive {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
-    pub fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        let groups = group_by_token_pair(&auction);
-        groups
-            .values()
-            .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
-            .collect()
+    pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        // Make sure to push the CPU-heavy code to a separate thread in order to
+        // not lock up the [`tokio`] runtime and cause it to slow down handling
+        // the real async things.
+        tokio::task::spawn_blocking(move || {
+            let groups = group_by_token_pair(&auction);
+            groups
+                .values()
+                .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                .collect()
+        })
+        .await
+        .expect("naive solver unexpected panic")
     }
 }
 

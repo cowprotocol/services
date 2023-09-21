@@ -4,20 +4,18 @@ use {
         conversions::U256Ext,
         price_estimation::{
             gas,
-            rate_limited,
             Estimate,
             PriceEstimateResult,
             PriceEstimating,
             PriceEstimationError,
             Query,
         },
-        rate_limiter::RateLimiter,
         recent_block_cache::Block,
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
     anyhow::Result,
     ethcontract::{H160, U256},
-    futures::stream::StreamExt,
+    futures::FutureExt as _,
     gas_estimation::GasPriceEstimating,
     model::{order::OrderKind, TokenPair},
     num::BigRational,
@@ -31,7 +29,6 @@ pub struct BaselinePriceEstimator {
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
     native_token_price_estimation_amount: NonZeroU256,
-    rate_limiter: Arc<RateLimiter>,
     solver: H160,
 }
 
@@ -42,7 +39,6 @@ impl BaselinePriceEstimator {
         base_tokens: Arc<BaseTokens>,
         native_token: H160,
         native_token_price_estimation_amount: NonZeroU256,
-        rate_limiter: Arc<RateLimiter>,
         solver: H160,
     ) -> Self {
         Self {
@@ -51,7 +47,6 @@ impl BaselinePriceEstimator {
             base_tokens,
             native_token,
             native_token_price_estimation_amount,
-            rate_limiter,
             solver,
         }
     }
@@ -60,62 +55,40 @@ impl BaselinePriceEstimator {
 type Pools = HashMap<TokenPair, Vec<Pool>>;
 
 impl PriceEstimating for BaselinePriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        async move {
+            let gas_price = async {
+                let gas_price = self
+                    .gas_estimator
+                    .estimate()
+                    .await
+                    .map_err(PriceEstimationError::ProtocolInternal)?;
+                Ok(gas_price.effective_gas_price())
+            };
+            let pools = async {
+                self.pools_for_query(&query)
+                    .await
+                    .map_err(PriceEstimationError::ProtocolInternal)
+            };
 
-        let gas_price = async {
-            let gas_price = self
-                .gas_estimator
-                .estimate()
-                .await
-                .map_err(PriceEstimationError::ProtocolInternal)?;
-            Ok(gas_price.effective_gas_price())
-        };
-        let pools = async {
-            self.pools_for_queries(queries)
-                .await
-                .map_err(PriceEstimationError::ProtocolInternal)
-        };
-
-        type Init = Result<(f64, Pools), PriceEstimationError>;
-        let init = futures::future::try_join(gas_price, pools);
-        let init = rate_limited(self.rate_limiter.clone(), init);
-
-        let estimate_single = |init: &Init, query: &Query| -> PriceEstimateResult {
-            let (gas_price, pools) = init.as_ref().map_err(Clone::clone)?;
-            let (path, out_amount) = self.estimate_price_helper(query, true, pools, *gas_price)?;
+            let (gas_price, pools) = futures::future::try_join(gas_price, pools).await?;
+            let (path, out_amount) = self.estimate_price_helper(&query, true, &pools, gas_price)?;
             let gas = estimate_gas(path.len());
             Ok(Estimate {
                 out_amount,
                 gas,
                 solver: self.solver,
             })
-        };
-        let estimate_all = move |init: Init| {
-            let iter = queries
-                .iter()
-                .map(move |query| estimate_single(&init, query))
-                .enumerate();
-            futures::stream::iter(iter)
-        };
-        futures::stream::once(init).flat_map(estimate_all).boxed()
+        }
+        .boxed()
     }
 }
 
 impl BaselinePriceEstimator {
-    async fn pools_for_queries(&self, queries: &[Query]) -> Result<Pools> {
-        let pairs = self.base_tokens.relevant_pairs(
-            &mut queries
-                .iter()
-                .flat_map(|query| TokenPair::new(query.buy_token, query.sell_token)),
-        );
+    async fn pools_for_query(&self, query: &Query) -> Result<Pools> {
+        let pairs = self
+            .base_tokens
+            .relevant_pairs(TokenPair::new(query.buy_token, query.sell_token).into_iter());
         let pools = self.pool_fetcher.fetch(pairs, Block::Recent).await?;
         Ok(pools_vec_to_map(pools))
     }
@@ -338,20 +311,11 @@ mod tests {
         crate::{
             baseline_solver::BaselineSolvable,
             gas_price_estimation::FakeGasPriceEstimator,
-            price_estimation::single_estimate,
-            rate_limiter::RateLimiter,
             sources::uniswap_v2::pool_fetching::{test_util::FakePoolFetcher, Pool},
         },
         gas_estimation::gas_price::GasPrice1559,
         std::sync::Mutex,
     };
-
-    fn default_rate_limiter() -> Arc<RateLimiter> {
-        Arc::new(RateLimiter::from_strategy(
-            Default::default(),
-            "test".into(),
-        ))
-    }
 
     #[tokio::test]
     async fn return_error_if_no_token_found() {
@@ -368,22 +332,19 @@ mod tests {
             base_tokens,
             token_a,
             NonZeroU256::try_from(1).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_err());
+            }))
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -408,22 +369,19 @@ mod tests {
             base_tokens,
             token_a,
             NonZeroU256::try_from(1).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_err());
+            }))
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -452,34 +410,29 @@ mod tests {
             base_tokens,
             token_b,
             NonZeroU256::try_from(1).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+        assert!(estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell
-            }
-        )
-        .await
-        .is_ok());
-        assert!(single_estimate(
-            &estimator,
-            &Query {
+            }))
+            .await
+            .is_ok());
+        assert!(estimator
+            .estimate(Arc::new(Query {
                 verification: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy
-            }
-        )
-        .await
-        .is_ok());
+            }))
+            .await
+            .is_ok());
     }
 
     fn pool_price(
@@ -527,32 +480,31 @@ mod tests {
             base_tokens,
             token_a,
             NonZeroU256::try_from(10).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: token_a,
             buy_token: token_b,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
-        };
-        let estimate = single_estimate(&estimator, &query).await.unwrap();
+        });
+        let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 0 is more favourable for buying token B.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
             pool_price(&pools[0], token_b, 100, token_a)
         );
 
-        let query = Query {
+        let query = Arc::new(Query {
             verification: None,
             sell_token: token_b,
             buy_token: token_a,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
-        };
-        let estimate = single_estimate(&estimator, &query).await.unwrap();
+        });
+        let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 1 is more favourable for buying token A.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -596,38 +548,33 @@ mod tests {
             base_tokens,
             intermediate,
             NonZeroU256::try_from(10).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
-            let intermediate = single_estimate(
-                &estimator,
-                &Query {
+            let intermediate = estimator
+                .estimate(Arc::new(Query {
                     verification: None,
                     sell_token: token_a,
                     buy_token: token_b,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: *kind,
-                },
-            )
-            .await
-            .unwrap()
-            .gas;
+                }))
+                .await
+                .unwrap()
+                .gas;
             assert_eq!(intermediate, estimate_gas(3));
-            let direct = single_estimate(
-                &estimator,
-                &Query {
+            let direct = estimator
+                .estimate(Arc::new(Query {
                     verification: None,
                     sell_token: token_b,
                     buy_token: token_a,
                     in_amount: NonZeroU256::try_from(10).unwrap(),
                     kind: *kind,
-                },
-            )
-            .await
-            .unwrap()
-            .gas;
+                }))
+                .await
+                .unwrap()
+                .gas;
             assert_eq!(direct, estimate_gas(2));
             assert!(direct < intermediate);
         }
@@ -686,26 +633,23 @@ mod tests {
             base_tokens,
             native,
             NonZeroU256::try_from(1_000_000_000).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                single_estimate(
-                    &estimator,
-                    &Query {
+                estimator
+                    .estimate(Arc::new(Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    }
-                )
-                .await
-                .unwrap()
-                .gas,
+                    }))
+                    .await
+                    .unwrap()
+                    .gas,
                 estimate_gas(2),
             );
         }
@@ -720,19 +664,17 @@ mod tests {
         // Lower gas price does make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                single_estimate(
-                    &estimator,
-                    &Query {
+                estimator
+                    .estimate(Arc::new(Query {
                         verification: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
                         kind: *order_kind
-                    }
-                )
-                .await
-                .unwrap()
-                .gas,
+                    }))
+                    .await
+                    .unwrap()
+                    .gas,
                 estimate_gas(3)
             );
         }
@@ -771,7 +713,6 @@ mod tests {
             base_tokens,
             token_a,
             NonZeroU256::try_from(10u128.pow(18)).unwrap(),
-            default_rate_limiter(),
             H160([1; 20]),
         );
 

@@ -84,6 +84,13 @@ pub struct Arguments {
     #[clap(long, env, default_value_t)]
     pub native_price_estimators: PriceEstimators,
 
+    /// How many successful price estimates for each order will cause a native
+    /// price estimation to return its result early. It's possible to pass
+    /// values greater than the total number of enabled estimators but that
+    /// will not have any further effect.
+    #[clap(long, env, default_value = "2")]
+    pub native_price_estimation_results_required: NonZeroUsize,
+
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
         long,

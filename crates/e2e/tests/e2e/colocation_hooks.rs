@@ -42,12 +42,18 @@ async fn allowance(web3: Web3) {
         .await;
     // Setup a malicious interaction for setting approvals to steal funds from
     // the settlement contract.
-    let steal_cow = hook_for_transaction(cow.approve(trader.address(), U256::max_value()).tx).await;
+    let steal_cow = hook_for_transaction(
+        cow.approve(trader.address(), U256::max_value())
+            .from(solver.account().clone())
+            .tx,
+    )
+    .await;
     let steal_weth = hook_for_transaction(
         onchain
             .contracts()
             .weth
             .approve(trader.address(), U256::max_value())
+            .from(solver.account().clone())
             .tx,
     )
     .await;

@@ -1,4 +1,5 @@
 use {
+    super::native::{NativePriceEstimateResult, NativePriceEstimating},
     crate::price_estimation::{
         Estimate,
         PriceEstimateResult,
@@ -6,15 +7,10 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::stream::StreamExt,
+    futures::FutureExt as _,
     model::order::OrderKind,
     primitive_types::H160,
-    std::{
-        cmp::Ordering,
-        collections::HashMap,
-        num::NonZeroUsize,
-        sync::{Arc, RwLock},
-    },
+    std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc},
 };
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -34,283 +30,201 @@ impl From<&Query> for Trade {
     }
 }
 
-/// Index of an estimator stored in the [`CompetitionPriceEstimator`] used as an
-/// identifier.
+/// Stage index and index within stage of an estimator stored in the
+/// [`CompetitionEstimator`] used as an identifier.
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
-struct EstimatorIndex(usize);
+struct EstimatorIndex(usize, usize);
 
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Wins(u64);
 
-#[derive(Debug, Clone, Default)]
-struct Competition {
-    /// How many quotes were requested for this trade.
-    total_quotes: u64,
-    /// How often each price estimator managed to offer the best quote.
-    /// The list is always sorted based on the number of wins in descending
-    /// order.
-    winners: Vec<(EstimatorIndex, Wins)>,
-}
-
-struct Prediction {
-    /// Which price estimator will probably provide the best quote.
-    winner: EstimatorIndex,
-    /// How confident we are in the pick.
-    _confidence: f64,
-}
-
-/// Collects historic data on which price estimator tends to give the best quote
-/// for what kind of trade.
-#[derive(Debug, Default)]
-struct HistoricalWinners(RwLock<HashMap<Trade, Competition>>);
-
-impl HistoricalWinners {
-    /// Updates the metrics for the given trade.
-    pub fn record_winner(&self, trade: Trade, winner: EstimatorIndex) {
-        let mut lock = self.0.write().unwrap();
-        let competition = lock.entry(trade).or_default();
-        competition.total_quotes += 1;
-        let winner_index = competition
-            .winners
-            .iter()
-            .enumerate()
-            .find_map(|(index, (estimator, _))| (*estimator == winner).then_some(index));
-        match winner_index {
-            Some(winner_index) => {
-                let (_, mut wins) = competition.winners[winner_index];
-                wins.0 += 1;
-                if winner_index != 0 {
-                    competition
-                        .winners
-                        .sort_by_key(|entry| std::cmp::Reverse(entry.1));
-                }
-            }
-            None => {
-                competition.winners.push((winner, Wins(1)));
-            }
-        }
-    }
-
-    /// Predicts based on historic data which price estimators should get asked
-    /// to return a quote for the given trade in order to be at least
-    /// `required_confidence` confident that we'll get the best possible
-    /// price.
-    pub fn predict_best_candidates(
-        &self,
-        quote: &Trade,
-        required_confidence: f64,
-    ) -> Vec<Prediction> {
-        let lock = self.0.read().unwrap();
-        let Some(competition) = lock.get(quote) else {
-            return vec![];
-        };
-        if competition.total_quotes < 100 {
-            // Not enough data to generate a meaningful prediction.
-            return vec![];
-        }
-        let mut total_confidence = 0.;
-        let mut predictions = vec![];
-        for (estimator, wins) in &competition.winners {
-            let confidence = wins.0 as f64 / competition.total_quotes as f64;
-            predictions.push(Prediction {
-                winner: *estimator,
-                _confidence: confidence,
-            });
-            total_confidence += confidence;
-            if total_confidence >= required_confidence {
-                break;
-            }
-        }
-        predictions
-    }
-}
+type PriceEstimationStage<T> = Vec<(String, T)>;
 
 /// Price estimator that pulls estimates from various sources
-/// and competes on the best price. Returns a price estimation
-/// early if there is a configurable number of successful estimates
-/// for every query or if all price sources returned an estimate.
-pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<(String, Arc<dyn PriceEstimating>)>,
+/// and competes on the best price. Sources are provided as a list of lists, the
+/// outer list representing the sequential stage of the search, and the inner
+/// list representing all source that should be queried in parallel in the given
+/// stage Returns a price estimation early if there is a configurable number of
+/// successful estimates for every query or if all price sources returned an
+/// estimate.
+pub struct RacingCompetitionEstimator<T> {
+    inner: Vec<PriceEstimationStage<T>>,
     successful_results_for_early_return: NonZeroUsize,
-    competition: Option<HistoricalWinners>,
-    /// The likelyhood of us including the winning price estimator based on
-    /// historic data.
-    required_confidence: f64,
 }
 
-impl RacingCompetitionPriceEstimator {
+impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     pub fn new(
-        inner: Vec<(String, Arc<dyn PriceEstimating>)>,
+        inner: PriceEstimationStage<T>,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner,
+            inner: vec![inner],
             successful_results_for_early_return,
-            competition: None,
-            required_confidence: 1.,
         }
     }
-}
 
-impl PriceEstimating for RacingCompetitionPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
+    fn estimate_generic<
+        Q: Clone + Debug + Send + 'static,
+        R: Clone + Debug + Send,
+        E: Clone + Debug + Send,
+    >(
+        &self,
+        query: Q,
+        kind: OrderKind,
+        get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
+            + Send
+            + 'static,
+        compare_results: impl Fn(&Result<R, E>, &Result<R, E>) -> Ordering + Send + 'static,
+    ) -> futures::future::BoxFuture<'_, Result<R, E>> {
+        async move {
+            let mut results = vec![];
+            // Process stages sequentially
+            'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
+                // Process estimators within each stage in parallel
+                let mut futures: Vec<_> = stage
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (_, estimator))| {
+                        // Return estimator `index` together with the result because `select_all()`
+                        // is allowed to shuffle around futures which makes the index return by
+                        // `select_all()` meaningless for our purposes.
+                        get_single_result(estimator, query.clone())
+                            .map(move |result| (index, result))
+                            .boxed()
+                    })
+                    .collect();
+                while !futures.is_empty() {
+                    let ((estimator_index, result), _, rest) =
+                        futures::future::select_all(futures).await;
+                    futures = rest;
+                    results.push((stage_index, estimator_index, result.clone()));
+                    let estimator = &self.inner[stage_index][estimator_index].0;
+                    tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-        let predictions: HashMap<_, _> = match &self.competition {
-            Some(competition) => queries
-                .iter()
-                .map(|query| {
-                    let trade = Trade::from(query);
-                    let prediction =
-                        competition.predict_best_candidates(&trade, self.required_confidence);
-                    (trade, prediction)
-                })
-                .collect(),
-            None => Default::default(),
-        };
-
-        // Turn the streams from all inner price estimators into a single stream.
-        let combined_stream = futures::stream::select_all(self.inner.iter().enumerate().map(
-            |(i, (_, estimator))| estimator.estimates(queries).map(move |result| (i, result)),
-        ));
-        // Stores the estimates for each query and estimator. When we have collected
-        // enough results to produce a result of our own the corresponding
-        // element is set to None.
-        let mut estimates: Vec<Option<Vec<(usize, PriceEstimateResult)>>> =
-            vec![Some(Vec::with_capacity(self.inner.len())); queries.len()];
-        // Receives items from the combined stream.
-        let mut handle_single_result = move |estimator_index: usize, query_index: usize, result| {
-            let query = &queries[query_index];
-            let estimator = self.inner[estimator_index].0.as_str();
-            tracing::debug!(?query, ?result, estimator, "new price estimate");
-
-            // Store the new result in the vector for this query.
-            let results = estimates.get_mut(query_index).unwrap().as_mut()?;
-            results.push((estimator_index, result));
-
-            // Check if we have enough results to emit a result of our own.
-            let successes = results.iter().filter(|result| result.1.is_ok()).count();
-            let remaining = self.inner.len() - results.len();
-            if successes < self.successful_results_for_early_return.get() && remaining > 0 {
-                return None;
+                    let successes = results
+                        .iter()
+                        .filter(|(_, _, result)| result.is_ok())
+                        .count();
+                    if successes >= self.successful_results_for_early_return.get() {
+                        break 'outer;
+                    }
+                }
             }
-            // We have enough successes or there are no remaining estimators running for
-            // this query.
 
-            // Find the best result.
-            let results = estimates.get_mut(query_index).unwrap().take().unwrap();
-            // Unwrap because there has to be at least one result.
-            let best_index = best_result(query, results.iter().map(|(_, result)| result)).unwrap();
-
-            // Log and collect metrics.
-            let (estimator_index, result) = results.into_iter().nth(best_index).unwrap();
-            let estimator = self.inner[estimator_index].0.as_str();
+            let best_index = results
+                .iter()
+                .map(|(_, _, result)| result)
+                .enumerate()
+                .max_by(|a, b| compare_results(a.1, b.1))
+                .map(|(index, _)| index)
+                .unwrap();
+            let (stage_index, estimator_index, result) = &results[best_index];
+            let (estimator, _) = &self.inner[*stage_index][*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
-            let requests = self.inner.len() as u64;
+            let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
+            let queried_estimators = results.len() as u64;
             metrics()
                 .requests
                 .with_label_values(&["executed"])
-                .inc_by(requests);
+                .inc_by(queried_estimators);
+            metrics()
+                .requests
+                .with_label_values(&["saved"])
+                .inc_by(total_estimators - queried_estimators);
 
             if result.is_ok() {
                 // Collect stats for winner predictions.
                 metrics()
                     .queries_won
-                    .with_label_values(&[estimator, query.kind.label()])
+                    .with_label_values(&[estimator, kind.label()])
                     .inc();
-
-                if let Some(competition) = &self.competition {
-                    let trade = Trade::from(query);
-                    let estimator = EstimatorIndex(estimator_index);
-                    if let Some(predictions) = predictions.get(&trade) {
-                        let was_correct = predictions.iter().any(|p| p.winner == estimator);
-                        metrics().record_prediction(&trade, was_correct);
-                    }
-                    competition.record_winner(trade, estimator);
-                    metrics()
-                        .requests
-                        .with_label_values(&["saved"])
-                        .inc_by(requests - predictions.len() as u64);
-                }
             }
+            result.clone()
+        }
+        .boxed()
+    }
+}
 
-            Some((query_index, result))
-        };
+impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.estimate_generic(
+            query.clone(),
+            query.kind,
+            |estimator, query| estimator.estimate(query),
+            move |a, b| {
+                if is_second_quote_result_preferred(query.as_ref(), a, b) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+        )
+    }
+}
 
-        combined_stream
-            .filter_map(move |(estimator_index, (query_index, result))| {
-                let result = handle_single_result(estimator_index, query_index, result);
-                futures::future::ready(result)
-            })
-            .boxed()
+impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>> {
+    fn estimate_native_price(
+        &self,
+        token: H160,
+    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        self.estimate_generic(
+            token,
+            OrderKind::Buy,
+            |estimator, token| estimator.estimate_native_price(token),
+            move |a, b| {
+                if is_second_native_result_preferred(a, b) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+        )
     }
 }
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
-pub struct CompetitionPriceEstimator {
-    inner: RacingCompetitionPriceEstimator,
+pub struct CompetitionEstimator<T> {
+    inner: RacingCompetitionEstimator<T>,
 }
 
-impl CompetitionPriceEstimator {
-    pub fn new(inner: Vec<(String, Arc<dyn PriceEstimating>)>) -> Self {
+impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
+    pub fn new(inner: Vec<(String, T)>) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
         Self {
-            inner: RacingCompetitionPriceEstimator::new(inner, number_of_estimators),
+            inner: RacingCompetitionEstimator::new(inner, number_of_estimators),
         }
     }
+}
 
-    /// Enables predicting the winning price estimator and gathering of related
-    /// metrics.
-    pub fn with_predictions(mut self, confidence: f64) -> Self {
-        self.inner.competition = Some(Default::default());
-        self.inner.required_confidence = confidence;
-        self
+impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.inner.estimate(query)
     }
 }
 
-impl PriceEstimating for CompetitionPriceEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        self.inner.estimates(queries)
-    }
-}
-
-fn best_result<'a>(
-    query: &Query,
-    results: impl Iterator<Item = &'a PriceEstimateResult>,
-) -> Option<usize> {
-    results
-        .enumerate()
-        .max_by(|a, b| {
-            if is_second_result_preferred(query, a.1, b.1) {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            }
-        })
-        .map(|(index, _)| index)
-}
-
-fn is_second_result_preferred(
+fn is_second_quote_result_preferred(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
 ) -> bool {
     match (a, b) {
         (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b),
+        (Ok(_), Err(_)) => false,
+        (Err(_), Ok(_)) => true,
+        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+    }
+}
+
+fn is_second_native_result_preferred(
+    a: &Result<f64, PriceEstimationError>,
+    b: &Result<f64, PriceEstimationError>,
+) -> bool {
+    match (a, b) {
+        (Ok(a), Ok(b)) => b >= a,
         (Ok(_), Err(_)) => false,
         (Err(_), Ok(_)) => true,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
@@ -356,36 +270,10 @@ struct Metrics {
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
 
-    /// Number of quotes we (un)successfully predicted the winning price
-    /// estimator for.
-    #[metric(labels("result", "sell_token", "buy_token", "kind"))]
-    quote_predictions: prometheus::IntCounterVec,
-
     /// Number of requests we saved due to greedy selection based on historic
     /// data.
     #[metric(labels("status"))]
     requests: prometheus::IntCounterVec,
-}
-
-impl Metrics {
-    fn record_prediction(&self, trade: &Trade, correct: bool) {
-        let result = match correct {
-            true => "correct",
-            false => "incorrect",
-        };
-        let kind = match trade.kind {
-            OrderKind::Buy => "buy",
-            OrderKind::Sell => "sell",
-        };
-        self.quote_predictions
-            .with_label_values(&[
-                result,
-                hex::encode(trade.sell_token).as_str(),
-                hex::encode(trade.buy_token).as_str(),
-                kind,
-            ])
-            .inc();
-    }
 }
 
 fn metrics() -> &'static Metrics {
@@ -397,9 +285,8 @@ fn metrics() -> &'static Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{old_estimator_to_stream, vec_estimates, MockPriceEstimating},
+        crate::price_estimation::MockPriceEstimating,
         anyhow::anyhow,
-        futures::StreamExt,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
@@ -410,41 +297,41 @@ mod tests {
     #[tokio::test]
     async fn works() {
         let queries = [
-            Query {
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
-            Query {
+            }),
+            Arc::new(Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            },
+            }),
         ];
         let estimates = [
             Estimate {
@@ -457,82 +344,81 @@ mod tests {
             },
         ];
 
-        let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 5);
-            futures::stream::iter([
-                Ok(estimates[0]),
-                Ok(estimates[0]),
-                Ok(estimates[0]),
-                Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
-                Err(PriceEstimationError::NoLiquidity),
-            ])
-            .enumerate()
-            .boxed()
-        });
-        let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 5);
-                futures::stream::iter([
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
-                    Ok(estimates[1]),
-                    Ok(estimates[1]),
-                    Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
-                    Err(PriceEstimationError::UnsupportedToken {
-                        token: H160([0; 20]),
-                        reason: "".to_string(),
-                    }),
-                ])
-                .enumerate()
-                .boxed()
-            });
+        let setup_estimator = |responses: Vec<PriceEstimateResult>| {
+            let mut estimator = MockPriceEstimating::new();
+            for response in responses {
+                estimator.expect_estimate().times(1).returning(move |_| {
+                    let response = response.clone();
+                    {
+                        async move { response }.boxed()
+                    }
+                });
+            }
+            estimator
+        };
 
-        let priority = CompetitionPriceEstimator::new(vec![
-            ("first".to_owned(), Arc::new(first)),
-            ("second".to_owned(), Arc::new(second)),
+        let first = setup_estimator(vec![
+            Ok(estimates[0]),
+            Ok(estimates[0]),
+            Ok(estimates[0]),
+            Err(PriceEstimationError::ProtocolInternal(anyhow!("a"))),
+            Err(PriceEstimationError::NoLiquidity),
         ]);
 
-        let result = vec_estimates(&priority, &queries).await;
-        assert_eq!(result.len(), 5);
-        assert_eq!(result[0].as_ref().unwrap(), &estimates[0]);
+        let second = setup_estimator(vec![
+            Err(PriceEstimationError::ProtocolInternal(anyhow!(""))),
+            Ok(estimates[1]),
+            Ok(estimates[1]),
+            Err(PriceEstimationError::ProtocolInternal(anyhow!("b"))),
+            Err(PriceEstimationError::UnsupportedToken {
+                token: H160([0; 20]),
+                reason: "".to_string(),
+            }),
+        ]);
+
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
+            CompetitionEstimator::new(vec![
+                ("first".to_owned(), Arc::new(first)),
+                ("second".to_owned(), Arc::new(second)),
+            ]);
+
+        let result = priority.estimate(queries[0].clone()).await;
+        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+
+        let result = priority.estimate(queries[1].clone()).await;
         // buy 2 is better than buy 1
-        assert_eq!(result[1].as_ref().unwrap(), &estimates[1]);
+        assert_eq!(result.as_ref().unwrap(), &estimates[1]);
+
+        let result = priority.estimate(queries[2].clone()).await;
         // pay 1 is better than pay 2
-        assert_eq!(result[2].as_ref().unwrap(), &estimates[0]);
+        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+
+        let result = priority.estimate(queries[3].clone()).await;
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
-            result[3].as_ref().unwrap_err(),
+            result.as_ref().unwrap_err(),
             PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
+
+        let result = priority.estimate(queries[4].clone()).await;
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
-            result[4].as_ref().unwrap_err(),
+            result.as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken { .. }
         ));
     }
 
     #[tokio::test]
     async fn racing_estimator_returns_early() {
-        let queries = [
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(0),
-                buy_token: H160::from_low_u64_le(1),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy,
-            },
-            Query {
-                verification: None,
-                sell_token: H160::from_low_u64_le(2),
-                buy_token: H160::from_low_u64_le(3),
-                in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Sell,
-            },
-        ];
+        let query = Arc::new(Query {
+            verification: None,
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Buy,
+        });
+
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
@@ -541,92 +427,118 @@ mod tests {
         }
 
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 2);
-            futures::stream::iter([Ok(estimate(1)), Err(PriceEstimationError::NoLiquidity)])
-                .enumerate()
-                .boxed()
+        first.expect_estimate().times(1).returning(move |_| {
+            // immediately return an error (not enough to terminate price competition early)
+            async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 
         let mut second = MockPriceEstimating::new();
-        second
-            .expect_estimates()
-            .times(1)
-            .returning(move |queries| {
-                assert_eq!(queries.len(), 2);
-                old_estimator_to_stream(async {
-                    sleep(Duration::from_millis(10)).await;
-                    [Err(PriceEstimationError::NoLiquidity), Ok(estimate(2))]
-                })
-            });
-
-        let mut third = MockPriceEstimating::new();
-        third.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 2);
-            futures::stream::once(async {
-                sleep(Duration::from_millis(20)).await;
-                unreachable!(
-                    "This estimation gets canceled because the racing estimatoralready got enough \
-                     estimates to return early."
-                )
-            })
+        second.expect_estimate().times(1).returning(|_| {
+            async {
+                sleep(Duration::from_millis(10)).await;
+                // return good result after some time; now we can terminate early
+                Ok(estimate(1))
+            }
             .boxed()
         });
 
-        let racing = RacingCompetitionPriceEstimator::new(
-            vec![
-                ("first".to_owned(), Arc::new(first)),
-                ("second".to_owned(), Arc::new(second)),
-                ("third".to_owned(), Arc::new(third)),
-            ],
-            NonZeroUsize::new(1).unwrap(),
-        );
+        let mut third = MockPriceEstimating::new();
+        third.expect_estimate().times(1).returning(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                unreachable!(
+                    "This estimation gets canceled because the racing estimator already got \
+                     enough estimates to return early."
+                )
+            }
+            .boxed()
+        });
 
-        let mut stream = racing.estimates(&queries);
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator::new(
+                vec![
+                    ("first".to_owned(), Arc::new(first)),
+                    ("second".to_owned(), Arc::new(second)),
+                    ("third".to_owned(), Arc::new(third)),
+                ],
+                NonZeroUsize::new(1).unwrap(),
+            );
 
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 0);
+        let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
-
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 1);
-        assert_eq!(result.as_ref().unwrap(), &estimate(2));
     }
 
     #[tokio::test]
-    async fn result_ordering() {
+    async fn queries_stages_sequentially() {
+        let query = Arc::new(Query {
+            verification: None,
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+        });
+
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
                 ..Default::default()
             }
         }
+
         let mut first = MockPriceEstimating::new();
-        first.expect_estimates().returning(move |_| {
-            futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
+        first.expect_estimate().times(1).returning(move |_| {
+            async {
+                // First stage takes longer than second to test they are not executed in
+                // parallel
+                sleep(Duration::from_millis(20)).await;
+                Ok(estimate(1))
+            }
+            .boxed()
         });
+
         let mut second = MockPriceEstimating::new();
-        second.expect_estimates().returning(move |_| {
-            futures::stream::iter([(1, Ok(estimate(1))), (0, Ok(estimate(0)))]).boxed()
+        second.expect_estimate().times(1).returning(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                Err(PriceEstimationError::NoLiquidity)
+            }
+            .boxed()
         });
-        let estimator = CompetitionPriceEstimator::new(vec![
-            ("first".to_owned(), Arc::new(first)),
-            ("second".to_owned(), Arc::new(second)),
-        ]);
-        let query = Query {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            ..Default::default()
-        };
-        let queries = &[query.clone(), query];
-        let mut stream = estimator.estimates(queries);
 
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 1);
-        assert_eq!(result.as_ref().unwrap(), &estimate(1));
+        let mut third = MockPriceEstimating::new();
+        third
+            .expect_estimate()
+            .times(1)
+            .returning(move |_| async { Ok(estimate(3)) }.boxed());
 
-        let (i, result) = stream.next().await.unwrap();
-        assert_eq!(i, 0);
-        assert_eq!(result.as_ref().unwrap(), &estimate(0));
+        let mut fourth = MockPriceEstimating::new();
+        fourth.expect_estimate().times(1).returning(move |_| {
+            async {
+                sleep(Duration::from_millis(10)).await;
+                unreachable!(
+                    "This estimation gets canceled because the racing estimator already got \
+                     enough estimates to return early."
+                )
+            }
+            .boxed()
+        });
+
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator {
+                inner: vec![
+                    vec![
+                        ("first".to_owned(), Arc::new(first)),
+                        ("second".to_owned(), Arc::new(second)),
+                    ],
+                    vec![
+                        ("third".to_owned(), Arc::new(third)),
+                        ("fourth".to_owned(), Arc::new(fourth)),
+                    ],
+                ],
+                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            };
+
+        let result = racing.estimate(query).await;
+        assert_eq!(result.as_ref().unwrap(), &estimate(3));
     }
 }

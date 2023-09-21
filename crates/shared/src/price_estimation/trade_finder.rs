@@ -30,10 +30,7 @@ use {
     },
     ethcontract::{tokens::Tokenize, Bytes, H160, U256},
     ethrpc::extensions::StateOverride,
-    futures::{
-        future::{BoxFuture, FutureExt as _},
-        stream::StreamExt as _,
-    },
+    futures::future::{BoxFuture, FutureExt as _},
     maplit::hashmap,
     model::{
         order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
@@ -48,7 +45,7 @@ use {
 /// limiting.
 pub struct TradeEstimator {
     inner: Arc<Inner>,
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
+    sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -91,7 +88,7 @@ impl TradeEstimator {
         self
     }
 
-    async fn estimate(&self, query: Query) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
         let estimate = rate_limited(
             self.rate_limiter.clone(),
             self.inner.clone().estimate(query.clone()),
@@ -101,7 +98,10 @@ impl TradeEstimator {
 }
 
 impl Inner {
-    async fn estimate(self: Arc<Self>, query: Query) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(
+        self: Arc<Self>,
+        query: Arc<Query>,
+    ) -> Result<Estimate, PriceEstimationError> {
         match (&self.verifier, &query.verification) {
             (Some(verifier), Some(verification)) => {
                 let trade = self.finder.get_trade(&query).await?;
@@ -361,20 +361,8 @@ impl Clone for TradeEstimator {
 }
 
 impl PriceEstimating for TradeEstimator {
-    fn estimates<'a>(
-        &'a self,
-        queries: &'a [Query],
-    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
-
-        futures::stream::iter(queries)
-            .then(|query| self.estimate(query.clone()))
-            .enumerate()
-            .boxed()
+    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.estimate(query).boxed()
     }
 }
 

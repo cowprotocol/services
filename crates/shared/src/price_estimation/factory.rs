@@ -2,7 +2,7 @@ use {
     super::{
         balancer_sor::BalancerSor,
         baseline::BaselinePriceEstimator,
-        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        competition::{CompetitionEstimator, RacingCompetitionEstimator},
         external::ExternalPriceEstimator,
         http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -30,6 +30,7 @@ use {
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
         oneinch_api::OneInchClient,
         paraswap_api::DefaultParaswapApi,
+        price_estimation::native::NativePriceEstimating,
         rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
@@ -278,9 +279,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             .collect()
     }
 
-    fn sanitized(&self, estimator: impl PriceEstimating) -> SanitizedPriceEstimator {
+    fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
-            Box::new(estimator),
+            estimator,
             self.network.native_token,
             self.components.bad_token_detector.clone(),
         )
@@ -291,15 +292,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         sources: &[PriceEstimatorSource],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
-        Ok(Arc::new(self.sanitized(
-            match self.args.enable_quote_predictions {
-                true => {
-                    competition_estimator.with_predictions(self.args.quote_prediction_confidence)
-                }
-                false => competition_estimator,
-            },
-        )))
+        let competition_estimator = CompetitionEstimator::new(estimators);
+        Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
     pub fn fast_price_estimator(
@@ -308,36 +302,40 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
-        Ok(Arc::new(self.sanitized(
-            RacingCompetitionPriceEstimator::new(
-                estimators,
-                fast_price_estimation_results_required,
-            ),
-        )))
+        Ok(Arc::new(self.sanitized(Arc::new(
+            RacingCompetitionEstimator::new(estimators, fast_price_estimation_results_required),
+        ))))
     }
 
     pub fn native_price_estimator(
         &mut self,
         sources: &[PriceEstimatorSource],
+        results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
             "price cache prefetch time needs to be less than price cache max age"
         );
-        let estimators = self.get_estimators(sources, |entry| &entry.native)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
+        let native_token_price_estimation_amount = self.native_token_price_estimation_amount()?;
+        let estimators = self
+            .get_estimators(sources, |entry| &entry.native)?
+            .into_iter()
+            .map(
+                |(name, estimator)| -> (String, Arc<dyn NativePriceEstimating>) {
+                    (
+                        name,
+                        Arc::new(NativePriceEstimator::new(
+                            Arc::new(self.sanitized(estimator)),
+                            self.network.native_token,
+                            native_token_price_estimation_amount,
+                        )),
+                    )
+                },
+            )
+            .collect::<Vec<_>>();
+        let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
-            Box::new(NativePriceEstimator::new(
-                Arc::new(
-                    self.sanitized(match self.args.enable_quote_predictions {
-                        true => competition_estimator
-                            .with_predictions(self.args.quote_prediction_confidence),
-                        false => competition_estimator,
-                    }),
-                ),
-                self.network.native_token,
-                self.native_token_price_estimation_amount()?,
-            )),
+            Box::new(competition_estimator),
             self.args.native_price_cache_max_age_secs,
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
@@ -374,14 +372,13 @@ trait PriceEstimatorCreating: Sized {
 impl PriceEstimatorCreating for BaselinePriceEstimator {
     type Params = H160;
 
-    fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
+    fn init(factory: &PriceEstimatorFactory, _name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BaselinePriceEstimator::new(
             factory.components.uniswap_v2_pools.clone(),
             factory.components.gas_price.clone(),
             factory.network.base_tokens.clone(),
             factory.network.native_token,
             factory.native_token_price_estimation_amount()?,
-            factory.rate_limiter(name),
             solver,
         ))
     }

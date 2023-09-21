@@ -65,7 +65,6 @@ async fn smart_contract_orders(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    // Place Orders
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
         sell_token: token.address(),
@@ -76,20 +75,39 @@ async fn smart_contract_orders(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     };
+    let signature1271 = gnosis_safe_eip1271_signature(
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        &safe,
+        H256(hashed_eip712_message(
+            &onchain.contracts().domain_separator,
+            &order_template.data().hash_struct(),
+        )),
+    )
+    .await;
+
+    // Check that we can't place invalid orders.
     let orders = [
         OrderCreation {
             from: Some(safe.address()),
-            signature: Signature::Eip1271(
-                gnosis_safe_eip1271_signature(
-                    SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-                    &safe,
-                    H256(hashed_eip712_message(
-                        &onchain.contracts().domain_separator,
-                        &order_template.data().hash_struct(),
-                    )),
-                )
-                .await,
-            ),
+            signature: Signature::Eip1271(b"invalid signature".to_vec()),
+            ..order_template.clone()
+        },
+        OrderCreation {
+            from: Some(H160(*b"invalid address\0\0\0\0\0")),
+            signature: Signature::Eip1271(signature1271.clone()),
+            ..order_template.clone()
+        },
+    ];
+    for order in &orders {
+        let (_, err) = dbg!(services.create_order(order).await.unwrap_err());
+        assert!(err.contains("InvalidEip1271Signature"));
+    }
+
+    // Place orders
+    let orders = [
+        OrderCreation {
+            from: Some(safe.address()),
+            signature: Signature::Eip1271(signature1271),
             ..order_template.clone()
         },
         OrderCreation {

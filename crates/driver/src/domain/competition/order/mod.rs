@@ -261,9 +261,11 @@ pub enum Kind {
     /// price is such that the order can be executed. Because the fulfillment
     /// can happen any time into the future, it's impossible to calculate
     /// the order fees ahead of time, so the fees are taken from the order
-    /// surplus instead. (The order surplus is the additional money that the
-    /// solver managed to solve for, above what the user specified in the
-    /// order.)
+    /// surplus instead.
+    ///
+    /// The order surplus is the additional money that the solver managed to
+    /// solve for, above what the user specified in the order. The exact amount
+    /// of fees that are taken is determined by the solver.
     Limit,
     /// An order submitted by a privileged user, which provides liquidity for
     /// our settlement contract.

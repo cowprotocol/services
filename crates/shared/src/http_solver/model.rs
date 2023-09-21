@@ -229,17 +229,7 @@ where
     D: Deserializer<'de>,
 {
     let value: Value = Deserialize::deserialize(deserializer)?;
-    match &value {
-        Value::Object(map)
-            if !map.contains_key("score")
-                && !map.contains_key("scoreDiscount")
-                && !map.contains_key("success_probability")
-                && !map.contains_key("gas_amount") =>
-        {
-            Ok(Score::default())
-        }
-        _ => serde_json::from_value(value).map_err(serde::de::Error::custom),
-    }
+    Ok(serde_json::from_value(value).unwrap_or(Score::default()))
 }
 
 impl Score {
@@ -487,6 +477,15 @@ pub enum SolverRejectionReason {
         #[serde(with = "u256_decimal")]
         submitted_score: U256,
     },
+
+    /// Objective value is too low.
+    ObjectiveValueNonPositive,
+
+    /// Success probability is out of the allowed range [0, 1]
+    SuccessProbabilityOutOfRange,
+
+    /// It is expected for a score to be less or equal to the objective value.
+    ScoreHigherThanObjective,
 }
 
 #[derive(Debug, Serialize)]
