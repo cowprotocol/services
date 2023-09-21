@@ -138,7 +138,7 @@ impl FromStr for PriceEstimator {
     }
 }
 
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
@@ -170,7 +170,24 @@ impl Default for NativePriceEstimators {
 
 impl Display for NativePriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.as_slice())
+        if self.0.is_empty() {
+            return f.write_str("None");
+        }
+
+        let mut stage_it = self.as_slice().iter().peekable();
+        while let Some(stage) = stage_it.next() {
+            let mut estimator_it = stage.iter().peekable();
+            while let Some(kind) = estimator_it.next() {
+                write!(f, "{kind:?}")?;
+                if estimator_it.peek().is_some() {
+                    write!(f, ",")?;
+                }
+            }
+            if stage_it.peek().is_some() {
+                write!(f, ";")?;
+            }
+        }
+        Ok(())
     }
 }
 
