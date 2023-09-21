@@ -300,6 +300,7 @@ pub enum Score {
     },
 }
 
+/// Represents score together with the way it was calculated.
 #[derive(Copy, Clone, Debug)]
 pub enum CalculatedScore {
     /// The score is provided by the solver.
@@ -328,7 +329,7 @@ impl CalculatedScore {
 }
 
 /// Represents a single value suitable for comparing/ranking solutions.
-/// This is a final score that should be seen by the protocol.
+/// This is a final score that is observed by the autopilot.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct RankingScore(pub eth::U256);
 

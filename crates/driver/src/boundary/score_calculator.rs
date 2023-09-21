@@ -15,21 +15,21 @@ pub struct ScoreCalculator {
 
 impl ScoreCalculator {
     pub fn new(score_cap: eth::U256, mempools: Vec<mempool::Config>) -> Self {
-        let strategies = mempools
-            .iter()
-            .map(|mempool| match mempool.kind {
-                mempool::Kind::Public(high_risk) => (
-                    TransactionStrategyArg::PublicMempool,
-                    matches!(high_risk, mempool::HighRisk::Enabled),
-                ),
-                mempool::Kind::Flashbots { .. } => (TransactionStrategyArg::Flashbots, false),
-            })
-            .collect();
-
         Self {
             inner: solver::settlement_rater::ScoreCalculator::new(
                 score_cap.to_big_rational(),
-                strategies,
+                mempools
+                    .iter()
+                    .map(|mempool| match mempool.kind {
+                        mempool::Kind::Public(high_risk) => (
+                            TransactionStrategyArg::PublicMempool,
+                            matches!(high_risk, mempool::HighRisk::Enabled),
+                        ),
+                        mempool::Kind::Flashbots { .. } => {
+                            (TransactionStrategyArg::Flashbots, false)
+                        }
+                    })
+                    .collect(),
             ),
         }
     }
