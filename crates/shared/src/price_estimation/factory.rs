@@ -6,7 +6,7 @@ use {
         external::ExternalPriceEstimator,
         http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
-        native::{self, oneinch::OneInch, NativePriceEstimator},
+        native::{self, NativePriceEstimator},
         native_price_cache::CachingNativePriceEstimator,
         oneinch::OneInchPriceEstimator,
         paraswap::ParaswapPriceEstimator,
@@ -272,7 +272,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
                 "OneInchSpotPriceApi".into(),
-                Arc::new(OneInch::new(
+                Arc::new(native::OneInch::new(
                     self.components.http_factory.create(),
                     self.args.one_inch_spot_price_api_key.clone(),
                     self.network.chain_id,
