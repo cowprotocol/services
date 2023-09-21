@@ -295,7 +295,35 @@ pub enum Score {
     },
 }
 
-/// This score represents a single value which is used to compare two solutions.
+#[derive(Copy, Clone, Debug)]
+pub enum CalculatedScore {
+    /// The score is provided by the solver.
+    Solver(eth::U256),
+    /// The score is calculated by the protocol (and equal to the objective
+    /// function).
+    Protocol(eth::U256),
+    /// The score is calculated by the protocol and success_probability provided
+    /// by solver is taken into account
+    ProtocolWithSolverRisk(eth::U256),
+    /// The score is calculated by the protocol, by applying a discount to the
+    /// `Self::Protocol` value.
+    Discounted(eth::U256),
+}
+
+impl CalculatedScore {
+    pub fn score(&self) -> RankingScore {
+        match self {
+            Self::Solver(score) => *score,
+            Self::Protocol(score) => *score,
+            Self::ProtocolWithSolverRisk(score) => *score,
+            Self::Discounted(score) => *score,
+        }
+        .into()
+    }
+}
+
+/// Represents a single value suitable for comparing/ranking solutions.
+/// This is a final score that should be seen by the protocol.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct RankingScore(pub eth::U256);
 

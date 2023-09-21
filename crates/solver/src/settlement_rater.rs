@@ -251,11 +251,11 @@ impl SettlementRating for SettlementRater {
             shared::http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => self.score_calculator.compute_score(
+            } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
                 &inputs.objective_value(),
                 &inputs.gas_cost(),
                 *success_probability,
-            )?,
+            )?),
         };
 
         let rated_settlement = RatedSettlement {
@@ -328,7 +328,7 @@ impl ScoreCalculator {
         objective_value: &BigRational,
         gas_cost: &BigRational,
         success_probability: f64,
-    ) -> Result<Score> {
+    ) -> Result<U256> {
         ensure!(
             (0.0..=1.0).contains(&success_probability),
             "success probability must be between 0 and 1."
@@ -342,7 +342,7 @@ impl ScoreCalculator {
             self.score_cap.clone(),
         )?;
         let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
-        Ok(Score::ProtocolWithSolverRisk(score))
+        Ok(score)
     }
 }
 
@@ -517,7 +517,6 @@ mod tests {
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()
-            .score()
     }
 
     #[test]

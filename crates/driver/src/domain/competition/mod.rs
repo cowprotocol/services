@@ -170,7 +170,8 @@ impl Competition {
         // Pick the best-scoring settlement.
         let (score, settlement) = scores
             .into_iter()
-            .max_by_key(|(score, _)| score.to_owned())
+            .max_by_key(|(score, _)| score.score())
+            .map(|(score, settlement)| (score.score(), settlement))
             .ok_or(Error::SolutionNotFound)?;
 
         *self.settlement.lock().unwrap() = Some(settlement);

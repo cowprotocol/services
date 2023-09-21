@@ -5,7 +5,10 @@ use {
                 self,
                 auction,
                 order,
-                solution::settlement::{self, Internalization},
+                solution::{
+                    settlement::{self, Internalization},
+                    CalculatedScore,
+                },
             },
             eth,
             liquidity,
@@ -29,7 +32,6 @@ use {
             SellTokenSource,
         },
         signature::EcdsaSignature,
-        solver_competition::Score,
         DomainSeparator,
     },
     shared::{
@@ -214,7 +216,7 @@ impl Settlement {
         auction: &competition::Auction,
         gas: eth::Gas,
         calculator: &ScoreCalculator,
-    ) -> Result<competition::solution::RankingScore> {
+    ) -> Result<competition::solution::CalculatedScore> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
@@ -245,20 +247,22 @@ impl Settlement {
 
         let objective_value = inputs.objective_value();
         let score = match &self.inner.score {
-            shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
-            shared::http_solver::model::Score::Discount { score_discount } => Score::Discounted(
-                eth::U256::from_big_rational(&objective_value)?.saturating_sub(*score_discount),
-            ),
+            shared::http_solver::model::Score::Solver { score } => CalculatedScore::Solver(*score),
+            shared::http_solver::model::Score::Discount { score_discount } => {
+                CalculatedScore::Discounted(
+                    eth::U256::from_big_rational(&objective_value)?.saturating_sub(*score_discount),
+                )
+            }
             shared::http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => calculator.compute_score(
+            } => CalculatedScore::ProtocolWithSolverRisk(calculator.compute_score(
                 &inputs.objective_value(),
                 &inputs.gas_cost(),
                 *success_probability,
-            )?,
+            )?),
         };
-        Ok(score.score().into())
+        Ok(score)
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
