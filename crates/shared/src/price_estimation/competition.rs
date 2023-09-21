@@ -166,10 +166,19 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             let mut futures: Vec<_> = self
                 .inner
                 .iter()
-                .map(|(_, estimator)| estimator.estimate(query.clone()))
+                .enumerate()
+                .map(|(index, (_, estimator))| {
+                    // Return estimator `index` together with the result because `select_all()`
+                    // is allowed to shuffle around futures which makes the index return by
+                    // `select_all()` meaningless for our purposes.
+                    estimator
+                        .estimate(query.clone())
+                        .map(move |result| (index, result))
+                        .boxed()
+                })
                 .collect();
             loop {
-                let (result, index, rest) = futures::future::select_all(futures).await;
+                let ((index, result), _, rest) = futures::future::select_all(futures).await;
                 futures = rest;
                 results.push((index, result.clone()));
                 let estimator = &self.inner[index].0;
