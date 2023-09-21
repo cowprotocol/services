@@ -546,12 +546,12 @@ impl OrderQuoter {
                 .map_err(PriceEstimationError::ProtocolInternal),
             self.price_estimator.estimate(trade_query.clone()),
             self.native_price_estimator
-                .estimate_native_price(&parameters.sell_token),
+                .estimate_native_price(parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it
             // when we build the auction. To prevent creating orders which we can't settle later on
             // we make the native buy_token price a requirement here as well.
             self.native_price_estimator
-                .estimate_native_price(&parameters.buy_token),
+                .estimate_native_price(parameters.buy_token),
         )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
