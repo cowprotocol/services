@@ -2,7 +2,7 @@ use {
     crate::{
         arguments::TransactionStrategyArg,
         driver::solver_settlements::RatedSettlement,
-        settlement::Settlement,
+        settlement::{self, Settlement, SuccessProbability},
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
             call_data,
@@ -10,14 +10,20 @@ use {
             simulate_and_estimate_gas_at_current_block,
         },
         settlement_submission::gas_limit_for_estimate,
-        solver::{Simulation, SimulationError, SimulationWithError, SolverInfo},
+        solver::{
+            risk_computation::RiskCalculator,
+            Simulation,
+            SimulationError,
+            SimulationWithError,
+            SolverInfo,
+        },
     },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     ethcontract::Account,
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
-    num::{zero, BigRational, CheckedDiv, One},
+    num::{zero, BigRational, CheckedDiv, One, ToPrimitive},
     number::conversions::big_rational_to_u256,
     primitive_types::U256,
     shared::{
@@ -242,7 +248,7 @@ impl SettlementRating for SettlementRater {
         let earned_fees = settlement.total_earned_fees(prices);
         let inputs = {
             let gas_amount = match settlement.score {
-                shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
+                crate::settlement::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas_estimate)
                 }
                 _ => gas_estimate,
@@ -257,18 +263,39 @@ impl SettlementRating for SettlementRater {
 
         let objective_value = inputs.objective_value();
         let score = match &settlement.score {
-            shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
-            shared::http_solver::model::Score::Discount { score_discount } => Score::Discounted(
+            settlement::Score::Solver(score) => Score::Solver(*score),
+            settlement::Score::Discount(score_discount) => Score::Discounted(
                 big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
             ),
-            shared::http_solver::model::Score::RiskAdjusted {
+            settlement::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
-                &inputs.objective_value(),
-                &inputs.gas_cost(),
-                *success_probability,
-            )?),
+            } => {
+                let success_probability = match *success_probability {
+                    SuccessProbability::Value(success_probability) => success_probability,
+                    SuccessProbability::Params {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    } => RiskCalculator {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    }
+                    .calculate(
+                        inputs.gas_amount.to_f64().unwrap(),
+                        gas_price.effective_gas_price(),
+                        settlement.trades().count(),
+                    )?,
+                };
+                Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
+                    &inputs.objective_value(),
+                    &inputs.gas_cost(),
+                    success_probability,
+                )?)
+            }
         };
 
         let rated_settlement = RatedSettlement {

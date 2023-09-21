@@ -154,7 +154,15 @@ async fn sell() {
                             },
                         ],
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "value": 1.0,
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );
@@ -308,7 +316,15 @@ async fn buy() {
                             },
                         ],
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "value": 1.0,
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );

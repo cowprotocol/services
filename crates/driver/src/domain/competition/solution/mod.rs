@@ -290,13 +290,27 @@ impl SolverTimeout {
 }
 
 /// This score carries information about how the score should be calculated.
-#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub enum Score {
     Solver(eth::U256),
     Discount(eth::U256),
     RiskAdjusted {
-        success_probability: f64,
+        success_probability: SuccessProbability,
         gas_amount: Option<eth::U256>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum SuccessProbability {
+    /// Probability exists and is equal to the given value.
+    Value(f64),
+    /// Probability is unknown and should be computed by the protocol using the
+    /// given parameters.
+    Params {
+        gas_amount_factor: f64,
+        gas_price_factor: f64,
+        nmb_orders_factor: f64,
+        intercept: f64,
     },
 }
 

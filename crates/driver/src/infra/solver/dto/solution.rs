@@ -203,7 +203,22 @@ impl Solutions {
                             success_probability,
                             gas_amount,
                         } => competition::solution::Score::RiskAdjusted {
-                            success_probability,
+                            success_probability: match success_probability {
+                                SuccessProbability::Value(value) => {
+                                    competition::solution::SuccessProbability::Value(value)
+                                }
+                                SuccessProbability::Params {
+                                    gas_amount_factor,
+                                    gas_price_factor,
+                                    nmb_orders_factor,
+                                    intercept,
+                                } => competition::solution::SuccessProbability::Params {
+                                    gas_amount_factor,
+                                    gas_price_factor,
+                                    nmb_orders_factor,
+                                    intercept,
+                                },
+                            },
                             gas_amount,
                         },
                     },
@@ -384,7 +399,19 @@ pub enum Score {
     Solver(eth::U256),
     Discount(eth::U256),
     RiskAdjusted {
-        success_probability: f64,
+        success_probability: SuccessProbability,
         gas_amount: Option<eth::U256>,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+pub enum SuccessProbability {
+    Value(f64),
+    Params {
+        gas_amount_factor: f64,
+        gas_price_factor: f64,
+        nmb_orders_factor: f64,
+        intercept: f64,
     },
 }

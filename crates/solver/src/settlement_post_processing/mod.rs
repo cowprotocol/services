@@ -1,11 +1,10 @@
-use shared::http_solver::model::Score;
-
 mod optimize_buffer_usage;
 mod optimize_score;
 mod optimize_unwrapping;
 
 use {
     crate::{
+        settlement,
         settlement::Settlement,
         settlement_simulation::simulate_and_estimate_gas_at_current_block,
         solver::{http_solver::buffers::BufferRetriever, risk_computation::RiskCalculator},
@@ -137,8 +136,8 @@ impl PostProcessing for PostProcessingPipeline {
         // this is currently done for naive, baseline, gnosis solvers
         // TODO: once we eliminate naive and baseline this logic should be moved to
         // SingleOrderSettlement::into_settlement
-        match (optimized_solution.score, risk_calculator) {
-            (Score::RiskAdjusted { gas_amount, .. }, Some(risk_calculator)) => {
+        match (optimized_solution.score.clone(), risk_calculator) {
+            (settlement::Score::RiskAdjusted { gas_amount, .. }, Some(risk_calculator)) => {
                 match compute_success_probability(
                     &optimized_solution,
                     &simulator,
@@ -149,8 +148,10 @@ impl PostProcessing for PostProcessingPipeline {
                 .await
                 {
                     Ok(success_probability) => Settlement {
-                        score: Score::RiskAdjusted {
-                            success_probability,
+                        score: settlement::Score::RiskAdjusted {
+                            success_probability: settlement::SuccessProbability::Value(
+                                success_probability,
+                            ),
                             gas_amount,
                         },
                         ..optimized_solution

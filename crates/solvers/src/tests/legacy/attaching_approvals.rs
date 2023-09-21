@@ -145,7 +145,15 @@ async fn test() {
                         ],
                         "kind": "custom",
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "value": 1.0,
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );

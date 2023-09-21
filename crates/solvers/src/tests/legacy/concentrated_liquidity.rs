@@ -137,7 +137,15 @@ async fn test() {
                         "inputAmount": "6043910341261930467761",
                         "outputAmount": "133700000000000000",
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "value": 1.0,
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );

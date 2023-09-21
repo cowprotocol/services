@@ -223,9 +223,9 @@ impl Trade {
     }
 }
 
+use shared::external_prices::ExternalPrices;
 #[cfg(test)]
 use shared::interaction::{EncodedInteraction, Interaction};
-use shared::{external_prices::ExternalPrices, http_solver::model::Score};
 #[cfg(test)]
 #[derive(Debug)]
 pub struct NoopInteraction;
@@ -234,6 +234,88 @@ pub struct NoopInteraction;
 impl Interaction for NoopInteraction {
     fn encode(&self) -> Vec<EncodedInteraction> {
         Vec::new()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SuccessProbability {
+    /// Probability exists and is equal to the given value.
+    Value(f64),
+    /// Probability is unknown and should be computed by the protocol using the
+    /// given parameters.
+    Params {
+        gas_amount_factor: f64,
+        gas_price_factor: f64,
+        nmb_orders_factor: f64,
+        intercept: f64,
+    },
+}
+
+impl Default for SuccessProbability {
+    fn default() -> Self {
+        Self::Value(1.)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Score {
+    /// The score value is provided as is from solver.
+    /// Success probability is not incorporated into this value.
+    Solver(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol.
+    /// To have more flexibility, the protocol score can be tweaked by the
+    /// solver by providing a discount.
+    Discount(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol given the success
+    /// probability and optionally the amount of gas this settlement will take.
+    ///
+    /// Additionally, even success_probability could be not provided by the
+    /// solver (Naive, Baseline, Gnosis solvers). In that case, the driver
+    /// should estimate the success_probability given the risk parameters
+    RiskAdjusted {
+        success_probability: SuccessProbability,
+        gas_amount: Option<U256>,
+    },
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted {
+            success_probability: Default::default(),
+            gas_amount: None,
+        }
+    }
+}
+
+impl Score {
+    // Returns a new merged score, if possible. Currently only supports merging
+    // scores of same variant.
+    pub fn merge(&self, other: &Score) -> Option<Self> {
+        match (self, other) {
+            (Score::Solver(left), Score::Solver(right)) => {
+                Some(Score::Solver(left.checked_add(*right)?))
+            }
+            (
+                Score::RiskAdjusted {
+                    success_probability: SuccessProbability::Value(p_left),
+                    gas_amount: gas_left,
+                },
+                Score::RiskAdjusted {
+                    success_probability: SuccessProbability::Value(p_right),
+                    gas_amount: gas_right,
+                },
+            ) => Some(Score::RiskAdjusted {
+                success_probability: SuccessProbability::Value(p_left * p_right),
+                gas_amount: gas_left
+                    .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
+            }),
+            (Score::Discount(left), Score::Discount(right)) => {
+                Some(Score::Discount(left.checked_add(*right)?))
+            }
+            _ => None,
+        }
     }
 }
 
@@ -287,7 +369,7 @@ impl Settlement {
         let encoder = self.encoder.without_onchain_liquidity();
         Self {
             encoder,
-            score: self.score,
+            score: self.score.clone(),
         }
     }
 

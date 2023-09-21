@@ -133,14 +133,29 @@ impl Solutions {
                             }
                         })
                         .collect(),
-                    score: match solution.score {
+                    score: match solution.score.clone() {
                         solution::Score::Solver(score) => Score::Solver(score),
                         solution::Score::Discount(discount) => Score::Discount(discount),
                         solution::Score::RiskAdjusted {
                             success_probability,
                             gas_amount,
                         } => Score::RiskAdjusted {
-                            success_probability,
+                            success_probability: match success_probability {
+                                solution::SuccessProbability::Value(value) => {
+                                    SuccessProbability::Value(value)
+                                }
+                                solution::SuccessProbability::Params {
+                                    gas_amount_factor,
+                                    gas_price_factor,
+                                    nmb_orders_factor,
+                                    intercept,
+                                } => SuccessProbability::Params {
+                                    gas_amount_factor,
+                                    gas_price_factor,
+                                    nmb_orders_factor,
+                                    intercept,
+                                },
+                            },
                             gas_amount: gas_amount.map(|gas_amount| gas_amount.0),
                         },
                     },
@@ -333,7 +348,19 @@ pub enum Score {
     Solver(U256),
     Discount(U256),
     RiskAdjusted {
-        success_probability: f64,
+        success_probability: SuccessProbability,
         gas_amount: Option<U256>,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuccessProbability {
+    Value(f64),
+    Params {
+        gas_amount_factor: f64,
+        gas_price_factor: f64,
+        nmb_orders_factor: f64,
+        intercept: f64,
     },
 }

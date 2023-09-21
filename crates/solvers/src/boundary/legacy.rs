@@ -540,7 +540,7 @@ fn to_domain_solution(
                 success_probability,
                 gas_amount,
             } => solution::Score::RiskAdjusted {
-                success_probability,
+                success_probability: solution::SuccessProbability::Value(success_probability),
                 gas_amount: gas_amount.map(eth::Gas),
             },
         },

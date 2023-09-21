@@ -18,6 +18,7 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Result},
+    bigdecimal::ToPrimitive,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -47,7 +48,9 @@ use {
             AmmOrderExecution,
             LimitOrderExecution,
         },
+        settlement::SuccessProbability,
         settlement_simulation::settle_method_builder,
+        solver::risk_computation::RiskCalculator,
     },
     std::sync::Arc,
 };
@@ -157,20 +160,31 @@ impl Settlement {
             );
         }
 
-        settlement.score = match solution.score() {
-            competition::Score::Solver(score) => {
-                shared::http_solver::model::Score::Solver { score: *score }
-            }
+        settlement.score = match solution.score().clone() {
+            competition::Score::Solver(score) => solver::settlement::Score::Solver(score),
             competition::Score::Discount(score_discount) => {
-                shared::http_solver::model::Score::Discount {
-                    score_discount: *score_discount,
-                }
+                solver::settlement::Score::Discount(score_discount)
             }
             competition::Score::RiskAdjusted {
                 success_probability,
                 gas_amount,
-            } => shared::http_solver::model::Score::RiskAdjusted {
-                success_probability: *success_probability,
+            } => solver::settlement::Score::RiskAdjusted {
+                success_probability: match success_probability {
+                    competition::solution::SuccessProbability::Value(success_probability) => {
+                        SuccessProbability::Value(success_probability)
+                    }
+                    competition::solution::SuccessProbability::Params {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    } => SuccessProbability::Params {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    },
+                },
                 gas_amount: gas_amount.map(Into::into),
             },
         };
@@ -232,7 +246,7 @@ impl Settlement {
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
         let inputs = {
             let gas_amount = match self.inner.score {
-                shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
+                solver::settlement::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas.into())
                 }
                 _ => gas.into(),
@@ -240,26 +254,45 @@ impl Settlement {
             solver::objective_value::Inputs::from_settlement(
                 &self.inner,
                 &prices,
-                gas_price,
+                gas_price.clone(),
                 &gas_amount,
             )
         };
 
         let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
-        let score = match &self.inner.score {
-            shared::http_solver::model::Score::Solver { score } => CalculatedScore::Solver(*score),
-            shared::http_solver::model::Score::Discount { score_discount } => {
-                CalculatedScore::Discounted(objective_value.saturating_sub(*score_discount))
+        let score = match self.inner.score.clone() {
+            solver::settlement::Score::Solver(score) => CalculatedScore::Solver(score),
+            solver::settlement::Score::Discount(score_discount) => {
+                CalculatedScore::Discounted(objective_value.saturating_sub(score_discount))
             }
-            shared::http_solver::model::Score::RiskAdjusted {
+            solver::settlement::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => {
+                let success_probability = match success_probability {
+                    SuccessProbability::Value(success_probability) => success_probability,
+                    SuccessProbability::Params {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    } => RiskCalculator {
+                        gas_amount_factor,
+                        gas_price_factor,
+                        nmb_orders_factor,
+                        intercept,
+                    }
+                    .calculate(
+                        inputs.gas_amount.to_f64().unwrap(),
+                        gas_price.to_f64().unwrap(),
+                        self.inner.clone().trades().count(),
+                    )?,
+                };
                 let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
                 CalculatedScore::ProtocolWithSolverRisk(calculator.score(
                     &objective_value,
                     &gas_cost,
-                    *success_probability,
+                    success_probability,
                 )?)
             }
         };
