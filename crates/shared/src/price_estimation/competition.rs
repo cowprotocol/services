@@ -189,7 +189,8 @@ pub struct CompetitionEstimator<T> {
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     pub fn new(inner: Vec<Vec<(String, T)>>) -> Self {
         let number_of_estimators =
-            NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
+            NonZeroUsize::new(inner.iter().fold(0, |sum, stage| sum + stage.len()))
+                .expect("Vec of estimators should not be empty.");
         Self {
             inner: RacingCompetitionEstimator::new(inner, number_of_estimators),
         }
