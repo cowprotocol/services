@@ -6,7 +6,7 @@ use {
         },
         metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
         settlement::{PriceCheckTokens, Settlement},
-        settlement_rater::{Rating, SettlementRating},
+        settlement_rater::{Rating, RatingError, ScoringError, SettlementRating},
         settlement_simulation::call_data,
         solver::{SimulationWithError, Solver, SolverInfo},
     },
@@ -145,7 +145,7 @@ impl SettlementRanker {
 
     /// Determines legal settlements and ranks them by simulating them.
     /// Settlements get partitioned into simulation errors and a list
-    /// of `RatedSettlement`s sorted by ascending order of objective value.
+    /// of `RatedSettlement`s sorted by ascending order of score.
     pub async fn rank_legal_settlements(
         &self,
         settlements: Vec<SolverResult>,
@@ -176,8 +176,8 @@ impl SettlementRanker {
             );
         }
 
-        let (mut rated_settlements, errors): (Vec<_>, Vec<_>) =
-            join_all(solver_settlements.into_iter().enumerate().map(
+        let (mut rated_settlements, failed_simulations): (Vec<_>, Vec<_>) = join_all(
+            solver_settlements.into_iter().enumerate().map(
                 |(i, (solver, settlement))| async move {
                     let simulation = self
                         .settlement_rater
@@ -194,37 +194,63 @@ impl SettlementRanker {
                         .await;
                     (solver, simulation)
                 },
-            ))
-            .await
-            .into_iter()
-            .filter_map(|(solver, result)| match result {
-                Ok(res) => Some((solver, res)),
-                Err(err) => {
-                    tracing::warn!(?err, "error in settlement rating logic");
+            ),
+        )
+        .await
+        .into_iter()
+        .filter_map(|(solver, result)| match result {
+            Ok(res) => Some((solver, Rating::Ok(res))),
+            Err(err) => match err {
+                RatingError::FailedSimulation(error) => {
+                    solver.notify_auction_result(
+                        auction_id,
+                        AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
+                            TransactionWithError {
+                                transaction: error.simulation.transaction.clone(),
+                                error: error.error.to_string(),
+                            },
+                        )),
+                    );
+                    Some((solver, Rating::Err(error)))
+                }
+                RatingError::FailedScoring(error) => {
+                    tracing::debug!(
+                        solver_name = %solver.name(), ?error,
+                        "settlement filtered",
+                    );
+                    let reason = match error {
+                        ScoringError::ObjectiveValueNonPositive(_) => {
+                            Some(SolverRejectionReason::ObjectiveValueNonPositive)
+                        }
+                        ScoringError::SuccessProbabilityOutOfRange(_) => {
+                            Some(SolverRejectionReason::SuccessProbabilityOutOfRange)
+                        }
+                        ScoringError::ScoreHigherThanObjective(_) => {
+                            Some(SolverRejectionReason::ScoreHigherThanObjective)
+                        }
+                        ScoringError::InternalError(_) => None,
+                    };
+                    if let Some(reason) = reason {
+                        solver.notify_auction_result(auction_id, AuctionResult::Rejected(reason));
+                    }
                     None
                 }
-            })
-            .partition_map(|(solver, result)| match result {
-                Rating::Ok(r) => itertools::Either::Left((solver, r)),
-                Rating::Err(err) => itertools::Either::Right((solver, err)),
-            });
+                RatingError::Internal(error) => {
+                    tracing::warn!(?error, "error in settlement rating logic");
+                    None
+                }
+            },
+        })
+        .partition_map(|(solver, result)| match result {
+            Rating::Ok(r) => itertools::Either::Left((solver, r)),
+            Rating::Err(err) => itertools::Either::Right((solver, err)),
+        });
 
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
-            errors.len(),
+            failed_simulations.len(),
         );
-        for (solver, error) in &errors {
-            solver.notify_auction_result(
-                auction_id,
-                AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
-                    TransactionWithError {
-                        transaction: error.simulation.transaction.clone(),
-                        error: error.error.to_string(),
-                    },
-                )),
-            );
-        }
 
         // Filter out settlements with non-positive score.
         if self.skip_non_positive_score_settlements {
@@ -284,7 +310,10 @@ impl SettlementRanker {
                 settlement.ranking = i + 1;
                 solver.notify_auction_result(auction_id, AuctionResult::Ranked(i + 1));
             });
-        let errors = errors.into_iter().map(|(_, error)| error).collect();
+        let errors = failed_simulations
+            .into_iter()
+            .map(|(_, error)| error)
+            .collect();
         Ok((rated_settlements, errors))
     }
 }
