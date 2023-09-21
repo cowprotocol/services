@@ -12,7 +12,6 @@ use {
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
-    solver::settlement_rater::ScoreCalculator,
     std::collections::{HashMap, HashSet},
 };
 
@@ -265,8 +264,8 @@ impl Settlement {
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
-        calculator: &ScoreCalculator,
-    ) -> Result<competition::solution::CalculatedScore, boundary::Error> {
+        calculator: &solution::ScoreCalculator,
+    ) -> Result<solution::CalculatedScore, boundary::Error> {
         self.boundary
             .score(eth, auction, self.gas.estimate, calculator)
     }

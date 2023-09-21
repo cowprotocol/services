@@ -12,7 +12,6 @@ use {
         },
         util::Bytes,
     },
-    ::solver::settlement_rater::ScoreCalculator,
     futures::future::join_all,
     itertools::Itertools,
     rand::seq::SliceRandom,
@@ -43,7 +42,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub score_calculator: ScoreCalculator,
+    pub score_calculator: solution::ScoreCalculator,
 }
 
 impl Competition {

@@ -6,11 +6,12 @@ use {
                 auction,
                 order,
                 solution::{
+                    self,
                     settlement::{self, Internalization},
                     CalculatedScore,
                 },
             },
-            eth,
+            eth::{self},
             liquidity,
         },
         infra::Ethereum,
@@ -46,7 +47,6 @@ use {
             AmmOrderExecution,
             LimitOrderExecution,
         },
-        settlement_rater::ScoreCalculator,
         settlement_simulation::settle_method_builder,
     },
     std::sync::Arc,
@@ -215,8 +215,8 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-        calculator: &ScoreCalculator,
-    ) -> Result<competition::solution::CalculatedScore> {
+        calculator: &solution::ScoreCalculator,
+    ) -> Result<solution::CalculatedScore> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
@@ -245,22 +245,23 @@ impl Settlement {
             )
         };
 
-        let objective_value = inputs.objective_value();
+        let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
         let score = match &self.inner.score {
             shared::http_solver::model::Score::Solver { score } => CalculatedScore::Solver(*score),
             shared::http_solver::model::Score::Discount { score_discount } => {
-                CalculatedScore::Discounted(
-                    eth::U256::from_big_rational(&objective_value)?.saturating_sub(*score_discount),
-                )
+                CalculatedScore::Discounted(objective_value.saturating_sub(*score_discount))
             }
             shared::http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => CalculatedScore::ProtocolWithSolverRisk(calculator.compute_score(
-                &inputs.objective_value(),
-                &inputs.gas_cost(),
-                *success_probability,
-            )?),
+            } => {
+                let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
+                CalculatedScore::ProtocolWithSolverRisk(calculator.score(
+                    &objective_value,
+                    &gas_cost,
+                    *success_probability,
+                )?)
+            }
         };
         Ok(score)
     }

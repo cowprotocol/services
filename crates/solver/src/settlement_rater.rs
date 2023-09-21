@@ -352,7 +352,7 @@ impl ScoreCalculator {
         }
     }
 
-    pub fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
+    fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
         match self.submission_strategies.iter().find(|s| {
             s.strategy == TransactionStrategyArg::PublicMempool
                 && !s.disable_high_risk_public_mempool_transactions

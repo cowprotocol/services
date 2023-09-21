@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::Mempools,
+        domain::{competition::solution, Mempools},
         infra::{
             self,
             blockchain::{self, Ethereum},
@@ -16,8 +16,6 @@ use {
     },
     clap::Parser,
     futures::future::join_all,
-    shared::conversions::U256Ext,
-    solver::{arguments::TransactionStrategyArg, settlement_rater::ScoreCalculator},
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
 };
@@ -74,20 +72,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
-        score_calculator: ScoreCalculator::new(
-            config.score_cap.to_big_rational(),
-            config
-                .mempools
-                .iter()
-                .map(|mempool| match mempool.kind {
-                    mempool::Kind::Public(high_risk) => (
-                        TransactionStrategyArg::PublicMempool,
-                        matches!(high_risk, mempool::HighRisk::Enabled),
-                    ),
-                    mempool::Kind::Flashbots { .. } => (TransactionStrategyArg::Flashbots, false),
-                })
-                .collect(),
-        ),
+        score_calculator: solution::ScoreCalculator::new(config.score_cap.into(), config.mempools),
     }
     .serve(async {
         let _ = shutdown_receiver.await;

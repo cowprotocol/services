@@ -20,10 +20,16 @@ use {
 };
 
 pub mod interaction;
+pub mod score_calculator;
 pub mod settlement;
 pub mod trade;
 
-pub use {interaction::Interaction, settlement::Settlement, trade::Trade};
+pub use {
+    interaction::Interaction,
+    score_calculator::ScoreCalculator,
+    settlement::Settlement,
+    trade::Trade,
+};
 
 // TODO Add a constructor and ensure that the clearing prices are included for
 // each trade
@@ -283,8 +289,7 @@ impl SolverTimeout {
     }
 }
 
-/// This score carries information about how the RankingScore should be
-/// calculated.
+/// This score carries information about how the score should be calculated.
 #[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
 pub enum Score {
     Solver(eth::U256),
