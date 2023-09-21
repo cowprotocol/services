@@ -354,7 +354,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         );
         let native_token_price_estimation_amount = self.native_token_price_estimation_amount()?;
         let mut estimators: Vec<_> = native
-            .into_iter()
+            .iter()
             .map(|source| self.create_native_estimator(*source).unwrap())
             .collect();
         estimators.extend(
