@@ -190,12 +190,14 @@ pub struct SolverInfo {
     pub account: Account,
 }
 
+#[derive(Debug)]
 pub struct Simulation {
     pub settlement: Settlement,
     pub solver: SolverInfo,
     pub transaction: SimulatedTransaction,
 }
 
+#[derive(Debug)]
 pub struct SimulationWithError {
     pub simulation: Simulation,
     pub error: SimulationError,

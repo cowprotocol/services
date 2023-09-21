@@ -477,6 +477,15 @@ pub enum SolverRejectionReason {
         #[serde(with = "u256_decimal")]
         submitted_score: U256,
     },
+
+    /// Objective value is too low.
+    ObjectiveValueNonPositive,
+
+    /// Success probability is out of the allowed range [0, 1]
+    SuccessProbabilityOutOfRange,
+
+    /// It is expected for a score to be less or equal to the objective value.
+    ScoreHigherThanObjective,
 }
 
 #[derive(Debug, Serialize)]

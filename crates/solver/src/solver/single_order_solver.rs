@@ -1,5 +1,5 @@
 use {
-    super::{SimulationWithError, SolverInfo},
+    super::SolverInfo,
     crate::{
         liquidity::{
             order_converter::OrderConverter,
@@ -9,10 +9,10 @@ use {
         },
         metrics::SolverMetrics,
         settlement::Settlement,
-        settlement_rater::{Rating, SettlementRating},
+        settlement_rater::SettlementRating,
         solver::{Auction, Solver},
     },
-    anyhow::{Context as _, Result},
+    anyhow::{anyhow, Context as _, Result},
     clap::Parser,
     ethcontract::Account,
     futures::FutureExt,
@@ -289,7 +289,7 @@ impl SingleOrderSolver {
             Ok(None) => anyhow::bail!("settlement did not respect limit price"),
         };
 
-        let result = self
+        let simulation = self
             .settlement_rater
             .rate_settlement(
                 &SolverInfo {
@@ -306,15 +306,8 @@ impl SingleOrderSolver {
                 },
                 id,
             )
-            .await?;
-
-        let simulation = match result {
-            Rating::Ok(simulation) => simulation,
-            Rating::Err(SimulationWithError { error, simulation }) => {
-                tracing::debug!(?error, ?simulation.transaction, "failed to simulate settlement");
-                return Err(error).context("failed to simulate the settlement");
-            }
-        };
+            .await
+            .map_err(|error| anyhow!("rating failed with {:?}", error))?;
 
         let gas_cost = simulation
             .gas_estimate
@@ -721,7 +714,7 @@ mod tests {
         let mut settlement_rating = MockSettlementRating::new();
         settlement_rating
             .expect_rate_settlement()
-            .returning(|_, _, _, _, _| Ok(Rating::Ok(Default::default())));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
 
         SingleOrderSolver {
             inner: Box::new(inner),
