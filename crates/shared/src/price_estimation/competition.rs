@@ -6,7 +6,7 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::FutureExt as _,
+    futures::{stream::FuturesUnordered, FutureExt as _, StreamExt},
     model::order::OrderKind,
     primitive_types::H160,
     std::{
@@ -163,7 +163,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             };
 
             let mut results = vec![];
-            let mut futures: Vec<_> = self
+            let mut futures: FuturesUnordered<_> = self
                 .inner
                 .iter()
                 .enumerate()
@@ -174,12 +174,10 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     estimator
                         .estimate(query.clone())
                         .map(move |result| (index, result))
-                        .boxed()
                 })
                 .collect();
-            loop {
-                let ((index, result), _, rest) = futures::future::select_all(futures).await;
-                futures = rest;
+
+            while let Some((index, result)) = futures.next().await {
                 results.push((index, result.clone()));
                 let estimator = &self.inner[index].0;
                 tracing::debug!(?query, ?result, estimator, "new price estimate");
