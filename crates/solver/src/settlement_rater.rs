@@ -12,9 +12,9 @@ use {
         settlement_submission::gas_limit_for_estimate,
         solver::{Simulation, SimulationError, SimulationWithError, SolverInfo},
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
-    ethcontract::{errors::ExecutionError, Account},
+    ethcontract::Account,
     gas_estimation::GasPrice1559,
     model::solver_competition::Score,
     num::{zero, BigRational, CheckedDiv, One},
@@ -30,19 +30,44 @@ use {
     web3::types::AccessList,
 };
 
-struct SimulationSuccess {
-    pub simulation: Simulation,
-    pub gas_estimate: U256,
+type GasEstimate = U256;
+
+pub enum SimulateError {
+    FailedSimulation(SimulationWithError),
+    Internal(anyhow::Error),
 }
 
-struct SimulationFailure {
-    pub simulation: Simulation,
-    pub error: ExecutionError,
+impl From<anyhow::Error> for SimulateError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Internal(error)
+    }
 }
 
-enum SimulationResult {
-    Ok(SimulationSuccess),
-    Err(SimulationFailure),
+#[derive(Debug)]
+pub enum RatingError {
+    FailedSimulation(SimulationWithError),
+    FailedScoring(ScoringError),
+    Internal(anyhow::Error),
+}
+
+impl From<SimulateError> for RatingError {
+    fn from(error: SimulateError) -> Self {
+        match error {
+            SimulateError::FailedSimulation(failure) => Self::FailedSimulation(failure),
+            SimulateError::Internal(error) => Self::Internal(error),
+        }
+    }
+}
+
+impl From<ScoringError> for RatingError {
+    fn from(error: ScoringError) -> Self {
+        Self::FailedScoring(error)
+    }
+}
+impl From<anyhow::Error> for RatingError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Internal(error)
+    }
 }
 
 pub enum Rating {
@@ -60,7 +85,7 @@ pub trait SettlementRating: Send + Sync {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
         id: usize,
-    ) -> Result<Rating>;
+    ) -> Result<RatedSettlement, RatingError>;
 }
 
 pub struct SettlementRater {
@@ -106,11 +131,17 @@ impl SettlementRater {
         settlement: &Settlement,
         gas_price: GasPrice1559,
         internalization: InternalizationStrategy,
-    ) -> Result<SimulationResult> {
+    ) -> Result<(Simulation, GasEstimate), SimulateError> {
         let access_list = self
             .generate_access_list(&solver.account, settlement, gas_price, internalization)
             .await;
-        let block_number = self.web3.eth().block_number().await?.as_u64();
+        let block_number = self
+            .web3
+            .eth()
+            .block_number()
+            .await
+            .context("failed to get block number")?
+            .as_u64();
         let simulation_result = simulate_and_estimate_gas_at_current_block(
             std::iter::once((
                 solver.account.clone(),
@@ -143,14 +174,13 @@ impl SettlementRater {
             solver: solver.clone(),
         };
 
-        let result = match simulation_result {
-            Ok(gas_estimate) => SimulationResult::Ok(SimulationSuccess {
+        match simulation_result {
+            Ok(gas_estimate) => Ok((simulation, gas_estimate)),
+            Err(error) => Err(SimulateError::FailedSimulation(SimulationWithError {
                 simulation,
-                gas_estimate,
-            }),
-            Err(error) => SimulationResult::Err(SimulationFailure { simulation, error }),
-        };
-        Ok(result)
+                error: error.into(),
+            })),
+        }
     }
 }
 
@@ -163,9 +193,9 @@ impl SettlementRating for SettlementRater {
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
         id: usize,
-    ) -> Result<Rating> {
+    ) -> Result<RatedSettlement, RatingError> {
         // first simulate settlements without internalizations to make sure they pass
-        let simulation_result = self
+        let _ = self
             .simulate_settlement(
                 solver,
                 &settlement,
@@ -174,16 +204,9 @@ impl SettlementRating for SettlementRater {
             )
             .await?;
 
-        if let SimulationResult::Err(err) = simulation_result {
-            return Ok(Rating::Err(SimulationWithError {
-                simulation: err.simulation,
-                error: err.error.into(),
-            }));
-        }
-
         // since rating is done with internalizations, repeat the simulations for
         // previously succeeded simulations
-        let simulation_result = self
+        let (simulation, gas_estimate) = self
             .simulate_settlement(
                 solver,
                 &settlement,
@@ -191,16 +214,6 @@ impl SettlementRating for SettlementRater {
                 InternalizationStrategy::SkipInternalizableInteraction,
             )
             .await?;
-
-        let simulation = match simulation_result {
-            SimulationResult::Ok(success) => success,
-            SimulationResult::Err(err) => {
-                return Ok(Rating::Err(SimulationWithError {
-                    simulation: err.simulation,
-                    error: err.error.into(),
-                }))
-            }
-        };
 
         let effective_gas_price =
             BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
@@ -212,13 +225,13 @@ impl SettlementRating for SettlementRater {
             .await
             .unwrap_or_default();
 
-        let gas_limit = gas_limit_for_estimate(simulation.gas_estimate);
+        let gas_limit = gas_limit_for_estimate(gas_estimate);
         let required_balance =
             gas_limit.saturating_mul(U256::from_f64_lossy(gas_price.max_fee_per_gas));
 
         if solver_balance < required_balance {
-            return Ok(Rating::Err(SimulationWithError {
-                simulation: simulation.simulation,
+            return Err(RatingError::FailedSimulation(SimulationWithError {
+                simulation,
                 error: SimulationError::InsufficientBalance {
                     needs: required_balance,
                     has: solver_balance,
@@ -230,9 +243,9 @@ impl SettlementRating for SettlementRater {
         let inputs = {
             let gas_amount = match settlement.score {
                 shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
-                    gas_amount.unwrap_or(simulation.gas_estimate)
+                    gas_amount.unwrap_or(gas_estimate)
                 }
-                _ => simulation.gas_estimate,
+                _ => gas_estimate,
             };
             crate::objective_value::Inputs::from_settlement(
                 &settlement,
@@ -266,13 +279,44 @@ impl SettlementRating for SettlementRater {
             solver_fees: inputs.solver_fees,
             // save simulation gas estimate even if the solver provided gas amount
             // it's safer and more accurate since simulation gas estimate includes pre/post hooks
-            gas_estimate: simulation.gas_estimate,
+            gas_estimate,
             gas_price: effective_gas_price,
             objective_value,
             score,
             ranking: Default::default(),
         };
-        Ok(Rating::Ok(rated_settlement))
+        Ok(rated_settlement)
+    }
+}
+
+#[derive(Debug)]
+pub enum ScoringError {
+    ObjectiveValueNonPositive(BigRational),
+    SuccessProbabilityOutOfRange(f64),
+    ScoreHigherThanObjective(BigRational),
+    InternalError(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ScoringError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::InternalError(error)
+    }
+}
+
+impl From<ScoringError> for anyhow::Error {
+    fn from(error: ScoringError) -> Self {
+        match error {
+            ScoringError::InternalError(error) => error,
+            ScoringError::ObjectiveValueNonPositive(objective) => {
+                anyhow!("Objective value non-positive {}", objective)
+            }
+            ScoringError::SuccessProbabilityOutOfRange(success_probability) => {
+                anyhow!("Success probability out of range {}", success_probability)
+            }
+            ScoringError::ScoreHigherThanObjective(score) => {
+                anyhow!("Score {} higher than objective", score)
+            }
+        }
     }
 }
 
@@ -326,11 +370,18 @@ impl ScoreCalculator {
         objective_value: &BigRational,
         gas_cost: &BigRational,
         success_probability: f64,
-    ) -> Result<Score> {
-        ensure!(
-            (0.0..=1.0).contains(&success_probability),
-            "success probability must be between 0 and 1."
-        );
+    ) -> Result<Score, ScoringError> {
+        if objective_value <= &zero() {
+            return Err(ScoringError::ObjectiveValueNonPositive(
+                objective_value.clone(),
+            ));
+        }
+        if !(0.0..=1.0).contains(&success_probability) {
+            return Err(ScoringError::SuccessProbabilityOutOfRange(
+                success_probability,
+            ));
+        }
+
         let success_probability = BigRational::from_float(success_probability).unwrap();
         let cost_fail = self.cost_fail(gas_cost);
         let optimal_score = compute_optimal_score(
@@ -339,7 +390,10 @@ impl ScoreCalculator {
             cost_fail,
             self.score_cap.clone(),
         )?;
-        let score = big_rational_to_u256(&optimal_score).context("Invalid score.")?;
+        if optimal_score > *objective_value {
+            return Err(ScoringError::ScoreHigherThanObjective(optimal_score));
+        }
+        let score = big_rational_to_u256(&optimal_score).context("Bad conversion")?;
         Ok(Score::ProtocolWithSolverRisk(score))
     }
 }
@@ -453,9 +507,6 @@ fn compute_optimal_score(
     };
 
     tracing::trace!(?score, "Optimal score");
-    if let Ok(score) = score.as_ref() {
-        ensure!(score <= &objective, "Optimal score higher than objective");
-    }
     score
 }
 

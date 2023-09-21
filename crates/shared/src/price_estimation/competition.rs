@@ -84,10 +84,18 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                 // Process estimators within each stage in parallel
                 let mut futures: Vec<_> = stage
                     .iter()
-                    .map(|(_, estimator)| get_single_result(estimator, query.clone()))
+                    .enumerate()
+                    .map(|(index, (_, estimator))| {
+                        // Return estimator `index` together with the result because `select_all()`
+                        // is allowed to shuffle around futures which makes the index return by
+                        // `select_all()` meaningless for our purposes.
+                        get_single_result(estimator, query.clone())
+                            .map(move |result| (index, result))
+                            .boxed()
+                    })
                     .collect();
                 while !futures.is_empty() {
-                    let (result, estimator_index, rest) =
+                    let ((estimator_index, result), _, rest) =
                         futures::future::select_all(futures).await;
                     futures = rest;
                     results.push((stage_index, estimator_index, result.clone()));
