@@ -8,6 +8,7 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
+    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -65,16 +66,17 @@ impl Default for PriceEstimators {
 
 impl Display for PriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(PriceEstimator { kind, address }) = it.next() {
-            write!(f, "{kind:?}|{address:?}")?;
-            for PriceEstimator { kind, address } in it {
-                write!(f, ",{kind:?}|{address:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
+        if self.0.is_empty() {
+            return f.write_str("None");
         }
+
+        let formatter = self
+            .as_slice()
+            .iter()
+            .format_with(",", |PriceEstimator { kind, address }, f| {
+                f(&format_args!("{kind:?}|{address:?}"))
+            });
+        write!(f, "{}", formatter)
     }
 }
 
@@ -174,20 +176,16 @@ impl Display for NativePriceEstimators {
             return f.write_str("None");
         }
 
-        let mut stage_it = self.as_slice().iter().peekable();
-        while let Some(stage) = stage_it.next() {
-            let mut estimator_it = stage.iter().peekable();
-            while let Some(kind) = estimator_it.next() {
-                write!(f, "{kind:?}")?;
-                if estimator_it.peek().is_some() {
-                    write!(f, ",")?;
-                }
-            }
-            if stage_it.peek().is_some() {
-                write!(f, ";")?;
-            }
-        }
-        Ok(())
+        let formatter = self
+            .as_slice()
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+            })
+            .format(";");
+        write!(f, "{}", formatter)
     }
 }
 
