@@ -19,14 +19,14 @@ use {
 /// Verifies that buy and sell tokens are supported and handles
 /// ETH as buy token appropriately.
 pub struct SanitizedPriceEstimator {
-    inner: Box<dyn PriceEstimating>,
+    inner: Arc<dyn PriceEstimating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: H160,
 }
 
 impl SanitizedPriceEstimator {
     pub fn new(
-        inner: Box<dyn PriceEstimating>,
+        inner: Arc<dyn PriceEstimating>,
         native_token: H160,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
@@ -344,7 +344,7 @@ mod tests {
             ..queries[3].0.clone()
         };
 
-        let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
+        let mut wrapped_estimator = MockPriceEstimating::new();
         wrapped_estimator
             .expect_estimate()
             .times(1)
@@ -403,7 +403,7 @@ mod tests {
             });
 
         let sanitized_estimator = SanitizedPriceEstimator {
-            inner: wrapped_estimator,
+            inner: Arc::new(wrapped_estimator),
             bad_token_detector: Arc::new(bad_token_detector),
             native_token,
         };

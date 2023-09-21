@@ -94,7 +94,7 @@ pub struct Arguments {
     pub native_price_estimators: PriceEstimators,
 
     /// How many successful price estimates for each order will cause a fast
-    /// price estimation to return its result early.
+    /// or native price estimation to return its result early.
     /// The bigger the value the more the fast price estimation performs like
     /// the optimal price estimation.
     /// It's possible to pass values greater than the total number of enabled

@@ -399,11 +399,14 @@ pub async fn run(args: Arguments) {
         )
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(&PriceEstimatorSource::for_args(
-            args.native_price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
+        .native_price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.native_price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            args.fast_price_estimation_results_required,
+        )
         .unwrap();
 
     let fee_subsidy = Arc::new(FeeSubsidyConfiguration {
