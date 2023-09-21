@@ -82,6 +82,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         async move {
             let mut results = vec![];
+            let mut iter = self.inner.iter().enumerate().peekable();
             // Process stages sequentially
             'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
                 // Process estimators within each stage in parallel
@@ -93,15 +94,26 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                             .map(move |result| (index, result))
                     })
                     .collect();
+
+                // Make sure we also use the next stage(s) if this one does not have enough
+                // estimators to return early anyways
+                while futures.len() < self.successful_results_for_early_return.get()
+                    && iter.peek().is_some()
+                {
+                    let (next_stage_index, next_stage) = iter.next().unwrap();
+                    requests.extend(next_stage.into_iter().enumerate().map(
+                        |(index, (name, estimator))| {
+                            (EstimatorIndex(next_stage_index, index), name, estimator)
+                        },
+                    ))
+                }
+
                 while let Some((estimator_index, result)) = futures.next().await {
                     results.push((stage_index, estimator_index, result.clone()));
                     let estimator = &self.inner[stage_index][estimator_index].0;
                     tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-                    let successes = results
-                        .iter()
-                        .filter(|(_, _, result)| result.is_ok())
-                        .count();
+                    let successes = results.iter().filter(|(_, result)| result.is_ok()).count();
                     if successes >= self.successful_results_for_early_return.get() {
                         break 'outer;
                     }
@@ -110,13 +122,13 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
 
             let best_index = results
                 .iter()
-                .map(|(_, _, result)| result)
+                .map(|(_, result)| result)
                 .enumerate()
                 .max_by(|a, b| compare_results(a.1, b.1))
                 .map(|(index, _)| index)
                 .unwrap();
-            let (stage_index, estimator_index, result) = &results[best_index];
-            let (estimator, _) = &self.inner[*stage_index][*estimator_index];
+            let (estimator_index, result) = &results[best_index];
+            let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
             let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
@@ -564,8 +576,8 @@ mod tests {
         first.expect_estimate().times(1).return_once(move |_| {
             async {
                 sleep(Duration::from_millis(20)).await;
-                sender.send(()).unwrap();
-                Ok(estimate(1))
+                let _ = sender.send(());
+                Err(PriceEstimationError::NoLiquidity)
             }
             .boxed()
         });
@@ -574,19 +586,20 @@ mod tests {
         second.expect_estimate().times(1).return_once(move |_| {
             async move {
                 // First stage hasn't finished yet
-                assert!(receiver.try_recv().is_err());
-                Err(PriceEstimationError::NoLiquidity)
+                assert!(receiver.try_recv().unwrap().is_none());
+                Ok(estimate(1))
             }
             .boxed()
         });
 
-        let racing = RacingCompetitionPriceEstimator {
-            inner: vec![
-                vec![("first".to_owned(), Arc::new(first))],
-                vec![("second".to_owned(), Arc::new(second))],
-            ],
-            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-        };
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator {
+                inner: vec![
+                    vec![("first".to_owned(), Arc::new(first))],
+                    vec![("second".to_owned(), Arc::new(second))],
+                ],
+                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            };
 
         racing.estimate(query).await.unwrap();
     }
