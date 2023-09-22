@@ -403,7 +403,7 @@ pub async fn run(args: Arguments) {
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
             &PriceEstimatorSource::for_args(
-                &args.order_quoting.price_estimators.as_slice(),
+                args.order_quoting.price_estimators.as_slice(),
                 &args.order_quoting.price_estimation_drivers,
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
