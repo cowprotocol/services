@@ -9,24 +9,48 @@ use {
     crate::{
         boundary,
         domain::{auction, liquidity, order, solution},
+        infra::config,
     },
     std::collections::HashMap,
 };
 
-pub struct Naive;
+pub struct Naive {
+    /// Parameters used to calculate the revert risk of a solution.
+    risk_parameters: config::RiskParameters,
+}
 
 impl Naive {
+    /// Creates a new naive solver for the specified configuration.
+    pub fn new(config: config::naive::Config) -> Self {
+        Self {
+            risk_parameters: config.risk_parameters,
+        }
+    }
+
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
+        let risk_parameters = self.risk_parameters.clone();
         tokio::task::spawn_blocking(move || {
             let groups = group_by_token_pair(&auction);
             groups
                 .values()
-                .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                .filter_map(|group| {
+                    boundary::naive::solve(&group.orders, group.liquidity).map(|solution| {
+                        solution.with_score(solution::Score::RiskAdjusted {
+                            success_probability: solution::SuccessProbability::Params {
+                                gas_amount_factor: risk_parameters.gas_amount_factor,
+                                gas_price_factor: risk_parameters.gas_price_factor,
+                                nmb_orders_factor: risk_parameters.nmb_orders_factor,
+                                intercept: risk_parameters.intercept,
+                            },
+                            gas_amount: None,
+                        })
+                    })
+                })
                 .collect()
         })
         .await

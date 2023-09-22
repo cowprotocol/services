@@ -16,6 +16,12 @@ pub struct Solution {
     pub score: Score,
 }
 
+impl Solution {
+    pub fn with_score(self, score: Score) -> Self {
+        Self { score, ..self }
+    }
+}
+
 /// A solution for a settling a single order.
 pub struct Single {
     /// The order included in this single order solution.
