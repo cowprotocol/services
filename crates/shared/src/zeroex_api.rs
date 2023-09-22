@@ -9,6 +9,7 @@ use {
         debug_bytes,
         http_client::HttpClientFactory,
         interaction::{EncodedInteraction, Interaction},
+        price_estimation::CachingStrategy,
     },
     anyhow::{Context, Result},
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
@@ -336,7 +337,11 @@ pub trait ZeroExApi: Send + Sync {
     /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<SwapResponse, ZeroExResponseError>;
 
     /// Pricing for RFQT liquidity.
     /// - https://0x.org/docs/guides/rfqt-in-the-0x-api
@@ -415,7 +420,7 @@ impl DefaultZeroExApi {
         url.query_pairs_mut()
             .append_pair("page", &page.to_string())
             .append_pair("perPage", &results_per_page.to_string());
-        self.request(url).await
+        self.request(url, None).await
     }
 }
 
@@ -454,13 +459,17 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
-        self.request(query.format_url(&self.base_url, "quote"))
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<SwapResponse, ZeroExResponseError> {
+        self.request(query.format_url(&self.base_url, "quote"), caching)
             .await
     }
 
     async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
-        self.request(query.format_url(&self.base_url, "price"))
+        self.request(query.format_url(&self.base_url, "price"), None)
             .await
     }
 
@@ -511,12 +520,17 @@ impl DefaultZeroExApi {
     async fn request<T: for<'a> serde::Deserialize<'a>>(
         &self,
         url: Url,
+        caching: Option<CachingStrategy>,
     ) -> Result<T, ZeroExResponseError> {
         tracing::trace!("Querying 0x API: {}", url);
 
         let path = url.path().to_owned();
         let result = async move {
-            let request = self.client.get(url.clone());
+            let mut headers = HeaderMap::new();
+            caching.and_then(|strategy| {
+                headers.insert(reqwest::header::CACHE_CONTROL, strategy.cache_control())
+            });
+            let request = self.client.get(url.clone()).headers(headers);
             let response = request.send().await.map_err(ZeroExResponseError::Send)?;
 
             let status = response.status();

@@ -54,6 +54,10 @@ impl ExternalTradeFinder {
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
+        if let Some(strategy) = query.caching {
+            request = request.header(header::CACHE_CONTROL, strategy.cache_control());
+        }
+
         if let Some(id) = observe::request_id::get_task_local_storage() {
             request = request.header("X-REQUEST-ID", id);
         }

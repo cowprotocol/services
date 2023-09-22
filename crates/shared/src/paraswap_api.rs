@@ -1,5 +1,10 @@
 use {
-    crate::{debug_bytes, interaction::Interaction, trade_finding::EncodedInteraction},
+    crate::{
+        debug_bytes,
+        interaction::Interaction,
+        price_estimation::CachingStrategy,
+        trade_finding::EncodedInteraction,
+    },
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
@@ -22,10 +27,15 @@ pub const DEFAULT_URL: &str = "https://apiv5.paraswap.io";
 #[async_trait::async_trait]
 #[mockall::automock]
 pub trait ParaswapApi: Send + Sync + 'static {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
+    async fn price(
+        &self,
+        query: PriceQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        caching: Option<CachingStrategy>,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
@@ -37,10 +47,19 @@ pub struct DefaultParaswapApi {
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
+    async fn price(
+        &self,
+        query: PriceQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.base_url, &self.partner);
         tracing::trace!("Querying Paraswap price API: {}", url);
-        let request = self.client.get(url).send();
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        caching
+            .map(|caching| headers.insert(reqwest::header::CACHE_CONTROL, caching.cache_control()));
+
+        let request = self.client.get(url).headers(headers).send();
 
         let response = request.await?;
         let status = response.status();
@@ -52,12 +71,20 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        caching: Option<CachingStrategy>,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
         let query = TransactionBuilderQueryWithPartner {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client, &self.base_url).send();
+        let mut headers = reqwest::header::HeaderMap::new();
+        caching
+            .map(|caching| headers.insert(reqwest::header::CACHE_CONTROL, caching.cache_control()));
+
+        let request = query
+            .into_request(&self.client, &self.base_url)
+            .headers(headers)
+            .send();
         let response = request.await?;
         let status = response.status();
         let response_text = response.text().await?;

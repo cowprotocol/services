@@ -118,7 +118,7 @@ impl SingleOrderSolving for ParaswapSolver {
         }
         let transaction_query =
             self.transaction_query_from(external_prices, &order, &price_response, &token_info)?;
-        let transaction = self.client.transaction(transaction_query).await?;
+        let transaction = self.client.transaction(transaction_query, None).await?;
         let mut settlement = SingleOrderSettlement {
             sell_token_price: price_response.dest_amount,
             buy_token_price: price_response.src_amount,
@@ -170,7 +170,7 @@ impl ParaswapSolver {
             side,
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
-        let price_response = self.client.price(price_query).await?;
+        let price_response = self.client.price(price_query, None).await?;
         Ok(price_response)
     }
 

@@ -66,17 +66,20 @@ impl Inner {
 
         let swap = self
             .api
-            .get_swap(SwapQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
-                sell_amount: sell_amount.map(|amount| amount.get()),
-                buy_amount: buy_amount.map(|amount| amount.get()),
-                slippage_percentage: None,
-                taker_address: None,
-                excluded_sources: self.excluded_sources.clone(),
-                intent_on_filling: false,
-                enable_slippage_protection: false,
-            })
+            .get_swap(
+                SwapQuery {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    sell_amount: sell_amount.map(|amount| amount.get()),
+                    buy_amount: buy_amount.map(|amount| amount.get()),
+                    slippage_percentage: None,
+                    taker_address: None,
+                    excluded_sources: self.excluded_sources.clone(),
+                    intent_on_filling: false,
+                    enable_slippage_protection: false,
+                },
+                query.caching.clone(),
+            )
             .await?;
 
         Ok(Trade::swap(

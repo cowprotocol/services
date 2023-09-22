@@ -143,13 +143,16 @@ impl Inner {
     async fn perform_quote(&self, query: InternalQuery) -> Result<Quote, TradeError> {
         let quote = self
             .api
-            .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
-                query.data.sell_token,
-                query.data.buy_token,
-                query.allowed_protocols,
-                query.data.in_amount.get(),
-                self.referrer_address,
-            ))
+            .get_sell_order_quote(
+                SellOrderQuoteQuery::with_default_options(
+                    query.data.sell_token,
+                    query.data.buy_token,
+                    query.allowed_protocols,
+                    query.data.in_amount.get(),
+                    self.referrer_address,
+                ),
+                query.data.caching,
+            )
             .await?;
 
         Ok(Quote {
@@ -172,15 +175,18 @@ impl Inner {
     ) -> Result<Swap, TradeError> {
         Ok(self
             .api
-            .get_swap(SwapQuery::with_default_options(
-                query.sell_token,
-                query.buy_token,
-                query.in_amount.get(),
-                self.settlement_contract,
-                allowed_protocols,
-                Slippage::ONE_PERCENT,
-                self.referrer_address,
-            ))
+            .get_swap(
+                SwapQuery::with_default_options(
+                    query.sell_token,
+                    query.buy_token,
+                    query.in_amount.get(),
+                    self.settlement_contract,
+                    allowed_protocols,
+                    Slippage::ONE_PERCENT,
+                    self.referrer_address,
+                ),
+                query.caching,
+            )
             .await?)
     }
 }

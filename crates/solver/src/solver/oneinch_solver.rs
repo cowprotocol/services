@@ -120,7 +120,7 @@ impl OneInchSolver {
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = self.client.get_swap(query).await?;
+        let swap = self.client.get_swap(query, None).await?;
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
             tracing::debug!("execution does not respect order");
             return Ok(None);

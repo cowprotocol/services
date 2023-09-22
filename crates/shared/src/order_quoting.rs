@@ -208,6 +208,8 @@ impl QuoteParameters {
             buy_token: self.buy_token,
             in_amount,
             kind,
+            //TODO(caching)
+            caching: None,
         }
     }
 

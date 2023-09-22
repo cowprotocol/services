@@ -100,7 +100,7 @@ impl Inner {
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
 
-        let price = self.paraswap.price(price_query).await?;
+        let price = self.paraswap.price(price_query, query.caching).await?;
         let quote = Quote {
             out_amount: match query.kind {
                 OrderKind::Buy => price.src_amount,
@@ -141,7 +141,7 @@ impl Inner {
                 .unwrap_or(Self::DEFAULT_USER),
         };
 
-        let tx = self.paraswap.transaction(tx_query).await?;
+        let tx = self.paraswap.transaction(tx_query, query.caching).await?;
 
         Ok(Trade::swap(
             query.sell_token,

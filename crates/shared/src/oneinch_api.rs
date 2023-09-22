@@ -6,7 +6,10 @@
 //! identical to v4.0 except it uses EIP 1559 gas prices.
 
 use {
-    crate::interaction::{EncodedInteraction, Interaction},
+    crate::{
+        interaction::{EncodedInteraction, Interaction},
+        price_estimation::CachingStrategy,
+    },
     anyhow::{ensure, Result},
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
@@ -467,12 +470,17 @@ pub struct Protocols {
 #[mockall::automock]
 pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<Swap, OneInchError>;
 
     /// Quotes a sell order with the 1Inch API.
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
+        caching: Option<CachingStrategy>,
     ) -> Result<SellOrderQuote, OneInchError>;
 
     /// Retrieves the address of the spender to use for token approvals.
@@ -517,36 +525,67 @@ impl OneInchClientImpl {
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError> {
-        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        caching: Option<CachingStrategy>,
+    ) -> Result<Swap, OneInchError> {
+        logged_query(
+            &self.client,
+            query.into_url(&self.base_url, self.chain_id),
+            caching,
+        )
+        .await
     }
 
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
+        caching: Option<CachingStrategy>,
     ) -> Result<SellOrderQuote, OneInchError> {
-        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
+        logged_query(
+            &self.client,
+            query.into_url(&self.base_url, self.chain_id),
+            caching,
+        )
+        .await
     }
 
     async fn get_spender(&self) -> Result<Spender, OneInchError> {
         let endpoint = format!("v5.0/{}/approve/spender", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
-        logged_query(&self.client, url).await
+        logged_query(
+            &self.client,
+            url,
+            Some(CachingStrategy::Time(Duration::from_secs(60))),
+        )
+        .await
     }
 
     async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
         let endpoint = format!("v5.0/{}/liquidity-sources", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
-        logged_query(&self.client, url).await
+        logged_query(
+            &self.client,
+            url,
+            Some(CachingStrategy::Time(Duration::from_secs(60))),
+        )
+        .await
     }
 }
 
-async fn logged_query<D>(client: &Client, url: Url) -> Result<D, OneInchError>
+async fn logged_query<D>(
+    client: &Client,
+    url: Url,
+    caching: Option<CachingStrategy>,
+) -> Result<D, OneInchError>
 where
     D: DeserializeOwned,
 {
     tracing::trace!(%url, "Query 1inch API");
-    let response = client.get(url).send().await?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    caching.map(|caching| headers.insert(reqwest::header::CACHE_CONTROL, caching.cache_control()));
+    let response = client.get(url).headers(headers).send().await?;
     let status_code = response.status();
     let response = response.text().await?;
     tracing::trace!(%response, ?status_code, "Received 1Inch API response");

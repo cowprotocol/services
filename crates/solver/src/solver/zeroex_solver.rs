@@ -126,7 +126,7 @@ impl SingleOrderSolving for ZeroExSolver {
             intent_on_filling: self.enable_rfqt,
             enable_slippage_protection: self.enable_slippage_protection,
         };
-        let swap = match self.api.get_swap(query).await {
+        let swap = match self.api.get_swap(query, None).await {
             Ok(swap) => swap,
             Err(ZeroExResponseError::InsufficientLiquidity) => {
                 tracing::debug!("Couldn't get a quote due to insufficient liquidity");
