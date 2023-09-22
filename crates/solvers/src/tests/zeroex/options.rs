@@ -184,6 +184,7 @@ async fn test() {
         "zeroex",
         tests::Config::String(format!(
             "
+risk-parameters = [1,2,3,4]
 relative-slippage = '0.1'
 [dex]
 endpoint = 'http://{}/swap/v1/'

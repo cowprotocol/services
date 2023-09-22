@@ -289,7 +289,7 @@ impl SolverTimeout {
     }
 }
 
-/// This score carries information about how the score should be calculated.
+/// Carries information how the score should be calculated.
 #[derive(Debug, Clone)]
 pub enum Score {
     Solver(eth::U256),
@@ -300,11 +300,12 @@ pub enum Score {
     },
 }
 
+/// Represents the probability that a solution will be successfully settled.
 #[derive(Debug, Clone)]
 pub enum SuccessProbability {
-    /// Probability exists and is equal to the given value.
+    /// Probability known and is equal to the given value.
     Value(f64),
-    /// Probability is unknown and should be computed by the protocol using the
+    /// Probability unknown and should be computed by the protocol using the
     /// given parameters.
     Params {
         gas_amount_factor: f64,
