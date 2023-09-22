@@ -1,7 +1,11 @@
 //! Framework for setting up tests.
 
 use {
-    self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
+    self::{
+        blockchain::{Fulfillment, Score},
+        driver::Driver,
+        solver::Solver,
+    },
     crate::{
         domain::{competition::order, eth},
         infra::time,
@@ -300,7 +304,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 impl Solution {
@@ -325,9 +329,9 @@ impl Solution {
         }
     }
 
-    /// Set the solution risk.
-    pub fn risk(self, risk: eth::U256) -> Self {
-        Self { risk, ..self }
+    /// Set the solution score.
+    pub fn score(self, score: Score) -> Self {
+        Self { score, ..self }
     }
 }
 
@@ -338,7 +342,7 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            risk: Default::default(),
+            score: Default::default(),
         }
     }
 }
@@ -371,7 +375,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -403,7 +407,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -434,7 +438,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 

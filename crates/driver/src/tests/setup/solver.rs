@@ -156,7 +156,7 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
-                "risk": solution.risk.to_string(),
+                "score": solution.score,
             }));
         }
 

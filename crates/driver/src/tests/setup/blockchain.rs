@@ -76,13 +76,43 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
 pub struct Fulfillment {
     pub quoted_order: QuotedOrder,
     pub interactions: Vec<Interaction>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum Score {
+    // Solver(eth::U256),
+    // Discount(eth::U256),
+    RiskAdjusted {
+        success_probability: SuccessProbability,
+        gas_amount: Option<eth::U256>,
+    },
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted {
+            success_probability: SuccessProbability::Value(1.0),
+            gas_amount: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum SuccessProbability {
+    Value(f64),
+    // Params {
+    //     gas_amount_factor: f64,
+    //     gas_price_factor: f64,
+    //     nmb_orders_factor: f64,
+    //     intercept: f64,
+    // },
 }
 
 /// An order for which buy and sell amounts have been calculated.
@@ -653,7 +683,7 @@ impl Blockchain {
         }
         Solution {
             fulfillments,
-            risk: solution.risk,
+            score: solution.score.clone(),
         }
     }
 
