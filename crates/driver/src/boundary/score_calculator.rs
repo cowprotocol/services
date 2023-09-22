@@ -23,7 +23,7 @@ impl ScoreCalculator {
                     .map(|mempool| match mempool.kind {
                         mempool::Kind::Public(high_risk) => (
                             TransactionStrategyArg::PublicMempool,
-                            matches!(high_risk, mempool::HighRisk::Enabled),
+                            matches!(high_risk, mempool::HighRisk::Disabled),
                         ),
                         mempool::Kind::Flashbots { .. } => {
                             (TransactionStrategyArg::Flashbots, false)
