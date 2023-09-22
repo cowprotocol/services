@@ -285,7 +285,10 @@ impl SettlementRating for SettlementRater {
                         intercept,
                     }
                     .calculate(
-                        inputs.gas_amount.to_f64().unwrap(),
+                        inputs
+                            .gas_amount
+                            .to_f64()
+                            .context("gas amount conversion")?,
                         gas_price.effective_gas_price(),
                         settlement.trades().count(),
                     )?,

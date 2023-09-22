@@ -283,8 +283,11 @@ impl Settlement {
                         intercept,
                     }
                     .calculate(
-                        inputs.gas_amount.to_f64().unwrap(),
-                        gas_price.to_f64().unwrap(),
+                        inputs
+                            .gas_amount
+                            .to_f64()
+                            .context("gas amount conversion")?,
+                        gas_price.to_f64().context("gas price conversion")?,
                         self.inner.clone().trades().count(),
                     )?,
                 };
