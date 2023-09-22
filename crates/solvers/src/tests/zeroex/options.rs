@@ -294,6 +294,19 @@ enable-slippage-protection = true
                         ],
                     },
                 ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );

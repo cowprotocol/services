@@ -12,6 +12,7 @@ async fn weighted() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -118,7 +119,12 @@ async fn weighted() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -138,6 +144,7 @@ async fn weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -237,7 +244,12 @@ async fn weighted_v3plus() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -257,6 +269,7 @@ async fn stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -379,7 +392,12 @@ async fn stable() {
                     "score": {
                         "riskadjusted": {
                             "success_probability": {
-                                "value": 1.0,
+                                "params": {
+                                    "gas_amount_factor": 1.0,
+                                    "gas_price_factor": 2.0,
+                                    "nmb_orders_factor": 3.0,
+                                    "intercept": 4.0,
+                                },
                             },
                             "gas_amount": null,
                         }
@@ -414,7 +432,12 @@ async fn stable() {
                     "score": {
                         "riskadjusted": {
                             "success_probability": {
-                                "value": 1.0,
+                                "params": {
+                                    "gas_amount_factor": 1.0,
+                                    "gas_price_factor": 2.0,
+                                    "nmb_orders_factor": 3.0,
+                                    "intercept": 4.0,
+                                },
                             },
                             "gas_amount": null,
                         }
@@ -435,6 +458,7 @@ async fn composable_stable_v4() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -551,7 +575,12 @@ async fn composable_stable_v4() {
                     "score": {
                         "riskadjusted": {
                             "success_probability": {
-                                "value": 1.0,
+                                "params": {
+                                    "gas_amount_factor": 1.0,
+                                    "gas_price_factor": 2.0,
+                                    "nmb_orders_factor": 3.0,
+                                    "intercept": 4.0,
+                                },
                             },
                             "gas_amount": null,
                         }

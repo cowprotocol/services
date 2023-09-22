@@ -103,7 +103,12 @@ async fn uniswap() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -123,6 +128,7 @@ async fn balancer_weighted() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 1
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -272,7 +278,12 @@ async fn balancer_weighted() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -292,6 +303,7 @@ async fn balancer_weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -391,7 +403,12 @@ async fn balancer_weighted_v3plus() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -411,6 +428,7 @@ async fn distant_convergence() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -510,7 +528,12 @@ async fn distant_convergence() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -530,6 +553,7 @@ async fn same_path() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -664,7 +688,12 @@ async fn same_path() {
                 "score": {
                     "riskadjusted": {
                         "success_probability": {
-                            "value": 1.0,
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
                         },
                         "gas_amount": null,
                     }
@@ -684,6 +713,7 @@ async fn balancer_stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
+                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -807,7 +837,12 @@ async fn balancer_stable() {
                     "score": {
                         "riskadjusted": {
                             "success_probability": {
-                                "value": 1.0,
+                                "params": {
+                                    "gas_amount_factor": 1.0,
+                                    "gas_price_factor": 2.0,
+                                    "nmb_orders_factor": 3.0,
+                                    "intercept": 4.0,
+                                },
                             },
                             "gas_amount": null,
                         }

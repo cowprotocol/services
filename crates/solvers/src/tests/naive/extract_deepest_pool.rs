@@ -13,7 +13,11 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new(
+        "naive",
+        tests::Config::File("config/example.naive.toml".into()),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({
@@ -114,7 +118,20 @@ async fn test() {
                         "inputAmount": "100",
                         "outputAmount": "99"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );

@@ -5,7 +5,7 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn sell_orders_on_both_sides() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::File("config/example.naive.toml".into())).await;
 
     let solution = engine
         .solve(json!({
@@ -97,6 +97,19 @@ async fn sell_orders_on_both_sides() {
                         "outputAmount": "54287532963535509685"
                     },
                 ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );
@@ -104,7 +117,7 @@ async fn sell_orders_on_both_sides() {
 
 #[tokio::test]
 async fn sell_orders_on_one_side() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::File("config/example.naive.toml".into())).await;
 
     let solution = engine
         .solve(json!({
@@ -196,6 +209,19 @@ async fn sell_orders_on_one_side() {
                         "outputAmount": "139560520142598496102"
                     },
                 ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );
@@ -203,7 +229,7 @@ async fn sell_orders_on_one_side() {
 
 #[tokio::test]
 async fn buy_orders_on_both_sides() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::File("config/example.naive.toml".into())).await;
 
     let solution = engine
         .solve(json!({
@@ -295,6 +321,19 @@ async fn buy_orders_on_both_sides() {
                         "outputAmount": "61942706346833798926"
                     },
                 ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );
@@ -302,7 +341,7 @@ async fn buy_orders_on_both_sides() {
 
 #[tokio::test]
 async fn buy_and_sell_orders() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new("naive", tests::Config::File("config/example.naive.toml".into())).await;
 
     let solution = engine
         .solve(json!({
@@ -394,6 +433,19 @@ async fn buy_and_sell_orders() {
                         "outputAmount": "65237102608923246619"
                     },
                 ],
+                "score": {
+                    "riskadjusted": {
+                        "success_probability": {
+                            "params": {
+                                "gas_amount_factor": 1.0,
+                                "gas_price_factor": 2.0,
+                                "nmb_orders_factor": 3.0,
+                                "intercept": 4.0,
+                            },
+                        },
+                        "gas_amount": null,
+                    }
+                }
             }]
         }),
     );
