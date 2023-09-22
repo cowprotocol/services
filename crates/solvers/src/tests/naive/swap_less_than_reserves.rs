@@ -10,7 +10,11 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn test() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::File("config/example.naive.toml".into())).await;
+    let engine = tests::SolverEngine::new(
+        "naive",
+        tests::Config::File("config/example.naive.toml".into()),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({
