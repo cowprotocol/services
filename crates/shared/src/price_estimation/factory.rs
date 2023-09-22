@@ -41,7 +41,7 @@ use {
         token_info::TokenInfoFetching,
         zeroex_api::ZeroExApi,
     },
-    anyhow::{Context as _, Result},
+    anyhow::{anyhow, Context as _, Result},
     ethcontract::H160,
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
@@ -251,29 +251,40 @@ impl<'a> PriceEstimatorFactory<'a> {
     }
 
     fn create_native_estimator(
-        &self,
+        &mut self,
         source: NativePriceEstimatorSource,
+        external: &[PriceEstimatorSource],
     ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
         match source {
-            NativePriceEstimatorSource::GenericPriceEstimator(kind) => {
-                let estimator = PriceEstimator {
-                    kind,
-                    address: Default::default(),
-                };
-                let instance = self.create_estimator(estimator)?.native;
-                Ok((
-                    estimator.name(),
-                    Arc::new(NativePriceEstimator::new(
-                        Arc::new(self.sanitized(instance)),
-                        self.network.native_token,
-                        self.native_token_price_estimation_amount()?,
-                    )),
-                ))
+            NativePriceEstimatorSource::GenericPriceEstimator(estimator) => {
+                let native_token_price_estimation_amount =
+                    self.native_token_price_estimation_amount()?;
+                self.get_estimators(external, |entry| &entry.native)?
+                    .into_iter()
+                    .map(
+                        |(name, estimator)| -> (String, Arc<dyn NativePriceEstimating>) {
+                            (
+                                name,
+                                Arc::new(NativePriceEstimator::new(
+                                    Arc::new(self.sanitized(estimator)),
+                                    self.network.native_token,
+                                    native_token_price_estimation_amount,
+                                )),
+                            )
+                        },
+                    )
+                    .find(|external| external.0 == estimator.name())
+                    .ok_or(anyhow!(
+                        "Couldn't find generic price estimator with name {} to instantiate native \
+                         estimator",
+                        estimator.name()
+                    ))
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
                 "OneInchSpotPriceApi".into(),
                 Arc::new(native::OneInch::new(
                     self.components.http_factory.create(),
+                    self.args.one_inch_spot_price_api_url.clone(),
                     self.args.one_inch_spot_price_api_key.clone(),
                     self.network.chain_id,
                     self.network.block_stream.clone(),
@@ -352,27 +363,12 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
             "price cache prefetch time needs to be less than price cache max age"
         );
-        let native_token_price_estimation_amount = self.native_token_price_estimation_amount()?;
-        let mut estimators: Vec<_> = native
+
+        let estimators = native
             .iter()
-            .map(|source| self.create_native_estimator(*source).unwrap())
-            .collect();
-        estimators.extend(
-            self.get_estimators(external, |entry| &entry.native)?
-                .into_iter()
-                .map(
-                    |(name, estimator)| -> (String, Arc<dyn NativePriceEstimating>) {
-                        (
-                            name,
-                            Arc::new(NativePriceEstimator::new(
-                                Arc::new(self.sanitized(estimator)),
-                                self.network.native_token,
-                                native_token_price_estimation_amount,
-                            )),
-                        )
-                    },
-                ),
-        );
+            .map(|&source| self.create_native_estimator(source, external))
+            .collect::<Result<Vec<_>>>()?;
+
         let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),

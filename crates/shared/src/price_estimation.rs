@@ -143,7 +143,7 @@ pub struct NativePriceEstimators(Vec<NativePriceEstimator>);
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
-    GenericPriceEstimator(PriceEstimatorKind),
+    GenericPriceEstimator(PriceEstimator),
     OneInchSpotPriceApi,
 }
 
@@ -160,7 +160,10 @@ impl NativePriceEstimators {
 impl Default for NativePriceEstimators {
     fn default() -> Self {
         Self(vec![NativePriceEstimator::GenericPriceEstimator(
-            PriceEstimatorKind::Baseline,
+            PriceEstimator {
+                kind: PriceEstimatorKind::Baseline,
+                address: H160::zero(),
+            },
         )])
     }
 }
@@ -201,13 +204,26 @@ impl FromStr for NativePriceEstimator {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let kind = match s {
-            "Baseline" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::Baseline),
-            "Paraswap" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::Paraswap),
-            "ZeroEx" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::ZeroEx),
-            "OneInch" => NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::OneInch),
-            "BalancerSor" => {
-                NativePriceEstimator::GenericPriceEstimator(PriceEstimatorKind::BalancerSor)
-            }
+            "Baseline" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
+                kind: PriceEstimatorKind::Baseline,
+                address: H160::zero(),
+            }),
+            "Paraswap" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
+                kind: PriceEstimatorKind::Paraswap,
+                address: H160::zero(),
+            }),
+            "ZeroEx" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
+                kind: PriceEstimatorKind::ZeroEx,
+                address: H160::zero(),
+            }),
+            "OneInch" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
+                kind: PriceEstimatorKind::OneInch,
+                address: H160::zero(),
+            }),
+            "BalancerSor" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
+                kind: PriceEstimatorKind::BalancerSor,
+                address: H160::zero(),
+            }),
             "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
             estimator => {
                 anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
@@ -329,6 +345,10 @@ pub struct Arguments {
     /// The API key for the 1Inch spot API.
     #[clap(long, env)]
     pub one_inch_spot_price_api_key: Option<String>,
+
+    /// The base URL for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_url: Option<Url>,
 }
 
 impl Display for Arguments {
