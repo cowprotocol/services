@@ -106,6 +106,7 @@ impl Default for Score {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum SuccessProbability {
     Value(f64),
     // Params {
