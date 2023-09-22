@@ -369,8 +369,13 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let estimators = native
             .iter()
-            .map(|&source| self.create_native_estimator(source, external))
-            .collect::<Result<Vec<_>>>()?;
+            .map(|stage| {
+                stage
+                    .iter()
+                    .map(|&source| self.create_native_estimator(source, external))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<Vec<_>>>>()?;
 
         let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
