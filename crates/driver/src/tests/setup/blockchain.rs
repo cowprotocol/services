@@ -86,6 +86,7 @@ pub struct Fulfillment {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Score {
     // Solver(eth::U256),
     // Discount(eth::U256),

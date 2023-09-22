@@ -329,10 +329,10 @@ impl Solution {
         }
     }
 
-    /// Set the solution score.
-    pub fn score(self, score: Score) -> Self {
-        Self { score, ..self }
-    }
+    // /// Set the solution score.
+    // pub fn score(self, score: Score) -> Self {
+    //     Self { score, ..self }
+    // }
 }
 
 impl Default for Solution {
