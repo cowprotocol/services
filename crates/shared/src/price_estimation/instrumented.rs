@@ -2,7 +2,7 @@ use {
     crate::price_estimation::{PriceEstimating, PriceEstimationError, Query},
     futures::future::FutureExt,
     prometheus::{HistogramVec, IntCounterVec},
-    std::{sync::Arc, time::Instant},
+    std::time::Instant,
 };
 
 /// An instrumented price estimator.
@@ -31,9 +31,9 @@ impl InstrumentedPriceEstimator {
 }
 
 impl PriceEstimating for InstrumentedPriceEstimator {
-    fn estimate(
-        &self,
-        query: Arc<Query>,
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async {
             let start = Instant::now();
@@ -81,20 +81,20 @@ mod tests {
     #[tokio::test]
     async fn records_metrics_for_each_query() {
         let queries = [
-            Arc::new(Query {
+            Query {
                 verification: None,
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
                 in_amount: NonZeroU256::try_from(3).unwrap(),
                 kind: OrderKind::Sell,
-            }),
-            Arc::new(Query {
+            },
+            Query {
                 verification: None,
                 sell_token: H160([4; 20]),
                 buy_token: H160([5; 20]),
                 in_amount: NonZeroU256::try_from(6).unwrap(),
                 kind: OrderKind::Buy,
-            }),
+            },
         ];
 
         let mut estimator = MockPriceEstimating::new();
@@ -115,8 +115,8 @@ mod tests {
 
         let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
 
-        let _ = instrumented.estimate(queries[0].clone()).await;
-        let _ = instrumented.estimate(queries[1].clone()).await;
+        let _ = instrumented.estimate(&queries[0]).await;
+        let _ = instrumented.estimate(&queries[1]).await;
 
         for result in &["success", "failure"] {
             let observed = instrumented

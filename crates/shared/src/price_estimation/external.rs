@@ -27,7 +27,10 @@ impl ExternalPriceEstimator {
 }
 
 impl PriceEstimating for ExternalPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.0.estimate(query)
     }
 }

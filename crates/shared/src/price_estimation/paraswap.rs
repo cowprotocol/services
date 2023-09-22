@@ -44,7 +44,10 @@ impl ParaswapPriceEstimator {
 }
 
 impl PriceEstimating for ParaswapPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.0.estimate(query).boxed()
     }
 }
@@ -94,7 +97,7 @@ mod tests {
             kind: OrderKind::Sell,
         });
 
-        let result = estimator.estimate(query).await;
+        let result = estimator.estimate(&query).await;
         dbg!(&result);
         let estimate = result.unwrap();
         println!(

@@ -45,7 +45,7 @@ use {
 /// limiting.
 pub struct TradeEstimator {
     inner: Arc<Inner>,
-    sharing: RequestSharing<Arc<Query>, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
+    sharing: RequestSharing<Query, BoxFuture<'static, Result<Estimate, PriceEstimationError>>>,
     rate_limiter: Arc<RateLimiter>,
 }
 
@@ -88,20 +88,17 @@ impl TradeEstimator {
         self
     }
 
-    async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(&self, query: Query) -> Result<Estimate, PriceEstimationError> {
         let estimate = rate_limited(
             self.rate_limiter.clone(),
             self.inner.clone().estimate(query.clone()),
         );
-        self.sharing.shared(query, estimate.boxed()).await
+        self.sharing.shared(query.clone(), estimate.boxed()).await
     }
 }
 
 impl Inner {
-    async fn estimate(
-        self: Arc<Self>,
-        query: Arc<Query>,
-    ) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(self: Arc<Self>, query: Query) -> Result<Estimate, PriceEstimationError> {
         match (&self.verifier, &query.verification) {
             (Some(verifier), Some(verification)) => {
                 let trade = self.finder.get_trade(&query).await?;
@@ -361,8 +358,8 @@ impl Clone for TradeEstimator {
 }
 
 impl PriceEstimating for TradeEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        self.estimate(query).boxed()
+    fn estimate(&self, query: &Query) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+        self.estimate(query.clone()).boxed()
     }
 }
 

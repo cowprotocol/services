@@ -53,12 +53,12 @@ impl SanitizedPriceEstimator {
 }
 
 impl PriceEstimating for SanitizedPriceEstimator {
-    fn estimate(
-        &self,
-        query: Arc<Query>,
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
     ) -> futures::future::BoxFuture<'_, super::PriceEstimateResult> {
         async move {
-            self.handle_bad_tokens(&query).await?;
+            self.handle_bad_tokens(query).await?;
 
             // buy_token == sell_token => 1 to 1 conversion
             if query.buy_token == query.sell_token {
@@ -97,7 +97,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                 AddGas(u64),
             }
 
-            let mut adjusted_query = Query::clone(&*query);
+            let mut adjusted_query = query.clone();
             let modification = if query.sell_token != self.native_token
                 && query.buy_token == BUY_ETH_ADDRESS
             {
@@ -112,7 +112,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                 None
             };
 
-            let mut estimate = self.inner.estimate(Arc::new(adjusted_query)).await?;
+            let mut estimate = self.inner.estimate(&adjusted_query).await?;
 
             match modification {
                 Some(Modification::AddGas(gas)) => {
@@ -348,7 +348,7 @@ mod tests {
         wrapped_estimator
             .expect_estimate()
             .times(1)
-            .withf(move |query| **query == first_forwarded_query)
+            .withf(move |query| *query == first_forwarded_query)
             .returning(|_| {
                 async {
                     Ok(Estimate {
@@ -362,7 +362,7 @@ mod tests {
         wrapped_estimator
             .expect_estimate()
             .times(1)
-            .withf(move |query| **query == second_forwarded_query)
+            .withf(move |query| *query == second_forwarded_query)
             .returning(|_| {
                 async {
                     Ok(Estimate {
@@ -376,7 +376,7 @@ mod tests {
         wrapped_estimator
             .expect_estimate()
             .times(1)
-            .withf(move |query| **query == third_forwarded_query)
+            .withf(move |query| *query == third_forwarded_query)
             .returning(|_| {
                 async {
                     Ok(Estimate {
@@ -390,7 +390,7 @@ mod tests {
         wrapped_estimator
             .expect_estimate()
             .times(1)
-            .withf(move |query| **query == forth_forwarded_query)
+            .withf(move |query| *query == forth_forwarded_query)
             .returning(|_| {
                 async {
                     Ok(Estimate {
@@ -409,7 +409,7 @@ mod tests {
         };
 
         for (query, expectation) in queries {
-            let result = sanitized_estimator.estimate(Arc::new(query)).await;
+            let result = sanitized_estimator.estimate(&query).await;
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {

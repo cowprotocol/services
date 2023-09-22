@@ -154,11 +154,14 @@ impl RacingCompetitionPriceEstimator {
 }
 
 impl PriceEstimating for RacingCompetitionPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async move {
             let predictions = match &self.competition {
                 Some(competition) => competition
-                    .predict_best_candidates(&Trade::from(&*query), self.required_confidence),
+                    .predict_best_candidates(&Trade::from(query), self.required_confidence),
                 None => vec![],
             };
 
@@ -171,9 +174,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     // Return estimator `index` together with the result because `select_all()`
                     // is allowed to shuffle around futures which makes the index return by
                     // `select_all()` meaningless for our purposes.
-                    estimator
-                        .estimate(query.clone())
-                        .map(move |result| (index, result))
+                    estimator.estimate(query).map(move |result| (index, result))
                 })
                 .collect();
 
@@ -190,7 +191,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                 }
             }
 
-            let best_index = best_result(&query, results.iter().map(|(_, result)| result)).unwrap();
+            let best_index = best_result(query, results.iter().map(|(_, result)| result)).unwrap();
             let (estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[*estimator_index];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
@@ -209,7 +210,7 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
                     .inc();
 
                 if let Some(competition) = &self.competition {
-                    let trade = Trade::from(&*query);
+                    let trade = Trade::from(query);
                     let estimator = EstimatorIndex(*estimator_index);
                     let was_correct = predictions.iter().any(|p| p.winner == estimator);
                     metrics().record_prediction(&trade, was_correct);
@@ -252,7 +253,10 @@ impl CompetitionPriceEstimator {
 }
 
 impl PriceEstimating for CompetitionPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(
+        &'a self,
+        query: &'a Query,
+    ) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.inner.estimate(query)
     }
 }
@@ -378,41 +382,41 @@ mod tests {
     #[tokio::test]
     async fn works() {
         let queries = [
-            Arc::new(Query {
+            Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            }),
-            Arc::new(Query {
+            },
+            Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
-            }),
-            Arc::new(Query {
+            },
+            Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            }),
-            Arc::new(Query {
+            },
+            Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            }),
-            Arc::new(Query {
+            },
+            Query {
                 verification: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
-            }),
+            },
         ];
         let estimates = [
             Estimate {
@@ -462,18 +466,18 @@ mod tests {
             ("second".to_owned(), Arc::new(second)),
         ]);
 
-        let result = priority.estimate(queries[0].clone()).await;
+        let result = priority.estimate(&queries[0].clone()).await;
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
 
-        let result = priority.estimate(queries[1].clone()).await;
+        let result = priority.estimate(&queries[1].clone()).await;
         // buy 2 is better than buy 1
         assert_eq!(result.as_ref().unwrap(), &estimates[1]);
 
-        let result = priority.estimate(queries[2].clone()).await;
+        let result = priority.estimate(&queries[2].clone()).await;
         // pay 1 is better than pay 2
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
 
-        let result = priority.estimate(queries[3].clone()).await;
+        let result = priority.estimate(&queries[3].clone()).await;
         // arbitrarily returns one of equal priority errors
         assert!(matches!(
             result.as_ref().unwrap_err(),
@@ -481,7 +485,7 @@ mod tests {
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
 
-        let result = priority.estimate(queries[4].clone()).await;
+        let result = priority.estimate(&queries[4].clone()).await;
         // unsupported token has higher priority than no liquidity
         assert!(matches!(
             result.as_ref().unwrap_err(),
@@ -491,13 +495,13 @@ mod tests {
 
     #[tokio::test]
     async fn racing_estimator_returns_early() {
-        let query = Arc::new(Query {
+        let query = Query {
             verification: None,
             sell_token: H160::from_low_u64_le(0),
             buy_token: H160::from_low_u64_le(1),
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
-        });
+        };
 
         fn estimate(amount: u64) -> Estimate {
             Estimate {
@@ -543,7 +547,7 @@ mod tests {
             NonZeroUsize::new(1).unwrap(),
         );
 
-        let result = racing.estimate(query).await;
+        let result = racing.estimate(&query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
     }
 }

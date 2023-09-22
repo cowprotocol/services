@@ -455,7 +455,7 @@ pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 
 #[mockall::automock]
 pub trait PriceEstimating: Send + Sync + 'static {
-    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult>;
+    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult>;
 }
 
 pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
@@ -499,14 +499,14 @@ pub mod mocks {
 
     pub struct FakePriceEstimator(pub Estimate);
     impl PriceEstimating for FakePriceEstimator {
-        fn estimate(&self, _query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+        fn estimate(&self, _query: &Query) -> BoxFuture<'_, PriceEstimateResult> {
             async { Ok(self.0) }.boxed()
         }
     }
 
     pub struct FailingPriceEstimator;
     impl PriceEstimating for FailingPriceEstimator {
-        fn estimate(&self, _query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+        fn estimate(&self, _query: &Query) -> BoxFuture<'_, PriceEstimateResult> {
             async {
                 Err(PriceEstimationError::EstimatorInternal(anyhow!(
                     "always fail"

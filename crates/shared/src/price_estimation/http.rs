@@ -56,7 +56,7 @@ use {
 pub struct HttpPriceEstimator {
     api: Arc<dyn HttpSolverApi>,
     sharing: RequestSharing<
-        Arc<Query>,
+        Query,
         BoxFuture<'static, Result<SettledBatchAuctionModel, PriceEstimationError>>,
     >,
     pools: Arc<dyn UniswapV2PoolFetching>,
@@ -105,7 +105,7 @@ impl HttpPriceEstimator {
         }
     }
 
-    async fn estimate(&self, query: Arc<Query>) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
         let gas_price = U256::from_f64_lossy(
             self.gas_info
                 .estimate()
@@ -407,7 +407,7 @@ impl HttpPriceEstimator {
 }
 
 impl PriceEstimating for HttpPriceEstimator {
-    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
+    fn estimate<'a>(&'a self, query: &'a Query) -> BoxFuture<'_, PriceEstimateResult> {
         self.estimate(query).boxed()
     }
 }
@@ -498,25 +498,25 @@ mod tests {
         );
 
         let sell_order = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
-            }))
+            })
             .await
             .unwrap();
         assert_eq!(sell_order.out_amount, 200.into());
 
         let buy_order = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy,
-            }))
+            })
             .await
             .unwrap();
         assert_eq!(buy_order.out_amount, 50.into());
@@ -551,13 +551,13 @@ mod tests {
             Default::default(),
         );
         let err = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
-            }))
+            })
             .await
             .unwrap_err();
         assert!(matches!(err, PriceEstimationError::EstimatorInternal(_)));
@@ -597,13 +597,13 @@ mod tests {
         );
 
         let err = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: H160::from_low_u64_be(0),
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
-            }))
+            })
             .await
             .unwrap_err();
         assert!(matches!(err, PriceEstimationError::NoLiquidity));
@@ -692,13 +692,13 @@ mod tests {
             Default::default(),
         );
 
-        let query = Arc::new(Query {
+        let query = &Query {
             verification: None,
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
-        });
+        };
         let result = estimator.estimate(query).await.unwrap();
 
         // 94391 base cost + 100k order cost + 200k AMM cost (x2) + 300k interaction
@@ -824,13 +824,13 @@ mod tests {
         };
 
         let result = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount1).unwrap(),
                 kind: OrderKind::Sell,
-            }))
+            })
             .await;
 
         dbg!(&result);
@@ -845,13 +845,13 @@ mod tests {
         );
 
         let result = estimator
-            .estimate(Arc::new(Query {
+            .estimate(&Query {
                 verification: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount2).unwrap(),
                 kind: OrderKind::Buy,
-            }))
+            })
             .await;
 
         dbg!(&result);

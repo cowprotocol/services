@@ -544,7 +544,7 @@ impl OrderQuoter {
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::ProtocolInternal),
-            self.price_estimator.estimate(trade_query.clone()),
+            self.price_estimator.estimate(&trade_query),
             self.native_price_estimator
                 .estimate_native_price(&parameters.sell_token),
             // We don't care about the native price of the buy_token for the quote but we need it
@@ -811,7 +811,7 @@ mod tests {
         price_estimator
             .expect_estimate()
             .withf(|q| {
-                **q == price_estimation::Query {
+                *q == price_estimation::Query {
                     verification: Some(Verification {
                         from: H160([3; 20]),
                         ..Default::default()
@@ -943,7 +943,7 @@ mod tests {
         price_estimator
             .expect_estimate()
             .withf(|q| {
-                **q == price_estimation::Query {
+                *q == price_estimation::Query {
                     verification: Some(Verification {
                         from: H160([3; 20]),
                         ..Default::default()
@@ -1073,7 +1073,7 @@ mod tests {
         price_estimator
             .expect_estimate()
             .withf(|q| {
-                **q == price_estimation::Query {
+                *q == price_estimation::Query {
                     verification: Some(Verification {
                         from: H160([3; 20]),
                         ..Default::default()
