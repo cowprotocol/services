@@ -8,6 +8,7 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
+    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -65,16 +66,17 @@ impl Default for PriceEstimators {
 
 impl Display for PriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(PriceEstimator { kind, address }) = it.next() {
-            write!(f, "{kind:?}|{address:?}")?;
-            for PriceEstimator { kind, address } in it {
-                write!(f, ",{kind:?}|{address:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
+        if self.0.is_empty() {
+            return f.write_str("None");
         }
+
+        let formatter = self
+            .as_slice()
+            .iter()
+            .format_with(",", |PriceEstimator { kind, address }, f| {
+                f(&format_args!("{kind:?}|{address:?}"))
+            });
+        write!(f, "{}", formatter)
     }
 }
 
@@ -139,7 +141,7 @@ impl FromStr for PriceEstimator {
 }
 
 #[derive(Clone, Debug)]
-pub struct NativePriceEstimators(Vec<NativePriceEstimator>);
+pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
@@ -152,34 +154,38 @@ impl NativePriceEstimators {
         Self(Vec::new())
     }
 
-    pub fn as_slice(&self) -> &[NativePriceEstimator] {
+    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
     }
 }
 
 impl Default for NativePriceEstimators {
     fn default() -> Self {
-        Self(vec![NativePriceEstimator::GenericPriceEstimator(
+        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
             PriceEstimator {
                 kind: PriceEstimatorKind::Baseline,
                 address: H160::zero(),
             },
-        )])
+        )]])
     }
 }
 
 impl Display for NativePriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(kind) = it.next() {
-            write!(f, "{kind:?}")?;
-            for kind in it {
-                write!(f, ",{kind:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
+        if self.0.is_empty() {
+            return f.write_str("None");
         }
+
+        let formatter = self
+            .as_slice()
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+            })
+            .format(";");
+        write!(f, "{}", formatter)
     }
 }
 
@@ -192,9 +198,14 @@ impl FromStr for NativePriceEstimators {
         }
 
         Ok(Self(
-            s.split(',')
-                .map(NativePriceEstimator::from_str)
-                .collect::<Result<_>>()?,
+            s.split(';')
+                .map(|sub_list| {
+                    sub_list
+                        .split(',')
+                        .map(NativePriceEstimator::from_str)
+                        .collect::<Result<Vec<NativePriceEstimator>>>()
+                })
+                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
         ))
     }
 }
