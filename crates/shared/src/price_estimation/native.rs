@@ -8,6 +8,7 @@ use {
 };
 
 mod oneinch;
+pub use self::oneinch::OneInch;
 
 pub type NativePriceEstimateResult = Result<f64, PriceEstimationError>;
 
