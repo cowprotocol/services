@@ -286,7 +286,11 @@ impl Settlement {
                         inputs
                             .gas_amount
                             .to_f64()
-                            .context("gas amount conversion")?,
+                            .context("gas amount conversion")?
+                            // Multiply by 0.9 to get more realistic gas amount.
+                            // This is because the gas estimation is not accurate enough and does not take
+                            // the EVM gas refund into account.
+                            * 0.9,
                         gas_price.to_f64().context("gas price conversion")?,
                         self.inner.clone().trades().count(),
                     )?,
