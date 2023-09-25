@@ -91,7 +91,6 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                     .map(|(index, (_, estimator))| {
                         get_single_result(estimator, query.clone())
                             .map(move |result| (index, result))
-                            .boxed()
                     })
                     .collect();
                 while let Some((estimator_index, result)) = futures.next().await {
