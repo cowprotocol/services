@@ -89,9 +89,6 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                     .iter()
                     .enumerate()
                     .map(|(index, (_, estimator))| {
-                        // Return estimator `index` together with the result because `select_all()`
-                        // is allowed to shuffle around futures which makes the index return by
-                        // `select_all()` meaningless for our purposes.
                         get_single_result(estimator, query.clone())
                             .map(move |result| (index, result))
                             .boxed()
