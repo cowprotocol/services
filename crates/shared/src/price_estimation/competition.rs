@@ -7,7 +7,10 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::FutureExt as _,
+    futures::{
+        stream::{FuturesUnordered, StreamExt},
+        FutureExt as _,
+    },
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc},
@@ -82,22 +85,15 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             // Process stages sequentially
             'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
                 // Process estimators within each stage in parallel
-                let mut futures: Vec<_> = stage
+                let mut futures: FuturesUnordered<_> = stage
                     .iter()
                     .enumerate()
                     .map(|(index, (_, estimator))| {
-                        // Return estimator `index` together with the result because `select_all()`
-                        // is allowed to shuffle around futures which makes the index return by
-                        // `select_all()` meaningless for our purposes.
                         get_single_result(estimator, query.clone())
                             .map(move |result| (index, result))
-                            .boxed()
                     })
                     .collect();
-                while !futures.is_empty() {
-                    let ((estimator_index, result), _, rest) =
-                        futures::future::select_all(futures).await;
-                    futures = rest;
+                while let Some((estimator_index, result)) = futures.next().await {
                     results.push((stage_index, estimator_index, result.clone()));
                     let estimator = &self.inner[stage_index][estimator_index].0;
                     tracing::debug!(?query, ?result, estimator, "new price estimate");
