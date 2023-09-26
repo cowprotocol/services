@@ -84,15 +84,17 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
-    run(args).await;
+
+    if args.shadow.is_some() {
+        shadow_mode(args).await;
+    } else {
+        run(args).await;
+    }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments) {
-    if args.shadow.is_some() {
-        shadow_mode(args).await;
-        unreachable!("shadow mode exited");
-    }
+    assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
@@ -611,6 +613,9 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
+    if args.drivers.is_empty() {
+        panic!("shadow mode is enabled but no drivers are configured");
+    }
     let drivers = args.drivers.into_iter().map(Driver::new).collect();
 
     let trusted_tokens = {
@@ -645,5 +650,7 @@ async fn shadow_mode(args: Arguments) -> ! {
     };
 
     let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens);
-    shadow.run_forever().await
+    shadow.run_forever().await;
+
+    unreachable!("shadow run loop exited");
 }

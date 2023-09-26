@@ -170,9 +170,11 @@ pub struct Arguments {
     /// Run the autopilot in a shadow mode by specifying an upstream CoW
     /// protocol deployment to pull auctions from. This will cause the autopilot
     /// to start a run loop where it performs solver competition on driver,
-    /// and report and log the winner **without** actually executing any
-    /// settlements. Note that many of the `autopilot`'s typical features will
-    /// be disabled in this mode, making many options ignored.
+    /// and report and log the winner **without** requesting that any driver
+    /// actually executes any settlements. Note that many of the `autopilot`'s
+    /// typical features will be disabled in this mode, making many options
+    /// ignored. This assumes co-location is enabled and does not require it
+    /// being specified separately.
     #[clap(long, env)]
     pub shadow: Option<Url>,
 }
