@@ -1,20 +1,32 @@
 use {
-    anyhow::anyhow,
+    anyhow::Context,
     primitive_types::U256 as ZeroU256,
     serde::{Deserialize, Deserializer, Serialize, Serializer},
+    std::fmt::{self, Display, Formatter},
 };
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct U256(ZeroU256);
+
+impl U256 {
+    pub fn new(value: ZeroU256) -> Option<Self> {
+        (!value.is_zero()).then_some(Self(value))
+    }
+
+    pub fn one() -> Self {
+        Self(ZeroU256::one())
+    }
+
+    pub fn get(&self) -> ZeroU256 {
+        self.0
+    }
+}
+
 impl TryFrom<ZeroU256> for U256 {
     type Error = anyhow::Error;
 
     fn try_from(value: ZeroU256) -> Result<Self, Self::Error> {
-        if value == ZeroU256::zero() {
-            Err(anyhow!("Value cannot be zero!"))
-        } else {
-            Ok(Self(value))
-        }
+        Self::new(value).context("Value cannot be zero!")
     }
 }
 
@@ -58,12 +70,8 @@ impl From<U256> for ZeroU256 {
     }
 }
 
-impl U256 {
-    pub fn one() -> Self {
-        Self(ZeroU256::one())
-    }
-
-    pub fn get(&self) -> ZeroU256 {
-        self.0
+impl Display for U256 {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        Display::fmt(&self.0, f)
     }
 }
