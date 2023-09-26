@@ -18,7 +18,6 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Result},
-    bigdecimal::ToPrimitive,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -48,9 +47,7 @@ use {
             AmmOrderExecution,
             LimitOrderExecution,
         },
-        settlement::SuccessProbability,
         settlement_simulation::settle_method_builder,
-        solver::risk_computation::RiskCalculator,
     },
     std::sync::Arc,
 };
@@ -162,31 +159,12 @@ impl Settlement {
 
         settlement.score = match solution.score().clone() {
             competition::Score::Solver(score) => solver::settlement::Score::Solver(score),
-            competition::Score::Discount(score_discount) => {
-                solver::settlement::Score::Discount(score_discount)
+            competition::Score::RiskAdjusted(success_probability) => {
+                solver::settlement::Score::RiskAdjusted {
+                    success_probability,
+                    gas_amount: None,
+                }
             }
-            competition::Score::RiskAdjusted {
-                success_probability,
-                gas_amount,
-            } => solver::settlement::Score::RiskAdjusted {
-                success_probability: match success_probability {
-                    competition::solution::SuccessProbability::Value(success_probability) => {
-                        SuccessProbability::Value(success_probability)
-                    }
-                    competition::solution::SuccessProbability::Params {
-                        gas_amount_factor,
-                        gas_price_factor,
-                        nmb_orders_factor,
-                        intercept,
-                    } => SuccessProbability::Params {
-                        gas_amount_factor,
-                        gas_price_factor,
-                        nmb_orders_factor,
-                        intercept,
-                    },
-                },
-                gas_amount: gas_amount.map(Into::into),
-            },
         };
 
         Ok(Self {
@@ -269,32 +247,6 @@ impl Settlement {
                 success_probability,
                 ..
             } => {
-                let success_probability = match success_probability {
-                    SuccessProbability::Value(success_probability) => success_probability,
-                    SuccessProbability::Params {
-                        gas_amount_factor,
-                        gas_price_factor,
-                        nmb_orders_factor,
-                        intercept,
-                    } => RiskCalculator {
-                        gas_amount_factor,
-                        gas_price_factor,
-                        nmb_orders_factor,
-                        intercept,
-                    }
-                    .calculate(
-                        inputs
-                            .gas_amount
-                            .to_f64()
-                            .context("gas amount conversion")?
-                            // Multiply by 0.9 to get more realistic gas amount.
-                            // This is because the gas estimation is not accurate enough and does not take
-                            // the EVM gas refund into account.
-                            * 0.9,
-                        gas_price.to_f64().context("gas price conversion")?,
-                        self.inner.clone().trades().count(),
-                    )?,
-                };
                 let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
                 CalculatedScore::ProtocolWithSolverRisk(calculator.score(
                     &objective_value,

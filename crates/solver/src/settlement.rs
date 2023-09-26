@@ -238,28 +238,11 @@ impl Interaction for NoopInteraction {
 }
 
 /// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Clone)]
-pub enum SuccessProbability {
-    /// Probability known and is equal to the given value.
-    Value(f64),
-    /// Probability unknown and should be computed by the protocol using the
-    /// given parameters.
-    Params {
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
-    },
-}
-
-impl Default for SuccessProbability {
-    fn default() -> Self {
-        Self::Value(1.)
-    }
-}
+type SuccessProbability = f64;
 
 #[derive(Debug, Clone)]
 pub enum Score {
+    // todo remove?
     /// The score value is provided as is from solver.
     /// Success probability is not incorporated into this value.
     Solver(U256),
@@ -270,11 +253,7 @@ pub enum Score {
     Discount(U256),
     /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol given the success
-    /// probability and optionally the amount of gas this settlement will take.
-    ///
-    /// Additionally, even success_probability could be not provided by the
-    /// solver (Naive, Baseline, Gnosis solvers). In that case, the driver
-    /// should estimate the success_probability given the risk parameters
+    /// probability.
     RiskAdjusted {
         success_probability: SuccessProbability,
         gas_amount: Option<U256>,
@@ -284,7 +263,7 @@ pub enum Score {
 impl Default for Score {
     fn default() -> Self {
         Self::RiskAdjusted {
-            success_probability: Default::default(),
+            success_probability: 1.0,
             gas_amount: None,
         }
     }
@@ -300,61 +279,18 @@ impl Score {
             }
             (
                 Score::RiskAdjusted {
-                    success_probability: SuccessProbability::Value(p_left),
+                    success_probability: p_left,
                     gas_amount: gas_left,
                 },
                 Score::RiskAdjusted {
-                    success_probability: SuccessProbability::Value(p_right),
+                    success_probability: p_right,
                     gas_amount: gas_right,
                 },
             ) => Some(Score::RiskAdjusted {
-                success_probability: SuccessProbability::Value(p_left * p_right),
+                success_probability: p_left * p_right,
                 gas_amount: gas_left
                     .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
             }),
-            (
-                Score::RiskAdjusted {
-                    success_probability:
-                        SuccessProbability::Params {
-                            gas_amount_factor: gas_amount_factor_left,
-                            gas_price_factor: gas_price_factor_left,
-                            nmb_orders_factor: nmb_orders_factor_left,
-                            intercept: intercept_left,
-                        },
-                    gas_amount: gas_left,
-                },
-                Score::RiskAdjusted {
-                    success_probability:
-                        SuccessProbability::Params {
-                            gas_amount_factor: gas_amount_factor_right,
-                            gas_price_factor: gas_price_factor_right,
-                            nmb_orders_factor: nmb_orders_factor_right,
-                            intercept: intercept_right,
-                        },
-                    gas_amount: gas_right,
-                },
-            ) => {
-                // the only way we can merge multiple single order solutions is to have the same
-                // risk parameters, which is currently true for our setltments merging logic
-                // because we only merge solutions from the same solver
-                if gas_amount_factor_left != gas_amount_factor_right
-                    || gas_price_factor_left != gas_price_factor_right
-                    || nmb_orders_factor_left != nmb_orders_factor_right
-                    || intercept_left != intercept_right
-                {
-                    return None;
-                }
-                Some(Score::RiskAdjusted {
-                    success_probability: SuccessProbability::Params {
-                        gas_amount_factor: *gas_amount_factor_left,
-                        gas_price_factor: *gas_price_factor_left,
-                        nmb_orders_factor: *nmb_orders_factor_left,
-                        intercept: *intercept_left,
-                    },
-                    gas_amount: gas_left
-                        .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
-                })
-            }
             (Score::Discount(left), Score::Discount(right)) => {
                 Some(Score::Discount(left.checked_add(*right)?))
             }

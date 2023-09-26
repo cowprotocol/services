@@ -198,29 +198,9 @@ impl Solutions {
                     solver.clone(),
                     match solution.score {
                         Score::Solver(score) => competition::solution::Score::Solver(score),
-                        Score::Discount(score) => competition::solution::Score::Discount(score),
-                        Score::RiskAdjusted {
-                            success_probability,
-                            gas_amount,
-                        } => competition::solution::Score::RiskAdjusted {
-                            success_probability: match success_probability {
-                                SuccessProbability::Value(value) => {
-                                    competition::solution::SuccessProbability::Value(value)
-                                }
-                                SuccessProbability::Params {
-                                    gas_amount_factor,
-                                    gas_price_factor,
-                                    nmb_orders_factor,
-                                    intercept,
-                                } => competition::solution::SuccessProbability::Params {
-                                    gas_amount_factor,
-                                    gas_price_factor,
-                                    nmb_orders_factor,
-                                    intercept,
-                                },
-                            },
-                            gas_amount,
-                        },
+                        Score::RiskAdjusted(success_probability) => {
+                            competition::solution::Score::RiskAdjusted(success_probability)
+                        }
                     },
                     weth,
                 )
@@ -397,21 +377,5 @@ enum SigningScheme {
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Score {
     Solver(eth::U256),
-    Discount(eth::U256),
-    RiskAdjusted {
-        success_probability: SuccessProbability,
-        gas_amount: Option<eth::U256>,
-    },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
-pub enum SuccessProbability {
-    Value(f64),
-    Params {
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
-    },
+    RiskAdjusted(f64),
 }

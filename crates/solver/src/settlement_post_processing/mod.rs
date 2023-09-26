@@ -149,9 +149,7 @@ impl PostProcessing for PostProcessingPipeline {
                 {
                     Ok(success_probability) => Settlement {
                         score: settlement::Score::RiskAdjusted {
-                            success_probability: settlement::SuccessProbability::Value(
-                                success_probability,
-                            ),
+                            success_probability,
                             gas_amount,
                         },
                         ..optimized_solution

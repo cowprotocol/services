@@ -289,30 +289,14 @@ impl SolverTimeout {
     }
 }
 
+/// Represents the probability that a solution will be successfully settled.
+type SuccessProbability = f64;
+
 /// Carries information how the score should be calculated.
 #[derive(Debug, Clone)]
 pub enum Score {
     Solver(eth::U256),
-    Discount(eth::U256),
-    RiskAdjusted {
-        success_probability: SuccessProbability,
-        gas_amount: Option<eth::U256>,
-    },
-}
-
-/// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Clone)]
-pub enum SuccessProbability {
-    /// Probability known and is equal to the given value.
-    Value(f64),
-    /// Probability unknown and should be computed by the protocol using the
-    /// given parameters.
-    Params {
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
-    },
+    RiskAdjusted(SuccessProbability),
 }
 
 /// Represents score together with the way it was calculated.

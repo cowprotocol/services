@@ -11,7 +11,7 @@ use {
             Liquidity,
         },
         order_balance_filter::BalancedOrder,
-        settlement::{Settlement, SuccessProbability},
+        settlement::Settlement,
     },
     anyhow::{anyhow, ensure, Context as _, Result},
     model::{
@@ -267,7 +267,7 @@ impl<'a> IntermediateSettlement<'a> {
                 success_probability,
                 gas_amount,
             } => crate::settlement::Score::RiskAdjusted {
-                success_probability: SuccessProbability::Value(success_probability),
+                success_probability,
                 gas_amount,
             },
         };
