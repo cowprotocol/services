@@ -20,14 +20,14 @@ use {
 };
 
 pub mod interaction;
-pub mod score_calculator;
 pub mod settlement;
+pub mod solver_score;
 pub mod trade;
 
 pub use {
     interaction::Interaction,
-    score_calculator::SolverScore,
     settlement::Settlement,
+    solver_score::SolverScore,
     trade::Trade,
 };
 
