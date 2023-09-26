@@ -102,15 +102,18 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                     self.successful_results_for_early_return.get() - successes(&results);
                 while requests.len() < missing_successes && iter.peek().is_some() {
                     let (next_stage_index, next_stage) = iter.next().unwrap();
-                    requests.extend(next_stage.into_iter().enumerate().map(
-                        |(index, (_, estimator))| {
-                            get_single_result(estimator, query.clone())
-                                .map(move |result| {
-                                    (EstimatorIndex(next_stage_index, index), result)
-                                })
-                                .boxed()
-                        },
-                    ))
+                    requests.extend(
+                        next_stage
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (_, estimator))| {
+                                get_single_result(estimator, query.clone())
+                                    .map(move |result| {
+                                        (EstimatorIndex(next_stage_index, index), result)
+                                    })
+                                    .boxed()
+                            }),
+                    )
                 }
 
                 let mut futures: FuturesUnordered<_> = requests.into_iter().collect();
@@ -160,7 +163,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     }
 }
 
-fn successes<R, E>(results: &Vec<(EstimatorIndex, Result<R, E>)>) -> usize {
+fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
     results.iter().filter(|(_, result)| result.is_ok()).count()
 }
 
