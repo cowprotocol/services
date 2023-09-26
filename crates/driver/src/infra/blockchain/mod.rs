@@ -59,7 +59,7 @@ impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API.
     pub async fn new(rpc: Rpc, addresses: contracts::Addresses) -> Result<Self, Error> {
         let Rpc { web3, network } = rpc;
-        let contracts = Contracts::new(&web3, &network.id, addresses);
+        let contracts = Contracts::new(&web3, &network.id, addresses).await?;
         let gas = Arc::new(
             NativeGasEstimator::new(web3.transport().clone(), None)
                 .await
@@ -166,7 +166,7 @@ impl Ethereum {
 
     /// Returns a [`token::Erc20`] for the specified address.
     pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
-        token::Erc20::new(self.contract_at(address.into()))
+        token::Erc20::new(self, address)
     }
 }
 
@@ -191,4 +191,12 @@ pub enum Error {
     Gas(boundary::Error),
     #[error("web3 error returned in response: {0:?}")]
     Response(serde_json::Value),
+}
+
+impl From<contracts::Error> for Error {
+    fn from(err: contracts::Error) -> Self {
+        match err {
+            contracts::Error::Method(err) => Self::Method(err),
+        }
+    }
 }

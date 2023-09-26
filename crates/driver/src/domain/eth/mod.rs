@@ -295,7 +295,7 @@ impl From<i32> for Ether {
 pub struct BlockNo(pub u64);
 
 /// An onchain transaction which interacts with a smart contract.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,

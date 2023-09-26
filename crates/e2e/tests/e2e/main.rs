@@ -5,12 +5,13 @@
 
 // Each of the following modules contains tests.
 mod app_data;
+mod colocation_ethflow;
 mod colocation_hooks;
 mod colocation_partial_fill;
 mod colocation_univ2;
 mod database;
-mod eth_flow;
 mod eth_integration;
+mod ethflow;
 mod hooks;
 mod limit_orders;
 mod onchain_settlement;
