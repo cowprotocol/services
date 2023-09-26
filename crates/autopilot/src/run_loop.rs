@@ -44,7 +44,7 @@ use {
     web3::types::Transaction,
 };
 
-const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
+pub const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
 
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -269,75 +269,8 @@ impl RunLoop {
             return Default::default();
         }
 
-        let request = &solve::Request {
-            id,
-            orders: auction
-                .orders
-                .iter()
-                .map(|order| {
-                    let class = match order.metadata.class {
-                        OrderClass::Market => Class::Market,
-                        OrderClass::Liquidity => Class::Liquidity,
-                        OrderClass::Limit(_) => Class::Limit,
-                    };
-                    let remaining_order = remaining_amounts::Order::from(order);
-                    let map_interactions =
-                        |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
-                            interactions
-                                .iter()
-                                .map(|interaction| solve::Interaction {
-                                    target: interaction.target,
-                                    value: interaction.value,
-                                    call_data: interaction.call_data.clone(),
-                                })
-                                .collect()
-                        };
-                    solve::Order {
-                        uid: order.metadata.uid,
-                        sell_token: order.data.sell_token,
-                        buy_token: order.data.buy_token,
-                        sell_amount: order.data.sell_amount,
-                        buy_amount: order.data.buy_amount,
-                        solver_fee: order.metadata.full_fee_amount,
-                        user_fee: order.data.fee_amount,
-                        valid_to: order.data.valid_to,
-                        kind: order.data.kind,
-                        receiver: order.data.receiver,
-                        owner: order.metadata.owner,
-                        partially_fillable: order.data.partially_fillable,
-                        executed: remaining_order.executed_amount,
-                        pre_interactions: map_interactions(&order.interactions.pre),
-                        post_interactions: map_interactions(&order.interactions.post),
-                        sell_token_balance: order.data.sell_token_balance,
-                        buy_token_balance: order.data.buy_token_balance,
-                        class,
-                        app_data: order.data.app_data,
-                        signature: order.signature.clone(),
-                    }
-                })
-                .collect(),
-            tokens: auction
-                .prices
-                .iter()
-                .map(|(address, price)| solve::Token {
-                    address: address.to_owned(),
-                    price: Some(price.to_owned()),
-                    trusted: self.market_makable_token_list.contains(address),
-                })
-                .chain(
-                    self.market_makable_token_list
-                        .all()
-                        .into_iter()
-                        .map(|address| solve::Token {
-                            address,
-                            price: None,
-                            trusted: true,
-                        }),
-                )
-                .unique_by(|token| token.address)
-                .collect(),
-            deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
-        };
+        let request = solve_request(id, auction, &self.market_makable_token_list.all());
+        let request = &request;
 
         self.database
             .store_order_events(
@@ -495,5 +428,76 @@ impl RunLoop {
             .save_competition(competition)
             .await
             .context("save competition data")
+    }
+}
+
+pub fn solve_request(
+    id: AuctionId,
+    auction: &Auction,
+    trusted_tokens: &HashSet<H160>,
+) -> solve::Request {
+    solve::Request {
+        id,
+        orders: auction
+            .orders
+            .iter()
+            .map(|order| {
+                let class = match order.metadata.class {
+                    OrderClass::Market => Class::Market,
+                    OrderClass::Liquidity => Class::Liquidity,
+                    OrderClass::Limit(_) => Class::Limit,
+                };
+                let remaining_order = remaining_amounts::Order::from(order);
+                let map_interactions =
+                    |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
+                        interactions
+                            .iter()
+                            .map(|interaction| solve::Interaction {
+                                target: interaction.target,
+                                value: interaction.value,
+                                call_data: interaction.call_data.clone(),
+                            })
+                            .collect()
+                    };
+                solve::Order {
+                    uid: order.metadata.uid,
+                    sell_token: order.data.sell_token,
+                    buy_token: order.data.buy_token,
+                    sell_amount: order.data.sell_amount,
+                    buy_amount: order.data.buy_amount,
+                    solver_fee: order.metadata.full_fee_amount,
+                    user_fee: order.data.fee_amount,
+                    valid_to: order.data.valid_to,
+                    kind: order.data.kind,
+                    receiver: order.data.receiver,
+                    owner: order.metadata.owner,
+                    partially_fillable: order.data.partially_fillable,
+                    executed: remaining_order.executed_amount,
+                    pre_interactions: map_interactions(&order.interactions.pre),
+                    post_interactions: map_interactions(&order.interactions.post),
+                    sell_token_balance: order.data.sell_token_balance,
+                    buy_token_balance: order.data.buy_token_balance,
+                    class,
+                    app_data: order.data.app_data,
+                    signature: order.signature.clone(),
+                }
+            })
+            .collect(),
+        tokens: auction
+            .prices
+            .iter()
+            .map(|(address, price)| solve::Token {
+                address: address.to_owned(),
+                price: Some(price.to_owned()),
+                trusted: trusted_tokens.contains(address),
+            })
+            .chain(trusted_tokens.iter().map(|&address| solve::Token {
+                address,
+                price: None,
+                trusted: true,
+            }))
+            .unique_by(|token| token.address)
+            .collect(),
+        deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
     }
 }

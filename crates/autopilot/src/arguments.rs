@@ -166,6 +166,17 @@ pub struct Arguments {
     /// is still considered for payout.
     #[clap(long, env, default_value = "5")]
     pub additional_deadline_for_rewards: usize,
+
+    /// Run the autopilot in a shadow mode by specifying an upstream CoW
+    /// protocol deployment to pull auctions from. This will cause the autopilot
+    /// to start a run loop where it performs solver competition on driver,
+    /// and report and log the winner **without** requesting that any driver
+    /// actually executes any settlements. Note that many of the `autopilot`'s
+    /// typical features will be disabled in this mode, making many options
+    /// ignored. This assumes co-location is enabled and does not require it
+    /// being specified separately.
+    #[clap(long, env)]
+    pub shadow: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -217,6 +228,13 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
         display_list(f, "drivers", self.drivers.iter())?;
+        writeln!(f, "submission_deadline: {}", self.submission_deadline)?;
+        writeln!(
+            f,
+            "additional_deadline_for_rewards: {}",
+            self.additional_deadline_for_rewards
+        )?;
+        display_option(f, "shadow", &self.shadow)?;
         Ok(())
     }
 }
