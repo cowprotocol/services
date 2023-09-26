@@ -88,33 +88,14 @@ pub struct Fulfillment {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
-    // Solver(eth::U256),
-    // Discount(eth::U256),
-    RiskAdjusted {
-        success_probability: SuccessProbability,
-        gas_amount: Option<eth::U256>,
-    },
+    Solver(eth::U256),
+    RiskAdjusted(f64),
 }
 
 impl Default for Score {
     fn default() -> Self {
-        Self::RiskAdjusted {
-            success_probability: SuccessProbability::Value(1.0),
-            gas_amount: None,
-        }
+        Self::RiskAdjusted(1.0)
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SuccessProbability {
-    Value(f64),
-    // Params {
-    //     gas_amount_factor: f64,
-    //     gas_price_factor: f64,
-    //     nmb_orders_factor: f64,
-    //     intercept: f64,
-    // },
 }
 
 /// An order for which buy and sell amounts have been calculated.

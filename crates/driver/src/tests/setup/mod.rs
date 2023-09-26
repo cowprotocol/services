@@ -329,10 +329,20 @@ impl Solution {
         }
     }
 
-    // /// Set the solution score.
-    // pub fn score(self, score: Score) -> Self {
-    //     Self { score, ..self }
-    // }
+    /// Set the solution default score
+    pub fn default_solver_score(self) -> Self {
+        Self {
+            score: Score::Solver(DEFAULT_SCORE_MIN.into()),
+            ..self
+        }
+    }
+
+    pub fn default_risk_adjusted_score(self) -> Self {
+        Self {
+            score: Score::RiskAdjusted(0.95),
+            ..self
+        }
+    }
 }
 
 impl Default for Solution {
