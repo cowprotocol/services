@@ -389,7 +389,7 @@ impl Display for Arguments {
         display_secret_option(
             f,
             "one_inch_spot_price_api_key: {:?}",
-            self.one_inch_spot_price_api_key,
+            &self.one_inch_spot_price_api_key,
         )?;
 
         Ok(())
