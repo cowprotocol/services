@@ -84,33 +84,39 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             let mut results = vec![];
             let mut iter = self.inner.iter().enumerate().peekable();
             // Process stages sequentially
-            'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
+            'outer: while let Some((stage_index, stage)) = iter.next() {
                 // Process estimators within each stage in parallel
-                let mut futures: FuturesUnordered<_> = stage
+                let mut requests: Vec<_> = stage
                     .iter()
                     .enumerate()
                     .map(|(index, (_, estimator))| {
                         get_single_result(estimator, query.clone())
-                            .map(move |result| (index, result))
+                            .map(move |result| (EstimatorIndex(stage_index, index), result))
+                            .boxed()
                     })
                     .collect();
 
                 // Make sure we also use the next stage(s) if this one does not have enough
                 // estimators to return early anyways
-                while futures.len() < self.successful_results_for_early_return.get()
+                while requests.len() < self.successful_results_for_early_return.get()
                     && iter.peek().is_some()
                 {
                     let (next_stage_index, next_stage) = iter.next().unwrap();
-                    futures.extend(next_stage.into_iter().enumerate().map(
-                        |(index, (name, estimator))| {
-                            (EstimatorIndex(next_stage_index, index), name, estimator)
+                    requests.extend(next_stage.into_iter().enumerate().map(
+                        |(index, (_, estimator))| {
+                            get_single_result(estimator, query.clone())
+                                .map(move |result| {
+                                    (EstimatorIndex(next_stage_index, index), result)
+                                })
+                                .boxed()
                         },
                     ))
                 }
 
+                let mut futures: FuturesUnordered<_> = requests.into_iter().collect();
                 while let Some((estimator_index, result)) = futures.next().await {
-                    results.push((stage_index, estimator_index, result.clone()));
-                    let estimator = &self.inner[stage_index][estimator_index].0;
+                    results.push((estimator_index, result.clone()));
+                    let estimator = &self.inner[estimator_index.0][estimator_index.1].0;
                     tracing::debug!(?query, ?result, estimator, "new price estimate");
 
                     let successes = results.iter().filter(|(_, result)| result.is_ok()).count();
