@@ -1,11 +1,7 @@
 //! Framework for setting up tests.
 
 use {
-    self::{
-        blockchain::{Fulfillment, Score},
-        driver::Driver,
-        solver::Solver,
-    },
+    self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
     crate::{
         domain::{competition::order, eth},
         infra::time,
@@ -77,6 +73,19 @@ impl ExecutionDiff {
             decrease_buy: 300.into(),
             ..Default::default()
         }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Score {
+    Solver(eth::U256),
+    RiskAdjusted(f64),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted(1.0)
     }
 }
 
@@ -329,19 +338,9 @@ impl Solution {
         }
     }
 
-    /// Set the solution default score
-    pub fn default_solver_score(self) -> Self {
-        Self {
-            score: Score::Solver(DEFAULT_SCORE_MIN.into()),
-            ..self
-        }
-    }
-
-    pub fn default_risk_adjusted_score(self) -> Self {
-        Self {
-            score: Score::RiskAdjusted(0.95),
-            ..self
-        }
+    /// Set the solution score to the specified value.
+    pub fn score(self, score: Score) -> Self {
+        Self { score, ..self }
     }
 }
 

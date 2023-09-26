@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order},
+    super::{Asset, Order, Score},
     crate::{
         domain::{
             competition::order,
@@ -83,19 +83,6 @@ pub struct Solution {
 pub struct Fulfillment {
     pub quoted_order: QuotedOrder,
     pub interactions: Vec<Interaction>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Score {
-    Solver(eth::U256),
-    RiskAdjusted(f64),
-}
-
-impl Default for Score {
-    fn default() -> Self {
-        Self::RiskAdjusted(1.0)
-    }
 }
 
 /// An order for which buy and sell amounts have been calculated.
