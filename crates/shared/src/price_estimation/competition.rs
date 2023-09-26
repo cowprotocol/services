@@ -101,7 +101,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                     && iter.peek().is_some()
                 {
                     let (next_stage_index, next_stage) = iter.next().unwrap();
-                    requests.extend(next_stage.into_iter().enumerate().map(
+                    futures.extend(next_stage.into_iter().enumerate().map(
                         |(index, (name, estimator))| {
                             (EstimatorIndex(next_stage_index, index), name, estimator)
                         },
@@ -577,7 +577,7 @@ mod tests {
             async {
                 sleep(Duration::from_millis(20)).await;
                 let _ = sender.send(());
-                Err(PriceEstimationError::NoLiquidity)
+                Ok(estimate(1))
             }
             .boxed()
         });
@@ -592,11 +592,15 @@ mod tests {
             .boxed()
         });
 
+        let mut third = MockPriceEstimating::new();
+        third.expect_estimate().never();
+
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator {
                 inner: vec![
                     vec![("first".to_owned(), Arc::new(first))],
                     vec![("second".to_owned(), Arc::new(second))],
+                    vec![("third".to_owned(), Arc::new(third))],
                 ],
                 successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             };
