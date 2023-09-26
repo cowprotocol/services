@@ -65,7 +65,7 @@ impl Auction {
                     buy_token: order.solver_buy(weth).token.into(),
                     sell_amount: order.solver_sell().amount.into(),
                     buy_amount: order.solver_buy(weth).amount.into(),
-                    fee_amount: order.fee.solver.into(),
+                    fee_amount: order.solver_fee().amount.into(),
                     kind: match order.side {
                         competition::order::Side::Buy => Kind::Buy,
                         competition::order::Side::Sell => Kind::Sell,

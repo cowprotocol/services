@@ -1,13 +1,16 @@
-use crate::{
-    domain::eth,
-    infra::{blockchain, Ethereum},
-    util::{self, conv::u256::U256Ext, Bytes},
+pub use signature::Signature;
+use {
+    super::auction,
+    crate::{
+        domain::eth,
+        infra::{blockchain, Ethereum},
+        util::{self, conv::u256::U256Ext, Bytes},
+    },
+    bigdecimal::Zero,
+    num::CheckedDiv,
 };
 
 pub mod signature;
-
-pub use signature::Signature;
-use {super::auction, bigdecimal::Zero, num::CheckedDiv};
 
 /// An order in the auction.
 #[derive(Debug, Clone)]
@@ -136,8 +139,8 @@ impl Order {
     /// The sell asset to pass to the solver.
     ///
     /// In order to simplify solver logic, we scale the remaining sell amount
-    /// for orders that have been partially filled to simplify computations on
-    /// the solver side. This is so the solvers only see "whats left".
+    /// for orders that have been partially filled. This is so the solvers only
+    /// see "whats left".
     pub fn solver_sell(&self) -> eth::Asset {
         match self.partial {
             Partial::Yes { available } => eth::Asset {
@@ -173,6 +176,26 @@ impl Order {
             Partial::No => eth::Asset {
                 token: self.buy.token.wrap(weth),
                 amount: self.buy.amount,
+            },
+        }
+    }
+
+    /// The fee asset to pass to the solver.
+    ///
+    /// In order to simplify solver logic, we scale the remaining sell amount
+    /// for orders that have been partially filled. This is so the solvers only
+    /// see "whats left".
+    pub fn solver_fee(&self) -> eth::Asset {
+        match self.partial {
+            Partial::Yes { available } => eth::Asset {
+                token: self.sell.token,
+                amount: util::math::mul_ratio(self.fee.solver.0, available.0, self.target().0)
+                    .unwrap_or_default()
+                    .into(),
+            },
+            Partial::No => eth::Asset {
+                token: self.sell.token,
+                amount: self.fee.solver.0.into(),
             },
         }
     }
@@ -369,5 +392,76 @@ impl Jit {
             Side::Buy => self.buy.amount.into(),
             Side::Sell => self.sell.amount.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn order_scaling() {
+        let sell = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0x5e11).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let buy = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0xbbbb).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let weth = eth::WethAddress(eth::H160([0xef; 20]).into());
+
+        let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
+            uid: Default::default(),
+            receiver: Default::default(),
+            valid_to: util::Timestamp(u32::MAX),
+            buy: buy(buy_amount),
+            sell: sell(sell_amount),
+            side: match available {
+                None => Side::Sell,
+                Some(executed) if executed.token == sell(0).token => Side::Sell,
+                Some(executed) if executed.token == buy(0).token => Side::Buy,
+                _ => panic!(),
+            },
+            fee: Default::default(),
+            kind: Kind::Limit,
+            app_data: Default::default(),
+            partial: available
+                .map(|available| Partial::Yes {
+                    available: available.amount.into(),
+                })
+                .unwrap_or(Partial::No),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: signature::Scheme::PreSign,
+                data: Default::default(),
+                signer: Default::default(),
+            },
+        };
+
+        assert_eq!(order(1000, 1000, Some(sell(750))).solver_sell(), sell(750));
+        assert_eq!(
+            order(1000, 1000, Some(sell(750))).solver_buy(weth),
+            buy(750)
+        );
+        assert_eq!(order(1000, 1000, Some(buy(750))).solver_sell(), sell(750));
+        assert_eq!(order(1000, 1000, Some(buy(750))).solver_buy(weth), buy(750));
+
+        assert_eq!(order(1000, 100, Some(sell(901))).solver_sell(), sell(901));
+        assert_eq!(order(1000, 100, Some(sell(91))).solver_buy(weth), buy(91));
+
+        assert_eq!(order(100, 1000, Some(buy(901))).solver_sell(), sell(90));
+        assert_eq!(order(100, 1000, Some(buy(901))).solver_buy(weth), buy(901));
+
+        assert_eq!(order(1000, 1, Some(sell(500))).solver_sell(), sell(500));
+        assert_eq!(order(1000, 1, Some(sell(500))).solver_buy(weth), buy(1));
+
+        assert_eq!(order(1, 1000, Some(buy(500))).solver_sell(), sell(0));
+        assert_eq!(order(1, 1000, Some(buy(500))).solver_buy(weth), buy(500));
+
+        assert_eq!(order(0, 0, Some(sell(0))).solver_sell(), sell(0));
     }
 }
