@@ -346,21 +346,8 @@ enum SigningScheme {
 #[serde(rename_all = "lowercase")]
 pub enum Score {
     Solver(U256),
-    Discount(U256),
     RiskAdjusted {
-        success_probability: SuccessProbability,
+        success_probability: f64,
         gas_amount: Option<U256>,
-    },
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SuccessProbability {
-    Value(f64),
-    Params {
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
     },
 }
