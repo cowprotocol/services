@@ -42,7 +42,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub score_calculator: solution::ScoreCalculator,
+    pub score_calculator: solution::SolverScore,
 }
 
 impl Competition {

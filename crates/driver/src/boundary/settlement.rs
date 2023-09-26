@@ -209,7 +209,7 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-        calculator: &solution::ScoreCalculator,
+        calculator: &solution::SolverScore,
     ) -> Result<solution::RankingScore> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
@@ -250,7 +250,7 @@ impl Settlement {
                 ..
             } => {
                 let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
-                calculator.score(&objective_value, &gas_cost, success_probability)?
+                calculator.calculate(&objective_value, &gas_cost, success_probability)?
             }
         };
         Ok(score.into())

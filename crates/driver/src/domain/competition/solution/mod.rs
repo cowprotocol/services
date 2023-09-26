@@ -26,7 +26,7 @@ pub mod trade;
 
 pub use {
     interaction::Interaction,
-    score_calculator::ScoreCalculator,
+    score_calculator::SolverScore,
     settlement::Settlement,
     trade::Trade,
 };
