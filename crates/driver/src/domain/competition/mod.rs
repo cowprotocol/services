@@ -42,7 +42,7 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub score_calculator: solution::SolverScore,
+    pub solver_score: solution::SolverScore,
 }
 
 impl Competition {
@@ -144,7 +144,7 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.score(&self.eth, auction, &self.score_calculator),
+                    settlement.score(&self.eth, auction, &self.solver_score),
                     settlement,
                 )
             })

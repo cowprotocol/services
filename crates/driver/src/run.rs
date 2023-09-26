@@ -72,7 +72,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         eth,
         addr: args.addr,
         addr_sender,
-        score_calculator: solution::SolverScore::new(config.score_cap, config.mempools),
+        solver_score: solution::SolverScore::new(config.score_cap, config.mempools),
     }
     .serve(async {
         let _ = shutdown_receiver.await;
