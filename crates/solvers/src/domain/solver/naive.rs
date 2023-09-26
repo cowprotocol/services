@@ -33,24 +33,13 @@ impl Naive {
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
-        let risk_parameters = self.risk_parameters.clone();
         tokio::task::spawn_blocking(move || {
             let groups = group_by_token_pair(&auction);
             groups
                 .values()
-                .filter_map(|group| {
-                    boundary::naive::solve(&group.orders, group.liquidity).map(|solution| {
-                        solution.with_score(solution::Score::RiskAdjusted {
-                            success_probability: solution::SuccessProbability::Params {
-                                gas_amount_factor: risk_parameters.gas_amount_factor,
-                                gas_price_factor: risk_parameters.gas_price_factor,
-                                nmb_orders_factor: risk_parameters.nmb_orders_factor,
-                                intercept: risk_parameters.intercept,
-                            },
-                            gas_amount: None,
-                        })
-                    })
-                })
+                .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                // TODO: append score to solution
+                // score should be calculated based on the self.risk_parameters
                 .collect()
         })
         .await

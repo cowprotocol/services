@@ -128,12 +128,7 @@ async fn test() {
                 ],
                 "interactions": [],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "value": 1.0,
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),

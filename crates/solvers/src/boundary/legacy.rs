@@ -535,14 +535,13 @@ fn to_domain_solution(
             .collect(),
         score: match model.score {
             Score::Solver { score } => solution::Score::Solver(score),
-            Score::Discount { score_discount } => solution::Score::Discount(score_discount),
+            Score::Discount { .. } => {
+                return Err(anyhow::anyhow!("score_discount no longer supported"))
+            }
             Score::RiskAdjusted {
                 success_probability,
-                gas_amount,
-            } => solution::Score::RiskAdjusted {
-                success_probability: solution::SuccessProbability::Value(success_probability),
-                gas_amount: gas_amount.map(eth::Gas),
-            },
+                ..
+            } => solution::Score::RiskAdjusted(success_probability),
         },
     })
 }

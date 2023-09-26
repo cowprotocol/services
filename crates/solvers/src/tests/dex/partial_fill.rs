@@ -223,17 +223,7 @@ async fn tested_amounts_adjust_depending_on_response() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         })
@@ -539,17 +529,7 @@ async fn moves_surplus_fee_to_buy_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         })
@@ -816,17 +796,7 @@ async fn market() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         })

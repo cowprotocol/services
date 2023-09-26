@@ -102,17 +102,7 @@ async fn sell_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -218,17 +208,7 @@ async fn sell_orders_on_one_side() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -334,17 +314,7 @@ async fn buy_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -450,17 +420,7 @@ async fn buy_and_sell_orders() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),

@@ -101,17 +101,7 @@ async fn uniswap() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -276,17 +266,7 @@ async fn balancer_weighted() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -401,17 +381,7 @@ async fn balancer_weighted_v3plus() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -526,17 +496,7 @@ async fn distant_convergence() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -686,17 +646,7 @@ async fn same_path() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": {
-                        "success_probability": {
-                            "params": {
-                                "gas_amount_factor": 1.0,
-                                "gas_price_factor": 2.0,
-                                "nmb_orders_factor": 3.0,
-                                "intercept": 4.0,
-                            },
-                        },
-                        "gas_amount": null,
-                    }
+                    "riskadjusted": 1.0
                 }
             }]
         }),
@@ -835,17 +785,7 @@ async fn balancer_stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": {
-                            "success_probability": {
-                                "params": {
-                                    "gas_amount_factor": 1.0,
-                                    "gas_price_factor": 2.0,
-                                    "nmb_orders_factor": 3.0,
-                                    "intercept": 4.0,
-                                },
-                            },
-                            "gas_amount": null,
-                        }
+                        "riskadjusted": 1.0
                     }
                 },
             ]

@@ -47,16 +47,9 @@ impl Dex {
         let solve_orders = async {
             let mut stream = self.solution_stream(&auction);
             while let Some(solution) = stream.next().await {
-                let score = solution::Score::RiskAdjusted {
-                    success_probability: solution::SuccessProbability::Params {
-                        gas_amount_factor: self.risk_parameters.gas_amount_factor,
-                        gas_price_factor: self.risk_parameters.gas_price_factor,
-                        nmb_orders_factor: self.risk_parameters.nmb_orders_factor,
-                        intercept: self.risk_parameters.intercept,
-                    },
-                    gas_amount: None,
-                };
-                solutions.push(solution.with_score(score));
+                // TODO: append score to solution
+                // score should be calculated based on the self.risk_parameters
+                solutions.push(solution);
             }
         };
 

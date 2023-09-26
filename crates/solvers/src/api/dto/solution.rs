@@ -135,29 +135,7 @@ impl Solutions {
                         .collect(),
                     score: match solution.score.clone() {
                         solution::Score::Solver(score) => Score::Solver(score),
-                        solution::Score::Discount(discount) => Score::Discount(discount),
-                        solution::Score::RiskAdjusted {
-                            success_probability,
-                            gas_amount,
-                        } => Score::RiskAdjusted {
-                            success_probability: match success_probability {
-                                solution::SuccessProbability::Value(value) => {
-                                    SuccessProbability::Value(value)
-                                }
-                                solution::SuccessProbability::Params {
-                                    gas_amount_factor,
-                                    gas_price_factor,
-                                    nmb_orders_factor,
-                                    intercept,
-                                } => SuccessProbability::Params {
-                                    gas_amount_factor,
-                                    gas_price_factor,
-                                    nmb_orders_factor,
-                                    intercept,
-                                },
-                            },
-                            gas_amount: gas_amount.map(|gas_amount| gas_amount.0),
-                        },
+                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score),
                     },
                 })
                 .collect(),
@@ -346,8 +324,5 @@ enum SigningScheme {
 #[serde(rename_all = "lowercase")]
 pub enum Score {
     Solver(U256),
-    RiskAdjusted {
-        success_probability: f64,
-        gas_amount: Option<U256>,
-    },
+    RiskAdjusted(f64),
 }

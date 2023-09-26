@@ -294,6 +294,9 @@ pub struct Allowance {
     pub asset: eth::Asset,
 }
 
+/// Represents the probability that a solution will be successfully settled.
+type SuccessProbability = f64;
+
 /// A score for a solution. The score is used to rank solutions.
 #[derive(Debug, Clone)]
 pub enum Score {
@@ -301,43 +304,13 @@ pub enum Score {
     /// Success probability is not incorporated into this value.
     Solver(U256),
     /// This option is used to indicate that the solver did not provide a score.
-    /// Instead, the score should be computed by the protocol.
-    /// To have more flexibility, the protocol score can be tweaked by the
-    /// solver by providing a discount.
-    Discount(U256),
-    /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol given the success
-    /// probability and optionally the amount of gas this settlement will take.
-
-    /// Additionally, if the solver did not provide success_probability, then
-    /// the driver is expected to evaluate success_probability before
-    /// calculating the score.
-    RiskAdjusted {
-        success_probability: SuccessProbability,
-        gas_amount: Option<eth::Gas>,
-    },
+    /// probability.
+    RiskAdjusted(SuccessProbability),
 }
 
 impl Default for Score {
     fn default() -> Self {
-        Self::RiskAdjusted {
-            success_probability: SuccessProbability::Value(1.),
-            gas_amount: None,
-        }
+        Self::RiskAdjusted(1.0)
     }
-}
-
-/// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Clone)]
-pub enum SuccessProbability {
-    /// Probability known and is equal to the given value.
-    Value(f64),
-    /// Probability unknown and should be computed by the protocol using the
-    /// given parameters.
-    Params {
-        gas_amount_factor: f64,
-        gas_price_factor: f64,
-        nmb_orders_factor: f64,
-        intercept: f64,
-    },
 }
