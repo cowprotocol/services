@@ -106,12 +106,10 @@ impl Auction {
             .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
             .into_iter()
             .map(|((trader, token, source), mut orders)| {
-                let interactions = orders
-                    .next()
-                    .map(|order| &order.pre_interactions[..])
-                    .unwrap_or_default();
-                if orders.all(|order| order.pre_interactions == interactions) {
-                    (trader, token, source, interactions)
+                let first = orders.next().expect("group contains at least 1 order");
+                let mut others = orders;
+                if others.all(|order| order.pre_interactions == first.pre_interactions) {
+                    (trader, token, source, &first.pre_interactions[..])
                 } else {
                     (trader, token, source, Default::default())
                 }
