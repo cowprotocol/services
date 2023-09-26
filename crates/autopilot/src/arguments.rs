@@ -80,7 +80,9 @@ pub struct Arguments {
     pub pool_cache_lru_size: NonZeroUsize,
 
     /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token.
+    /// native token. Estimators with the same name need to also be specified as
+    /// built-in, legacy or external price estimators (lookup happens in this
+    /// order in case of name collisions)
     #[clap(long, env, default_value_t)]
     pub native_price_estimators: NativePriceEstimators,
 

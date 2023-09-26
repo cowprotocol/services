@@ -273,11 +273,11 @@ impl<'a> PriceEstimatorFactory<'a> {
                             )
                         },
                     )
-                    .find(|external| external.0 == estimator.name())
+                    .find(|external| external.0 == estimator)
                     .ok_or(anyhow!(
                         "Couldn't find generic price estimator with name {} to instantiate native \
                          estimator",
-                        estimator.name()
+                        estimator
                     ))
             }
             NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
@@ -372,7 +372,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             .map(|stage| {
                 stage
                     .iter()
-                    .map(|&source| self.create_native_estimator(source, external))
+                    .map(|source| self.create_native_estimator(source.clone(), external))
                     .collect::<Result<Vec<_>>>()
             })
             .collect::<Result<Vec<Vec<_>>>>()?;

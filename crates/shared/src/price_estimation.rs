@@ -143,17 +143,13 @@ impl FromStr for PriceEstimator {
 #[derive(Clone, Debug)]
 pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub enum NativePriceEstimator {
-    GenericPriceEstimator(PriceEstimator),
+    GenericPriceEstimator(String),
     OneInchSpotPriceApi,
 }
 
 impl NativePriceEstimators {
-    fn none() -> Self {
-        Self(Vec::new())
-    }
-
     pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
     }
@@ -162,20 +158,13 @@ impl NativePriceEstimators {
 impl Default for NativePriceEstimators {
     fn default() -> Self {
         Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
-            PriceEstimator {
-                kind: PriceEstimatorKind::Baseline,
-                address: H160::zero(),
-            },
+            "Baseline".into(),
         )]])
     }
 }
 
 impl Display for NativePriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        if self.0.is_empty() {
-            return f.write_str("None");
-        }
-
         let formatter = self
             .as_slice()
             .iter()
@@ -189,58 +178,27 @@ impl Display for NativePriceEstimators {
     }
 }
 
-impl FromStr for NativePriceEstimators {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s == "None" {
-            return Ok(Self::none());
-        }
-
-        Ok(Self(
+impl From<&str> for NativePriceEstimators {
+    fn from(s: &str) -> Self {
+        Self(
             s.split(';')
                 .map(|sub_list| {
                     sub_list
                         .split(',')
-                        .map(NativePriceEstimator::from_str)
-                        .collect::<Result<Vec<NativePriceEstimator>>>()
+                        .map(NativePriceEstimator::from)
+                        .collect::<Vec<NativePriceEstimator>>()
                 })
-                .collect::<Result<Vec<Vec<NativePriceEstimator>>>>()?,
-        ))
+                .collect::<Vec<Vec<NativePriceEstimator>>>(),
+        )
     }
 }
 
-impl FromStr for NativePriceEstimator {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let kind = match s {
-            "Baseline" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
-                kind: PriceEstimatorKind::Baseline,
-                address: H160::zero(),
-            }),
-            "Paraswap" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
-                kind: PriceEstimatorKind::Paraswap,
-                address: H160::zero(),
-            }),
-            "ZeroEx" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
-                kind: PriceEstimatorKind::ZeroEx,
-                address: H160::zero(),
-            }),
-            "OneInch" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
-                kind: PriceEstimatorKind::OneInch,
-                address: H160::zero(),
-            }),
-            "BalancerSor" => NativePriceEstimator::GenericPriceEstimator(PriceEstimator {
-                kind: PriceEstimatorKind::BalancerSor,
-                address: H160::zero(),
-            }),
+impl From<&str> for NativePriceEstimator {
+    fn from(s: &str) -> Self {
+        match s {
             "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
-            estimator => {
-                anyhow::bail!("failed to convert to PriceEstimatorKind: {estimator}")
-            }
-        };
-        Ok(kind)
+            estimator => NativePriceEstimator::GenericPriceEstimator(estimator.into()),
+        }
     }
 }
 
