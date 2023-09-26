@@ -2,7 +2,7 @@ use {
     crate::{
         arguments::TransactionStrategyArg,
         driver::solver_settlements::RatedSettlement,
-        settlement::{self, Settlement},
+        settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
         settlement_simulation::{
             call_data,
@@ -24,7 +24,10 @@ use {
         code_fetching::CodeFetching,
         ethrpc::Web3,
         external_prices::ExternalPrices,
-        http_solver::model::{InternalizationStrategy, SimulatedTransaction},
+        http_solver::{
+            self,
+            model::{InternalizationStrategy, SimulatedTransaction},
+        },
     },
     std::{borrow::Borrow, cmp::min, sync::Arc},
     web3::types::AccessList,
@@ -242,7 +245,7 @@ impl SettlementRating for SettlementRater {
         let earned_fees = settlement.total_earned_fees(prices);
         let inputs = {
             let gas_amount = match settlement.score {
-                crate::settlement::Score::RiskAdjusted { gas_amount, .. } => {
+                http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas_estimate)
                 }
                 _ => gas_estimate,
@@ -257,11 +260,11 @@ impl SettlementRating for SettlementRater {
 
         let objective_value = inputs.objective_value();
         let score = match settlement.score {
-            settlement::Score::Solver(score) => Score::Solver(score),
-            settlement::Score::Discount(score_discount) => Score::Discounted(
+            http_solver::model::Score::Solver { score } => Score::Solver(score),
+            http_solver::model::Score::Discount { score_discount } => Score::Discounted(
                 big_rational_to_u256(&objective_value)?.saturating_sub(score_discount),
             ),
-            settlement::Score::RiskAdjusted {
+            http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(

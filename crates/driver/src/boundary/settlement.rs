@@ -37,7 +37,10 @@ use {
     },
     shared::{
         external_prices::ExternalPrices,
-        http_solver::model::{InternalizationStrategy, TokenAmount},
+        http_solver::{
+            self,
+            model::{InternalizationStrategy, TokenAmount},
+        },
     },
     solver::{
         interactions::Erc20ApproveInteraction,
@@ -158,9 +161,9 @@ impl Settlement {
         }
 
         settlement.score = match solution.score().clone() {
-            competition::Score::Solver(score) => solver::settlement::Score::Solver(score),
+            competition::Score::Solver(score) => http_solver::model::Score::Solver { score },
             competition::Score::RiskAdjusted(success_probability) => {
-                solver::settlement::Score::RiskAdjusted {
+                http_solver::model::Score::RiskAdjusted {
                     success_probability,
                     gas_amount: None,
                 }
@@ -224,7 +227,7 @@ impl Settlement {
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
         let inputs = {
             let gas_amount = match self.inner.score {
-                solver::settlement::Score::RiskAdjusted { gas_amount, .. } => {
+                http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas.into())
                 }
                 _ => gas.into(),
@@ -238,12 +241,12 @@ impl Settlement {
         };
 
         let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
-        let score = match self.inner.score.clone() {
-            solver::settlement::Score::Solver(score) => CalculatedScore::Solver(score),
-            solver::settlement::Score::Discount(score_discount) => {
+        let score = match self.inner.score {
+            http_solver::model::Score::Solver { score } => CalculatedScore::Solver(score),
+            http_solver::model::Score::Discount { score_discount } => {
                 CalculatedScore::Discounted(objective_value.saturating_sub(score_discount))
             }
-            solver::settlement::Score::RiskAdjusted {
+            http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => {

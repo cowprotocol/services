@@ -257,20 +257,7 @@ impl<'a> IntermediateSettlement<'a> {
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
-
-        settlement.score = match self.score {
-            Score::Solver { score } => crate::settlement::Score::Solver(score),
-            Score::Discount { score_discount } => {
-                crate::settlement::Score::Discount(score_discount)
-            }
-            Score::RiskAdjusted {
-                success_probability,
-                gas_amount,
-            } => crate::settlement::Score::RiskAdjusted {
-                success_probability,
-                gas_amount,
-            },
-        };
+        settlement.score = self.score;
 
         // Make sure to always add approval interactions **before** any
         // interactions from the execution plan - the execution plan typically
