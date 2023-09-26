@@ -124,7 +124,7 @@ pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
 }
 
 /// Observe the settlement score.
-pub fn score(settlement: &Settlement, score: &competition::solution::CalculatedScore) {
+pub fn score(settlement: &Settlement, score: &competition::solution::RankingScore) {
     tracing::info!(
         solutions = ?settlement.solutions(),
         score = ?score,

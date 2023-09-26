@@ -265,7 +265,7 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         calculator: &solution::ScoreCalculator,
-    ) -> Result<solution::CalculatedScore, boundary::Error> {
+    ) -> Result<solution::RankingScore, boundary::Error> {
         self.boundary
             .score(eth, auction, self.gas.estimate, calculator)
     }

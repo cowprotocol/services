@@ -8,7 +8,6 @@ use {
                 solution::{
                     self,
                     settlement::{self, Internalization},
-                    CalculatedScore,
                 },
             },
             eth::{self},
@@ -211,7 +210,7 @@ impl Settlement {
         auction: &competition::Auction,
         gas: eth::Gas,
         calculator: &solution::ScoreCalculator,
-    ) -> Result<solution::CalculatedScore> {
+    ) -> Result<solution::RankingScore> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
@@ -242,23 +241,19 @@ impl Settlement {
 
         let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
         let score = match self.inner.score {
-            http_solver::model::Score::Solver { score } => CalculatedScore::Solver(score),
+            http_solver::model::Score::Solver { score } => score,
             http_solver::model::Score::Discount { score_discount } => {
-                CalculatedScore::Discounted(objective_value.saturating_sub(score_discount))
+                objective_value.saturating_sub(score_discount)
             }
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => {
                 let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
-                CalculatedScore::ProtocolWithSolverRisk(calculator.score(
-                    &objective_value,
-                    &gas_cost,
-                    success_probability,
-                )?)
+                calculator.score(&objective_value, &gas_cost, success_probability)?
             }
         };
-        Ok(score)
+        Ok(score.into())
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
