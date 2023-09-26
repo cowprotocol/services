@@ -98,9 +98,9 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
 
                 // Make sure we also use the next stage(s) if this one does not have enough
                 // estimators to return early anyways
-                while requests.len() < self.successful_results_for_early_return.get()
-                    && iter.peek().is_some()
-                {
+                let missing_successes =
+                    self.successful_results_for_early_return.get() - successes(&results);
+                while requests.len() < missing_successes && iter.peek().is_some() {
                     let (next_stage_index, next_stage) = iter.next().unwrap();
                     requests.extend(next_stage.into_iter().enumerate().map(
                         |(index, (_, estimator))| {
@@ -119,8 +119,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                     let estimator = &self.inner[estimator_index.0][estimator_index.1].0;
                     tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-                    let successes = results.iter().filter(|(_, result)| result.is_ok()).count();
-                    if successes >= self.successful_results_for_early_return.get() {
+                    if successes(&results) >= self.successful_results_for_early_return.get() {
                         break 'outer;
                     }
                 }
@@ -159,6 +158,10 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         }
         .boxed()
     }
+}
+
+fn successes<R, E>(results: &Vec<(EstimatorIndex, Result<R, E>)>) -> usize {
+    results.iter().filter(|(_, result)| result.is_ok()).count()
 }
 
 impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
@@ -593,13 +596,21 @@ mod tests {
             async move {
                 // First stage hasn't finished yet
                 assert!(receiver.try_recv().unwrap().is_none());
-                Ok(estimate(1))
+                Err(PriceEstimationError::NoLiquidity)
             }
             .boxed()
         });
 
+        // After the first combined stage is done, we are only missing one positive
+        // result, thus we query third but not fourth
         let mut third = MockPriceEstimating::new();
-        third.expect_estimate().never();
+        third
+            .expect_estimate()
+            .times(1)
+            .return_once(move |_| async move { Ok(estimate(1)) }.boxed());
+
+        let mut fourth = MockPriceEstimating::new();
+        fourth.expect_estimate().never();
 
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator {
@@ -607,6 +618,7 @@ mod tests {
                     vec![("first".to_owned(), Arc::new(first))],
                     vec![("second".to_owned(), Arc::new(second))],
                     vec![("third".to_owned(), Arc::new(third))],
+                    vec![("fourth".to_owned(), Arc::new(fourth))],
                 ],
                 successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             };
