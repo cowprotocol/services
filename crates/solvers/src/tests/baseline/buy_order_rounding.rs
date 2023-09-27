@@ -118,7 +118,6 @@ async fn balancer_weighted() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 1
                 max-partial-attempts = 1
-                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -283,7 +282,6 @@ async fn balancer_weighted_v3plus() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -398,7 +396,6 @@ async fn distant_convergence() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -513,7 +510,6 @@ async fn same_path() {
                 base-tokens = ["0x9c58bacc331c9aa871afd802db6379a98e80cedb"]
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),
@@ -663,7 +659,6 @@ async fn balancer_stable() {
                 base-tokens = []
                 max-hops = 0
                 max-partial-attempts = 1
-                risk-parameters = [1,2,3,4]
             "#
             .to_owned(),
         ),

@@ -44,9 +44,6 @@ struct Inner {
     /// Basically we continuously halve the amount to execute until we find a
     /// valid solution or exceed this count.
     max_partial_attempts: usize,
-
-    /// Parameters used to calculate the revert risk of a solution.
-    risk_parameters: config::RiskParameters,
 }
 
 impl Baseline {
@@ -57,7 +54,6 @@ impl Baseline {
             base_tokens: config.base_tokens.into_iter().collect(),
             max_hops: config.max_hops,
             max_partial_attempts: config.max_partial_attempts,
-            risk_parameters: config.risk_parameters,
         }))
     }
 
@@ -125,9 +121,6 @@ impl Inner {
                             gas: route.gas(),
                         }
                         .into_solution(auction.gas_price, sell_token)
-                        // TODO: append score to solution
-                        // score should be calculated based on the
-                        // self.risk_parameters
                     })
             })
             .collect()

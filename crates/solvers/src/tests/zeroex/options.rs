@@ -180,10 +180,11 @@ async fn test() {
     }])
     .await;
 
-    let config = tests::Config::String(format!(
-        "
+    let engine = tests::SolverEngine::new(
+        "zeroex",
+        tests::Config::String(format!(
+            "
 relative-slippage = '0.1'
-risk-parameters = [1,2,3,4]
 [dex]
 endpoint = 'http://{}/swap/v1/'
 api-key = 'abc123'
@@ -191,10 +192,11 @@ excluded-sources = ['Uniswap_V2', 'Balancer_V2']
 affiliate = '0x0123456789012345678901234567890123456789'
 enable-rfqt = true
 enable-slippage-protection = true
-        ",
-        api.address
-    ));
-    let engine = tests::SolverEngine::new("zeroex", config).await;
+            ",
+            api.address
+        )),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({

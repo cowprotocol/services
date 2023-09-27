@@ -26,9 +26,6 @@ pub struct Dex {
     /// Helps to manage the strategy to fill orders (especially partially
     /// fillable orders).
     fills: Fills,
-
-    /// Parameters used to calculate the revert risk of a solution.
-    risk_parameters: infra::config::RiskParameters,
 }
 
 impl Dex {
@@ -38,7 +35,6 @@ impl Dex {
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
-            risk_parameters: config.risk_parameters,
         }
     }
 
@@ -47,8 +43,6 @@ impl Dex {
         let solve_orders = async {
             let mut stream = self.solution_stream(&auction);
             while let Some(solution) = stream.next().await {
-                // TODO: append score to solution
-                // score should be calculated based on the self.risk_parameters
                 solutions.push(solution);
             }
         };
