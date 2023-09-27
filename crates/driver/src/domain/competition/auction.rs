@@ -3,13 +3,9 @@ use {
     crate::{
         domain::{
             competition::{self, solution},
-            eth::{self},
+            eth,
         },
-        infra::{
-            blockchain,
-            observe::{self},
-            Ethereum,
-        },
+        infra::{blockchain, observe, Ethereum},
     },
     futures::future::join_all,
     itertools::Itertools,
@@ -97,34 +93,45 @@ impl Auction {
             ))
         });
 
-        // Fetch balances of each token for each trader.
-        // Has to be separate closure due to compiler bug.
-        let f = |order: &competition::Order| -> (order::Trader, eth::TokenAddress) {
-            (order.trader(), order.sell.token)
-        };
-        let tokens_by_trader = self.orders.iter().map(f).unique();
-        let mut balances: HashMap<
-            (order::Trader, eth::TokenAddress),
-            Result<eth::TokenAmount, crate::infra::blockchain::Error>,
-        > = join_all(tokens_by_trader.map(|(trader, token)| async move {
-            let contract = eth.erc20(token);
-            let balance = contract.balance(trader.into()).await;
-            ((trader, token), balance)
-        }))
+        // Collect trader/token/source/interaction tuples for fetching available
+        // balances. Note that we are pessimistic here, if a trader is selling
+        // the same token with the same source in two different orders using a
+        // different set of pre-interactions, then we fetch the balance as if no
+        // pre-interactions were specified. This is done to avoid creating
+        // dependencies between orders (i.e. order 1 is required for executing
+        // order 2) which we currently cannot express with the solver interface.
+        let traders = self
+            .orders()
+            .iter()
+            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
+            .into_iter()
+            .map(|((trader, token, source), mut orders)| {
+                let first = orders.next().expect("group contains at least 1 order");
+                let mut others = orders;
+                if others.all(|order| order.pre_interactions == first.pre_interactions) {
+                    (trader, token, source, &first.pre_interactions[..])
+                } else {
+                    (trader, token, source, Default::default())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut balances = join_all(traders.into_iter().map(
+            |(trader, token, source, interactions)| async move {
+                let balance = eth
+                    .erc20(token)
+                    .tradable_balance(trader.into(), source, interactions)
+                    .await;
+                ((trader, token, source), balance)
+            },
+        ))
         .await
         .into_iter()
-        .collect();
+        .collect::<HashMap<_, _>>();
 
         self.orders.retain(|order| {
-            // TODO: We should use balance fetching that takes interactions into account
-            // from `crates/shared/src/account_balances/simulation.rs` instead of hardcoding
-            // an Ethflow exception. https://github.com/cowprotocol/services/issues/1595
-            if Some(order.signature.signer.0) == eth.contracts().ethflow_address().map(|a| a.0) {
-                return true;
-            }
-
             let remaining_balance = match balances
-                .get_mut(&(order.trader(), order.sell.token))
+                .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
                 .unwrap()
             {
                 Ok(balance) => &mut balance.0,

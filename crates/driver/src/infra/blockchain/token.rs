@@ -1,20 +1,32 @@
-use {super::Error, crate::domain::eth};
+use {
+    super::{Error, Ethereum},
+    crate::domain::{competition::order, eth},
+};
 
 /// An ERC-20 token.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
 pub struct Erc20 {
-    contract: contracts::ERC20,
+    token: contracts::ERC20,
+    balances: contracts::support::Balances,
+    vault_relayer: eth::ContractAddress,
+    vault: eth::ContractAddress,
 }
 
 impl Erc20 {
-    pub(super) fn new(contract: contracts::ERC20) -> Self {
-        Self { contract }
+    pub(super) fn new(eth: &Ethereum, address: eth::TokenAddress) -> Self {
+        let settlement = eth.contracts().settlement().address().into();
+        Self {
+            token: eth.contract_at(address.into()),
+            balances: eth.contract_at(settlement),
+            vault_relayer: eth.contracts().vault_relayer(),
+            vault: eth.contracts().vault().address().into(),
+        }
     }
 
     /// Returns the [`eth::TokenAddress`] of the ERC20.
     pub fn address(&self) -> eth::TokenAddress {
-        self.contract.address().into()
+        self.token.address().into()
     }
 
     /// Fetch the ERC20 allowance for the spender. See the allowance method in
@@ -26,9 +38,9 @@ impl Erc20 {
         owner: eth::Address,
         spender: eth::Address,
     ) -> Result<eth::allowance::Existing, Error> {
-        let amount = self.contract.allowance(owner.0, spender.0).call().await?;
+        let amount = self.token.allowance(owner.0, spender.0).call().await?;
         Ok(eth::Allowance {
-            token: self.contract.address().into(),
+            token: self.token.address().into(),
             spender,
             amount,
         }
@@ -40,7 +52,7 @@ impl Erc20 {
     ///
     /// https://eips.ethereum.org/EIPS/eip-20#decimals
     pub async fn decimals(&self) -> Result<Option<u8>, Error> {
-        match self.contract.decimals().call().await {
+        match self.token.decimals().call().await {
             Ok(decimals) => Ok(Some(decimals)),
             Err(err) if is_contract_error(&err) => Ok(None),
             Err(err) => Err(err.into()),
@@ -52,7 +64,7 @@ impl Erc20 {
     ///
     /// https://eips.ethereum.org/EIPS/eip-20#symbol
     pub async fn symbol(&self) -> Result<Option<String>, Error> {
-        match self.contract.symbol().call().await {
+        match self.token.symbol().call().await {
             Ok(symbol) => Ok(Some(symbol)),
             Err(err) if is_contract_error(&err) => Ok(None),
             Err(err) => Err(err.into()),
@@ -64,12 +76,55 @@ impl Erc20 {
     ///
     /// https://eips.ethereum.org/EIPS/eip-20#balanceof
     pub async fn balance(&self, holder: eth::Address) -> Result<eth::TokenAmount, Error> {
-        self.contract
+        self.token
             .balance_of(holder.0)
             .call()
             .await
             .map(Into::into)
             .map_err(Into::into)
+    }
+
+    /// Fetches the tradable balance for the specified user given an order's
+    /// pre-interactions.
+    pub async fn tradable_balance(
+        &self,
+        trader: eth::Address,
+        source: order::SellTokenBalance,
+        interactions: &[eth::Interaction],
+    ) -> Result<eth::TokenAmount, Error> {
+        let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
+            &self.balances.raw_instance().web3(),
+            contracts::support::Balances::raw_contract(),
+            "balance",
+            self.balances.balance(
+                (
+                    self.balances.address(),
+                    self.vault_relayer.into(),
+                    self.vault.into(),
+                ),
+                trader.into(),
+                self.token.address(),
+                0.into(),
+                ethcontract::Bytes(source.hash().0),
+                interactions
+                    .iter()
+                    .map(|i| {
+                        (
+                            i.target.into(),
+                            i.value.into(),
+                            ethcontract::Bytes(i.call_data.0.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        )
+        .await?;
+
+        if can_transfer {
+            Ok(effective_balance.into())
+        } else {
+            Ok(eth::TokenAmount(0.into()))
+        }
     }
 }
 

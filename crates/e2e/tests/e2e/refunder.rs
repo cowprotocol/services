@@ -1,5 +1,5 @@
 use {
-    crate::eth_flow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
+    crate::ethflow::{EthFlowOrderOnchainStatus, ExtendedEthFlowOrder},
     chrono::{TimeZone, Utc},
     e2e::{nodes::local_node::TestNodeApi, setup::*},
     ethcontract::{H160, U256},
