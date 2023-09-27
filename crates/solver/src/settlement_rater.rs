@@ -323,42 +323,30 @@ impl From<ScoringError> for anyhow::Error {
     }
 }
 
-/// Contains a subset of the configuration options for the submission of a
-/// settlement, needed for the score calculation.
-#[derive(Debug, Clone)]
-pub struct SubmissionStrategy {
-    pub strategy: TransactionStrategyArg,
-    pub disable_high_risk_public_mempool_transactions: bool,
-}
-
 #[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    submission_strategies: Vec<SubmissionStrategy>,
+    disable_high_risk_public_mempool_transactions: bool,
+    submission_strategies: Vec<TransactionStrategyArg>,
 }
 
 impl ScoreCalculator {
-    pub fn new(score_cap: BigRational, strategies: Vec<(TransactionStrategyArg, bool)>) -> Self {
+    pub fn new(
+        score_cap: BigRational,
+        disable_high_risk_public_mempool_transactions: bool,
+        submission_strategies: Vec<TransactionStrategyArg>,
+    ) -> Self {
         Self {
             score_cap,
-            submission_strategies: strategies
-                .into_iter()
-                .map(
-                    |(strategy, disable_high_risk_public_mempool_transactions)| {
-                        SubmissionStrategy {
-                            strategy,
-                            disable_high_risk_public_mempool_transactions,
-                        }
-                    },
-                )
-                .collect(),
+            disable_high_risk_public_mempool_transactions,
+            submission_strategies,
         }
     }
 
     fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
         match self.submission_strategies.iter().find(|s| {
-            s.strategy == TransactionStrategyArg::PublicMempool
-                && !s.disable_high_risk_public_mempool_transactions
+            matches!(s, TransactionStrategyArg::PublicMempool)
+                && !self.disable_high_risk_public_mempool_transactions
         }) {
             Some(_) => {
                 // The cost in case of a revert can deviate non-deterministically from the cost
@@ -563,9 +551,10 @@ mod tests {
         let score_cap = BigRational::from_float(1e16).unwrap();
         let score_calculator = super::ScoreCalculator::new(
             score_cap,
+            true,
             vec![
-                (TransactionStrategyArg::Flashbots, true),
-                (TransactionStrategyArg::PublicMempool, true),
+                TransactionStrategyArg::Flashbots,
+                TransactionStrategyArg::PublicMempool,
             ],
         );
         score_calculator

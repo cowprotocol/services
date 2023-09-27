@@ -18,16 +18,17 @@ impl ScoreCalculator {
         Self {
             inner: solver::settlement_rater::ScoreCalculator::new(
                 score_cap.to_big_rational(),
+                mempools.iter().any(|mempool| {
+                    matches!(
+                        mempool.kind,
+                        mempool::Kind::Public(mempool::HighRisk::Disabled)
+                    )
+                }),
                 mempools
                     .iter()
                     .map(|mempool| match mempool.kind {
-                        mempool::Kind::Public(high_risk) => (
-                            TransactionStrategyArg::PublicMempool,
-                            matches!(high_risk, mempool::HighRisk::Disabled),
-                        ),
-                        mempool::Kind::Flashbots { .. } => {
-                            (TransactionStrategyArg::Flashbots, false)
-                        }
+                        mempool::Kind::Public(_) => TransactionStrategyArg::PublicMempool,
+                        mempool::Kind::Flashbots { .. } => TransactionStrategyArg::Flashbots,
                     })
                     .collect(),
             ),
