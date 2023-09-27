@@ -796,17 +796,22 @@ pub struct SolveOk {
 }
 
 impl SolveOk {
-    /// Ensure that the score in the response is within a certain range. The
-    /// reason why this is a range is because small timing differences in
-    /// the test can lead to the settlement using slightly different amounts
-    /// of gas, which in turn leads to different scores.
-    pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
+    /// Extracts the score from the response.
+    pub fn score(&self) -> eth::U256 {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
         assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(result.get("score").is_some());
         let score = result.get("score").unwrap().as_str().unwrap();
-        let score = eth::U256::from_dec_str(score).unwrap();
+        eth::U256::from_dec_str(score).unwrap()
+    }
+
+    /// Ensure that the score in the response is within a certain range. The
+    /// reason why this is a range is because small timing differences in
+    /// the test can lead to the settlement using slightly different amounts
+    /// of gas, which in turn leads to different scores.
+    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
+        let score = self.score();
         assert!(score >= min, "score less than min {score} < {min}");
         assert!(score <= max, "score more than max {score} > {max}");
         self
@@ -814,7 +819,7 @@ impl SolveOk {
 
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
-        self.score(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+        self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
     }
 }
 
