@@ -168,7 +168,7 @@ impl Auction {
 
             let used_sell = match order.partial {
                 order::Partial::Yes { .. } => max_sell.min(*remaining_balance),
-                order::Partial::No if max_sell < *remaining_balance => max_sell,
+                order::Partial::No if max_sell <= *remaining_balance => max_sell,
                 _ => U256::zero(),
             };
             if used_sell.is_zero() {
