@@ -50,9 +50,7 @@ impl Auction {
         }
 
         // Ensure that there are no orders with 0 amounts.
-        if orders.iter().any(|order| {
-            order.solver_sell().amount.0.is_zero() || order.solver_buy(weth).amount.0.is_zero()
-        }) {
+        if orders.iter().any(|order| order.available(weth).is_zero()) {
             return Err(Error::InvalidAmounts);
         }
 
@@ -145,6 +143,7 @@ impl Auction {
         // to each order, and potentially scaling the order's `available` amount
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
+        let weth = eth.contracts().weth_address();
         self.orders.retain_mut(|order| {
             let remaining_balance = match balances
                 .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
@@ -158,19 +157,10 @@ impl Auction {
                 }
             };
 
-            fn max_sell(order: &competition::Order) -> Option<U256> {
-                let target = order.target().0;
-                let available = match order.partial {
-                    order::Partial::Yes { available } => available.0,
-                    order::Partial::No => target,
-                };
-
-                let sell = util::math::mul_ratio(order.sell.amount.0, available, target)?;
-                let fee = util::math::mul_ratio(order.fee.user.0, available, target)?;
-
-                sell.checked_add(fee)
-            }
-            let max_sell = match max_sell(order) {
+            let max_sell = match {
+                let available = order.available(weth);
+                available.sell.amount.0.checked_add(available.fee.user.0)
+            } {
                 Some(amount) => amount,
                 None => {
                     observe::order_excluded_from_auction(
@@ -198,13 +188,7 @@ impl Auction {
                 available.0 =
                     util::math::mul_ratio(available.0, used_sell, max_sell).unwrap_or_default();
             }
-            if order.solver_sell().amount.0.is_zero()
-                || order
-                    .solver_buy(eth.contracts().weth_address())
-                    .amount
-                    .0
-                    .is_zero()
-            {
+            if order.available(weth).is_zero() {
                 observe::order_excluded_from_auction(
                     order,
                     observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
