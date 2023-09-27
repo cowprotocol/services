@@ -579,6 +579,7 @@ mod tests {
             buy_token: H160::from_low_u64_le(1),
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
 
         fn estimate(amount: u64) -> Estimate {
