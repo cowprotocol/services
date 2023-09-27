@@ -133,6 +133,38 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
+    /// The available sell amount for the order.
+    ///
+    /// This returns the maximum partial sell amount that can be used given past
+    /// partial executions and available balance.
+    pub fn available_sell(&self) -> eth::Asset {
+        match self.partial {
+            Partial::Yes { available } => eth::Asset {
+                token: self.sell.token,
+                amount: util::math::mul_ratio(self.sell.amount.0, available.0, self.target().0)
+                    .unwrap_or_default()
+                    .into(),
+            },
+            Partial::No => self.sell,
+        }
+    }
+
+    /// The available buy amount for the order.
+    ///
+    /// This returns the minimum partial buy amount that can be used given past
+    /// partial executions and available balance.
+    pub fn available_buy(&self) -> eth::Asset {
+        match self.partial {
+            Partial::Yes { available } => eth::Asset {
+                token: self.buy.token,
+                amount: util::math::mul_ratio_ceil(self.buy.amount.0, available.0, self.target().0)
+                    .unwrap_or_default()
+                    .into(),
+            },
+            Partial::No => self.buy,
+        }
+    }
+
     /// The buy asset to pass to the solver. This is a special case due to
     /// orders which buy ETH. The settlement contract only works with ERC20
     /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
@@ -183,8 +215,11 @@ pub enum Partial {
     /// E.g. only 10% of the requested amount may be traded, if this leads
     /// to the most optimal solution.
     Yes {
-        /// The already-executed amount for the partial order.
-        executed: TargetAmount,
+        /// The available amount that can be used from the order.
+        ///
+        /// This amount considers both how much of the order has already been
+        /// executed as well as the trader's balance.
+        available: TargetAmount,
     },
     No,
 }

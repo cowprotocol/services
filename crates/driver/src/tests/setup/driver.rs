@@ -2,6 +2,7 @@ use {
     super::{
         blockchain::Blockchain,
         solver::{self, Solver},
+        Partial,
         Test,
     },
     crate::{
@@ -84,10 +85,10 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Side::Buy => "buy",
             },
             "owner": hex_address(test.trader_address),
-            "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+            "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
             "executed": match quote.order.partial {
-                order::Partial::Yes { executed } => executed.0.to_string(),
-                order::Partial::No => "0".to_owned(),
+                Partial::Yes { executed } => executed.to_string(),
+                Partial::No => "0".to_owned(),
             },
             "preInteractions": [],
             "postInteractions": [],

@@ -1,5 +1,5 @@
 use {
-    super::{blockchain, blockchain::Blockchain},
+    super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
         domain::competition::{auction, order},
         infra::{self, blockchain::contracts::Addresses, Ethereum},
@@ -66,7 +66,7 @@ impl Solver {
                     order::Side::Sell => "sell",
                     order::Side::Buy => "buy",
                 },
-                "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+                "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",

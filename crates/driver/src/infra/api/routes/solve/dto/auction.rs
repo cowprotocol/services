@@ -59,7 +59,14 @@ impl Auction {
                         app_data: order.app_data.into(),
                         partial: if order.partially_fillable {
                             competition::order::Partial::Yes {
-                                executed: order.executed.into(),
+                                available: match order.kind {
+                                    Kind::Sell => {
+                                        order.sell_amount.saturating_sub(order.executed).into()
+                                    }
+                                    Kind::Buy => {
+                                        order.buy_amount.saturating_sub(order.executed).into()
+                                    }
+                                },
                             }
                         } else {
                             competition::order::Partial::No
