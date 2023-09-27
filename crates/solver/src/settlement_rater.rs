@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments::TransactionStrategyArg,
         driver::solver_settlements::RatedSettlement,
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
@@ -326,36 +325,24 @@ impl From<ScoringError> for anyhow::Error {
 #[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    disable_high_risk_public_mempool_transactions: bool,
-    submission_strategies: Vec<TransactionStrategyArg>,
+    consider_cost_failure: bool,
 }
 
 impl ScoreCalculator {
-    pub fn new(
-        score_cap: BigRational,
-        disable_high_risk_public_mempool_transactions: bool,
-        submission_strategies: Vec<TransactionStrategyArg>,
-    ) -> Self {
+    pub fn new(score_cap: BigRational, consider_cost_failure: bool) -> Self {
         Self {
             score_cap,
-            disable_high_risk_public_mempool_transactions,
-            submission_strategies,
+            consider_cost_failure,
         }
     }
 
     fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
-        match self.submission_strategies.iter().find(|s| {
-            matches!(s, TransactionStrategyArg::PublicMempool)
-                && !self.disable_high_risk_public_mempool_transactions
-        }) {
-            Some(_) => {
-                // The cost in case of a revert can deviate non-deterministically from the cost
-                // in case of success and it is often significantly smaller. Thus, we go with
-                // the full cost as a safe assumption.
-                gas_cost.clone()
-            }
-            None => zero(),
-        }
+        // The cost in case of a revert can deviate non-deterministically from the cost
+        // in case of success and it is often significantly smaller. Thus, we go with
+        // the full cost as a safe assumption.
+        self.consider_cost_failure
+            .then(|| gas_cost.clone())
+            .unwrap_or_else(zero)
     }
 
     pub fn compute_score(
@@ -536,12 +523,7 @@ fn profit(
 
 #[cfg(test)]
 mod tests {
-    use {
-        crate::arguments::TransactionStrategyArg,
-        num::BigRational,
-        primitive_types::U256,
-        shared::conversions::U256Ext,
-    };
+    use {num::BigRational, primitive_types::U256, shared::conversions::U256Ext};
 
     fn calculate_score(
         objective_value: &BigRational,
@@ -549,14 +531,7 @@ mod tests {
         success_probability: f64,
     ) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator = super::ScoreCalculator::new(
-            score_cap,
-            true,
-            vec![
-                TransactionStrategyArg::Flashbots,
-                TransactionStrategyArg::PublicMempool,
-            ],
-        );
+        let score_calculator = super::ScoreCalculator::new(score_cap, true);
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()

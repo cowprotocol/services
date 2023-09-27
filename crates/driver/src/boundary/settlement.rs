@@ -1,16 +1,14 @@
 use {
     crate::{
+        domain,
         domain::{
             competition::{
                 self,
                 auction,
                 order,
-                solution::{
-                    self,
-                    settlement::{self, Internalization},
-                },
+                solution::settlement::{self, Internalization},
             },
-            eth::{self},
+            eth,
             liquidity,
         },
         infra::Ethereum,
@@ -160,8 +158,8 @@ impl Settlement {
         }
 
         settlement.score = match solution.score().clone() {
-            competition::Score::Solver(score) => http_solver::model::Score::Solver { score },
-            competition::Score::RiskAdjusted(success_probability) => {
+            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
+            competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
                     success_probability,
                     gas_amount: None,
@@ -209,48 +207,54 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-        solver_score: &solution::SolverScore,
-    ) -> Result<solution::RankingScore> {
-        let prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().address(),
-            auction
-                .tokens()
-                .iter()
-                .filter_map(|token| {
-                    token
-                        .price
-                        .map(|price| (token.address.into(), price.into()))
-                })
-                .collect(),
-        )?;
-        let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let inputs = {
-            let gas_amount = match self.inner.score {
-                http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
-                    gas_amount.unwrap_or(gas.into())
-                }
-                _ => gas.into(),
-            };
-            solver::objective_value::Inputs::from_settlement(
-                &self.inner,
-                &prices,
-                gas_price.clone(),
-                &gas_amount,
-            )
-        };
-
-        let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
+        high_risk: &domain::HighRisk,
+    ) -> Result<competition::Score> {
         let score = match self.inner.score {
             http_solver::model::Score::Solver { score } => score,
-            http_solver::model::Score::Discount { score_discount } => {
-                objective_value.saturating_sub(score_discount)
+            http_solver::model::Score::Discount { .. } => {
+                unreachable!("discounted score no longer supported")
             }
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => {
-                let gas_cost = eth::Ether(eth::U256::from_big_rational(&inputs.gas_cost())?);
-                solver_score.calculate(&objective_value, &gas_cost, success_probability)?
+                let prices = ExternalPrices::try_from_auction_prices(
+                    eth.contracts().weth().address(),
+                    auction
+                        .tokens()
+                        .iter()
+                        .filter_map(|token| {
+                            token
+                                .price
+                                .map(|price| (token.address.into(), price.into()))
+                        })
+                        .collect(),
+                )?;
+                let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
+                let inputs = {
+                    let gas_amount = match self.inner.score {
+                        http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
+                            gas_amount.unwrap_or(gas.into())
+                        }
+                        _ => gas.into(),
+                    };
+                    solver::objective_value::Inputs::from_settlement(
+                        &self.inner,
+                        &prices,
+                        gas_price.clone(),
+                        &gas_amount,
+                    )
+                };
+
+                let score_calculator = solver::settlement_rater::ScoreCalculator::new(
+                    auction.score_cap().to_big_rational(),
+                    matches!(high_risk, domain::HighRisk::Enabled),
+                );
+                score_calculator.compute_score(
+                    &inputs.objective_value(),
+                    &inputs.gas_cost(),
+                    success_probability,
+                )?
             }
         };
         Ok(score.into())

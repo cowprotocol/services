@@ -34,8 +34,31 @@ impl Mempools {
             .boxed()
         })));
     }
+
+    /// Defines if the mempools are configured in a way that could lead to
+    /// significant costs in case a settlement fails onchain submission.
+    pub fn high_risk(&self) -> HighRisk {
+        if self.0.iter().any(|mempool| {
+            matches!(
+                mempool.config().kind,
+                infra::mempool::Kind::Public(infra::mempool::HighRisk::Enabled)
+            )
+        }) {
+            HighRisk::Enabled
+        } else {
+            HighRisk::Disabled
+        }
+    }
 }
 
 #[derive(Debug, Error)]
 #[error("no mempools configured, cannot execute settlements")]
 pub struct NoMempools;
+
+/// Defines if the mempools are configured in a way that could lead to
+/// significant costs in case a settlement fails onchain submission.
+#[derive(Debug, Clone, Copy)]
+pub enum HighRisk {
+    Enabled,
+    Disabled,
+}

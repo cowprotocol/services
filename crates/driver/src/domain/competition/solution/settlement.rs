@@ -3,9 +3,9 @@ use {
     crate::{
         boundary,
         domain::{
-            competition,
-            competition::{auction, order, solution},
+            competition::{self, auction, order, solution},
             eth,
+            mempools,
         },
         infra::{blockchain::Ethereum, Simulator},
         util::conv::u256::U256Ext,
@@ -264,10 +264,10 @@ impl Settlement {
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
-        solver_score: &solution::SolverScore,
-    ) -> Result<solution::RankingScore, boundary::Error> {
+        high_risk: &mempools::HighRisk,
+    ) -> Result<competition::Score, boundary::Error> {
         self.boundary
-            .score(eth, auction, self.gas.estimate, solver_score)
+            .score(eth, auction, self.gas.estimate, high_risk)
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.

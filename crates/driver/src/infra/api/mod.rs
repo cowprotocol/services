@@ -1,7 +1,7 @@
 use {
     crate::{
         domain,
-        domain::{competition::solution, Mempools},
+        domain::Mempools,
         infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
     },
     error::Error,
@@ -22,7 +22,6 @@ pub struct Api {
     pub eth: Ethereum,
     pub mempools: Mempools,
     pub addr: SocketAddr,
-    pub solver_score: solution::SolverScore,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
     pub addr_sender: Option<oneshot::Sender<SocketAddr>>,
@@ -69,7 +68,6 @@ impl Api {
                     simulator: self.simulator.clone(),
                     mempools: self.mempools.clone(),
                     settlement: Default::default(),
-                    solver_score: self.solver_score.clone(),
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

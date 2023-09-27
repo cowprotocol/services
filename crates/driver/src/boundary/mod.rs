@@ -25,7 +25,6 @@
 pub mod liquidity;
 pub mod mempool;
 pub mod quote;
-pub mod score_calculator;
 pub mod settlement;
 
 // The [`anyhow::Error`] type is re-exported because the legacy code mostly
@@ -36,7 +35,6 @@ pub use {
     contracts,
     mempool::Mempool,
     model::order::OrderData,
-    score_calculator::ScoreCalculator,
     settlement::Settlement,
     shared::ethrpc::Web3,
 };
