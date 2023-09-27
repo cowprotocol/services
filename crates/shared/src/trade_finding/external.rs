@@ -7,8 +7,10 @@ use {
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::anyhow,
+    ethrpc::current_block::BlockRetrieving,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
+    std::sync::Arc,
     url::Url,
 };
 
@@ -23,15 +25,18 @@ pub struct ExternalTradeFinder {
 
     /// Client to issue http requests with.
     client: Client,
+
+    /// Latest block retriever to use for block-dependent queries.
+    block_retriever: Arc<dyn BlockRetrieving>,
 }
 
 impl ExternalTradeFinder {
-    #[allow(dead_code)]
-    pub fn new(driver: Url, client: Client) -> Self {
+    pub fn new(driver: Url, client: Client, block_retriever: Arc<dyn BlockRetrieving>) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
+            block_retriever,
         }
     }
 
@@ -54,8 +59,11 @@ impl ExternalTradeFinder {
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
-        if let Some(strategy) = query.caching {
-            request = request.header(header::CACHE_CONTROL, strategy.cache_control());
+        if query.block_dependent {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_retriever.current_block().await?.hash.to_string(),
+            )
         }
 
         if let Some(id) = observe::request_id::get_task_local_storage() {

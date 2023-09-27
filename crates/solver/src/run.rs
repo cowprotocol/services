@@ -296,6 +296,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key,
+            block_retriever.clone(),
         )
         .unwrap(),
     );

@@ -43,7 +43,7 @@ use {
     },
     anyhow::{anyhow, Context as _, Result},
     ethcontract::H160,
-    ethrpc::current_block::CurrentBlockStream,
+    ethrpc::current_block::{BlockRetrieving, CurrentBlockStream},
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
@@ -91,6 +91,7 @@ pub struct Components {
     pub gas_price: Arc<dyn GasPriceEstimating>,
     pub zeroex: Arc<dyn ZeroExApi>,
     pub oneinch: Option<Arc<dyn OneInchClient>>,
+    pub block_retriever: Arc<dyn BlockRetrieving>,
 }
 
 /// The source of the price estimator.
@@ -440,6 +441,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
                     .paraswap_partner
                     .clone()
                     .unwrap_or_default(),
+                block_retriever: factory.components.block_retriever.clone(),
             }),
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
@@ -586,6 +588,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             params.driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
+            factory.components.block_retriever.clone(),
         ))
     }
 

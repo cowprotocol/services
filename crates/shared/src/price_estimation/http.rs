@@ -504,6 +504,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -516,6 +517,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -557,6 +559,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap_err();
@@ -603,6 +606,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap_err();
@@ -698,6 +702,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
         let result = estimator.estimate(query).await.unwrap();
 
@@ -830,6 +835,7 @@ mod tests {
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount1).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 
@@ -851,6 +857,7 @@ mod tests {
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount2).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await;
 

@@ -64,7 +64,7 @@ impl ParaswapSolver {
         base_url: String,
         slippage_calculator: SlippageCalculator,
     ) -> Self {
-        let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
+        let allowance_fetcher = AllowanceManager::new(web3.clone(), settlement_contract.address());
 
         Self {
             account,
@@ -75,6 +75,7 @@ impl ParaswapSolver {
                 client,
                 base_url,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
+                block_retriever: Arc::new(web3),
             }),
             disabled_paraswap_dexs,
             slippage_calculator,
@@ -118,7 +119,7 @@ impl SingleOrderSolving for ParaswapSolver {
         }
         let transaction_query =
             self.transaction_query_from(external_prices, &order, &price_response, &token_info)?;
-        let transaction = self.client.transaction(transaction_query, None).await?;
+        let transaction = self.client.transaction(transaction_query, true).await?;
         let mut settlement = SingleOrderSettlement {
             sell_token_price: price_response.dest_amount,
             buy_token_price: price_response.src_amount,
@@ -170,7 +171,7 @@ impl ParaswapSolver {
             side,
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
-        let price_response = self.client.price(price_query, None).await?;
+        let price_response = self.client.price(price_query, true).await?;
         Ok(price_response)
     }
 
@@ -276,7 +277,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
 
-        client.expect_price().returning(|_| {
+        client.expect_price().returning(|_, _| {
             async {
                 Ok(PriceResponse {
                     price_route_raw: Default::default(),
@@ -290,7 +291,7 @@ mod tests {
         });
         client
             .expect_transaction()
-            .returning(|_| async { Ok(Default::default()) }.boxed());
+            .returning(|_, _| async { Ok(Default::default()) }.boxed());
 
         allowance_fetcher
             .expect_get_approval()
@@ -355,7 +356,7 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
         let token_transfer_proxy = H160([0x42; 20]);
 
-        client.expect_price().returning(move |_| {
+        client.expect_price().returning(move |_, _| {
             async move {
                 Ok(PriceResponse {
                     price_route_raw: Default::default(),
@@ -369,7 +370,7 @@ mod tests {
         });
         client
             .expect_transaction()
-            .returning(|_| async { Ok(Default::default()) }.boxed());
+            .returning(|_, _| async { Ok(Default::default()) }.boxed());
 
         // On first invocation no prior allowance, then max allowance set.
         let mut seq = Sequence::new();
@@ -450,7 +451,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
 
-        client.expect_price().returning(|_| {
+        client.expect_price().returning(|_, _| {
             async {
                 Ok(PriceResponse {
                     price_route_raw: Default::default(),
@@ -468,7 +469,7 @@ mod tests {
         client
             .expect_transaction()
             .times(1)
-            .returning(|transaction| {
+            .returning(|transaction, _| {
                 assert_eq!(
                     transaction.trade_amount,
                     TradeAmount::Exact {
@@ -482,7 +483,7 @@ mod tests {
         client
             .expect_transaction()
             .times(1)
-            .returning(|transaction| {
+            .returning(|transaction, _| {
                 assert_eq!(
                     transaction.trade_amount,
                     TradeAmount::Exact {

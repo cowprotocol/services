@@ -6,6 +6,7 @@ use {
         Query,
     },
     crate::{rate_limiter::RateLimiter, trade_finding::external::ExternalTradeFinder},
+    ethrpc::current_block::BlockRetrieving,
     reqwest::{Client, Url},
     std::sync::Arc,
 };
@@ -13,9 +14,18 @@ use {
 pub struct ExternalPriceEstimator(TradeEstimator);
 
 impl ExternalPriceEstimator {
-    pub fn new(driver: Url, client: Client, rate_limiter: Arc<RateLimiter>) -> Self {
+    pub fn new(
+        driver: Url,
+        client: Client,
+        rate_limiter: Arc<RateLimiter>,
+        block_retriever: Arc<dyn BlockRetrieving>,
+    ) -> Self {
         Self(TradeEstimator::new(
-            Arc::new(ExternalTradeFinder::new(driver.clone(), client)),
+            Arc::new(ExternalTradeFinder::new(
+                driver.clone(),
+                client,
+                block_retriever,
+            )),
             rate_limiter,
             driver.to_string(),
         ))

@@ -12,7 +12,6 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::H256,
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -444,31 +443,11 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
-    /// If this is `Some` the quotes are expected to pass simulations using the
-    /// contained parameters.
+    /// Signals whether responses from that were valid on previous blocks can be
+    /// used to answer the query.
     pub verification: Option<Verification>,
     #[serde(skip_serializing)]
-    pub caching: Option<CachingStrategy>,
-}
-
-/// Different ways price estimation queries can be cached
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum CachingStrategy {
-    /// Hit, if the block hash at the time of caching is the same as this one
-    Block(H256),
-    /// Hit if the cache entry is more recent than the specified duration
-    Time(Duration),
-}
-
-impl CachingStrategy {
-    pub fn cache_control(&self) -> reqwest::header::HeaderValue {
-        match self {
-            Self::Block(block_hash) => format!("block-hash={}", block_hash),
-            Self::Time(duration) => format!("max-age={}", duration.as_secs()),
-        }
-        .parse()
-        .unwrap()
-    }
+    pub block_dependent: bool,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be

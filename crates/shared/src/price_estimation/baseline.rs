@@ -341,7 +341,8 @@ mod tests {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy
+                kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .is_err());
@@ -378,7 +379,8 @@ mod tests {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(1).unwrap(),
-                kind: OrderKind::Buy
+                kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .is_err());
@@ -419,7 +421,8 @@ mod tests {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
-                kind: OrderKind::Sell
+                kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .is_ok());
@@ -429,7 +432,8 @@ mod tests {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: NonZeroU256::try_from(100).unwrap(),
-                kind: OrderKind::Buy
+                kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .is_ok());
@@ -489,6 +493,7 @@ mod tests {
             buy_token: token_b,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
         let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 0 is more favourable for buying token B.
@@ -503,6 +508,7 @@ mod tests {
             buy_token: token_a,
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
         let estimate = estimator.estimate(query.clone()).await.unwrap();
         // Pool 1 is more favourable for buying token A.
@@ -559,6 +565,7 @@ mod tests {
                     buy_token: token_b,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: *kind,
+                    block_dependent: false,
                 }))
                 .await
                 .unwrap()
@@ -571,6 +578,7 @@ mod tests {
                     buy_token: token_a,
                     in_amount: NonZeroU256::try_from(10).unwrap(),
                     kind: *kind,
+                    block_dependent: false,
                 }))
                 .await
                 .unwrap()
@@ -645,7 +653,8 @@ mod tests {
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
-                        kind: *order_kind
+                        kind: *order_kind,
+                        block_dependent: false,
                     }))
                     .await
                     .unwrap()
@@ -670,7 +679,8 @@ mod tests {
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: NonZeroU256::try_from(10).unwrap(),
-                        kind: *order_kind
+                        kind: *order_kind,
+                        block_dependent: false,
                     }))
                     .await
                     .unwrap()
@@ -723,6 +733,7 @@ mod tests {
             buy_token: token_c,
             in_amount: NonZeroU256::try_from(10u128.pow(19)).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         };
         let out_amount_considering_gas_costs = estimator
             .estimate_price_helper(&query, true, &pools, gas_price)

@@ -351,6 +351,7 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
             &http_factory,
@@ -359,6 +360,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
+            block_retriever.clone(),
         )
         .unwrap(),
     );
@@ -366,6 +368,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
+        block_retriever.clone(),
     )
     .map(Arc::new);
 
@@ -397,6 +400,7 @@ pub async fn run(args: Arguments) {
             gas_price: gas_price_estimator.clone(),
             zeroex: zeroex_api.clone(),
             oneinch: one_inch_api.ok().map(|a| a as _),
+            block_retriever: block_retriever.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -425,7 +429,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let event_updater = Arc::new(EventUpdater::new(
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),

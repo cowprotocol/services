@@ -62,8 +62,7 @@ impl NativePriceEstimator {
             in_amount: self.price_estimation_amount,
             kind: OrderKind::Buy,
             verification: None,
-            //TODO(caching)
-            caching: None,
+            block_dependent: false,
         }
     }
 }

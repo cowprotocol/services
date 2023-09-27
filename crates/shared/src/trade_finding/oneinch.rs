@@ -151,7 +151,7 @@ impl Inner {
                     query.data.in_amount.get(),
                     self.referrer_address,
                 ),
-                query.data.caching,
+                query.data.block_dependent,
             )
             .await?;
 
@@ -185,7 +185,7 @@ impl Inner {
                     Slippage::ONE_PERCENT,
                     self.referrer_address,
                 ),
-                query.caching,
+                query.block_dependent,
             )
             .await?)
     }
@@ -228,7 +228,6 @@ mod tests {
         },
         hex_literal::hex,
         number::nonzero::U256 as NonZeroU256,
-        reqwest::Client,
         std::time::Duration,
     };
 
@@ -253,7 +252,7 @@ mod tests {
         //     fromTokenAddress=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&\
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
-        one_inch.expect_get_sell_order_quote().return_once(|_| {
+        one_inch.expect_get_sell_order_quote().return_once(|_, _| {
             async {
                 Ok(SellOrderQuote {
                     from_token: Token {
@@ -280,6 +279,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await
             .unwrap();
@@ -307,7 +307,7 @@ mod tests {
         //     fromAddress=0x0000000000000000000000000000000000000000&\
         //     slippage=1&\
         //     disableEstimate=true'
-        one_inch.expect_get_sell_order_quote().return_once(|_| {
+        one_inch.expect_get_sell_order_quote().return_once(|_, _| {
             async {
                 Ok(SellOrderQuote {
                     from_token: Token {
@@ -332,7 +332,7 @@ mod tests {
             }
             .boxed()
         });
-        one_inch.expect_get_swap().return_once(|_| {
+        one_inch.expect_get_swap().return_once(|_, _| {
             async {
                 Ok(Swap {
                     from_token: Token {
@@ -366,6 +366,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await
             .unwrap();
@@ -419,6 +420,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             })
             .await;
 
@@ -431,7 +433,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| {
+            .return_once(|_, _| {
                 async {
                     Err(OneInchError::Api(RestError {
                         status_code: 500,
@@ -450,6 +452,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await;
 
@@ -465,7 +468,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| {
+            .return_once(|_, _| {
                 async { Err(OneInchError::Other(anyhow::anyhow!("malformed JSON"))) }.boxed()
             });
 
@@ -478,6 +481,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await;
 
@@ -490,7 +494,7 @@ mod tests {
     #[tokio::test]
     async fn shares_quote_api_request() {
         let mut oneinch = MockOneInchClient::new();
-        oneinch.expect_get_sell_order_quote().return_once(|_| {
+        oneinch.expect_get_sell_order_quote().return_once(|_, _| {
             async move {
                 tokio::time::sleep(Duration::from_millis(1)).await;
                 Ok(Default::default())
@@ -502,7 +506,7 @@ mod tests {
             .return_once(|| async { Ok(Default::default()) }.boxed());
         oneinch
             .expect_get_swap()
-            .return_once(|_| async { Ok(Default::default()) }.boxed());
+            .return_once(|_, _| async { Ok(Default::default()) }.boxed());
 
         let trader = OneInchTradeFinder::new(
             Arc::new(oneinch),
@@ -527,8 +531,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let one_inch =
-            OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap();
+        let one_inch = OneInchClientImpl::test();
         let estimator = create_trade_finder(one_inch);
 
         let result = estimator
@@ -538,6 +541,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await;
 

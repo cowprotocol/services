@@ -125,6 +125,7 @@ mod tests {
             buy_token: testlib::tokens::DAI,
             in_amount: NonZeroU256::try_from(U256::from_f64_lossy(1e18)).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
         let result = estimator.estimate(query).await;
         println!("{result:?}");

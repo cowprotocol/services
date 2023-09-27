@@ -68,7 +68,12 @@ impl OneInchSolver {
             account,
             settlement_contract,
             disabled_protocols: disabled_protocols.into_iter().collect(),
-            client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
+            client: Box::new(OneInchClientImpl::new(
+                one_inch_url,
+                client,
+                chain_id,
+                Arc::new(web3.clone()),
+            )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             cache: Cache::default(),
             slippage_calculator,
@@ -120,7 +125,7 @@ impl OneInchSolver {
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = self.client.get_swap(query, None).await?;
+        let swap = self.client.get_swap(query, true).await?;
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
             tracing::debug!("execution does not respect order");
             return Ok(None);
@@ -268,7 +273,7 @@ mod tests {
             }
             .boxed()
         });
-        client.expect_get_swap().returning(|_| {
+        client.expect_get_swap().returning(|_, _| {
             async {
                 Ok(Swap {
                     from_token_amount: 100.into(),
@@ -354,7 +359,7 @@ mod tests {
             }
             .boxed()
         });
-        client.expect_get_swap().times(1).returning(|query| {
+        client.expect_get_swap().times(1).returning(|query, _| {
             async move {
                 assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
                 Ok(Swap {
@@ -399,7 +404,7 @@ mod tests {
         client
             .expect_get_spender()
             .returning(move || async move { Ok(Spender { address: spender }) }.boxed());
-        client.expect_get_swap().returning(|_| {
+        client.expect_get_swap().returning(|_, _| {
             async {
                 Ok(Swap {
                     from_token_amount: 100.into(),

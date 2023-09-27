@@ -208,8 +208,7 @@ impl QuoteParameters {
             buy_token: self.buy_token,
             in_amount,
             kind,
-            //TODO(caching)
-            caching: None,
+            block_dependent: true,
         }
     }
 
@@ -822,6 +821,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {
@@ -954,6 +954,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {
@@ -1084,6 +1085,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {

@@ -1,13 +1,9 @@
 use {
-    crate::{
-        debug_bytes,
-        interaction::Interaction,
-        price_estimation::CachingStrategy,
-        trade_finding::EncodedInteraction,
-    },
+    crate::{debug_bytes, interaction::Interaction, trade_finding::EncodedInteraction},
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
+    ethrpc::current_block::BlockRetrieving,
     number::u256_decimal,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
@@ -18,6 +14,7 @@ use {
     },
     serde_json::Value,
     serde_with::{serde_as, DisplayFromStr},
+    std::sync::Arc,
     thiserror::Error,
 };
 
@@ -30,12 +27,12 @@ pub trait ParaswapApi: Send + Sync + 'static {
     async fn price(
         &self,
         query: PriceQuery,
-        caching: Option<CachingStrategy>,
+        set_current_block_header: bool,
     ) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
-        caching: Option<CachingStrategy>,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
@@ -43,6 +40,7 @@ pub struct DefaultParaswapApi {
     pub client: Client,
     pub base_url: String,
     pub partner: String,
+    pub block_retriever: Arc<dyn BlockRetrieving>,
 }
 
 #[async_trait::async_trait]
@@ -50,18 +48,20 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn price(
         &self,
         query: PriceQuery,
-        caching: Option<CachingStrategy>,
+        set_current_block_header: bool,
     ) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.base_url, &self.partner);
         tracing::trace!("Querying Paraswap price API: {}", url);
 
-        let mut headers = reqwest::header::HeaderMap::new();
-        caching
-            .map(|caching| headers.insert(reqwest::header::CACHE_CONTROL, caching.cache_control()));
+        let mut request = self.client.get(url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_retriever.current_block().await?.hash.to_string(),
+            );
+        };
 
-        let request = self.client.get(url).headers(headers).send();
-
-        let response = request.await?;
+        let response = request.send().await?;
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
@@ -71,21 +71,21 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
-        caching: Option<CachingStrategy>,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
         let query = TransactionBuilderQueryWithPartner {
             query,
             partner: &self.partner,
         };
-        let mut headers = reqwest::header::HeaderMap::new();
-        caching
-            .map(|caching| headers.insert(reqwest::header::CACHE_CONTROL, caching.cache_control()));
 
-        let request = query
-            .into_request(&self.client, &self.base_url)
-            .headers(headers)
-            .send();
-        let response = request.await?;
+        let mut request = query.into_request(&self.client, &self.base_url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_retriever.current_block().await?.hash.to_string(),
+            );
+        };
+        let response = request.send().await?;
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
@@ -385,7 +385,12 @@ impl Interaction for TransactionBuilderResponse {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, reqwest::StatusCode, serde_json::json};
+    use {
+        super::*,
+        ethrpc::{create_env_test_transport, Web3},
+        reqwest::StatusCode,
+        serde_json::json,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -789,10 +794,12 @@ mod tests {
             .await
             .expect("Response is not json");
 
+        let http = create_env_test_transport();
         let api = DefaultParaswapApi {
             client: Client::new(),
             base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
+            block_retriever: Arc::new(Web3::new(http)),
         };
 
         let good_query = TransactionBuilderQuery {
@@ -808,7 +815,7 @@ mod tests {
             user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
         };
 
-        assert!(api.transaction(good_query).await.is_ok());
+        assert!(api.transaction(good_query, false).await.is_ok());
     }
 
     #[test]
