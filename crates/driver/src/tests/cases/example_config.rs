@@ -6,5 +6,9 @@ use crate::tests;
 #[ignore]
 async fn test() {
     let example_config_file = std::env::current_dir().unwrap().join("example.toml");
-    tests::setup().config(example_config_file).done().await;
+    tests::setup()
+        .config(example_config_file)
+        .settlement_address("0x9008D19f58AAbD9eD0D60971565AA8510560ab41")
+        .done()
+        .await;
 }

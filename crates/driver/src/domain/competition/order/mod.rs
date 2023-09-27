@@ -273,15 +273,27 @@ pub enum Kind {
 }
 
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum SellTokenBalance {
     Erc20,
     Internal,
     External,
 }
 
+impl SellTokenBalance {
+    /// Returns the hash value for the specified source.
+    pub fn hash(&self) -> eth::H256 {
+        let name = match self {
+            Self::Erc20 => "erc20",
+            Self::Internal => "internal",
+            Self::External => "external",
+        };
+        eth::H256(web3::signing::keccak256(name.as_bytes()))
+    }
+}
+
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum BuyTokenBalance {
     Erc20,
     Internal,

@@ -4,8 +4,14 @@ use {
     crate::support::SimulateCode,
     ethcontract::{
         common::abi,
+        contract::MethodBuilder,
+        errors::MethodError,
         tokens::Tokenize,
-        web3::types::{Bytes, CallRequest},
+        web3::{
+            types::{Bytes, CallRequest},
+            Transport,
+            Web3,
+        },
         H160,
     },
 };
@@ -38,4 +44,39 @@ pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
         ),
         ..Default::default()
     }
+}
+
+/// Simulates the specified `ethcontract::MethodBuilder` encoded as a
+/// `StorageAccessible` call.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The method doesn't specify a target address or calldata
+/// - The function name doesn't exist or match the method signature
+/// - The contract does not have deployment code
+pub async fn simulate<T, R>(
+    web3: &Web3<T>,
+    contract: &ethcontract::Contract,
+    function_name: &str,
+    method: MethodBuilder<T, R>,
+) -> Result<R, MethodError>
+where
+    T: Transport,
+    R: Tokenize,
+{
+    let function = contract.abi.function(function_name).unwrap();
+    let code = contract.bytecode.to_bytes().unwrap();
+
+    let call = call(method.tx.to.unwrap(), code, method.tx.data.clone().unwrap());
+    let output = web3
+        .eth()
+        .call(call, None)
+        .await
+        .map_err(|err| MethodError::new(function, err))?;
+
+    let tokens = function
+        .decode_output(&output.0)
+        .map_err(|err| MethodError::new(function, err))?;
+    R::from_token(abi::Token::Tuple(tokens)).map_err(|err| MethodError::new(function, err))
 }

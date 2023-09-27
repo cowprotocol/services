@@ -11,6 +11,7 @@ use {
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
     secp256k1::SecretKey,
+    serde_json::json,
     std::collections::HashMap,
 };
 
@@ -144,6 +145,7 @@ pub struct Config {
     pub solver_address: eth::H160,
     pub solver_secret_key: SecretKey,
     pub fund_solver: bool,
+    pub settlement_address: Option<eth::H160>,
 }
 
 impl Blockchain {
@@ -249,7 +251,7 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let settlement = wait_for(
+        let mut settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
                 .from(trader_account.clone())
@@ -257,6 +259,27 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        if let Some(settlement_address) = config.settlement_address {
+            let vault_relayer = settlement.vault_relayer().call().await.unwrap();
+            let vault_relayer_code = {
+                // replace the vault relayer code to allow the settlement
+                // contract at a specific address.
+                let mut code = web3.eth().code(vault_relayer, None).await.unwrap().0;
+                for i in 0..code.len() - 20 {
+                    let window = &mut code[i..][..20];
+                    if window == settlement.address().0 {
+                        window.copy_from_slice(&settlement_address.0);
+                    }
+                }
+                code
+            };
+            let settlement_code = web3.eth().code(settlement.address(), None).await.unwrap().0;
+
+            set_code(&web3, vault_relayer, &vault_relayer_code).await;
+            set_code(&web3, settlement_address, &settlement_code).await;
+
+            settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
+        }
         wait_for(
             &web3,
             authenticator
@@ -780,4 +803,17 @@ pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
     .await
     .expect("timeout while waiting for next block to be mined");
     result
+}
+
+/// Sets code at a specific address for testing.
+pub async fn set_code(web3: &DynWeb3, address: eth::H160, code: &[u8]) {
+    use web3::Transport;
+
+    web3.transport()
+        .execute(
+            "anvil_setCode",
+            vec![json!(address), json!(format!("0x{}", hex::encode(code)))],
+        )
+        .await
+        .unwrap();
 }

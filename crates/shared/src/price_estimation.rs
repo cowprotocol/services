@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::{display_option, CodeSimulatorKind},
+        arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
@@ -386,10 +386,10 @@ impl Display for Arguments {
             "zeroex_only_estimate_buy_queries: {:?}",
             self.zeroex_only_estimate_buy_queries
         )?;
-        writeln!(
+        display_secret_option(
             f,
             "one_inch_spot_price_api_key: {:?}",
-            self.one_inch_spot_price_api_key
+            &self.one_inch_spot_price_api_key,
         )?;
 
         Ok(())
