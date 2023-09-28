@@ -74,7 +74,7 @@ pub struct Contracts {
 }
 
 /// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(contracts: Contracts, web3: Web3) -> Arc<dyn BalanceFetching> {
+pub fn fetcher(web3: &Web3, contracts: Contracts) -> Arc<dyn BalanceFetching> {
     Arc::new(simulation::Balances::new(
         web3,
         contracts.settlement,
@@ -85,11 +85,11 @@ pub fn fetcher(contracts: Contracts, web3: Web3) -> Arc<dyn BalanceFetching> {
 
 /// Create a cached [`BalanceFetching`] instance.
 pub fn cached(
+    web3: &Web3,
     contracts: Contracts,
-    web3: Web3,
     blocks: CurrentBlockStream,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(contracts, web3)));
+    let cached = Arc::new(cached::Balances::new(fetcher(web3, contracts)));
     cached.spawn_background_task(blocks);
     cached
 }

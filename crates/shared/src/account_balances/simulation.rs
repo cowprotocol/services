@@ -4,22 +4,21 @@
 
 use {
     super::{BalanceFetching, Query, TransferSimulationError},
-    anyhow::{Context, Result},
-    ethcontract::{tokens::Tokenize, Bytes, H160, U256},
+    anyhow::Result,
+    ethcontract::{Bytes, H160, U256},
     ethrpc::Web3,
     futures::future,
-    web3::ethabi::Token,
 };
 
 pub struct Balances {
-    web3: Web3,
+    balances: contracts::support::Balances,
     settlement: H160,
     vault_relayer: H160,
     vault: H160,
 }
 
 impl Balances {
-    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
+    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160, vault: Option<H160>) -> Self {
         // Note that the balances simulation **will fail** if the `vault`
         // address is not a contract and the `source` is set to one of
         // `SellTokenSource::{External, Internal}` (i.e. the Vault contract is
@@ -30,7 +29,7 @@ impl Balances {
         let vault = vault.unwrap_or_default();
 
         Self {
-            web3,
+            balances: contracts::support::Balances::at(web3, settlement),
             settlement,
             vault_relayer,
             vault,
@@ -45,31 +44,30 @@ impl Balances {
         //    settlement
         //
         // This allows us to end up with very accurate balance simulations.
-        let balances = contracts::dummy_contract!(contracts::support::Balances, self.settlement);
-        let tx = balances
-            .methods()
-            .balance(
-                (self.settlement, self.vault_relayer, self.vault),
-                query.owner,
-                query.token,
-                amount.unwrap_or_default(),
-                Bytes(query.source.as_bytes()),
-                query
-                    .interactions
-                    .iter()
-                    .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
-                    .collect(),
+        let (token_balance, allowance, effective_balance, can_transfer) =
+            contracts::storage_accessible::simulate(
+                contracts::bytecode!(contracts::support::Balances),
+                self.balances.methods().balance(
+                    (self.settlement, self.vault_relayer, self.vault),
+                    query.owner,
+                    query.token,
+                    amount.unwrap_or_default(),
+                    Bytes(query.source.as_bytes()),
+                    query
+                        .interactions
+                        .iter()
+                        .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
+                        .collect(),
+                ),
             )
-            .tx;
+            .await?;
 
-        let call = contracts::storage_accessible::call(
-            self.settlement,
-            contracts::bytecode!(contracts::support::Balances),
-            tx.data.unwrap(),
-        );
-
-        let output = self.web3.eth().call(call, None).await?;
-        let simulation = Simulation::decode(&output.0)?;
+        let simulation = Simulation {
+            token_balance,
+            allowance,
+            effective_balance,
+            can_transfer,
+        };
 
         tracing::trace!(?query, ?amount, ?simulation, "simulated balances");
         Ok(simulation)
@@ -82,25 +80,6 @@ struct Simulation {
     allowance: U256,
     effective_balance: U256,
     can_transfer: bool,
-}
-
-impl Simulation {
-    fn decode(output: &[u8]) -> Result<Self> {
-        let function = contracts::support::Balances::raw_contract()
-            .abi
-            .function("balance")
-            .unwrap();
-        let tokens = function.decode_output(output).context("decode")?;
-        let (token_balance, allowance, effective_balance, can_transfer) =
-            Tokenize::from_token(Token::Tuple(tokens))?;
-
-        Ok(Self {
-            token_balance,
-            allowance,
-            effective_balance,
-            can_transfer,
-        })
-    }
 }
 
 #[async_trait::async_trait]
@@ -155,7 +134,7 @@ mod tests {
     #[tokio::test]
     async fn test_for_user() {
         let balances = Balances::new(
-            Web3::new(ethrpc::create_env_test_transport()),
+            &Web3::new(ethrpc::create_env_test_transport()),
             addr!("9008d19f58aabd9ed0d60971565aa8510560ab41"),
             addr!("C92E8bdf79f0507f65a392b0ab4667716BFE0110"),
             Some(addr!("BA12222222228d8Ba445958a75a0704d566BF2C8")),
