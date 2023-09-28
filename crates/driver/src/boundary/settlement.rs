@@ -216,7 +216,7 @@ impl Settlement {
             }
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
-                ..
+                gas_amount,
             } => {
                 let prices = ExternalPrices::try_from_auction_prices(
                     eth.contracts().weth().address(),
@@ -231,26 +231,17 @@ impl Settlement {
                         .collect(),
                 )?;
                 let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-                let inputs = {
-                    let gas_amount = match self.inner.score {
-                        http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
-                            gas_amount.unwrap_or(gas.into())
-                        }
-                        _ => gas.into(),
-                    };
-                    solver::objective_value::Inputs::from_settlement(
-                        &self.inner,
-                        &prices,
-                        gas_price.clone(),
-                        &gas_amount,
-                    )
-                };
-
-                let score_calculator = solver::settlement_rater::ScoreCalculator::new(
+                let inputs = solver::objective_value::Inputs::from_settlement(
+                    &self.inner,
+                    &prices,
+                    gas_price.clone(),
+                    &gas_amount.unwrap_or(gas.into()),
+                );
+                solver::settlement_rater::ScoreCalculator::new(
                     auction.score_cap().to_big_rational(),
                     matches!(revert_protection, domain::RevertProtection::Disabled),
-                );
-                score_calculator.compute_score(
+                )
+                .compute_score(
                     &inputs.objective_value(),
                     &inputs.gas_cost(),
                     success_probability,
