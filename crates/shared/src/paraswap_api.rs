@@ -386,8 +386,7 @@ impl Interaction for TransactionBuilderResponse {
 mod tests {
     use {
         super::*,
-        ethrpc::{create_env_test_transport, current_block::BlockInfo, Web3},
-        primitive_types::H256,
+        ethrpc::current_block::BlockInfo,
         reqwest::StatusCode,
         serde_json::json,
         tokio::sync::watch,

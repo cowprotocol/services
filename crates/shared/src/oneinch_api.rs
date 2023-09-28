@@ -524,7 +524,7 @@ impl OneInchClientImpl {
 
     #[cfg(test)]
     pub fn test() -> Self {
-        use {ethrpc::current_block::BlockInfo, primitive_types::H256, tokio::sync::watch};
+        use {ethrpc::current_block::BlockInfo, tokio::sync::watch};
 
         let (_, block_stream) = watch::channel(BlockInfo::default());
         OneInchClientImpl::new(
@@ -720,9 +720,8 @@ mod tests {
     use {
         super::*,
         crate::addr,
-        ethrpc::{create_test_transport, current_block::BlockInfo, Web3},
+        ethrpc::current_block::BlockInfo,
         futures::FutureExt as _,
-        primitive_types::H256,
         tokio::sync::watch,
     };
 
