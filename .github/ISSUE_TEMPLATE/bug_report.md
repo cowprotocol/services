@@ -26,9 +26,15 @@ A clear and concise description of what you expected to happen.
 ### Screenshots/logs
 If applicable, add screenshots or logs to help explain your problem.
 
-### services version/commit hash
+### services version/commit hash and environment
 State the version of services where you've encountered the bug or, if built off a specific commit, the relevant commit hash.
-- e.g. `v0.9` or `ed53bcd`
+
+Version / commit hash: <!-- e.g. 0.0.1, 0.0.1-1-ga1b2c3d -->
+Environment: <!--- e.g. local, staging (ie. barn), production -->
+
+<!--
+If you're unsure of the commit hash, you can find it by querying the `/v1/version` API endpoint on the backend service.
+-->
 
 ### Additional context
 Add any other context about the problem here.
