@@ -10,7 +10,6 @@ use {
     },
     futures::future::join_all,
     itertools::Itertools,
-    primitive_types::U256,
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -128,7 +127,10 @@ impl Auction {
                     .erc20(token)
                     .tradable_balance(trader.into(), source, interactions)
                     .await;
-                ((trader, token, source), balance)
+                (
+                    (trader, token, source),
+                    balance.map(order::SellAmount::from),
+                )
             },
         ))
         .await
@@ -149,7 +151,7 @@ impl Auction {
                 .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
                 .unwrap()
             {
-                Ok(balance) => &mut balance.0,
+                Ok(balance) => balance,
                 Err(err) => {
                     let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance(err);
                     observe::order_excluded_from_auction(order, reason);
@@ -161,7 +163,7 @@ impl Auction {
                 let available = order.available(weth);
                 available.sell.amount.0.checked_add(available.fee.user.0)
             } {
-                Some(amount) => amount,
+                Some(amount) => order::SellAmount(amount),
                 None => {
                     observe::order_excluded_from_auction(
                         order,
@@ -171,12 +173,12 @@ impl Auction {
                 }
             };
 
-            let used_sell = match order.partial {
+            let allocated_balance = match order.partial {
                 order::Partial::Yes { .. } => max_sell.min(*remaining_balance),
                 order::Partial::No if max_sell <= *remaining_balance => max_sell,
-                _ => U256::zero(),
+                _ => order::SellAmount::default(),
             };
-            if used_sell.is_zero() {
+            if allocated_balance.0.is_zero() {
                 observe::order_excluded_from_auction(
                     order,
                     observe::OrderExcludedFromAuctionReason::InsufficientBalance,
@@ -185,8 +187,10 @@ impl Auction {
             }
 
             if let order::Partial::Yes { available } = &mut order.partial {
-                available.0 =
-                    util::math::mul_ratio(available.0, used_sell, max_sell).unwrap_or_default();
+                *available = order::TargetAmount(
+                    util::math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                        .unwrap_or_default(),
+                );
             }
             if order.available(weth).is_zero() {
                 observe::order_excluded_from_auction(
@@ -196,7 +200,7 @@ impl Auction {
                 return false;
             }
 
-            *remaining_balance -= used_sell;
+            remaining_balance.0 -= allocated_balance.0;
             true
         });
 

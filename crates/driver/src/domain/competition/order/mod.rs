@@ -42,12 +42,18 @@ pub struct Order {
 }
 
 /// An amount denominated in the sell token of an [`Order`].
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SellAmount(pub eth::U256);
 
 impl From<eth::U256> for SellAmount {
     fn from(value: eth::U256) -> Self {
         Self(value)
+    }
+}
+
+impl From<eth::TokenAmount> for SellAmount {
+    fn from(value: eth::TokenAmount) -> Self {
+        Self(value.into())
     }
 }
 
