@@ -74,7 +74,6 @@ pub trait OrderValidating: Send + Sync {
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
-        order_partially_fillable: bool,
     ) -> Result<OrderAppData, AppDataValidationError>;
 
     /// This is the full order validation performed at the time of order
@@ -515,7 +514,6 @@ impl OrderValidating for OrderValidator {
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
-        order_partially_fillable: bool,
     ) -> Result<OrderAppData, AppDataValidationError> {
         let validate = |app_data: &str| -> Result<_, AppDataValidationError> {
             let app_data = self
@@ -554,18 +552,9 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        if !self.enable_custom_interactions {
-            if !app_data.protocol.hooks.is_empty() {
-                // contains some custom interactions while feature is disabled
-                return Err(AppDataValidationError::UnsupportedCustomInteraction);
-            }
-
-            if order_partially_fillable && !app_data.protocol.hooks.post.is_empty() {
-                // It's currently ambiguous when to execute post hooks for partially fillable
-                // orders (e.g. every fill, first fill, final fill).
-                // Executing pre-hooks on the first fill seems like a sane default.
-                return Err(AppDataValidationError::UnsupportedCustomInteraction);
-            }
+        if !self.enable_custom_interactions && !app_data.protocol.hooks.is_empty() {
+            // contains some custom interactions while feature is disabled
+            return Err(AppDataValidationError::UnsupportedCustomInteraction);
         }
 
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
@@ -585,11 +574,7 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
-        let app_data = self.validate_app_data(
-            &order.app_data,
-            &full_app_data_override,
-            order.partially_fillable,
-        )?;
+        let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
 
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
