@@ -585,6 +585,7 @@ pub async fn run(args: Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+            score_cap: args.score_cap,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

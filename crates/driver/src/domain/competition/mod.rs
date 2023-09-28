@@ -1,6 +1,6 @@
 use {
-    self::solution::{settlement, RankingScore},
-    super::Mempools,
+    self::solution::settlement,
+    super::{eth, Mempools},
     crate::{
         domain::{competition::solution::Settlement, liquidity},
         infra::{
@@ -26,7 +26,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
-    solution::{Score, Solution, SolverTimeout},
+    solution::{Solution, SolverScore, SolverTimeout},
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -42,7 +42,6 @@ pub struct Competition {
     pub simulator: Simulator,
     pub mempools: Mempools,
     pub settlement: Mutex<Option<Settlement>>,
-    pub solver_score: solution::SolverScore,
 }
 
 impl Competition {
@@ -144,7 +143,7 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.score(&self.eth, auction, &self.solver_score),
+                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
                     settlement,
                 )
             })
@@ -238,11 +237,28 @@ impl Competition {
     }
 }
 
+/// Represents a single value suitable for comparing/ranking solutions.
+/// This is a final score that is observed by the autopilot.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Score(pub eth::U256);
+
+impl From<Score> for eth::U256 {
+    fn from(value: Score) -> Self {
+        value.0
+    }
+}
+
+impl From<eth::U256> for Score {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
 /// Solution information sent to the protocol by the driver before the solution
 /// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
-    pub score: RankingScore,
+    pub score: Score,
 }
 
 /// Winning solution information revealed to the protocol by the driver before
