@@ -1,5 +1,5 @@
 use {
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
@@ -166,6 +166,10 @@ pub struct Arguments {
     /// is still considered for payout.
     #[clap(long, env, default_value = "5")]
     pub additional_deadline_for_rewards: usize,
+
+    /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
+    #[clap(long, env, default_value = "10000000000000000")]
+    pub score_cap: U256,
 }
 
 impl std::fmt::Display for Arguments {

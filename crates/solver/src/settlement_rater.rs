@@ -531,7 +531,7 @@ mod tests {
         success_probability: f64,
     ) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator = super::ScoreCalculator::new(score_cap, true);
+        let score_calculator = super::ScoreCalculator::new(score_cap, false);
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()

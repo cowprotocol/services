@@ -207,7 +207,7 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-        high_risk: &domain::HighRisk,
+        revert_protection: &domain::RevertProtection,
     ) -> Result<competition::Score> {
         let score = match self.inner.score {
             http_solver::model::Score::Solver { score } => score,
@@ -248,7 +248,7 @@ impl Settlement {
 
                 let score_calculator = solver::settlement_rater::ScoreCalculator::new(
                     auction.score_cap().to_big_rational(),
-                    matches!(high_risk, domain::HighRisk::Enabled),
+                    matches!(revert_protection, domain::RevertProtection::Disabled),
                 );
                 score_calculator.compute_score(
                     &inputs.objective_value(),

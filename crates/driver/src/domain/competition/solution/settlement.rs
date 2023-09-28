@@ -264,10 +264,10 @@ impl Settlement {
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
-        high_risk: &mempools::HighRisk,
+        revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, boundary::Error> {
         self.boundary
-            .score(eth, auction, self.gas.estimate, high_risk)
+            .score(eth, auction, self.gas.estimate, revert_protection)
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.

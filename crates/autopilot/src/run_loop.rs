@@ -28,7 +28,7 @@ use {
             SolverSettlement,
         },
     },
-    primitive_types::{H160, H256},
+    primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{
         event_handling::MAX_REORG_BLOCK_COUNT,
@@ -56,6 +56,7 @@ pub struct RunLoop {
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
+    pub score_cap: U256,
 }
 
 impl RunLoop {
@@ -337,6 +338,7 @@ impl RunLoop {
                 .unique_by(|token| token.address)
                 .collect(),
             deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
+            score_cap: self.score_cap,
         };
 
         self.database

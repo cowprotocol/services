@@ -143,7 +143,7 @@ impl Competition {
             .map(|settlement| {
                 observe::scoring(&settlement);
                 (
-                    settlement.score(&self.eth, auction, &self.mempools.high_risk()),
+                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
                     settlement,
                 )
             })

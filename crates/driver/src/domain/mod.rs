@@ -7,5 +7,5 @@ pub mod quote;
 pub use {
     competition::Competition,
     liquidity::Liquidity,
-    mempools::{HighRisk, Mempools},
+    mempools::{Mempools, RevertProtection},
 };
