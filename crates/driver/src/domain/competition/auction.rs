@@ -130,6 +130,14 @@ impl Auction {
         .into_iter()
         .collect::<HashMap<_, _>>();
 
+        // The auction that we receive from the `autopilot` assumes that there
+        // is sufficient balance to completely cover all the orders. **This is
+        // not the case** (as the protocol should not chose which limit orders
+        // get filled for some given sell token balance). This loop goes through
+        // the priority sorted orders and allocates the available user balance
+        // to each order, and potentially scaling the order's `available` amount
+        // down in case the available user balance is only enough to partially
+        // cover the rest of the order.
         self.orders.retain_mut(|order| {
             let remaining_balance = match balances
                 .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
