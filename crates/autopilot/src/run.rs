@@ -650,7 +650,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens);
+    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens, args.score_cap);
     shadow.run_forever().await;
 
     unreachable!("shadow run loop exited");

@@ -270,7 +270,12 @@ impl RunLoop {
             return Default::default();
         }
 
-        let request = solve_request(id, auction, &self.market_makable_token_list.all(), self.score_cap);
+        let request = solve_request(
+            id,
+            auction,
+            &self.market_makable_token_list.all(),
+            self.score_cap,
+        );
         let request = &request;
 
         self.database
