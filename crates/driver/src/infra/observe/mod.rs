@@ -15,7 +15,7 @@ use {
                 Solution,
                 Solved,
             },
-            eth::{self},
+            eth,
             quote::{self, Quote},
             Liquidity,
         },
@@ -317,7 +317,9 @@ fn competition_error(err: &competition::Error) -> &'static str {
 #[derive(Debug)]
 pub enum OrderExcludedFromAuctionReason<'a> {
     CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
-    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+    CouldNotCalculateMaxSell,
+    InsufficientBalance,
+    OrderWithZeroAmountRemaining,
 }
 
 pub fn order_excluded_from_auction(

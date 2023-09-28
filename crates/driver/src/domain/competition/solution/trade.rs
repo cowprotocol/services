@@ -44,8 +44,8 @@ impl Fulfillment {
             };
 
             match order.partial {
-                order::Partial::Yes { executed: already } => {
-                    order::TargetAmount(already.0 + executed.0 + surplus_fee.0) <= order.target()
+                order::Partial::Yes { available } => {
+                    order::TargetAmount(executed.0 + surplus_fee.0) <= available
                 }
                 order::Partial::No => {
                     order::TargetAmount(executed.0 + surplus_fee.0) == order.target()

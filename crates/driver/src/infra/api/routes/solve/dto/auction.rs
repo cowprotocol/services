@@ -8,7 +8,6 @@ use {
         infra::{tokens, Ethereum},
         util::serialize,
     },
-    itertools::Itertools,
     serde::Deserialize,
     serde_with::serde_as,
 };
@@ -30,94 +29,93 @@ impl Auction {
             Some(self.id.try_into()?),
             self.orders
                 .into_iter()
-                .map(|order| {
-                    Ok(competition::Order {
-                        uid: order.uid.into(),
-                        receiver: order.receiver.map(Into::into),
-                        valid_to: order.valid_to.into(),
-                        buy: eth::Asset {
-                            amount: order.buy_amount.into(),
-                            token: order.buy_token.into(),
-                        },
-                        sell: eth::Asset {
-                            amount: order.sell_amount.into(),
-                            token: order.sell_token.into(),
-                        },
-                        side: match order.kind {
-                            Kind::Sell => competition::order::Side::Sell,
-                            Kind::Buy => competition::order::Side::Buy,
-                        },
-                        fee: competition::order::Fee {
-                            user: order.user_fee.into(),
-                            solver: order.solver_fee.into(),
-                        },
-                        kind: match order.class {
-                            Class::Market => competition::order::Kind::Market,
-                            Class::Limit => competition::order::Kind::Limit,
-                            Class::Liquidity => competition::order::Kind::Liquidity,
-                        },
-                        app_data: order.app_data.into(),
-                        partial: if order.partially_fillable {
-                            competition::order::Partial::Yes {
-                                executed: order.executed.into(),
-                            }
-                        } else {
-                            competition::order::Partial::No
-                        },
-                        pre_interactions: order
-                            .pre_interactions
-                            .into_iter()
-                            .map(|interaction| eth::Interaction {
-                                target: interaction.target.into(),
-                                value: interaction.value.into(),
-                                call_data: interaction.call_data.into(),
-                            })
-                            .collect(),
-                        post_interactions: order
-                            .post_interactions
-                            .into_iter()
-                            .map(|interaction| eth::Interaction {
-                                target: interaction.target.into(),
-                                value: interaction.value.into(),
-                                call_data: interaction.call_data.into(),
-                            })
-                            .collect(),
-                        sell_token_balance: match order.sell_token_balance {
-                            SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
-                            SellTokenBalance::Internal => {
-                                competition::order::SellTokenBalance::Internal
-                            }
-                            SellTokenBalance::External => {
-                                competition::order::SellTokenBalance::External
-                            }
-                        },
-                        buy_token_balance: match order.buy_token_balance {
-                            BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
-                            BuyTokenBalance::Internal => {
-                                competition::order::BuyTokenBalance::Internal
-                            }
-                        },
-                        signature: competition::order::Signature {
-                            scheme: match order.signing_scheme {
-                                SigningScheme::Eip712 => {
-                                    competition::order::signature::Scheme::Eip712
+                .map(|order| competition::Order {
+                    uid: order.uid.into(),
+                    receiver: order.receiver.map(Into::into),
+                    valid_to: order.valid_to.into(),
+                    buy: eth::Asset {
+                        amount: order.buy_amount.into(),
+                        token: order.buy_token.into(),
+                    },
+                    sell: eth::Asset {
+                        amount: order.sell_amount.into(),
+                        token: order.sell_token.into(),
+                    },
+                    side: match order.kind {
+                        Kind::Sell => competition::order::Side::Sell,
+                        Kind::Buy => competition::order::Side::Buy,
+                    },
+                    fee: competition::order::Fee {
+                        user: order.user_fee.into(),
+                        solver: order.solver_fee.into(),
+                    },
+                    kind: match order.class {
+                        Class::Market => competition::order::Kind::Market,
+                        Class::Limit => competition::order::Kind::Limit,
+                        Class::Liquidity => competition::order::Kind::Liquidity,
+                    },
+                    app_data: order.app_data.into(),
+                    partial: if order.partially_fillable {
+                        competition::order::Partial::Yes {
+                            available: match order.kind {
+                                Kind::Sell => {
+                                    order.sell_amount.saturating_sub(order.executed).into()
                                 }
-                                SigningScheme::EthSign => {
-                                    competition::order::signature::Scheme::EthSign
-                                }
-                                SigningScheme::PreSign => {
-                                    competition::order::signature::Scheme::PreSign
-                                }
-                                SigningScheme::Eip1271 => {
-                                    competition::order::signature::Scheme::Eip1271
-                                }
+                                Kind::Buy => order.buy_amount.saturating_sub(order.executed).into(),
                             },
-                            data: order.signature.into(),
-                            signer: order.owner.into(),
+                        }
+                    } else {
+                        competition::order::Partial::No
+                    },
+                    pre_interactions: order
+                        .pre_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: interaction.call_data.into(),
+                        })
+                        .collect(),
+                    post_interactions: order
+                        .post_interactions
+                        .into_iter()
+                        .map(|interaction| eth::Interaction {
+                            target: interaction.target.into(),
+                            value: interaction.value.into(),
+                            call_data: interaction.call_data.into(),
+                        })
+                        .collect(),
+                    sell_token_balance: match order.sell_token_balance {
+                        SellTokenBalance::Erc20 => competition::order::SellTokenBalance::Erc20,
+                        SellTokenBalance::Internal => {
+                            competition::order::SellTokenBalance::Internal
+                        }
+                        SellTokenBalance::External => {
+                            competition::order::SellTokenBalance::External
+                        }
+                    },
+                    buy_token_balance: match order.buy_token_balance {
+                        BuyTokenBalance::Erc20 => competition::order::BuyTokenBalance::Erc20,
+                        BuyTokenBalance::Internal => competition::order::BuyTokenBalance::Internal,
+                    },
+                    signature: competition::order::Signature {
+                        scheme: match order.signing_scheme {
+                            SigningScheme::Eip712 => competition::order::signature::Scheme::Eip712,
+                            SigningScheme::EthSign => {
+                                competition::order::signature::Scheme::EthSign
+                            }
+                            SigningScheme::PreSign => {
+                                competition::order::signature::Scheme::PreSign
+                            }
+                            SigningScheme::Eip1271 => {
+                                competition::order::signature::Scheme::Eip1271
+                            }
                         },
-                    })
+                        data: order.signature.into(),
+                        signer: order.owner.into(),
+                    },
                 })
-                .try_collect::<_, Vec<_>, Error>()?,
+                .collect(),
             self.tokens.into_iter().map(|token| {
                 let info = token_infos.get(&token.address.into());
                 competition::auction::Token {
@@ -145,6 +143,8 @@ pub enum Error {
     MissingSurplusFee,
     #[error("invalid tokens in auction")]
     InvalidTokens,
+    #[error("invalid order amounts in auction")]
+    InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
 }
@@ -159,6 +159,7 @@ impl From<auction::Error> for Error {
     fn from(value: auction::Error) -> Self {
         match value {
             auction::Error::InvalidTokens => Self::InvalidTokens,
+            auction::Error::InvalidAmounts => Self::InvalidAmounts,
             auction::Error::Blockchain(err) => Self::Blockchain(err),
         }
     }
