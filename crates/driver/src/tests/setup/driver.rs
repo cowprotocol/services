@@ -118,7 +118,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
-        "score_cap": cases::DEFAULT_SCORE_CAP,
+        "scoreCap": cases::DEFAULT_SCORE_CAP,
     })
 }
 
