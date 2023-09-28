@@ -189,18 +189,15 @@ impl Auction {
             // We need to scale the available amount in the order based on
             // allocated balance. We cannot naively just set the `available`
             // amount to equal the `allocated_balance` because of two reasons:
-            // 1. They are in different units. `available` is a `TargetAmount`
-            //    which means it would be in buy token for buy orders and not in
-            //    sell token like the `allocated_balance`
-            // 2. Account for fees. Even in the case of sell orders, `available`
-            //    is potentially different to `allocated_balance` because of fee
-            //    scaling. For example, imagine a partially fillable order
-            //    selling 100 tokens with a fee of 10 for a user with a balance
-            //    of 50. The `allocated_balance` would be 50 tokens, but the
-            //    `available` amount needs to be less! We want the following:
-            //    ```
-            //    available + (fee * available / sell) <= allocated_balance
-            //    ```
+            // 1. They are in different units. `available` is a `TargetAmount` which means
+            //    it would be in buy token for buy orders and not in sell token like the
+            //    `allocated_balance`
+            // 2. Account for fees. Even in the case of sell orders, `available` is
+            //    potentially different to `allocated_balance` because of fee scaling. For
+            //    example, imagine a partially fillable order selling 100 tokens with a fee
+            //    of 10 for a user with a balance of 50. The `allocated_balance` would be 50
+            //    tokens, but the `available` amount needs to be less! We want the
+            //    following: `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
                     util::math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
