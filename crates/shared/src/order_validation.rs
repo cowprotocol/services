@@ -554,17 +554,20 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        // convert the user-specified hooks into interactions.
-        if !app_data.protocol.hooks.is_empty() {
-            // custom interactions are disabled
-            if !self.enable_custom_interactions {
+        if !self.enable_custom_interactions {
+            if !app_data.protocol.hooks.is_empty() {
+                // contains some custom interactions while feature is disabled
                 return Err(AppDataValidationError::UnsupportedCustomInteraction);
             }
-            // custom interactions are not allowed for partially fillable orders
-            if order_partially_fillable {
+
+            if order_partially_fillable && !app_data.protocol.hooks.post.is_empty() {
+                // It's currently ambiguous when to execute post hooks for partially fillable
+                // orders (e.g. every fill, first fill, final fill).
+                // Executing pre-hooks on the first fill seems like a sane default.
                 return Err(AppDataValidationError::UnsupportedCustomInteraction);
             }
         }
+
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
