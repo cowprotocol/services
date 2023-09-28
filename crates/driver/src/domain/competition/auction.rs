@@ -5,15 +5,11 @@ use {
             competition::{self, solution},
             eth,
         },
-        infra::{
-            blockchain,
-            observe::{self},
-            Ethereum,
-        },
+        infra::{blockchain, observe, Ethereum},
+        util,
     },
     futures::future::join_all,
     itertools::Itertools,
-    primitive_types::U256,
     std::collections::HashMap,
     thiserror::Error,
 };
@@ -49,9 +45,14 @@ impl Auction {
         let weth = eth.contracts().weth_address();
         if !orders.iter().all(|order| {
             tokens.0.contains_key(&order.buy.token.wrap(weth))
-                && tokens.0.contains_key(&order.sell.token.wrap(weth))
+                && tokens.0.contains_key(&order.sell.token)
         }) {
             return Err(Error::InvalidTokens);
+        }
+
+        // Ensure that there are no orders with 0 amounts.
+        if orders.iter().any(|order| order.available(weth).is_zero()) {
+            return Err(Error::InvalidAmounts);
         }
 
         Ok(Self {
@@ -100,37 +101,60 @@ impl Auction {
             ))
         });
 
-        // Fetch balances of each token for each trader.
-        // Has to be separate closure due to compiler bug.
-        let f = |order: &competition::Order| -> (order::Trader, eth::TokenAddress) {
-            (order.trader(), order.sell.token)
-        };
-        let tokens_by_trader = self.orders.iter().map(f).unique();
-        let mut balances: HashMap<
-            (order::Trader, eth::TokenAddress),
-            Result<eth::TokenAmount, crate::infra::blockchain::Error>,
-        > = join_all(tokens_by_trader.map(|(trader, token)| async move {
-            let contract = eth.erc20(token);
-            let balance = contract.balance(trader.into()).await;
-            ((trader, token), balance)
-        }))
+        // Collect trader/token/source/interaction tuples for fetching available
+        // balances. Note that we are pessimistic here, if a trader is selling
+        // the same token with the same source in two different orders using a
+        // different set of pre-interactions, then we fetch the balance as if no
+        // pre-interactions were specified. This is done to avoid creating
+        // dependencies between orders (i.e. order 1 is required for executing
+        // order 2) which we currently cannot express with the solver interface.
+        let traders = self
+            .orders()
+            .iter()
+            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
+            .into_iter()
+            .map(|((trader, token, source), mut orders)| {
+                let first = orders.next().expect("group contains at least 1 order");
+                let mut others = orders;
+                if others.all(|order| order.pre_interactions == first.pre_interactions) {
+                    (trader, token, source, &first.pre_interactions[..])
+                } else {
+                    (trader, token, source, Default::default())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut balances = join_all(traders.into_iter().map(
+            |(trader, token, source, interactions)| async move {
+                let balance = eth
+                    .erc20(token)
+                    .tradable_balance(trader.into(), source, interactions)
+                    .await;
+                (
+                    (trader, token, source),
+                    balance.map(order::SellAmount::from),
+                )
+            },
+        ))
         .await
         .into_iter()
-        .collect();
+        .collect::<HashMap<_, _>>();
 
-        self.orders.retain(|order| {
-            // TODO: We should use balance fetching that takes interactions into account
-            // from `crates/shared/src/account_balances/simulation.rs` instead of hardcoding
-            // an Ethflow exception. https://github.com/cowprotocol/services/issues/1595
-            if Some(order.signature.signer.0) == eth.contracts().ethflow_address().map(|a| a.0) {
-                return true;
-            }
-
+        // The auction that we receive from the `autopilot` assumes that there
+        // is sufficient balance to completely cover all the orders. **This is
+        // not the case** (as the protocol should not chose which limit orders
+        // get filled for some given sell token balance). This loop goes through
+        // the priority sorted orders and allocates the available user balance
+        // to each order, and potentially scaling the order's `available` amount
+        // down in case the available user balance is only enough to partially
+        // cover the rest of the order.
+        let weth = eth.contracts().weth_address();
+        self.orders.retain_mut(|order| {
             let remaining_balance = match balances
-                .get_mut(&(order.trader(), order.sell.token))
+                .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
                 .unwrap()
             {
-                Ok(balance) => &mut balance.0,
+                Ok(balance) => balance,
                 Err(err) => {
                     let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance(err);
                     observe::order_excluded_from_auction(order, reason);
@@ -138,66 +162,60 @@ impl Auction {
                 }
             };
 
-            fn max_fill(order: &competition::Order) -> anyhow::Result<U256> {
-                use {
-                    anyhow::Context,
-                    shared::remaining_amounts::{Order as RemainingOrder, Remaining},
-                };
-
-                let remaining = Remaining::from_order(&RemainingOrder {
-                    kind: match order.side {
-                        order::Side::Buy => model::order::OrderKind::Buy,
-                        order::Side::Sell => model::order::OrderKind::Sell,
-                    },
-                    buy_amount: order.buy.amount.0,
-                    sell_amount: order.sell.amount.0,
-                    fee_amount: order.fee.user.0,
-                    executed_amount: match order.partial {
-                        order::Partial::Yes { executed } => executed.0,
-                        order::Partial::No => 0.into(),
-                    },
-                    partially_fillable: match order.partial {
-                        order::Partial::Yes { .. } => true,
-                        order::Partial::No => false,
-                    },
-                })
-                .context("Remaining::from_order")?;
-                let sell = remaining
-                    .remaining(order.sell.amount.0)
-                    .context("remaining_sell")?;
-                let fee = remaining
-                    .remaining(order.fee.user.0)
-                    .context("remaining_fee")?;
-                sell.checked_add(fee).context("add sell and fee")
-            }
-
-            let max_fill = match max_fill(order) {
-                Ok(balance) => balance,
-                Err(err) => {
-                    let reason =
-                        observe::OrderExcludedFromAuctionReason::CouldNotCalculateRemainingAmount(
-                            &err,
-                        );
-                    observe::order_excluded_from_auction(order, reason);
+            let max_sell = match {
+                let available = order.available(weth);
+                available.sell.amount.0.checked_add(available.fee.user.0)
+            } {
+                Some(amount) => order::SellAmount(amount),
+                None => {
+                    observe::order_excluded_from_auction(
+                        order,
+                        observe::OrderExcludedFromAuctionReason::CouldNotCalculateMaxSell,
+                    );
                     return false;
                 }
             };
 
-            let used_balance = match order.is_partial() {
-                true => {
-                    if *remaining_balance == 0.into() {
-                        return false;
-                    }
-                    max_fill.min(*remaining_balance)
-                }
-                false => {
-                    if *remaining_balance < max_fill {
-                        return false;
-                    }
-                    max_fill
-                }
+            let allocated_balance = match order.partial {
+                order::Partial::Yes { .. } => max_sell.min(*remaining_balance),
+                order::Partial::No if max_sell <= *remaining_balance => max_sell,
+                _ => order::SellAmount::default(),
             };
-            *remaining_balance -= used_balance;
+            if allocated_balance.0.is_zero() {
+                observe::order_excluded_from_auction(
+                    order,
+                    observe::OrderExcludedFromAuctionReason::InsufficientBalance,
+                );
+                return false;
+            }
+
+            // We need to scale the available amount in the order based on
+            // allocated balance. We cannot naively just set the `available`
+            // amount to equal the `allocated_balance` because of two reasons:
+            // 1. They are in different units. `available` is a `TargetAmount` which means
+            //    it would be in buy token for buy orders and not in sell token like the
+            //    `allocated_balance`
+            // 2. Account for fees. Even in the case of sell orders, `available` is
+            //    potentially different to `allocated_balance` because of fee scaling. For
+            //    example, imagine a partially fillable order selling 100 tokens with a fee
+            //    of 10 for a user with a balance of 50. The `allocated_balance` would be 50
+            //    tokens, but the `available` amount needs to be less! We want the
+            //    following: `available + (fee * available / sell) <= allocated_balance`
+            if let order::Partial::Yes { available } = &mut order.partial {
+                *available = order::TargetAmount(
+                    util::math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                        .unwrap_or_default(),
+                );
+            }
+            if order.available(weth).is_zero() {
+                observe::order_excluded_from_auction(
+                    order,
+                    observe::OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
+                );
+                return false;
+            }
+
+            remaining_balance.0 -= allocated_balance.0;
             true
         });
 
@@ -358,6 +376,8 @@ pub struct InvalidPrice;
 pub enum Error {
     #[error("invalid auction tokens")]
     InvalidTokens,
+    #[error("invalid order amounts")]
+    InvalidAmounts,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
 }

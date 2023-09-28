@@ -317,12 +317,14 @@ fn competition_error(err: &competition::Error) -> &'static str {
 #[derive(Debug)]
 pub enum OrderExcludedFromAuctionReason<'a> {
     CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
-    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+    CouldNotCalculateMaxSell,
+    InsufficientBalance,
+    OrderWithZeroAmountRemaining,
 }
 
 pub fn order_excluded_from_auction(
     order: &competition::Order,
     reason: OrderExcludedFromAuctionReason,
 ) {
-    tracing::trace!(uid=?order.uid, ?reason,"order excluded from auction");
+    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
 }

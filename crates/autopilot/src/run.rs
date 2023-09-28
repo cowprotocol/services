@@ -12,7 +12,9 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        protocol,
         run_loop::RunLoop,
+        shadow,
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
@@ -82,11 +84,18 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
-    run(args).await;
+
+    if args.shadow.is_some() {
+        shadow_mode(args).await;
+    } else {
+        run(args).await;
+    }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments) {
+    assert!(args.shadow.is_none(), "cannot run in shadow mode");
+
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
         crate::database::database_metrics(db.clone())
@@ -376,6 +385,7 @@ pub async fn run(args: Arguments) {
                 .await
                 .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
+            block_stream: current_block_stream.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
@@ -400,8 +410,9 @@ pub async fn run(args: Arguments) {
         .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
+            args.native_price_estimators.as_slice(),
             &PriceEstimatorSource::for_args(
-                args.native_price_estimators.as_slice(),
+                args.order_quoting.price_estimators.as_slice(),
                 &args.order_quoting.price_estimation_drivers,
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
@@ -593,4 +604,54 @@ pub async fn run(args: Arguments) {
         let result = serve_metrics.await;
         unreachable!("serve_metrics exited {result:?}");
     }
+}
+
+async fn shadow_mode(args: Arguments) -> ! {
+    let http_factory = HttpClientFactory::new(&args.http_client);
+
+    let orderbook = protocol::Orderbook::new(
+        http_factory.create(),
+        args.shadow.expect("missing shadow mode configuration"),
+    );
+
+    if args.drivers.is_empty() {
+        panic!("shadow mode is enabled but no drivers are configured");
+    }
+    let drivers = args.drivers.into_iter().map(Driver::new).collect();
+
+    let trusted_tokens = {
+        let web3 = shared::ethrpc::web3(
+            &args.shared.ethrpc,
+            &http_factory,
+            &args.shared.node_url,
+            "base",
+        );
+
+        let chain_id = web3
+            .eth()
+            .chain_id()
+            .await
+            .expect("Could not get chainId")
+            .as_u64();
+        if let Some(expected_chain_id) = args.shared.chain_id {
+            assert_eq!(
+                chain_id, expected_chain_id,
+                "connected to node with incorrect chain ID",
+            );
+        }
+
+        AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
+            url: args.trusted_tokens_url,
+            update_interval: args.trusted_tokens_update_interval,
+            chain_id,
+            client: http_factory.create(),
+            hardcoded: args.trusted_tokens.unwrap_or_default(),
+        })
+        .await
+    };
+
+    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens);
+    shadow.run_forever().await;
+
+    unreachable!("shadow run loop exited");
 }

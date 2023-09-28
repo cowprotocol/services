@@ -44,6 +44,15 @@ pub struct Asset {
     amount: eth::U256,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Partial {
+    #[default]
+    No,
+    Yes {
+        executed: eth::U256,
+    },
+}
+
 /// Set up a difference between the placed order amounts and the amounts
 /// executed by the solver. This is useful for testing e.g. asset flow
 /// verification. See [`crate::domain::competition::solution::Settlement`].
@@ -99,7 +108,7 @@ pub struct Order {
 
     pub internalize: bool,
     pub side: order::Side,
-    pub partial: order::Partial,
+    pub partial: Partial,
     pub valid_for: util::Timestamp,
     pub kind: order::Kind,
 
@@ -241,7 +250,7 @@ impl Default for Order {
             buy_token: Default::default(),
             internalize: Default::default(),
             side: order::Side::Sell,
-            partial: order::Partial::No,
+            partial: Default::default(),
             valid_for: 100.into(),
             kind: order::Kind::Market,
             user_fee: Default::default(),
@@ -276,6 +285,7 @@ pub fn setup() -> Setup {
         quote: Default::default(),
         fund_solver: true,
         enable_simulation: true,
+        settlement_address: Default::default(),
     }
 }
 
@@ -293,6 +303,8 @@ pub struct Setup {
     fund_solver: bool,
     /// Should simulation be enabled? True by default.
     enable_simulation: bool,
+    /// Ensure the settlement contract is deployed on a specific address?
+    settlement_address: Option<eth::H160>,
 }
 
 /// The validity of a solution.
@@ -517,6 +529,12 @@ impl Setup {
         self
     }
 
+    /// Ensure that the settlement contract is deployed to a specific address.
+    pub fn settlement_address(mut self, address: &str) -> Self {
+        self.settlement_address = Some(address.parse().unwrap());
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -566,6 +584,7 @@ impl Setup {
             solver_address,
             solver_secret_key,
             fund_solver: self.fund_solver,
+            settlement_address: self.settlement_address,
         })
         .await;
         let mut solutions = Vec::new();

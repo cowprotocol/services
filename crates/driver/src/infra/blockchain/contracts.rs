@@ -1,53 +1,71 @@
 use {
     crate::{domain::eth, infra::blockchain::Ethereum},
     ethcontract::dyns::DynWeb3,
+    thiserror::Error,
 };
-
-pub use crate::boundary::contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20, WETH9};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
+    vault_relayer: eth::ContractAddress,
+    vault: contracts::BalancerV2Vault,
     weth: contracts::WETH9,
-    ethflow: Option<eth::ContractAddress>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Addresses {
     pub settlement: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
-    pub ethflow: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
-    pub(super) fn new(web3: &DynWeb3, network_id: &eth::NetworkId, addresses: Addresses) -> Self {
-        let address = addresses
-            .settlement
-            .or_else(|| deployment_address(contracts::GPv2Settlement::raw_contract(), network_id))
-            .unwrap()
-            .into();
-        let settlement = contracts::GPv2Settlement::at(web3, address);
+    pub(super) async fn new(
+        web3: &DynWeb3,
+        network_id: &eth::NetworkId,
+        addresses: Addresses,
+    ) -> Result<Self, Error> {
+        let address_for = |contract: &ethcontract::Contract,
+                           address: Option<eth::ContractAddress>| {
+            address
+                .or_else(|| deployment_address(contract, network_id))
+                .unwrap()
+                .0
+        };
 
-        let address = addresses
-            .weth
-            .or_else(|| deployment_address(contracts::WETH9::raw_contract(), network_id))
-            .unwrap()
-            .into();
-        let weth = contracts::WETH9::at(web3, address);
+        let settlement = contracts::GPv2Settlement::at(
+            web3,
+            address_for(
+                contracts::GPv2Settlement::raw_contract(),
+                addresses.settlement,
+            ),
+        );
+        let vault_relayer = settlement.methods().vault_relayer().call().await?.into();
+        let vault =
+            contracts::BalancerV2Vault::at(web3, settlement.methods().vault().call().await?);
 
-        // Not doing deployment information because there are separate Ethflow contracts
-        // for staging and production.
-        let ethflow = addresses.ethflow;
+        let weth = contracts::WETH9::at(
+            web3,
+            address_for(contracts::WETH9::raw_contract(), addresses.weth),
+        );
 
-        Self {
+        Ok(Self {
             settlement,
+            vault_relayer,
+            vault,
             weth,
-            ethflow,
-        }
+        })
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn vault_relayer(&self) -> eth::ContractAddress {
+        self.vault_relayer
+    }
+
+    pub fn vault(&self) -> &contracts::BalancerV2Vault {
+        &self.vault
     }
 
     pub fn weth(&self) -> &contracts::WETH9 {
@@ -56,10 +74,6 @@ impl Contracts {
 
     pub fn weth_address(&self) -> eth::WethAddress {
         self.weth.address().into()
-    }
-
-    pub fn ethflow_address(&self) -> Option<eth::ContractAddress> {
-        self.ethflow
     }
 }
 
@@ -77,14 +91,26 @@ pub trait ContractAt {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self;
 }
 
-impl ContractAt for IUniswapLikeRouter {
+impl ContractAt for contracts::IUniswapLikeRouter {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
         Self::at(&eth.web3, address.0)
     }
 }
 
-impl ContractAt for ERC20 {
+impl ContractAt for contracts::ERC20 {
     fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
-        ERC20::at(&eth.web3, address.into())
+        Self::at(&eth.web3, address.into())
     }
+}
+
+impl ContractAt for contracts::support::Balances {
+    fn at(eth: &Ethereum, address: eth::ContractAddress) -> Self {
+        Self::at(&eth.web3, address.into())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("method error: {0:?}")]
+    Method(#[from] ethcontract::errors::MethodError),
 }

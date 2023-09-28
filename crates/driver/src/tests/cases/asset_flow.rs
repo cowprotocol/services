@@ -3,7 +3,7 @@ use crate::{
     tests::{
         self,
         cases::DEFAULT_SOLVER_FEE,
-        setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Solution},
+        setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Partial, Solution},
     },
 };
 
@@ -182,7 +182,7 @@ async fn mix() {
             sell_token: "A",
             buy_token: "B",
             side: order::Side::Buy,
-            partial: order::Partial::Yes {
+            partial: Partial::Yes {
                 executed: Default::default(),
             },
             kind: order::Kind::Liquidity,

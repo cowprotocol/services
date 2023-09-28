@@ -181,6 +181,10 @@ enum Account {
     PrivateKey(eth::H256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
+    /// An address is used to identify the account for signing, relying on the
+    /// connected node's account management features. This can also be used to
+    /// start the driver in a dry-run mode.
+    Address(eth::H160),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -191,11 +195,6 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
-
-    /// Sets the Ethflow contract address. Without this we cannot detect Ethflow
-    /// orders, which leads to such orders not being solved because it appears
-    /// that the user doesn't have enough sell token balance.
-    ethflow: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]

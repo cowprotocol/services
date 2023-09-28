@@ -4,7 +4,7 @@ use {
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimators},
+        price_estimation::{self, NativePriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
     url::Url,
@@ -80,9 +80,11 @@ pub struct Arguments {
     pub pool_cache_lru_size: NonZeroUsize,
 
     /// Which estimators to use to estimate token prices in terms of the chain's
-    /// native token.
+    /// native token. Estimators with the same name need to also be specified as
+    /// built-in, legacy or external price estimators (lookup happens in this
+    /// order in case of name collisions)
     #[clap(long, env, default_value_t)]
-    pub native_price_estimators: PriceEstimators,
+    pub native_price_estimators: NativePriceEstimators,
 
     /// How many successful price estimates for each order will cause a native
     /// price estimation to return its result early. It's possible to pass
@@ -170,6 +172,17 @@ pub struct Arguments {
     /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
     #[clap(long, env, default_value = "10000000000000000")]
     pub score_cap: U256,
+
+    /// Run the autopilot in a shadow mode by specifying an upstream CoW
+    /// protocol deployment to pull auctions from. This will cause the autopilot
+    /// to start a run loop where it performs solver competition on driver,
+    /// and report and log the winner **without** requesting that any driver
+    /// actually executes any settlements. Note that many of the `autopilot`'s
+    /// typical features will be disabled in this mode, making many options
+    /// ignored. This assumes co-location is enabled and does not require it
+    /// being specified separately.
+    #[clap(long, env)]
+    pub shadow: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -221,6 +234,14 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
         display_list(f, "drivers", self.drivers.iter())?;
+        writeln!(f, "submission_deadline: {}", self.submission_deadline)?;
+        writeln!(
+            f,
+            "additional_deadline_for_rewards: {}",
+            self.additional_deadline_for_rewards
+        )?;
+        writeln!(f, "score_cap: {}", self.score_cap)?;
+        display_option(f, "shadow", &self.shadow)?;
         Ok(())
     }
 }

@@ -7,7 +7,10 @@ use {
         PriceEstimationError,
         Query,
     },
-    futures::FutureExt as _,
+    futures::{
+        stream::{FuturesUnordered, StreamExt},
+        FutureExt as _,
+    },
     model::order::OrderKind,
     primitive_types::H160,
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc},
@@ -54,12 +57,12 @@ pub struct RacingCompetitionEstimator<T> {
 
 impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     pub fn new(
-        inner: PriceEstimationStage<T>,
+        inner: Vec<PriceEstimationStage<T>>,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
-            inner: vec![inner],
+            inner,
             successful_results_for_early_return,
         }
     }
@@ -79,34 +82,47 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         async move {
             let mut results = vec![];
+            let mut iter = self.inner.iter().enumerate().peekable();
             // Process stages sequentially
-            'outer: for (stage_index, stage) in self.inner.iter().enumerate() {
+            'outer: while let Some((stage_index, stage)) = iter.next() {
                 // Process estimators within each stage in parallel
-                let mut futures: Vec<_> = stage
+                let mut requests: Vec<_> = stage
                     .iter()
                     .enumerate()
                     .map(|(index, (_, estimator))| {
-                        // Return estimator `index` together with the result because `select_all()`
-                        // is allowed to shuffle around futures which makes the index return by
-                        // `select_all()` meaningless for our purposes.
                         get_single_result(estimator, query.clone())
-                            .map(move |result| (index, result))
+                            .map(move |result| (EstimatorIndex(stage_index, index), result))
                             .boxed()
                     })
                     .collect();
-                while !futures.is_empty() {
-                    let ((estimator_index, result), _, rest) =
-                        futures::future::select_all(futures).await;
-                    futures = rest;
-                    results.push((stage_index, estimator_index, result.clone()));
-                    let estimator = &self.inner[stage_index][estimator_index].0;
+
+                // Make sure we also use the next stage(s) if this one does not have enough
+                // estimators to return early anyways
+                let missing_successes =
+                    self.successful_results_for_early_return.get() - successes(&results);
+                while requests.len() < missing_successes && iter.peek().is_some() {
+                    let (next_stage_index, next_stage) = iter.next().unwrap();
+                    requests.extend(
+                        next_stage
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (_, estimator))| {
+                                get_single_result(estimator, query.clone())
+                                    .map(move |result| {
+                                        (EstimatorIndex(next_stage_index, index), result)
+                                    })
+                                    .boxed()
+                            }),
+                    )
+                }
+
+                let mut futures: FuturesUnordered<_> = requests.into_iter().collect();
+                while let Some((estimator_index, result)) = futures.next().await {
+                    results.push((estimator_index, result.clone()));
+                    let estimator = &self.inner[estimator_index.0][estimator_index.1].0;
                     tracing::debug!(?query, ?result, estimator, "new price estimate");
 
-                    let successes = results
-                        .iter()
-                        .filter(|(_, _, result)| result.is_ok())
-                        .count();
-                    if successes >= self.successful_results_for_early_return.get() {
+                    if successes(&results) >= self.successful_results_for_early_return.get() {
                         break 'outer;
                     }
                 }
@@ -114,13 +130,13 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
 
             let best_index = results
                 .iter()
-                .map(|(_, _, result)| result)
+                .map(|(_, result)| result)
                 .enumerate()
                 .max_by(|a, b| compare_results(a.1, b.1))
                 .map(|(index, _)| index)
                 .unwrap();
-            let (stage_index, estimator_index, result) = &results[best_index];
-            let (estimator, _) = &self.inner[*stage_index][*estimator_index];
+            let (estimator_index, result) = &results[best_index];
+            let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
             tracing::debug!(?query, ?result, estimator, "winning price estimate");
 
             let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
@@ -145,6 +161,10 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         }
         .boxed()
     }
+}
+
+fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
+    results.iter().filter(|(_, result)| result.is_ok()).count()
 }
 
 impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
@@ -191,9 +211,10 @@ pub struct CompetitionEstimator<T> {
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(inner: Vec<(String, T)>) -> Self {
+    pub fn new(inner: Vec<Vec<(String, T)>>) -> Self {
         let number_of_estimators =
-            NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
+            NonZeroUsize::new(inner.iter().fold(0, |sum, stage| sum + stage.len()))
+                .expect("Vec of estimators should not be empty.");
         Self {
             inner: RacingCompetitionEstimator::new(inner, number_of_estimators),
         }
@@ -287,6 +308,7 @@ mod tests {
         super::*,
         crate::price_estimation::MockPriceEstimating,
         anyhow::anyhow,
+        futures::channel::oneshot::channel,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         primitive_types::H160,
@@ -377,10 +399,10 @@ mod tests {
         ]);
 
         let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionEstimator::new(vec![
+            CompetitionEstimator::new(vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
-            ]);
+            ]]);
 
         let result = priority.estimate(queries[0].clone()).await;
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
@@ -456,11 +478,11 @@ mod tests {
 
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator::new(
-                vec![
+                vec![vec![
                     ("first".to_owned(), Arc::new(first)),
                     ("second".to_owned(), Arc::new(second)),
                     ("third".to_owned(), Arc::new(third)),
-                ],
+                ]],
                 NonZeroUsize::new(1).unwrap(),
             );
 
@@ -524,8 +546,8 @@ mod tests {
         });
 
         let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
-            RacingCompetitionEstimator {
-                inner: vec![
+            RacingCompetitionEstimator::new(
+                vec![
                     vec![
                         ("first".to_owned(), Arc::new(first)),
                         ("second".to_owned(), Arc::new(second)),
@@ -535,10 +557,75 @@ mod tests {
                         ("fourth".to_owned(), Arc::new(fourth)),
                     ],
                 ],
-                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            };
+                NonZeroUsize::new(2).unwrap(),
+            );
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(3));
+    }
+
+    #[tokio::test]
+    async fn combines_stages_if_threshold_bigger_than_next_stage_length() {
+        let query = Arc::new(Query {
+            verification: None,
+            sell_token: H160::from_low_u64_le(0),
+            buy_token: H160::from_low_u64_le(1),
+            in_amount: NonZeroU256::try_from(1).unwrap(),
+            kind: OrderKind::Sell,
+        });
+
+        fn estimate(amount: u64) -> Estimate {
+            Estimate {
+                out_amount: amount.into(),
+                ..Default::default()
+            }
+        }
+
+        let (sender, mut receiver) = channel();
+
+        let mut first = MockPriceEstimating::new();
+
+        first.expect_estimate().times(1).return_once(move |_| {
+            async {
+                sleep(Duration::from_millis(20)).await;
+                let _ = sender.send(());
+                Ok(estimate(1))
+            }
+            .boxed()
+        });
+
+        let mut second = MockPriceEstimating::new();
+        second.expect_estimate().times(1).return_once(move |_| {
+            async move {
+                // First stage hasn't finished yet
+                assert!(receiver.try_recv().unwrap().is_none());
+                Err(PriceEstimationError::NoLiquidity)
+            }
+            .boxed()
+        });
+
+        // After the first combined stage is done, we are only missing one positive
+        // result, thus we query third but not fourth
+        let mut third = MockPriceEstimating::new();
+        third
+            .expect_estimate()
+            .times(1)
+            .return_once(move |_| async move { Ok(estimate(1)) }.boxed());
+
+        let mut fourth = MockPriceEstimating::new();
+        fourth.expect_estimate().never();
+
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator {
+                inner: vec![
+                    vec![("first".to_owned(), Arc::new(first))],
+                    vec![("second".to_owned(), Arc::new(second))],
+                    vec![("third".to_owned(), Arc::new(third))],
+                    vec![("fourth".to_owned(), Arc::new(fourth))],
+                ],
+                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            };
+
+        racing.estimate(query).await.unwrap();
     }
 }

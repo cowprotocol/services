@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::{display_option, CodeSimulatorKind},
+        arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
@@ -8,6 +8,7 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
+    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -65,16 +66,17 @@ impl Default for PriceEstimators {
 
 impl Display for PriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(PriceEstimator { kind, address }) = it.next() {
-            write!(f, "{kind:?}|{address:?}")?;
-            for PriceEstimator { kind, address } in it {
-                write!(f, ",{kind:?}|{address:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
+        if self.0.is_empty() {
+            return f.write_str("None");
         }
+
+        let formatter = self
+            .as_slice()
+            .iter()
+            .format_with(",", |PriceEstimator { kind, address }, f| {
+                f(&format_args!("{kind:?}|{address:?}"))
+            });
+        write!(f, "{}", formatter)
     }
 }
 
@@ -135,6 +137,68 @@ impl FromStr for PriceEstimator {
             }
         };
         Ok(PriceEstimator { kind, address })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub enum NativePriceEstimator {
+    GenericPriceEstimator(String),
+    OneInchSpotPriceApi,
+}
+
+impl NativePriceEstimators {
+    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
+        &self.0
+    }
+}
+
+impl Default for NativePriceEstimators {
+    fn default() -> Self {
+        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
+            "Baseline".into(),
+        )]])
+    }
+}
+
+impl Display for NativePriceEstimators {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let formatter = self
+            .as_slice()
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+            })
+            .format(";");
+        write!(f, "{}", formatter)
+    }
+}
+
+impl From<&str> for NativePriceEstimators {
+    fn from(s: &str) -> Self {
+        Self(
+            s.split(';')
+                .map(|sub_list| {
+                    sub_list
+                        .split(',')
+                        .map(NativePriceEstimator::from)
+                        .collect::<Vec<NativePriceEstimator>>()
+                })
+                .collect::<Vec<Vec<NativePriceEstimator>>>(),
+        )
+    }
+}
+
+impl From<&str> for NativePriceEstimator {
+    fn from(s: &str) -> Self {
+        match s {
+            "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
+            estimator => NativePriceEstimator::GenericPriceEstimator(estimator.into()),
+        }
     }
 }
 
@@ -246,6 +310,14 @@ pub struct Arguments {
     /// request pressure on the 0x API.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_only_estimate_buy_queries: bool,
+
+    /// The API key for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_key: Option<String>,
+
+    /// The base URL for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_url: Option<Url>,
 }
 
 impl Display for Arguments {
@@ -313,6 +385,11 @@ impl Display for Arguments {
             f,
             "zeroex_only_estimate_buy_queries: {:?}",
             self.zeroex_only_estimate_buy_queries
+        )?;
+        display_secret_option(
+            f,
+            "one_inch_spot_price_api_key: {:?}",
+            &self.one_inch_spot_price_api_key,
         )?;
 
         Ok(())

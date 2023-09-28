@@ -570,15 +570,15 @@ impl From<(H160, u32)> for EthFlowOrderOnchainStatus {
     }
 }
 
-struct EthFlowTradeIntent {
-    sell_amount: U256,
-    buy_token: H160,
-    receiver: H160,
+pub struct EthFlowTradeIntent {
+    pub sell_amount: U256,
+    pub buy_token: H160,
+    pub receiver: H160,
 }
 
 impl EthFlowTradeIntent {
     // How a user trade intent is converted into a quote request by the frontend
-    fn to_quote_request(&self, ethflow: &CoWSwapEthFlow, weth: &WETH9) -> OrderQuoteRequest {
+    pub fn to_quote_request(&self, ethflow: &CoWSwapEthFlow, weth: &WETH9) -> OrderQuoteRequest {
         OrderQuoteRequest {
             from: ethflow.address(),
             // Even if the user sells ETH, we request a quote for WETH
