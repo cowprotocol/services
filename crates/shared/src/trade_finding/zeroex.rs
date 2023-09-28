@@ -123,7 +123,6 @@ impl From<ZeroExResponseError> for TradeError {
             ZeroExResponseError::RateLimited => TradeError::RateLimited,
             ZeroExResponseError::ServerError(_)
             | ZeroExResponseError::UnknownZeroExError(_)
-            | ZeroExResponseError::CurrentBlockRetrieval(_)
             | ZeroExResponseError::DeserializeError(_, _)
             | ZeroExResponseError::TextFetch(_)
             | ZeroExResponseError::Send(_) => TradeError::Other(err.into()),

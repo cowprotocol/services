@@ -14,7 +14,7 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
-    ethrpc::{create_env_test_transport, current_block::BlockRetrieving, Web3},
+    ethrpc::current_block::{BlockInfo, CurrentBlockStream},
     number::u256_decimal,
     reqwest::{
         header::{HeaderMap, HeaderValue},
@@ -28,9 +28,9 @@ use {
     std::{
         collections::HashSet,
         fmt::{self, Display, Formatter},
-        sync::Arc,
     },
     thiserror::Error,
+    tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -361,7 +361,7 @@ pub trait ZeroExApi: Send + Sync {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_stream: CurrentBlockStream,
 }
 
 impl DefaultZeroExApi {
@@ -377,7 +377,7 @@ impl DefaultZeroExApi {
         http_factory: &HttpClientFactory,
         base_url: impl IntoUrl,
         api_key: Option<String>,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         let client = match api_key {
             Some(api_key) => {
@@ -395,7 +395,7 @@ impl DefaultZeroExApi {
         Ok(Self {
             client,
             base_url: base_url.into_url().context("zeroex api url")?,
-            block_retriever,
+            block_stream,
         })
     }
 
@@ -405,12 +405,12 @@ impl DefaultZeroExApi {
     /// default URL) and `ZEROEX_API_KEY` (falling back to no API key) from the
     /// local environment when creating the API client.
     pub fn test() -> Self {
-        let http = create_env_test_transport();
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         Self::new(
             &HttpClientFactory::default(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
             std::env::var("ZEROEX_API_KEY").ok(),
-            Arc::new(Web3::new(http)),
+            block_stream,
         )
         .unwrap()
     }
@@ -450,9 +450,6 @@ pub enum ZeroExResponseError {
 
     #[error("Error({0}) for response {1}")]
     DeserializeError(serde_json::Error, String),
-
-    #[error("Couldn't retrieve current block: {0}")]
-    CurrentBlockRetrieval(anyhow::Error),
 
     // Recovered Response but failed on async call of response.text()
     #[error(transparent)]
@@ -542,12 +539,7 @@ impl DefaultZeroExApi {
             if set_current_block_header {
                 request = request.header(
                     "X-Current-Block-Hash",
-                    self.block_retriever
-                        .current_block()
-                        .await
-                        .map_err(ZeroExResponseError::CurrentBlockRetrieval)?
-                        .hash
-                        .to_string(),
+                    self.block_stream.borrow().hash.to_string(),
                 );
             };
 

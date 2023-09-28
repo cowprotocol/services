@@ -6,7 +6,7 @@ use {
         Query,
     },
     crate::{rate_limiter::RateLimiter, trade_finding::external::ExternalTradeFinder},
-    ethrpc::current_block::BlockRetrieving,
+    ethrpc::current_block::CurrentBlockStream,
     reqwest::{Client, Url},
     std::sync::Arc,
 };
@@ -18,13 +18,13 @@ impl ExternalPriceEstimator {
         driver: Url,
         client: Client,
         rate_limiter: Arc<RateLimiter>,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_stream: CurrentBlockStream,
     ) -> Self {
         Self(TradeEstimator::new(
             Arc::new(ExternalTradeFinder::new(
                 driver.clone(),
                 client,
-                block_retriever,
+                block_stream,
             )),
             rate_limiter,
             driver.to_string(),

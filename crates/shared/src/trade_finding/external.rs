@@ -7,10 +7,9 @@ use {
         trade_finding::{Interaction, Quote, Trade, TradeError, TradeFinding},
     },
     anyhow::anyhow,
-    ethrpc::current_block::BlockRetrieving,
+    ethrpc::current_block::CurrentBlockStream,
     futures::{future::BoxFuture, FutureExt},
     reqwest::{header, Client},
-    std::sync::Arc,
     url::Url,
 };
 
@@ -26,17 +25,17 @@ pub struct ExternalTradeFinder {
     /// Client to issue http requests with.
     client: Client,
 
-    /// Latest block retriever to use for block-dependent queries.
-    block_retriever: Arc<dyn BlockRetrieving>,
+    /// Stream to retrieve latest block information for block-dependent queries.
+    block_stream: CurrentBlockStream,
 }
 
 impl ExternalTradeFinder {
-    pub fn new(driver: Url, client: Client, block_retriever: Arc<dyn BlockRetrieving>) -> Self {
+    pub fn new(driver: Url, client: Client, block_stream: CurrentBlockStream) -> Self {
         Self {
             quote_endpoint: crate::url::join(&driver, "quote"),
             sharing: RequestSharing::labelled(format!("tradefinder_{}", driver)),
             client,
-            block_retriever,
+            block_stream,
         }
     }
 
@@ -62,7 +61,7 @@ impl ExternalTradeFinder {
         if query.block_dependent {
             request = request.header(
                 "X-Current-Block-Hash",
-                self.block_retriever.current_block().await?.hash.to_string(),
+                self.block_stream.borrow().hash.to_string(),
             )
         }
 

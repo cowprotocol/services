@@ -18,6 +18,7 @@ use {
     contracts::GPv2Settlement,
     derivative::Derivative,
     ethcontract::Account,
+    ethrpc::current_block::CurrentBlockStream,
     model::order::OrderKind,
     primitive_types::H160,
     reqwest::{Client, Url},
@@ -62,6 +63,7 @@ impl OneInchSolver {
         one_inch_url: Url,
         slippage_calculator: SlippageCalculator,
         referrer_address: Option<H160>,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
@@ -72,7 +74,7 @@ impl OneInchSolver {
                 one_inch_url,
                 client,
                 chain_id,
-                Arc::new(web3.clone()),
+                block_stream,
             )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             cache: Cache::default(),
@@ -210,6 +212,7 @@ mod tests {
         },
         contracts::{dummy_contract, GPv2Settlement, WETH9},
         ethcontract::{Web3, H160, U256},
+        ethrpc::current_block::BlockInfo,
         futures::FutureExt as _,
         maplit::hashmap,
         mockall::{predicate::*, Sequence},
@@ -219,6 +222,7 @@ mod tests {
             ethrpc::create_env_test_transport,
             oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
         },
+        tokio::sync::watch,
     };
 
     fn dummy_solver(
@@ -489,6 +493,7 @@ mod tests {
 
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = testlib::tokens::GNO;
+        let (_, block_stream) = watch::channel(BlockInfo::default());
 
         let solver = OneInchSolver::with_disabled_protocols(
             account(),
@@ -500,6 +505,7 @@ mod tests {
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
             SlippageCalculator::default(),
             None,
+            block_stream,
         )
         .unwrap();
         let settlement = solver

@@ -3,7 +3,7 @@ use {
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
-    ethrpc::current_block::BlockRetrieving,
+    ethrpc::current_block::CurrentBlockStream,
     number::u256_decimal,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
@@ -14,7 +14,6 @@ use {
     },
     serde_json::Value,
     serde_with::{serde_as, DisplayFromStr},
-    std::sync::Arc,
     thiserror::Error,
 };
 
@@ -40,7 +39,7 @@ pub struct DefaultParaswapApi {
     pub client: Client,
     pub base_url: String,
     pub partner: String,
-    pub block_retriever: Arc<dyn BlockRetrieving>,
+    pub block_stream: CurrentBlockStream,
 }
 
 #[async_trait::async_trait]
@@ -57,7 +56,7 @@ impl ParaswapApi for DefaultParaswapApi {
         if set_current_block_header {
             request = request.header(
                 "X-Current-Block-Hash",
-                self.block_retriever.current_block().await?.hash.to_string(),
+                self.block_stream.borrow().hash.to_string(),
             );
         };
 
@@ -82,7 +81,7 @@ impl ParaswapApi for DefaultParaswapApi {
         if set_current_block_header {
             request = request.header(
                 "X-Current-Block-Hash",
-                self.block_retriever.current_block().await?.hash.to_string(),
+                self.block_stream.borrow().hash.to_string(),
             );
         };
         let response = request.send().await?;
@@ -387,9 +386,11 @@ impl Interaction for TransactionBuilderResponse {
 mod tests {
     use {
         super::*,
-        ethrpc::{create_env_test_transport, Web3},
+        ethrpc::{create_env_test_transport, current_block::BlockInfo, Web3},
+        primitive_types::H256,
         reqwest::StatusCode,
         serde_json::json,
+        tokio::sync::watch,
     };
 
     #[tokio::test]
@@ -794,12 +795,12 @@ mod tests {
             .await
             .expect("Response is not json");
 
-        let http = create_env_test_transport();
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         let api = DefaultParaswapApi {
             client: Client::new(),
             base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
-            block_retriever: Arc::new(Web3::new(http)),
+            block_stream,
         };
 
         let good_query = TransactionBuilderQuery {

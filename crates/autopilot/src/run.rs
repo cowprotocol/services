@@ -360,7 +360,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
-            block_retriever.clone(),
+            current_block_stream.clone(),
         )
         .unwrap(),
     );
@@ -368,7 +368,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
-        block_retriever.clone(),
+        current_block_stream.clone(),
     )
     .map(Arc::new);
 
@@ -400,7 +400,6 @@ pub async fn run(args: Arguments) {
             gas_price: gas_price_estimator.clone(),
             zeroex: zeroex_api.clone(),
             oneinch: one_inch_api.ok().map(|a| a as _),
-            block_retriever: block_retriever.clone(),
         },
     )
     .expect("failed to initialize price estimator factory");

@@ -13,6 +13,7 @@ use {
     contracts::GPv2Settlement,
     derivative::Derivative,
     ethcontract::{Account, H160},
+    ethrpc::current_block::CurrentBlockStream,
     model::order::OrderKind,
     reqwest::Client,
     shared::{
@@ -63,6 +64,7 @@ impl ParaswapSolver {
         partner: Option<String>,
         base_url: String,
         slippage_calculator: SlippageCalculator,
+        block_stream: CurrentBlockStream,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3.clone(), settlement_contract.address());
 
@@ -75,7 +77,7 @@ impl ParaswapSolver {
                 client,
                 base_url,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
-                block_retriever: Arc::new(web3),
+                block_stream,
             }),
             disabled_paraswap_dexs,
             slippage_calculator,
@@ -225,6 +227,7 @@ mod tests {
         },
         contracts::{dummy_contract, WETH9},
         ethcontract::U256,
+        ethrpc::current_block::BlockInfo,
         futures::FutureExt as _,
         maplit::hashmap,
         mockall::{predicate::*, Sequence},
@@ -236,6 +239,7 @@ mod tests {
             token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
         },
         std::collections::HashMap,
+        tokio::sync::watch,
     };
 
     #[tokio::test]
@@ -557,6 +561,7 @@ mod tests {
 
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = testlib::tokens::GNO;
+        let (_, block_stream) = watch::channel(BlockInfo::default());
 
         let solver = ParaswapSolver::new(
             account(),
@@ -568,6 +573,7 @@ mod tests {
             None,
             "https://apiv5.paraswap.io".into(),
             SlippageCalculator::default(),
+            block_stream,
         );
 
         let settlement = solver

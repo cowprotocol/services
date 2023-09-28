@@ -10,7 +10,7 @@ use {
     anyhow::{ensure, Result},
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
-    ethrpc::current_block::BlockRetrieving,
+    ethrpc::current_block::CurrentBlockStream,
     number::u256_decimal,
     reqwest::{Client, IntoUrl, Url},
     serde::{de::DeserializeOwned, Deserialize},
@@ -494,7 +494,7 @@ pub struct OneInchClientImpl {
     client: Client,
     base_url: Url,
     chain_id: u64,
-    block_retriever: Arc<dyn BlockRetrieving>,
+    block_stream: CurrentBlockStream,
 }
 
 impl OneInchClientImpl {
@@ -507,7 +507,7 @@ impl OneInchClientImpl {
         base_url: impl IntoUrl,
         client: Client,
         chain_id: u64,
-        block_retriever: Arc<dyn BlockRetrieving>,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         ensure!(
             Self::SUPPORTED_CHAINS.contains(&chain_id),
@@ -518,20 +518,20 @@ impl OneInchClientImpl {
             client,
             base_url: base_url.into_url()?,
             chain_id,
-            block_retriever,
+            block_stream,
         })
     }
 
     #[cfg(test)]
     pub fn test() -> Self {
-        use ethrpc::{create_env_test_transport, Web3};
+        use {ethrpc::current_block::BlockInfo, primitive_types::H256, tokio::sync::watch};
 
-        let http = create_env_test_transport();
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         OneInchClientImpl::new(
             OneInchClientImpl::DEFAULT_URL,
             Client::new(),
             1,
-            Arc::new(Web3::new(http)),
+            block_stream,
         )
         .unwrap()
     }
@@ -547,7 +547,7 @@ impl OneInchClient for OneInchClientImpl {
         logged_query(
             &self.client,
             query.into_url(&self.base_url, self.chain_id),
-            set_current_block_header.then(|| self.block_retriever.clone()),
+            set_current_block_header.then(|| self.block_stream.clone()),
         )
         .await
     }
@@ -560,7 +560,7 @@ impl OneInchClient for OneInchClientImpl {
         logged_query(
             &self.client,
             query.into_url(&self.base_url, self.chain_id),
-            set_current_block_header.then(|| self.block_retriever.clone()),
+            set_current_block_header.then(|| self.block_stream.clone()),
         )
         .await
     }
@@ -581,17 +581,17 @@ impl OneInchClient for OneInchClientImpl {
 async fn logged_query<D>(
     client: &Client,
     url: Url,
-    block_retrieving: Option<Arc<dyn BlockRetrieving>>,
+    block_stream: Option<CurrentBlockStream>,
 ) -> Result<D, OneInchError>
 where
     D: DeserializeOwned,
 {
     tracing::trace!(%url, "Query 1inch API");
     let mut request = client.get(url);
-    if let Some(block_retriever) = block_retrieving {
+    if let Some(block_stream) = block_stream {
         request = request.header(
             "X-Current-Block-Hash",
-            block_retriever.current_block().await?.hash.to_string(),
+            block_stream.borrow().hash.to_string(),
         );
     };
 
@@ -720,8 +720,10 @@ mod tests {
     use {
         super::*,
         crate::addr,
-        ethrpc::{create_test_transport, Web3},
+        ethrpc::{create_test_transport, current_block::BlockInfo, Web3},
         futures::FutureExt as _,
+        primitive_types::H256,
+        tokio::sync::watch,
     };
 
     #[test]
@@ -1314,11 +1316,12 @@ mod tests {
 
     #[test]
     fn creation_fails_on_unsupported_chain() {
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         let api = OneInchClientImpl::new(
             OneInchClientImpl::DEFAULT_URL,
             Client::new(),
             2,
-            Arc::new(Web3::new(create_test_transport("http://localhost:8545"))),
+            block_stream,
         );
         assert!(api.is_err());
     }
