@@ -200,7 +200,7 @@ impl Solver {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
             },
-            &vec![],
+            &[],
         )
         .await
         .unwrap();
