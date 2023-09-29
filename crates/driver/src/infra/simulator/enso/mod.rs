@@ -55,15 +55,15 @@ pub enum Error {
     Revert(String),
 }
 
-impl Into<Result<eth::Gas, Error>> for dto::Response {
-    fn into(self) -> Result<eth::Gas, Error> {
-        if !self.success {
+impl From<dto::Response> for Result<eth::Gas, Error> {
+    fn from(response: dto::Response) -> Self {
+        if !response.success {
             return Err(Error::Revert(format!(
                 "{}: {}",
-                self.exit_reason,
-                hex::encode(&self.return_data)
+                response.exit_reason,
+                hex::encode(&response.return_data)
             )));
         }
-        Ok(self.gas_used.into())
+        Ok(response.gas_used.into())
     }
 }
