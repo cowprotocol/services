@@ -121,7 +121,7 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
 }
 
 async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
-    Ethereum::new(ethrpc, config.contracts)
+    Ethereum::new(ethrpc, config.contracts, &config.mempools)
         .await
         .expect("initialize ethereum RPC API")
 }

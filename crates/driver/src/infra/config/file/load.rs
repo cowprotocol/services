@@ -37,7 +37,6 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
     );
 
     infra::Config {
-        score_cap: config.score_cap,
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
                 file::Account::PrivateKey(private_key) => ethcontract::Account::Offline(
