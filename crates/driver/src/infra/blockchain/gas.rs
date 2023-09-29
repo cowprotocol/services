@@ -7,7 +7,6 @@ use {
     crate::{domain::eth, infra::mempool},
     ethcontract::dyns::DynWeb3,
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
-    std::sync::Arc,
 };
 
 type MaxAdditionalTip = f64;
@@ -15,17 +14,15 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    gas: Arc<NativeGasEstimator>,
+    gas: NativeGasEstimator,
     additional_tip: Option<AdditionalTip>,
 }
 
 impl GasPriceEstimator {
     pub async fn new(web3: &DynWeb3, mempools: &[mempool::Config]) -> Result<Self, Error> {
-        let gas = Arc::new(
-            NativeGasEstimator::new(web3.transport().clone(), None)
-                .await
-                .map_err(Error::Gas)?,
-        );
+        let gas = NativeGasEstimator::new(web3.transport().clone(), None)
+            .await
+            .map_err(Error::Gas)?;
         let additional_tip = mempools
             .iter()
             .find(|mempool| matches!(mempool.kind, mempool::Kind::Flashbots { .. }))
