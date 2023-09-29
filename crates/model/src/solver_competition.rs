@@ -133,6 +133,7 @@ pub enum Score {
     ProtocolWithSolverRisk(U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
+    /// [DEPRECATED] Kept to not brake the solver competition API.
     #[serde(rename = "scoreDiscounted")]
     #[serde(with = "u256_decimal")]
     Discounted(U256),
