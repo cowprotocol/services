@@ -221,7 +221,10 @@ async fn tested_amounts_adjust_depending_on_response() {
                         "kind": "fulfillment",
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         })
     );
@@ -524,7 +527,10 @@ async fn moves_surplus_fee_to_buy_token() {
                         "kind": "fulfillment",
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         })
     );
@@ -788,7 +794,10 @@ async fn market() {
                         "kind": "fulfillment",
                         "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         })
     );

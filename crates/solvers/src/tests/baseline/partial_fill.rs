@@ -96,7 +96,10 @@ async fn test() {
                         "inputAmount": "500000000000000000",
                         "outputAmount": "20694705425542464884657"
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );

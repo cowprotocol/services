@@ -196,7 +196,12 @@ impl Solutions {
                         })
                         .try_collect()?,
                     solver.clone(),
-                    solution.risk.into(),
+                    match solution.score {
+                        Score::Solver(score) => competition::solution::SolverScore::Solver(score),
+                        Score::RiskAdjusted(success_probability) => {
+                            competition::solution::SolverScore::RiskAdjusted(success_probability)
+                        }
+                    },
                     weth,
                 )
                 .map_err(|competition::solution::InvalidClearingPrices| {
@@ -223,9 +228,7 @@ pub struct Solution {
     prices: HashMap<eth::H160, eth::U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
-    #[serde_as(as = "serialize::U256")]
-    #[serde(default)]
-    risk: eth::U256,
+    score: Score,
 }
 
 #[derive(Debug, Deserialize)]
@@ -368,4 +371,11 @@ enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+pub enum Score {
+    Solver(eth::U256),
+    RiskAdjusted(f64),
 }

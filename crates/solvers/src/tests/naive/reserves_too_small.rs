@@ -90,6 +90,9 @@ async fn test() {
                         "outputAmount": "2500007430"
                     },
                 ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );

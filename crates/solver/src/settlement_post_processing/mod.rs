@@ -1,5 +1,3 @@
-use shared::http_solver::model::Score;
-
 mod optimize_buffer_usage;
 mod optimize_score;
 mod optimize_unwrapping;
@@ -20,7 +18,7 @@ use {
     primitive_types::H160,
     shared::{
         ethrpc::Web3,
-        http_solver::model::InternalizationStrategy,
+        http_solver::{self, model::InternalizationStrategy},
         token_list::AutoUpdatingTokenList,
     },
 };
@@ -138,7 +136,7 @@ impl PostProcessing for PostProcessingPipeline {
         // TODO: once we eliminate naive and baseline this logic should be moved to
         // SingleOrderSettlement::into_settlement
         match (optimized_solution.score, risk_calculator) {
-            (Score::RiskAdjusted { gas_amount, .. }, Some(risk_calculator)) => {
+            (http_solver::model::Score::RiskAdjusted { gas_amount, .. }, Some(risk_calculator)) => {
                 match compute_success_probability(
                     &optimized_solution,
                     &simulator,
@@ -149,7 +147,7 @@ impl PostProcessing for PostProcessingPipeline {
                 .await
                 {
                     Ok(success_probability) => Settlement {
-                        score: Score::RiskAdjusted {
+                        score: http_solver::model::Score::RiskAdjusted {
                             success_probability,
                             gas_amount,
                         },

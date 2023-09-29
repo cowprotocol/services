@@ -99,7 +99,10 @@ async fn uniswap() {
                         "inputAmount": "1848013595",
                         "outputAmount": "1000000000428620302"
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -260,7 +263,10 @@ async fn balancer_weighted() {
                         "inputAmount": "9056454904360584",
                         "outputAmount": "1000000000000337213"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -371,7 +377,10 @@ async fn balancer_weighted_v3plus() {
                         "inputAmount": "603167793526702182",
                         "outputAmount": "1000000000000001964333"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -482,7 +491,10 @@ async fn distant_convergence() {
                         "inputAmount": "601109440402472000",
                         "outputAmount": "1000000000000015112015"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -628,7 +640,10 @@ async fn same_path() {
                         "inputAmount": "15503270361045187242",
                         "outputAmount": "9056454904357528"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -763,7 +778,10 @@ async fn balancer_stable() {
                             "inputAmount": "9970226684231795304",
                             "outputAmount": "10000000000000000000"
                         },
-                    ]
+                    ],
+                    "score": {
+                        "riskadjusted": 1.0
+                    }
                 },
             ]
         }),

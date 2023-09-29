@@ -27,6 +27,7 @@ pub struct Auction {
     tokens: Tokens,
     gas_price: eth::GasPrice,
     deadline: Deadline,
+    score_cap: eth::U256,
 }
 
 impl Auction {
@@ -36,6 +37,7 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: Deadline,
         eth: &Ethereum,
+        score_cap: eth::U256,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
@@ -59,6 +61,7 @@ impl Auction {
             tokens,
             gas_price: eth.gas_price().await?,
             deadline,
+            score_cap,
         })
     }
 
@@ -230,6 +233,10 @@ impl Auction {
 
     pub fn deadline(&self) -> Deadline {
         self.deadline
+    }
+
+    pub fn score_cap(&self) -> eth::U256 {
+        self.score_cap
     }
 }
 
