@@ -110,6 +110,7 @@ pub fn not_merged(settlement: &Settlement, other: &Settlement, err: solution::Er
 pub fn scoring(settlement: &Settlement) {
     tracing::trace!(
         solutions = ?settlement.solutions(),
+        gas = ?settlement.gas,
         "scoring settlement"
     );
 }

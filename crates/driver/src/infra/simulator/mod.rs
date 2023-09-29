@@ -3,6 +3,7 @@ use crate::{
     infra::blockchain::{self, Ethereum},
 };
 
+pub mod enso;
 pub mod tenderly;
 
 /// Ethereum transaction simulator.
@@ -29,6 +30,16 @@ impl Simulator {
     pub fn ethereum(eth: Ethereum) -> Self {
         Self {
             inner: Inner::Ethereum(eth),
+            disable_access_lists: false,
+            disable_gas: None,
+        }
+    }
+
+    /// Simulate transactions using the [Enso Simulator](https://github.com/EnsoFinance/transaction-simulator).
+    /// Uses Ethereum RPC API to generate access lists.
+    pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
+        Self {
+            inner: Inner::Enso(enso::Enso::new(config, eth.network().chain), eth),
             disable_access_lists: false,
             disable_gas: None,
         }
@@ -61,6 +72,7 @@ impl Simulator {
                     .access_list
             }
             Inner::Ethereum(ethereum) => ethereum.create_access_list(tx.clone()).await?,
+            Inner::Enso(_, ethereum) => ethereum.create_access_list(tx.clone()).await?,
         };
         Ok(tx.access_list.merge(access_list))
     }
@@ -78,6 +90,7 @@ impl Simulator {
                     .gas
             }
             Inner::Ethereum(ethereum) => ethereum.estimate_gas(tx).await?,
+            Inner::Enso(enso, _) => enso.simulate(tx).await?,
         })
     }
 }
@@ -86,6 +99,7 @@ impl Simulator {
 enum Inner {
     Tenderly(tenderly::Tenderly),
     Ethereum(Ethereum),
+    Enso(enso::Enso, Ethereum),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -94,4 +108,6 @@ pub enum Error {
     Tenderly(#[from] tenderly::Error),
     #[error("tenderly error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+    #[error("tenderly error: {0:?}")]
+    Enso(#[from] enso::Error),
 }
