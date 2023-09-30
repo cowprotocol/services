@@ -26,16 +26,16 @@ impl Driver {
         }
     }
 
-    pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
+    pub async fn solve(&self, request: &solve::Solve) -> Result<solve::Solved> {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn reveal(&self) -> Result<reveal::Response> {
-        self.request_response("reveal", Option::<&()>::None).await
+    pub async fn reveal(&self, request: &reveal::RevealSolution) -> Result<reveal::Revealed> {
+        self.request_response("reveal", Some(request)).await
     }
 
-    pub async fn settle(&self) -> Result<settle::Response> {
-        self.request_response("settle", Option::<&()>::None).await
+    pub async fn settle(&self, request: &settle::SettleSolution) -> Result<settle::Settled> {
+        self.request_response("settle", Some(request)).await
     }
 
     async fn request_response<Response>(

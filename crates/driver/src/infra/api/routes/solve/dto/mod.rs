@@ -1,7 +1,7 @@
 mod auction;
-mod solution;
+mod solved;
 
 pub use {
     auction::{Auction, Error as AuctionError},
-    solution::Solution,
+    solved::Solved,
 };

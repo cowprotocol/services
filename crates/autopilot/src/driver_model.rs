@@ -62,7 +62,7 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Request {
+    pub struct Solve {
         #[serde_as(as = "DisplayFromStr")]
         pub id: i64,
         pub tokens: Vec<Token>,
@@ -135,19 +135,33 @@ pub mod solve {
 
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct Response {
+    pub struct Solution {
+        pub id: u64,
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Solved {
+        pub solutions: Vec<Solution>,
     }
 }
 
 pub mod reveal {
     use {
         model::{bytes_hex, order::OrderUid},
-        serde::Deserialize,
+        serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RevealSolution {
+        pub id: u64,
+    }
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
@@ -161,19 +175,30 @@ pub mod reveal {
 
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct Response {
+    pub struct Revealed {
         pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
     }
 }
 
 pub mod settle {
-    use {model::bytes_hex, serde::Deserialize, serde_with::serde_as};
+    use {
+        model::bytes_hex,
+        serde::{Deserialize, Serialize},
+        serde_with::serde_as,
+    };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SettleSolution {
+        pub id: u64,
+    }
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Response {
+    pub struct Settled {
         pub calldata: Calldata,
     }
 
