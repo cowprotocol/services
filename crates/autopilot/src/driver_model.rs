@@ -159,7 +159,7 @@ pub mod reveal {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct RevealSolution {
+    pub struct Reveal {
         pub id: u64,
     }
 
@@ -191,7 +191,7 @@ pub mod settle {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct SettleSolution {
+    pub struct Settle {
         pub id: u64,
     }
 

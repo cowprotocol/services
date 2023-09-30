@@ -6,8 +6,8 @@ use {
         },
         driver_api::Driver,
         driver_model::{
-            reveal,
-            settle,
+            reveal::{self, Reveal},
+            settle::Settle,
             solve::{self, Class},
         },
         solvable_orders::SolvableOrdersCache,
@@ -354,7 +354,7 @@ impl RunLoop {
         driver: &Driver,
     ) -> Result<reveal::Revealed> {
         let response = driver
-            .reveal(&reveal::RevealSolution { id: solution_id })
+            .reveal(&Reveal { id: solution_id })
             .await
             .context("reveal")?;
         ensure!(
@@ -381,7 +381,7 @@ impl RunLoop {
         self.database.store_order_events(&events).await;
 
         driver
-            .settle(&settle::SettleSolution { id: solved.id })
+            .settle(&Settle { id: solved.id })
             .await
             .context("settle")?;
         // TODO: React to deadline expiring.

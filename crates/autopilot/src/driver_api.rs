@@ -1,5 +1,9 @@
 use {
-    crate::driver_model::{reveal, settle, solve},
+    crate::driver_model::{
+        reveal::{Reveal, Revealed},
+        settle::{Settle, Settled},
+        solve::{Solve, Solved},
+    },
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
     shared::http_client::response_body_with_size_limit,
@@ -26,15 +30,15 @@ impl Driver {
         }
     }
 
-    pub async fn solve(&self, request: &solve::Solve) -> Result<solve::Solved> {
+    pub async fn solve(&self, request: &Solve) -> Result<Solved> {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn reveal(&self, request: &reveal::RevealSolution) -> Result<reveal::Revealed> {
+    pub async fn reveal(&self, request: &Reveal) -> Result<Revealed> {
         self.request_response("reveal", Some(request)).await
     }
 
-    pub async fn settle(&self, request: &settle::SettleSolution) -> Result<settle::Settled> {
+    pub async fn settle(&self, request: &Settle) -> Result<Settled> {
         self.request_response("settle", Some(request)).await
     }
 

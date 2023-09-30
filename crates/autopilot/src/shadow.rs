@@ -10,7 +10,10 @@
 use {
     crate::{
         driver_api::Driver,
-        driver_model::{reveal, solve},
+        driver_model::{
+            reveal::{self, Reveal},
+            solve::Solve,
+        },
         protocol,
         run_loop,
     },
@@ -185,11 +188,7 @@ impl RunLoop {
     }
 
     /// Computes a driver's solutions in the shadow competition.
-    async fn participate(
-        &self,
-        driver: &Driver,
-        request: &solve::Solve,
-    ) -> Result<Solution, Error> {
+    async fn participate(&self, driver: &Driver, request: &Solve) -> Result<Solution, Error> {
         let proposed = tokio::time::timeout(run_loop::SOLVE_TIME_LIMIT, driver.solve(request))
             .await
             .map_err(|_| Error::Timeout)?
@@ -203,10 +202,7 @@ impl RunLoop {
 
         let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
 
-        let revealed = driver
-            .reveal(&reveal::RevealSolution { id })
-            .await
-            .map_err(Error::Reveal)?;
+        let revealed = driver.reveal(&Reveal { id }).await.map_err(Error::Reveal)?;
         if !revealed
             .calldata
             .internalized
