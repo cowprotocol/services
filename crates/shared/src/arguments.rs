@@ -103,7 +103,7 @@ pub struct OrderQuotingArguments {
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
 
-    /// The time period a regukar offchain-quote request (ethsign/eip712) is
+    /// The time period a regular offchain-quote request (ethsign/eip712) is
     /// valid.
     #[clap(
         long,
