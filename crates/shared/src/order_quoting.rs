@@ -486,10 +486,6 @@ impl Now for DateTime<Utc> {
     }
 }
 
-/// Standard validity for a quote: Quotes are stored only as long as they are
-/// valid.
-const STANDARD_QUOTE_VALIDITY_SECONDS: i64 = 60;
-
 /// An order quoter implementation that relies
 pub struct OrderQuoter {
     price_estimator: Arc<dyn PriceEstimating>,
@@ -500,6 +496,7 @@ pub struct OrderQuoter {
     now: Arc<dyn Now>,
     eip1271_onchain_quote_validity_seconds: Duration,
     presign_onchain_quote_validity_seconds: Duration,
+    standard_quote_validity_seconds: Duration,
 }
 
 impl OrderQuoter {
@@ -511,6 +508,7 @@ impl OrderQuoter {
         storage: Arc<dyn QuoteStoring>,
         eip1271_onchain_quote_validity_seconds: Duration,
         presign_onchain_quote_validity_seconds: Duration,
+        standard_quote_validity_seconds: Duration,
     ) -> Self {
         Self {
             price_estimator,
@@ -521,6 +519,7 @@ impl OrderQuoter {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds,
             presign_onchain_quote_validity_seconds,
+            standard_quote_validity_seconds,
         }
     }
 
@@ -536,7 +535,7 @@ impl OrderQuoter {
             QuoteSigningScheme::PreSign {
                 onchain_order: true,
             } => self.now.now() + self.presign_onchain_quote_validity_seconds,
-            _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+            _ => self.now.now() + self.standard_quote_validity_seconds,
         };
 
         let trade_query = Arc::new(parameters.to_price_query());
@@ -865,7 +864,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -880,6 +879,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -900,7 +900,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -997,7 +997,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -1015,6 +1015,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1035,7 +1036,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -1127,7 +1128,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Buy,
-                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -1146,6 +1147,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1166,7 +1168,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Buy,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -1240,6 +1242,7 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1310,6 +1313,7 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1368,6 +1372,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1451,6 +1456,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1532,6 +1538,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1603,6 +1610,7 @@ mod tests {
             now: Arc::new(now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1633,6 +1641,7 @@ mod tests {
             now: Arc::new(Utc::now),
             eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
             presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            standard_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(

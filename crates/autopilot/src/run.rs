@@ -468,6 +468,8 @@ pub async fn run(args: Arguments) {
             .unwrap(),
         chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
             .unwrap(),
+        chrono::Duration::from_std(args.order_quoting.standard_offchain_quote_validity_seconds)
+            .unwrap(),
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {

@@ -445,6 +445,8 @@ pub async fn run(args: Arguments) {
                 .unwrap(),
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
                 .unwrap(),
+            chrono::Duration::from_std(args.order_quoting.standard_offchain_quote_validity_seconds)
+                .unwrap(),
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone());
