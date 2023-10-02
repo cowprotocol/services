@@ -1,5 +1,5 @@
 /// Wrapper around the gas estimation library.
-/// Also llows to add additional tip to the gas price. This is used to
+/// Also allows to add additional tip to the gas price. This is used to
 /// increase the chance of a transaction being included in a block, in case
 /// private submission networks are used.
 use {
