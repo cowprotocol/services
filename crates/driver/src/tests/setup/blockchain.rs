@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order, Partial},
+    super::{Asset, Order, Partial, Score},
     crate::{
         domain::{
             competition::order,
@@ -77,7 +77,7 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
@@ -676,7 +676,7 @@ impl Blockchain {
         }
         Solution {
             fulfillments,
-            risk: solution.risk,
+            score: solution.score.clone(),
         }
     }
 

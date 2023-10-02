@@ -202,7 +202,10 @@ async fn quote() {
                         "inputAmount": "6043910341261930467761",
                         "outputAmount": "133700000000000000",
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -403,7 +406,10 @@ async fn solve() {
                         "inputAmount": "6043910341261930467761",
                         "outputAmount": "133700000000000000",
                     }
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );

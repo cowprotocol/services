@@ -205,7 +205,10 @@ async fn sell() {
                   "kind": "fulfillment",
                   "order": "0x2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"
                 }
-              ]
+              ],
+              "score": {
+                "riskadjusted": 1.0
+              }
             }
           ]
         }),

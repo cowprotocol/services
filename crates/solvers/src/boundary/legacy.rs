@@ -17,6 +17,7 @@ use {
                 ConstantProductPoolParameters,
                 MetadataModel,
                 OrderModel,
+                Score,
                 SettledBatchAuctionModel,
                 StablePoolParameters,
                 TokenAmount,
@@ -532,6 +533,16 @@ fn to_domain_solution(
             .into_iter()
             .map(|(interaction, _)| interaction)
             .collect(),
+        score: match model.score {
+            Score::Solver { score } => solution::Score::Solver(score),
+            Score::Discount { .. } => {
+                return Err(anyhow::anyhow!("score_discount no longer supported"))
+            }
+            Score::RiskAdjusted {
+                success_probability,
+                ..
+            } => solution::Score::RiskAdjusted(success_probability),
+        },
     })
 }
 

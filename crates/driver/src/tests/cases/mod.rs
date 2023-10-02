@@ -9,7 +9,7 @@ pub mod multiple_solutions;
 pub mod negative_scores;
 pub mod order_prioritization;
 pub mod quote;
-pub mod risk;
+pub mod score_competition;
 pub mod settle;
 pub mod solver_balance;
 
@@ -41,3 +41,6 @@ pub const DEFAULT_SCORE_MAX: u128 = 500000000000000000000000000000u128;
 
 /// The default solver fee for limit orders.
 pub const DEFAULT_SOLVER_FEE: u128 = 100u128;
+
+/// The default maximum value to be payout out to solver per solution
+pub const DEFAULT_SCORE_CAP: u128 = 10000000000000000u128;

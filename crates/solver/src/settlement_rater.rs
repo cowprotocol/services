@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments::TransactionStrategyArg,
         driver::solver_settlements::RatedSettlement,
         settlement::Settlement,
         settlement_access_list::{estimate_settlement_access_list, AccessListEstimating},
@@ -24,7 +23,10 @@ use {
         code_fetching::CodeFetching,
         ethrpc::Web3,
         external_prices::ExternalPrices,
-        http_solver::model::{InternalizationStrategy, SimulatedTransaction},
+        http_solver::{
+            self,
+            model::{InternalizationStrategy, SimulatedTransaction},
+        },
     },
     std::{borrow::Borrow, cmp::min, sync::Arc},
     web3::types::AccessList,
@@ -242,7 +244,7 @@ impl SettlementRating for SettlementRater {
         let earned_fees = settlement.total_earned_fees(prices);
         let inputs = {
             let gas_amount = match settlement.score {
-                shared::http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
+                http_solver::model::Score::RiskAdjusted { gas_amount, .. } => {
                     gas_amount.unwrap_or(gas_estimate)
                 }
                 _ => gas_estimate,
@@ -256,19 +258,19 @@ impl SettlementRating for SettlementRater {
         };
 
         let objective_value = inputs.objective_value();
-        let score = match &settlement.score {
-            shared::http_solver::model::Score::Solver { score } => Score::Solver(*score),
-            shared::http_solver::model::Score::Discount { score_discount } => Score::Discounted(
-                big_rational_to_u256(&objective_value)?.saturating_sub(*score_discount),
+        let score = match settlement.score {
+            http_solver::model::Score::Solver { score } => Score::Solver(score),
+            http_solver::model::Score::Discount { score_discount } => Score::Discounted(
+                big_rational_to_u256(&objective_value)?.saturating_sub(score_discount),
             ),
-            shared::http_solver::model::Score::RiskAdjusted {
+            http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => self.score_calculator.compute_score(
+            } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
                 &inputs.objective_value(),
                 &inputs.gas_cost(),
-                *success_probability,
-            )?,
+                success_probability,
+            )?),
         };
 
         let rated_settlement = RatedSettlement {
@@ -320,49 +322,27 @@ impl From<ScoringError> for anyhow::Error {
     }
 }
 
-/// Contains a subset of the configuration options for the submission of a
-/// settlement, needed for the score calculation.
-pub struct SubmissionConfig {
-    pub strategies: Vec<TransactionStrategyArg>,
-    pub disable_high_risk_public_mempool_transactions: bool,
-}
-
+#[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    submission_config: SubmissionConfig,
+    consider_cost_failure: bool,
 }
 
 impl ScoreCalculator {
-    pub fn new(
-        score_cap: BigRational,
-        strategies: Vec<TransactionStrategyArg>,
-        disable_high_risk_public_mempool_transactions: bool,
-    ) -> Self {
+    pub fn new(score_cap: BigRational, consider_cost_failure: bool) -> Self {
         Self {
             score_cap,
-            submission_config: SubmissionConfig {
-                strategies,
-                disable_high_risk_public_mempool_transactions,
-            },
+            consider_cost_failure,
         }
     }
 
-    pub fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
-        if self
-            .submission_config
-            .strategies
-            .contains(&TransactionStrategyArg::PublicMempool)
-            && !self
-                .submission_config
-                .disable_high_risk_public_mempool_transactions
-        {
-            // The cost in case of a revert can deviate non-deterministically from the cost
-            // in case of success and it is often significantly smaller. Thus, we go with
-            // the full cost as a safe assumption.
-            gas_cost.clone()
-        } else {
-            zero()
-        }
+    fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
+        // The cost in case of a revert can deviate non-deterministically from the cost
+        // in case of success and it is often significantly smaller. Thus, we go with
+        // the full cost as a safe assumption.
+        self.consider_cost_failure
+            .then(|| gas_cost.clone())
+            .unwrap_or_else(zero)
     }
 
     pub fn compute_score(
@@ -370,7 +350,7 @@ impl ScoreCalculator {
         objective_value: &BigRational,
         gas_cost: &BigRational,
         success_probability: f64,
-    ) -> Result<Score, ScoringError> {
+    ) -> Result<U256, ScoringError> {
         if objective_value <= &zero() {
             return Err(ScoringError::ObjectiveValueNonPositive(
                 objective_value.clone(),
@@ -394,7 +374,7 @@ impl ScoreCalculator {
             return Err(ScoringError::ScoreHigherThanObjective(optimal_score));
         }
         let score = big_rational_to_u256(&optimal_score).context("Bad conversion")?;
-        Ok(Score::ProtocolWithSolverRisk(score))
+        Ok(score)
     }
 }
 
@@ -543,12 +523,7 @@ fn profit(
 
 #[cfg(test)]
 mod tests {
-    use {
-        crate::arguments::TransactionStrategyArg,
-        num::BigRational,
-        primitive_types::U256,
-        shared::conversions::U256Ext,
-    };
+    use {num::BigRational, primitive_types::U256, shared::conversions::U256Ext};
 
     fn calculate_score(
         objective_value: &BigRational,
@@ -556,18 +531,10 @@ mod tests {
         success_probability: f64,
     ) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator = super::ScoreCalculator::new(
-            score_cap,
-            vec![
-                TransactionStrategyArg::Flashbots,
-                TransactionStrategyArg::PublicMempool,
-            ],
-            true,
-        );
+        let score_calculator = super::ScoreCalculator::new(score_cap, false);
         score_calculator
             .compute_score(objective_value, gas_cost, success_probability)
             .unwrap()
-            .score()
     }
 
     #[test]

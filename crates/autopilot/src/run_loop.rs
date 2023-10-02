@@ -28,7 +28,7 @@ use {
             SolverSettlement,
         },
     },
-    primitive_types::{H160, H256},
+    primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{
         event_handling::MAX_REORG_BLOCK_COUNT,
@@ -56,6 +56,7 @@ pub struct RunLoop {
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
+    pub score_cap: U256,
 }
 
 impl RunLoop {
@@ -269,7 +270,12 @@ impl RunLoop {
             return Default::default();
         }
 
-        let request = solve_request(id, auction, &self.market_makable_token_list.all());
+        let request = solve_request(
+            id,
+            auction,
+            &self.market_makable_token_list.all(),
+            self.score_cap,
+        );
         let request = &request;
 
         self.database
@@ -435,6 +441,7 @@ pub fn solve_request(
     id: AuctionId,
     auction: &Auction,
     trusted_tokens: &HashSet<H160>,
+    score_cap: U256,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -499,5 +506,6 @@ pub fn solve_request(
             .unique_by(|token| token.address)
             .collect(),
         deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
+        score_cap,
     }
 }

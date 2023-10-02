@@ -1,14 +1,12 @@
 use {
     crate::{
+        domain,
         domain::{
             competition::{
                 self,
                 auction,
                 order,
-                solution::{
-                    self,
-                    settlement::{self, Internalization},
-                },
+                solution::settlement::{self, Internalization},
             },
             eth,
             liquidity,
@@ -16,8 +14,7 @@ use {
         infra::Ethereum,
         util::conv::u256::U256Ext,
     },
-    anyhow::{anyhow, ensure, Context, Result},
-    bigdecimal::Signed,
+    anyhow::{anyhow, Context, Result},
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -37,7 +34,10 @@ use {
     },
     shared::{
         external_prices::ExternalPrices,
-        http_solver::model::{InternalizationStrategy, TokenAmount},
+        http_solver::{
+            self,
+            model::{InternalizationStrategy, TokenAmount},
+        },
     },
     solver::{
         interactions::Erc20ApproveInteraction,
@@ -56,7 +56,6 @@ use {
 pub struct Settlement {
     pub(super) inner: solver::settlement::Settlement,
     pub solver: eth::Address,
-    risk: solution::Risk,
 }
 
 impl Settlement {
@@ -158,10 +157,19 @@ impl Settlement {
             );
         }
 
+        settlement.score = match solution.score().clone() {
+            competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
+            competition::SolverScore::RiskAdjusted(success_probability) => {
+                http_solver::model::Score::RiskAdjusted {
+                    success_probability,
+                    gas_amount: None,
+                }
+            }
+        };
+
         Ok(Self {
             inner: settlement,
             solver: solution.solver().address(),
-            risk: solution.risk(),
         })
     }
 
@@ -199,36 +207,54 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-    ) -> Result<competition::solution::Score> {
-        let prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().address(),
-            auction
-                .tokens()
-                .iter()
-                .filter_map(|token| {
-                    token
-                        .price
-                        .map(|price| (token.address.into(), price.into()))
-                })
-                .collect(),
-        )?;
-        let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let inputs = solver::objective_value::Inputs::from_settlement(
-            &self.inner,
-            &prices,
-            gas_price,
-            &gas.into(),
-        );
-        ensure!(!inputs.objective_value().is_negative(), "negative score");
-        let objective_value = eth::U256::from_big_rational(&inputs.objective_value())?;
-        Ok((objective_value - self.risk.0).into())
+        revert_protection: &domain::RevertProtection,
+    ) -> Result<competition::Score> {
+        let score = match self.inner.score {
+            http_solver::model::Score::Solver { score } => score,
+            http_solver::model::Score::Discount { .. } => {
+                unreachable!("discounted score no longer supported")
+            }
+            http_solver::model::Score::RiskAdjusted {
+                success_probability,
+                gas_amount,
+            } => {
+                let prices = ExternalPrices::try_from_auction_prices(
+                    eth.contracts().weth().address(),
+                    auction
+                        .tokens()
+                        .iter()
+                        .filter_map(|token| {
+                            token
+                                .price
+                                .map(|price| (token.address.into(), price.into()))
+                        })
+                        .collect(),
+                )?;
+                let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
+                let inputs = solver::objective_value::Inputs::from_settlement(
+                    &self.inner,
+                    &prices,
+                    gas_price.clone(),
+                    &gas_amount.unwrap_or(gas.into()),
+                );
+                solver::settlement_rater::ScoreCalculator::new(
+                    auction.score_cap().to_big_rational(),
+                    matches!(revert_protection, domain::RevertProtection::Disabled),
+                )
+                .compute_score(
+                    &inputs.objective_value(),
+                    &inputs.gas_cost(),
+                    success_probability,
+                )?
+            }
+        };
+        Ok(score.into())
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
         self.inner.merge(other.inner).map(|inner| Self {
             inner,
             solver: self.solver,
-            risk: self.risk.merge(other.risk),
         })
     }
 }

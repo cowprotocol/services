@@ -350,8 +350,10 @@ pub async fn run(args: Arguments) {
         code_fetcher: code_fetcher.clone(),
         score_calculator: ScoreCalculator::new(
             u256_to_big_rational(&args.score_cap),
-            args.transaction_strategy.clone(),
-            args.disable_high_risk_public_mempool_transactions,
+            args.transaction_strategy.iter().any(|s| {
+                matches!(s, TransactionStrategyArg::PublicMempool)
+                    && !args.disable_high_risk_public_mempool_transactions
+            }),
         ),
     });
 
