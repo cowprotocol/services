@@ -122,7 +122,7 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
 
 async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
     let gas = Arc::new(
-        blockchain::gas::GasPriceEstimator::new(ethrpc.web3(), &config.mempools)
+        blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.mempools)
             .await
             .expect("initialize gas price estimator"),
     );
