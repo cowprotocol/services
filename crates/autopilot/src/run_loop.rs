@@ -6,8 +6,8 @@ use {
         },
         driver_api::Driver,
         driver_model::{
-            reveal::{self, Reveal},
-            settle::Settle,
+            reveal::{self, Request},
+            settle,
             solve::{self, Class},
         },
         solvable_orders::SolvableOrdersCache,
@@ -108,7 +108,7 @@ impl RunLoop {
                         .filter_map(|solution| {
                             if solution.score == U256::zero() {
                                 tracing::warn!(
-                                    id = ?solution.id,
+                                    id = ?solution.solution_id,
                                     driver = ?self.drivers[index].url,
                                     "driver sent solution with zero score",
                                 );
@@ -136,7 +136,10 @@ impl RunLoop {
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.last() {
             tracing::info!(url = %self.drivers[*index].url, "revealing with driver");
-            let revealed = match self.reveal(id, solution.id, &self.drivers[*index]).await {
+            let revealed = match self
+                .reveal(id, solution.solution_id, &self.drivers[*index])
+                .await
+            {
                 Ok(result) => result,
                 Err(err) => {
                     tracing::warn!(?err, "driver {} failed to reveal", self.drivers[*index].url);
@@ -289,7 +292,7 @@ impl RunLoop {
     }
 
     /// Returns the successful /solve responses and the index of the solver.
-    async fn solve(&self, auction: &Auction, id: AuctionId) -> Vec<(usize, solve::Solved)> {
+    async fn solve(&self, auction: &Auction, id: AuctionId) -> Vec<(usize, solve::Response)> {
         if auction
             .orders
             .iter()
@@ -352,9 +355,9 @@ impl RunLoop {
         id: AuctionId,
         solution_id: u64,
         driver: &Driver,
-    ) -> Result<reveal::Revealed> {
+    ) -> Result<reveal::Response> {
         let response = driver
-            .reveal(&Reveal { id: solution_id })
+            .reveal(&Request { solution_id })
             .await
             .context("reveal")?;
         ensure!(
@@ -371,7 +374,7 @@ impl RunLoop {
         id: AuctionId,
         driver: &Driver,
         solved: &solve::Solution,
-        revealed: &reveal::Revealed,
+        revealed: &reveal::Response,
     ) -> Result<()> {
         let events = revealed
             .orders
@@ -381,7 +384,9 @@ impl RunLoop {
         self.database.store_order_events(&events).await;
 
         driver
-            .settle(&Settle { id: solved.id })
+            .settle(&settle::Request {
+                solution_id: solved.solution_id,
+            })
             .await
             .context("settle")?;
         // TODO: React to deadline expiring.
@@ -481,8 +486,8 @@ pub fn solve_request(
     auction: &Auction,
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
-) -> solve::Solve {
-    solve::Solve {
+) -> solve::Request {
+    solve::Request {
         id,
         orders: auction
             .orders

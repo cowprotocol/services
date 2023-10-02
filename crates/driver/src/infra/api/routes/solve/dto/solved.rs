@@ -24,9 +24,9 @@ pub struct Solved {
 }
 
 impl Solution {
-    pub fn new(id: u64, solved: competition::Solved, solver: &Solver) -> Self {
+    pub fn new(solution_id: u64, solved: competition::Solved, solver: &Solver) -> Self {
         Self {
-            id,
+            solution_id,
             score: solved.score.into(),
             submission_address: solver.address().into(),
         }
@@ -36,7 +36,7 @@ impl Solution {
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct Solution {
-    id: u64,
+    solution_id: u64,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
     submission_address: eth::H160,

@@ -5,5 +5,5 @@ use {serde::Deserialize, serde_with::serde_as};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Solution {
     #[allow(dead_code)]
-    id: u64,
+    solution_id: u64,
 }

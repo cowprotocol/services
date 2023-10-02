@@ -62,7 +62,7 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Solve {
+    pub struct Request {
         #[serde_as(as = "DisplayFromStr")]
         pub id: i64,
         pub tokens: Vec<Token>,
@@ -136,7 +136,7 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Solution {
-        pub id: u64,
+        pub solution_id: u64,
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
@@ -144,7 +144,7 @@ pub mod solve {
 
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct Solved {
+    pub struct Response {
         pub solutions: Vec<Solution>,
     }
 }
@@ -159,8 +159,8 @@ pub mod reveal {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Reveal {
-        pub id: u64,
+    pub struct Request {
+        pub solution_id: u64,
     }
 
     #[serde_as]
@@ -175,7 +175,7 @@ pub mod reveal {
 
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
-    pub struct Revealed {
+    pub struct Response {
         pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
     }
@@ -191,14 +191,14 @@ pub mod settle {
     #[serde_as]
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct Settle {
-        pub id: u64,
+    pub struct Request {
+        pub solution_id: u64,
     }
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Settled {
+    pub struct Response {
         pub calldata: Calldata,
     }
 
