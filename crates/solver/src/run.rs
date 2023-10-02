@@ -549,13 +549,13 @@ pub async fn run(args: Arguments) {
         .expect("unknown network block interval");
 
     let balance_fetcher = account_balances::fetcher(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault_contract.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
     );
 
     let mut driver = Driver::new(

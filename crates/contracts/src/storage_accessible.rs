@@ -10,7 +10,6 @@ use {
         web3::{
             types::{Bytes, CallRequest},
             Transport,
-            Web3,
         },
         H160,
     },
@@ -55,28 +54,12 @@ pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
 /// - The method doesn't specify a target address or calldata
 /// - The function name doesn't exist or match the method signature
 /// - The contract does not have deployment code
-pub async fn simulate<T, R>(
-    web3: &Web3<T>,
-    contract: &ethcontract::Contract,
-    function_name: &str,
-    method: MethodBuilder<T, R>,
-) -> Result<R, MethodError>
+pub async fn simulate<T, R>(code: Bytes, mut method: MethodBuilder<T, R>) -> Result<R, MethodError>
 where
     T: Transport,
     R: Tokenize,
 {
-    let function = contract.abi.function(function_name).unwrap();
-    let code = contract.bytecode.to_bytes().unwrap();
-
-    let call = call(method.tx.to.unwrap(), code, method.tx.data.clone().unwrap());
-    let output = web3
-        .eth()
-        .call(call, None)
-        .await
-        .map_err(|err| MethodError::new(function, err))?;
-
-    let tokens = function
-        .decode_output(&output.0)
-        .map_err(|err| MethodError::new(function, err))?;
-    R::from_token(abi::Token::Tuple(tokens)).map_err(|err| MethodError::new(function, err))
+    method.tx.data = call(method.tx.to.unwrap(), code, method.tx.data.take().unwrap()).data;
+    method.tx.to = None;
+    method.call().await
 }

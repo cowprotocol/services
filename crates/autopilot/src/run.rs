@@ -181,22 +181,22 @@ pub async fn run(args: Arguments) {
         .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
+        &web3,
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
-        web3.clone(),
     );
 
     let balance_fetcher = account_balances::cached(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
         current_block_stream.clone(),
     );
 
