@@ -133,11 +133,13 @@ pub mod solve {
         pub call_data: Vec<u8>,
     }
 
+    #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Solution {
         /// Unique ID of the solution, used to identify it in subsequent
         /// requests (reveal, settle).
+        #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
@@ -163,6 +165,7 @@ pub mod reveal {
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         /// Unique ID of the solution to reveal.
+        #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
     }
 
@@ -196,6 +199,7 @@ pub mod settle {
     #[serde(rename_all = "camelCase")]
     pub struct Request {
         /// Unique ID of the solution to settle.
+        #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
     }
 

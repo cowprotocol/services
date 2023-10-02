@@ -40,6 +40,7 @@ impl Solution {
 pub struct Solution {
     /// Unique ID of the solution, used to identify it in subsequent requests
     /// (reveal, settle).
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,

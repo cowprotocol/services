@@ -6,5 +6,6 @@ use {serde::Deserialize, serde_with::serde_as};
 pub struct Solution {
     #[allow(dead_code)]
     /// Unique ID of the solution to reveal.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
 }
