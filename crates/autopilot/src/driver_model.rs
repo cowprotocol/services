@@ -136,6 +136,8 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Solution {
+        /// Unique ID of the solution, used to identify it in subsequent
+        /// requests (reveal, settle).
         pub solution_id: u64,
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
@@ -160,6 +162,7 @@ pub mod reveal {
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
+        /// Unique ID of the solution to reveal.
         pub solution_id: u64,
     }
 
@@ -192,6 +195,7 @@ pub mod settle {
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
+        /// Unique ID of the solution to settle.
         pub solution_id: u64,
     }
 

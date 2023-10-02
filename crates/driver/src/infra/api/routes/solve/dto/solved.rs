@@ -36,6 +36,8 @@ impl Solution {
 #[serde_as]
 #[derive(Debug, Serialize)]
 pub struct Solution {
+    /// Unique ID of the solution, used to identify it in subsequent requests
+    /// (reveal, settle).
     solution_id: u64,
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
