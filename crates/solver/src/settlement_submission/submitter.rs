@@ -162,10 +162,13 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             .estimate_with_limits(gas_limit, time_limit)
             .await?;
 
-        estimate.max_fee_per_gas = estimate.max_fee_per_gas.min(self.max_fee_per_gas);
-        estimate.max_priority_fee_per_gas += self
+        let additional_tip = self
             .max_additional_tip
             .min(estimate.max_fee_per_gas * self.additional_tip_percentage_of_max_fee);
+        estimate.max_priority_fee_per_gas += additional_tip;
+        estimate.max_fee_per_gas += additional_tip;
+        // ensure limits are not violated
+        estimate.max_fee_per_gas = estimate.max_fee_per_gas.min(self.max_fee_per_gas);
         estimate.max_priority_fee_per_gas = estimate
             .max_priority_fee_per_gas
             .min(estimate.max_fee_per_gas);

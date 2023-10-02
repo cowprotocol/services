@@ -1,3 +1,5 @@
+use anyhow::ensure;
+
 /// Wrapper around the gas estimation library.
 /// Also allows to add additional tip to the gas price. This is used to
 /// increase the chance of a transaction being included in a block, in case
@@ -54,11 +56,10 @@ impl GasPriceEstimator {
             .map(|mut estimate| {
                 let estimate = match self.additional_tip {
                     Some((max_additional_tip, additional_tip_percentage)) => {
-                        estimate.max_priority_fee_per_gas += max_additional_tip
+                        let additional_tip = max_additional_tip
                             .min(estimate.max_fee_per_gas * additional_tip_percentage);
-                        estimate.max_priority_fee_per_gas = estimate
-                            .max_priority_fee_per_gas
-                            .min(estimate.max_fee_per_gas);
+                        estimate.max_fee_per_gas += additional_tip;
+                        estimate.max_priority_fee_per_gas += additional_tip;
                         estimate = estimate.ceil();
                         estimate
                     }
