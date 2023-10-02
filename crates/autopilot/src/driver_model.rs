@@ -134,7 +134,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Solution {
         /// Unique ID of the solution, used to identify it in subsequent
         /// requests (reveal, settle).
@@ -145,7 +145,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub solutions: Vec<Solution>,
     }
@@ -177,7 +177,7 @@ pub mod reveal {
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub orders: Vec<OrderUid>,
         pub calldata: Calldata,

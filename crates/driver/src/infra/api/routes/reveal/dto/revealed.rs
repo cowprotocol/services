@@ -21,6 +21,7 @@ impl Revealed {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Revealed {
     #[serde_as(as = "Vec<serialize::Hex>")]
     orders: Vec<[u8; order::UID_LEN]>,

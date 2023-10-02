@@ -19,6 +19,7 @@ impl Solved {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Solved {
     solutions: Vec<Solution>,
 }
@@ -35,6 +36,7 @@ impl Solution {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Solution {
     /// Unique ID of the solution, used to identify it in subsequent requests
     /// (reveal, settle).
