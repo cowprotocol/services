@@ -1,6 +1,5 @@
 use {
     self::contracts::ContractAt,
-    super::mempool,
     crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
     std::{fmt, sync::Arc},
@@ -45,6 +44,11 @@ impl Rpc {
     pub fn network(&self) -> &Network {
         &self.network
     }
+
+    /// Returns a reference to the underlying web3 client.
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
+    }
 }
 
 /// The Ethereum blockchain.
@@ -61,11 +65,10 @@ impl Ethereum {
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
-        mempools: &[mempool::Config],
+        gas: Arc<GasPriceEstimator>,
     ) -> Result<Self, Error> {
         let Rpc { web3, network } = rpc;
         let contracts = Contracts::new(&web3, &network.id, addresses).await?;
-        let gas = Arc::new(GasPriceEstimator::new(&web3, mempools).await?);
 
         Ok(Self {
             web3,
