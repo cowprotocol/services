@@ -107,7 +107,7 @@ impl RunLoop {
                         .into_iter()
                         .filter_map(|solution| {
                             if solution.score == U256::zero() {
-                                tracing::warn!(
+                                tracing::debug!(
                                     id = ?solution.solution_id,
                                     driver = ?self.drivers[index].url,
                                     "driver sent solution with zero score",
@@ -124,7 +124,7 @@ impl RunLoop {
             .collect_vec();
 
         if solutions.is_empty() {
-            tracing::warn!(?id, "no solutions for auction");
+            tracing::info!(?id, "no solutions for auction");
             return;
         }
 
