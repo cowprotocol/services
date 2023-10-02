@@ -126,14 +126,14 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
 /// Create a request for the driver /reveal endpoint.
 pub fn reveal_req() -> serde_json::Value {
     json!({
-        "solution_id": "0",
+        "solutionId": "0",
     })
 }
 
 /// Create a request for the driver /settle endpoint.
 pub fn settle_req() -> serde_json::Value {
     json!({
-        "solution_id": "0",
+        "solutionId": "0",
     })
 }
 
