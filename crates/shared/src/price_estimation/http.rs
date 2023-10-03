@@ -1,5 +1,4 @@
 use {
-    super::gas::TRADE,
     crate::{
         baseline_solver::BaseTokens,
         http_solver::{
@@ -23,7 +22,7 @@ use {
             HttpSolverApi,
         },
         price_estimation::{
-            gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
+            gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT, TRADE},
             rate_limited,
             Estimate,
             PriceEstimateResult,
