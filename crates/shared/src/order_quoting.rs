@@ -496,8 +496,8 @@ pub struct Validity {
 impl Default for Validity {
     fn default() -> Self {
         Self {
-            eip1271_onchain_quote: Duration::seconds(60),
-            presign_onchain_quote: Duration::seconds(60),
+            eip1271_onchain_quote: Duration::seconds(600),
+            presign_onchain_quote: Duration::seconds(600),
             standard_quote: Duration::seconds(60),
         }
     }
