@@ -123,6 +123,20 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
     })
 }
 
+/// Create a request for the driver /reveal endpoint.
+pub fn reveal_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
+    })
+}
+
+/// Create a request for the driver /settle endpoint.
+pub fn settle_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
+    })
+}
+
 /// Create a request for the driver /quote endpoint.
 pub fn quote_req(test: &Test) -> serde_json::Value {
     if test.quoted_orders.len() != 1 {

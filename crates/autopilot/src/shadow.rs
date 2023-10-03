@@ -184,7 +184,7 @@ impl RunLoop {
         .await
     }
 
-    /// Computes a driver's solution in the shadow competition.
+    /// Computes a driver's solutions in the shadow competition.
     async fn participate(
         &self,
         driver: &Driver,
@@ -194,9 +194,25 @@ impl RunLoop {
             .await
             .map_err(|_| Error::Timeout)?
             .map_err(Error::Solve)?;
-        let score = NonZeroU256::new(proposed.score).ok_or(Error::ZeroScore)?;
+        let (score, solution_id, submission_address) = proposed
+            .solutions
+            .into_iter()
+            .max_by_key(|solution| solution.score)
+            .map(|solution| {
+                (
+                    solution.score,
+                    solution.solution_id,
+                    solution.submission_address,
+                )
+            })
+            .ok_or(Error::NoSolutions)?;
 
-        let revealed = driver.reveal().await.map_err(Error::Reveal)?;
+        let score = NonZeroU256::new(score).ok_or(Error::ZeroScore)?;
+
+        let revealed = driver
+            .reveal(&reveal::Request { solution_id })
+            .await
+            .map_err(Error::Reveal)?;
         if !revealed
             .calldata
             .internalized
@@ -207,7 +223,7 @@ impl RunLoop {
 
         Ok(Solution {
             score,
-            account: proposed.submission_address,
+            account: submission_address,
             calldata: revealed.calldata,
         })
     }
@@ -237,6 +253,8 @@ impl Participant<'_> {
 enum Error {
     #[error("the solver timed out")]
     Timeout,
+    #[error("driver did not propose any solutions")]
+    NoSolutions,
     #[error("the proposed a 0-score solution")]
     ZeroScore,
     #[error("the solver's revealed solution does not match the auction")]
@@ -251,6 +269,7 @@ impl Error {
     fn label(&self) -> &str {
         match self {
             Error::Timeout => "timeout",
+            Error::NoSolutions => "no solutions",
             Error::ZeroScore => "empty",
             Error::Mismatch => "mismatch",
             Error::Solve(_) => "error",
