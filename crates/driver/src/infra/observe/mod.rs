@@ -15,7 +15,7 @@ use {
                 Solution,
                 Solved,
             },
-            eth::{self},
+            eth,
             quote::{self, Quote},
             Liquidity,
         },
@@ -124,10 +124,10 @@ pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
 }
 
 /// Observe the settlement score.
-pub fn score(settlement: &Settlement, score: &solution::Score) {
+pub fn score(settlement: &Settlement, score: &competition::Score) {
     tracing::info!(
         solutions = ?settlement.solutions(),
-        score = score.0.to_f64_lossy(),
+        score = ?score,
         "scored settlement"
     );
 }
@@ -317,7 +317,9 @@ fn competition_error(err: &competition::Error) -> &'static str {
 #[derive(Debug)]
 pub enum OrderExcludedFromAuctionReason<'a> {
     CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
-    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+    CouldNotCalculateMaxSell,
+    InsufficientBalance,
+    OrderWithZeroAmountRemaining,
 }
 
 pub fn order_excluded_from_auction(

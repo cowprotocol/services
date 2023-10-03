@@ -114,7 +114,10 @@ async fn weighted() {
                         "inputAmount": "1000000000000000000",
                         "outputAmount": "1657855325872947866705"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -225,7 +228,10 @@ async fn weighted_v3plus() {
                         "inputAmount": "1000000000000000000",
                         "outputAmount": "1663373703594405548696"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );
@@ -359,7 +365,10 @@ async fn stable() {
                             "inputAmount": "10000000000000000000",
                             "outputAmount": "9999475"
                         },
-                    ]
+                    ],
+                    "score": {
+                        "riskadjusted": 1.0
+                    }
                 },
                 {
                     "id": 1,
@@ -386,7 +395,10 @@ async fn stable() {
                             "inputAmount": "10000524328839166557",
                             "outputAmount": "10000000"
                         },
-                    ]
+                    ],
+                    "score": {
+                        "riskadjusted": 1.0
+                    }
                 },
             ]
         }),
@@ -515,7 +527,10 @@ async fn composable_stable_v4() {
                             "inputAmount": "10000000000000000000",
                             "outputAmount": "10029862202766050434"
                         },
-                    ]
+                    ],
+                    "score": {
+                        "riskadjusted": 1.0
+                    }
                 },
             ]
         }),

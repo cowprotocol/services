@@ -32,6 +32,7 @@ pub struct RunLoop {
     trusted_tokens: AutoUpdatingTokenList,
     auction: AuctionId,
     block: u64,
+    score_cap: U256,
 }
 
 impl RunLoop {
@@ -39,6 +40,7 @@ impl RunLoop {
         orderbook: protocol::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
+        score_cap: U256,
     ) -> Self {
         Self {
             orderbook,
@@ -46,6 +48,7 @@ impl RunLoop {
             trusted_tokens,
             auction: 0,
             block: 0,
+            score_cap,
         }
     }
 
@@ -170,7 +173,8 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let request = run_loop::solve_request(id, auction, &self.trusted_tokens.all());
+        let request =
+            run_loop::solve_request(id, auction, &self.trusted_tokens.all(), self.score_cap);
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {

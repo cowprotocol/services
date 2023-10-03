@@ -2,16 +2,16 @@ use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
-    gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
     std::{fmt, sync::Arc},
     thiserror::Error,
     web3::Transport,
 };
 
 pub mod contracts;
+pub mod gas;
 pub mod token;
 
-pub use self::contracts::Contracts;
+pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
 /// An Ethereum RPC connection.
 pub struct Rpc {
@@ -44,6 +44,11 @@ impl Rpc {
     pub fn network(&self) -> &Network {
         &self.network
     }
+
+    /// Returns a reference to the underlying web3 client.
+    pub fn web3(&self) -> &DynWeb3 {
+        &self.web3
+    }
 }
 
 /// The Ethereum blockchain.
@@ -52,19 +57,18 @@ pub struct Ethereum {
     web3: DynWeb3,
     network: Network,
     contracts: Contracts,
-    gas: Arc<NativeGasEstimator>,
+    gas: Arc<GasPriceEstimator>,
 }
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API.
-    pub async fn new(rpc: Rpc, addresses: contracts::Addresses) -> Result<Self, Error> {
+    pub async fn new(
+        rpc: Rpc,
+        addresses: contracts::Addresses,
+        gas: Arc<GasPriceEstimator>,
+    ) -> Result<Self, Error> {
         let Rpc { web3, network } = rpc;
         let contracts = Contracts::new(&web3, &network.id, addresses).await?;
-        let gas = Arc::new(
-            NativeGasEstimator::new(web3.transport().clone(), None)
-                .await
-                .map_err(Error::Gas)?,
-        );
 
         Ok(Self {
             web3,
@@ -143,15 +147,7 @@ impl Ethereum {
     }
 
     pub async fn gas_price(&self) -> Result<eth::GasPrice, Error> {
-        self.gas
-            .estimate()
-            .await
-            .map(|estimate| eth::GasPrice {
-                max: eth::U256::from_f64_lossy(estimate.max_fee_per_gas).into(),
-                tip: eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
-                base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
-            })
-            .map_err(Error::Gas)
+        self.gas.estimate().await
     }
 
     /// Returns the current [`eth::Ether`] balance of the specified account.

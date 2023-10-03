@@ -1,5 +1,5 @@
 use {
-    super::{blockchain, blockchain::Blockchain},
+    super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
         domain::competition::{auction, order},
         infra::{self, blockchain::contracts::Addresses, Ethereum},
@@ -66,7 +66,7 @@ impl Solver {
                     order::Side::Sell => "sell",
                     order::Side::Buy => "buy",
                 },
-                "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+                "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
                 "class": match quote.order.kind {
                     _ if config.quote => "market",
                     order::Kind::Market => "market",
@@ -156,7 +156,7 @@ impl Solver {
                 "prices": prices_json,
                 "trades": trades_json,
                 "interactions": interactions_json,
-                "risk": solution.risk.to_string(),
+                "score": solution.score,
             }));
         }
 
@@ -194,12 +194,19 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
+        let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
+        let gas = Arc::new(
+            infra::blockchain::GasPriceEstimator::new(rpc.web3(), &[])
+                .await
+                .unwrap(),
+        );
         let eth = Ethereum::new(
-            infra::blockchain::Rpc::new(&url).await.unwrap(),
+            rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
             },
+            gas,
         )
         .await
         .unwrap();

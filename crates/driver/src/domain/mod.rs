@@ -4,4 +4,8 @@ pub mod liquidity;
 mod mempools;
 pub mod quote;
 
-pub use {competition::Competition, liquidity::Liquidity, mempools::Mempools};
+pub use {
+    competition::Competition,
+    liquidity::Liquidity,
+    mempools::{Mempools, RevertProtection},
+};

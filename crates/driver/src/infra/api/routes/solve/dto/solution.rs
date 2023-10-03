@@ -1,9 +1,6 @@
 use {
     crate::{
-        domain::{
-            competition::{self},
-            eth,
-        },
+        domain::{competition, eth},
         infra::Solver,
         util::serialize,
     },

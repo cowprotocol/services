@@ -68,6 +68,8 @@ pub mod solve {
         pub tokens: Vec<Token>,
         pub orders: Vec<Order>,
         pub deadline: DateTime<Utc>,
+        #[serde_as(as = "DecimalU256")]
+        pub score_cap: U256,
     }
 
     #[serde_as]

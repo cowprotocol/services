@@ -59,23 +59,26 @@ impl Auction {
             orders: auction
                 .orders()
                 .iter()
-                .map(|order| Order {
-                    uid: order.uid.into(),
-                    sell_token: order.sell.token.into(),
-                    buy_token: order.solver_buy(weth).token.into(),
-                    sell_amount: order.sell.amount.into(),
-                    buy_amount: order.solver_buy(weth).amount.into(),
-                    fee_amount: order.fee.solver.into(),
-                    kind: match order.side {
-                        competition::order::Side::Buy => Kind::Buy,
-                        competition::order::Side::Sell => Kind::Sell,
-                    },
-                    partially_fillable: order.is_partial(),
-                    class: match order.kind {
-                        competition::order::Kind::Market => Class::Market,
-                        competition::order::Kind::Limit { .. } => Class::Limit,
-                        competition::order::Kind::Liquidity => Class::Liquidity,
-                    },
+                .map(|order| {
+                    let available = order.available(weth);
+                    Order {
+                        uid: order.uid.into(),
+                        sell_token: available.sell.token.into(),
+                        buy_token: available.buy.token.into(),
+                        sell_amount: available.sell.amount.into(),
+                        buy_amount: available.buy.amount.into(),
+                        fee_amount: available.fee.solver.into(),
+                        kind: match order.side {
+                            competition::order::Side::Buy => Kind::Buy,
+                            competition::order::Side::Sell => Kind::Sell,
+                        },
+                        partially_fillable: order.is_partial(),
+                        class: match order.kind {
+                            competition::order::Kind::Market => Class::Market,
+                            competition::order::Kind::Limit { .. } => Class::Limit,
+                            competition::order::Kind::Liquidity => Class::Liquidity,
+                        },
+                    }
                 })
                 .collect(),
             liquidity: liquidity

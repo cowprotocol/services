@@ -1,13 +1,16 @@
-use crate::{
-    domain::eth,
-    infra::{blockchain, Ethereum},
-    util::{self, conv::u256::U256Ext, Bytes},
+pub use signature::Signature;
+use {
+    super::auction,
+    crate::{
+        domain::eth,
+        infra::{blockchain, Ethereum},
+        util::{self, conv::u256::U256Ext, Bytes},
+    },
+    bigdecimal::Zero,
+    num::CheckedDiv,
 };
 
 pub mod signature;
-
-pub use signature::Signature;
-use {super::auction, bigdecimal::Zero, num::CheckedDiv};
 
 /// An order in the auction.
 #[derive(Debug, Clone)]
@@ -39,12 +42,18 @@ pub struct Order {
 }
 
 /// An amount denominated in the sell token of an [`Order`].
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SellAmount(pub eth::U256);
 
 impl From<eth::U256> for SellAmount {
     fn from(value: eth::U256) -> Self {
         Self(value)
+    }
+}
+
+impl From<eth::TokenAmount> for SellAmount {
+    fn from(value: eth::TokenAmount) -> Self {
+        Self(value.into())
     }
 }
 
@@ -84,13 +93,38 @@ impl From<TargetAmount> for eth::TokenAmount {
 }
 
 /// Order fee denominated in the sell token.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Fee {
     /// The order fee that is actually paid by the user.
     pub user: SellAmount,
     /// The fee used for scoring. This is a scaled version of the user fee to
     /// incentivize solvers to solve orders in batches.
     pub solver: SellAmount,
+}
+
+/// The available amounts for a specific order that gets passed to the solver.
+///
+/// These amounts differ from the order buy/sell/fee amounts in two ways:
+/// 1. Partially fillable orders: they get pre-scaled before being passed to the
+///    solver engine in order to simplify computation on their end. This uses
+///    the order's `available` amount for scaling and considers both previously
+///    executed amounts as well as remaining balances.
+/// 1. Orders which buy ETH: The settlement contract only works with ERC20
+///    tokens, but unfortunately ETH is not an ERC20 token. We still want to
+///    provide a seamless user experience for ETH trades, so the driver will
+///    encode the settlement to automatically unwrap the WETH into ETH after the
+///    trade is done. For this reason, we want the solvers to solve the orders
+///    which buy ETH as if they were buying WETH, and then add our unwrap
+///    interaction to that solution.
+pub struct Available {
+    /// The available sell maximum amount for an order that gets passed to a
+    /// solver engine.
+    pub sell: eth::Asset,
+    /// The available minimum buy amount for an order that gets passed to a
+    /// solver engine.
+    pub buy: eth::Asset,
+    /// The available fee amount.
+    pub fee: Fee,
 }
 
 impl Order {
@@ -133,21 +167,39 @@ impl Order {
         matches!(self.kind, Kind::Liquidity)
     }
 
-    /// The buy asset to pass to the solver. This is a special case due to
-    /// orders which buy ETH. The settlement contract only works with ERC20
-    /// tokens, but unfortunately ETH is not an ERC20 token. We still want to
-    /// provide a seamless user experience for ETH trades, so the driver
-    /// will encode the settlement to automatically unwrap the WETH into ETH
-    /// after the trade is done.
+    /// Returns the order's available amounts to be passed to a solver engine.
     ///
-    /// For this reason, we want the solvers to solve the orders which buy ETH
-    /// as if they were buying WETH, and then add our unwrap interaction to that
-    /// solution.
-    pub fn solver_buy(&self, weth: eth::WethAddress) -> eth::Asset {
-        eth::Asset {
-            amount: self.buy.amount,
-            token: self.buy.token.wrap(weth),
+    /// See [`Available`] for more details.
+    pub fn available(&self, weth: eth::WethAddress) -> Available {
+        let mut amounts = Available {
+            sell: self.sell,
+            buy: eth::Asset {
+                token: self.buy.token.wrap(weth),
+                amount: self.buy.amount,
+            },
+            fee: self.fee,
+        };
+
+        let available = match self.partial {
+            Partial::Yes { available } => available,
+            Partial::No => return amounts,
+        };
+        let target = self.target();
+
+        for amount in [
+            &mut amounts.sell.amount.0,
+            &mut amounts.fee.user.0,
+            &mut amounts.fee.solver.0,
+        ] {
+            *amount = util::math::mul_ratio(*amount, available.0, target.0).unwrap_or_default();
         }
+
+        amounts.buy.amount =
+            util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
+                .unwrap_or_default()
+                .into();
+
+        amounts
     }
 
     /// Should the order fee be determined by the solver? This is true for
@@ -177,14 +229,28 @@ impl Order {
     }
 }
 
+impl Available {
+    /// Returns `true` if any of the available orders amounts are `0`, thus
+    /// making the order not suitable to send to solvers.
+    ///
+    /// TODO: It would be ideal to prohibit the construction of orders with bad
+    /// available amounts (`0` or larger than the order) to prevent bugs.
+    pub fn is_zero(&self) -> bool {
+        self.sell.amount.0.is_zero() || self.buy.amount.0.is_zero()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Partial {
     /// A partially order doesn't require the full amount to be traded.
     /// E.g. only 10% of the requested amount may be traded, if this leads
     /// to the most optimal solution.
     Yes {
-        /// The already-executed amount for the partial order.
-        executed: TargetAmount,
+        /// The available amount that can be used from the order.
+        ///
+        /// This amount considers both how much of the order has already been
+        /// executed as well as the trader's balance.
+        available: TargetAmount,
     },
     No,
 }
@@ -339,5 +405,100 @@ impl Jit {
             Side::Buy => self.buy.amount.into(),
             Side::Sell => self.sell.amount.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn order_scaling() {
+        let sell = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0x5e11).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let buy = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0xbbbb).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let weth = eth::WethAddress(eth::H160([0xef; 20]).into());
+
+        let order = |sell_amount: u64, buy_amount: u64, available: Option<eth::Asset>| Order {
+            uid: Default::default(),
+            receiver: Default::default(),
+            valid_to: util::Timestamp(u32::MAX),
+            buy: buy(buy_amount),
+            sell: sell(sell_amount),
+            side: match available {
+                None => Side::Sell,
+                Some(executed) if executed.token == sell(0).token => Side::Sell,
+                Some(executed) if executed.token == buy(0).token => Side::Buy,
+                _ => panic!(),
+            },
+            fee: Default::default(),
+            kind: Kind::Limit,
+            app_data: Default::default(),
+            partial: available
+                .map(|available| Partial::Yes {
+                    available: available.amount.into(),
+                })
+                .unwrap_or(Partial::No),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: signature::Scheme::PreSign,
+                data: Default::default(),
+                signer: Default::default(),
+            },
+        };
+
+        assert_eq!(
+            order(1000, 1000, Some(sell(750))).available(weth).sell,
+            sell(750)
+        );
+        assert_eq!(
+            order(1000, 1000, Some(sell(750))).available(weth).buy,
+            buy(750)
+        );
+        assert_eq!(
+            order(1000, 1000, Some(buy(750))).available(weth).sell,
+            sell(750)
+        );
+        assert_eq!(
+            order(1000, 1000, Some(buy(750))).available(weth).buy,
+            buy(750)
+        );
+
+        assert_eq!(
+            order(1000, 100, Some(sell(901))).available(weth).sell,
+            sell(901)
+        );
+        assert_eq!(
+            order(1000, 100, Some(sell(901))).available(weth).buy,
+            buy(91)
+        );
+
+        assert_eq!(
+            order(100, 1000, Some(buy(901))).available(weth).sell,
+            sell(90)
+        );
+        assert_eq!(
+            order(100, 1000, Some(buy(901))).available(weth).buy,
+            buy(901)
+        );
+
+        assert_eq!(
+            order(1000, 1, Some(sell(500))).available(weth).sell,
+            sell(500)
+        );
+        assert_eq!(order(1000, 1, Some(sell(500))).available(weth).buy, buy(1));
+
+        assert_eq!(order(1, 1000, Some(buy(500))).available(weth).sell, sell(0));
+        assert_eq!(order(1, 1000, Some(buy(500))).available(weth).buy, buy(500));
+
+        assert_eq!(order(0, 0, Some(sell(0))).available(weth).sell, sell(0));
     }
 }
