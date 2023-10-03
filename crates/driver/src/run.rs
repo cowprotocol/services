@@ -92,7 +92,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
 fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
     let mut simulator = match &config.simulator {
-        Some(infra::config::Simulator::Tenderly(tenderly)) => Simulator::tenderly(
+        Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
             simulator::tenderly::Config {
                 url: tenderly.url.to_owned(),
                 api_key: tenderly.api_key.to_owned(),
@@ -103,7 +103,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
             },
             eth.network().id.clone(),
         ),
-        Some(infra::config::Simulator::Enso(enso)) => Simulator::enso(
+        Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
             simulator::enso::Config {
                 url: enso.url.to_owned(),
             },

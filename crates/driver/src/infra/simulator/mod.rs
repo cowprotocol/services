@@ -16,6 +16,13 @@ pub struct Simulator {
     disable_gas: Option<eth::Gas>,
 }
 
+/// Configuration of the transaction simulator.
+#[derive(Debug)]
+pub enum Config {
+    Tenderly(tenderly::Config),
+    Enso(enso::Config),
+}
+
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
     pub fn tenderly(config: tenderly::Config, network_id: eth::NetworkId) -> Self {
@@ -106,8 +113,8 @@ enum Inner {
 pub enum Error {
     #[error("tenderly error: {0:?}")]
     Tenderly(#[from] tenderly::Error),
-    #[error("tenderly error: {0:?}")]
+    #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
-    #[error("tenderly error: {0:?}")]
+    #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
 }

@@ -1,15 +1,7 @@
 use {
     crate::{
         domain::eth,
-        infra::{
-            self,
-            blockchain,
-            config::{file, Simulator},
-            liquidity,
-            mempool,
-            simulator,
-            solver,
-        },
+        infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
     futures::future::join_all,
     std::path::Path,
@@ -242,17 +234,19 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
             })
             .collect(),
         simulator: match (config.tenderly, config.enso) {
-            (Some(config), None) => Some(Simulator::Tenderly(simulator::tenderly::Config {
-                url: config.url,
-                api_key: config.api_key,
-                user: config.user,
-                project: config.project,
-                save: config.save,
-                save_if_fails: config.save_if_fails,
-            })),
-            (None, Some(config)) => {
-                Some(Simulator::Enso(simulator::enso::Config { url: config.url }))
+            (Some(config), None) => {
+                Some(simulator::Config::Tenderly(simulator::tenderly::Config {
+                    url: config.url,
+                    api_key: config.api_key,
+                    user: config.user,
+                    project: config.project,
+                    save: config.save,
+                    save_if_fails: config.save_if_fails,
+                }))
             }
+            (None, Some(config)) => Some(simulator::Config::Enso(simulator::enso::Config {
+                url: config.url,
+            })),
             (None, None) => None,
             (Some(_), Some(_)) => panic!("Cannot configure both Tenderly and Enso"),
         },

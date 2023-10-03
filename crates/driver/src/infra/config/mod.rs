@@ -12,14 +12,7 @@ pub struct Config {
     pub disable_gas_simulation: Option<eth::Gas>,
     pub solvers: Vec<solver::Config>,
     pub liquidity: liquidity::Config,
-    pub simulator: Option<Simulator>,
+    pub simulator: Option<simulator::Config>,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
-}
-
-/// Configuration of the transaction simulator.
-#[derive(Debug)]
-pub enum Simulator {
-    Tenderly(simulator::tenderly::Config),
-    Enso(simulator::enso::Config),
 }

@@ -1,4 +1,4 @@
-//! Data transfer objects for interacting with the Enso Trade Simulatpr API.
+//! Data transfer objects for interacting with the Enso Trade Simulator API.
 
 use {
     crate::{domain::eth, util::serialize},
