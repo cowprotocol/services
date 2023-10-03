@@ -69,7 +69,7 @@ mod tests {
     #[ignore]
     async fn real_estimate() {
         let web3 = Web3::new(create_env_test_transport());
-        let tokens = TokenInfoFetcher { web3: web3.clone() };
+        let tokens = TokenInfoFetcher { web3 };
         let (_, block_stream) = watch::channel(BlockInfo::default());
         let paraswap = DefaultParaswapApi {
             client: Client::new(),

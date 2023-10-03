@@ -443,9 +443,9 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
+    pub verification: Option<Verification>,
     /// Signals whether responses from that were valid on previous blocks can be
     /// used to answer the query.
-    pub verification: Option<Verification>,
     #[serde(skip_serializing)]
     pub block_dependent: bool,
 }
