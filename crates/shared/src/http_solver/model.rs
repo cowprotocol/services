@@ -12,7 +12,10 @@ use {
         signature::Signature,
     },
     num::BigRational,
-    number::u256_decimal::{self, DecimalU256},
+    number::{
+        u256_decimal::{self, DecimalU256},
+        u256_hex_or_decimal::HexOrDecimalU256,
+    },
     primitive_types::{H256, U256},
     serde::{Deserialize, Deserializer, Serialize},
     serde_json::Value,
@@ -131,9 +134,10 @@ pub struct TokenInfoModel {
     pub accepted_for_internalization: bool,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TokenAmount {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
     pub token: H160,
 }
@@ -147,18 +151,21 @@ impl TokenAmount {
     }
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApprovalModel {
     pub token: H160,
     pub spender: H160,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
 }
 
+#[serde_as]
 #[derive(Clone, Derivative, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
+    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
@@ -193,7 +200,7 @@ pub enum Score {
     /// The score value is provided as is from solver.
     /// Success probability is not incorporated into this value.
     Solver {
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         score: U256,
     },
     /// This option is used to indicate that the solver did not provide a score.
@@ -201,7 +208,7 @@ pub enum Score {
     /// probability and optionally the amount of gas this settlement will take.
     RiskAdjusted {
         success_probability: f64,
-        #[serde_as(as = "Option<DecimalU256>")]
+        #[serde_as(as = "Option<HexOrDecimalU256>")]
         gas_amount: Option<U256>,
     },
 }
@@ -311,11 +318,11 @@ pub struct SettledBatchAuctionMetadataModel {
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExecutedOrderModel {
-    #[serde_as(as = "DecimalU256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_sell_amount: U256,
-    #[serde_as(as = "DecimalU256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_buy_amount: U256,
-    #[serde_as(as = "Option<DecimalU256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub exec_fee_amount: Option<U256>,
     pub cost: Option<TokenAmount>,
     pub fee: Option<TokenAmount>,
@@ -324,12 +331,13 @@ pub struct ExecutedOrderModel {
     pub exec_plan: Option<ExecutionPlan>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ExecutedLiquidityOrderModel {
     pub order: NativeLiquidityOrder,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_buy_amount: U256,
 }
 
@@ -344,6 +352,7 @@ pub struct NativeLiquidityOrder {
     pub interactions: Interactions,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
@@ -351,13 +360,14 @@ pub struct UpdatedAmmModel {
     pub cost: Option<TokenAmount>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ExecutedAmmModel {
     pub sell_token: H160,
     pub buy_token: H160,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub exec_buy_amount: U256,
     pub exec_plan: ExecutionPlan,
 }
