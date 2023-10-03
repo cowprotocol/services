@@ -70,11 +70,9 @@ impl QuoteHandler {
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
         tracing::debug!(?request, "calculating quote");
 
-        let app_data = self.order_validator.validate_app_data(
-            &request.app_data,
-            &None,
-            request.partially_fillable,
-        )?;
+        let app_data = self
+            .order_validator
+            .validate_app_data(&request.app_data, &None)?;
 
         let order = PreOrderData::from(request);
         let valid_to = order.valid_to;

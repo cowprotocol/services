@@ -260,14 +260,11 @@ impl SettlementRating for SettlementRater {
         let objective_value = inputs.objective_value();
         let score = match settlement.score {
             http_solver::model::Score::Solver { score } => Score::Solver(score),
-            http_solver::model::Score::Discount { score_discount } => Score::Discounted(
-                big_rational_to_u256(&objective_value)?.saturating_sub(score_discount),
-            ),
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
             } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
-                &inputs.objective_value(),
+                &objective_value,
                 &inputs.gas_cost(),
                 success_probability,
             )?),

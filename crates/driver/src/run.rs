@@ -16,7 +16,7 @@ use {
     },
     clap::Parser,
     futures::future::join_all,
-    std::{net::SocketAddr, time::Duration},
+    std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
 
@@ -121,7 +121,12 @@ async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
 }
 
 async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
-    Ethereum::new(ethrpc, config.contracts)
+    let gas = Arc::new(
+        blockchain::GasPriceEstimator::new(ethrpc.web3(), &config.mempools)
+            .await
+            .expect("initialize gas price estimator"),
+    );
+    Ethereum::new(ethrpc, config.contracts, gas)
         .await
         .expect("initialize ethereum RPC API")
 }

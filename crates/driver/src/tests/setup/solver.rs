@@ -194,12 +194,19 @@ impl Solver {
             .collect::<HashMap<_, _>>();
 
         let url = config.blockchain.web3_url.parse().unwrap();
+        let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
+        let gas = Arc::new(
+            infra::blockchain::GasPriceEstimator::new(rpc.web3(), &[])
+                .await
+                .unwrap(),
+        );
         let eth = Ethereum::new(
-            infra::blockchain::Rpc::new(&url).await.unwrap(),
+            rpc,
             Addresses {
                 settlement: Some(config.blockchain.settlement.address().into()),
                 weth: Some(config.blockchain.weth.address().into()),
             },
+            gas,
         )
         .await
         .unwrap();

@@ -93,9 +93,7 @@ impl Erc20 {
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
-            &self.balances.raw_instance().web3(),
-            contracts::support::Balances::raw_contract(),
-            "balance",
+            contracts::bytecode!(contracts::support::Balances),
             self.balances.balance(
                 (
                     self.balances.address(),
