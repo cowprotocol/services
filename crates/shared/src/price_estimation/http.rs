@@ -255,9 +255,7 @@ impl HttpPriceEstimator {
                     + SETTLEMENT
                     + (TRADE + 2 * ERC20_TRANSFER) * settlement.orders.len() as u64
             }
-            _ => {
-                (cost / gas_price).as_u64() + INITIALIZATION_COST + SETTLEMENT + ERC20_TRANSFER * 2
-            }
+            gas => gas + INITIALIZATION_COST + SETTLEMENT + ERC20_TRANSFER * 2,
         };
         Ok(Estimate {
             out_amount: match query.kind {
