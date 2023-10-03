@@ -535,9 +535,6 @@ fn to_domain_solution(
             .collect(),
         score: match model.score {
             Score::Solver { score } => solution::Score::Solver(score),
-            Score::Discount { .. } => {
-                return Err(anyhow::anyhow!("score_discount no longer supported"))
-            }
             Score::RiskAdjusted {
                 success_probability,
                 ..
