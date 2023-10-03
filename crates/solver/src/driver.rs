@@ -304,6 +304,8 @@ impl Driver {
             return Ok(false);
         }
 
+        auction_preprocessing::filter_executed_pre_interactions(&mut auction.orders);
+
         let gas_price = self
             .gas_price_estimator
             .estimate()

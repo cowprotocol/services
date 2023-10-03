@@ -211,9 +211,6 @@ impl Settlement {
     ) -> Result<competition::Score> {
         let score = match self.inner.score {
             http_solver::model::Score::Solver { score } => score,
-            http_solver::model::Score::Discount { .. } => {
-                unreachable!("discounted score no longer supported")
-            }
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 gas_amount,

@@ -17,7 +17,7 @@ pub(in crate::infra::api) fn solve(router: axum::Router<State>) -> axum::Router<
 async fn route(
     state: axum::extract::State<State>,
     auction: axum::Json<dto::Auction>,
-) -> Result<axum::Json<dto::Solution>, (hyper::StatusCode, axum::Json<Error>)> {
+) -> Result<axum::Json<dto::Solved>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = auction.id();
     let handle_request = async {
         let auction = auction
@@ -32,7 +32,7 @@ async fn route(
         let competition = state.competition();
         let result = competition.solve(&auction).await;
         observe::solved(state.solver().name(), &result);
-        Ok(axum::Json(dto::Solution::new(result?, &competition.solver)))
+        Ok(axum::Json(dto::Solved::new(result?, &competition.solver)))
     };
 
     handle_request
