@@ -6,23 +6,23 @@
 use {
     super::{SignatureCheck, SignatureValidating, SignatureValidationError},
     crate::ethcontract_error::EthcontractErrorType,
-    anyhow::{Context, Result},
-    ethcontract::{common::abi::Token, errors::ExecutionError, tokens::Tokenize, Bytes},
+    anyhow::Result,
+    ethcontract::Bytes,
     ethrpc::Web3,
     futures::future,
     primitive_types::{H160, U256},
 };
 
 pub struct Validator {
-    web3: Web3,
+    signatures: contracts::support::Signatures,
     settlement: H160,
     vault_relayer: H160,
 }
 
 impl Validator {
-    pub fn new(web3: Web3, settlement: H160, vault_relayer: H160) -> Self {
+    pub fn new(web3: &Web3, settlement: H160, vault_relayer: H160) -> Self {
         Self {
-            web3,
+            signatures: contracts::support::Signatures::at(web3, settlement),
             settlement,
             vault_relayer,
         }
@@ -37,11 +37,9 @@ impl Validator {
         // 1. How the pre-interactions would behave as part of the settlement
         // 2. Simulate the actual `isValidSignature` calls that would happen as part of
         //    a settlement
-        let signatures =
-            contracts::dummy_contract!(contracts::support::Signatures, self.settlement);
-        let tx = signatures
-            .methods()
-            .validate(
+        let gas_used = contracts::storage_accessible::simulate(
+            contracts::bytecode!(contracts::support::Signatures),
+            self.signatures.methods().validate(
                 (self.settlement, self.vault_relayer),
                 check.signer,
                 Bytes(check.hash),
@@ -51,17 +49,11 @@ impl Validator {
                     .iter()
                     .map(|i| (i.target, i.value, Bytes(i.call_data.clone())))
                     .collect(),
-            )
-            .tx;
+            ),
+        )
+        .await?;
 
-        let call = contracts::storage_accessible::call(
-            self.settlement,
-            contracts::bytecode!(contracts::support::Signatures),
-            tx.data.unwrap(),
-        );
-
-        let output = self.web3.eth().call(call, None).await?;
-        let simulation = Simulation::decode(&output.0)?;
+        let simulation = Simulation { gas_used };
 
         tracing::trace!(?check, ?simulation, "simulated signature");
         Ok(simulation)
@@ -99,33 +91,8 @@ struct Simulation {
     gas_used: U256,
 }
 
-impl Simulation {
-    fn decode(output: &[u8]) -> Result<Self> {
-        let function = contracts::support::Signatures::raw_contract()
-            .abi
-            .function("validate")
-            .unwrap();
-        let tokens = function.decode_output(output).context("decode")?;
-        let (gas_used,) = Tokenize::from_token(Token::Tuple(tokens))?;
-
-        Ok(Self { gas_used })
-    }
-}
-
-impl From<web3::Error> for SignatureValidationError {
-    fn from(err: web3::Error) -> Self {
-        // TODO: This is needed to parse Hardhat revert errors, which
-        // `ethcontract` does not support currently.
-        if matches!(
-            &err,
-            web3::Error::Rpc(err)
-                if err.message.contains("VM Exception") ||
-                    err.message.contains("Transaction reverted")
-        ) {
-            return Self::Invalid;
-        }
-
-        let err = ExecutionError::from(err);
+impl From<ethcontract::errors::MethodError> for SignatureValidationError {
+    fn from(err: ethcontract::errors::MethodError) -> Self {
         match EthcontractErrorType::classify(&err) {
             EthcontractErrorType::Contract => Self::Invalid,
             _ => Self::Other(err.into()),
