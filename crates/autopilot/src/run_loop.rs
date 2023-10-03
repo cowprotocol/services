@@ -95,32 +95,29 @@ impl RunLoop {
         // Validate solutions and filter out invalid ones.
         let mut solutions = solutions
             .into_iter()
-            .filter_map(|(index, response)| {
+            .flat_map(|(index, response)| {
                 if response.solutions.is_empty() {
                     tracing::debug!(driver = ?self.drivers[index].url, "driver sent zero solutions");
-                    return None;
+                    return vec![];
                 }
 
-                Some(
-                    response
-                        .solutions
-                        .into_iter()
-                        .filter_map(|solution| {
-                            if solution.score == U256::zero() {
-                                tracing::debug!(
-                                    id = ?solution.solution_id,
-                                    driver = ?self.drivers[index].url,
-                                    "driver sent solution with zero score",
-                                );
-                                None
-                            } else {
-                                Some((index, solution))
-                            }
-                        })
-                        .collect_vec(),
-                )
+                response
+                    .solutions
+                    .into_iter()
+                    .filter_map(|solution| {
+                        if solution.score == U256::zero() {
+                            tracing::debug!(
+                                id = ?solution.solution_id,
+                                driver = ?self.drivers[index].url,
+                                "driver sent solution with zero score",
+                            );
+                            None
+                        } else {
+                            Some((index, solution))
+                        }
+                    })
+                    .collect_vec()
             })
-            .flatten()
             .collect_vec();
 
         if solutions.is_empty() {
