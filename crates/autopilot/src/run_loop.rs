@@ -466,6 +466,7 @@ pub fn solve_request(
                             })
                             .collect()
                     };
+                let order_is_untouched = remaining_order.executed_amount.is_zero();
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -480,7 +481,11 @@ pub fn solve_request(
                     owner: order.metadata.owner,
                     partially_fillable: order.data.partially_fillable,
                     executed: remaining_order.executed_amount,
-                    pre_interactions: map_interactions(&order.interactions.pre),
+                    // Partially fillable orders should have their pre-interactions only executed
+                    // on the first fill.
+                    pre_interactions: order_is_untouched
+                        .then(|| map_interactions(&order.interactions.pre))
+                        .unwrap_or_default(),
                     post_interactions: map_interactions(&order.interactions.post),
                     sell_token_balance: order.data.sell_token_balance,
                     buy_token_balance: order.data.buy_token_balance,
