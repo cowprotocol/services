@@ -39,7 +39,7 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
-        order_quoting::OrderQuoter,
+        order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator,
@@ -464,10 +464,20 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         fee_subsidy,
         Arc::new(db.clone()),
-        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+        order_quoting::Validity {
+            eip1271_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+            )
             .unwrap(),
-        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            presign_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.presign_onchain_quote_validity_seconds,
+            )
             .unwrap(),
+            standard_quote: chrono::Duration::from_std(
+                args.order_quoting.standard_offchain_quote_validity_seconds,
+            )
+            .unwrap(),
+        },
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
