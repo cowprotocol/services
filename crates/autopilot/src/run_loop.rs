@@ -6,7 +6,8 @@ use {
         },
         driver_api::Driver,
         driver_model::{
-            reveal,
+            reveal::{self, Request},
+            settle,
             solve::{self, Class},
         },
         solvable_orders::SolvableOrdersCache,
@@ -89,7 +90,43 @@ impl RunLoop {
 
     async fn single_run_(&self, id: AuctionId, auction: &Auction) {
         tracing::info!("solving");
-        let mut solutions = self.solve(auction, id).await;
+        let solutions = self.solve(auction, id).await;
+
+        // Validate solutions and filter out invalid ones.
+        let mut solutions = solutions
+            .into_iter()
+            .filter_map(|(index, response)| {
+                if response.solutions.is_empty() {
+                    tracing::debug!(driver = ?self.drivers[index].url, "driver sent zero solutions");
+                    return None;
+                }
+
+                Some(
+                    response
+                        .solutions
+                        .into_iter()
+                        .filter_map(|solution| {
+                            if solution.score == U256::zero() {
+                                tracing::debug!(
+                                    id = ?solution.solution_id,
+                                    driver = ?self.drivers[index].url,
+                                    "driver sent solution with zero score",
+                                );
+                                None
+                            } else {
+                                Some((index, solution))
+                            }
+                        })
+                        .collect_vec(),
+                )
+            })
+            .flatten()
+            .collect_vec();
+
+        if solutions.is_empty() {
+            tracing::info!(?id, "no solutions for auction");
+            return;
+        }
 
         // Shuffle so that sorting randomly splits ties.
         solutions.shuffle(&mut rand::thread_rng());
@@ -98,13 +135,11 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some((index, solution)) = solutions.last() {
-            // The winner has score 0 so all solutions are empty.
-            if solution.score == 0.into() {
-                return;
-            }
-
             tracing::info!(url = %self.drivers[*index].url, "revealing with driver");
-            let revealed = match self.reveal(id, &self.drivers[*index]).await {
+            let revealed = match self
+                .reveal(id, solution.solution_id, &self.drivers[*index])
+                .await
+            {
                 Ok(result) => result,
                 Err(err) => {
                     tracing::warn!(?err, "driver {} failed to reveal", self.drivers[*index].url);
@@ -305,11 +340,7 @@ impl RunLoop {
         results
             .into_iter()
             .filter_map(|(index, result)| match result {
-                Ok(result) if result.score >= 0.into() => Some((index, result)),
-                Ok(result) => {
-                    tracing::warn!("bad score {:?}", result.score);
-                    None
-                }
+                Ok(result) => Some((index, result)),
                 Err(err) => {
                     tracing::warn!(?err, "driver solve error");
                     None
@@ -319,8 +350,16 @@ impl RunLoop {
     }
 
     /// Ask the winning solver to reveal their solution.
-    async fn reveal(&self, id: AuctionId, driver: &Driver) -> Result<reveal::Response> {
-        let response = driver.reveal().await.context("reveal")?;
+    async fn reveal(
+        &self,
+        id: AuctionId,
+        solution_id: u64,
+        driver: &Driver,
+    ) -> Result<reveal::Response> {
+        let response = driver
+            .reveal(&Request { solution_id })
+            .await
+            .context("reveal")?;
         ensure!(
             response.calldata.internalized.ends_with(&id.to_be_bytes()),
             "reveal auction id missmatch"
@@ -334,24 +373,29 @@ impl RunLoop {
         &self,
         id: AuctionId,
         driver: &Driver,
-        solve: &solve::Response,
-        reveal: &reveal::Response,
+        solved: &solve::Solution,
+        revealed: &reveal::Response,
     ) -> Result<()> {
-        let events = reveal
+        let events = revealed
             .orders
             .iter()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
         self.database.store_order_events(&events).await;
 
-        driver.settle().await.context("settle")?;
+        driver
+            .settle(&settle::Request {
+                solution_id: solved.solution_id,
+            })
+            .await
+            .context("settle")?;
         // TODO: React to deadline expiring.
         let transaction = self
-            .wait_for_settlement_transaction(id, solve.submission_address)
+            .wait_for_settlement_transaction(id, solved.submission_address)
             .await
             .context("wait for settlement transaction")?;
         if let Some(tx) = transaction {
-            let events = reveal
+            let events = revealed
                 .orders
                 .iter()
                 .map(|uid| (*uid, OrderEventLabel::Traded))
