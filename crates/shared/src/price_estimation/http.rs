@@ -248,12 +248,10 @@ impl HttpPriceEstimator {
         for interaction in settlement.interaction_data {
             cost += self.extract_cost(&interaction.cost)?;
         }
-
         let gas = (cost / gas_price).as_u64().max(TRADE)
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
             + ERC20_TRANSFER * 2; // transfer in and transfer out
-            
         Ok(Estimate {
             out_amount: match query.kind {
                 OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
