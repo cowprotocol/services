@@ -38,8 +38,8 @@ impl Solution {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
-    /// Unique ID of the solution, used to identify it in subsequent requests
-    /// (reveal, settle).
+    /// Unique ID of the solution (per driver competition), used to identify it
+    /// in subsequent requests (reveal, settle).
     #[serde_as(as = "serde_with::DisplayFromStr")]
     solution_id: u64,
     #[serde_as(as = "serialize::U256")]
