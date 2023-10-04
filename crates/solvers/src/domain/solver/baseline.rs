@@ -9,6 +9,7 @@ use {
     crate::{
         boundary,
         domain::{
+            self,
             auction,
             eth,
             liquidity,
@@ -46,7 +47,7 @@ struct Inner {
     max_partial_attempts: usize,
 
     /// Parameters used to calculate the revert risk of a solution.
-    risk_parameters: config::RiskParameters,
+    risk: domain::Risk,
 }
 
 impl Baseline {
@@ -57,7 +58,7 @@ impl Baseline {
             base_tokens: config.base_tokens.into_iter().collect(),
             max_hops: config.max_hops,
             max_partial_attempts: config.max_partial_attempts,
-            risk_parameters: config.risk_parameters,
+            risk: config.risk,
         }))
     }
 
@@ -117,6 +118,12 @@ impl Inner {
                             output.amount = cmp::min(output.amount, order.buy.amount);
                         }
 
+                        let score = solution::Score::RiskAdjusted(self.risk.success_probability(
+                            route.gas(),
+                            auction.gas_price,
+                            1,
+                        ));
+
                         solution::Single {
                             order: order.clone(),
                             input: route.input(),
@@ -124,10 +131,11 @@ impl Inner {
                             interactions,
                             gas: route.gas(),
                         }
-                        .into_solution(auction.gas_price, sell_token)
-                        // TODO: append score to solution
-                        // score should be calculated based on the
-                        // self.risk_parameters
+                        .into_solution(
+                            auction.gas_price,
+                            sell_token,
+                            score,
+                        )
                     })
             })
             .collect()

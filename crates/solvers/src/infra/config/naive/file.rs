@@ -1,5 +1,5 @@
 use {
-    crate::infra::config::{unwrap_or_log, RiskParameters},
+    crate::{domain::Risk, infra::config::unwrap_or_log},
     serde::Deserialize,
     serde_with::serde_as,
     std::path::Path,
@@ -27,7 +27,7 @@ pub async fn load(path: &Path) -> super::Config {
     // Not printing detailed error because it could potentially leak secrets.
     let config = unwrap_or_log(toml::de::from_str::<Config>(&data), &path);
     super::Config {
-        risk_parameters: RiskParameters {
+        risk: Risk {
             gas_amount_factor: config.risk_parameters.0,
             gas_price_factor: config.risk_parameters.1,
             nmb_orders_factor: config.risk_parameters.2,

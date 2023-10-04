@@ -106,6 +106,7 @@ impl Swap {
         order: order::Order,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
+        score: solution::Score,
     ) -> Option<solution::Solution> {
         let allowance = self.allowance();
         let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {
@@ -125,7 +126,7 @@ impl Swap {
             interactions,
             gas: self.gas,
         }
-        .into_solution(gas_price, sell_token)
+        .into_solution(gas_price, sell_token, score)
     }
 }
 

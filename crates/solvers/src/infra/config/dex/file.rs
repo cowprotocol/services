@@ -2,8 +2,8 @@
 
 use {
     crate::{
-        domain::{dex::slippage, eth},
-        infra::config::{unwrap_or_log, RiskParameters},
+        domain::{dex::slippage, eth, Risk},
+        infra::config::unwrap_or_log,
     },
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
@@ -77,7 +77,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .expect("invalid slippage limits"),
         concurrent_requests: config.concurrent_requests,
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
-        risk_parameters: RiskParameters {
+        risk: Risk {
             gas_amount_factor: config.risk_parameters.0,
             gas_price_factor: config.risk_parameters.1,
             nmb_orders_factor: config.risk_parameters.2,

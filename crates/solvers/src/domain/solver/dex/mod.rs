@@ -3,6 +3,7 @@
 
 use {
     crate::{
+        domain,
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
@@ -28,7 +29,7 @@ pub struct Dex {
     fills: Fills,
 
     /// Parameters used to calculate the revert risk of a solution.
-    risk_parameters: infra::config::RiskParameters,
+    risk: domain::Risk,
 }
 
 impl Dex {
@@ -38,7 +39,7 @@ impl Dex {
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
-            risk_parameters: config.risk_parameters,
+            risk: config.risk,
         }
     }
 
@@ -47,8 +48,6 @@ impl Dex {
         let solve_orders = async {
             let mut stream = self.solution_stream(&auction);
             while let Some(solution) = stream.next().await {
-                // TODO: append score to solution
-                // score should be calculated based on the self.risk_parameters
                 solutions.push(solution);
             }
         };
@@ -114,7 +113,9 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell) else {
+        let score =
+            solution::Score::RiskAdjusted(self.risk.success_probability(swap.gas, gas_price, 1));
+        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell, score) else {
             tracing::debug!("no solution for swap");
             return None;
         };

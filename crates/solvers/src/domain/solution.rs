@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{auction, eth, liquidity, order},
+        domain::{auction, eth, liquidity, order, solution},
         util,
     },
     ethereum_types::{Address, U256},
@@ -46,6 +46,7 @@ impl Single {
         self,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
+        score: solution::Score,
     ) -> Option<Solution> {
         let Self {
             order,
@@ -118,7 +119,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
-            score: Default::default(),
+            score,
         })
     }
 }

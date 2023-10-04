@@ -1,10 +1,7 @@
 use {
     crate::{
-        domain::eth,
-        infra::{
-            config::{unwrap_or_log, RiskParameters},
-            contracts,
-        },
+        domain::{eth, Risk},
+        infra::{config::unwrap_or_log, contracts},
         util::serialize,
     },
     ethereum_types::H160,
@@ -78,7 +75,7 @@ pub async fn load(path: &Path) -> super::Config {
             .collect(),
         max_hops: config.max_hops,
         max_partial_attempts: config.max_partial_attempts,
-        risk_parameters: RiskParameters {
+        risk: Risk {
             gas_amount_factor: config.risk_parameters.0,
             gas_price_factor: config.risk_parameters.1,
             nmb_orders_factor: config.risk_parameters.2,

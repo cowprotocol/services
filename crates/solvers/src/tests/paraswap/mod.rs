@@ -8,7 +8,7 @@ mod out_of_price;
 pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
-risk-parameters = [1,2,3,4]
+risk-parameters = [0,0,0,0]
 [dex]
 endpoint = 'http://{solver_addr}'
 exclude-dexs = ['UniswapV2']

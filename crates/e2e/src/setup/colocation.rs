@@ -13,7 +13,7 @@ weth = "{weth:?}"
 base-tokens = []
 max-hops = 0
 max-partial-attempts = 5
-risk-parameters = [1,2,3,4]
+risk-parameters = [0,0,0,0]
         "#,
     ));
     let args = vec![

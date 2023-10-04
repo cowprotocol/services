@@ -1,4 +1,4 @@
-use crate::domain::eth;
+use crate::domain::{eth, Risk};
 
 pub mod file;
 
@@ -7,5 +7,5 @@ pub struct Config {
     pub base_tokens: Vec<eth::TokenAddress>,
     pub max_hops: usize,
     pub max_partial_attempts: usize,
-    pub risk_parameters: super::RiskParameters,
+    pub risk: Risk,
 }

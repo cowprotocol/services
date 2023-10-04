@@ -183,7 +183,7 @@ async fn test() {
     let config = tests::Config::String(format!(
         "
 relative-slippage = '0.1'
-risk-parameters = [1,2,3,4]
+risk-parameters = [0,0,0,0]
 [dex]
 endpoint = 'http://{}/swap/v1/'
 api-key = 'abc123'
@@ -293,7 +293,7 @@ enable-slippage-protection = true
                     },
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
