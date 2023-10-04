@@ -3,6 +3,7 @@ use {
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
+    ethrpc::current_block::CurrentBlockStream,
     number::u256_decimal,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
@@ -22,10 +23,15 @@ pub const DEFAULT_URL: &str = "https://apiv5.paraswap.io";
 #[async_trait::async_trait]
 #[mockall::automock]
 pub trait ParaswapApi: Send + Sync + 'static {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
+    async fn price(
+        &self,
+        query: PriceQuery,
+        set_current_block_header: bool,
+    ) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
@@ -33,16 +39,28 @@ pub struct DefaultParaswapApi {
     pub client: Client,
     pub base_url: String,
     pub partner: String,
+    pub block_stream: CurrentBlockStream,
 }
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
+    async fn price(
+        &self,
+        query: PriceQuery,
+        set_current_block_header: bool,
+    ) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.base_url, &self.partner);
         tracing::trace!("Querying Paraswap price API: {}", url);
-        let request = self.client.get(url).send();
 
-        let response = request.await?;
+        let mut request = self.client.get(url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_stream.borrow().hash.to_string(),
+            );
+        };
+
+        let response = request.send().await?;
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
@@ -52,13 +70,21 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
         let query = TransactionBuilderQueryWithPartner {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client, &self.base_url).send();
-        let response = request.await?;
+
+        let mut request = query.into_request(&self.client, &self.base_url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_stream.borrow().hash.to_string(),
+            );
+        };
+        let response = request.send().await?;
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
@@ -358,7 +384,13 @@ impl Interaction for TransactionBuilderResponse {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, reqwest::StatusCode, serde_json::json};
+    use {
+        super::*,
+        ethrpc::current_block::BlockInfo,
+        reqwest::StatusCode,
+        serde_json::json,
+        tokio::sync::watch,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -762,10 +794,12 @@ mod tests {
             .await
             .expect("Response is not json");
 
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         let api = DefaultParaswapApi {
             client: Client::new(),
             base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
+            block_stream,
         };
 
         let good_query = TransactionBuilderQuery {
@@ -781,7 +815,7 @@ mod tests {
             user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
         };
 
-        assert!(api.transaction(good_query).await.is_ok());
+        assert!(api.transaction(good_query, false).await.is_ok());
     }
 
     #[test]

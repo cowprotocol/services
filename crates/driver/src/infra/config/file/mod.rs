@@ -42,6 +42,9 @@ struct Config {
     /// Use Tenderly for transaction simulation.
     tenderly: Option<TenderlyConfig>,
 
+    /// Use Enso for transaction simulation.
+    enso: Option<EnsoConfig>,
+
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
@@ -211,6 +214,13 @@ struct TenderlyConfig {
 
     /// Save the transaction even in the case of failure.
     save_if_fails: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct EnsoConfig {
+    /// URL at which the trade simulator is hosted
+    url: Url,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

@@ -443,9 +443,11 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
-    /// If this is `Some` the quotes are expected to pass simulations using the
-    /// contained parameters.
     pub verification: Option<Verification>,
+    /// Signals whether responses from that were valid on previous blocks can be
+    /// used to answer the query.
+    #[serde(skip_serializing)]
+    pub block_dependent: bool,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be

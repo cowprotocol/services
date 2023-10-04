@@ -66,17 +66,20 @@ impl Inner {
 
         let swap = self
             .api
-            .get_swap(SwapQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
-                sell_amount: sell_amount.map(|amount| amount.get()),
-                buy_amount: buy_amount.map(|amount| amount.get()),
-                slippage_percentage: None,
-                taker_address: None,
-                excluded_sources: self.excluded_sources.clone(),
-                intent_on_filling: false,
-                enable_slippage_protection: false,
-            })
+            .get_swap(
+                SwapQuery {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    sell_amount: sell_amount.map(|amount| amount.get()),
+                    buy_amount: buy_amount.map(|amount| amount.get()),
+                    slippage_percentage: None,
+                    taker_address: None,
+                    excluded_sources: self.excluded_sources.clone(),
+                    intent_on_filling: false,
+                    enable_slippage_protection: false,
+                },
+                query.block_dependent,
+            )
             .await?;
 
         Ok(Trade::swap(
@@ -152,7 +155,7 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     sellAmount=100000000000000000"
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -182,6 +185,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await
             .unwrap();
@@ -231,7 +235,7 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     buyAmount=100000000000000000"
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -260,6 +264,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             })
             .await
             .unwrap();
@@ -273,7 +278,7 @@ mod tests {
     #[tokio::test]
     async fn shares_quote_api_request() {
         let mut zeroex_api = MockZeroExApi::new();
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 tokio::time::sleep(Duration::from_millis(1)).await;
                 Ok(Default::default())
@@ -305,6 +310,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             })
             .await
             .unwrap();

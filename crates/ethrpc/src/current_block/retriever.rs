@@ -22,6 +22,7 @@ use {
 /// requests to fetch the full block header (which includes the hash) and
 /// simulate code on the latest block for which there is state. This gives us
 /// the best of both worlds at the cost of an extra request per "poll".
+#[derive(Debug)]
 pub struct BlockRetriever(pub Web3);
 
 #[async_trait::async_trait]
