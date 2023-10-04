@@ -534,6 +534,9 @@ fn main() {
 
     // Contract for batching multiple `eth_call`s into a single one.
     generate_contract("Multicall");
+
+    // Test Contract for incrementing arbitrary counters.
+    generate_contract("Counter");
 }
 
 fn generate_contract(name: &str) {

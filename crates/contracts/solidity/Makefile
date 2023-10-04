@@ -17,8 +17,11 @@ CONTRACTS := \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
+TEST_CONTRACTS := Counter.sol
+TEST_ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(TEST_CONTRACTS))
+
 .PHONY: artifacts
-artifacts: $(ARTIFACTS)
+artifacts: $(ARTIFACTS) $(TEST_ARTIFACTS)
 
 define ARTIFACTTEMPLATE
 {
@@ -52,3 +55,12 @@ $(TARGETDIR)/%.abi: %.sol
 		-v "$(abspath $(TARGETDIR)):/target" \
 		$(SOLC) \
 		$(SOLFLAGS) -o /target $<
+
+$(TARGETDIR)/%.abi: test/%.sol
+	@mkdir -p $(TARGETDIR)
+	@echo solc $(SOLFLAGS) -o /target $(notdir $<)
+	@$(DOCKER) run -it --rm \
+		-v "$(abspath .)/test:/contracts" -w "/contracts" \
+		-v "$(abspath $(TARGETDIR)):/target" \
+		$(SOLC) \
+		$(SOLFLAGS) -o /target $(notdir $<)
