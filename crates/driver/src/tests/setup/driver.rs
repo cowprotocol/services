@@ -8,7 +8,7 @@ use {
     crate::{
         domain::{competition::order, eth},
         infra::time,
-        tests::hex_address,
+        tests::{cases, hex_address},
     },
     rand::seq::SliceRandom,
     secp256k1::SecretKey,
@@ -119,6 +119,21 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
+        "scoreCap": cases::DEFAULT_SCORE_CAP.to_string(),
+    })
+}
+
+/// Create a request for the driver /reveal endpoint.
+pub fn reveal_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
+    })
+}
+
+/// Create a request for the driver /settle endpoint.
+pub fn settle_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
     })
 }
 

@@ -197,15 +197,6 @@ pub enum Score {
         score: U256,
     },
     /// This option is used to indicate that the solver did not provide a score.
-    /// Instead, the score should be computed by the protocol.
-    /// To have more flexibility, the protocol score can be tweaked by the
-    /// solver by providing a discount.
-    Discount {
-        #[serde(with = "u256_decimal")]
-        #[serde(rename = "scoreDiscount")]
-        score_discount: U256,
-    },
-    /// This option is used to indicate that the solver did not provide a score.
     /// Instead, the score should be computed by the protocol given the success
     /// probability and optionally the amount of gas this settlement will take.
     RiskAdjusted {
@@ -255,16 +246,6 @@ impl Score {
                 success_probability: p_left * p_right,
                 gas_amount: gas_left
                     .and_then(|left| gas_right.and_then(|right| left.checked_add(right))),
-            }),
-            (
-                Score::Discount {
-                    score_discount: left,
-                },
-                Score::Discount {
-                    score_discount: right,
-                },
-            ) => Some(Score::Discount {
-                score_discount: left.checked_add(*right)?,
             }),
             _ => None,
         }
@@ -954,27 +935,6 @@ mod tests {
             deserialized.score,
             Score::Solver {
                 score: 20_000_000_000_000_000u128.into()
-            }
-        );
-    }
-
-    #[test]
-    fn decode_score_discount() {
-        let solution = r#"
-            {
-                "tokens": {},
-                "orders": {},
-                "scoreDiscount": "1337",
-                "metadata": {},
-                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
-                "prices": {}
-            }
-        "#;
-        let deserialized = serde_json::from_str::<SettledBatchAuctionModel>(solution).unwrap();
-        assert_eq!(
-            deserialized.score,
-            Score::Discount {
-                score_discount: 1337.into()
             }
         );
     }

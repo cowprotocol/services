@@ -133,6 +133,10 @@ impl Solutions {
                             }
                         })
                         .collect(),
+                    score: match solution.score.clone() {
+                        solution::Score::Solver(score) => Score::Solver(score),
+                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score),
+                    },
                 })
                 .collect(),
         }
@@ -154,6 +158,7 @@ struct Solution {
     prices: HashMap<H160, U256>,
     trades: Vec<Trade>,
     interactions: Vec<Interaction>,
+    score: Score,
 }
 
 #[derive(Debug, Serialize)]
@@ -312,4 +317,12 @@ enum SigningScheme {
     EthSign,
     PreSign,
     Eip1271,
+}
+
+/// A score for a solution. The score is used to rank solutions.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Score {
+    Solver(U256),
+    RiskAdjusted(f64),
 }

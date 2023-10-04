@@ -30,12 +30,12 @@ impl Driver {
         self.request_response("solve", Some(request)).await
     }
 
-    pub async fn reveal(&self) -> Result<reveal::Response> {
-        self.request_response("reveal", Option::<&()>::None).await
+    pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
+        self.request_response("reveal", Some(request)).await
     }
 
-    pub async fn settle(&self) -> Result<settle::Response> {
-        self.request_response("settle", Option::<&()>::None).await
+    pub async fn settle(&self, request: &settle::Request) -> Result<settle::Response> {
+        self.request_response("settle", Some(request)).await
     }
 
     async fn request_response<Response>(

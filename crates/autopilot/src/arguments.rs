@@ -1,5 +1,5 @@
 use {
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option},
         bad_token::token_owner_finder,
@@ -169,6 +169,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "5")]
     pub additional_deadline_for_rewards: usize,
 
+    /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
+    #[clap(long, env, default_value = "10000000000000000")]
+    pub score_cap: U256,
+
     /// Run the autopilot in a shadow mode by specifying an upstream CoW
     /// protocol deployment to pull auctions from. This will cause the autopilot
     /// to start a run loop where it performs solver competition on driver,
@@ -236,6 +240,7 @@ impl std::fmt::Display for Arguments {
             "additional_deadline_for_rewards: {}",
             self.additional_deadline_for_rewards
         )?;
+        writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         Ok(())
     }
