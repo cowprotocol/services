@@ -333,7 +333,7 @@ async fn partial_fills(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader] = onchain.make_accounts(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(3)).await;
 
     let counter = contracts::test::Counter::builder(&web3)
         .deploy()
