@@ -279,7 +279,7 @@ pub async fn run(args: Arguments) {
         )
         .expect("failed to create pool cache"),
     );
-    let block_retriver = args.shared.current_block.retriever(web3.clone());
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -293,7 +293,7 @@ pub async fn run(args: Arguments) {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
-                block_retriver.clone(),
+                block_retriever.clone(),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
@@ -319,7 +319,7 @@ pub async fn run(args: Arguments) {
                 chain_id,
                 web3.clone(),
                 http_factory.create(),
-                block_retriver,
+                block_retriever.clone(),
                 args.shared.max_pools_to_initialize_cache,
             )
             .await
@@ -340,6 +340,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
+            current_block_stream.clone(),
         )
         .unwrap(),
     );
@@ -347,6 +348,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
+        current_block_stream.clone(),
     )
     .map(Arc::new);
 
