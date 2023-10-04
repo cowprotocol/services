@@ -254,7 +254,7 @@ impl From<TokenAddress> for ContractAddress {
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,

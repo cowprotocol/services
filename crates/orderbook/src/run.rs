@@ -32,7 +32,7 @@ use {
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
         oneinch_api::OneInchClientImpl,
-        order_quoting::{OrderQuoter, QuoteHandler},
+        order_quoting::{self, OrderQuoter, QuoteHandler},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
             factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
@@ -125,12 +125,12 @@ pub async fn run(args: Arguments) {
     let network_name = network_name(&network, chain_id);
 
     let signature_validator = signature_validator::validator(
+        &web3,
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
-        web3.clone(),
     );
 
     let vault = match args.shared.balancer_v2_vault_address {
@@ -161,13 +161,13 @@ pub async fn run(args: Arguments) {
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
 
     let balance_fetcher = account_balances::fetcher(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
     );
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
@@ -443,10 +443,20 @@ pub async fn run(args: Arguments) {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             Arc::new(postgres.clone()),
-            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+            order_quoting::Validity {
+                eip1271_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.eip1271_onchain_quote_validity_seconds,
+                )
                 .unwrap(),
-            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+                presign_onchain_quote: chrono::Duration::from_std(
+                    args.order_quoting.presign_onchain_quote_validity_seconds,
+                )
                 .unwrap(),
+                standard_quote: chrono::Duration::from_std(
+                    args.order_quoting.standard_offchain_quote_validity_seconds,
+                )
+                .unwrap(),
+            },
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone());

@@ -34,8 +34,31 @@ impl Mempools {
             .boxed()
         })));
     }
+
+    /// Defines if the mempools are configured in a way that guarantees that
+    /// /settle'd solution will not revert.
+    pub fn revert_protection(&self) -> RevertProtection {
+        if self.0.iter().any(|mempool| {
+            matches!(
+                mempool.config().kind,
+                infra::mempool::Kind::Public(infra::mempool::HighRisk::Enabled)
+            )
+        }) {
+            RevertProtection::Disabled
+        } else {
+            RevertProtection::Enabled
+        }
+    }
 }
 
 #[derive(Debug, Error)]
 #[error("no mempools configured, cannot execute settlements")]
 pub struct NoMempools;
+
+/// Defines if the mempools are configured in a way that guarantees that
+/// /settle'd solution will not revert.
+#[derive(Debug, Clone, Copy)]
+pub enum RevertProtection {
+    Enabled,
+    Disabled,
+}

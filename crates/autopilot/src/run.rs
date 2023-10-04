@@ -39,7 +39,7 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
-        order_quoting::OrderQuoter,
+        order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator,
@@ -181,22 +181,22 @@ pub async fn run(args: Arguments) {
         .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
+        &web3,
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
-        web3.clone(),
     );
 
     let balance_fetcher = account_balances::cached(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
         current_block_stream.clone(),
     );
 
@@ -466,10 +466,20 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         fee_subsidy,
         Arc::new(db.clone()),
-        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+        order_quoting::Validity {
+            eip1271_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+            )
             .unwrap(),
-        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            presign_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.presign_onchain_quote_validity_seconds,
+            )
             .unwrap(),
+            standard_quote: chrono::Duration::from_std(
+                args.order_quoting.standard_offchain_quote_validity_seconds,
+            )
+            .unwrap(),
+        },
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
@@ -598,6 +608,7 @@ pub async fn run(args: Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+            score_cap: args.score_cap,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -651,7 +662,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens);
+    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens, args.score_cap);
     shadow.run_forever().await;
 
     unreachable!("shadow run loop exited");

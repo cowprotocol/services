@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order},
+    super::{Asset, Order, Partial, Score},
     crate::{
         domain::{
             competition::order,
@@ -77,7 +77,7 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
@@ -133,7 +133,7 @@ impl QuotedOrder {
             secret_key: blockchain.trader_secret_key,
             domain_separator: blockchain.domain_separator,
             owner: blockchain.trader_address,
-            partially_fillable: matches!(self.order.partial, order::Partial::Yes { .. }),
+            partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
         }
     }
 }
@@ -676,7 +676,7 @@ impl Blockchain {
         }
         Solution {
             fulfillments,
-            risk: solution.risk,
+            score: solution.score.clone(),
         }
     }
 

@@ -13,6 +13,13 @@ pub struct Solution {
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
+    pub score: Score,
+}
+
+impl Solution {
+    pub fn with_score(self, score: Score) -> Self {
+        Self { score, ..self }
+    }
 }
 
 /// A solution for a settling a single order.
@@ -111,6 +118,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
+            score: Default::default(),
         })
     }
 }
@@ -284,4 +292,25 @@ pub struct CustomInteraction {
 pub struct Allowance {
     pub spender: Address,
     pub asset: eth::Asset,
+}
+
+/// Represents the probability that a solution will be successfully settled.
+type SuccessProbability = f64;
+
+/// A score for a solution. The score is used to rank solutions.
+#[derive(Debug, Clone)]
+pub enum Score {
+    /// The score value is provided as is from solver.
+    /// Success probability is not incorporated into this value.
+    Solver(U256),
+    /// This option is used to indicate that the solver did not provide a score.
+    /// Instead, the score should be computed by the protocol given the success
+    /// probability.
+    RiskAdjusted(SuccessProbability),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted(1.0)
+    }
 }

@@ -74,7 +74,6 @@ pub trait OrderValidating: Send + Sync {
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
-        order_partially_fillable: bool,
     ) -> Result<OrderAppData, AppDataValidationError>;
 
     /// This is the full order validation performed at the time of order
@@ -515,7 +514,6 @@ impl OrderValidating for OrderValidator {
         &self,
         app_data: &OrderCreationAppData,
         full_app_data_override: &Option<String>,
-        order_partially_fillable: bool,
     ) -> Result<OrderAppData, AppDataValidationError> {
         let validate = |app_data: &str| -> Result<_, AppDataValidationError> {
             let app_data = self
@@ -554,17 +552,11 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        // convert the user-specified hooks into interactions.
-        if !app_data.protocol.hooks.is_empty() {
-            // custom interactions are disabled
-            if !self.enable_custom_interactions {
-                return Err(AppDataValidationError::UnsupportedCustomInteraction);
-            }
-            // custom interactions are not allowed for partially fillable orders
-            if order_partially_fillable {
-                return Err(AppDataValidationError::UnsupportedCustomInteraction);
-            }
+        if !self.enable_custom_interactions && !app_data.protocol.hooks.is_empty() {
+            // contains some custom interactions while feature is disabled
+            return Err(AppDataValidationError::UnsupportedCustomInteraction);
         }
+
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -582,11 +574,7 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
-        let app_data = self.validate_app_data(
-            &order.app_data,
-            &full_app_data_override,
-            order.partially_fillable,
-        )?;
+        let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
 
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();

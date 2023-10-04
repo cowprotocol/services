@@ -2,12 +2,13 @@ use {
     super::{
         blockchain::Blockchain,
         solver::{self, Solver},
+        Partial,
         Test,
     },
     crate::{
         domain::{competition::order, eth},
         infra::time,
-        tests::hex_address,
+        tests::{cases, hex_address},
     },
     rand::seq::SliceRandom,
     secp256k1::SecretKey,
@@ -84,10 +85,10 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Side::Buy => "buy",
             },
             "owner": hex_address(test.trader_address),
-            "partiallyFillable": matches!(quote.order.partial, order::Partial::Yes { .. }),
+            "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
             "executed": match quote.order.partial {
-                order::Partial::Yes { executed } => executed.0.to_string(),
-                order::Partial::No => "0".to_owned(),
+                Partial::Yes { executed } => executed.to_string(),
+                Partial::No => "0".to_owned(),
             },
             "preInteractions": [],
             "postInteractions": [],
@@ -118,6 +119,21 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
         "tokens": tokens_json,
         "orders": orders_json,
         "deadline": test.deadline,
+        "scoreCap": cases::DEFAULT_SCORE_CAP.to_string(),
+    })
+}
+
+/// Create a request for the driver /reveal endpoint.
+pub fn reveal_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
+    })
+}
+
+/// Create a request for the driver /settle endpoint.
+pub fn settle_req() -> serde_json::Value {
+    json!({
+        "solutionId": "0",
     })
 }
 

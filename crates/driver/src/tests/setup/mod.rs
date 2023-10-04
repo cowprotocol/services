@@ -44,6 +44,15 @@ pub struct Asset {
     amount: eth::U256,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Partial {
+    #[default]
+    No,
+    Yes {
+        executed: eth::U256,
+    },
+}
+
 /// Set up a difference between the placed order amounts and the amounts
 /// executed by the solver. This is useful for testing e.g. asset flow
 /// verification. See [`crate::domain::competition::solution::Settlement`].
@@ -76,6 +85,19 @@ impl ExecutionDiff {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Score {
+    Solver(eth::U256),
+    RiskAdjusted(f64),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted(1.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order {
     pub name: &'static str,
@@ -86,7 +108,7 @@ pub struct Order {
 
     pub internalize: bool,
     pub side: order::Side,
-    pub partial: order::Partial,
+    pub partial: Partial,
     pub valid_for: util::Timestamp,
     pub kind: order::Kind,
 
@@ -228,7 +250,7 @@ impl Default for Order {
             buy_token: Default::default(),
             internalize: Default::default(),
             side: order::Side::Sell,
-            partial: order::Partial::No,
+            partial: Default::default(),
             valid_for: 100.into(),
             kind: order::Kind::Market,
             user_fee: Default::default(),
@@ -303,7 +325,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 impl Solution {
@@ -328,9 +350,9 @@ impl Solution {
         }
     }
 
-    /// Set the solution risk.
-    pub fn risk(self, risk: eth::U256) -> Self {
-        Self { risk, ..self }
+    /// Set the solution score to the specified value.
+    pub fn score(self, score: Score) -> Self {
+        Self { score, ..self }
     }
 }
 
@@ -341,7 +363,7 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            risk: Default::default(),
+            score: Default::default(),
         }
     }
 }
@@ -374,7 +396,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -406,7 +428,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -437,7 +459,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -669,6 +691,7 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
+            .json(&driver::reveal_req())
             .send()
             .await
             .unwrap();
@@ -721,6 +744,7 @@ impl Test {
                     self.driver.addr,
                     solver::NAME
                 ))
+                .json(&driver::settle_req())
                 .send(),
         )
         .await
@@ -793,17 +817,30 @@ pub struct SolveOk {
 }
 
 impl SolveOk {
+    /// Extracts the score from the response. Since response can contain
+    /// multiple solutions, it takes the score from the first solution.
+    pub fn score(&self) -> eth::U256 {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 1);
+        assert!(result.get("solutions").is_some());
+        let solutions = result.get("solutions").unwrap();
+        let solutions = solutions.as_array().unwrap();
+        assert_eq!(solutions.len(), 1);
+        let solution = solutions[0].clone();
+        assert!(solution.is_object());
+        assert_eq!(solution.as_object().unwrap().len(), 3);
+        assert!(solution.get("score").is_some());
+        let score = solution.get("score").unwrap().as_str().unwrap();
+        eth::U256::from_dec_str(score).unwrap()
+    }
+
     /// Ensure that the score in the response is within a certain range. The
     /// reason why this is a range is because small timing differences in
     /// the test can lead to the settlement using slightly different amounts
     /// of gas, which in turn leads to different scores.
-    pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("score").is_some());
-        let score = result.get("score").unwrap().as_str().unwrap();
-        let score = eth::U256::from_dec_str(score).unwrap();
+    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
+        let score = self.score();
         assert!(score >= min, "score less than min {score} < {min}");
         assert!(score <= max, "score more than max {score} > {max}");
         self
@@ -811,7 +848,7 @@ impl SolveOk {
 
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
-        self.score(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+        self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
     }
 }
 

@@ -351,8 +351,10 @@ pub async fn run(args: Arguments) {
         code_fetcher: code_fetcher.clone(),
         score_calculator: ScoreCalculator::new(
             u256_to_big_rational(&args.score_cap),
-            args.transaction_strategy.clone(),
-            args.disable_high_risk_public_mempool_transactions,
+            args.transaction_strategy.iter().any(|s| {
+                matches!(s, TransactionStrategyArg::PublicMempool)
+                    && !args.disable_high_risk_public_mempool_transactions
+            }),
         ),
     });
 
@@ -549,13 +551,13 @@ pub async fn run(args: Arguments) {
         .expect("unknown network block interval");
 
     let balance_fetcher = account_balances::fetcher(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault_contract.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
     );
 
     let mut driver = Driver::new(

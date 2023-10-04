@@ -103,6 +103,16 @@ pub struct OrderQuotingArguments {
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
 
+    /// The time period a regular offchain-quote request (ethsign/eip712) is
+    /// valid.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = duration_from_seconds,
+    )]
+    pub standard_offchain_quote_validity_seconds: Duration,
+
     /// A flat fee discount denominated in the network's native token (i.e.
     /// Ether for Mainnet).
     ///
