@@ -98,13 +98,12 @@ impl RunLoop {
             .flat_map(|(index, response)| {
                 if response.solutions.is_empty() {
                     tracing::debug!(driver = ?self.drivers[index].url, "driver sent zero solutions");
-                    return vec![];
                 }
 
                 response
                     .solutions
                     .into_iter()
-                    .filter_map(|solution| {
+                    .filter_map(move |solution| {
                         if solution.score == U256::zero() {
                             tracing::debug!(
                                 id = ?solution.solution_id,
@@ -116,7 +115,6 @@ impl RunLoop {
                             Some((index, solution))
                         }
                     })
-                    .collect_vec()
             })
             .collect_vec();
 
