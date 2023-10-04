@@ -13,4 +13,5 @@ pub struct Config {
     pub slippage: slippage::Limits,
     pub concurrent_requests: NonZeroUsize,
     pub smallest_partial_fill: eth::Ether,
+    pub risk_parameters: super::RiskParameters,
 }

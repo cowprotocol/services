@@ -9,13 +9,24 @@ use {
     crate::{
         boundary,
         domain::{auction, liquidity, order, solution},
+        infra::config,
     },
     std::collections::HashMap,
 };
 
-pub struct Naive;
+pub struct Naive {
+    /// Parameters used to calculate the revert risk of a solution.
+    risk_parameters: config::RiskParameters,
+}
 
 impl Naive {
+    /// Creates a new naive solver for the specified configuration.
+    pub fn new(config: config::naive::Config) -> Self {
+        Self {
+            risk_parameters: config.risk_parameters,
+        }
+    }
+
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
@@ -27,6 +38,8 @@ impl Naive {
             groups
                 .values()
                 .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                // TODO: append score to solution
+                // score should be calculated based on the self.risk_parameters
                 .collect()
         })
         .await

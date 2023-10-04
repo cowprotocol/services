@@ -3,6 +3,16 @@ use std::fmt::Debug;
 pub mod baseline;
 pub mod dex;
 pub mod legacy;
+pub mod naive;
+
+/// Parameters used to calculate the revert risk of a solution.
+#[derive(Debug, Clone)]
+pub struct RiskParameters {
+    pub gas_amount_factor: f64,
+    pub gas_price_factor: f64,
+    pub nmb_orders_factor: f64,
+    pub intercept: f64,
+}
 
 /// Unwraps result or logs a `TOML` parsing error.
 fn unwrap_or_log<T, E, P>(result: Result<T, E>, path: &P) -> T
