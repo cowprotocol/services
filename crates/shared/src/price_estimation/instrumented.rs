@@ -87,6 +87,7 @@ mod tests {
                 buy_token: H160([2; 20]),
                 in_amount: NonZeroU256::try_from(3).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }),
             Arc::new(Query {
                 verification: None,
@@ -94,6 +95,7 @@ mod tests {
                 buy_token: H160([5; 20]),
                 in_amount: NonZeroU256::try_from(6).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }),
         ];
 
