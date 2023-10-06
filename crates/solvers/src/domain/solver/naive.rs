@@ -16,9 +16,6 @@ use {
 
 pub struct Naive {
     /// Parameters used to calculate the revert risk of a solution.
-    ///
-    /// [ CURRENTLY NOT USED ]
-    /// TODO: Waiting for proper gas estimation to be implemented
     risk: domain::Risk,
 }
 
@@ -31,6 +28,7 @@ impl Naive {
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        let risk = self.risk.clone();
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
@@ -38,7 +36,9 @@ impl Naive {
             let groups = group_by_token_pair(&auction);
             groups
                 .values()
-                .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                .filter_map(|group| {
+                    boundary::naive::solve(&group.orders, group.liquidity, &risk, auction.gas_price)
+                })
                 .collect()
         })
         .await

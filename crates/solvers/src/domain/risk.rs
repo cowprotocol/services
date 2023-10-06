@@ -2,7 +2,7 @@ use super::{auction::GasPrice, eth::Gas};
 
 /// Parameters that define the possibility of a revert when executing a
 /// solution.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Risk {
     pub gas_amount_factor: f64,
     pub gas_price_factor: f64,
