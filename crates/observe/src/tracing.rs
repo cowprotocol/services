@@ -2,7 +2,13 @@ use {
     std::{panic::PanicInfo, sync::Once},
     time::macros::format_description,
     tracing::level_filters::LevelFilter,
-    tracing_subscriber::fmt::{time::UtcTime, writer::MakeWriterExt as _},
+    tracing_subscriber::{
+        fmt::{time::UtcTime, writer::MakeWriterExt as _},
+        prelude::*,
+        util::SubscriberInitExt,
+        EnvFilter,
+        Layer,
+    },
 };
 
 /// Initializes tracing setup that is shared between the binaries.
@@ -28,22 +34,29 @@ pub fn initialize_reentrant(env_filter: &str) {
 }
 
 fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
-    // This is what kibana uses to separate multi line log messages.
-    let subscriber_builder = tracing_subscriber::fmt::fmt()
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(
+            std::io::stdout
+                .with_min_level(
+                    stderr_threshold
+                        .into_level()
+                        .unwrap_or(tracing::Level::ERROR),
+                )
+                .or_else(std::io::stderr),
+        )
         .with_timer(UtcTime::new(format_description!(
+            // This is what kibana uses to separate multi line log messages.
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         )))
-        .with_env_filter(env_filter)
-        .with_ansi(atty::is(atty::Stream::Stdout));
-    match stderr_threshold.into_level() {
-        Some(threshold) => subscriber_builder
-            .with_writer(
-                std::io::stderr
-                    .with_max_level(threshold)
-                    .or_else(std::io::stdout),
-            )
-            .init(),
-        None => subscriber_builder.init(),
+        .with_ansi(atty::is(atty::Stream::Stdout))
+        .with_filter::<EnvFilter>(env_filter.into());
+
+    let registry = tracing_subscriber::registry().with(fmt_layer);
+    if cfg!(tokio_unstable) {
+        // Start with tokio_console subscriber
+        registry.with(console_subscriber::spawn()).init();
+    } else {
+        registry.init()
     }
 }
 

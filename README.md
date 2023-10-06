@@ -117,6 +117,17 @@ ANVIL_IP_ADDR=0.0.0.0 anvil \
   --timestamp 1577836800
 ```
 
+### Profiling
+
+In order to attach [tokio-console](https://github.com/tokio-rs/console) to the running process, compile the binary using `RUSTFLAGS="--cfg tokio_unstable"`.
+
+Then in another shell, simply run
+
+```
+cargo install --locked tokio-console
+tokio-console
+```
+
 ## Running the Services Locally
 
 ### Prerequisites
