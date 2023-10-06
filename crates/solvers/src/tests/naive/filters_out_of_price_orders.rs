@@ -122,7 +122,7 @@ async fn sell_orders_on_both_sides() {
                 ],
                 "interactions": [],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
