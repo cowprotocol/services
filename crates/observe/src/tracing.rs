@@ -4,7 +4,7 @@ use {
     tracing::level_filters::LevelFilter,
     tracing_subscriber::{
         fmt::{time::UtcTime, writer::MakeWriterExt as _},
-        prelude::__tracing_subscriber_SubscriberExt,
+        prelude::*,
         util::SubscriberInitExt,
         EnvFilter,
         Layer,
