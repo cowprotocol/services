@@ -27,38 +27,38 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", Some(request)).await
+        self.request_response("solve", request).await
     }
 
     pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
-        self.request_response("reveal", Some(request)).await
+        self.request_response("reveal", request).await
     }
 
     pub async fn settle(&self, request: &settle::Request) -> Result<settle::Response> {
-        self.request_response("settle", Some(request)).await
+        self.request_response("settle", request).await
     }
 
     async fn request_response<Response>(
         &self,
         path: &str,
-        request: Option<&impl serde::Serialize>,
+        request: &impl serde::Serialize,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
     {
         let url = shared::url::join(&self.url, path);
-        let request = if let Some(request) = request {
-            tracing::trace!(
-                path=&url.path(),
-                body=%serde_json::to_string_pretty(request).unwrap(),
-                "request",
-            );
-            self.client.post(url.clone()).json(request)
-        } else {
-            tracing::trace!(path=%url.path(), "request");
-            self.client.post(url.clone())
-        };
-        let mut response = request.send().await.context("send")?;
+        tracing::trace!(
+            path=&url.path(),
+            body=%serde_json::to_string_pretty(request).unwrap(),
+            "request",
+        );
+        let mut response = self
+            .client
+            .post(url.clone())
+            .json(request)
+            .send()
+            .await
+            .context("send")?;
         let status = response.status().as_u16();
         let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
             .await

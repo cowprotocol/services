@@ -206,6 +206,7 @@ impl QuoteParameters {
             buy_token: self.buy_token,
             in_amount,
             kind,
+            block_dependent: true,
         }
     }
 
@@ -484,9 +485,22 @@ impl Now for DateTime<Utc> {
     }
 }
 
-/// Standard validity for a quote: Quotes are stored only as long as they are
-/// valid.
-const STANDARD_QUOTE_VALIDITY_SECONDS: i64 = 60;
+pub struct Validity {
+    pub eip1271_onchain_quote: Duration,
+    pub presign_onchain_quote: Duration,
+    pub standard_quote: Duration,
+}
+
+#[cfg(test)]
+impl Default for Validity {
+    fn default() -> Self {
+        Self {
+            eip1271_onchain_quote: Duration::seconds(600),
+            presign_onchain_quote: Duration::seconds(600),
+            standard_quote: Duration::seconds(60),
+        }
+    }
+}
 
 /// An order quoter implementation that relies
 pub struct OrderQuoter {
@@ -496,8 +510,7 @@ pub struct OrderQuoter {
     fee_subsidy: Arc<dyn FeeSubsidizing>,
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
-    eip1271_onchain_quote_validity_seconds: Duration,
-    presign_onchain_quote_validity_seconds: Duration,
+    validity: Validity,
 }
 
 impl OrderQuoter {
@@ -507,8 +520,7 @@ impl OrderQuoter {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         fee_subsidy: Arc<dyn FeeSubsidizing>,
         storage: Arc<dyn QuoteStoring>,
-        eip1271_onchain_quote_validity_seconds: Duration,
-        presign_onchain_quote_validity_seconds: Duration,
+        validity: Validity,
     ) -> Self {
         Self {
             price_estimator,
@@ -517,8 +529,7 @@ impl OrderQuoter {
             fee_subsidy,
             storage,
             now: Arc::new(Utc::now),
-            eip1271_onchain_quote_validity_seconds,
-            presign_onchain_quote_validity_seconds,
+            validity,
         }
     }
 
@@ -530,11 +541,11 @@ impl OrderQuoter {
             QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
                 ..
-            } => self.now.now() + self.eip1271_onchain_quote_validity_seconds,
+            } => self.now.now() + self.validity.eip1271_onchain_quote,
             QuoteSigningScheme::PreSign {
                 onchain_order: true,
-            } => self.now.now() + self.presign_onchain_quote_validity_seconds,
-            _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+            } => self.now.now() + self.validity.presign_onchain_quote,
+            _ => self.now.now() + self.validity.standard_quote,
         };
 
         let trade_query = Arc::new(parameters.to_price_query());
@@ -751,7 +762,7 @@ mod tests {
         futures::FutureExt,
         gas_estimation::GasPrice1559,
         mockall::{predicate::eq, Sequence},
-        model::{quote::Validity, time},
+        model::time,
         number::nonzero::U256 as NonZeroU256,
         std::sync::Mutex,
     };
@@ -759,7 +770,7 @@ mod tests {
     #[test]
     fn pre_order_data_from_quote_request() {
         let quote_request = OrderQuoteRequest {
-            validity: Validity::To(0),
+            validity: model::quote::Validity::To(0),
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -770,7 +781,7 @@ mod tests {
     #[test]
     fn pre_order_data_from_quote_request_with_valid_for() {
         let quote_request = OrderQuoteRequest {
-            validity: Validity::For(100),
+            validity: model::quote::Validity::For(100),
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -818,6 +829,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {
@@ -863,7 +875,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -876,8 +888,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: super::Validity::default(),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -898,7 +909,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -950,6 +961,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(100).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {
@@ -995,7 +1007,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -1011,8 +1023,7 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1033,7 +1044,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -1080,6 +1091,7 @@ mod tests {
                     buy_token: H160([2; 20]),
                     in_amount: NonZeroU256::try_from(42).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: true,
                 }
             })
             .returning(|_| {
@@ -1125,7 +1137,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Buy,
-                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
             }))
@@ -1142,8 +1154,7 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         let quote = quoter.calculate_quote(parameters).await.unwrap();
@@ -1164,7 +1175,7 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Buy,
-                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
                 },
@@ -1236,8 +1247,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert!(matches!(
@@ -1306,8 +1316,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert!(matches!(
@@ -1364,8 +1373,7 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert_eq!(
@@ -1447,8 +1455,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert_eq!(
@@ -1528,8 +1535,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert_eq!(
@@ -1599,8 +1605,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert!(matches!(
@@ -1629,8 +1634,7 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
-            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
-            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            validity: Validity::default(),
         };
 
         assert!(matches!(

@@ -60,7 +60,6 @@ mod tests {
         },
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
-        reqwest::Client,
     };
 
     impl OneInchPriceEstimator {
@@ -90,7 +89,7 @@ mod tests {
         //     fromTokenAddress=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&\
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
-        one_inch.expect_get_sell_order_quote().return_once(|_| {
+        one_inch.expect_get_sell_order_quote().return_once(|_, _| {
             async {
                 Ok(SellOrderQuote {
                     from_token: Token {
@@ -117,6 +116,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -140,6 +140,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await;
 
@@ -155,7 +156,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| {
+            .return_once(|_, _| {
                 async {
                     Err(RestError {
                         status_code: 500,
@@ -175,6 +176,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 
@@ -190,7 +192,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| async { Err(anyhow::anyhow!("malformed JSON").into()) }.boxed());
+            .return_once(|_, _| async { Err(anyhow::anyhow!("malformed JSON").into()) }.boxed());
 
         let estimator = OneInchPriceEstimator::test(one_inch);
 
@@ -201,6 +203,7 @@ mod tests {
                 buy_token: testlib::tokens::GNO,
                 in_amount: NonZeroU256::try_from(1_000_000_000_000_000_000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 
@@ -216,8 +219,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let one_inch =
-            OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap();
+        let one_inch = OneInchClientImpl::test();
         let estimator = OneInchPriceEstimator::test(one_inch);
 
         let result = estimator
@@ -227,6 +229,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 

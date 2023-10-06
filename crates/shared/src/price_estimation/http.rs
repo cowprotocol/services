@@ -22,7 +22,7 @@ use {
             HttpSolverApi,
         },
         price_estimation::{
-            gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
+            gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT, TRADE},
             rate_limited,
             Estimate,
             PriceEstimateResult,
@@ -248,11 +248,10 @@ impl HttpPriceEstimator {
         for interaction in settlement.interaction_data {
             cost += self.extract_cost(&interaction.cost)?;
         }
-        let gas = (cost / gas_price).as_u64()
+        let gas = (cost / gas_price).as_u64().max(TRADE)
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
             + ERC20_TRANSFER * 2; // transfer in and transfer out
-
         Ok(Estimate {
             out_amount: match query.kind {
                 OrderKind::Buy => settlement.orders[&0].exec_sell_amount,
@@ -504,6 +503,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -516,6 +516,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -557,6 +558,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap_err();
@@ -603,6 +605,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 in_amount: NonZeroU256::try_from(100).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap_err();
@@ -698,6 +701,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             in_amount: NonZeroU256::try_from(100).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
         let result = estimator.estimate(query).await.unwrap();
 
@@ -830,6 +834,7 @@ mod tests {
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount1).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 
@@ -851,6 +856,7 @@ mod tests {
                 buy_token: t2.1,
                 in_amount: NonZeroU256::try_from(amount2).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await;
 

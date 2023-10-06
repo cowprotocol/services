@@ -296,6 +296,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key,
+            current_block_stream.clone(),
         )
         .unwrap(),
     );
@@ -397,6 +398,7 @@ pub async fn run(args: Arguments) {
         settlement_rater.clone(),
         args.enforce_correct_fees_for_partially_fillable_limit_orders,
         args.ethflow_contract,
+        current_block_stream.clone(),
     )
     .await
     .expect("failure creating solvers");

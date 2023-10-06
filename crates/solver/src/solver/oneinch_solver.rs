@@ -18,6 +18,7 @@ use {
     contracts::GPv2Settlement,
     derivative::Derivative,
     ethcontract::Account,
+    ethrpc::current_block::CurrentBlockStream,
     model::order::OrderKind,
     primitive_types::H160,
     reqwest::{Client, Url},
@@ -62,13 +63,19 @@ impl OneInchSolver {
         one_inch_url: Url,
         slippage_calculator: SlippageCalculator,
         referrer_address: Option<H160>,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
             account,
             settlement_contract,
             disabled_protocols: disabled_protocols.into_iter().collect(),
-            client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
+            client: Box::new(OneInchClientImpl::new(
+                one_inch_url,
+                client,
+                chain_id,
+                block_stream,
+            )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             cache: Cache::default(),
             slippage_calculator,
@@ -120,7 +127,7 @@ impl OneInchSolver {
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = self.client.get_swap(query).await?;
+        let swap = self.client.get_swap(query, true).await?;
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
             tracing::debug!("execution does not respect order");
             return Ok(None);
@@ -205,6 +212,7 @@ mod tests {
         },
         contracts::{dummy_contract, GPv2Settlement, WETH9},
         ethcontract::{Web3, H160, U256},
+        ethrpc::current_block::BlockInfo,
         futures::FutureExt as _,
         maplit::hashmap,
         mockall::{predicate::*, Sequence},
@@ -214,6 +222,7 @@ mod tests {
             ethrpc::create_env_test_transport,
             oneinch_api::{MockOneInchClient, Protocols, Spender, Swap},
         },
+        tokio::sync::watch,
     };
 
     fn dummy_solver(
@@ -268,7 +277,7 @@ mod tests {
             }
             .boxed()
         });
-        client.expect_get_swap().returning(|_| {
+        client.expect_get_swap().returning(|_, _| {
             async {
                 Ok(Swap {
                     from_token_amount: 100.into(),
@@ -354,7 +363,7 @@ mod tests {
             }
             .boxed()
         });
-        client.expect_get_swap().times(1).returning(|query| {
+        client.expect_get_swap().times(1).returning(|query, _| {
             async move {
                 assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
                 Ok(Swap {
@@ -399,7 +408,7 @@ mod tests {
         client
             .expect_get_spender()
             .returning(move || async move { Ok(Spender { address: spender }) }.boxed());
-        client.expect_get_swap().returning(|_| {
+        client.expect_get_swap().returning(|_, _| {
             async {
                 Ok(Swap {
                     from_token_amount: 100.into(),
@@ -484,6 +493,7 @@ mod tests {
 
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = testlib::tokens::GNO;
+        let (_, block_stream) = watch::channel(BlockInfo::default());
 
         let solver = OneInchSolver::with_disabled_protocols(
             account(),
@@ -495,6 +505,7 @@ mod tests {
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
             SlippageCalculator::default(),
             None,
+            block_stream,
         )
         .unwrap();
         let settlement = solver
