@@ -21,8 +21,15 @@ impl SerializeAs<U256> for HexOrDecimalU256 {
     where
         S: Serializer,
     {
-        super::u256_decimal::serialize(source, serializer)
+        serialize(source, serializer)
     }
+}
+
+pub fn serialize<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&value.to_string())
 }
 
 pub fn deserialize<'de, D>(deserializer: D) -> Result<U256, D::Error>

@@ -12,10 +12,7 @@ use {
         signature::Signature,
     },
     num::BigRational,
-    number::{
-        u256_decimal::{self, DecimalU256},
-        u256_hex_or_decimal::HexOrDecimalU256,
-    },
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H256, U256},
     serde::{Deserialize, Deserializer, Serialize},
     serde_json::Value,
@@ -32,15 +29,16 @@ pub struct BatchAuctionModel {
     pub metadata: Option<MetadataModel>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Serialize)]
 pub struct OrderModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<OrderUid>,
     pub sell_token: H160,
     pub buy_token: H160,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
@@ -87,13 +85,14 @@ pub enum AmmParameters {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct ConstantProductPoolParameters {
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeightedPoolTokenData {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub balance: U256,
     #[serde(with = "ratio_as_decimal")]
     pub weight: BigRational,
@@ -107,9 +106,9 @@ pub struct WeightedProductPoolParameters {
 #[serde_as]
 #[derive(Clone, Debug, Serialize)]
 pub struct StablePoolParameters {
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub scaling_rates: BTreeMap<H160, U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
@@ -128,7 +127,7 @@ pub struct TokenInfoModel {
     pub alias: Option<String>,
     pub external_price: Option<f64>,
     pub normalize_priority: Option<u64>,
-    #[serde_as(as = "Option<DecimalU256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub internal_buffer: Option<U256>,
     /// Is token in the external list containing only safe tokens
     pub accepted_for_internalization: bool,
@@ -268,7 +267,7 @@ pub struct SettledBatchAuctionModel {
     #[serde(default)]
     pub amms: HashMap<H160, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
-    #[serde_as(as = "HashMap<_, DecimalU256>")]
+    #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
     pub prices: HashMap<H160, U256>,
     #[serde(default)]
     pub approvals: Vec<ApprovalModel>,
@@ -422,6 +421,7 @@ pub enum AuctionResult {
     SubmittedOnchain(SubmissionResult),
 }
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SolverRejectionReason {
@@ -459,13 +459,13 @@ pub enum SolverRejectionReason {
     /// score is higher than the maximum score (surplus + fees)
     #[serde(rename_all = "camelCase")]
     TooHighScore {
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         surplus: U256,
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         fees: U256,
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         max_score: U256,
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         submitted_score: U256,
     },
 
@@ -498,6 +498,7 @@ pub struct TransactionWithError {
 }
 
 /// Transaction data used for simulation of the settlement
+#[serde_as]
 #[derive(Clone, Serialize, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -522,9 +523,9 @@ pub struct SimulatedTransaction {
     pub data: Vec<u8>,
     /// Gas price can influence the success of simulation if sender balance
     /// is not enough for paying the costs of executing the transaction onchain
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub max_fee_per_gas: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub max_priority_fee_per_gas: U256,
 }
 

@@ -1,6 +1,6 @@
 use {
     crate::{auction::AuctionId, bytes_hex::BytesHex, order::OrderUid},
-    number::u256_decimal::{self, DecimalU256},
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -24,12 +24,13 @@ pub struct Request {
     pub prices: BTreeMap<H160, U256>, // external prices for auction
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Scores {
     pub winner: H160,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub winning_score: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub reference_score: U256,
     pub block_deadline: u64,
 }
@@ -43,9 +44,9 @@ pub struct Transaction {
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Execution {
-    #[serde_as(as = "Option<DecimalU256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub surplus_fee: Option<U256>,
-    #[serde_as(as = "DecimalU256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub solver_fee: U256,
 }
 
@@ -77,7 +78,7 @@ pub struct SolverCompetitionAPI {
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAuction {
     pub orders: Vec<OrderUid>,
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
 }
 
@@ -95,7 +96,7 @@ pub struct SolverSettlement {
     // this is temporarily needed as the scored settlements are ordered by objective value ATM
     // and this represents how they would be ranked after switching to the auction based scoring
     pub ranking: Option<usize>,
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
     #[serde(with = "crate::bytes_hex")]
@@ -115,28 +116,25 @@ pub struct Objective {
     pub gas: u64,
 }
 
+#[serde_as]
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Score {
     /// The score is provided by the solver.
     #[serde(rename = "score")]
-    #[serde(with = "u256_decimal")]
-    Solver(U256),
+    Solver(#[serde_as(as = "HexOrDecimalU256")] U256),
     /// The score is calculated by the protocol (and equal to the objective
     /// function).
     #[serde(rename = "scoreProtocol")]
-    #[serde(with = "u256_decimal")]
-    Protocol(U256),
+    Protocol(#[serde_as(as = "HexOrDecimalU256")] U256),
     /// The score is calculated by the protocol and success_probability provided
     /// by solver is taken into account
     #[serde(rename = "scoreProtocolWithSolverRisk")]
-    #[serde(with = "u256_decimal")]
-    ProtocolWithSolverRisk(U256),
+    ProtocolWithSolverRisk(#[serde_as(as = "HexOrDecimalU256")] U256),
     /// The score is calculated by the protocol, by applying a discount to the
     /// `Self::Protocol` value.
     /// [DEPRECATED] Kept to not brake the solver competition API.
     #[serde(rename = "scoreDiscounted")]
-    #[serde(with = "u256_decimal")]
-    Discounted(U256),
+    Discounted(#[serde_as(as = "HexOrDecimalU256")] U256),
 }
 
 impl Default for Score {
@@ -156,11 +154,12 @@ impl Score {
     }
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     pub id: OrderUid,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
 }
 
