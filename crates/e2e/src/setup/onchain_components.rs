@@ -435,7 +435,7 @@ impl OnchainComponents {
         solvers
     }
 
-    pub async fn deploy_tokens<const N: usize>(&self, minter: Account) -> [MintableToken; N] {
+    async fn deploy_tokens<const N: usize>(&self, minter: Account) -> [MintableToken; N] {
         let mut res = Vec::with_capacity(N);
         for _ in 0..N {
             let contract = ERC20Mintable::builder(&self.web3)
