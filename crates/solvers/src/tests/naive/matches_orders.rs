@@ -102,7 +102,7 @@ async fn sell_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -208,7 +208,7 @@ async fn sell_orders_on_one_side() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -314,7 +314,7 @@ async fn buy_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -420,7 +420,7 @@ async fn buy_and_sell_orders() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
