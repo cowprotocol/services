@@ -60,6 +60,7 @@ impl Competition {
                         order::Kind::Liquidity => None,
                     })
                     .collect(),
+                false,
             )
             .await;
 

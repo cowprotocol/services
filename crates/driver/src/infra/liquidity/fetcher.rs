@@ -25,9 +25,13 @@ impl Fetcher {
 
     /// Fetches all relevant liquidity for the specified token pairs. Handles
     /// failures by logging and returning an empty vector.
-    pub async fn fetch(&self, pairs: &HashSet<liquidity::TokenPair>) -> Vec<liquidity::Liquidity> {
+    pub async fn fetch(
+        &self,
+        pairs: &HashSet<liquidity::TokenPair>,
+        allow_stale: bool,
+    ) -> Vec<liquidity::Liquidity> {
         observe::fetching_liquidity();
-        match self.inner.fetch(pairs).await {
+        match self.inner.fetch(pairs, allow_stale).await {
             Ok(liquidity) => {
                 observe::fetched_liquidity(&liquidity);
                 liquidity
