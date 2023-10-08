@@ -129,7 +129,7 @@ impl Fetcher {
     pub async fn fetch(
         &self,
         pairs: &HashSet<liquidity::TokenPair>,
-        when: infra::liquidity::When,
+        block: infra::liquidity::AtBlock,
     ) -> Result<Vec<liquidity::Liquidity>> {
         let pairs = pairs
             .iter()
@@ -139,9 +139,9 @@ impl Fetcher {
             })
             .collect();
 
-        let block = match when {
-            infra::liquidity::When::Recent => recent_block_cache::Block::Recent,
-            infra::liquidity::When::Latest => {
+        let block = match block {
+            infra::liquidity::AtBlock::Recent => recent_block_cache::Block::Recent,
+            infra::liquidity::AtBlock::Latest => {
                 let block_number = self.blocks.borrow().number;
                 recent_block_cache::Block::Number(block_number)
             }

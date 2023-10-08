@@ -13,11 +13,11 @@ pub struct Fetcher {
     inner: Arc<boundary::liquidity::Fetcher>,
 }
 
-/// Specifies for when liquidity should be fetched.
-pub enum When {
-    /// Fetches some recent liquidity. This will prefer reusing cached liquidity
-    /// even if it is stale by a few blocks instead of fetching the absolute
-    /// latest state from the blockchain.
+/// Specifies at which block liquidity should be fetched.
+pub enum AtBlock {
+    /// Fetches liquidity at a recent block. This will prefer reusing cached
+    /// liquidity even if it is stale by a few blocks instead of fetching the
+    /// absolute latest state from the blockchain.
     ///
     /// This is useful for quoting where we want an up-to-date, but not
     /// necessarily exactly correct price. In the context of quote verification,
@@ -44,10 +44,10 @@ impl Fetcher {
     pub async fn fetch(
         &self,
         pairs: &HashSet<liquidity::TokenPair>,
-        when: When,
+        block: AtBlock,
     ) -> Vec<liquidity::Liquidity> {
         observe::fetching_liquidity();
-        match self.inner.fetch(pairs, when).await {
+        match self.inner.fetch(pairs, block).await {
             Ok(liquidity) => {
                 observe::fetched_liquidity(&liquidity);
                 liquidity

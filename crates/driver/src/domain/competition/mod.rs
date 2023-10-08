@@ -49,7 +49,10 @@ impl Competition {
     pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
         let liquidity = self
             .liquidity
-            .fetch(&auction.liquidity_pairs(), infra::liquidity::When::Latest)
+            .fetch(
+                &auction.liquidity_pairs(),
+                infra::liquidity::AtBlock::Latest,
+            )
             .await;
 
         // Fetch the solutions from the solver.

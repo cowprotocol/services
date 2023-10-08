@@ -15,5 +15,5 @@ pub mod fetcher;
 
 pub use self::{
     config::Config,
-    fetcher::{Fetcher, When},
+    fetcher::{AtBlock, Fetcher},
 };

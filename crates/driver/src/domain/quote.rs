@@ -75,7 +75,7 @@ impl Order {
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
         let liquidity = liquidity
-            .fetch(&self.liquidity_pairs(), infra::liquidity::When::Recent)
+            .fetch(&self.liquidity_pairs(), infra::liquidity::AtBlock::Recent)
             .await;
         let timeout = self.deadline.timeout()?;
         let solutions = solver
