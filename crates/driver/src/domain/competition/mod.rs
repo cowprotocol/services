@@ -60,7 +60,7 @@ impl Competition {
                         order::Kind::Liquidity => None,
                     })
                     .collect(),
-                false,
+                infra::liquidity::When::Latest,
             )
             .await;
 
