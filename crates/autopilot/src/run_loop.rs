@@ -12,13 +12,13 @@ use {
         },
         solvable_orders::SolvableOrdersCache,
     },
-    anyhow::{anyhow, ensure, Context, Result},
+    anyhow::Result,
     chrono::Utc,
     database::order_events::OrderEventLabel,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
-        auction::{Auction, AuctionId},
+        auction::{Auction, AuctionId, AuctionWithId},
         interaction::InteractionData,
         order::OrderClass,
         solver_competition::{
@@ -29,6 +29,7 @@ use {
             SolverSettlement,
         },
     },
+    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{
@@ -61,83 +62,80 @@ pub struct RunLoop {
 }
 
 impl RunLoop {
-    pub async fn run_forever(&self) -> ! {
+    pub async fn run_forever(self) -> ! {
         loop {
-            self.single_run().await;
+            if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
+                self.single_run(id, &auction)
+                    .instrument(tracing::info_span!("auction", id))
+                    .await;
+            };
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
-    async fn single_run(&self) {
+    async fn next_auction(&self) -> Option<AuctionWithId> {
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
                 tracing::debug!("no current auction");
-                return;
+                return None;
             }
         };
+
+        if auction
+            .orders
+            .iter()
+            .all(|order| match order.metadata.class {
+                OrderClass::Market => false,
+                OrderClass::Liquidity => true,
+                OrderClass::Limit(_) => false,
+            })
+        {
+            tracing::debug!("skipping empty auction");
+            return None;
+        }
+
         let id = match self.database.replace_current_auction(&auction).await {
             Ok(id) => id,
             Err(err) => {
                 tracing::error!(?err, "failed to replace current auction");
-                return;
+                return None;
             }
         };
-        self.single_run_(id, &auction)
-            .instrument(tracing::info_span!("auction", id))
-            .await;
+
+        Some(AuctionWithId { id, auction })
     }
 
-    async fn single_run_(&self, id: AuctionId, auction: &Auction) {
+    async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
         tracing::info!("solving");
-        let solutions = self.solve(auction, id).await;
+        Metrics::get().auction.set(auction_id);
 
-        // Validate solutions and filter out invalid ones.
-        let mut solutions = solutions
-            .into_iter()
-            .flat_map(|(index, response)| {
-                if response.solutions.is_empty() {
-                    tracing::debug!(driver = ?self.drivers[index].url, "driver sent zero solutions");
-                }
+        let solutions = {
+            let mut solutions = self.competition(auction_id, auction).await;
+            if solutions.is_empty() {
+                tracing::info!("no solutions for auction");
+                return;
+            }
 
-                response
-                    .solutions
-                    .into_iter()
-                    .filter_map(move |solution| {
-                        if solution.score == U256::zero() {
-                            tracing::debug!(
-                                id = ?solution.solution_id,
-                                driver = ?self.drivers[index].url,
-                                "driver sent solution with zero score",
-                            );
-                            None
-                        } else {
-                            Some((index, solution))
-                        }
-                    })
-            })
-            .collect_vec();
-
-        if solutions.is_empty() {
-            tracing::info!(?id, "no solutions for auction");
-            return;
-        }
-
-        // Shuffle so that sorting randomly splits ties.
-        solutions.shuffle(&mut rand::thread_rng());
-        solutions.sort_unstable_by_key(|solution| solution.1.score);
+            // Shuffle so that sorting randomly splits ties.
+            solutions.shuffle(&mut rand::thread_rng());
+            solutions.sort_unstable_by_key(|participant| participant.solution.score);
+            solutions
+        };
         let competition_simulation_block = self.current_block.borrow().number;
 
         // TODO: Keep going with other solutions until some deadline.
-        if let Some((index, solution)) = solutions.last() {
-            tracing::info!(url = %self.drivers[*index].url, "revealing with driver");
-            let revealed = match self
-                .reveal(id, solution.solution_id, &self.drivers[*index])
-                .await
-            {
+        if let Some(Participant { driver, solution }) = solutions.last() {
+            tracing::info!(driver = %driver.url, solution = %solution.id, "winner");
+
+            let revealed = match self.reveal(driver, auction_id, solution.id).await {
                 Ok(result) => result,
                 Err(err) => {
-                    tracing::warn!(?err, "driver {} failed to reveal", self.drivers[*index].url);
+                    tracing::warn!(driver = %driver.url, ?err, "failed to reveal winning solution");
+                    Metrics::get()
+                        .reveal
+                        .with_label_values(&[driver.url.as_str(), err.label()])
+                        .inc();
                     return;
                 }
             };
@@ -148,24 +146,26 @@ impl RunLoop {
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
             self.database.store_order_events(&events).await;
-            let auction_id = id;
-            let winner = solution.submission_address;
-            let winning_score = solution.score;
+
+            let winner = solution.account;
+            let winning_score = solution.score.get();
             let reference_score = solutions
                 .iter()
                 .nth_back(1)
-                .map(|(_, response)| response.score)
+                .map(|participant| participant.solution.score.get())
                 .unwrap_or_default();
             let participants = solutions
                 .iter()
-                .map(|(_, response)| response.submission_address)
+                .map(|participant| participant.solution.account)
                 .collect::<HashSet<_>>();
+
             let mut prices = BTreeMap::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
+
             // Save order executions for all orders in the solution. Surplus fees for
             // limit orders will be saved after settling the order onchain.
             let mut order_executions = vec![];
@@ -208,6 +208,7 @@ impl RunLoop {
                     }
                 }
             }
+
             let competition_table = SolverCompetitionDB {
                 competition_simulation_block,
                 auction: CompetitionAuction {
@@ -220,11 +221,12 @@ impl RunLoop {
                 },
                 solutions: solutions
                     .iter()
-                    .map(|(index, response)| {
+                    .enumerate()
+                    .map(|(index, participant)| {
                         let is_winner = solutions.len() - index == 1;
                         let mut settlement = SolverSettlement {
-                            solver_address: response.submission_address,
-                            score: Some(Score::Solver(response.score)),
+                            solver_address: participant.solution.account,
+                            score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
@@ -267,39 +269,26 @@ impl RunLoop {
                 uninternalized_call_data,
                 competition_table,
             };
+
             tracing::info!(?competition, "saving competition");
             if let Err(err) = self.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
             }
 
-            tracing::info!(url = %self.drivers[*index].url, "settling with solver");
-            match self
-                .settle(id, &self.drivers[*index], solution, &revealed)
-                .await
-            {
-                Ok(()) => (),
-                Err(err) => {
-                    tracing::error!(?err, "solver {index} failed to settle");
-                }
+            tracing::info!(driver = %driver.url, "settling");
+            if let Err(err) = self.settle(driver, auction_id, solution, &revealed).await {
+                tracing::error!(?err, driver = %driver.url, "settlement failed");
+                Metrics::get()
+                    .settle
+                    .with_label_values(&[driver.url.as_str(), err.label()])
+                    .inc();
             }
         }
     }
 
-    /// Returns the successful /solve responses and the index of the solver.
-    async fn solve(&self, auction: &Auction, id: AuctionId) -> Vec<(usize, solve::Response)> {
-        if auction
-            .orders
-            .iter()
-            .all(|order| match order.metadata.class {
-                OrderClass::Market => false,
-                OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
-            })
-        {
-            return Default::default();
-        }
-
+    /// Runs the solver competition, making all configured drivers participate.
+    async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
         let request = solve_request(
             id,
             auction,
@@ -318,47 +307,85 @@ impl RunLoop {
             )
             .await;
 
-        let futures = self
-            .drivers
-            .iter()
-            .enumerate()
-            .map(|(index, driver)| async move {
-                let result =
-                    match tokio::time::timeout(SOLVE_TIME_LIMIT, driver.solve(request)).await {
-                        Ok(inner) => inner,
-                        Err(_) => Err(anyhow!("timeout")),
-                    };
-                (index, result)
-            })
-            .collect::<Vec<_>>();
-        let results = futures::future::join_all(futures).await;
-        results
-            .into_iter()
-            .filter_map(|(index, result)| match result {
-                Ok(result) => Some((index, result)),
+        futures::future::join_all(
+            self.drivers
+                .iter()
+                .map(|driver| self.solve(driver, request)),
+        )
+        .await
+        .into_iter()
+        .zip(&self.drivers)
+        .fold(Vec::new(), |mut solutions, (response, driver)| {
+            for solution in match response {
+                Ok(solutions) => solutions,
                 Err(err) => {
-                    tracing::warn!(?err, "driver solve error");
-                    None
+                    Metrics::get()
+                        .solve
+                        .with_label_values(&[driver.url.as_str(), err.label()])
+                        .inc();
+                    return solutions;
                 }
+            } {
+                match solution {
+                    Ok(solution) => solutions.push(Participant { driver, solution }),
+                    Err(err) => {
+                        Metrics::get()
+                            .solve
+                            .with_label_values(&[driver.url.as_str(), err.label()])
+                            .inc();
+                    }
+                }
+            }
+            solutions
+        })
+    }
+
+    /// Computes a driver's solutions for the solver competition.
+    async fn solve(
+        &self,
+        driver: &Driver,
+        request: &solve::Request,
+    ) -> Result<Vec<Result<Solution, ZeroScoreError>>, SolveError> {
+        let response = tokio::time::timeout(SOLVE_TIME_LIMIT, driver.solve(request))
+            .await
+            .map_err(|_| SolveError::Timeout)?
+            .map_err(SolveError::Failure)?;
+        if response.solutions.is_empty() {
+            return Err(SolveError::NoSolutions);
+        }
+
+        Ok(response
+            .solutions
+            .into_iter()
+            .map(|solution| {
+                Ok(Solution {
+                    id: solution.solution_id,
+                    account: solution.submission_address,
+                    score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
+                })
             })
-            .collect()
+            .collect())
     }
 
     /// Ask the winning solver to reveal their solution.
     async fn reveal(
         &self,
-        id: AuctionId,
-        solution_id: u64,
         driver: &Driver,
-    ) -> Result<reveal::Response> {
+        auction: AuctionId,
+        solution_id: u64,
+    ) -> Result<reveal::Response, RevealError> {
         let response = driver
             .reveal(&Request { solution_id })
             .await
-            .context("reveal")?;
-        ensure!(
-            response.calldata.internalized.ends_with(&id.to_be_bytes()),
-            "reveal auction id missmatch"
-        );
+            .map_err(RevealError::Failure)?;
+        if !response
+            .calldata
+            .internalized
+            .ends_with(&auction.to_be_bytes())
+        {
+            return Err(RevealError::AuctionMismatch);
+        }
+
         Ok(response)
     }
 
@@ -366,11 +393,11 @@ impl RunLoop {
     /// transaction has been mined.
     async fn settle(
         &self,
-        id: AuctionId,
         driver: &Driver,
-        solved: &solve::Solution,
+        id: AuctionId,
+        solved: &Solution,
         revealed: &reveal::Response,
-    ) -> Result<()> {
+    ) -> Result<(), SettleError> {
         let events = revealed
             .orders
             .iter()
@@ -380,15 +407,15 @@ impl RunLoop {
 
         driver
             .settle(&settle::Request {
-                solution_id: solved.solution_id,
+                solution_id: solved.id,
             })
             .await
-            .context("settle")?;
+            .map_err(SettleError::Failure)?;
+
         // TODO: React to deadline expiring.
         let transaction = self
-            .wait_for_settlement_transaction(id, solved.submission_address)
-            .await
-            .context("wait for settlement transaction")?;
+            .wait_for_settlement_transaction(id, solved.account)
+            .await?;
         if let Some(tx) = transaction {
             let events = revealed
                 .orders
@@ -398,17 +425,18 @@ impl RunLoop {
             self.database.store_order_events(&events).await;
             tracing::debug!("settled in tx {:?}", tx.hash);
         }
+
         Ok(())
     }
 
     /// Tries to find a `settle` contract call with calldata ending in `tag`.
     ///
     /// Returns None if no transaction was found within the deadline.
-    pub async fn wait_for_settlement_transaction(
+    async fn wait_for_settlement_transaction(
         &self,
         id: AuctionId,
         submission_address: H160,
-    ) -> Result<Option<Transaction>> {
+    ) -> Result<Option<Transaction>, SettleError> {
         const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
         // Start earlier than current block because there might be a delay when
         // receiving the Solver's /execute response during which it already
@@ -419,7 +447,10 @@ impl RunLoop {
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_wait_time_blocks);
-        tracing::debug!(%current, %start, %deadline, ?id, ?submission_address, "waiting for settlement");
+        tracing::debug!(
+            %current, %start, %deadline, ?id, ?submission_address,
+            "waiting for settlement",
+        );
 
         // Use the existing event indexing infrastructure to find the transaction. We
         // query all settlement events in the block range to get tx hashes and
@@ -432,28 +463,31 @@ impl RunLoop {
         // We do keep track of hashes we have already seen to reduce load from the node.
 
         let mut seen_transactions: HashSet<H256> = Default::default();
-        loop {
-            // This could be a while loop. It isn't, because some care must be taken to not
-            // accidentally keep the borrow alive, which would block senders. Technically
-            // this is fine with while conditions but this is clearer.
-            if self.current_block.borrow().number > deadline {
-                break;
-            }
+        while {
+            let block = self.current_block.borrow();
+            let still_time = block.number <= deadline;
+
+            // Take extra care to not accidentally keep the borrow alive within
+            // the `while` body, which would block senders.
+            drop(block);
+
+            still_time
+        } {
             let mut hashes = self
                 .database
                 .recent_settlement_tx_hashes(start..deadline + 1)
-                .await?;
+                .await
+                .map_err(SettleError::Database)?;
             hashes.retain(|hash| !seen_transactions.contains(hash));
             for hash in hashes {
-                let tx: Option<Transaction> = self
+                let Some(tx) = self
                     .web3
                     .eth()
                     .transaction(web3::types::TransactionId::Hash(hash))
                     .await
-                    .with_context(|| format!("web3 transaction {hash:?}"))?;
-                let tx: Transaction = match tx {
-                    Some(tx) => tx,
-                    None => continue,
+                    .map_err(|err| SettleError::TransactionFetch(hash, err))?
+                else {
+                    continue;
                 };
                 if tx.input.0.ends_with(&id.to_be_bytes()) && tx.from == Some(submission_address) {
                     return Ok(Some(tx));
@@ -469,10 +503,7 @@ impl RunLoop {
 
     /// Saves the competition data to the database
     async fn save_competition(&self, competition: &Competition) -> Result<()> {
-        self.database
-            .save_competition(competition)
-            .await
-            .context("save competition data")
+        self.database.save_competition(competition).await
     }
 }
 
@@ -551,5 +582,108 @@ pub fn solve_request(
             .collect(),
         deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
         score_cap,
+    }
+}
+
+struct Participant<'a> {
+    driver: &'a Driver,
+    solution: Solution,
+}
+
+struct Solution {
+    id: u64,
+    account: H160,
+    score: NonZeroU256,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SolveError {
+    #[error("the solver timed out")]
+    Timeout,
+    #[error("driver did not propose any solutions")]
+    NoSolutions,
+    #[error(transparent)]
+    Failure(anyhow::Error),
+}
+
+impl SolveError {
+    fn label(&self) -> &str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::NoSolutions => "no_solutions",
+            Self::Failure(_) => "error",
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the proposed a 0-score solution")]
+struct ZeroScoreError;
+
+impl ZeroScoreError {
+    fn label(&self) -> &str {
+        "zero_score"
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum RevealError {
+    #[error("revealed calldata does not match auction")]
+    AuctionMismatch,
+    #[error(transparent)]
+    Failure(anyhow::Error),
+}
+
+impl RevealError {
+    fn label(&self) -> &str {
+        match self {
+            Self::AuctionMismatch => "mismatch",
+            Self::Failure(_) => "error",
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SettleError {
+    #[error("unexpected database error: {0}")]
+    Database(anyhow::Error),
+    #[error("error fetching transaction receipts for {0:?}: {1}")]
+    TransactionFetch(H256, web3::Error),
+    #[error(transparent)]
+    Failure(anyhow::Error),
+}
+
+impl SettleError {
+    fn label(&self) -> &str {
+        match self {
+            Self::Database(_) => "internal_error",
+            Self::TransactionFetch(..) => "tx_error",
+            Self::Failure(_) => "error",
+        }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "runloop")]
+struct Metrics {
+    /// Tracks the last executed auction.
+    auction: prometheus::IntGauge,
+
+    /// Tracks the result of driver `/solve` requests.
+    #[metric(labels("driver", "result"))]
+    solve: prometheus::IntCounterVec,
+
+    /// Tracks the result of driver `/reveal` requests.
+    #[metric(labels("driver", "result"))]
+    reveal: prometheus::IntCounterVec,
+
+    /// Tracks the result of driver `/settle` requests.
+    #[metric(labels("driver", "result"))]
+    settle: prometheus::IntCounterVec,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }

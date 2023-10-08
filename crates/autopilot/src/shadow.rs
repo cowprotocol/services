@@ -269,8 +269,8 @@ impl Error {
     fn label(&self) -> &str {
         match self {
             Error::Timeout => "timeout",
-            Error::NoSolutions => "no solutions",
-            Error::ZeroScore => "empty",
+            Error::NoSolutions => "no_solutions",
+            Error::ZeroScore => "zero_score",
             Error::Mismatch => "mismatch",
             Error::Solve(_) => "error",
             Error::Reveal(_) => "error",
@@ -284,7 +284,7 @@ struct Metrics {
     /// Tracks the last seen auction.
     auction: prometheus::IntGauge,
 
-    /// Tracks the result of every refunding loops.
+    /// Tracks the result of every driver.
     #[metric(labels("driver", "result"))]
     results: prometheus::IntCounterVec,
 
