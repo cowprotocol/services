@@ -33,13 +33,13 @@ impl Solution {
         for interaction in self.interactions.iter_mut() {
             let (inputs, outputs, internalize) = match interaction {
                 Interaction::Liquidity(interaction) => (
-                    slice::from_mut(&mut interaction.input),
-                    slice::from_mut(&mut interaction.output),
+                    slice::from_ref(&interaction.input),
+                    slice::from_ref(&interaction.output),
                     &mut interaction.internalize,
                 ),
                 Interaction::Custom(interaction) => (
-                    &mut interaction.inputs[..],
-                    &mut interaction.outputs[..],
+                    &interaction.inputs[..],
+                    &interaction.outputs[..],
                     &mut interaction.internalize,
                 ),
             };
@@ -56,27 +56,21 @@ impl Solution {
 
             let Some(required_buffers) =
                 outputs.iter().try_fold(HashMap::new(), |mut map, output| {
-                    let entry = map.entry(output.token).or_default();
-                    *entry = output.amount.checked_add(*entry)?;
+                    let amount = map.entry(output.token).or_default();
+                    *amount = output.amount.checked_add(*amount)?;
+
+                    let total = amount.checked_add(
+                        used_buffers.get(&output.token).copied().unwrap_or_default(),
+                    )?;
+                    if total > tokens.get(&output.token)?.available_balance {
+                        return None;
+                    }
+
                     Some(map)
                 })
             else {
                 continue;
             };
-            let sufficient_buffers = required_buffers.iter().all(|(address, amount)| {
-                tokens
-                    .get(address)
-                    .and_then(|token| {
-                        let used = used_buffers.get(address).copied().unwrap_or_default();
-                        let total = amount.checked_add(used)?;
-
-                        Some(token.available_balance >= total)
-                    })
-                    .unwrap_or_default()
-            });
-            if !sufficient_buffers {
-                continue;
-            }
 
             // Make sure to update the used buffers, this ensures that, if we
             // have two interactions that use the same token buffers, we don't
