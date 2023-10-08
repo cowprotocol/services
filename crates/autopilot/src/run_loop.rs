@@ -322,7 +322,11 @@ impl RunLoop {
                 }
                 Err(err) => {
                     Metrics::get().solve_err(driver, start, &err);
-                    tracing::warn!(?err, driver = %driver.url, "solve error");
+                    if matches!(err, SolveError::NoSolutions) {
+                        tracing::debug!(driver = %driver.url, "solver found no solution");
+                    } else {
+                        tracing::warn!(?err, driver = %driver.url, "solve error");
+                    }
                     return solutions;
                 }
             } {
