@@ -40,7 +40,7 @@ use {
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     },
     tracing::Instrument,
     web3::types::Transaction,
@@ -108,7 +108,7 @@ impl RunLoop {
 
     async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
         tracing::info!("solving");
-        Metrics::get().auction.set(auction_id);
+        Metrics::get().auction(auction_id);
 
         let solutions = {
             let mut solutions = self.competition(auction_id, auction).await;
@@ -129,13 +129,13 @@ impl RunLoop {
             tracing::info!(driver = %driver.url, solution = %solution.id, "winner");
 
             let revealed = match self.reveal(driver, auction_id, solution.id).await {
-                Ok(result) => result,
+                Ok(result) => {
+                    Metrics::get().reveal_ok(driver);
+                    result
+                }
                 Err(err) => {
+                    Metrics::get().reveal_err(driver, &err);
                     tracing::warn!(driver = %driver.url, ?err, "failed to reveal winning solution");
-                    Metrics::get()
-                        .reveal
-                        .with_label_values(&[driver.url.as_str(), err.label()])
-                        .inc();
                     return;
                 }
             };
@@ -277,12 +277,12 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.url, "settling");
-            if let Err(err) = self.settle(driver, auction_id, solution, &revealed).await {
-                tracing::error!(?err, driver = %driver.url, "settlement failed");
-                Metrics::get()
-                    .settle
-                    .with_label_values(&[driver.url.as_str(), err.label()])
-                    .inc();
+            match self.settle(driver, auction_id, solution, &revealed).await {
+                Ok(()) => Metrics::get().settle_ok(driver),
+                Err(err) => {
+                    Metrics::get().settle_err(driver, &err);
+                    tracing::error!(?err, driver = %driver.url, "settlement failed");
+                }
             }
         }
     }
@@ -307,32 +307,33 @@ impl RunLoop {
             )
             .await;
 
-        futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver, request)),
-        )
+        futures::future::join_all(self.drivers.iter().map(|driver| async move {
+            let start = Instant::now();
+            (start, self.solve(driver, request).await)
+        }))
         .await
         .into_iter()
         .zip(&self.drivers)
-        .fold(Vec::new(), |mut solutions, (response, driver)| {
-            for solution in match response {
-                Ok(solutions) => solutions,
+        .fold(Vec::new(), |mut solutions, ((start, result), driver)| {
+            for solution in match result {
+                Ok(solutions) => {
+                    Metrics::get().solve_ok(driver, start);
+                    solutions
+                }
                 Err(err) => {
-                    Metrics::get()
-                        .solve
-                        .with_label_values(&[driver.url.as_str(), err.label()])
-                        .inc();
+                    Metrics::get().solve_err(driver, start, &err);
+                    tracing::warn!(?err, driver = %driver.url, "solve error");
                     return solutions;
                 }
             } {
                 match solution {
-                    Ok(solution) => solutions.push(Participant { driver, solution }),
+                    Ok(solution) => {
+                        Metrics::get().solution_ok(driver);
+                        solutions.push(Participant { driver, solution })
+                    }
                     Err(err) => {
-                        Metrics::get()
-                            .solve
-                            .with_label_values(&[driver.url.as_str(), err.label()])
-                            .inc();
+                        Metrics::get().solution_err(driver, &err);
+                        tracing::debug!(?err, driver = %driver.url, "invalid proposed solution");
                     }
                 }
             }
@@ -606,25 +607,9 @@ enum SolveError {
     Failure(anyhow::Error),
 }
 
-impl SolveError {
-    fn label(&self) -> &str {
-        match self {
-            Self::Timeout => "timeout",
-            Self::NoSolutions => "no_solutions",
-            Self::Failure(_) => "error",
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 #[error("the proposed a 0-score solution")]
 struct ZeroScoreError;
-
-impl ZeroScoreError {
-    fn label(&self) -> &str {
-        "zero_score"
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 enum RevealError {
@@ -632,15 +617,6 @@ enum RevealError {
     AuctionMismatch,
     #[error(transparent)]
     Failure(anyhow::Error),
-}
-
-impl RevealError {
-    fn label(&self) -> &str {
-        match self {
-            Self::AuctionMismatch => "mismatch",
-            Self::Failure(_) => "error",
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -653,25 +629,19 @@ enum SettleError {
     Failure(anyhow::Error),
 }
 
-impl SettleError {
-    fn label(&self) -> &str {
-        match self {
-            Self::Database(_) => "internal_error",
-            Self::TransactionFetch(..) => "tx_error",
-            Self::Failure(_) => "error",
-        }
-    }
-}
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "runloop")]
 struct Metrics {
     /// Tracks the last executed auction.
     auction: prometheus::IntGauge,
 
-    /// Tracks the result of driver `/solve` requests.
+    /// Tracks the duration of successful driver `/solve` requests.
     #[metric(labels("driver", "result"))]
-    solve: prometheus::IntCounterVec,
+    solve: prometheus::HistogramVec,
+
+    /// Tracks driver solutions.
+    #[metric(labels("driver", "result"))]
+    solutions: prometheus::IntCounterVec,
 
     /// Tracks the result of driver `/reveal` requests.
     #[metric(labels("driver", "result"))]
@@ -685,5 +655,71 @@ struct Metrics {
 impl Metrics {
     fn get() -> &'static Self {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+
+    fn auction(&self, auction_id: AuctionId) {
+        self.auction.set(auction_id)
+    }
+
+    fn solve_ok(&self, driver: &Driver, start: Instant) {
+        self.solve
+            .with_label_values(&[driver.url.as_str(), "success"])
+            .observe(start.elapsed().as_secs_f64())
+    }
+
+    fn solve_err(&self, driver: &Driver, start: Instant, err: &SolveError) {
+        let label = match err {
+            SolveError::Timeout => "timeout",
+            SolveError::NoSolutions => "no_solutions",
+            SolveError::Failure(_) => "error",
+        };
+        self.solve
+            .with_label_values(&[driver.url.as_str(), label])
+            .observe(start.elapsed().as_secs_f64())
+    }
+
+    fn solution_ok(&self, driver: &Driver) {
+        self.solutions
+            .with_label_values(&[driver.url.as_str(), "success"])
+            .inc();
+    }
+
+    fn solution_err(&self, driver: &Driver, _: &ZeroScoreError) {
+        self.solutions
+            .with_label_values(&[driver.url.as_str(), "zero_score"])
+            .inc();
+    }
+
+    fn reveal_ok(&self, driver: &Driver) {
+        self.reveal
+            .with_label_values(&[driver.url.as_str(), "success"])
+            .inc();
+    }
+
+    fn reveal_err(&self, driver: &Driver, err: &RevealError) {
+        let label = match err {
+            RevealError::AuctionMismatch => "mismatch",
+            RevealError::Failure(_) => "error",
+        };
+        self.reveal
+            .with_label_values(&[driver.url.as_str(), label])
+            .inc();
+    }
+
+    fn settle_ok(&self, driver: &Driver) {
+        self.settle
+            .with_label_values(&[driver.url.as_str(), "success"])
+            .inc();
+    }
+
+    fn settle_err(&self, driver: &Driver, err: &SettleError) {
+        let label = match err {
+            SettleError::Database(_) => "internal_error",
+            SettleError::TransactionFetch(..) => "tx_error",
+            SettleError::Failure(_) => "error",
+        };
+        self.settle
+            .with_label_values(&[driver.url.as_str(), label])
+            .inc();
     }
 }
