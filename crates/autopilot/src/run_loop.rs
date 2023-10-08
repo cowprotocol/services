@@ -82,6 +82,17 @@ impl RunLoop {
             }
         };
 
+        let id = match self.database.replace_current_auction(&auction).await {
+            Ok(id) => {
+                Metrics::get().auction(id);
+                id
+            }
+            Err(err) => {
+                tracing::error!(?err, "failed to replace current auction");
+                return None;
+            }
+        };
+
         if auction
             .orders
             .iter()
@@ -95,20 +106,11 @@ impl RunLoop {
             return None;
         }
 
-        let id = match self.database.replace_current_auction(&auction).await {
-            Ok(id) => id,
-            Err(err) => {
-                tracing::error!(?err, "failed to replace current auction");
-                return None;
-            }
-        };
-
         Some(AuctionWithId { id, auction })
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
         tracing::info!("solving");
-        Metrics::get().auction(auction_id);
 
         let solutions = {
             let mut solutions = self.competition(auction_id, auction).await;
