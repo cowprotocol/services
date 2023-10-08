@@ -466,7 +466,7 @@ async fn buy() {
                       "token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                     }
                   ],
-                  "internalize": false,
+                  "internalize": true,
                   "kind": "custom",
                   "outputs": [
                     {
