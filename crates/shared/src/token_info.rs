@@ -92,15 +92,18 @@ impl TokenInfoFetching for TokenInfoFetcher {
         if let Err(err) = &info {
             tracing::debug!(?err, token = ?address, "failed to fetch token info");
         }
+
         info
     }
 
     async fn get_token_infos(&self, addresses: &[H160]) -> HashMap<H160, TokenInfo> {
         futures::future::join_all(addresses.iter().copied().map(|address| async move {
-            (
-                address,
-                self.get_token_info(address).await.unwrap_or_default(),
-            )
+            let info = self.fetch_token(address).await;
+            if let Err(err) = &info {
+                tracing::debug!(?err, token = ?address, "failed to fetch token info");
+            }
+
+            (address, info.unwrap_or_default())
         }))
         .await
         .into_iter()
