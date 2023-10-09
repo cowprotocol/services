@@ -164,6 +164,10 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
+    /// Whether or not to skip fetching liquidity for this solver.
+    #[serde(default)]
+    skip_liquidity: bool,
+
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 }

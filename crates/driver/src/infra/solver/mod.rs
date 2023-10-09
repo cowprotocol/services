@@ -48,6 +48,16 @@ pub struct Slippage {
     pub absolute: Option<eth::Ether>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum Liquidity {
+    /// Liquidity should be fetched and included in the auction sent to this
+    /// solver.
+    Fetch,
+    /// The solver does not need liquidity, so fetching can be skipped for this
+    /// solver.
+    Skip,
+}
+
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
@@ -65,6 +75,8 @@ pub struct Config {
     pub name: Name,
     /// The acceptable slippage for this solver.
     pub slippage: Slippage,
+    /// Whether or not liquidity is used by this solver.
+    pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
 }
@@ -99,6 +111,11 @@ impl Solver {
     /// The slippage configuration of this solver.
     pub fn slippage(&self) -> &Slippage {
         &self.config.slippage
+    }
+
+    /// The liquidity configuration of this solver
+    pub fn liquidity(&self) -> Liquidity {
+        self.config.liquidity
     }
 
     /// The blockchain address of this solver.
