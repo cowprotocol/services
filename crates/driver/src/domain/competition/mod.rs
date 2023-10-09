@@ -47,13 +47,17 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
-        let liquidity = self
-            .liquidity
-            .fetch(
-                &auction.liquidity_pairs(),
-                infra::liquidity::AtBlock::Latest,
-            )
-            .await;
+        let liquidity = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => {
+                self.liquidity
+                    .fetch(
+                        &auction.liquidity_pairs(),
+                        infra::liquidity::AtBlock::Latest,
+                    )
+                    .await
+            }
+            solver::Liquidity::Skip => Default::default(),
+        };
 
         // Fetch the solutions from the solver.
         let solutions = self
