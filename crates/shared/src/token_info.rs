@@ -46,19 +46,9 @@ pub struct TokenInfoFetcher {
 impl TokenInfoFetcher {
     async fn fetch_token(&self, address: H160) -> Result<TokenInfo, Error> {
         if address == BUY_ETH_ADDRESS {
-            let chain = self
-                .web3
-                .eth()
-                .chain_id()
-                .await
-                .map_err(|err| Error(err.to_string()))?;
             return Ok(TokenInfo {
                 decimals: Some(18),
-                symbol: match chain.as_u64() {
-                    1 | 5 => Some("ETH".to_string()),
-                    100 => Some("xDAI".to_string()),
-                    _ => None,
-                },
+                symbol: Some("NATIVE_ASSET".to_string()),
             });
         }
 
