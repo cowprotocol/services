@@ -7,7 +7,6 @@ use {
         prelude::*,
         util::SubscriberInitExt,
         EnvFilter,
-        Layer,
     },
 };
 
@@ -45,10 +44,12 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
             // This is what kibana uses to separate multi line log messages.
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         )))
-        .with_ansi(atty::is(atty::Stream::Stdout))
-        .with_filter::<EnvFilter>(env_filter.into());
+        .with_ansi(atty::is(atty::Stream::Stdout));
+    let filter_layer: EnvFilter = env_filter.into();
 
-    let registry = tracing_subscriber::registry().with(fmt_layer);
+    let registry = tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer);
     if cfg!(tokio_unstable) {
         // Start with tokio_console subscriber
         registry.with(console_subscriber::spawn()).init();
