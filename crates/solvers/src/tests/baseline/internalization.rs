@@ -1,4 +1,4 @@
-//! Simple test case that verifies that the baseline solver internalization
+//! Simple test case that verifies that the baseline solver internalizes
 //! eligible interactions using Settlement contract buffers.
 
 use {crate::tests, serde_json::json};
