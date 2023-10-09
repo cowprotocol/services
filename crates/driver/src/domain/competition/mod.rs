@@ -2,7 +2,7 @@ use {
     self::solution::settlement,
     super::{eth, Mempools},
     crate::{
-        domain::{competition::solution::Settlement, liquidity},
+        domain::competition::solution::Settlement,
         infra::{
             self,
             blockchain::Ethereum,
@@ -50,17 +50,8 @@ impl Competition {
         let liquidity = self
             .liquidity
             .fetch(
-                &auction
-                    .orders()
-                    .iter()
-                    .filter_map(|order| match order.kind {
-                        order::Kind::Market | order::Kind::Limit { .. } => {
-                            liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
-                        }
-                        order::Kind::Liquidity => None,
-                    })
-                    .collect(),
-                false,
+                &auction.liquidity_pairs(),
+                infra::liquidity::AtBlock::Latest,
             )
             .await;
 

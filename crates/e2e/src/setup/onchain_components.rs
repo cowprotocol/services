@@ -12,6 +12,7 @@ use {
         order::Hook,
         signature::{EcdsaSignature, EcdsaSigningScheme},
         DomainSeparator,
+        TokenPair,
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -503,6 +504,46 @@ impl OnchainComponents {
         }
 
         tokens
+    }
+
+    /// Mints `amount` tokens to its `token`-WETH Uniswap V2 pool.
+    ///
+    /// This can be used to modify the pool reserves during a test.
+    pub async fn mint_token_to_weth_uni_v2_pool(&self, token: &MintableToken, amount: U256) {
+        let pair = contracts::IUniswapLikePair::at(
+            &self.web3,
+            self.contracts
+                .uniswap_v2_factory
+                .get_pair(self.contracts.weth.address(), token.address())
+                .call()
+                .await
+                .expect("failed to get Uniswap V2 pair"),
+        );
+        assert!(!pair.address().is_zero(), "Uniswap V2 pair is not deployed");
+
+        // Mint amount + 1 to the pool, and then swap out 1 of the minted token
+        // in order to force it to update its K-value.
+        token.mint(pair.address(), amount + 1).await;
+        let (out0, out1) = if TokenPair::new(self.contracts.weth.address(), token.address())
+            .unwrap()
+            .get()
+            .0
+            == token.address()
+        {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+        pair.swap(
+            out0.into(),
+            out1.into(),
+            token.minter.address(),
+            Default::default(),
+        )
+        .from(token.minter.clone())
+        .send()
+        .await
+        .expect("Uniswap V2 pair couldn't mint");
     }
 
     pub async fn deploy_cow_token(&self, holder: Account, supply: U256) -> CowToken {
