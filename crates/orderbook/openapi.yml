@@ -1060,7 +1060,7 @@ components:
           type: string
           enum:
             [
-              DuplicateOrder,
+              DuplicatedOrder,
               QuoteNotFound,
               InvalidQuote,
               MissingFrom,
@@ -1125,7 +1125,7 @@ components:
               OrderFullyExecuted,
               OrderExpired,
               OnChainOrder,
-              DuplicateOrder,
+              DuplicatedOrder,
               InsufficientFee,
               InsufficientAllowance,
               InsufficientBalance,

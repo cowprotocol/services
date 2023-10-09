@@ -531,7 +531,7 @@ mod tests {
                 .await
                 .unwrap();
         let token_info_fetcher =
-            Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
+            Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
                 web3: web3.clone(),
             })));
         let block_stream = ethrpc::current_block::current_block_stream(

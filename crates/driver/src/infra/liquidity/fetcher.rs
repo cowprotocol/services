@@ -13,6 +13,22 @@ pub struct Fetcher {
     inner: Arc<boundary::liquidity::Fetcher>,
 }
 
+/// Specifies at which block liquidity should be fetched.
+pub enum AtBlock {
+    /// Fetches liquidity at a recent block. This will prefer reusing cached
+    /// liquidity even if it is stale by a few blocks instead of fetching the
+    /// absolute latest state from the blockchain.
+    ///
+    /// This is useful for quoting where we want an up-to-date, but not
+    /// necessarily exactly correct price. In the context of quote verification,
+    /// this is completely fine as the exactly input and output amounts will be
+    /// computed anyway. At worse, we might provide a slightly sub-optimal
+    /// route in some cases, but this is an acceptable trade-off.
+    Recent,
+    /// Fetches liquidity liquidity for the latest state of the blockchain.
+    Latest,
+}
+
 impl Fetcher {
     /// Creates a new liquidity fetcher for the specified Ethereum instance and
     /// configuration.
@@ -25,9 +41,13 @@ impl Fetcher {
 
     /// Fetches all relevant liquidity for the specified token pairs. Handles
     /// failures by logging and returning an empty vector.
-    pub async fn fetch(&self, pairs: &HashSet<liquidity::TokenPair>) -> Vec<liquidity::Liquidity> {
+    pub async fn fetch(
+        &self,
+        pairs: &HashSet<liquidity::TokenPair>,
+        block: AtBlock,
+    ) -> Vec<liquidity::Liquidity> {
         observe::fetching_liquidity();
-        match self.inner.fetch(pairs).await {
+        match self.inner.fetch(pairs, block).await {
             Ok(liquidity) => {
                 observe::fetched_liquidity(&liquidity);
                 liquidity
