@@ -129,6 +129,7 @@ impl Fetcher {
     pub async fn fetch(
         &self,
         pairs: &HashSet<liquidity::TokenPair>,
+        block: infra::liquidity::AtBlock,
     ) -> Result<Vec<liquidity::Liquidity>> {
         let pairs = pairs
             .iter()
@@ -137,12 +138,15 @@ impl Fetcher {
                 TokenPair::new(a.into(), b.into()).expect("a != b")
             })
             .collect();
-        let block_number = self.blocks.borrow().number;
 
-        let liquidity = self
-            .inner
-            .get_liquidity(pairs, recent_block_cache::Block::Number(block_number))
-            .await?;
+        let block = match block {
+            infra::liquidity::AtBlock::Recent => recent_block_cache::Block::Recent,
+            infra::liquidity::AtBlock::Latest => {
+                let block_number = self.blocks.borrow().number;
+                recent_block_cache::Block::Number(block_number)
+            }
+        };
+        let liquidity = self.inner.get_liquidity(pairs, block).await?;
 
         let liquidity = liquidity
             .into_iter()
