@@ -74,7 +74,10 @@ impl Order {
         liquidity: &infra::liquidity::Fetcher,
         tokens: &infra::tokens::Fetcher,
     ) -> Result<Quote, Error> {
-        let liquidity = liquidity.fetch(&self.liquidity_pairs()).await;
+        let liquidity = match solver.liquidity() {
+            solver::Liquidity::Fetch => liquidity.fetch(&self.liquidity_pairs()).await,
+            solver::Liquidity::Skip => Default::default(),
+        };
         let timeout = self.deadline.timeout()?;
         let solutions = solver
             .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
