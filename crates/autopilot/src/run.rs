@@ -299,7 +299,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create pool cache"),
     );
     let block_retriever = args.shared.current_block.retriever(web3.clone());
-    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
+    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
     let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
