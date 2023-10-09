@@ -136,21 +136,41 @@ pub mod solve {
         pub call_data: Vec<u8>,
     }
 
+    #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(deny_unknown_fields)]
-    pub struct Response {
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Solution {
+        /// Unique ID of the solution (per driver competition), used to identify
+        /// it in subsequent requests (reveal, settle).
+        #[serde_as(as = "serde_with::DisplayFromStr")]
+        pub solution_id: u64,
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Response {
+        pub solutions: Vec<Solution>,
     }
 }
 
 pub mod reveal {
     use {
         model::{bytes_hex, order::OrderUid},
-        serde::Deserialize,
+        serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Request {
+        /// Unique ID of the solution (per driver competition), to reveal.
+        #[serde_as(as = "serde_with::DisplayFromStr")]
+        pub solution_id: u64,
+    }
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
@@ -163,7 +183,7 @@ pub mod reveal {
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(deny_unknown_fields)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
@@ -171,7 +191,20 @@ pub mod reveal {
 }
 
 pub mod settle {
-    use {model::bytes_hex, serde::Deserialize, serde_with::serde_as};
+    use {
+        model::bytes_hex,
+        serde::{Deserialize, Serialize},
+        serde_with::serde_as,
+    };
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Request {
+        /// Unique ID of the solution (per driver competition), to settle.
+        #[serde_as(as = "serde_with::DisplayFromStr")]
+        pub solution_id: u64,
+    }
 
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]

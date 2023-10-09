@@ -80,6 +80,12 @@ pub mod support {
     }
 }
 
+pub mod test {
+    include_contracts! {
+        Counter;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     const MAINNET: u64 = 1;

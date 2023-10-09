@@ -91,8 +91,8 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 }
 
 fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
-    let mut simulator = match &config.tenderly {
-        Some(tenderly) => Simulator::tenderly(
+    let mut simulator = match &config.simulator {
+        Some(infra::simulator::Config::Tenderly(tenderly)) => Simulator::tenderly(
             simulator::tenderly::Config {
                 url: tenderly.url.to_owned(),
                 api_key: tenderly.api_key.to_owned(),
@@ -102,6 +102,12 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
                 save_if_fails: tenderly.save_if_fails,
             },
             eth.network().id.clone(),
+        ),
+        Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
+            simulator::enso::Config {
+                url: enso.url.to_owned(),
+            },
+            eth.to_owned(),
         ),
         None => Simulator::ethereum(eth.to_owned()),
     };

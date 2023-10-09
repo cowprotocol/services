@@ -440,6 +440,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
                     .paraswap_partner
                     .clone()
                     .unwrap_or_default(),
+                block_stream: factory.network.block_stream.clone(),
             }),
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
@@ -586,6 +587,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             params.driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
+            factory.network.block_stream.clone(),
         ))
     }
 

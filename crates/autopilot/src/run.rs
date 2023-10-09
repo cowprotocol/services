@@ -39,7 +39,7 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
-        order_quoting::OrderQuoter,
+        order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator,
@@ -351,6 +351,7 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
             &http_factory,
@@ -359,6 +360,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
+            current_block_stream.clone(),
         )
         .unwrap(),
     );
@@ -366,6 +368,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
+        current_block_stream.clone(),
     )
     .map(Arc::new);
 
@@ -425,7 +428,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let event_updater = Arc::new(EventUpdater::new(
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
@@ -464,10 +466,20 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         fee_subsidy,
         Arc::new(db.clone()),
-        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+        order_quoting::Validity {
+            eip1271_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+            )
             .unwrap(),
-        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            presign_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.presign_onchain_quote_validity_seconds,
+            )
             .unwrap(),
+            standard_quote: chrono::Duration::from_std(
+                args.order_quoting.standard_offchain_quote_validity_seconds,
+            )
+            .unwrap(),
+        },
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {

@@ -58,9 +58,11 @@ mod tests {
             paraswap_api::DefaultParaswapApi,
             token_info::TokenInfoFetcher,
         },
+        ethrpc::current_block::BlockInfo,
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
         reqwest::Client,
+        tokio::sync::watch,
     };
 
     #[tokio::test]
@@ -68,10 +70,12 @@ mod tests {
     async fn real_estimate() {
         let web3 = Web3::new(create_env_test_transport());
         let tokens = TokenInfoFetcher { web3 };
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         let paraswap = DefaultParaswapApi {
             client: Client::new(),
             base_url: "https://apiv5.paraswap.io".to_string(),
             partner: "Test".to_string(),
+            block_stream,
         };
         let estimator = ParaswapPriceEstimator::new(
             Arc::new(paraswap),
@@ -92,6 +96,7 @@ mod tests {
             buy_token: gno,
             in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
             kind: OrderKind::Sell,
+            block_dependent: false,
         });
 
         let result = estimator.estimate(query).await;
