@@ -138,7 +138,7 @@ pub struct Arguments {
     pub allow_placing_fill_or_kill_limit_orders: bool,
 
     /// Note that partially fillable liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub allow_placing_partially_fillable_limit_orders: bool,
 
     /// Max number of limit orders per user.
