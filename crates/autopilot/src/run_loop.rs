@@ -614,7 +614,7 @@ enum SolveError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the proposed a 0-score solution")]
+#[error("the solver proposed a 0-score solution")]
 struct ZeroScoreError;
 
 #[derive(Debug, thiserror::Error)]
