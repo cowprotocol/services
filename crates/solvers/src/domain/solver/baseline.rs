@@ -113,14 +113,17 @@ impl Inner {
                             output.amount = cmp::min(output.amount, order.buy.amount);
                         }
 
-                        solution::Single {
-                            order: order.clone(),
-                            input: route.input(),
-                            output,
-                            interactions,
-                            gas: route.gas(),
-                        }
-                        .into_solution(auction.gas_price, sell_token)
+                        Some(
+                            solution::Single {
+                                order: order.clone(),
+                                input: route.input(),
+                                output,
+                                interactions,
+                                gas: route.gas(),
+                            }
+                            .into_solution(auction.gas_price, sell_token)?
+                            .with_buffers_internalizations(&auction.tokens),
+                        )
                     })
             })
             .collect()

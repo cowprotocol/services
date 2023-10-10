@@ -62,7 +62,7 @@ async fn sell() {
                     "symbol": "WETH",
                     "referencePrice": "1000000000000000000",
                     "availableBalance": "482725140468789680",
-                    "trusted": true
+                    "trusted": false
                 },
             },
             "orders": [
@@ -264,7 +264,7 @@ async fn buy() {
                 "interactions": [
                     {
                         "kind": "custom",
-                        "internalize": false,
+                        "internalize": true,
                         "target": "0xba12222222228d8ba445958a75a0704d566bf2c8",
                         "value": "0",
                         "callData": "0x945bcec9\
