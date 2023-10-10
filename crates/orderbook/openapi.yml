@@ -1081,7 +1081,7 @@ components:
               InsufficientValidTo,
               ExcessiveValidTo,
               TransferEthToContract,
-              InvalidNativeSellToken
+              InvalidNativeSellToken,
               SameBuyAndSellToken,
               UnsupportedSignature,
               UnsupportedToken,
