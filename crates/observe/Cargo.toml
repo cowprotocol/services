@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 atty = "0.2"
 console-subscriber = "0.2.0"
 once_cell = { workspace = true }
+pin-project-lite = "0.2"
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 time = { version = "0.3", features = ["macros"] }
