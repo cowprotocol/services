@@ -30,7 +30,7 @@ services:
       FLYWAY_URL: jdbc:postgresql://db/?user=$USER&password=
     volumes:
       - type: bind
-        source: database/sql/
+        source: ./database/sql/
         target: /flyway/sql
 
   chain:
