@@ -27,6 +27,7 @@ impl Naive {
             groups
                 .values()
                 .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                .map(|solution| solution.with_buffers_internalizations(&auction.tokens))
                 .collect()
         })
         .await
