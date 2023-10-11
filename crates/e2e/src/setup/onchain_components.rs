@@ -11,8 +11,8 @@ use {
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     hex_literal::hex,
     model::{
-        order::Hook,
-        signature::{EcdsaSignature, EcdsaSigningScheme},
+        order::{Hook, OrderCreation},
+        signature::{hashed_eip712_message, EcdsaSignature, EcdsaSigningScheme, Signature},
         DomainSeparator,
         TokenPair,
     },
@@ -339,6 +339,30 @@ impl Safe {
         }
     }
 
+    /// Deploy a Safe with a single owner.
+    pub async fn deploy(owner: TestAccount, web3: &Web3) -> Self {
+        // Infrastructure contracts can in principle be reused for any new deployments,
+        // but it leads to boilerplate code that we don't need. Redeploying the
+        // infrastructure contracts every time should have no appreciable impact in the
+        // tests.
+        let infra = GnosisSafeInfrastructure::new(web3).await;
+        let chain_id = web3.eth().chain_id().await.unwrap();
+        let contract = infra.deploy_safe(vec![owner.address()], 1).await;
+        Self {
+            chain_id,
+            contract,
+            owner,
+        }
+    }
+
+    pub async fn exec_call<T: ethcontract::tokens::Tokenize>(
+        &self,
+        tx: ethcontract::dyns::DynMethodBuilder<T>,
+    ) {
+        let contract = &self.contract;
+        tx_safe!(self.owner.account(), contract, tx);
+    }
+
     /// Returns the address of the Safe.
     pub fn address(&self) -> H160 {
         self.contract.address()
@@ -403,6 +427,21 @@ impl Safe {
 
             signing::keccak256(&buffer)
         })
+    }
+
+    pub fn sign_order(&self, order: &mut OrderCreation, onchain: &OnchainComponents) {
+        order.signature = Signature::Eip1271(self.order_eip1271_signature(order, onchain));
+    }
+
+    pub fn order_eip1271_signature(
+        &self,
+        order: &OrderCreation,
+        onchain: &OnchainComponents,
+    ) -> Vec<u8> {
+        self.sign_message(&hashed_eip712_message(
+            &onchain.contracts().domain_separator,
+            &order.data().hash_struct(),
+        ))
     }
 
     /// Returns the domain separator for the Safe.
