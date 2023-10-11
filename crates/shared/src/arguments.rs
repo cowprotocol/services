@@ -269,7 +269,7 @@ pub struct Arguments {
     pub disabled_one_inch_protocols: Vec<String>,
 
     /// The 1Inch REST API URL to use.
-    #[structopt(long, env, default_value = "https://api.1inch.io/")]
+    #[structopt(long, env, default_value = "https://api.1inch.dev/")]
     pub one_inch_url: Url,
 
     /// Which address should receive the rewards for referring trades to 1Inch.
