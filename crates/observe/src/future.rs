@@ -52,7 +52,7 @@ impl<T: Future> Future for Measurable<T> {
             );
         }
         let result = this.inner.poll(cx);
-        if let Poll::Ready(_) = result {
+        if result.is_ready() {
             // Dropping the timer will record the execution time.
             *this.state = State::Done;
         }
