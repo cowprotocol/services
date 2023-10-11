@@ -16,7 +16,10 @@ impl Auction {
     /// Converts a data transfer object into its domain object representation.
     pub fn to_domain(&self) -> Result<auction::Auction, Error> {
         Ok(auction::Auction {
-            id: self.id.map(auction::Id),
+            id: match self.id {
+                Some(id) => auction::Id::Solve(id),
+                None => auction::Id::Quote,
+            },
             tokens: auction::Tokens(
                 self.tokens
                     .iter()
