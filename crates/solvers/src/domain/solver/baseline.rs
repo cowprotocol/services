@@ -131,11 +131,8 @@ impl Inner {
                             interactions,
                             gas: route.gas(),
                         }
-                        .into_solution(
-                            auction.gas_price,
-                            sell_token,
-                            score,
-                        )
+                        .into_solution(auction.gas_price, sell_token, score)
+                        .with_buffers_internalizations(&auction.tokens)
                     })
             })
             .collect()

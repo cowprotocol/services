@@ -137,8 +137,8 @@ pub mod solve {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Solution {
-        /// Unique ID of the solution, used to identify it in subsequent
-        /// requests (reveal, settle).
+        /// Unique ID of the solution (per driver competition), used to identify
+        /// it in subsequent requests (reveal, settle).
         #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
         pub score: U256,
@@ -164,7 +164,7 @@ pub mod reveal {
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
-        /// Unique ID of the solution to reveal.
+        /// Unique ID of the solution (per driver competition), to reveal.
         #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
     }
@@ -198,7 +198,7 @@ pub mod settle {
     #[derive(Clone, Debug, Default, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Request {
-        /// Unique ID of the solution to settle.
+        /// Unique ID of the solution (per driver competition), to settle.
         #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
     }

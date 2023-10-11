@@ -10,6 +10,7 @@ use {
     anyhow::{ensure, Result},
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
+    ethrpc::current_block::CurrentBlockStream,
     number::u256_decimal,
     reqwest::{Client, IntoUrl, Url},
     serde::{de::DeserializeOwned, Deserialize},
@@ -467,12 +468,17 @@ pub struct Protocols {
 #[mockall::automock]
 pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        set_current_block_header: bool,
+    ) -> Result<Swap, OneInchError>;
 
     /// Quotes a sell order with the 1Inch API.
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
+        set_current_block_header: bool,
     ) -> Result<SellOrderQuote, OneInchError>;
 
     /// Retrieves the address of the spender to use for token approvals.
@@ -488,6 +494,7 @@ pub struct OneInchClientImpl {
     client: Client,
     base_url: Url,
     chain_id: u64,
+    block_stream: CurrentBlockStream,
 }
 
 impl OneInchClientImpl {
@@ -496,7 +503,12 @@ impl OneInchClientImpl {
     pub const SUPPORTED_CHAINS: &'static [u64] = &[1, 100];
 
     /// Create a new 1Inch HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl, client: Client, chain_id: u64) -> Result<Self> {
+    pub fn new(
+        base_url: impl IntoUrl,
+        client: Client,
+        chain_id: u64,
+        block_stream: CurrentBlockStream,
+    ) -> Result<Self> {
         ensure!(
             Self::SUPPORTED_CHAINS.contains(&chain_id),
             "1Inch is not supported on this chain"
@@ -506,47 +518,84 @@ impl OneInchClientImpl {
             client,
             base_url: base_url.into_url()?,
             chain_id,
+            block_stream,
         })
     }
 
     #[cfg(test)]
     pub fn test() -> Self {
-        OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap()
+        use {ethrpc::current_block::BlockInfo, tokio::sync::watch};
+
+        let (_, block_stream) = watch::channel(BlockInfo::default());
+        OneInchClientImpl::new(
+            OneInchClientImpl::DEFAULT_URL,
+            Client::new(),
+            1,
+            block_stream,
+        )
+        .unwrap()
     }
 }
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError> {
-        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        set_current_block_header: bool,
+    ) -> Result<Swap, OneInchError> {
+        logged_query(
+            &self.client,
+            query.into_url(&self.base_url, self.chain_id),
+            set_current_block_header.then(|| self.block_stream.clone()),
+        )
+        .await
     }
 
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
+        set_current_block_header: bool,
     ) -> Result<SellOrderQuote, OneInchError> {
-        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
+        logged_query(
+            &self.client,
+            query.into_url(&self.base_url, self.chain_id),
+            set_current_block_header.then(|| self.block_stream.clone()),
+        )
+        .await
     }
 
     async fn get_spender(&self) -> Result<Spender, OneInchError> {
         let endpoint = format!("v5.0/{}/approve/spender", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
-        logged_query(&self.client, url).await
+        logged_query(&self.client, url, None).await
     }
 
     async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
         let endpoint = format!("v5.0/{}/liquidity-sources", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
-        logged_query(&self.client, url).await
+        logged_query(&self.client, url, None).await
     }
 }
 
-async fn logged_query<D>(client: &Client, url: Url) -> Result<D, OneInchError>
+async fn logged_query<D>(
+    client: &Client,
+    url: Url,
+    block_stream: Option<CurrentBlockStream>,
+) -> Result<D, OneInchError>
 where
     D: DeserializeOwned,
 {
     tracing::trace!(%url, "Query 1inch API");
-    let response = client.get(url).send().await?;
+    let mut request = client.get(url);
+    if let Some(block_stream) = block_stream {
+        request = request.header(
+            "X-Current-Block-Hash",
+            block_stream.borrow().hash.to_string(),
+        );
+    };
+
+    let response = request.send().await?;
     let status_code = response.status();
     let response = response.text().await?;
     tracing::trace!(%response, ?status_code, "Received 1Inch API response");
@@ -668,7 +717,13 @@ impl<T> CacheEntry<T> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::addr, futures::FutureExt as _};
+    use {
+        super::*,
+        crate::addr,
+        ethrpc::current_block::BlockInfo,
+        futures::FutureExt as _,
+        tokio::sync::watch,
+    };
 
     #[test]
     fn slippage_rounds_percentage() {
@@ -917,21 +972,24 @@ mod tests {
     #[ignore]
     async fn oneinch_swap() {
         let swap = OneInchClientImpl::test()
-            .get_swap(SwapQuery {
-                from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::ONE_PERCENT,
-                disable_estimate: None,
-                quote: SellOrderQuoteQuery::with_default_options(
-                    addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                    addr!("111111111117dc0aa78b770fa6a738034120c302"),
-                    None,
-                    1_000_000_000_000_000_000u128.into(),
-                    None,
-                ),
-                burn_chi: None,
-                allow_partial_fill: None,
-                dest_receiver: None,
-            })
+            .get_swap(
+                SwapQuery {
+                    from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+                    slippage: Slippage::ONE_PERCENT,
+                    disable_estimate: None,
+                    quote: SellOrderQuoteQuery::with_default_options(
+                        addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                        addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                        None,
+                        1_000_000_000_000_000_000u128.into(),
+                        None,
+                    ),
+                    burn_chi: None,
+                    allow_partial_fill: None,
+                    dest_receiver: None,
+                },
+                false,
+            )
             .await
             .unwrap();
         println!("{swap:#?}");
@@ -941,31 +999,34 @@ mod tests {
     #[ignore]
     async fn oneinch_swap_fully_parameterized() {
         let swap = OneInchClientImpl::test()
-            .get_swap(SwapQuery {
-                from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::percentage(1.2345678).unwrap(),
-                disable_estimate: Some(true),
-                quote: SellOrderQuoteQuery {
-                    from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                    to_token_address: addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
-                    protocols: Some(vec!["WETH".to_string(), "UNISWAP_V2".to_string()]),
-                    amount: 100_000_000_000_000_000_000u128.into(),
-                    complexity_level: Some(Amount::new(2).unwrap()),
-                    gas_limit: Some(Amount::new(750_000).unwrap()),
-                    main_route_parts: Some(Amount::new(3).unwrap()),
-                    parts: Some(Amount::new(3).unwrap()),
-                    fee: Some(1.5),
-                    connector_tokens: Some(vec![
-                        addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                        addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
-                    ]),
-                    virtual_parts: Some(Amount::new(10).unwrap()),
-                    referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
+            .get_swap(
+                SwapQuery {
+                    from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
+                    slippage: Slippage::percentage(1.2345678).unwrap(),
+                    disable_estimate: Some(true),
+                    quote: SellOrderQuoteQuery {
+                        from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                        to_token_address: addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
+                        protocols: Some(vec!["WETH".to_string(), "UNISWAP_V2".to_string()]),
+                        amount: 100_000_000_000_000_000_000u128.into(),
+                        complexity_level: Some(Amount::new(2).unwrap()),
+                        gas_limit: Some(Amount::new(750_000).unwrap()),
+                        main_route_parts: Some(Amount::new(3).unwrap()),
+                        parts: Some(Amount::new(3).unwrap()),
+                        fee: Some(1.5),
+                        connector_tokens: Some(vec![
+                            addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                            addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
+                        ]),
+                        virtual_parts: Some(Amount::new(10).unwrap()),
+                        referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
+                    },
+                    dest_receiver: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
+                    burn_chi: Some(false),
+                    allow_partial_fill: Some(false),
                 },
-                dest_receiver: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
-                burn_chi: Some(false),
-                allow_partial_fill: Some(false),
-            })
+                false,
+            )
             .await
             .unwrap();
         println!("{swap:#?}");
@@ -984,11 +1045,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_spender_address() {
-        let spender = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
-            .get_spender()
-            .await
-            .unwrap();
+        let spender = OneInchClientImpl::test().get_spender().await.unwrap();
         println!("{spender:#?}");
     }
 
@@ -1176,15 +1233,17 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_sell_order_quote() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
-            .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
-                addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                addr!("111111111117dc0aa78b770fa6a738034120c302"),
-                None,
-                1_000_000_000_000_000_000u128.into(),
-                None,
-            ))
+        let swap = OneInchClientImpl::test()
+            .get_sell_order_quote(
+                SellOrderQuoteQuery::with_default_options(
+                    addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                    addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                    None,
+                    1_000_000_000_000_000_000u128.into(),
+                    None,
+                ),
+                false,
+            )
             .await
             .unwrap();
         println!("{swap:#?}");
@@ -1193,25 +1252,27 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_sell_order_quote_fully_parameterized() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
-            .unwrap()
-            .get_sell_order_quote(SellOrderQuoteQuery {
-                from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
-                protocols: Some(vec!["WETH".to_string(), "UNISWAP_V3".to_string()]),
-                amount: 1_000_000_000_000_000_000u128.into(),
-                fee: Some(0.5),
-                connector_tokens: Some(vec![
-                    addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                    addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
-                ]),
-                virtual_parts: Some(Amount::new(42).unwrap()),
-                complexity_level: Some(Amount::new(3).unwrap()),
-                gas_limit: Some(Amount::new(750_000).unwrap()),
-                main_route_parts: Some(Amount::new(2).unwrap()),
-                parts: Some(Amount::new(2).unwrap()),
-                referrer_address: Some(addr!("6C642caFCbd9d8383250bb25F67aE409147f78b2")),
-            })
+        let swap = OneInchClientImpl::test()
+            .get_sell_order_quote(
+                SellOrderQuoteQuery {
+                    from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                    to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                    protocols: Some(vec!["WETH".to_string(), "UNISWAP_V3".to_string()]),
+                    amount: 1_000_000_000_000_000_000u128.into(),
+                    fee: Some(0.5),
+                    connector_tokens: Some(vec![
+                        addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
+                    ]),
+                    virtual_parts: Some(Amount::new(42).unwrap()),
+                    complexity_level: Some(Amount::new(3).unwrap()),
+                    gas_limit: Some(Amount::new(750_000).unwrap()),
+                    main_route_parts: Some(Amount::new(2).unwrap()),
+                    parts: Some(Amount::new(2).unwrap()),
+                    referrer_address: Some(addr!("6C642caFCbd9d8383250bb25F67aE409147f78b2")),
+                },
+                false,
+            )
             .await
             .unwrap();
         println!("{swap:#?}");
@@ -1254,7 +1315,13 @@ mod tests {
 
     #[test]
     fn creation_fails_on_unsupported_chain() {
-        let api = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 2);
+        let (_, block_stream) = watch::channel(BlockInfo::default());
+        let api = OneInchClientImpl::new(
+            OneInchClientImpl::DEFAULT_URL,
+            Client::new(),
+            2,
+            block_stream,
+        );
         assert!(api.is_err());
     }
 

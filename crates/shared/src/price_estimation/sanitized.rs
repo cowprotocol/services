@@ -175,6 +175,7 @@ mod tests {
                     buy_token: H160::from_low_u64_le(2),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -192,6 +193,7 @@ mod tests {
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -209,6 +211,7 @@ mod tests {
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(U256::MAX).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
                     "cost of converting native asset would overflow gas price"
@@ -224,6 +227,7 @@ mod tests {
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -242,6 +246,7 @@ mod tests {
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -257,6 +262,7 @@ mod tests {
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -272,6 +278,7 @@ mod tests {
                     buy_token: BUY_ETH_ADDRESS,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -288,6 +295,7 @@ mod tests {
                     buy_token: native_token,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
+                    block_dependent: false,
                 },
                 Ok(Estimate {
                     out_amount: 1.into(),
@@ -304,6 +312,7 @@ mod tests {
                     buy_token: H160::from_low_u64_le(1),
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,
@@ -318,6 +327,7 @@ mod tests {
                     buy_token: BAD_TOKEN,
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
+                    block_dependent: false,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
                     token: BAD_TOKEN,

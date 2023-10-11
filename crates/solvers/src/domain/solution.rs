@@ -4,7 +4,7 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
-    std::collections::HashMap,
+    std::{collections::HashMap, slice},
 };
 
 /// A solution to an auction.
@@ -17,8 +17,73 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Returns `self` with a new score.
     pub fn with_score(self, score: Score) -> Self {
         Self { score, ..self }
+    }
+
+    /// Returns `self` with eligible interactions internalized using the
+    /// Settlement contract buffers.
+    ///
+    /// Currently, this internalizes all interactions with input/outputs where
+    /// all input tokens are trusted and the settlement contract has sufficient
+    /// balance to cover the output tokens.
+    pub fn with_buffers_internalizations(mut self, tokens: &auction::Tokens) -> Self {
+        let mut used_buffers = HashMap::new();
+        for interaction in self.interactions.iter_mut() {
+            let (inputs, outputs, internalize) = match interaction {
+                Interaction::Liquidity(interaction) => (
+                    slice::from_ref(&interaction.input),
+                    slice::from_ref(&interaction.output),
+                    &mut interaction.internalize,
+                ),
+                Interaction::Custom(interaction) => (
+                    &interaction.inputs[..],
+                    &interaction.outputs[..],
+                    &mut interaction.internalize,
+                ),
+            };
+
+            let trusted_inputs = inputs.iter().all(|input| {
+                matches!(
+                    tokens.get(&input.token),
+                    Some(auction::Token { trusted: true, .. })
+                )
+            });
+            if inputs.is_empty() || outputs.is_empty() || !trusted_inputs {
+                continue;
+            }
+
+            let Some(required_buffers) =
+                outputs.iter().try_fold(HashMap::new(), |mut map, output| {
+                    let amount = map.entry(output.token).or_default();
+                    *amount = output.amount.checked_add(*amount)?;
+
+                    let total = amount.checked_add(
+                        used_buffers.get(&output.token).copied().unwrap_or_default(),
+                    )?;
+                    if total > tokens.get(&output.token)?.available_balance {
+                        return None;
+                    }
+
+                    Some(map)
+                })
+            else {
+                continue;
+            };
+
+            // Make sure to update the used buffers, this ensures that, if we
+            // have two interactions that use the same token buffers, we don't
+            // end up over-internalizing.
+            for (token, amount) in required_buffers {
+                let used = used_buffers.entry(token).or_default();
+                *used = used.checked_add(amount).expect("overflow verified above");
+            }
+
+            *internalize = true;
+        }
+
+        self
     }
 }
 

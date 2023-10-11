@@ -39,6 +39,7 @@ impl Naive {
                 .filter_map(|group| {
                     boundary::naive::solve(&group.orders, group.liquidity, &risk, auction.gas_price)
                 })
+                .map(|solution| solution.with_buffers_internalizations(&auction.tokens))
                 .collect()
         })
         .await

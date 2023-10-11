@@ -1,6 +1,6 @@
 use {
     contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxyFactory},
-    e2e::setup::*,
+    e2e::{setup::*, tx, tx_value},
     ethcontract::{Bytes, H160, U256},
     model::{
         order::{Hook, OrderCreation, OrderCreationAppData, OrderKind},
@@ -22,6 +22,12 @@ async fn local_node_allowance() {
 #[ignore]
 async fn local_node_signature() {
     run_test(signature).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_partial_fills() {
+    run_test(partial_fills).await;
 }
 
 async fn allowance(web3: Web3) {
@@ -321,4 +327,114 @@ async fn signature(web3: Web3) {
     tracing::info!("Waiting for auction to be cleared.");
     let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
     wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
+}
+
+async fn partial_fills(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(3)).await;
+
+    let counter = contracts::test::Counter::builder(&web3)
+        .deploy()
+        .await
+        .unwrap();
+
+    let [token] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
+        .await;
+
+    tx!(
+        trader.account(),
+        onchain
+            .contracts()
+            .weth
+            .approve(onchain.contracts().allowance, to_wei(2))
+    );
+    tx_value!(
+        trader.account(),
+        to_wei(1),
+        onchain.contracts().weth.deposit()
+    );
+
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![
+        "--enable-colocation=true".to_string(),
+        "--drivers=http://localhost:11088/test_solver".to_string(),
+    ]);
+    services
+        .start_api(vec!["--enable-custom-interactions=true".to_string()])
+        .await;
+
+    tracing::info!("Placing order");
+    let order = OrderCreation {
+        sell_token: onchain.contracts().weth.address(),
+        sell_amount: to_wei(2),
+        buy_token: token.address(),
+        buy_amount: to_wei(1),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        partially_fillable: true,
+        app_data: OrderCreationAppData::Full {
+            full: json!({
+                "metadata": {
+                    "hooks": {
+                        "pre": [hook_for_transaction(counter.increment_counter("pre".to_string()).tx).await],
+                        "post": [hook_for_transaction(counter.increment_counter("post".to_string()).tx).await],
+                    },
+                },
+            })
+            .to_string(),
+        },
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    services.create_order(&order).await.unwrap();
+
+    tracing::info!("Waiting for first trade.");
+    let trade_happened = || async {
+        onchain
+            .contracts()
+            .weth
+            .balance_of(trader.address())
+            .call()
+            .await
+            .unwrap()
+            == 0.into()
+    };
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+    assert_eq!(
+        counter.counters("pre".to_string()).call().await.unwrap(),
+        1.into()
+    );
+    assert_eq!(
+        counter.counters("post".to_string()).call().await.unwrap(),
+        1.into()
+    );
+
+    tracing::info!("Fund remaining sell balance.");
+    tx_value!(
+        trader.account(),
+        to_wei(1),
+        onchain.contracts().weth.deposit()
+    );
+
+    tracing::info!("Waiting for second trade.");
+    wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
+    assert_eq!(
+        counter.counters("pre".to_string()).call().await.unwrap(),
+        1.into()
+    );
+    assert_eq!(
+        counter.counters("post".to_string()).call().await.unwrap(),
+        2.into()
+    );
 }

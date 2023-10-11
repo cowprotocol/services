@@ -4,13 +4,14 @@ use {
         domain::{
             competition::{self, solution},
             eth,
+            liquidity,
         },
         infra::{blockchain, observe, Ethereum},
         util,
     },
     futures::future::join_all,
     itertools::Itertools,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
 
@@ -225,6 +226,20 @@ impl Auction {
     /// The tokens used in the auction.
     pub fn tokens(&self) -> &Tokens {
         &self.tokens
+    }
+
+    /// Returns a collection of liquidity token pairs that are relevant to this
+    /// auction.
+    pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
+        self.orders
+            .iter()
+            .filter_map(|order| match order.kind {
+                order::Kind::Market | order::Kind::Limit { .. } => {
+                    liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
+                }
+                order::Kind::Liquidity => None,
+            })
+            .collect()
     }
 
     pub fn gas_price(&self) -> eth::GasPrice {
