@@ -12,7 +12,7 @@ use {crate::tests, serde_json::json};
 async fn test() {
     let engine = tests::SolverEngine::new(
         "naive",
-        tests::Config::File("config/example.naive.toml".into()),
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
     )
     .await;
 

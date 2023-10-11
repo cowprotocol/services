@@ -7,7 +7,7 @@ use {crate::tests, serde_json::json};
 async fn sell_orders_on_both_sides() {
     let engine = tests::SolverEngine::new(
         "naive",
-        tests::Config::File("config/example.naive.toml".into()),
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
     )
     .await;
 
@@ -113,7 +113,7 @@ async fn sell_orders_on_both_sides() {
 async fn sell_orders_on_one_side() {
     let engine = tests::SolverEngine::new(
         "naive",
-        tests::Config::File("config/example.naive.toml".into()),
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
     )
     .await;
 
@@ -219,7 +219,7 @@ async fn sell_orders_on_one_side() {
 async fn buy_orders_on_both_sides() {
     let engine = tests::SolverEngine::new(
         "naive",
-        tests::Config::File("config/example.naive.toml".into()),
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
     )
     .await;
 
@@ -325,7 +325,7 @@ async fn buy_orders_on_both_sides() {
 async fn buy_and_sell_orders() {
     let engine = tests::SolverEngine::new(
         "naive",
-        tests::Config::File("config/example.naive.toml".into()),
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
     )
     .await;
 
