@@ -25,6 +25,7 @@ use {
         app_data::AppDataHash,
         interaction::InteractionData,
         order::{
+            AppdataFromMismatch,
             BuyTokenDestination,
             Hook,
             Hooks,
@@ -153,6 +154,9 @@ pub enum ValidationError {
     /// The specified on-chain signature requires the from address of the
     /// order signer.
     MissingFrom,
+    /// The signer in the appdata metadata does not match the provided from
+    /// value.
+    AppdataFromMismatch(AppdataFromMismatch),
     WrongOwner(signature::Recovered),
     /// An invalid EIP-1271 signature, where the on-chain validation check
     /// reverted or did not return the expected value.
@@ -185,6 +189,7 @@ impl From<VerificationError> for ValidationError {
             VerificationError::UnableToRecoverSigner(_) => Self::InvalidSignature,
             VerificationError::UnexpectedSigner(recovered) => Self::WrongOwner(recovered),
             VerificationError::MissingFrom => Self::MissingFrom,
+            VerificationError::AppdataFromMismatch(mismatch) => Self::AppdataFromMismatch(mismatch),
         }
     }
 }
@@ -575,8 +580,9 @@ impl OrderValidating for OrderValidator {
         // Happens before signature verification because a miscalculated app data hash
         // by the API user would lead to being unable to validate the signature below.
         let app_data = self.validate_app_data(&order.app_data, &full_app_data_override)?;
+        let app_data_signer = app_data.inner.protocol.signer;
 
-        let owner = order.verify_owner(domain_separator)?;
+        let owner = order.verify_owner(domain_separator, app_data_signer)?;
         let signing_scheme = order.signature.scheme();
         let data = OrderData {
             app_data: app_data.inner.hash,
