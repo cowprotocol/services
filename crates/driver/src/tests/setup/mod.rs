@@ -736,24 +736,31 @@ impl Test {
     /// Call the /settle endpoint.
     pub async fn settle(&self) -> Settle {
         let old_balances = self.balances().await;
-        let res = blockchain::wait_for(
-            &self.blockchain.web3,
-            self.client
-                .post(format!(
-                    "http://{}/{}/settle",
-                    self.driver.addr,
-                    solver::NAME
-                ))
-                .json(&driver::settle_req())
-                .send(),
-        )
-        .await
-        .unwrap();
+        let old_block = self
+            .blockchain
+            .web3
+            .eth()
+            .block_number()
+            .await
+            .unwrap()
+            .as_u64();
+        let res = self
+            .client
+            .post(format!(
+                "http://{}/{}/settle",
+                self.driver.addr,
+                solver::NAME
+            ))
+            .json(&driver::settle_req())
+            .send()
+            .await
+            .unwrap();
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /settle");
         Settle {
             old_balances,
+            old_block,
             status,
             test: self,
             body,
@@ -798,22 +805,16 @@ pub struct Solve {
     body: String,
 }
 
+pub struct SolveOk {
+    body: String,
+}
+
 impl Solve {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk {
         assert_eq!(self.status, hyper::StatusCode::OK);
         SolveOk { body: self.body }
     }
-
-    /// Expect the /solve endpoint to return a 400 BAD REQUEST response.
-    pub fn err(self) -> SolveErr {
-        assert_eq!(self.status, hyper::StatusCode::BAD_REQUEST);
-        SolveErr { body: self.body }
-    }
-}
-
-pub struct SolveOk {
-    body: String,
 }
 
 impl SolveOk {
@@ -857,23 +858,6 @@ impl SolveOk {
     /// Ensures that `/solve` returns no solutions.
     pub fn empty(self) {
         assert!(self.solutions().is_empty());
-    }
-}
-
-pub struct SolveErr {
-    body: String,
-}
-
-impl SolveErr {
-    /// Check the kind field in the error response.
-    pub fn kind(self, expected_kind: &str) {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("kind").is_some());
-        assert!(result.get("description").is_some());
-        let kind = result.get("kind").unwrap().as_str().unwrap();
-        assert_eq!(kind, expected_kind);
     }
 }
 
@@ -1021,6 +1005,7 @@ pub enum Balance {
 /// A /settle response.
 pub struct Settle<'a> {
     old_balances: HashMap<&'static str, eth::U256>,
+    old_block: u64,
     status: StatusCode,
     test: &'a Test,
     body: String,
@@ -1029,6 +1014,10 @@ pub struct Settle<'a> {
 pub struct SettleOk<'a> {
     test: &'a Test,
     old_balances: HashMap<&'static str, eth::U256>,
+}
+
+pub struct SettleErr {
+    body: String,
 }
 
 impl<'a> Settle<'a> {
@@ -1055,6 +1044,9 @@ impl<'a> Settle<'a> {
             .as_str()
             .unwrap()
             .is_empty());
+
+        // Wait for the new block with the settlement to be mined.
+        blockchain::wait_for_block(&self.test.blockchain.web3, self.old_block + 1).await;
 
         // Ensure that the solution ID is included in the settlement.
         let tx = self
@@ -1092,6 +1084,12 @@ impl<'a> Settle<'a> {
             test: self.test,
             old_balances: self.old_balances,
         }
+    }
+
+    /// Expect the /settle endpoint to return a 400 BAD REQUEST response.
+    pub fn err(self) -> SettleErr {
+        assert_eq!(self.status, hyper::StatusCode::BAD_REQUEST);
+        SettleErr { body: self.body }
     }
 }
 
@@ -1133,5 +1131,18 @@ impl<'a> SettleOk<'a> {
             .await
             .balance("ETH", Balance::Greater)
             .await
+    }
+}
+
+impl SettleErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }

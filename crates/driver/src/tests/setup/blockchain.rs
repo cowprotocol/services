@@ -789,12 +789,18 @@ impl Drop for Node {
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
 pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
-    let block = web3.eth().block_number().await.unwrap();
+    let block = web3.eth().block_number().await.unwrap().as_u64();
     let result = fut.await;
+    wait_for_block(web3, block + 1).await;
+    result
+}
+
+/// Waits for the block height to be at least the specified value.
+pub async fn wait_for_block(web3: &DynWeb3, block: u64) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
-            let next_block = web3.eth().block_number().await.unwrap();
-            if next_block > block {
+            let next_block = web3.eth().block_number().await.unwrap().as_u64();
+            if next_block >= block {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -802,7 +808,6 @@ pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
     })
     .await
     .expect("timeout while waiting for next block to be mined");
-    result
 }
 
 /// Sets code at a specific address for testing.
