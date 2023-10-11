@@ -65,9 +65,13 @@ impl Baseline {
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
         let inner = self.0.clone();
-        tokio::task::spawn_blocking(move || inner.solve(auction))
-            .await
-            .expect("baseline solver unexpected panic")
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            let _entered = span.enter();
+            inner.solve(auction)
+        })
+        .await
+        .expect("baseline solver unexpected panic")
     }
 }
 
