@@ -128,7 +128,7 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
-            tracing::info!(driver = %driver.url, solution = %solution.id, "winner");
+            tracing::info!(driver = %driver.name, solution = %solution.id, "winner");
 
             let revealed = match self.reveal(driver, auction_id, solution.id).await {
                 Ok(result) => {
@@ -137,7 +137,7 @@ impl RunLoop {
                 }
                 Err(err) => {
                     Metrics::reveal_err(driver, &err);
-                    tracing::warn!(driver = %driver.url, ?err, "failed to reveal winning solution");
+                    tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
                     return;
                 }
             };
@@ -278,12 +278,12 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!(driver = %driver.url, "settling");
+            tracing::info!(driver = %driver.name, "settling");
             match self.settle(driver, auction_id, solution, &revealed).await {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
-                    tracing::error!(?err, driver = %driver.url, "settlement failed");
+                    tracing::error!(?err, driver = %driver.name, "settlement failed");
                 }
             }
         }
@@ -326,9 +326,9 @@ impl RunLoop {
                 Err(err) => {
                     Metrics::solve_err(driver, elapsed, &err);
                     if matches!(err, SolveError::NoSolutions) {
-                        tracing::debug!(driver = %driver.url, "solver found no solution");
+                        tracing::debug!(driver = %driver.name, "solver found no solution");
                     } else {
-                        tracing::warn!(?err, driver = %driver.url, "solve error");
+                        tracing::warn!(?err, driver = %driver.name, "solve error");
                     }
                     return solutions;
                 }
@@ -340,7 +340,7 @@ impl RunLoop {
                     }
                     Err(err) => {
                         Metrics::solution_err(driver, &err);
-                        tracing::debug!(?err, driver = %driver.url, "invalid proposed solution");
+                        tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
                     }
                 }
             }
@@ -662,7 +662,7 @@ impl Metrics {
     fn solve_ok(driver: &Driver, elapsed: Duration) {
         Self::get()
             .solve
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .observe(elapsed.as_secs_f64())
     }
 
@@ -674,28 +674,28 @@ impl Metrics {
         };
         Self::get()
             .solve
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .observe(elapsed.as_secs_f64())
     }
 
     fn solution_ok(driver: &Driver) {
         Self::get()
             .solutions
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
     fn solution_err(driver: &Driver, _: &ZeroScoreError) {
         Self::get()
             .solutions
-            .with_label_values(&[driver.url.as_str(), "zero_score"])
+            .with_label_values(&[&driver.name, "zero_score"])
             .inc();
     }
 
     fn reveal_ok(driver: &Driver) {
         Self::get()
             .reveal
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
@@ -706,14 +706,14 @@ impl Metrics {
         };
         Self::get()
             .reveal
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .inc();
     }
 
     fn settle_ok(driver: &Driver) {
         Self::get()
             .settle
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
@@ -725,7 +725,7 @@ impl Metrics {
         };
         Self::get()
             .settle
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .inc();
     }
 }

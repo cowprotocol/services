@@ -128,14 +128,14 @@ impl RunLoop {
                 .expect("reference score unexpectedly larger than winner's score");
 
             tracing::info!(
-                driver =% driver.url,
+                driver =% driver.name,
                 score =% solution.score,
                 %reward,
                 "winner"
             );
             Metrics::get()
                 .performance_rewards
-                .with_label_values(&[driver.url.as_str()])
+                .with_label_values(&[&driver.name])
                 .inc_by(reward.to_f64_lossy());
         }
 
@@ -148,7 +148,7 @@ impl RunLoop {
                         .then(|| hex(&solution.calldata.uninternalized));
 
                     tracing::debug!(
-                        driver =% driver.url,
+                        driver =% driver.name,
                         score =% solution.score,
                         account =? solution.account,
                         calldata =% hex(&solution.calldata.internalized),
@@ -157,14 +157,14 @@ impl RunLoop {
                     );
                     Metrics::get()
                         .results
-                        .with_label_values(&[driver.url.as_str(), "ok"])
+                        .with_label_values(&[&driver.name, "ok"])
                         .inc();
                 }
                 Err(err) => {
-                    tracing::warn!(%err, driver =% driver.url, "driver error");
+                    tracing::warn!(%err, driver =% driver.name, "driver error");
                     Metrics::get()
                         .results
-                        .with_label_values(&[driver.url.as_str(), err.label()])
+                        .with_label_values(&[&driver.name, err.label()])
                         .inc();
                 }
             };
