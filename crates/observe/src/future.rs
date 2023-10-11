@@ -1,4 +1,5 @@
 use {
+    futures::future::FusedFuture,
     pin_project_lite::pin_project,
     std::{
         future::Future,
@@ -56,6 +57,12 @@ impl<T: Future> Future for Measurable<T> {
             *this.state = State::Done;
         }
         result
+    }
+}
+
+impl<T: FusedFuture> FusedFuture for Measurable<T> {
+    fn is_terminated(&self) -> bool {
+        matches!(self.state, State::Done)
     }
 }
 
