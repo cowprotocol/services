@@ -1,5 +1,5 @@
 use {
-    contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxyFactory},
+    contracts::GnosisSafe,
     e2e::{setup::*, tx, tx_value},
     ethcontract::{Bytes, H160, U256},
     model::{
@@ -181,29 +181,21 @@ async fn signature(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    // Deploy and setup a Gnosis Safe.
-    let safe_singleton = GnosisSafe::builder(&web3).deploy().await.unwrap();
-    let safe_fallback = GnosisSafeCompatibilityFallbackHandler::builder(&web3)
-        .deploy()
-        .await
-        .unwrap();
-    let safe_factory = GnosisSafeProxyFactory::builder(&web3)
-        .deploy()
-        .await
-        .unwrap();
+    let safe_infra = GnosisSafeInfrastructure::new(&web3).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
-    let safe_creation_builder = safe_factory.create_proxy(
-        safe_singleton.address(),
+    let safe_creation_builder = safe_infra.factory.create_proxy(
+        safe_infra.singleton.address(),
         ethcontract::Bytes(
-            safe_singleton
+            safe_infra
+                .singleton
                 .setup(
                     vec![trader.address()], // owners
                     1.into(),               // threshold
                     H160::default(),        // delegate call
                     Bytes::default(),       // delegate call bytes
-                    safe_fallback.address(),
+                    safe_infra.fallback.address(),
                     H160::default(), // relayer payment token
                     0.into(),        // relayer payment amount
                     H160::default(), // relayer address
