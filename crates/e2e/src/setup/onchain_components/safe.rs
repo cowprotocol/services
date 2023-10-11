@@ -20,7 +20,6 @@ use {
     },
 };
 
-//#[macro_export]
 macro_rules! tx_safe {
     ($acc:expr, $safe:ident, $call:expr) => {{
         let call = $call;
