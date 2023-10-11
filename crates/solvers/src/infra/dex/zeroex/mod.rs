@@ -135,6 +135,12 @@ impl ZeroEx {
         let status = response.status();
         let body = response.text().await?;
         tracing::trace!(status = %status.as_u16(), %body, "quoted");
+        if !status.is_success() {
+            return Err(Error::Api {
+                code: status.as_u16() as i64,
+                description: body,
+            });
+        }
 
         let quote = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
         Ok(quote)
@@ -155,8 +161,8 @@ pub enum Error {
     NotFound,
     #[error("quote does not specify an approval spender")]
     MissingSpender,
-    #[error("api error code {code}: {reason}")]
-    Api { code: i64, reason: String },
+    #[error("api error code {code}: {description}")]
+    Api { code: i64, description: String },
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
@@ -172,7 +178,7 @@ impl From<dto::Error> for Error {
             100 => Self::NotFound,
             _ => Self::Api {
                 code: err.code,
-                reason: err.reason,
+                description: err.reason,
             },
         }
     }

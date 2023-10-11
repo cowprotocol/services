@@ -68,6 +68,14 @@ impl OneInch {
                 let status = response.status();
                 let body = response.text().await?;
                 tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch liquidity sources");
+
+                if !status.is_success() {
+                    return Err(Error::Api {
+                        code: status.as_u16() as i32,
+                        description: body,
+                    });
+                }
+
                 let liquidity: dto::Liquidity = serde_json::from_str(&body)?;
                 let protocols = liquidity
                     .protocols
@@ -97,8 +105,14 @@ impl OneInch {
         let status = response.status();
         let body = response.text().await?;
         tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch spender address");
-        let spender = eth::ContractAddress(serde_json::from_str::<dto::Spender>(&body)?.address);
+        if !status.is_success() {
+            return Err(Error::Api {
+                code: status.as_u16() as i32,
+                description: body,
+            });
+        }
 
+        let spender = eth::ContractAddress(serde_json::from_str::<dto::Spender>(&body)?.address);
         Ok(Self {
             client,
             endpoint,
@@ -161,6 +175,12 @@ impl OneInch {
         let status = response.status();
         let body = response.text().await?;
         tracing::trace!(status = %status.as_u16(), %body, "quoted");
+        if !status.is_success() {
+            return Err(Error::Api {
+                code: status.as_u16() as i32,
+                description: body,
+            });
+        }
 
         let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
         Ok(swap)

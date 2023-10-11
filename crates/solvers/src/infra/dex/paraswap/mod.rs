@@ -84,8 +84,12 @@ impl ParaSwap {
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from ParaSwap price API");
-        let price = serde_json::from_str::<dto::Response<dto::Price>>(&text)?.into_result()?;
-        Ok(price)
+        if status.is_success() {
+            let price = serde_json::from_str::<dto::Response<dto::Price>>(&text)?.into_result()?;
+            Ok(price)
+        } else {
+            Err(Error::Api(format!("status {}", status)))
+        }
     }
 
     /// Make a request to the `/transactions` endpoint.
@@ -111,6 +115,10 @@ impl ParaSwap {
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from ParaSwap transaction API");
+        if !status.is_success() {
+            return Err(Error::Api(format!("status {}", status)));
+        }
+
         let transaction =
             serde_json::from_str::<dto::Response<dto::Transaction>>(&text)?.into_result()?;
         Ok(transaction)
