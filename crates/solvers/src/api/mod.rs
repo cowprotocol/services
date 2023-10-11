@@ -62,7 +62,7 @@ async fn solve(
         let auction_id = auction.id;
         let solutions = state
             .solve(auction)
-            .instrument(tracing::info_span!("auction", %auction_id))
+            .instrument(tracing::info_span!("auction", id = %auction_id))
             .await;
 
         tracing::trace!(?solutions);
