@@ -124,15 +124,17 @@ impl Inner {
                             1,
                         ));
 
-                        solution::Single {
-                            order: order.clone(),
-                            input: route.input(),
-                            output,
-                            interactions,
-                            gas: route.gas(),
-                        }
-                        .into_solution(auction.gas_price, sell_token, score)
-                        .with_buffers_internalizations(&auction.tokens)
+                        Some(
+                            solution::Single {
+                                order: order.clone(),
+                                input: route.input(),
+                                output,
+                                interactions,
+                                gas: route.gas(),
+                            }
+                            .into_solution(auction.gas_price, sell_token, score)?
+                            .with_buffers_internalizations(&auction.tokens),
+                        )
                     })
             })
             .collect()

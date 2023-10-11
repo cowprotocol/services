@@ -1,16 +1,13 @@
 use {
     crate::{
         boundary::liquidity::constant_product::to_boundary_pool,
-        domain::{self, auction, eth, liquidity, order, solution},
+        domain::{eth, liquidity, order, solution},
     },
     ethereum_types::H160,
     itertools::Itertools,
     model::order::{Order, OrderClass, OrderData, OrderKind, OrderMetadata, OrderUid},
     num::{BigRational, One},
-    shared::{
-        external_prices::ExternalPrices,
-        price_estimation::gas::{ERC20_TRANSFER, INITIALIZATION_COST, SETTLEMENT},
-    },
+    shared::external_prices::ExternalPrices,
     solver::{
         liquidity::{
             slippage::{SlippageCalculator, SlippageContext},
@@ -32,8 +29,6 @@ use {
 pub fn solve(
     orders: &[&order::Order],
     liquidity: &liquidity::Liquidity,
-    risk: &domain::Risk,
-    gas_price: auction::GasPrice,
 ) -> Option<solution::Solution> {
     let pool = match &liquidity.state {
         liquidity::State::ConstantProduct(pool) => pool,
@@ -113,15 +108,6 @@ pub fn solve(
     let boundary_solution =
         multi_order_solver::solve(&slippage.context(), boundary_orders, &boundary_pool)?;
 
-    let nmb_orders = boundary_solution.trades().count();
-    let gas = INITIALIZATION_COST
-        + SETTLEMENT
-        + nmb_orders as u64 * (2 * ERC20_TRANSFER + liquidity.gas.0.as_u64()); // this is pessimistic in case the pool is not used
-    let score = solution::Score::RiskAdjusted(risk.success_probability(
-        eth::Gas(gas.into()),
-        gas_price,
-        nmb_orders,
-    ));
     let swap = pool_handler.swap.lock().unwrap().take();
     Some(solution::Solution {
         prices: solution::ClearingPrices::new(
@@ -157,7 +143,7 @@ pub fn solve(
                 })
             })
             .collect(),
-        score,
+        score: Default::default(),
     })
 }
 
