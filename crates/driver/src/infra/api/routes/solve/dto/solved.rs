@@ -9,16 +9,17 @@ use {
 };
 
 impl Solved {
-    pub fn new(solved: competition::Solved, solver: &Solver) -> Self {
-        let solution = Solution::new(0, solved, solver);
-        Self {
-            solutions: vec![solution],
-        }
+    pub fn new(solved: Option<competition::Solved>, solver: &Solver) -> Self {
+        let solutions = solved
+            .into_iter()
+            .map(|solved| Solution::new(0, solved, solver))
+            .collect();
+        Self { solutions }
     }
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Solved {
     solutions: Vec<Solution>,

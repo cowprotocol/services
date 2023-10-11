@@ -18,7 +18,7 @@ async fn no_valid_solutions() {
 
     let solve = test.solve().await;
 
-    solve.err().kind("SolutionNotFound");
+    solve.ok().empty();
 }
 
 #[tokio::test]
