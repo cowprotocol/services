@@ -192,7 +192,7 @@ pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition
                 .inc();
         }
         Ok(None) => {
-            tracing::info!("no solution found");
+            tracing::debug!("no solution found");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "SolutionNotFound"])
