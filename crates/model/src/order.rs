@@ -436,17 +436,14 @@ impl OrderCreation {
             (None, None) => None,
             (None, Some(addr)) => Some(addr),
             (Some(addr), None) => Some(addr),
+            (Some(from), Some(app_data_signer)) if from == app_data_signer => Some(from),
             (Some(from), Some(app_data_signer)) => {
-                if from == app_data_signer {
-                    Some(from)
-                } else {
-                    return Err(VerificationError::AppdataFromMismatch(
-                        AppdataFromMismatch {
-                            from,
-                            app_data_signer,
-                        },
-                    ));
-                }
+                return Err(VerificationError::AppdataFromMismatch(
+                    AppdataFromMismatch {
+                        from,
+                        app_data_signer,
+                    },
+                ))
             }
         };
 
