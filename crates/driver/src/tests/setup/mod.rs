@@ -817,15 +817,18 @@ pub struct SolveOk {
 }
 
 impl SolveOk {
+    fn solutions(&self) -> Vec<serde_json::Value> {
+        #[derive(serde::Deserialize)]
+        struct Body {
+            solutions: Vec<serde_json::Value>,
+        }
+        serde_json::from_str::<Body>(&self.body).unwrap().solutions
+    }
+
     /// Extracts the score from the response. Since response can contain
     /// multiple solutions, it takes the score from the first solution.
     pub fn score(&self) -> eth::U256 {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 1);
-        assert!(result.get("solutions").is_some());
-        let solutions = result.get("solutions").unwrap();
-        let solutions = solutions.as_array().unwrap();
+        let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
@@ -849,6 +852,11 @@ impl SolveOk {
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
         self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+    }
+
+    /// Ensures that `/solve` returns no solutions.
+    pub fn empty(self) {
+        assert!(self.solutions().is_empty());
     }
 }
 

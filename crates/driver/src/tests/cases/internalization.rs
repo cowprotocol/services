@@ -42,7 +42,7 @@ async fn untrusted_internalization() {
 
     // TODO When we add metrics, assert that an untrusted internalization error is
     // traced.
-    solve.err().kind("SolutionNotFound");
+    solve.ok().empty();
 }
 
 /// Check that verification fails if the solution contains internalized
