@@ -11,7 +11,7 @@ use {
 enum Kind {
     QuotingFailed,
     SolverFailed,
-    SolutionNotFound,
+    SolutionNotAvailable,
     DeadlineExceeded,
     Unknown,
     InvalidAuctionId,
@@ -33,7 +33,10 @@ impl From<Kind> for (hyper::StatusCode, axum::Json<Error>) {
         let description = match value {
             Kind::QuotingFailed => "No valid quote found",
             Kind::SolverFailed => "Solver engine returned an invalid response",
-            Kind::SolutionNotFound => "No solution found for the auction",
+            Kind::SolutionNotAvailable => {
+                "no solution is available yet, this might mean that /settle was called before \
+                 /solve returned"
+            }
             Kind::DeadlineExceeded => "Exceeded solution deadline",
             Kind::Unknown => "An unknown error occurred",
             Kind::InvalidAuctionId => "Invalid ID specified in the auction",
@@ -73,9 +76,7 @@ impl From<quote::Error> for (hyper::StatusCode, axum::Json<Error>) {
 impl From<competition::Error> for (hyper::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         let error = match value {
-            competition::Error::SolutionNotFound | competition::Error::SolutionNotAvailable => {
-                Kind::SolutionNotFound
-            }
+            competition::Error::SolutionNotAvailable => Kind::SolutionNotAvailable,
             competition::Error::DeadlineExceeded(_) => Kind::DeadlineExceeded,
             competition::Error::Solver(_) => Kind::SolverFailed,
         };
