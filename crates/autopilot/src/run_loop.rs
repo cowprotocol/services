@@ -227,6 +227,7 @@ impl RunLoop {
                     .map(|(index, participant)| {
                         let is_winner = solutions.len() - index == 1;
                         let mut settlement = SolverSettlement {
+                            solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
                             score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
