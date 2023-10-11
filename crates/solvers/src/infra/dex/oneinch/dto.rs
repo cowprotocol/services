@@ -1,5 +1,5 @@
 //! DTOs for the 1Inch DEX aggregator API. Full documentation for the API can be
-//! found [here](https://docs.1inch.io/docs/aggregation-protocol/api/swagger).
+//! found [here](https://portal.1inch.dev/documentation/swap/swagger).
 
 use {
     crate::{
@@ -33,7 +33,7 @@ pub struct Liquidity {
 
 /// A 1Inch API swap query parameters.
 ///
-/// See [API](https://docs.1inch.io/docs/aggregation-protocol/api/swagger)
+/// See [API](https://portal.1inch.dev/documentation/swap/swagger)
 /// documentation for more details.
 #[serde_as]
 #[derive(Clone, Default, Serialize)]

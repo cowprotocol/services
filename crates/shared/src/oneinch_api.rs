@@ -1,7 +1,7 @@
 //! 1Inch HTTP API client implementation.
 //!
 //! For more information on the HTTP API, consult:
-//! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
+//! <https://portal.1inch.dev/documentation/swap/swagger>
 //! Although there is no documentation about API v4.1, it exists and is
 //! identical to v4.0 except it uses EIP 1559 gas prices.
 
