@@ -12,7 +12,7 @@ pub trait Measure: Sized {
         Measurable {
             inner: self,
             label: label.to_owned(),
-            timer: None,
+            state: State::NeverPolled,
         }
     }
 }
@@ -26,8 +26,15 @@ pin_project! {
         #[pin]
         inner: T,
         label: String,
-        timer: Option<prometheus::HistogramTimer>,
+        state: State,
     }
+}
+
+#[derive(Debug)]
+enum State {
+    NeverPolled,
+    Running(prometheus::HistogramTimer),
+    Done,
 }
 
 impl<T: Future> Future for Measurable<T> {
@@ -35,15 +42,20 @@ impl<T: Future> Future for Measurable<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
-        if this.timer.is_none() {
-            *this.timer = Some(
+        if matches!(this.state, State::NeverPolled) {
+            *this.state = State::Running(
                 Metrics::get()
                     .future_execution_times
                     .with_label_values(&[this.label])
                     .start_timer(),
             );
         }
-        this.inner.poll(cx)
+        let result = this.inner.poll(cx);
+        if let Poll::Ready(_) = result {
+            // Dropping the timer will record the execution time.
+            *this.state = State::Done;
+        }
+        result
     }
 }
 
