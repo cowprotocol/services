@@ -22,7 +22,9 @@ impl Naive {
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
+        let span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
+            let _entered = span.enter();
             let groups = group_by_token_pair(&auction);
             groups
                 .values()
