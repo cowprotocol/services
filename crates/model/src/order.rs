@@ -416,7 +416,7 @@ impl OrderCreation {
     /// it matches the expected addresses.
     ///
     /// Expected addresses can come from two sources: directly from the order
-    /// creation and as part of the calldata.
+    /// creation and as part of the app data.
     ///
     /// Returns the recovered address on success, or an error if there is an
     /// issue performing the EC-recover or the recovered address does not match
