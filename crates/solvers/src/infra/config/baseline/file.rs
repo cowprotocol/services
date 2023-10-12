@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::eth,
+        domain::{eth, Risk},
         infra::{config::unwrap_or_log, contracts},
         util::serialize,
     },
@@ -37,6 +37,10 @@ struct Config {
     /// The maximum number of pieces to divide partially fillable limit orders
     /// when trying to solve it against baseline liquidity.
     max_partial_attempts: usize,
+
+    /// Parameters used to calculate the revert risk of a solution.
+    /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
+    risk_parameters: (f64, f64, f64, f64),
 }
 
 /// Load the driver configuration from a TOML file.
@@ -71,5 +75,11 @@ pub async fn load(path: &Path) -> super::Config {
             .collect(),
         max_hops: config.max_hops,
         max_partial_attempts: config.max_partial_attempts,
+        risk: Risk {
+            gas_amount_factor: config.risk_parameters.0,
+            gas_price_factor: config.risk_parameters.1,
+            nmb_orders_factor: config.risk_parameters.2,
+            intercept: config.risk_parameters.3,
+        },
     }
 }

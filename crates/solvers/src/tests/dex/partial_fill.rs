@@ -223,7 +223,7 @@ async fn tested_amounts_adjust_depending_on_response() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         })
@@ -529,7 +529,7 @@ async fn moves_surplus_fee_to_buy_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         })
@@ -796,7 +796,7 @@ async fn market() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         })

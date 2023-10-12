@@ -5,7 +5,11 @@ use {crate::tests, serde_json::json};
 
 #[tokio::test]
 async fn sell_orders_on_both_sides() {
-    let engine = tests::SolverEngine::new("naive", tests::Config::None).await;
+    let engine = tests::SolverEngine::new(
+        "naive",
+        tests::Config::String(r#"risk-parameters = [0,0,0,0]"#.to_owned()),
+    )
+    .await;
 
     let solution = engine
         .solve(json!({
@@ -118,7 +122,7 @@ async fn sell_orders_on_both_sides() {
                 ],
                 "interactions": [],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),

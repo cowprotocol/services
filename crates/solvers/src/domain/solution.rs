@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{auction, eth, liquidity, order},
+        domain::{auction, eth, liquidity, order, solution, Risk},
         util,
     },
     ethereum_types::{Address, U256},
@@ -20,6 +20,18 @@ impl Solution {
     /// Returns `self` with a new score.
     pub fn with_score(self, score: Score) -> Self {
         Self { score, ..self }
+    }
+
+    pub fn with_risk_adjusted_score(
+        self,
+        risk: &Risk,
+        gas: eth::Gas,
+        gas_price: auction::GasPrice,
+    ) -> Self {
+        let nmb_orders = self.trades.len();
+        self.with_score(Score::RiskAdjusted(
+            risk.success_probability(gas, gas_price, nmb_orders),
+        ))
     }
 
     /// Returns `self` with eligible interactions internalized using the
@@ -111,6 +123,7 @@ impl Single {
         self,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
+        score: solution::Score,
     ) -> Option<Solution> {
         let Self {
             order,
@@ -183,7 +196,7 @@ impl Single {
             ]),
             trades: vec![Trade::Fulfillment(Fulfillment::new(order, executed, fee)?)],
             interactions,
-            score: Default::default(),
+            score,
         })
     }
 }
@@ -379,3 +392,13 @@ impl Default for Score {
         Self::RiskAdjusted(1.0)
     }
 }
+
+// initial tx gas used to call the settle function from the settlement contract
+pub const INITIALIZATION_COST: u64 = 32_000;
+/// minimum gas every settlement takes (isSolver)
+pub const SETTLEMENT: u64 = 7365;
+/// lower bound for an erc20 transfer.
+///
+/// Value was computed by taking 52 percentile median of `transfer()` costs
+/// of the 90% most traded tokens by volume in the month of Oct. 2021.
+pub const ERC20_TRANSFER: u64 = 27_513;
