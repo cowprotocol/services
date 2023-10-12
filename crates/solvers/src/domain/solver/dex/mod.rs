@@ -3,6 +3,7 @@
 
 use {
     crate::{
+        domain,
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
@@ -26,6 +27,9 @@ pub struct Dex {
     /// Helps to manage the strategy to fill orders (especially partially
     /// fillable orders).
     fills: Fills,
+
+    /// Parameters used to calculate the revert risk of a solution.
+    risk: domain::Risk,
 }
 
 impl Dex {
@@ -35,6 +39,7 @@ impl Dex {
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
+            risk: config.risk,
         }
     }
 
@@ -108,7 +113,9 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell) else {
+        let score =
+            solution::Score::RiskAdjusted(self.risk.success_probability(swap.gas, gas_price, 1));
+        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell, score) else {
             tracing::debug!("no solution for swap");
             return None;
         };

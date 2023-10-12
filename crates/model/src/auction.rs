@@ -2,7 +2,7 @@
 
 use {
     crate::order::Order,
-    number::u256_decimal::DecimalU256,
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
@@ -47,7 +47,7 @@ pub struct Auction {
     pub orders: Vec<Order>,
 
     /// The reference prices for all traded tokens in the auction.
-    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
 }
 

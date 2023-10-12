@@ -97,7 +97,7 @@ async fn trusted_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -198,7 +198,7 @@ async fn untrusted_sell_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -299,7 +299,7 @@ async fn insufficient_balance() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskadjusted": 0.5
                 }
             }]
         }),

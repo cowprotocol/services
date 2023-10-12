@@ -212,6 +212,7 @@ impl RunLoop {
             }
 
             let competition_table = SolverCompetitionDB {
+                auction_start_block: auction.block,
                 competition_simulation_block,
                 auction: CompetitionAuction {
                     orders: auction

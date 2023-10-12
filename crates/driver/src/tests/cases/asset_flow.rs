@@ -38,7 +38,7 @@ async fn matrix() {
                     .await;
 
                 // TODO When we add metrics, assert that an invalid asset flow error is traced.
-                test.solve().await.err().kind("SolutionNotFound");
+                test.solve().await.ok().empty();
             }
         }
     }
@@ -110,7 +110,7 @@ async fn negative_sum() {
         .await;
 
     // TODO When we add metrics, assert that an invalid asset flow error is traced.
-    test.solve().await.err().kind("SolutionNotFound");
+    test.solve().await.ok().empty();
 }
 
 /// Test that asset flow verification passes when sums of flows are positive.

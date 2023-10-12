@@ -2,7 +2,7 @@ use {
     crate::orderbook::{AddOrderError, Orderbook},
     anyhow::Result,
     model::{
-        order::{OrderCreation, OrderUid},
+        order::{AppdataFromMismatch, OrderCreation, OrderUid},
         quote::QuoteId,
         signature,
     },
@@ -154,6 +154,19 @@ impl IntoWarpReply for ValidationErrorWrapper {
                 error(
                     "MissingFrom",
                     "From address must be specified for on-chain signature",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            ValidationError::AppdataFromMismatch(AppdataFromMismatch {
+                from,
+                app_data_signer,
+            }) => with_status(
+                error(
+                    "AppdataFromMismatch",
+                    format!(
+                        "from address {from:?} cannot be different from metadata.signer \
+                         {app_data_signer:?} specified in the app data"
+                    ),
                 ),
                 StatusCode::BAD_REQUEST,
             ),

@@ -9,6 +9,9 @@ pub struct BackendAppData {
 
 impl From<BackendAppData> for ProtocolAppData {
     fn from(value: BackendAppData) -> Self {
-        Self { hooks: value.hooks }
+        Self {
+            hooks: value.hooks,
+            signer: None,
+        }
     }
 }
