@@ -164,7 +164,7 @@ mod dto {
     use {
         ethcontract::{H160, U256},
         model::{bytes_hex::BytesHex, order::OrderKind},
-        number::u256_decimal::DecimalU256,
+        number::serialization::HexOrDecimalU256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
@@ -175,7 +175,7 @@ mod dto {
     pub struct Order {
         pub sell_token: H160,
         pub buy_token: H160,
-        #[serde_as(as = "DecimalU256")]
+        #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub kind: OrderKind,
         pub deadline: chrono::DateTime<chrono::Utc>,
@@ -185,7 +185,7 @@ mod dto {
     #[derive(Clone, Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Quote {
-        #[serde_as(as = "DecimalU256")]
+        #[serde_as(as = "HexOrDecimalU256")]
         pub amount: U256,
         pub interactions: Vec<Interaction>,
         pub solver: H160,
@@ -196,7 +196,7 @@ mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct Interaction {
         pub target: H160,
-        #[serde_as(as = "DecimalU256")]
+        #[serde_as(as = "HexOrDecimalU256")]
         pub value: U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
