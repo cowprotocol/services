@@ -58,7 +58,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 name: config.name.into(),
                 slippage: solver::Slippage {
                     relative: config.relative_slippage,
-                    absolute: config.absolute_slippage.map(Into::into),
+                    absolute: config.absolute_slippage.map(eth::Ether),
                 },
                 liquidity: if config.skip_liquidity {
                     solver::Liquidity::Skip
