@@ -62,6 +62,7 @@ dependencies = [
  "prometheus",
  "reqwest",
  "serde",
+ "serde_with",
  "shared",
  "tokio",
  "tracing",

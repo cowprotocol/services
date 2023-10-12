@@ -4,7 +4,7 @@ use {
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
     ethrpc::current_block::CurrentBlockStream,
-    number::u256_decimal,
+    number::serialization::HexOrDecimalU256,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
@@ -241,9 +241,9 @@ impl<'de> Deserialize<'de> for PriceResponse {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
-            #[serde(with = "u256_decimal")]
+            #[serde_as(as = "HexOrDecimalU256")]
             src_amount: U256,
-            #[serde(with = "u256_decimal")]
+            #[serde_as(as = "HexOrDecimalU256")]
             dest_amount: U256,
             token_transfer_proxy: H160,
             #[serde_as(as = "DisplayFromStr")]
@@ -290,6 +290,7 @@ pub struct TransactionBuilderQuery {
 }
 
 /// The amounts for buying and selling.
+#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TradeAmount {
@@ -298,7 +299,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Sell {
         /// The source amount
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         src_amount: U256,
         /// The maximum slippage in BPS.
         slippage: u32,
@@ -308,7 +309,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Buy {
         /// The destination amount
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         dest_amount: U256,
         /// The maximum slippage in BPS.
         slippage: u32,
@@ -318,9 +319,9 @@ pub enum TradeAmount {
     /// on the initial `/price` query and the included `price_route`.
     #[serde(rename_all = "camelCase")]
     Exact {
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         src_amount: U256,
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         dest_amount: U256,
     },
 }
@@ -354,6 +355,7 @@ impl TransactionBuilderQueryWithPartner<'_> {
 }
 
 /// Paraswap transaction builder response.
+#[serde_as]
 #[derive(Clone, Derivative, Deserialize, Default)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -365,14 +367,14 @@ pub struct TransactionBuilderResponse {
     /// the chain for which this transaction is valid
     pub chain_id: u64,
     /// the native token value to be set on the transaction
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     /// the calldata for the transaction
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
     /// the suggested gas price
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub gas_price: U256,
 }
 

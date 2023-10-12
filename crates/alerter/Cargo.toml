@@ -15,6 +15,7 @@ number = { path = "../number" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
+serde_with = { workspace = true }
 serde = { workspace = true }
 shared = { path = "../shared" }
 tokio = { workspace = true, features = ["macros", "time", "rt-multi-thread"] }
