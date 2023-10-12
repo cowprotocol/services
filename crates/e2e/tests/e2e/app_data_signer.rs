@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{safe::Safe, *},
+        tx,
+    },
     ethcontract::{prelude::U256, H160},
     model::{
         app_data::AppDataHash,

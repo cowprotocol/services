@@ -62,6 +62,7 @@ dependencies = [
  "prometheus",
  "reqwest",
  "serde",
+ "serde_with",
  "shared",
  "tokio",
  "tracing",
@@ -3034,7 +3035,9 @@ name = "observe"
 version = "0.1.0"
 dependencies = [
  "atty",
+ "futures",
  "once_cell",
+ "pin-project-lite",
  "prometheus",
  "prometheus-metric-storage",
  "time",

@@ -17,7 +17,7 @@ use {
     itertools::{Either, Itertools},
     model::TokenPair,
     num::{rational::Ratio, BigInt, Zero},
-    number::u256_decimal,
+    number::serialization::HexOrDecimalU256,
     reqwest::Client,
     serde::Serialize,
     serde_with::{serde_as, DisplayFromStr},
@@ -53,9 +53,9 @@ pub struct PoolInfo {
 #[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolState {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub liquidity: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,
@@ -67,9 +67,10 @@ pub struct PoolState {
 }
 
 /// Pool stats in a format prepared for solvers
+#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct PoolStats {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     #[serde(rename = "mean")]
     pub mean_gas: U256,
 }

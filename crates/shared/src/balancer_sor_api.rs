@@ -9,7 +9,7 @@ use {
     ethcontract::{H160, H256, U256},
     model::order::OrderKind,
     num::BigInt,
-    number::u256_decimal,
+    number::serialization::HexOrDecimalU256,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
     serde_with::{serde_as, DisplayFromStr},
@@ -83,6 +83,7 @@ impl BalancerSorApi for DefaultBalancerSorApi {
 }
 
 /// An SOR query.
+#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Query {
@@ -96,11 +97,11 @@ pub struct Query {
     ///
     /// For sell orders this is the exact amount of sell token to trade, for buy
     /// orders, this is the amount of buy tokens to buy.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
     /// The current gas price estimate used for determining how the trading
     /// route should be split.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub gas_price: U256,
 }
 
@@ -116,7 +117,7 @@ pub struct Quote {
     /// The swapped token amount.
     ///
     /// In sell token for sell orders or buy token for buy orders.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub swap_amount: U256,
     /// The real swapped amount for certain kinds of wrapped tokens.
     ///
@@ -126,17 +127,17 @@ pub struct Quote {
     ///
     /// This amount is useful for informational purposes and not intended to be
     /// used when calling `singleSwap` an `batchSwap` on the Vault.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub swap_amount_for_swaps: U256,
     /// The returned token amount.
     ///
     /// In buy token for sell orders or sell token for buy orders.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub return_amount: U256,
     /// The real returned amount.
     ///
     /// See `swap_amount_for_swap` for more details.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub return_amount_from_swaps: U256,
     /// The received considering fees.
     ///
@@ -157,6 +158,7 @@ pub struct Quote {
 }
 
 /// A swap included in a larger batched swap.
+#[serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Swap {
@@ -169,7 +171,7 @@ pub struct Swap {
     #[serde(with = "value_or_string")]
     pub asset_out_index: usize,
     /// The amount to swap.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub amount: U256,
     /// Additional user data to pass to the pool.
     #[serde(with = "model::bytes_hex")]
