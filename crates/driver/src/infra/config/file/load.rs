@@ -51,6 +51,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .unwrap_or_else(|_| panic!("Unable to load KMS account {:?}", key_id));
                     ethcontract::Account::Kms(account, None)
                 }
+                file::Account::Address(address) => ethcontract::Account::Local(address, None),
             };
             solver::Config {
                 endpoint: config.endpoint,
@@ -58,6 +59,11 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 slippage: solver::Slippage {
                     relative: config.relative_slippage,
                     absolute: config.absolute_slippage.map(Into::into),
+                },
+                liquidity: if config.skip_liquidity {
+                    solver::Liquidity::Skip
+                } else {
+                    solver::Liquidity::Fetch
                 },
                 account,
             }
@@ -232,18 +238,26 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 },
             })
             .collect(),
-        tenderly: config.tenderly.map(|config| simulator::tenderly::Config {
-            url: config.url,
-            api_key: config.api_key,
-            user: config.user,
-            project: config.project,
-            save: config.save,
-            save_if_fails: config.save_if_fails,
-        }),
+        simulator: match (config.tenderly, config.enso) {
+            (Some(config), None) => {
+                Some(simulator::Config::Tenderly(simulator::tenderly::Config {
+                    url: config.url,
+                    api_key: config.api_key,
+                    user: config.user,
+                    project: config.project,
+                    save: config.save,
+                    save_if_fails: config.save_if_fails,
+                }))
+            }
+            (None, Some(config)) => Some(simulator::Config::Enso(simulator::enso::Config {
+                url: config.url,
+            })),
+            (None, None) => None,
+            (Some(_), Some(_)) => panic!("Cannot configure both Tenderly and Enso"),
+        },
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
             weth: config.contracts.weth.map(Into::into),
-            ethflow: config.contracts.ethflow.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

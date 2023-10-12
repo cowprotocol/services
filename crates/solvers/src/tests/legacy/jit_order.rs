@@ -127,6 +127,9 @@ async fn test() {
                     }
                 ],
                 "interactions": [],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );

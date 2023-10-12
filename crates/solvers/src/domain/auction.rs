@@ -1,14 +1,17 @@
 use {
     crate::domain::{eth, liquidity, order},
     ethereum_types::U256,
-    std::{collections::HashMap, time::Duration},
+    std::{
+        collections::HashMap,
+        fmt::{self, Display, Formatter},
+        time::Duration,
+    },
 };
 
 /// The auction that the solvers need to find solutions to.
 #[derive(Debug)]
 pub struct Auction {
-    /// [`None`] if the auction applies to a quote.
-    pub id: Option<Id>,
+    pub id: Id,
     pub tokens: Tokens,
     pub orders: Vec<order::Order>,
     pub liquidity: Vec<liquidity::Liquidity>,
@@ -35,8 +38,24 @@ impl Tokens {
 }
 
 /// The ID of an auction.
-#[derive(Clone, Debug)]
-pub struct Id(pub i64);
+#[derive(Clone, Copy, Debug)]
+pub enum Id {
+    /// An auction as part of an official solver competition, that could
+    /// translate to an on-chain settlement transaction.
+    Solve(i64),
+    /// An auction that is used for computing a price quote and will not get
+    /// executed on chain.
+    Quote,
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Id::Solve(id) => write!(f, "{id}"),
+            Id::Quote => f.write_str("quote"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Token {

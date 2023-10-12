@@ -12,7 +12,9 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        protocol,
         run_loop::RunLoop,
+        shadow,
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
@@ -37,7 +39,7 @@ use {
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
         oneinch_api::OneInchClientImpl,
-        order_quoting::OrderQuoter,
+        order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
         signature_validator,
@@ -82,11 +84,18 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
-    run(args).await;
+
+    if args.shadow.is_some() {
+        shadow_mode(args).await;
+    } else {
+        run(args).await;
+    }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn run(args: Arguments) {
+    assert!(args.shadow.is_none(), "cannot run in shadow mode");
+
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     tokio::task::spawn(
         crate::database::database_metrics(db.clone())
@@ -172,22 +181,22 @@ pub async fn run(args: Arguments) {
         .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
+        &web3,
         signature_validator::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
         },
-        web3.clone(),
     );
 
     let balance_fetcher = account_balances::cached(
+        &web3,
         account_balances::Contracts {
             chain_id,
             settlement: settlement_contract.address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        web3.clone(),
         current_block_stream.clone(),
     );
 
@@ -290,7 +299,7 @@ pub async fn run(args: Arguments) {
         .expect("failed to create pool cache"),
     );
     let block_retriever = args.shared.current_block.retriever(web3.clone());
-    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
+    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Arc::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
     let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
@@ -342,6 +351,7 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
+    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
             &http_factory,
@@ -350,6 +360,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
+            current_block_stream.clone(),
         )
         .unwrap(),
     );
@@ -357,6 +368,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
+        current_block_stream.clone(),
     )
     .map(Arc::new);
 
@@ -376,6 +388,7 @@ pub async fn run(args: Arguments) {
                 .await
                 .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
+            block_stream: current_block_stream.clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
@@ -399,11 +412,15 @@ pub async fn run(args: Arguments) {
         ))
         .unwrap();
     let native_price_estimator = price_estimator_factory
-        .native_price_estimator(&PriceEstimatorSource::for_args(
+        .native_price_estimator(
             args.native_price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            args.native_price_estimation_results_required,
+        )
         .unwrap();
 
     let skip_event_sync_start = if args.skip_event_sync {
@@ -411,7 +428,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let block_retriever = args.shared.current_block.retriever(web3.clone());
     let event_updater = Arc::new(EventUpdater::new(
         GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
@@ -450,10 +466,20 @@ pub async fn run(args: Arguments) {
         gas_price_estimator,
         fee_subsidy,
         Arc::new(db.clone()),
-        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+        order_quoting::Validity {
+            eip1271_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+            )
             .unwrap(),
-        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            presign_onchain_quote: chrono::Duration::from_std(
+                args.order_quoting.presign_onchain_quote_validity_seconds,
+            )
             .unwrap(),
+            standard_quote: chrono::Duration::from_std(
+                args.order_quoting.standard_offchain_quote_validity_seconds,
+            )
+            .unwrap(),
+        },
     ));
 
     if let Some(ethflow_contract) = args.ethflow_contract {
@@ -582,6 +608,7 @@ pub async fn run(args: Arguments) {
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+            score_cap: args.score_cap,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -589,4 +616,54 @@ pub async fn run(args: Arguments) {
         let result = serve_metrics.await;
         unreachable!("serve_metrics exited {result:?}");
     }
+}
+
+async fn shadow_mode(args: Arguments) -> ! {
+    let http_factory = HttpClientFactory::new(&args.http_client);
+
+    let orderbook = protocol::Orderbook::new(
+        http_factory.create(),
+        args.shadow.expect("missing shadow mode configuration"),
+    );
+
+    if args.drivers.is_empty() {
+        panic!("shadow mode is enabled but no drivers are configured");
+    }
+    let drivers = args.drivers.into_iter().map(Driver::new).collect();
+
+    let trusted_tokens = {
+        let web3 = shared::ethrpc::web3(
+            &args.shared.ethrpc,
+            &http_factory,
+            &args.shared.node_url,
+            "base",
+        );
+
+        let chain_id = web3
+            .eth()
+            .chain_id()
+            .await
+            .expect("Could not get chainId")
+            .as_u64();
+        if let Some(expected_chain_id) = args.shared.chain_id {
+            assert_eq!(
+                chain_id, expected_chain_id,
+                "connected to node with incorrect chain ID",
+            );
+        }
+
+        AutoUpdatingTokenList::from_configuration(TokenListConfiguration {
+            url: args.trusted_tokens_url,
+            update_interval: args.trusted_tokens_update_interval,
+            chain_id,
+            client: http_factory.create(),
+            hardcoded: args.trusted_tokens.unwrap_or_default(),
+        })
+        .await
+    };
+
+    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens, args.score_cap);
+    shadow.run_forever().await;
+
+    unreachable!("shadow run loop exited");
 }

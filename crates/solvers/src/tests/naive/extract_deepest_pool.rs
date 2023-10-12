@@ -114,7 +114,10 @@ async fn test() {
                         "inputAmount": "100",
                         "outputAmount": "99"
                     },
-                ]
+                ],
+                "score": {
+                    "riskadjusted": 1.0
+                }
             }]
         }),
     );

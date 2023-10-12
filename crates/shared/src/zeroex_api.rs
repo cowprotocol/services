@@ -14,7 +14,8 @@ use {
     chrono::{DateTime, NaiveDateTime, TimeZone, Utc},
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
-    number::u256_decimal,
+    ethrpc::current_block::{BlockInfo, CurrentBlockStream},
+    number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Client,
@@ -29,6 +30,7 @@ use {
         fmt::{self, Display, Formatter},
     },
     thiserror::Error,
+    tokio::sync::watch,
 };
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -231,7 +233,7 @@ pub struct Order {
     pub pool: H256,
     /// A value that can be used to guarantee order uniqueness. Typically it is
     /// set to a random number.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub salt: U256,
     /// It allows the maker to enforce that the order flow through some
     /// additional logic before it can be filled (e.g., a KYC whitelist).
@@ -297,9 +299,9 @@ pub struct OrdersResponse {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceResponse {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub allowance_target: H160,
     #[serde_as(as = "DisplayFromStr")]
@@ -309,6 +311,7 @@ pub struct PriceResponse {
 }
 
 /// A Ox API `swap` response.
+#[serde_as]
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -319,7 +322,7 @@ pub struct SwapResponse {
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
 }
 
@@ -336,7 +339,11 @@ pub trait ZeroExApi: Send + Sync {
     /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        set_block_retriever_header: bool,
+    ) -> Result<SwapResponse, ZeroExResponseError>;
 
     /// Pricing for RFQT liquidity.
     /// - https://0x.org/docs/guides/rfqt-in-the-0x-api
@@ -355,6 +362,7 @@ pub trait ZeroExApi: Send + Sync {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
+    block_stream: CurrentBlockStream,
 }
 
 impl DefaultZeroExApi {
@@ -370,6 +378,7 @@ impl DefaultZeroExApi {
         http_factory: &HttpClientFactory,
         base_url: impl IntoUrl,
         api_key: Option<String>,
+        block_stream: CurrentBlockStream,
     ) -> Result<Self> {
         let client = match api_key {
             Some(api_key) => {
@@ -387,6 +396,7 @@ impl DefaultZeroExApi {
         Ok(Self {
             client,
             base_url: base_url.into_url().context("zeroex api url")?,
+            block_stream,
         })
     }
 
@@ -396,10 +406,12 @@ impl DefaultZeroExApi {
     /// default URL) and `ZEROEX_API_KEY` (falling back to no API key) from the
     /// local environment when creating the API client.
     pub fn test() -> Self {
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         Self::new(
             &HttpClientFactory::default(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
             std::env::var("ZEROEX_API_KEY").ok(),
+            block_stream,
         )
         .unwrap()
     }
@@ -415,7 +427,7 @@ impl DefaultZeroExApi {
         url.query_pairs_mut()
             .append_pair("page", &page.to_string())
             .append_pair("perPage", &results_per_page.to_string());
-        self.request(url).await
+        self.request(url, false).await
     }
 }
 
@@ -454,13 +466,20 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
-        self.request(query.format_url(&self.base_url, "quote"))
-            .await
+    async fn get_swap(
+        &self,
+        query: SwapQuery,
+        set_current_block_header: bool,
+    ) -> Result<SwapResponse, ZeroExResponseError> {
+        self.request(
+            query.format_url(&self.base_url, "quote"),
+            set_current_block_header,
+        )
+        .await
     }
 
     async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
-        self.request(query.format_url(&self.base_url, "price"))
+        self.request(query.format_url(&self.base_url, "price"), false)
             .await
     }
 
@@ -511,12 +530,20 @@ impl DefaultZeroExApi {
     async fn request<T: for<'a> serde::Deserialize<'a>>(
         &self,
         url: Url,
+        set_current_block_header: bool,
     ) -> Result<T, ZeroExResponseError> {
         tracing::trace!("Querying 0x API: {}", url);
 
         let path = url.path().to_owned();
         let result = async move {
-            let request = self.client.get(url.clone());
+            let mut request = self.client.get(url.clone());
+            if set_current_block_header {
+                request = request.header(
+                    "X-Current-Block-Hash",
+                    self.block_stream.borrow().hash.to_string(),
+                );
+            };
+
             let response = request.send().await.map_err(ZeroExResponseError::Send)?;
 
             let status = response.status();
@@ -590,7 +617,7 @@ mod tests {
             ..Default::default()
         };
 
-        let price_response = zeroex_client.get_swap(swap_query).await;
+        let price_response = zeroex_client.get_swap(swap_query, false).await;
         dbg!(&price_response);
         assert!(price_response.is_ok());
     }
@@ -598,10 +625,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e_private() {
-        let url = std::env::var("ZEROEX_URL").unwrap();
-        let api_key = std::env::var("ZEROEX_API_KEY").unwrap();
-        let zeroex_client =
-            DefaultZeroExApi::new(&HttpClientFactory::default(), url, Some(api_key)).unwrap();
+        let zeroex_client = DefaultZeroExApi::test();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
@@ -613,7 +637,7 @@ mod tests {
         let price_response = zeroex_client.get_price(swap_query.clone()).await;
         dbg!(&price_response);
         assert!(price_response.is_ok());
-        let swap_response = zeroex_client.get_swap(swap_query).await;
+        let swap_response = zeroex_client.get_swap(swap_query, false).await;
         dbg!(&swap_response);
         assert!(swap_response.is_ok());
     }
@@ -630,15 +654,18 @@ mod tests {
             ..Default::default()
         };
 
-        let swap = zeroex.get_swap(query.clone()).await;
+        let swap = zeroex.get_swap(query.clone(), false).await;
         dbg!(&swap);
         assert!(swap.is_ok());
 
         let swap = zeroex
-            .get_swap(SwapQuery {
-                excluded_sources: vec!["Balancer_V2".to_string()],
-                ..query
-            })
+            .get_swap(
+                SwapQuery {
+                    excluded_sources: vec!["Balancer_V2".to_string()],
+                    ..query
+                },
+                false,
+            )
             .await;
         dbg!(&swap);
         assert!(swap.is_ok());

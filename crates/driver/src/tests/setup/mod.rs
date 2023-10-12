@@ -44,6 +44,15 @@ pub struct Asset {
     amount: eth::U256,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Partial {
+    #[default]
+    No,
+    Yes {
+        executed: eth::U256,
+    },
+}
+
 /// Set up a difference between the placed order amounts and the amounts
 /// executed by the solver. This is useful for testing e.g. asset flow
 /// verification. See [`crate::domain::competition::solution::Settlement`].
@@ -76,6 +85,19 @@ impl ExecutionDiff {
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Score {
+    Solver(eth::U256),
+    RiskAdjusted(f64),
+}
+
+impl Default for Score {
+    fn default() -> Self {
+        Self::RiskAdjusted(1.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Order {
     pub name: &'static str,
@@ -86,7 +108,7 @@ pub struct Order {
 
     pub internalize: bool,
     pub side: order::Side,
-    pub partial: order::Partial,
+    pub partial: Partial,
     pub valid_for: util::Timestamp,
     pub kind: order::Kind,
 
@@ -228,7 +250,7 @@ impl Default for Order {
             buy_token: Default::default(),
             internalize: Default::default(),
             side: order::Side::Sell,
-            partial: order::Partial::No,
+            partial: Default::default(),
             valid_for: 100.into(),
             kind: order::Kind::Market,
             user_fee: Default::default(),
@@ -263,6 +285,7 @@ pub fn setup() -> Setup {
         quote: Default::default(),
         fund_solver: true,
         enable_simulation: true,
+        settlement_address: Default::default(),
     }
 }
 
@@ -280,6 +303,8 @@ pub struct Setup {
     fund_solver: bool,
     /// Should simulation be enabled? True by default.
     enable_simulation: bool,
+    /// Ensure the settlement contract is deployed on a specific address?
+    settlement_address: Option<eth::H160>,
 }
 
 /// The validity of a solution.
@@ -300,7 +325,7 @@ pub enum Calldata {
 pub struct Solution {
     pub calldata: Calldata,
     pub orders: Vec<&'static str>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 impl Solution {
@@ -325,9 +350,9 @@ impl Solution {
         }
     }
 
-    /// Set the solution risk.
-    pub fn risk(self, risk: eth::U256) -> Self {
-        Self { risk, ..self }
+    /// Set the solution score to the specified value.
+    pub fn score(self, score: Score) -> Self {
+        Self { score, ..self }
     }
 }
 
@@ -338,7 +363,7 @@ impl Default for Solution {
                 additional_bytes: 0,
             },
             orders: Default::default(),
-            risk: Default::default(),
+            score: Default::default(),
         }
     }
 }
@@ -371,7 +396,7 @@ pub fn ab_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["A-B order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -403,7 +428,7 @@ pub fn cd_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["C-D order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -434,7 +459,7 @@ pub fn eth_solution() -> Solution {
             additional_bytes: 0,
         },
         orders: vec!["ETH order"],
-        risk: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -504,6 +529,12 @@ impl Setup {
         self
     }
 
+    /// Ensure that the settlement contract is deployed to a specific address.
+    pub fn settlement_address(mut self, address: &str) -> Self {
+        self.settlement_address = Some(address.parse().unwrap());
+        self
+    }
+
     /// Create the test: set up onchain contracts and pools, start a mock HTTP
     /// server for the solver and start the HTTP server for the driver.
     pub async fn done(self) -> Test {
@@ -553,6 +584,7 @@ impl Setup {
             solver_address,
             solver_secret_key,
             fund_solver: self.fund_solver,
+            settlement_address: self.settlement_address,
         })
         .await;
         let mut solutions = Vec::new();
@@ -659,6 +691,7 @@ impl Test {
                 self.driver.addr,
                 solver::NAME
             ))
+            .json(&driver::reveal_req())
             .send()
             .await
             .unwrap();
@@ -703,23 +736,31 @@ impl Test {
     /// Call the /settle endpoint.
     pub async fn settle(&self) -> Settle {
         let old_balances = self.balances().await;
-        let res = blockchain::wait_for(
-            &self.blockchain.web3,
-            self.client
-                .post(format!(
-                    "http://{}/{}/settle",
-                    self.driver.addr,
-                    solver::NAME
-                ))
-                .send(),
-        )
-        .await
-        .unwrap();
+        let old_block = self
+            .blockchain
+            .web3
+            .eth()
+            .block_number()
+            .await
+            .unwrap()
+            .as_u64();
+        let res = self
+            .client
+            .post(format!(
+                "http://{}/{}/settle",
+                self.driver.addr,
+                solver::NAME
+            ))
+            .json(&driver::settle_req())
+            .send()
+            .await
+            .unwrap();
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /settle");
         Settle {
             old_balances,
+            old_block,
             status,
             test: self,
             body,
@@ -764,36 +805,46 @@ pub struct Solve {
     body: String,
 }
 
+pub struct SolveOk {
+    body: String,
+}
+
 impl Solve {
     /// Expect the /solve endpoint to have returned a 200 OK response.
     pub fn ok(self) -> SolveOk {
         assert_eq!(self.status, hyper::StatusCode::OK);
         SolveOk { body: self.body }
     }
-
-    /// Expect the /solve endpoint to return a 400 BAD REQUEST response.
-    pub fn err(self) -> SolveErr {
-        assert_eq!(self.status, hyper::StatusCode::BAD_REQUEST);
-        SolveErr { body: self.body }
-    }
-}
-
-pub struct SolveOk {
-    body: String,
 }
 
 impl SolveOk {
+    fn solutions(&self) -> Vec<serde_json::Value> {
+        #[derive(serde::Deserialize)]
+        struct Body {
+            solutions: Vec<serde_json::Value>,
+        }
+        serde_json::from_str::<Body>(&self.body).unwrap().solutions
+    }
+
+    /// Extracts the score from the response. Since response can contain
+    /// multiple solutions, it takes the score from the first solution.
+    pub fn score(&self) -> eth::U256 {
+        let solutions = self.solutions();
+        assert_eq!(solutions.len(), 1);
+        let solution = solutions[0].clone();
+        assert!(solution.is_object());
+        assert_eq!(solution.as_object().unwrap().len(), 3);
+        assert!(solution.get("score").is_some());
+        let score = solution.get("score").unwrap().as_str().unwrap();
+        eth::U256::from_dec_str(score).unwrap()
+    }
+
     /// Ensure that the score in the response is within a certain range. The
     /// reason why this is a range is because small timing differences in
     /// the test can lead to the settlement using slightly different amounts
     /// of gas, which in turn leads to different scores.
-    pub fn score(self, min: eth::U256, max: eth::U256) -> Self {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("score").is_some());
-        let score = result.get("score").unwrap().as_str().unwrap();
-        let score = eth::U256::from_dec_str(score).unwrap();
+    pub fn score_in_range(self, min: eth::U256, max: eth::U256) -> Self {
+        let score = self.score();
         assert!(score >= min, "score less than min {score} < {min}");
         assert!(score <= max, "score more than max {score} > {max}");
         self
@@ -801,24 +852,12 @@ impl SolveOk {
 
     /// Ensure that the score is within the default expected range.
     pub fn default_score(self) -> Self {
-        self.score(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
+        self.score_in_range(DEFAULT_SCORE_MIN.into(), DEFAULT_SCORE_MAX.into())
     }
-}
 
-pub struct SolveErr {
-    body: String,
-}
-
-impl SolveErr {
-    /// Check the kind field in the error response.
-    pub fn kind(self, expected_kind: &str) {
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("kind").is_some());
-        assert!(result.get("description").is_some());
-        let kind = result.get("kind").unwrap().as_str().unwrap();
-        assert_eq!(kind, expected_kind);
+    /// Ensures that `/solve` returns no solutions.
+    pub fn empty(self) {
+        assert!(self.solutions().is_empty());
     }
 }
 
@@ -966,6 +1005,7 @@ pub enum Balance {
 /// A /settle response.
 pub struct Settle<'a> {
     old_balances: HashMap<&'static str, eth::U256>,
+    old_block: u64,
     status: StatusCode,
     test: &'a Test,
     body: String,
@@ -974,6 +1014,10 @@ pub struct Settle<'a> {
 pub struct SettleOk<'a> {
     test: &'a Test,
     old_balances: HashMap<&'static str, eth::U256>,
+}
+
+pub struct SettleErr {
+    body: String,
 }
 
 impl<'a> Settle<'a> {
@@ -1000,6 +1044,9 @@ impl<'a> Settle<'a> {
             .as_str()
             .unwrap()
             .is_empty());
+
+        // Wait for the new block with the settlement to be mined.
+        blockchain::wait_for_block(&self.test.blockchain.web3, self.old_block + 1).await;
 
         // Ensure that the solution ID is included in the settlement.
         let tx = self
@@ -1037,6 +1084,12 @@ impl<'a> Settle<'a> {
             test: self.test,
             old_balances: self.old_balances,
         }
+    }
+
+    /// Expect the /settle endpoint to return a 400 BAD REQUEST response.
+    pub fn err(self) -> SettleErr {
+        assert_eq!(self.status, hyper::StatusCode::BAD_REQUEST);
+        SettleErr { body: self.body }
     }
 }
 
@@ -1078,5 +1131,18 @@ impl<'a> SettleOk<'a> {
             .await
             .balance("ETH", Balance::Greater)
             .await
+    }
+}
+
+impl SettleErr {
+    /// Check the kind field in the error response.
+    pub fn kind(self, expected_kind: &str) {
+        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
+        assert!(result.is_object());
+        assert_eq!(result.as_object().unwrap().len(), 2);
+        assert!(result.get("kind").is_some());
+        assert!(result.get("description").is_some());
+        let kind = result.get("kind").unwrap().as_str().unwrap();
+        assert_eq!(kind, expected_kind);
     }
 }

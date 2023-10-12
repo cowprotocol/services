@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::{display_option, CodeSimulatorKind},
+        arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
         rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
@@ -8,6 +8,7 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, U256},
     futures::future::BoxFuture,
+    itertools::Itertools,
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
@@ -65,16 +66,17 @@ impl Default for PriceEstimators {
 
 impl Display for PriceEstimators {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut it = self.as_slice().iter();
-        if let Some(PriceEstimator { kind, address }) = it.next() {
-            write!(f, "{kind:?}|{address:?}")?;
-            for PriceEstimator { kind, address } in it {
-                write!(f, ",{kind:?}|{address:?}")?;
-            }
-            Ok(())
-        } else {
-            f.write_str("None")
+        if self.0.is_empty() {
+            return f.write_str("None");
         }
+
+        let formatter = self
+            .as_slice()
+            .iter()
+            .format_with(",", |PriceEstimator { kind, address }, f| {
+                f(&format_args!("{kind:?}|{address:?}"))
+            });
+        write!(f, "{}", formatter)
     }
 }
 
@@ -135,6 +137,68 @@ impl FromStr for PriceEstimator {
             }
         };
         Ok(PriceEstimator { kind, address })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NativePriceEstimators(Vec<Vec<NativePriceEstimator>>);
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub enum NativePriceEstimator {
+    GenericPriceEstimator(String),
+    OneInchSpotPriceApi,
+}
+
+impl NativePriceEstimators {
+    pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
+        &self.0
+    }
+}
+
+impl Default for NativePriceEstimators {
+    fn default() -> Self {
+        Self(vec![vec![NativePriceEstimator::GenericPriceEstimator(
+            "Baseline".into(),
+        )]])
+    }
+}
+
+impl Display for NativePriceEstimators {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let formatter = self
+            .as_slice()
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+            })
+            .format(";");
+        write!(f, "{}", formatter)
+    }
+}
+
+impl From<&str> for NativePriceEstimators {
+    fn from(s: &str) -> Self {
+        Self(
+            s.split(';')
+                .map(|sub_list| {
+                    sub_list
+                        .split(',')
+                        .map(NativePriceEstimator::from)
+                        .collect::<Vec<NativePriceEstimator>>()
+                })
+                .collect::<Vec<Vec<NativePriceEstimator>>>(),
+        )
+    }
+}
+
+impl From<&str> for NativePriceEstimator {
+    fn from(s: &str) -> Self {
+        match s {
+            "OneInchSpotPriceApi" => NativePriceEstimator::OneInchSpotPriceApi,
+            estimator => NativePriceEstimator::GenericPriceEstimator(estimator.into()),
+        }
     }
 }
 
@@ -202,22 +266,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub quasimodo_solver_url: Option<Url>,
 
-    /// The API endpoint to call the yearn solver for price estimation
-    #[clap(long, env)]
-    pub yearn_solver_url: Option<Url>,
-
-    /// The API path to use for solving.
-    #[clap(long, env, default_value = "solve")]
-    pub yearn_solver_path: String,
-
-    /// The API endpoint to call the Raven solver for price estimation
-    #[clap(long, env)]
-    pub raven_solver_url: Option<Url>,
-
-    /// The API path to use for solving.
-    #[clap(long, env, default_value = "solve")]
-    pub raven_solver_path: String,
-
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
@@ -242,23 +290,18 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub tenderly_save_failed_trade_simulations: bool,
 
-    /// Controls if we try to predict the winning price estimator for a given
-    /// trade and enables metrics accordingly.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_quote_predictions: bool,
-
-    /// Determines the likelihood that the program returns the best possible
-    /// price for a given quote request. If the value is <1 the program is
-    /// allowed to not send requests to price estimators that historically
-    /// performed poorly for a given trade. The smaller the value the
-    /// more price estimators will not be asked for a quote.
-    #[clap(long, env, default_value = "1")]
-    pub quote_prediction_confidence: f64,
-
     /// Use 0x estimator for only buy orders. This flag can be enabled to reduce
     /// request pressure on the 0x API.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_only_estimate_buy_queries: bool,
+
+    /// The API key for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_key: Option<String>,
+
+    /// The base URL for the 1Inch spot API.
+    #[clap(long, env)]
+    pub one_inch_spot_price_api_url: Option<Url>,
 }
 
 impl Display for Arguments {
@@ -299,10 +342,6 @@ impl Display for Arguments {
             &self.amount_to_estimate_prices_with,
         )?;
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
-        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
-        writeln!(f, "yearn_solver_path: {}", self.yearn_solver_path)?;
-        display_option(f, "raven_solver_url", &self.raven_solver_url)?;
-        writeln!(f, "raven_solver_path: {}", self.raven_solver_path)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,
@@ -324,13 +363,13 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "enable_quote_predictions: {:?}",
-            self.enable_quote_predictions
-        )?;
-        writeln!(
-            f,
             "zeroex_only_estimate_buy_queries: {:?}",
             self.zeroex_only_estimate_buy_queries
+        )?;
+        display_secret_option(
+            f,
+            "one_inch_spot_price_api_key: {:?}",
+            &self.one_inch_spot_price_api_key,
         )?;
 
         Ok(())
@@ -384,9 +423,11 @@ pub struct Query {
     /// buy_token.
     pub in_amount: NonZeroU256,
     pub kind: OrderKind,
-    /// If this is `Some` the quotes are expected to pass simulations using the
-    /// contained parameters.
     pub verification: Option<Verification>,
+    /// Signals whether responses from that were valid on previous blocks can be
+    /// used to answer the query.
+    #[serde(skip_serializing)]
+    pub block_dependent: bool,
 }
 
 /// Conditions under which a given price estimate needs to work in order to be

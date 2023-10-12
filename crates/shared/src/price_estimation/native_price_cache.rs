@@ -67,13 +67,13 @@ struct CachedResult {
 impl Inner {
     // Returns a single cached price and updates its `requested_at` field.
     fn get_cached_price(
-        token: &H160,
+        token: H160,
         now: Instant,
         cache: &mut MutexGuard<HashMap<H160, CachedResult>>,
         max_age: &Duration,
         create_missing_entry: bool,
     ) -> Option<CacheEntry> {
-        match cache.entry(*token) {
+        match cache.entry(token) {
             Entry::Occupied(mut entry) => {
                 let entry = entry.get_mut();
                 entry.requested_at = now;
@@ -117,13 +117,13 @@ impl Inner {
                     // check if price is cached by now
                     let now = Instant::now();
                     let mut cache = self.cache.lock().unwrap();
-                    let price = Self::get_cached_price(token, now, &mut cache, &max_age, false);
+                    let price = Self::get_cached_price(*token, now, &mut cache, &max_age, false);
                     if let Some(price) = price {
                         return (index, price);
                     }
                 }
 
-                let result = self.estimator.estimate_native_price(token).await;
+                let result = self.estimator.estimate_native_price(*token).await;
 
                 // update price in cache
                 if should_cache(&result) {
@@ -276,7 +276,7 @@ impl CachingNativePriceEstimator {
         let mut cache = self.0.cache.lock().unwrap();
         let mut results = HashMap::default();
         for token in tokens {
-            let cached = Inner::get_cached_price(token, now, &mut cache, &self.0.max_age, true);
+            let cached = Inner::get_cached_price(*token, now, &mut cache, &self.0.max_age, true);
             let label = if cached.is_some() { "hits" } else { "misses" };
             Metrics::get()
                 .native_price_cache_access
@@ -295,11 +295,11 @@ impl CachingNativePriceEstimator {
 }
 
 impl NativePriceEstimating for CachingNativePriceEstimator {
-    fn estimate_native_price<'a>(
-        &'a self,
-        token: &'a H160,
+    fn estimate_native_price(
+        &self,
+        token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        async {
+        async move {
             let cached = {
                 let now = Instant::now();
                 let mut cache = self.0.cache.lock().unwrap();
@@ -317,7 +317,7 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             }
 
             self.0
-                .estimate_prices_and_update_cache(std::slice::from_ref(token), self.0.max_age, 1)
+                .estimate_prices_and_update_cache(&[token], self.0.max_age, 1)
                 .next()
                 .await
                 .unwrap()
@@ -361,7 +361,7 @@ mod tests {
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(&token(0)).await;
+            let result = estimator.estimate_native_price(token(0)).await;
             assert!(result.as_ref().unwrap().to_i64().unwrap() == 1);
         }
     }
@@ -384,7 +384,7 @@ mod tests {
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(&token(0)).await;
+            let result = estimator.estimate_native_price(token(0)).await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::NoLiquidity
@@ -410,7 +410,7 @@ mod tests {
         );
 
         for _ in 0..10 {
-            let result = estimator.estimate_native_price(&token(0)).await;
+            let result = estimator.estimate_native_price(token(0)).await;
             assert!(matches!(
                 result.as_ref().unwrap_err(),
                 PriceEstimationError::RateLimited
@@ -426,7 +426,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(1)
             .returning(|passed_token| {
-                assert_eq!(passed_token, &token(0));
+                assert_eq!(passed_token, token(0));
                 async { Ok(1.0) }.boxed()
             });
         // second request from user
@@ -434,7 +434,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(1)
             .returning(|passed_token| {
-                assert_eq!(passed_token, &token(1));
+                assert_eq!(passed_token, token(1));
                 async { Ok(2.0) }.boxed()
             });
         // maintenance task updates n=1 outdated prices
@@ -442,7 +442,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(1)
             .returning(|passed_token| {
-                assert_eq!(passed_token, &token(1));
+                assert_eq!(passed_token, token(1));
                 async { Ok(4.0) }.boxed()
             });
         // user requested something which has been skipped by the maintenance task
@@ -450,7 +450,7 @@ mod tests {
             .expect_estimate_native_price()
             .times(1)
             .returning(|passed_token| {
-                assert_eq!(passed_token, &token(0));
+                assert_eq!(passed_token, token(0));
                 async { Ok(3.0) }.boxed()
             });
 
@@ -464,18 +464,18 @@ mod tests {
         );
 
         // fill cache with 2 different queries
-        let result = estimator.estimate_native_price(&token(0)).await;
+        let result = estimator.estimate_native_price(token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 1);
-        let result = estimator.estimate_native_price(&token(1)).await;
+        let result = estimator.estimate_native_price(token(1)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 2);
 
         // wait for maintenance cycle
         tokio::time::sleep(Duration::from_millis(60)).await;
 
-        let result = estimator.estimate_native_price(&token(0)).await;
+        let result = estimator.estimate_native_price(token(0)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 3);
 
-        let result = estimator.estimate_native_price(&token(1)).await;
+        let result = estimator.estimate_native_price(token(1)).await;
         assert_eq!(result.as_ref().unwrap().to_i64().unwrap(), 4);
     }
 
@@ -503,7 +503,7 @@ mod tests {
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
         for token in &tokens {
-            let price = estimator.estimate_native_price(token).await.unwrap();
+            let price = estimator.estimate_native_price(*token).await.unwrap();
             assert_eq!(price.to_i64().unwrap(), 1);
         }
 
@@ -511,7 +511,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60)).await;
 
         for token in &tokens {
-            let price = estimator.estimate_native_price(token).await.unwrap();
+            let price = estimator.estimate_native_price(*token).await.unwrap();
             assert_eq!(price.to_i64().unwrap(), 2);
         }
     }
@@ -548,7 +548,7 @@ mod tests {
 
         let tokens: Vec<_> = (0..BATCH_SIZE as u64).map(H160::from_low_u64_be).collect();
         for token in &tokens {
-            let price = estimator.estimate_native_price(token).await.unwrap();
+            let price = estimator.estimate_native_price(*token).await.unwrap();
             assert_eq!(price.to_i64().unwrap(), 1);
         }
 
@@ -559,7 +559,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60 + WAIT_TIME_MS)).await;
 
         for token in &tokens {
-            let price = estimator.estimate_native_price(token).await.unwrap();
+            let price = estimator.estimate_native_price(*token).await.unwrap();
             assert_eq!(price.to_i64().unwrap(), 2);
         }
     }

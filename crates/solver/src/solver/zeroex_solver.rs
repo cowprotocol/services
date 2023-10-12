@@ -126,7 +126,7 @@ impl SingleOrderSolving for ZeroExSolver {
             intent_on_filling: self.enable_rfqt,
             enable_slippage_protection: self.enable_slippage_protection,
         };
-        let swap = match self.api.get_swap(query).await {
+        let swap = match self.api.get_swap(query, true).await {
             Ok(swap) => swap,
             Err(ZeroExResponseError::InsufficientLiquidity) => {
                 tracing::debug!("Couldn't get a quote due to insufficient liquidity");
@@ -305,7 +305,7 @@ mod tests {
         let buy_token = H160::from_low_u64_be(1);
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
-        client.expect_get_swap().returning(move |_| {
+        client.expect_get_swap().returning(move |_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -441,7 +441,7 @@ mod tests {
         let buy_token = H160::from_low_u64_be(1);
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
-        client.expect_get_swap().returning(move |_| {
+        client.expect_get_swap().returning(move |_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {

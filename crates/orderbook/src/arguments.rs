@@ -5,7 +5,7 @@ use {
         arguments::{display_option, display_secret_option},
         bad_token::token_owner_finder,
         http_client,
-        price_estimation::{self, PriceEstimators},
+        price_estimation::{self, NativePriceEstimators},
     },
     std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
 };
@@ -91,10 +91,10 @@ pub struct Arguments {
     /// Which estimators to use to estimate token prices in terms of the chain's
     /// native token.
     #[clap(long, env, default_value_t)]
-    pub native_price_estimators: PriceEstimators,
+    pub native_price_estimators: NativePriceEstimators,
 
     /// How many successful price estimates for each order will cause a fast
-    /// price estimation to return its result early.
+    /// or native price estimation to return its result early.
     /// The bigger the value the more the fast price estimation performs like
     /// the optimal price estimation.
     /// It's possible to pass values greater than the total number of enabled
@@ -138,7 +138,7 @@ pub struct Arguments {
     pub allow_placing_fill_or_kill_limit_orders: bool,
 
     /// Note that partially fillable liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub allow_placing_partially_fillable_limit_orders: bool,
 
     /// Max number of limit orders per user.

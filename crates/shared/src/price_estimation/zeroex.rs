@@ -84,7 +84,7 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     sellAmount=100000000000000000"
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -112,6 +112,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -131,7 +132,7 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     buyAmount=100000000000000000"
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -159,6 +160,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await
             .unwrap();
@@ -171,7 +173,7 @@ mod tests {
     async fn filter_out_sell_estimates() {
         let mut zeroex_api = MockZeroExApi::new();
 
-        zeroex_api.expect_get_swap().return_once(|_| {
+        zeroex_api.expect_get_swap().return_once(|_, _| {
             async move {
                 Ok(SwapResponse {
                     price: PriceResponse {
@@ -199,6 +201,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 
@@ -214,6 +217,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(100000000000000000u128).unwrap(),
                 kind: OrderKind::Buy,
+                block_dependent: false,
             }))
             .await;
 
@@ -239,6 +243,7 @@ mod tests {
                 buy_token: gno,
                 in_amount: NonZeroU256::try_from(10u128.pow(18)).unwrap(),
                 kind: OrderKind::Sell,
+                block_dependent: false,
             }))
             .await;
 

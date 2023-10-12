@@ -1,8 +1,8 @@
 use {
     self::solution::settlement,
-    super::Mempools,
+    super::{eth, Mempools},
     crate::{
-        domain::{competition::solution::Settlement, liquidity},
+        domain::competition::solution::Settlement,
         infra::{
             self,
             blockchain::Ethereum,
@@ -26,7 +26,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
-    solution::{Score, Solution, SolverTimeout},
+    solution::{Solution, SolverScore, SolverTimeout},
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -46,22 +46,18 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
-        let liquidity = self
-            .liquidity
-            .fetch(
-                &auction
-                    .orders()
-                    .iter()
-                    .filter_map(|order| match order.kind {
-                        order::Kind::Market | order::Kind::Limit { .. } => {
-                            liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
-                        }
-                        order::Kind::Liquidity => None,
-                    })
-                    .collect(),
-            )
-            .await;
+    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
+        let liquidity = match self.solver.liquidity() {
+            solver::Liquidity::Fetch => {
+                self.liquidity
+                    .fetch(
+                        &auction.liquidity_pairs(),
+                        infra::liquidity::AtBlock::Latest,
+                    )
+                    .await
+            }
+            solver::Liquidity::Skip => Default::default(),
+        };
 
         // Fetch the solutions from the solver.
         let solutions = self
@@ -142,7 +138,10 @@ impl Competition {
             .into_iter()
             .map(|settlement| {
                 observe::scoring(&settlement);
-                (settlement.score(&self.eth, auction), settlement)
+                (
+                    settlement.score(&self.eth, auction, &self.mempools.revert_protection()),
+                    settlement,
+                )
             })
             .collect_vec();
 
@@ -166,11 +165,11 @@ impl Competition {
         let (score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
-            .ok_or(Error::SolutionNotFound)?;
+            .map(|(score, settlement)| (Solved { score }, settlement))
+            .unzip();
 
-        *self.settlement.lock().unwrap() = Some(settlement);
-
-        Ok(Solved { score })
+        *self.settlement.lock().unwrap() = settlement;
+        Ok(score)
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {
@@ -234,6 +233,23 @@ impl Competition {
     }
 }
 
+/// Represents a single value suitable for comparing/ranking solutions.
+/// This is a final score that is observed by the autopilot.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Score(pub eth::U256);
+
+impl From<Score> for eth::U256 {
+    fn from(value: Score) -> Self {
+        value.0
+    }
+}
+
+impl From<eth::U256> for Score {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
 /// Solution information sent to the protocol by the driver before the solution
 /// ranking happens.
 #[derive(Debug)]
@@ -272,8 +288,6 @@ pub enum Error {
          returned"
     )]
     SolutionNotAvailable,
-    #[error("no solution found for the auction")]
-    SolutionNotFound,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]

@@ -3,7 +3,8 @@ use {
     anyhow::Result,
     derivative::Derivative,
     ethcontract::{Bytes, H160, U256},
-    number::u256_decimal,
+    ethrpc::current_block::CurrentBlockStream,
+    number::serialization::HexOrDecimalU256,
     reqwest::{Client, RequestBuilder, StatusCode, Url},
     serde::{
         de::{DeserializeOwned, Error},
@@ -22,10 +23,15 @@ pub const DEFAULT_URL: &str = "https://apiv5.paraswap.io";
 #[async_trait::async_trait]
 #[mockall::automock]
 pub trait ParaswapApi: Send + Sync + 'static {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
+    async fn price(
+        &self,
+        query: PriceQuery,
+        set_current_block_header: bool,
+    ) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
@@ -33,16 +39,28 @@ pub struct DefaultParaswapApi {
     pub client: Client,
     pub base_url: String,
     pub partner: String,
+    pub block_stream: CurrentBlockStream,
 }
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
+    async fn price(
+        &self,
+        query: PriceQuery,
+        set_current_block_header: bool,
+    ) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.base_url, &self.partner);
         tracing::trace!("Querying Paraswap price API: {}", url);
-        let request = self.client.get(url).send();
 
-        let response = request.await?;
+        let mut request = self.client.get(url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_stream.borrow().hash.to_string(),
+            );
+        };
+
+        let response = request.send().await?;
         let status = response.status();
         let text = response.text().await?;
         tracing::trace!(%status, %text, "Response from Paraswap price API");
@@ -52,13 +70,21 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
+        set_current_block_header: bool,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
         let query = TransactionBuilderQueryWithPartner {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client, &self.base_url).send();
-        let response = request.await?;
+
+        let mut request = query.into_request(&self.client, &self.base_url);
+        if set_current_block_header {
+            request = request.header(
+                "X-Current-Block-Hash",
+                self.block_stream.borrow().hash.to_string(),
+            );
+        };
+        let response = request.send().await?;
         let status = response.status();
         let response_text = response.text().await?;
         tracing::trace!(%status, %response_text, "Response from Paraswap transaction API");
@@ -215,9 +241,9 @@ impl<'de> Deserialize<'de> for PriceResponse {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
-            #[serde(with = "u256_decimal")]
+            #[serde_as(as = "HexOrDecimalU256")]
             src_amount: U256,
-            #[serde(with = "u256_decimal")]
+            #[serde_as(as = "HexOrDecimalU256")]
             dest_amount: U256,
             token_transfer_proxy: H160,
             #[serde_as(as = "DisplayFromStr")]
@@ -264,6 +290,7 @@ pub struct TransactionBuilderQuery {
 }
 
 /// The amounts for buying and selling.
+#[serde_as]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TradeAmount {
@@ -272,7 +299,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Sell {
         /// The source amount
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         src_amount: U256,
         /// The maximum slippage in BPS.
         slippage: u32,
@@ -282,7 +309,7 @@ pub enum TradeAmount {
     #[serde(rename_all = "camelCase")]
     Buy {
         /// The destination amount
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         dest_amount: U256,
         /// The maximum slippage in BPS.
         slippage: u32,
@@ -292,9 +319,9 @@ pub enum TradeAmount {
     /// on the initial `/price` query and the included `price_route`.
     #[serde(rename_all = "camelCase")]
     Exact {
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         src_amount: U256,
-        #[serde(with = "u256_decimal")]
+        #[serde_as(as = "HexOrDecimalU256")]
         dest_amount: U256,
     },
 }
@@ -328,6 +355,7 @@ impl TransactionBuilderQueryWithPartner<'_> {
 }
 
 /// Paraswap transaction builder response.
+#[serde_as]
 #[derive(Clone, Derivative, Deserialize, Default)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -339,14 +367,14 @@ pub struct TransactionBuilderResponse {
     /// the chain for which this transaction is valid
     pub chain_id: u64,
     /// the native token value to be set on the transaction
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
     /// the calldata for the transaction
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
     /// the suggested gas price
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub gas_price: U256,
 }
 
@@ -358,7 +386,13 @@ impl Interaction for TransactionBuilderResponse {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, reqwest::StatusCode, serde_json::json};
+    use {
+        super::*,
+        ethrpc::current_block::BlockInfo,
+        reqwest::StatusCode,
+        serde_json::json,
+        tokio::sync::watch,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -762,10 +796,12 @@ mod tests {
             .await
             .expect("Response is not json");
 
+        let (_, block_stream) = watch::channel(BlockInfo::default());
         let api = DefaultParaswapApi {
             client: Client::new(),
             base_url: DEFAULT_URL.into(),
             partner: "Test".into(),
+            block_stream,
         };
 
         let good_query = TransactionBuilderQuery {
@@ -781,7 +817,7 @@ mod tests {
             user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
         };
 
-        assert!(api.transaction(good_query).await.is_ok());
+        assert!(api.transaction(good_query, false).await.is_ok());
     }
 
     #[test]

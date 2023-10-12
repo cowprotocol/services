@@ -166,6 +166,10 @@ impl Mempool {
             .await?;
         Ok(receipt.transaction_hash.into())
     }
+
+    pub fn config(&self) -> &Config {
+        &self.config
+    }
 }
 
 struct AccessListEstimator(eth::AccessList);

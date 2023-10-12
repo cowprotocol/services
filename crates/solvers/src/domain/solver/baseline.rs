@@ -65,9 +65,13 @@ impl Baseline {
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
         let inner = self.0.clone();
-        tokio::task::spawn_blocking(move || inner.solve(auction))
-            .await
-            .expect("baseline solver unexpected panic")
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            let _entered = span.enter();
+            inner.solve(auction)
+        })
+        .await
+        .expect("baseline solver unexpected panic")
     }
 }
 
@@ -113,14 +117,17 @@ impl Inner {
                             output.amount = cmp::min(output.amount, order.buy.amount);
                         }
 
-                        solution::Single {
-                            order: order.clone(),
-                            input: route.input(),
-                            output,
-                            interactions,
-                            gas: route.gas(),
-                        }
-                        .into_solution(auction.gas_price, sell_token)
+                        Some(
+                            solution::Single {
+                                order: order.clone(),
+                                input: route.input(),
+                                output,
+                                interactions,
+                                gas: route.gas(),
+                            }
+                            .into_solution(auction.gas_price, sell_token)?
+                            .with_buffers_internalizations(&auction.tokens),
+                        )
                     })
             })
             .collect()

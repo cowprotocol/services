@@ -42,6 +42,9 @@ struct Config {
     /// Use Tenderly for transaction simulation.
     tenderly: Option<TenderlyConfig>,
 
+    /// Use Enso for transaction simulation.
+    enso: Option<EnsoConfig>,
+
     #[serde(rename = "solver")]
     solvers: Vec<SolverConfig>,
 
@@ -161,6 +164,10 @@ struct SolverConfig {
     #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
+    /// Whether or not to skip fetching liquidity for this solver.
+    #[serde(default)]
+    skip_liquidity: bool,
+
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 }
@@ -174,6 +181,10 @@ enum Account {
     PrivateKey(eth::H256),
     /// AWS KMS is used to sign transactions. Expects the key identifier.
     Kms(#[serde_as(as = "serde_with::DisplayFromStr")] Arn),
+    /// An address is used to identify the account for signing, relying on the
+    /// connected node's account management features. This can also be used to
+    /// start the driver in a dry-run mode.
+    Address(eth::H160),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -184,11 +195,6 @@ struct ContractsConfig {
 
     /// Override the default address of the WETH contract.
     weth: Option<eth::H160>,
-
-    /// Sets the Ethflow contract address. Without this we cannot detect Ethflow
-    /// orders, which leads to such orders not being solved because it appears
-    /// that the user doesn't have enough sell token balance.
-    ethflow: Option<eth::H160>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,6 +218,13 @@ struct TenderlyConfig {
 
     /// Save the transaction even in the case of failure.
     save_if_fails: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct EnsoConfig {
+    /// URL at which the trade simulator is hosted
+    url: Url,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

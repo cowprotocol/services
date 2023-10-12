@@ -1,5 +1,5 @@
 use {
-    super::{Asset, Order},
+    super::{Asset, Order, Partial, Score},
     crate::{
         domain::{
             competition::order,
@@ -11,6 +11,7 @@ use {
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
     futures::Future,
     secp256k1::SecretKey,
+    serde_json::json,
     std::collections::HashMap,
 };
 
@@ -76,7 +77,7 @@ impl Pool {
 #[derive(Debug, Clone)]
 pub struct Solution {
     pub fulfillments: Vec<Fulfillment>,
-    pub risk: eth::U256,
+    pub score: Score,
 }
 
 #[derive(Debug, Clone)]
@@ -132,7 +133,7 @@ impl QuotedOrder {
             secret_key: blockchain.trader_secret_key,
             domain_separator: blockchain.domain_separator,
             owner: blockchain.trader_address,
-            partially_fillable: matches!(self.order.partial, order::Partial::Yes { .. }),
+            partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
         }
     }
 }
@@ -144,6 +145,7 @@ pub struct Config {
     pub solver_address: eth::H160,
     pub solver_secret_key: SecretKey,
     pub fund_solver: bool,
+    pub settlement_address: Option<eth::H160>,
 }
 
 impl Blockchain {
@@ -249,7 +251,7 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        let settlement = wait_for(
+        let mut settlement = wait_for(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
                 .from(trader_account.clone())
@@ -257,6 +259,27 @@ impl Blockchain {
         )
         .await
         .unwrap();
+        if let Some(settlement_address) = config.settlement_address {
+            let vault_relayer = settlement.vault_relayer().call().await.unwrap();
+            let vault_relayer_code = {
+                // replace the vault relayer code to allow the settlement
+                // contract at a specific address.
+                let mut code = web3.eth().code(vault_relayer, None).await.unwrap().0;
+                for i in 0..code.len() - 20 {
+                    let window = &mut code[i..][..20];
+                    if window == settlement.address().0 {
+                        window.copy_from_slice(&settlement_address.0);
+                    }
+                }
+                code
+            };
+            let settlement_code = web3.eth().code(settlement.address(), None).await.unwrap().0;
+
+            set_code(&web3, vault_relayer, &vault_relayer_code).await;
+            set_code(&web3, settlement_address, &settlement_code).await;
+
+            settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
+        }
         wait_for(
             &web3,
             authenticator
@@ -653,7 +676,7 @@ impl Blockchain {
         }
         Solution {
             fulfillments,
-            risk: solution.risk,
+            score: solution.score.clone(),
         }
     }
 
@@ -766,12 +789,18 @@ impl Drop for Node {
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
 pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
-    let block = web3.eth().block_number().await.unwrap();
+    let block = web3.eth().block_number().await.unwrap().as_u64();
     let result = fut.await;
+    wait_for_block(web3, block + 1).await;
+    result
+}
+
+/// Waits for the block height to be at least the specified value.
+pub async fn wait_for_block(web3: &DynWeb3, block: u64) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
-            let next_block = web3.eth().block_number().await.unwrap();
-            if next_block > block {
+            let next_block = web3.eth().block_number().await.unwrap().as_u64();
+            if next_block >= block {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -779,5 +808,17 @@ pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
     })
     .await
     .expect("timeout while waiting for next block to be mined");
-    result
+}
+
+/// Sets code at a specific address for testing.
+pub async fn set_code(web3: &DynWeb3, address: eth::H160, code: &[u8]) {
+    use web3::Transport;
+
+    web3.transport()
+        .execute(
+            "anvil_setCode",
+            vec![json!(address), json!(format!("0x{}", hex::encode(code)))],
+        )
+        .await
+        .unwrap();
 }

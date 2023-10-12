@@ -4,8 +4,13 @@ use {
     crate::support::SimulateCode,
     ethcontract::{
         common::abi,
+        contract::MethodBuilder,
+        errors::MethodError,
         tokens::Tokenize,
-        web3::types::{Bytes, CallRequest},
+        web3::{
+            types::{Bytes, CallRequest},
+            Transport,
+        },
         H160,
     },
 };
@@ -38,4 +43,23 @@ pub fn call(target: H160, code: Bytes, call: Bytes) -> CallRequest {
         ),
         ..Default::default()
     }
+}
+
+/// Simulates the specified `ethcontract::MethodBuilder` encoded as a
+/// `StorageAccessible` call.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The method doesn't specify a target address or calldata
+/// - The function name doesn't exist or match the method signature
+/// - The contract does not have deployment code
+pub async fn simulate<T, R>(code: Bytes, mut method: MethodBuilder<T, R>) -> Result<R, MethodError>
+where
+    T: Transport,
+    R: Tokenize,
+{
+    method.tx.data = call(method.tx.to.unwrap(), code, method.tx.data.take().unwrap()).data;
+    method.tx.to = None;
+    method.call().await
 }

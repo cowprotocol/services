@@ -254,7 +254,7 @@ impl From<TokenAddress> for ContractAddress {
 
 /// An asset on the Ethereum blockchain. Represents a particular amount of a
 /// particular token.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Asset {
     pub amount: TokenAmount,
     pub token: TokenAddress,
@@ -295,7 +295,7 @@ impl From<i32> for Ether {
 pub struct BlockNo(pub u64);
 
 /// An onchain transaction which interacts with a smart contract.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Interaction {
     pub target: Address,
     pub value: Ether,

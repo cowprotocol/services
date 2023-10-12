@@ -3,7 +3,7 @@ use crate::{
     tests::{
         self,
         cases::DEFAULT_SOLVER_FEE,
-        setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Solution},
+        setup::{ab_order, ab_pool, ab_solution, ExecutionDiff, Order, Partial, Solution},
     },
 };
 
@@ -38,7 +38,7 @@ async fn matrix() {
                     .await;
 
                 // TODO When we add metrics, assert that an invalid asset flow error is traced.
-                test.solve().await.err().kind("SolutionNotFound");
+                test.solve().await.ok().empty();
             }
         }
     }
@@ -110,7 +110,7 @@ async fn negative_sum() {
         .await;
 
     // TODO When we add metrics, assert that an invalid asset flow error is traced.
-    test.solve().await.err().kind("SolutionNotFound");
+    test.solve().await.ok().empty();
 }
 
 /// Test that asset flow verification passes when sums of flows are positive.
@@ -182,7 +182,7 @@ async fn mix() {
             sell_token: "A",
             buy_token: "B",
             side: order::Side::Buy,
-            partial: order::Partial::Yes {
+            partial: Partial::Yes {
                 executed: Default::default(),
             },
             kind: order::Kind::Liquidity,

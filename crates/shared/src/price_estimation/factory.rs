@@ -2,7 +2,7 @@ use {
     super::{
         balancer_sor::BalancerSor,
         baseline::BaselinePriceEstimator,
-        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        competition::{CompetitionEstimator, RacingCompetitionEstimator},
         external::ExternalPriceEstimator,
         http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -14,6 +14,7 @@ use {
         trade_finder::TradeVerifier,
         zeroex::ZeroExPriceEstimator,
         Arguments,
+        NativePriceEstimator as NativePriceEstimatorSource,
         PriceEstimating,
         PriceEstimator,
         PriceEstimatorKind,
@@ -30,6 +31,7 @@ use {
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
         oneinch_api::OneInchClient,
         paraswap_api::DefaultParaswapApi,
+        price_estimation::native::NativePriceEstimating,
         rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
@@ -39,8 +41,9 @@ use {
         token_info::TokenInfoFetching,
         zeroex_api::ZeroExApi,
     },
-    anyhow::{Context as _, Result},
+    anyhow::{anyhow, Context as _, Result},
     ethcontract::H160,
+    ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
     reqwest::Url,
@@ -74,6 +77,7 @@ pub struct Network {
     pub settlement: H160,
     pub authenticator: H160,
     pub base_tokens: Arc<BaseTokens>,
+    pub block_stream: CurrentBlockStream,
 }
 
 /// The shared components needed for creating price estimators.
@@ -246,6 +250,49 @@ impl<'a> PriceEstimatorFactory<'a> {
         }
     }
 
+    fn create_native_estimator(
+        &mut self,
+        source: NativePriceEstimatorSource,
+        external: &[PriceEstimatorSource],
+    ) -> Result<(String, Arc<dyn NativePriceEstimating>)> {
+        match source {
+            NativePriceEstimatorSource::GenericPriceEstimator(estimator) => {
+                let native_token_price_estimation_amount =
+                    self.native_token_price_estimation_amount()?;
+                self.get_estimators(external, |entry| &entry.native)?
+                    .into_iter()
+                    .map(
+                        |(name, estimator)| -> (String, Arc<dyn NativePriceEstimating>) {
+                            (
+                                name,
+                                Arc::new(NativePriceEstimator::new(
+                                    Arc::new(self.sanitized(estimator)),
+                                    self.network.native_token,
+                                    native_token_price_estimation_amount,
+                                )),
+                            )
+                        },
+                    )
+                    .find(|external| external.0 == estimator)
+                    .ok_or(anyhow!(
+                        "Couldn't find generic price estimator with name {} to instantiate native \
+                         estimator",
+                        estimator
+                    ))
+            }
+            NativePriceEstimatorSource::OneInchSpotPriceApi => Ok((
+                "OneInchSpotPriceApi".into(),
+                Arc::new(native::OneInch::new(
+                    self.components.http_factory.create(),
+                    self.args.one_inch_spot_price_api_url.clone(),
+                    self.args.one_inch_spot_price_api_key.clone(),
+                    self.network.chain_id,
+                    self.network.block_stream.clone(),
+                )),
+            )),
+        }
+    }
+
     fn get_estimator(&mut self, source: &PriceEstimatorSource) -> Result<&EstimatorEntry> {
         let name = source.name();
 
@@ -278,9 +325,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             .collect()
     }
 
-    fn sanitized(&self, estimator: impl PriceEstimating) -> SanitizedPriceEstimator {
+    fn sanitized(&self, estimator: Arc<dyn PriceEstimating>) -> SanitizedPriceEstimator {
         SanitizedPriceEstimator::new(
-            Box::new(estimator),
+            estimator,
             self.network.native_token,
             self.components.bad_token_detector.clone(),
         )
@@ -291,15 +338,8 @@ impl<'a> PriceEstimatorFactory<'a> {
         sources: &[PriceEstimatorSource],
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
-        Ok(Arc::new(self.sanitized(
-            match self.args.enable_quote_predictions {
-                true => {
-                    competition_estimator.with_predictions(self.args.quote_prediction_confidence)
-                }
-                false => competition_estimator,
-            },
-        )))
+        let competition_estimator = CompetitionEstimator::new(vec![estimators]);
+        Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
     pub fn fast_price_estimator(
@@ -308,36 +348,38 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
-        Ok(Arc::new(self.sanitized(
-            RacingCompetitionPriceEstimator::new(
-                estimators,
+        Ok(Arc::new(self.sanitized(Arc::new(
+            RacingCompetitionEstimator::new(
+                vec![estimators],
                 fast_price_estimation_results_required,
             ),
-        )))
+        ))))
     }
 
     pub fn native_price_estimator(
         &mut self,
-        sources: &[PriceEstimatorSource],
+        native: &[Vec<NativePriceEstimatorSource>],
+        external: &[PriceEstimatorSource],
+        results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
             self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
             "price cache prefetch time needs to be less than price cache max age"
         );
-        let estimators = self.get_estimators(sources, |entry| &entry.native)?;
-        let competition_estimator = CompetitionPriceEstimator::new(estimators);
+
+        let estimators = native
+            .iter()
+            .map(|stage| {
+                stage
+                    .iter()
+                    .map(|source| self.create_native_estimator(source.clone(), external))
+                    .collect::<Result<Vec<_>>>()
+            })
+            .collect::<Result<Vec<Vec<_>>>>()?;
+
+        let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
-            Box::new(NativePriceEstimator::new(
-                Arc::new(
-                    self.sanitized(match self.args.enable_quote_predictions {
-                        true => competition_estimator
-                            .with_predictions(self.args.quote_prediction_confidence),
-                        false => competition_estimator,
-                    }),
-                ),
-                self.network.native_token,
-                self.native_token_price_estimation_amount()?,
-            )),
+            Box::new(competition_estimator),
             self.args.native_price_cache_max_age_secs,
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
@@ -398,6 +440,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
                     .paraswap_partner
                     .clone()
                     .unwrap_or_default(),
+                block_stream: factory.network.block_stream.clone(),
             }),
             factory.components.tokens.clone(),
             factory.shared_args.disabled_paraswap_dexs.clone(),
@@ -544,6 +587,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             params.driver,
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
+            factory.network.block_stream.clone(),
         ))
     }
 

@@ -35,6 +35,7 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::{BalancerV2Vault, GPv2Settlement, WETH9},
     ethcontract::{errors::ExecutionError, transaction::kms, Account, PrivateKey, H160, U256},
+    ethrpc::current_block::CurrentBlockStream,
     futures::future::join_all,
     model::{auction::AuctionId, order::Order, DomainSeparator},
     reqwest::Url,
@@ -190,12 +191,14 @@ pub struct SolverInfo {
     pub account: Account,
 }
 
+#[derive(Debug)]
 pub struct Simulation {
     pub settlement: Settlement,
     pub solver: SolverInfo,
     pub transaction: SimulatedTransaction,
 }
 
+#[derive(Debug)]
 pub struct SimulationWithError {
     pub simulation: Simulation,
     pub error: SimulationError,
@@ -397,6 +400,7 @@ pub async fn create(
     settlement_rater: Arc<dyn SettlementRating>,
     enforce_correct_fees: bool,
     ethflow_contract: Option<H160>,
+    current_block_stream: CurrentBlockStream,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -522,6 +526,7 @@ pub async fn create(
                         one_inch_url.clone(),
                         slippage_calculator,
                         one_inch_referrer_address,
+                        current_block_stream.clone(),
                     )
                     .unwrap(),
                 ))),
@@ -550,6 +555,7 @@ pub async fn create(
                     paraswap_partner.clone(),
                     paraswap_api_url.clone(),
                     slippage_calculator,
+                    current_block_stream.clone(),
                 )))),
                 SolverType::BalancerSor => shared(single_order(Box::new(BalancerSorSolver::new(
                     account,

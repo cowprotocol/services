@@ -15,7 +15,7 @@ use {
                 Solution,
                 Solved,
             },
-            eth::{self},
+            eth,
             quote::{self, Quote},
             Liquidity,
         },
@@ -110,6 +110,7 @@ pub fn not_merged(settlement: &Settlement, other: &Settlement, err: solution::Er
 pub fn scoring(settlement: &Settlement) {
     tracing::trace!(
         solutions = ?settlement.solutions(),
+        gas = ?settlement.gas,
         "scoring settlement"
     );
 }
@@ -124,10 +125,10 @@ pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
 }
 
 /// Observe the settlement score.
-pub fn score(settlement: &Settlement, score: &solution::Score) {
+pub fn score(settlement: &Settlement, score: &competition::Score) {
     tracing::info!(
         solutions = ?settlement.solutions(),
-        score = score.0.to_f64_lossy(),
+        score = ?score,
         "scored settlement"
     );
 }
@@ -181,13 +182,20 @@ pub fn settled(solver: &solver::Name, result: &Result<competition::Settled, comp
 }
 
 /// Observe the result of solving an auction.
-pub fn solved(solver: &solver::Name, result: &Result<Solved, competition::Error>) {
+pub fn solved(solver: &solver::Name, result: &Result<Option<Solved>, competition::Error>) {
     match result {
-        Ok(solved) => {
+        Ok(Some(solved)) => {
             tracing::info!(?solved, "solved auction");
             metrics::get()
                 .solutions
                 .with_label_values(&[solver.as_str(), "Success"])
+                .inc();
+        }
+        Ok(None) => {
+            tracing::debug!("no solution found");
+            metrics::get()
+                .solutions
+                .with_label_values(&[solver.as_str(), "SolutionNotFound"])
                 .inc();
         }
         Err(err) => {
@@ -305,7 +313,6 @@ pub fn quoting(order: &quote::Order) {
 fn competition_error(err: &competition::Error) -> &'static str {
     match err {
         competition::Error::SolutionNotAvailable => "SolutionNotAvailable",
-        competition::Error::SolutionNotFound => "SolutionNotFound",
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
@@ -317,12 +324,14 @@ fn competition_error(err: &competition::Error) -> &'static str {
 #[derive(Debug)]
 pub enum OrderExcludedFromAuctionReason<'a> {
     CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
-    CouldNotCalculateRemainingAmount(&'a anyhow::Error),
+    CouldNotCalculateMaxSell,
+    InsufficientBalance,
+    OrderWithZeroAmountRemaining,
 }
 
 pub fn order_excluded_from_auction(
     order: &competition::Order,
     reason: OrderExcludedFromAuctionReason,
 ) {
-    tracing::trace!(uid=?order.uid, ?reason,"order excluded from auction");
+    tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
 }

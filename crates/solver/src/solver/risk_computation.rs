@@ -10,7 +10,6 @@ use {
     super::SolverType,
     anyhow::{Context, Result},
     clap::{Parser, ValueEnum},
-    num::ToPrimitive,
     std::{
         collections::HashMap,
         fmt::{Display, Formatter},
@@ -29,8 +28,6 @@ pub struct RiskCalculator {
 
 impl RiskCalculator {
     pub fn calculate(&self, gas_amount: f64, gas_price: f64, nmb_orders: usize) -> Result<f64> {
-        let gas_amount = gas_amount.to_f64().context("gas_amount conversion")?;
-        let gas_price = gas_price.to_f64().context("gas_price conversion")?;
         let exponent = self.intercept.neg()
             - self.gas_amount_factor * gas_amount / 1_000_000.
             - self.gas_price_factor * gas_price / 10_000_000_000.
