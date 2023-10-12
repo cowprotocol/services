@@ -507,7 +507,6 @@ impl Driver {
                 winning_settlement.gas_estimate,
                 gas_price.max_fee_per_gas,
                 Some(winning_settlement.id as u64),
-                auction_id,
             )
             .await
             {
@@ -603,7 +602,6 @@ pub async fn submit_settlement(
     gas_estimate: U256,
     max_fee_per_gas: f64,
     settlement_id: Option<u64>,
-    auction_id: i64,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
@@ -613,7 +611,6 @@ pub async fn submit_settlement(
             max_fee_per_gas,
             account,
             nonce,
-            auction_id,
         )
         .await;
     logger

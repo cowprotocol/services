@@ -191,7 +191,6 @@ impl SolutionSubmitter {
         max_fee_per_gas: f64,
         account: Account,
         nonce: U256,
-        auction_id: i64,
     ) -> Result<SubmissionReceipt, SubmissionError> {
         // Other transaction strategies than the ones below, depend on an
         // account signing a raw transaction for a nonce, and waiting until that
@@ -226,7 +225,6 @@ impl SolutionSubmitter {
                     max_fee_per_gas,
                     network_id.clone(),
                     settlement.clone(),
-                    auction_id,
                 )
                 .instrument(tracing::info_span!(
                     "submission",
@@ -261,7 +259,6 @@ impl SolutionSubmitter {
         max_fee_per_gas: f64,
         network_id: String,
         settlement: Settlement,
-        auction_id: i64,
     ) -> Result<SubmissionReceipt, SubmissionError> {
         match strategy {
             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -295,7 +292,7 @@ impl SolutionSubmitter {
             deadline: Some(Instant::now() + self.max_confirm_time),
             retry_interval: self.retry_interval,
             network_id,
-            additional_call_data: auction_id.to_be_bytes().into_iter().collect(),
+            additional_call_data: Default::default(),
             use_soft_cancellations: strategy_args.use_soft_cancellations,
         };
         let gas_price_estimator = SubmitterGasPriceEstimator {
