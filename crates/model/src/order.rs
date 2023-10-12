@@ -415,18 +415,41 @@ impl OrderCreation {
     }
 
     /// Recovers the owner address for the specified domain, and then verifies
-    /// it matches the expected address.
+    /// it matches the expected addresses.
+    ///
+    /// Expected addresses can come from two sources: directly from the order
+    /// creation and as part of the app data.
     ///
     /// Returns the recovered address on success, or an error if there is an
     /// issue performing the EC-recover or the recovered address does not match
     /// the expected one.
-    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
+    pub fn verify_owner(
+        &self,
+        domain: &DomainSeparator,
+        app_data_signer: Option<H160>,
+    ) -> Result<H160, VerificationError> {
         let recovered = self
             .signature
             .recover(domain, &self.data().hash_struct())
             .map_err(VerificationError::UnableToRecoverSigner)?;
 
-        let verified_owner = match (self.from, recovered) {
+        // Coalesce the two signer values.
+        let from = match (self.from, app_data_signer) {
+            (None, None) => None,
+            (None, Some(addr)) => Some(addr),
+            (Some(addr), None) => Some(addr),
+            (Some(from), Some(app_data_signer)) if from == app_data_signer => Some(from),
+            (Some(from), Some(app_data_signer)) => {
+                return Err(VerificationError::AppdataFromMismatch(
+                    AppdataFromMismatch {
+                        from,
+                        app_data_signer,
+                    },
+                ))
+            }
+        };
+
+        let verified_owner = match (from, recovered) {
             (Some(from), Some(recovered)) if from == recovered.signer => from,
             (Some(from), None) => from,
             (None, Some(recovered)) => recovered.signer,
@@ -492,10 +515,17 @@ impl OrderCreationAppData {
 }
 
 #[derive(Debug)]
+pub struct AppdataFromMismatch {
+    pub from: H160,
+    pub app_data_signer: H160,
+}
+
+#[derive(Debug)]
 pub enum VerificationError {
     UnableToRecoverSigner(anyhow::Error),
     UnexpectedSigner(signature::Recovered),
     MissingFrom,
+    AppdataFromMismatch(AppdataFromMismatch),
 }
 
 /// Cancellation of multiple orders.
