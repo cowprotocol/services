@@ -32,3 +32,18 @@ async fn matrix() {
         }
     }
 }
+
+/// Checks that settling without a solution returns an error.
+#[tokio::test]
+#[ignore]
+async fn solution_not_available() {
+    let test = tests::setup()
+        .name("solution not available")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .done()
+        .await;
+
+    test.settle().await.err().kind("SolutionNotAvailable");
+}

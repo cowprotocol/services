@@ -1,5 +1,4 @@
 use {
-    contracts::{GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy},
     e2e::{setup::*, tx_safe},
     ethcontract::{Bytes, H160, H256, U256},
     model::{
@@ -24,30 +23,8 @@ async fn smart_contract_orders(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    // Deploy and setup a Gnosis Safe.
-    let safe_singleton = GnosisSafe::builder(&web3).deploy().await.unwrap();
-    let safe_fallback = GnosisSafeCompatibilityFallbackHandler::builder(&web3)
-        .deploy()
-        .await
-        .unwrap();
-    let safe_proxy = GnosisSafeProxy::builder(&web3, safe_singleton.address())
-        .deploy()
-        .await
-        .unwrap();
-    let safe = GnosisSafe::at(&web3, safe_proxy.address());
-    safe.setup(
-        vec![trader.address()],
-        1.into(),         // threshold
-        H160::default(),  // delegate call
-        Bytes::default(), // delegate call bytes
-        safe_fallback.address(),
-        H160::default(), // relayer payment token
-        0.into(),        // relayer payment amount
-        H160::default(), // relayer address
-    )
-    .send()
-    .await
-    .unwrap();
+    let safe_infra = GnosisSafeInfrastructure::new(&web3).await;
+    let safe = safe_infra.deploy_safe(vec![trader.address()], 1).await;
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))

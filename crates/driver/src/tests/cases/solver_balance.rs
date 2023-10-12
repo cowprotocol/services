@@ -18,5 +18,5 @@ async fn test() {
 
     let solve = test.solve().await;
 
-    solve.err().kind("SolutionNotFound");
+    solve.ok().empty();
 }
