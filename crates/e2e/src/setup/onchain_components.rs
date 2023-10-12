@@ -5,6 +5,8 @@ use {
         ERC20Mintable,
         GnosisSafe,
         GnosisSafeCompatibilityFallbackHandler,
+        GnosisSafeProxy,
+        GnosisSafeProxyFactory,
     },
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, H256, U256},
     hex_literal::hex,
@@ -64,6 +66,55 @@ macro_rules! tx_safe {
             )
         );
     }};
+}
+
+pub struct GnosisSafeInfrastructure {
+    pub factory: GnosisSafeProxyFactory,
+    pub fallback: GnosisSafeCompatibilityFallbackHandler,
+    pub singleton: GnosisSafe,
+    web3: Web3,
+}
+
+impl GnosisSafeInfrastructure {
+    pub async fn new(web3: &Web3) -> Self {
+        let singleton = GnosisSafe::builder(web3).deploy().await.unwrap();
+        let fallback = GnosisSafeCompatibilityFallbackHandler::builder(web3)
+            .deploy()
+            .await
+            .unwrap();
+        let factory = GnosisSafeProxyFactory::builder(web3)
+            .deploy()
+            .await
+            .unwrap();
+        Self {
+            web3: web3.clone(),
+            singleton,
+            fallback,
+            factory,
+        }
+    }
+
+    pub async fn deploy_safe(&self, owners: Vec<H160>, threshold: usize) -> GnosisSafe {
+        let safe_proxy = GnosisSafeProxy::builder(&self.web3, self.singleton.address())
+            .deploy()
+            .await
+            .unwrap();
+        let safe = GnosisSafe::at(&self.web3, safe_proxy.address());
+        safe.setup(
+            owners,
+            threshold.into(),
+            H160::default(),  // delegate call
+            Bytes::default(), // delegate call bytes
+            self.fallback.address(),
+            H160::default(), // relayer payment token
+            0.into(),        // relayer payment amount
+            H160::default(), // relayer address
+        )
+        .send()
+        .await
+        .unwrap();
+        safe
+    }
 }
 
 /// Generate a Safe "pre-validated" signature.

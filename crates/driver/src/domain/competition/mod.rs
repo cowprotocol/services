@@ -46,7 +46,7 @@ pub struct Competition {
 
 impl Competition {
     /// Solve an auction as part of this competition.
-    pub async fn solve(&self, auction: &Auction) -> Result<Solved, Error> {
+    pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -165,11 +165,11 @@ impl Competition {
         let (score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
-            .ok_or(Error::SolutionNotFound)?;
+            .map(|(score, settlement)| (Solved { score }, settlement))
+            .unzip();
 
-        *self.settlement.lock().unwrap() = Some(settlement);
-
-        Ok(Solved { score })
+        *self.settlement.lock().unwrap() = settlement;
+        Ok(score)
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {
@@ -288,8 +288,6 @@ pub enum Error {
          returned"
     )]
     SolutionNotAvailable,
-    #[error("no solution found for the auction")]
-    SolutionNotFound,
     #[error("{0:?}")]
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
