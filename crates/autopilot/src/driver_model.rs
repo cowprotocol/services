@@ -144,6 +144,7 @@ pub mod solve {
         /// it in subsequent requests (reveal, settle).
         #[serde_as(as = "serde_with::DisplayFromStr")]
         pub solution_id: u64,
+        #[serde_as(as = "HexOrDecimalU256")]
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
