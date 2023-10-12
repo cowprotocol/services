@@ -86,6 +86,5 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             intercept: config.risk_parameters.3,
         },
     };
-    println!("{:?}", config.slippage);
     (config, dex)
 }
