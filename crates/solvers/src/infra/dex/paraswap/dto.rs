@@ -46,6 +46,9 @@ pub struct PriceQuery {
 
     /// The network ID.
     pub network: String,
+
+    /// The partner name
+    pub partner: String,
 }
 
 impl PriceQuery {
@@ -70,6 +73,7 @@ impl PriceQuery {
             amount: order.amount.get(),
             exclude_dexs: config.exclude_dexs.clone(),
             network: "1".to_owned(),
+            partner: config.partner.clone(),
         })
     }
 }
