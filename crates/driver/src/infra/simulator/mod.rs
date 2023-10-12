@@ -1,6 +1,9 @@
-use crate::{
-    domain::eth,
-    infra::blockchain::{self, Ethereum},
+use {
+    crate::{
+        domain::eth,
+        infra::blockchain::{self, Ethereum},
+    },
+    observe::future::Measure,
 };
 
 pub mod enso;
@@ -93,11 +96,12 @@ impl Simulator {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx, tenderly::GenerateAccessList::No)
+                    .measure("tenderly_simulate_gas")
                     .await?
                     .gas
             }
             Inner::Ethereum(ethereum) => ethereum.estimate_gas(tx).await?,
-            Inner::Enso(enso, _) => enso.simulate(tx).await?,
+            Inner::Enso(enso, _) => enso.simulate(tx).measure("enso_simulate_gas").await?,
         })
     }
 }

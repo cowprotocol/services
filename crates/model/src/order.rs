@@ -16,7 +16,7 @@ use {
     derivative::Derivative,
     hex_literal::hex,
     num::BigUint,
-    number::u256_decimal::{self, DecimalU256},
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, H256, U256},
     serde::{de, Deserialize, Deserializer, Serialize, Serializer},
     serde_with::{serde_as, DisplayFromStr},
@@ -272,6 +272,7 @@ impl OrderBuilder {
 ///
 /// These are the exact fields that get signed and verified by the settlement
 /// contract.
+#[serde_as]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderData {
@@ -279,9 +280,9 @@ pub struct OrderData {
     pub buy_token: H160,
     #[serde(default)]
     pub receiver: Option<H160>,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub valid_to: u32,
     pub app_data: AppDataHash,
@@ -292,7 +293,7 @@ pub struct OrderData {
     /// This is 0 for limit orders as their fee gets taken from the surplus.
     /// This is `OrderMetadata::full_fee_amount` modulo possible subsidies for
     /// market orders.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
@@ -352,6 +353,7 @@ impl OrderData {
 }
 
 /// An order as provided to the POST order endpoint.
+#[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
@@ -360,12 +362,12 @@ pub struct OrderCreation {
     pub buy_token: H160,
     #[serde(default)]
     pub receiver: Option<H160>,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
@@ -413,18 +415,41 @@ impl OrderCreation {
     }
 
     /// Recovers the owner address for the specified domain, and then verifies
-    /// it matches the expected address.
+    /// it matches the expected addresses.
+    ///
+    /// Expected addresses can come from two sources: directly from the order
+    /// creation and as part of the app data.
     ///
     /// Returns the recovered address on success, or an error if there is an
     /// issue performing the EC-recover or the recovered address does not match
     /// the expected one.
-    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
+    pub fn verify_owner(
+        &self,
+        domain: &DomainSeparator,
+        app_data_signer: Option<H160>,
+    ) -> Result<H160, VerificationError> {
         let recovered = self
             .signature
             .recover(domain, &self.data().hash_struct())
             .map_err(VerificationError::UnableToRecoverSigner)?;
 
-        let verified_owner = match (self.from, recovered) {
+        // Coalesce the two signer values.
+        let from = match (self.from, app_data_signer) {
+            (None, None) => None,
+            (None, Some(addr)) => Some(addr),
+            (Some(addr), None) => Some(addr),
+            (Some(from), Some(app_data_signer)) if from == app_data_signer => Some(from),
+            (Some(from), Some(app_data_signer)) => {
+                return Err(VerificationError::AppdataFromMismatch(
+                    AppdataFromMismatch {
+                        from,
+                        app_data_signer,
+                    },
+                ))
+            }
+        };
+
+        let verified_owner = match (from, recovered) {
             (Some(from), Some(recovered)) if from == recovered.signer => from,
             (Some(from), None) => from,
             (None, Some(recovered)) => recovered.signer,
@@ -490,10 +515,17 @@ impl OrderCreationAppData {
 }
 
 #[derive(Debug)]
+pub struct AppdataFromMismatch {
+    pub from: H160,
+    pub app_data_signer: H160,
+}
+
+#[derive(Debug)]
 pub enum VerificationError {
     UnableToRecoverSigner(anyhow::Error),
     UnexpectedSigner(signature::Recovered),
     MissingFrom,
+    AppdataFromMismatch(AppdataFromMismatch),
 }
 
 /// Cancellation of multiple orders.
@@ -696,7 +728,7 @@ pub struct OrderMetadata {
     pub owner: H160,
     pub uid: OrderUid,
     /// deprecated, always set to null
-    #[serde_as(as = "Option<DecimalU256>")]
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
     pub available_balance: Option<U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
@@ -704,9 +736,9 @@ pub struct OrderMetadata {
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
-    #[serde(default, with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub executed_sell_amount_before_fees: U256,
-    #[serde(default, with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
@@ -719,7 +751,7 @@ pub struct OrderMetadata {
     /// execution we could find while quoting converted to an equivalent
     /// `sell_token` amount.
     /// Does not take partial fill into account.
-    #[serde(default, with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub full_fee_amount: U256,
     /// The fee amount that should be used for objective value computations.
     ///
@@ -728,7 +760,7 @@ pub struct OrderMetadata {
     /// factor to make matching orders more valuable from an objective value
     /// perspective.
     /// Does not take partial fill into account.
-    #[serde(default, with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub solver_fee: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
@@ -906,7 +938,7 @@ impl OrderClass {
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LimitOrderClass {
-    #[serde_as(as = "DecimalU256")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub executed_surplus_fee: U256,
 }
 

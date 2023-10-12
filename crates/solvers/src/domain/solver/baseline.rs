@@ -9,6 +9,7 @@ use {
     crate::{
         boundary,
         domain::{
+            self,
             auction,
             eth,
             liquidity,
@@ -44,6 +45,9 @@ struct Inner {
     /// Basically we continuously halve the amount to execute until we find a
     /// valid solution or exceed this count.
     max_partial_attempts: usize,
+
+    /// Parameters used to calculate the revert risk of a solution.
+    risk: domain::Risk,
 }
 
 impl Baseline {
@@ -54,6 +58,7 @@ impl Baseline {
             base_tokens: config.base_tokens.into_iter().collect(),
             max_hops: config.max_hops,
             max_partial_attempts: config.max_partial_attempts,
+            risk: config.risk,
         }))
     }
 
@@ -117,6 +122,12 @@ impl Inner {
                             output.amount = cmp::min(output.amount, order.buy.amount);
                         }
 
+                        let score = solution::Score::RiskAdjusted(self.risk.success_probability(
+                            route.gas(),
+                            auction.gas_price,
+                            1,
+                        ));
+
                         Some(
                             solution::Single {
                                 order: order.clone(),
@@ -125,7 +136,7 @@ impl Inner {
                                 interactions,
                                 gas: route.gas(),
                             }
-                            .into_solution(auction.gas_price, sell_token)?
+                            .into_solution(auction.gas_price, sell_token, score)?
                             .with_buffers_internalizations(&auction.tokens),
                         )
                     })

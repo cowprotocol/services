@@ -9,7 +9,7 @@ use {
     anyhow::{bail, Result},
     ethcontract::{H160, U256},
     num::BigInt,
-    number::u256_decimal,
+    number::serialization::HexOrDecimalU256,
     reqwest::Client,
     serde::{Deserialize, Serialize},
     serde_json::{json, Map, Value},
@@ -235,11 +235,11 @@ pub struct PoolData {
     pub id: H160,
     pub token0: Token,
     pub token1: Token,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub fee_tier: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub liquidity: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sqrt_price: U256,
     #[serde_as(as = "DisplayFromStr")]
     pub tick: BigInt,

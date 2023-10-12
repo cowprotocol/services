@@ -9,6 +9,7 @@ mod out_of_price;
 pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
+risk-parameters = [0,0,0,0]
 [dex]
 endpoint = 'http://{solver_addr}/swap/v1/'
 api-key = 'SUPER_SECRET_API_KEY'

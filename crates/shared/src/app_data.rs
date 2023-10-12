@@ -1,6 +1,7 @@
 use {
     anyhow::{anyhow, Context, Result},
     model::{app_data::AppDataHash, order::Hooks},
+    primitive_types::H160,
     serde::Deserialize,
 };
 
@@ -20,6 +21,7 @@ pub struct ValidatedAppData {
 pub struct ProtocolAppData {
     #[serde(default)]
     pub hooks: Hooks,
+    pub signer: Option<H160>,
 }
 
 #[derive(Clone)]
@@ -223,6 +225,24 @@ mod tests {
                         },
                     ],
                 },
+                ..Default::default()
+            },
+        );
+
+        assert_app_data!(
+            r#"
+                {
+                    "appCode": "CoW Swap",
+                    "environment": "production",
+                    "metadata": {
+                        "signer": "0x4242424242424242424242424242424242424242"
+                    },
+                    "version": "0.9.0"
+                }
+            "#,
+            ProtocolAppData {
+                signer: Some(H160([0x42; 20])),
+                ..Default::default()
             },
         );
     }
@@ -277,6 +297,7 @@ mod tests {
                         },
                     ],
                 },
+                ..Default::default()
             },
         );
 
