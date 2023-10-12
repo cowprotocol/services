@@ -13,7 +13,7 @@ use {
     },
     model::order::OrderKind,
     primitive_types::H160,
-    std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc},
+    std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
 };
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -80,6 +80,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             + 'static,
         compare_results: impl Fn(&Result<R, E>, &Result<R, E>) -> Ordering + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
+        let start = Instant::now();
         async move {
             let mut results = vec![];
             let mut iter = self.inner.iter().enumerate().peekable();
@@ -120,7 +121,15 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                 while let Some((estimator_index, result)) = futures.next().await {
                     results.push((estimator_index, result.clone()));
                     let estimator = &self.inner[estimator_index.0][estimator_index.1].0;
-                    tracing::debug!(?query, ?result, estimator, "new price estimate");
+                    tracing::debug!(
+                        ?query,
+                        ?result,
+                        estimator,
+                        requests = futures.len(),
+                        results = results.len(),
+                        elapsed = ?start.elapsed(),
+                        "new price estimate"
+                    );
 
                     if successes(&results) >= self.successful_results_for_early_return.get() {
                         break 'outer;
@@ -137,7 +146,13 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                 .unwrap();
             let (estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
-            tracing::debug!(?query, ?result, estimator, "winning price estimate");
+            tracing::debug!(
+                ?query,
+                ?result,
+                estimator,
+                elapsed = ?start.elapsed(),
+                "winning price estimate"
+            );
 
             let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
             let queried_estimators = results.len() as u64;
