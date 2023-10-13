@@ -7,7 +7,7 @@ use {
         util::serialize,
     },
     ethereum_types::{H160, U256},
-    serde::{Deserialize, Serialize},
+    serde::{de, Deserialize, Deserializer, Serialize},
     serde_with::serde_as,
 };
 
@@ -125,8 +125,8 @@ impl TransactionBody {
         slippage: &dex::Slippage,
     ) -> Result<Self, super::Error> {
         let (src_amount, dest_amount) = match order.side {
-            order::Side::Sell => (price.src_amount()?, slippage.sub(price.dest_amount()?)),
-            order::Side::Buy => (slippage.add(price.src_amount()?), price.dest_amount()?),
+            order::Side::Sell => (price.src_amount, slippage.sub(price.dest_amount)),
+            order::Side::Buy => (slippage.add(price.src_amount), price.dest_amount),
         };
         Ok(Self {
             src_token: order.sell.0,
@@ -154,45 +154,57 @@ pub enum Side {
 }
 
 /// A ParaSwap API price response.
-#[serde_as]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Price {
     /// The price route. This should be passed on to the `/transactions`
     /// endpoint.
     pub price_route: serde_json::Value,
+
+    /// The source token amount in atoms.
+    pub src_amount: U256,
+    /// The destination token amount in atoms.
+    pub dest_amount: U256,
+    /// The (very) approximate gas cost for the swap.
+    pub gas_cost: U256,
+    /// The token transfer proxy that requires an allowance.
+    pub token_transfer_proxy: H160,
 }
 
-impl Price {
-    pub fn src_amount(&self) -> Result<U256, serde_json::Error> {
-        serde_json::from_value::<PriceRoute>(self.price_route.clone()).map(|r| r.src_amount)
-    }
+impl<'de> Deserialize<'de> for Price {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Raw {
+            price_route: serde_json::Value,
+        }
 
-    pub fn dest_amount(&self) -> Result<U256, serde_json::Error> {
-        serde_json::from_value::<PriceRoute>(self.price_route.clone()).map(|r| r.dest_amount)
-    }
+        #[serde_as]
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Parsed {
+            #[serde_as(as = "serialize::U256")]
+            src_amount: U256,
+            #[serde_as(as = "serialize::U256")]
+            dest_amount: U256,
+            #[serde_as(as = "serialize::U256")]
+            gas_cost: U256,
+            token_transfer_proxy: H160,
+        }
 
-    pub fn gas_cost(&self) -> Result<U256, serde_json::Error> {
-        serde_json::from_value::<PriceRoute>(self.price_route.clone()).map(|r| r.gas_cost)
-    }
+        let Raw { price_route } = Raw::deserialize(deserializer)?;
+        let parsed =
+            serde_json::from_value::<Parsed>(price_route.clone()).map_err(de::Error::custom)?;
 
-    pub fn token_transfer_proxy(&self) -> Result<H160, serde_json::Error> {
-        serde_json::from_value::<PriceRoute>(self.price_route.clone())
-            .map(|r| r.token_transfer_proxy)
+        Ok(Self {
+            price_route,
+            src_amount: parsed.src_amount,
+            dest_amount: parsed.dest_amount,
+            gas_cost: parsed.gas_cost,
+            token_transfer_proxy: parsed.token_transfer_proxy,
+        })
     }
-}
-
-#[serde_as]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PriceRoute {
-    #[serde_as(as = "serialize::U256")]
-    src_amount: U256,
-    #[serde_as(as = "serialize::U256")]
-    dest_amount: U256,
-    #[serde_as(as = "serialize::U256")]
-    gas_cost: U256,
-    token_transfer_proxy: H160,
 }
 
 #[serde_as]
