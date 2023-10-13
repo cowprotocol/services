@@ -54,17 +54,17 @@ impl ParaSwap {
             },
             input: eth::Asset {
                 token: order.sell,
-                amount: price.src_amount()?,
+                amount: price.src_amount,
             },
             output: eth::Asset {
                 token: order.buy,
-                amount: price.dest_amount()?,
+                amount: price.dest_amount,
             },
             allowance: dex::Allowance {
-                spender: eth::ContractAddress(price.token_transfer_proxy()?),
-                amount: dex::Amount::new(price.src_amount()?),
+                spender: eth::ContractAddress(price.token_transfer_proxy),
+                amount: dex::Amount::new(price.src_amount),
             },
-            gas: eth::Gas(price.gas_cost()?),
+            gas: eth::Gas(price.gas_cost),
         })
     }
 
@@ -74,17 +74,13 @@ impl ParaSwap {
         order: &dex::Order,
         tokens: &auction::Tokens,
     ) -> Result<dto::Price, Error> {
-        let request = self
-            .client
-            .get(util::url::join(&self.config.endpoint, "prices"))
-            .query(&dto::PriceQuery::new(&self.config, order, tokens)?)
-            .build()?;
-        tracing::trace!("Querying ParaSwap price API: {request:?}");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let text = response.text().await?;
-        tracing::trace!(%status, %text, "Response from ParaSwap price API");
-        let price = serde_json::from_str::<dto::Response<dto::Price>>(&text)?.into_result()?;
+        let price = util::http::roundtrip!(
+            <dto::Price, dto::Error>;
+            self.client
+                .get(util::url::join(&self.config.endpoint, "prices"))
+                .query(&dto::PriceQuery::new(&self.config, order, tokens)?)
+        )
+        .await?;
         Ok(price)
     }
 
@@ -97,22 +93,16 @@ impl ParaSwap {
         slippage: &dex::Slippage,
     ) -> Result<dto::Transaction, Error> {
         let body = dto::TransactionBody::new(price, &self.config, order, tokens, slippage)?;
-        let request = self
-            .client
-            .post(util::url::join(
-                &self.config.endpoint,
-                "transactions/1?ignoreChecks=true",
-            ))
-            .json(&body)
-            .build()?;
-        let body = serde_json::to_string(&body)?;
-        tracing::trace!(?request, %body, "Querying ParaSwap transaction API");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let text = response.text().await?;
-        tracing::trace!(%status, %text, "Response from ParaSwap transaction API");
-        let transaction =
-            serde_json::from_str::<dto::Response<dto::Transaction>>(&text)?.into_result()?;
+        let transaction = util::http::roundtrip!(
+            <dto::Transaction, dto::Error>;
+            self.client
+                .post(util::url::join(
+                    &self.config.endpoint,
+                    "transactions/1?ignoreChecks=true",
+                ))
+                .json(&body)
+        )
+        .await?;
         Ok(transaction)
     }
 }
@@ -126,18 +116,19 @@ pub enum Error {
     #[error("api error {0}")]
     Api(String),
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Http(#[from] reqwest::Error),
+    Http(util::http::Error),
 }
 
-impl From<dto::Error> for Error {
-    fn from(value: dto::Error) -> Self {
-        match value.error.as_str() {
-            "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT"
-            | "No routes found with enough liquidity"
-            | "Too much slippage on quote, please try again" => Self::NotFound,
-            _ => Self::Api(value.error),
+impl From<util::http::RoundtripError<dto::Error>> for Error {
+    fn from(err: util::http::RoundtripError<dto::Error>) -> Self {
+        match err {
+            util::http::RoundtripError::Http(err) => Self::Http(err),
+            util::http::RoundtripError::Api(err) => match err.error.as_str() {
+                "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT"
+                | "No routes found with enough liquidity"
+                | "Too much slippage on quote, please try again" => Self::NotFound,
+                _ => Self::Api(err.error),
+            },
         }
     }
 }

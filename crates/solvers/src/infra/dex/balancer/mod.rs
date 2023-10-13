@@ -1,5 +1,8 @@
 use {
-    crate::domain::{auction, dex, eth, order},
+    crate::{
+        domain::{auction, dex, eth, order},
+        util,
+    },
     contracts::ethcontract::I256,
     ethereum_types::U256,
     std::sync::atomic::{self, AtomicU64},
@@ -145,21 +148,13 @@ impl Sor {
     }
 
     async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
-        let request = serde_json::to_string(&query)?;
-        tracing::trace!(endpoint = %self.endpoint, %request, "quoting");
-        let response = self
-            .client
-            .post(self.endpoint.clone())
-            .header("content-type", "application/json")
-            .body(request)
-            .send()
-            .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        tracing::trace!(%response, "quoted");
-        let quote = serde_json::from_str(&response)?;
-
+        let quote = util::http::roundtrip!(
+            <dto::Quote, util::serialize::Never>;
+            self.client
+                .post(self.endpoint.clone())
+                .json(query)
+        )
+        .await?;
         Ok(quote)
     }
 }
@@ -169,7 +164,11 @@ pub enum Error {
     #[error("no valid swap interaction could be found")]
     NotFound,
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Http(#[from] reqwest::Error),
+    Http(util::http::Error),
+}
+
+impl From<util::http::RoundtripError<util::serialize::Never>> for Error {
+    fn from(err: util::http::RoundtripError<util::serialize::Never>) -> Self {
+        Self::Http(err.into())
+    }
 }
