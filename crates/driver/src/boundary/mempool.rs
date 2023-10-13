@@ -41,8 +41,8 @@ pub struct Config {
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
     Public(HighRisk),
-    /// The Flashbots private mempool.
-    Flashbots {
+    /// The MEVBlocker private mempool.
+    MEVBlocker {
         url: reqwest::Url,
         max_additional_tip: f64,
         use_soft_cancellations: bool,
@@ -100,7 +100,7 @@ impl Mempool {
                 config,
                 eth,
             },
-            Kind::Flashbots { url, .. } => Self {
+            Kind::MEVBlocker { url, .. } => Self {
                 submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url.to_owned())?),
                 submitted_transactions: pool.add_sub_pool(Strategy::Flashbots),
                 gas_price_estimator,
@@ -124,14 +124,14 @@ impl Mempool {
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
             max_additional_tip: match self.config.kind {
                 Kind::Public(_) => 0.,
-                Kind::Flashbots {
+                Kind::MEVBlocker {
                     max_additional_tip, ..
                 } => max_additional_tip,
             },
         };
         let use_soft_cancellations = match self.config.kind {
             Kind::Public(_) => false,
-            Kind::Flashbots {
+            Kind::MEVBlocker {
                 use_soft_cancellations,
                 ..
             } => use_soft_cancellations,
