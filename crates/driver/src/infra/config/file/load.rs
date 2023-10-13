@@ -219,13 +219,13 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     config.submission.retry_interval_secs,
                 ),
                 kind: match mempool {
-                    file::Mempool::Public {
-                        disable_high_risk_public_mempool_transactions,
-                    } => mempool::Kind::Public(if *disable_high_risk_public_mempool_transactions {
-                        mempool::HighRisk::Disabled
-                    } else {
-                        mempool::HighRisk::Enabled
-                    }),
+                    file::Mempool::Public { revert_protection } => {
+                        mempool::Kind::Public(if *revert_protection {
+                            mempool::RevertProtection::Enabled
+                        } else {
+                            mempool::RevertProtection::Disabled
+                        })
+                    }
                     file::Mempool::MEVBlocker {
                         url,
                         max_additional_tip,

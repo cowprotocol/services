@@ -1,1 +1,1 @@
-pub use crate::boundary::mempool::{Config, GlobalTxPool, HighRisk, Kind, Mempool};
+pub use crate::boundary::mempool::{Config, GlobalTxPool, Kind, Mempool, RevertProtection};

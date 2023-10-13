@@ -40,7 +40,7 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
-    Public(HighRisk),
+    Public(RevertProtection),
     /// The MEVBlocker private mempool.
     MEVBlocker {
         url: reqwest::Url,
@@ -50,7 +50,7 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum HighRisk {
+pub enum RevertProtection {
     Enabled,
     Disabled,
 }
@@ -87,13 +87,13 @@ impl Mempool {
             .await?,
         );
         Ok(match &config.kind {
-            Kind::Public(high_risk) => Self {
+            Kind::Public(revert_protection) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
                     vec![SubmissionNode::new(
                         SubmissionNodeKind::Broadcast,
                         boundary::web3(&eth),
                     )],
-                    matches!(high_risk, HighRisk::Disabled),
+                    matches!(revert_protection, RevertProtection::Enabled),
                 )),
                 submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),
                 gas_price_estimator,

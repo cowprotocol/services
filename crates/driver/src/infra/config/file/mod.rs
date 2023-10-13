@@ -97,7 +97,7 @@ enum Mempool {
         /// This can be enabled to avoid MEV when private transaction
         /// submission strategies are available.
         #[serde(default)]
-        disable_high_risk_public_mempool_transactions: bool,
+        revert_protection: bool,
     },
     MEVBlocker {
         /// The MEVBlocker URL to use.
