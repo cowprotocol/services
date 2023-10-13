@@ -117,8 +117,7 @@ impl OnSettlementEventUpdater {
             .await?
             .map(AuctionId::Colocated);
         if auction_id.is_none() {
-            // This settlement either belongs to the other environment (staging, prod) or it
-            // was issued BEFORE solver-driver colocation.
+            // This settlement was issued BEFORE solver-driver colocation.
             auction_id = database::auction_transaction::get_auction_id(
                 &mut ex,
                 &ByteArray(tx_from.0),
