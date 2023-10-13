@@ -12,6 +12,12 @@ use {
     std::str,
 };
 
+/// Roundtrip an HTTP request. This will `TRACE` log the request and responses.
+///
+/// This is a thin macro wrapper around [`roundtrip_internal`] that ensures that
+/// logs are attributed from the callsite and not from this module. This allows
+/// log filtering to be done in a more fine-grained manner and based on where
+/// the HTTP roundtripping is happening.
 macro_rules! roundtrip {
     (<$t:ty, $e:ty>; $request:expr) => {
         $crate::util::http::roundtrip_internal::<$t, $e>(
@@ -85,10 +91,18 @@ where
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// An error occurred when parsing the JSON body from the HTTP response
+    /// into the expected result type.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    /// A general HTTP error when sending a request or receiving a response.
+    ///
+    /// This is a protocol-level error, and can indicate a networking issue or
+    /// a misbehaving HTTP server.
     #[error(transparent)]
     Http(#[from] reqwest::Error),
+    /// An error indicating that the HTTP response contained a non-200 status
+    /// code indicating an application-level error.
     #[error("HTTP {0}: {1}")]
     Status(StatusCode, String),
 }
