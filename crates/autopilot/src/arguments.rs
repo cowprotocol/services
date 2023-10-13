@@ -1,7 +1,7 @@
 use {
     primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option},
+        arguments::{display_list, display_option, ExternalSolver},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -153,9 +153,9 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_colocation: bool,
 
-    /// Driver base URLs.
+    /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
-    pub drivers: Vec<Url>,
+    pub drivers: Vec<ExternalSolver>,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.

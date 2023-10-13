@@ -2,7 +2,7 @@ use {
     crate::driver_model::{reveal, settle, solve},
     anyhow::{anyhow, Context, Result},
     reqwest::Client,
-    shared::http_client::response_body_with_size_limit,
+    shared::{arguments::ExternalSolver, http_client::response_body_with_size_limit},
     std::time::Duration,
     url::Url,
 };
@@ -11,14 +11,16 @@ const RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 const RESPONSE_TIME_LIMIT: Duration = Duration::from_secs(60);
 
 pub struct Driver {
+    pub name: String,
     pub url: Url,
     client: Client,
 }
 
 impl Driver {
-    pub fn new(url: Url) -> Self {
+    pub fn new(driver: ExternalSolver) -> Self {
         Self {
-            url,
+            name: driver.name,
+            url: driver.url,
             client: Client::builder()
                 .timeout(RESPONSE_TIME_LIMIT)
                 .build()
