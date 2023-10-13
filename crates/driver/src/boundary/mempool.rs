@@ -40,9 +40,9 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
-    Public(HighRisk),
-    /// The Flashbots private mempool.
-    Flashbots {
+    Public(RevertProtection),
+    /// The MEVBlocker private mempool.
+    MEVBlocker {
         url: reqwest::Url,
         max_additional_tip: f64,
         use_soft_cancellations: bool,
@@ -50,7 +50,7 @@ pub enum Kind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum HighRisk {
+pub enum RevertProtection {
     Enabled,
     Disabled,
 }
@@ -87,20 +87,20 @@ impl Mempool {
             .await?,
         );
         Ok(match &config.kind {
-            Kind::Public(high_risk) => Self {
+            Kind::Public(revert_protection) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
                     vec![SubmissionNode::new(
                         SubmissionNodeKind::Broadcast,
                         boundary::web3(&eth),
                     )],
-                    matches!(high_risk, HighRisk::Disabled),
+                    matches!(revert_protection, RevertProtection::Enabled),
                 )),
                 submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),
                 gas_price_estimator,
                 config,
                 eth,
             },
-            Kind::Flashbots { url, .. } => Self {
+            Kind::MEVBlocker { url, .. } => Self {
                 submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url.to_owned())?),
                 submitted_transactions: pool.add_sub_pool(Strategy::Flashbots),
                 gas_price_estimator,
@@ -124,14 +124,14 @@ impl Mempool {
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
             max_additional_tip: match self.config.kind {
                 Kind::Public(_) => 0.,
-                Kind::Flashbots {
+                Kind::MEVBlocker {
                     max_additional_tip, ..
                 } => max_additional_tip,
             },
         };
         let use_soft_cancellations = match self.config.kind {
             Kind::Public(_) => false,
-            Kind::Flashbots {
+            Kind::MEVBlocker {
                 use_soft_cancellations,
                 ..
             } => use_soft_cancellations,

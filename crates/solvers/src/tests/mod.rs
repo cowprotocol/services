@@ -43,7 +43,7 @@ impl SolverEngine {
         let mut args = vec![
             "/test/solvers/path".to_owned(),
             "--addr=0.0.0.0:0".to_owned(),
-            "--log=off".to_owned(),
+            "--log=solvers=trace".to_owned(),
             command.to_owned(),
         ];
         let tempfile = match config {

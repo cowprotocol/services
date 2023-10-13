@@ -82,7 +82,7 @@ struct SubmissionConfig {
     max_confirm_time_secs: u64,
 
     /// The mempools to submit settlement transactions to. Can be the public
-    /// mempool of a node or the private Flashbots mempool.
+    /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
 }
@@ -97,14 +97,14 @@ enum Mempool {
         /// This can be enabled to avoid MEV when private transaction
         /// submission strategies are available.
         #[serde(default)]
-        disable_high_risk_public_mempool_transactions: bool,
+        revert_protection: bool,
     },
-    Flashbots {
-        /// The Flashbots URL to use.
+    MEVBlocker {
+        /// The MEVBlocker URL to use.
         url: Url,
         /// Maximum additional tip in Gwei that we are willing to give to
-        /// Flashbots above regular gas price estimation.
-        #[serde(default = "default_max_additional_flashbots_tip")]
+        /// MEVBlocker above regular gas price estimation.
+        #[serde(default = "default_max_additional_tip")]
         max_additional_tip: f64,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
@@ -136,7 +136,7 @@ fn default_max_confirm_time_secs() -> u64 {
     120
 }
 
-fn default_max_additional_flashbots_tip() -> f64 {
+fn default_max_additional_tip() -> f64 {
     3.0
 }
 

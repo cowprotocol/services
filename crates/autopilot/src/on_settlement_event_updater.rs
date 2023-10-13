@@ -113,17 +113,18 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let mut auction_id =
-            database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
-                .await?
-                .map(AuctionId::Centralized);
+        let mut auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
+            .await?
+            .map(AuctionId::Colocated);
         if auction_id.is_none() {
-            // This settlement either belongs to the other environment (staging, prod) or it
-            // was issued using solver-driver colocation. In that case solvers
-            // are supposed to append the `auction_id` to the calldata.
-            auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
-                .await?
-                .map(AuctionId::Colocated);
+            // This settlement was issued BEFORE solver-driver colocation.
+            auction_id = database::auction_transaction::get_auction_id(
+                &mut ex,
+                &ByteArray(tx_from.0),
+                tx_nonce,
+            )
+            .await?
+            .map(AuctionId::Centralized);
         }
 
         let mut update = SettlementUpdate {
