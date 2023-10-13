@@ -89,8 +89,9 @@ struct SubmissionConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mempool")]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
+    #[serde(rename_all = "kebab-case")]
     Public {
         /// Don't submit transactions with high revert risk (i.e. transactions
         /// that interact with on-chain AMMs) to the public mempool.
@@ -99,7 +100,8 @@ enum Mempool {
         #[serde(default)]
         revert_protection: bool,
     },
-    MEVBlocker {
+    #[serde(rename_all = "kebab-case")]
+    MevBlocker {
         /// The MEVBlocker URL to use.
         url: Url,
         /// Maximum additional tip in Gwei that we are willing to give to

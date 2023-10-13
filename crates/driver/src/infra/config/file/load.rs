@@ -226,7 +226,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             mempool::RevertProtection::Disabled
                         })
                     }
-                    file::Mempool::MEVBlocker {
+                    file::Mempool::MevBlocker {
                         url,
                         max_additional_tip,
                         use_soft_cancellations,
