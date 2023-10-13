@@ -4,7 +4,7 @@ use {
     anyhow::{anyhow, Context, Result},
     ethrpc::current_block::{into_stream, CurrentBlockStream},
     futures::{future::BoxFuture, FutureExt, StreamExt},
-    number::u256_decimal::DecimalU256,
+    number::serialization::HexOrDecimalU256,
     primitive_types::{H160, U256},
     reqwest::{header::AUTHORIZATION, Client},
     serde::{Deserialize, Serialize},
@@ -20,7 +20,7 @@ const BASE_URL: &str = "https://api.1inch.dev/";
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
-struct Response(#[serde_as(as = "HashMap<_, DecimalU256>")] HashMap<Token, PriceInWei>);
+struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, PriceInWei>);
 
 type Token = H160;
 type PriceInWei = U256;

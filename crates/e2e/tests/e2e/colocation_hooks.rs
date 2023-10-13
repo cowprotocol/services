@@ -1,6 +1,10 @@
 use {
     contracts::GnosisSafe,
-    e2e::{setup::*, tx, tx_value},
+    e2e::{
+        setup::{safe::Safe, *},
+        tx,
+        tx_value,
+    },
     ethcontract::{Bytes, H160, U256},
     model::{
         order::{Hook, OrderCreation, OrderCreationAppData, OrderKind},
@@ -181,7 +185,7 @@ async fn signature(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe_infra = GnosisSafeInfrastructure::new(&web3).await;
+    let safe_infra = safe::Infrastructure::new(&web3).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.

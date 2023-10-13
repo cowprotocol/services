@@ -2,8 +2,9 @@
 
 use {
     crate::{
-        domain::{dex::slippage, eth},
+        domain::{dex::slippage, eth, Risk},
         infra::config::unwrap_or_log,
+        util::serialize,
     },
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
@@ -22,7 +23,7 @@ struct Config {
     relative_slippage: BigDecimal,
 
     /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    #[serde_as(as = "Option<serialize::U256>")]
     absolute_slippage: Option<eth::U256>,
 
     /// The number of concurrent requests to make to the DEX aggregator API.
@@ -32,7 +33,12 @@ struct Config {
     /// The amount of Ether a partially fillable order should be filled for at
     /// least.
     #[serde(default = "default_smallest_partial_fill")]
+    #[serde_as(as = "serialize::U256")]
     smallest_partial_fill: eth::U256,
+
+    /// Parameters used to calculate the revert risk of a solution.
+    /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
+    risk_parameters: (f64, f64, f64, f64),
 
     /// Settings specific to the wrapped dex API.
     dex: toml::Value,
@@ -73,7 +79,12 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         .expect("invalid slippage limits"),
         concurrent_requests: config.concurrent_requests,
         smallest_partial_fill: eth::Ether(config.smallest_partial_fill),
+        risk: Risk {
+            gas_amount_factor: config.risk_parameters.0,
+            gas_price_factor: config.risk_parameters.1,
+            nmb_orders_factor: config.risk_parameters.2,
+            intercept: config.risk_parameters.3,
+        },
     };
-
     (config, dex)
 }

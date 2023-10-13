@@ -1,14 +1,12 @@
 use {
-    e2e::{setup::*, tx_safe},
-    ethcontract::{Bytes, H160, H256, U256},
+    e2e::setup::{safe::Safe, *},
+    ethcontract::{Bytes, H160, U256},
     model::{
         app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
-        signature::{hashed_eip712_message, Signature},
+        signature::Signature,
     },
-    secp256k1::SecretKey,
     shared::ethrpc::Web3,
-    web3::signing::SecretKeyRef,
 };
 
 #[tokio::test]
@@ -23,8 +21,7 @@ async fn smart_contract_orders(web3: Web3) {
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe_infra = GnosisSafeInfrastructure::new(&web3).await;
-    let safe = safe_infra.deploy_safe(vec![trader.address()], 1).await;
+    let safe = Safe::deploy(trader, &web3).await;
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
@@ -32,11 +29,8 @@ async fn smart_contract_orders(web3: Web3) {
     token.mint(safe.address(), to_wei(10)).await;
 
     // Approve GPv2 for trading
-    tx_safe!(
-        trader.account(),
-        safe,
-        token.approve(onchain.contracts().allowance, to_wei(10))
-    );
+    safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
+        .await;
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![]);
@@ -52,15 +46,7 @@ async fn smart_contract_orders(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         ..Default::default()
     };
-    let signature1271 = gnosis_safe_eip1271_signature(
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
-        &safe,
-        H256(hashed_eip712_message(
-            &onchain.contracts().domain_separator,
-            &order_template.data().hash_struct(),
-        )),
-    )
-    .await;
+    let signature1271 = safe.order_eip1271_signature(&order_template, &onchain);
 
     // Check that we can't place invalid orders.
     let orders = [
@@ -124,14 +110,13 @@ async fn smart_contract_orders(web3: Web3) {
         order_status(uids[1]).await,
         OrderStatus::PresignaturePending
     );
-    tx_safe!(
-        trader.account(),
-        safe,
+    safe.exec_call(
         onchain
             .contracts()
             .gp_settlement
-            .set_pre_signature(Bytes(uids[1].0.to_vec()), true)
-    );
+            .set_pre_signature(Bytes(uids[1].0.to_vec()), true),
+    )
+    .await;
 
     // Check that the presignature event was received.
     wait_for_condition(TIMEOUT, || async {

@@ -15,7 +15,7 @@ use {
     derivative::Derivative,
     ethcontract::{Bytes, H160, H256, U256},
     ethrpc::current_block::{BlockInfo, CurrentBlockStream},
-    number::u256_decimal,
+    number::serialization::HexOrDecimalU256,
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Client,
@@ -233,7 +233,7 @@ pub struct Order {
     pub pool: H256,
     /// A value that can be used to guarantee order uniqueness. Typically it is
     /// set to a random number.
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub salt: U256,
     /// It allows the maker to enforce that the order flow through some
     /// additional logic before it can be filled (e.g., a KYC whitelist).
@@ -299,9 +299,9 @@ pub struct OrdersResponse {
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceResponse {
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub allowance_target: H160,
     #[serde_as(as = "DisplayFromStr")]
@@ -311,6 +311,7 @@ pub struct PriceResponse {
 }
 
 /// A Ox API `swap` response.
+#[serde_as]
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -321,7 +322,7 @@ pub struct SwapResponse {
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
-    #[serde(with = "u256_decimal")]
+    #[serde_as(as = "HexOrDecimalU256")]
     pub value: U256,
 }
 

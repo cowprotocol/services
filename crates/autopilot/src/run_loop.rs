@@ -212,6 +212,7 @@ impl RunLoop {
             }
 
             let competition_table = SolverCompetitionDB {
+                auction_start_block: auction.block,
                 competition_simulation_block,
                 auction: CompetitionAuction {
                     orders: auction
@@ -433,6 +434,8 @@ impl RunLoop {
                 .collect_vec();
             self.database.store_order_events(&events).await;
             tracing::debug!("settled in tx {:?}", tx.hash);
+        } else {
+            tracing::warn!("could not find a mined transaction in time");
         }
 
         Ok(())

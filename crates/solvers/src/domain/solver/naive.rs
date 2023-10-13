@@ -8,17 +8,27 @@
 use {
     crate::{
         boundary,
-        domain::{auction, liquidity, order, solution},
+        domain::{self, auction, eth, liquidity, order, solution},
+        infra::config,
     },
     std::collections::HashMap,
 };
 
-pub struct Naive;
+pub struct Naive {
+    /// Parameters used to calculate the revert risk of a solution.
+    risk: domain::Risk,
+}
 
 impl Naive {
+    /// Creates a new naive solver for the specified configuration.
+    pub fn new(config: config::naive::Config) -> Self {
+        Self { risk: config.risk }
+    }
+
     /// Solves the specified auction, returning a vector of all possible
     /// solutions.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+        let risk = self.risk.clone();
         // Make sure to push the CPU-heavy code to a separate thread in order to
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things.
@@ -28,7 +38,19 @@ impl Naive {
             let groups = group_by_token_pair(&auction);
             groups
                 .values()
-                .filter_map(|group| boundary::naive::solve(&group.orders, group.liquidity))
+                .filter_map(|group| {
+                    boundary::naive::solve(&group.orders, group.liquidity).map(|solution| {
+                        let gas = solution::INITIALIZATION_COST
+                            + solution::SETTLEMENT
+                            + solution::ERC20_TRANSFER * solution.trades.len() as u64 * 2
+                            + group.liquidity.gas.0.as_u64(); // this is pessimistic in case the pool is not used
+                        solution.with_risk_adjusted_score(
+                            &risk,
+                            eth::Gas(gas.into()),
+                            auction.gas_price,
+                        )
+                    })
+                })
                 .map(|solution| solution.with_buffers_internalizations(&auction.tokens))
                 .collect()
         })
