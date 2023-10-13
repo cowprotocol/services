@@ -10,7 +10,7 @@ pub async fn save(
     order: &OrderUid,
     auction: AuctionId,
     surplus_fee: Option<&BigDecimal>,
-    solver_fee: &BigDecimal,
+    solver_fee: Option<&BigDecimal>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
