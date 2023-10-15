@@ -41,11 +41,14 @@ use {
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
     database::byte_array::ByteArray,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
+    ethrpc::{
+        current_block::{into_stream, CurrentBlockStream},
+        Web3,
+    },
+    futures::StreamExt,
     primitive_types::{H160, H256},
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
-    std::time::Duration,
     web3::types::{Transaction, TransactionId},
 };
 
@@ -54,28 +57,33 @@ pub struct OnSettlementEventUpdater {
     pub contract: GPv2Settlement,
     pub native_token: H160,
     pub db: Postgres,
-    pub current_block: CurrentBlockStream,
 }
 
 impl OnSettlementEventUpdater {
-    pub async fn run_forever(self) -> ! {
+    pub async fn run_forever(self, block_stream: CurrentBlockStream) -> ! {
+        let mut current_block = block_stream.borrow().clone();
+        let mut block_stream = into_stream(block_stream);
         loop {
-            match self.update().await {
-                Ok(true) => (),
-                Ok(false) => tokio::time::sleep(Duration::from_secs(10)).await,
+            match self.update(current_block.number).await {
+                Ok(performed_update) => {
+                    tracing::debug!(
+                        ?performed_update,
+                        block = current_block.number,
+                        "on settlement event updater ran"
+                    );
+                }
                 Err(err) => {
                     tracing::error!(?err, "on settlement event update task failed");
-                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
+            current_block = block_stream.next().await.expect("blockchains never end");
         }
     }
 
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
-    async fn update(&self) -> Result<bool> {
-        let current_block = self.current_block.borrow().number;
+    async fn update(&self, current_block: u64) -> Result<bool> {
         let reorg_safe_block: i64 = current_block
             .checked_sub(MAX_REORG_BLOCK_COUNT)
             .context("no reorg safe block")?
@@ -282,7 +290,6 @@ mod tests {
         super::*,
         database::{auction_prices::AuctionPrice, settlement_observations::Observation},
         sqlx::Executor,
-        std::sync::Arc,
     };
 
     #[tokio::test]
@@ -294,12 +301,6 @@ mod tests {
         database::clear_DANGER(&db.0).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let current_block = ethrpc::current_block::current_block_stream(
-            Arc::new(web3.clone()),
-            Duration::from_secs(1),
-        )
-        .await
-        .unwrap();
 
         let contract = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
@@ -307,11 +308,10 @@ mod tests {
             web3,
             db,
             native_token,
-            current_block,
             contract,
         };
 
-        assert!(!updater.update().await.unwrap());
+        assert!(!updater.update(15875900).await.unwrap());
 
         let query = r"
 INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_nonce)
@@ -334,7 +334,7 @@ VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 63477957279334750883433
 
         updater.db.0.execute(query).await.unwrap();
 
-        assert!(updater.update().await.unwrap());
+        assert!(updater.update(15875900).await.unwrap());
 
         let query = r"
 SELECT tx_from, tx_nonce
@@ -384,6 +384,6 @@ FROM auction_transaction
         assert_eq!(observation.effective_gas_price, 19789368758u64.into());
         assert_eq!(observation.surplus, 5150444803867862u64.into());
 
-        assert!(!updater.update().await.unwrap());
+        assert!(!updater.update(15875900).await.unwrap());
     }
 }
