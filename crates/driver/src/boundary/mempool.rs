@@ -52,10 +52,10 @@ pub enum Kind {
 
 impl Kind {
     /// for instrumentization purposes
-    pub fn format_variant(&self) -> String {
+    pub fn format_variant(&self) -> &'static str {
         match self {
-            Kind::Public(_) => "PublicMempool".to_string(),
-            Kind::MEVBlocker { .. } => "MEVBlocker".to_string(),
+            Kind::Public(_) => "PublicMempool",
+            Kind::MEVBlocker { .. } => "MEVBlocker",
         }
     }
 }
