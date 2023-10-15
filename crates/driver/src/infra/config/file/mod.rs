@@ -120,8 +120,9 @@ fn default_additional_tip_percentage() -> f64 {
     0.05
 }
 
+/// 1000 gwei
 fn default_gas_price_cap() -> f64 {
-    1e9
+    1e12
 }
 
 fn default_target_confirm_time_secs() -> u64 {
@@ -136,8 +137,9 @@ fn default_max_confirm_time_secs() -> u64 {
     120
 }
 
+/// 3 gwei
 fn default_max_additional_tip() -> f64 {
-    3.0
+    3e9
 }
 
 fn default_soft_cancellations_flag() -> bool {
