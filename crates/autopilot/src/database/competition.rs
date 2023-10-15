@@ -82,10 +82,7 @@ impl super::Postgres {
             .context("solver_competition::save")?;
 
         for order_execution in &competition.order_executions {
-            let solver_fee = order_execution
-                .executed_fee
-                .fee()
-                .map(|fee| u256_to_big_decimal(fee));
+            let solver_fee = order_execution.executed_fee.fee().map(u256_to_big_decimal);
             database::order_execution::save(
                 &mut ex,
                 &ByteArray(order_execution.order_id.0),

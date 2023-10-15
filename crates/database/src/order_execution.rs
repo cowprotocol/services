@@ -60,7 +60,7 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        save(&mut db, &Default::default(), 0, None, &Default::default())
+        save(&mut db, &Default::default(), 0, None, Default::default())
             .await
             .unwrap();
 
@@ -69,7 +69,7 @@ mod tests {
             &Default::default(),
             1,
             Some(&Default::default()),
-            &Default::default(),
+            Default::default(),
         )
         .await
         .unwrap();
