@@ -60,6 +60,7 @@ pub mod solve {
         primitive_types::{H160, U256},
         serde::{Deserialize, Serialize},
         serde_with::{serde_as, DisplayFromStr},
+        std::collections::HashMap,
     };
 
     #[serde_as]
@@ -139,6 +140,16 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct OrderAmounts {
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub in_amount: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub out_amount: U256,
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Solution {
         /// Unique ID of the solution (per driver competition), used to identify
         /// it in subsequent requests (reveal, settle).
@@ -148,6 +159,7 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+        pub orders: HashMap<OrderUid, OrderAmounts>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
@@ -159,7 +171,7 @@ pub mod solve {
 
 pub mod reveal {
     use {
-        model::{bytes_hex, order::OrderUid},
+        model::bytes_hex,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
@@ -186,7 +198,6 @@ pub mod reveal {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
-        pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
     }
 }

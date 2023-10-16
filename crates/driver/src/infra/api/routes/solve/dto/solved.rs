@@ -1,11 +1,12 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, competition::order, eth},
         infra::Solver,
         util::serialize,
     },
     serde::Serialize,
     serde_with::serde_as,
+    std::collections::HashMap,
 };
 
 impl Solved {
@@ -31,9 +32,34 @@ impl Solution {
             solution_id,
             score: solved.score.0.get(),
             submission_address: solver.address().into(),
+            orders: solved
+                .orders
+                .into_iter()
+                .map(|(order_id, amounts)| {
+                    (
+                        order_id.into(),
+                        OrderAmounts {
+                            in_amount: amounts.in_amount.into(),
+                            out_amount: amounts.out_amount.into(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderAmounts {
+    #[serde_as(as = "serialize::U256")]
+    pub in_amount: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    pub out_amount: eth::U256,
+}
+
+type OrderId = [u8; order::UID_LEN];
 
 #[serde_as]
 #[derive(Debug, Serialize)]
@@ -46,4 +72,6 @@ pub struct Solution {
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
     submission_address: eth::H160,
+    #[serde_as(as = "HashMap<serialize::Hex, _>")]
+    orders: HashMap<OrderId, OrderAmounts>,
 }
