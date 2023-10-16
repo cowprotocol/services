@@ -238,16 +238,16 @@ impl RunLoop {
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
                         };
+                        settlement.orders = participant
+                            .solution
+                            .orders()
+                            .iter()
+                            .map(|(id, order)| Order {
+                                id: *id,
+                                executed_amount: order.out_amount,
+                            })
+                            .collect();
                         if is_winner {
-                            settlement.orders = participant
-                                .solution
-                                .orders()
-                                .iter()
-                                .map(|(id, order)| Order {
-                                    id: *id,
-                                    executed_amount: order.out_amount,
-                                })
-                                .collect();
                             settlement.call_data = revealed.calldata.internalized.clone();
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
