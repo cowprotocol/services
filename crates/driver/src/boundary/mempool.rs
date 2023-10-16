@@ -23,6 +23,7 @@ use {
         },
     },
     std::{fmt::Debug, sync::Arc},
+    tracing::Instrument,
     web3::types::AccessList,
 };
 pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::GlobalTxPool};
@@ -47,6 +48,16 @@ pub enum Kind {
         max_additional_tip: f64,
         use_soft_cancellations: bool,
     },
+}
+
+impl Kind {
+    /// for instrumentization purposes
+    pub fn format_variant(&self) -> &'static str {
+        match self {
+            Kind::Public(_) => "PublicMempool",
+            Kind::MEVBlocker { .. } => "MEVBlocker",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -163,6 +174,10 @@ impl Mempool {
                     use_soft_cancellations,
                 },
             )
+            .instrument(tracing::info_span!(
+                "mempool",
+                kind = self.config.kind.format_variant()
+            ))
             .await?;
         Ok(receipt.transaction_hash.into())
     }
