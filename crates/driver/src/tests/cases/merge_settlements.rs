@@ -17,11 +17,11 @@ async fn possible() {
         .done()
         .await;
 
-    test.solve().await.ok();
-    test.reveal()
+    test.solve()
         .await
         .ok()
         .orders(&[ab_order().name, cd_order().name]);
+    test.reveal().await.ok().calldata();
     test.settle()
         .await
         // Even though the solver returned two solutions, the executed settlement is a
@@ -54,7 +54,7 @@ async fn impossible() {
 
     // Only the first A-B order gets settled.
 
-    test.solve().await.ok();
-    test.reveal().await.ok().orders(&[ab_order().name]);
+    test.solve().await.ok().orders(&[ab_order().name]);
+    test.reveal().await.ok().calldata();
     test.settle().await.ok().await.ab_order_executed().await;
 }

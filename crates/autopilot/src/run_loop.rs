@@ -231,19 +231,19 @@ impl RunLoop {
                             solver_address: participant.solution.account,
                             score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
+                            orders: participant
+                                .solution
+                                .orders()
+                                .iter()
+                                .map(|(id, order)| Order {
+                                    id: *id,
+                                    executed_amount: order.out_amount,
+                                })
+                                .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
                         };
-                        settlement.orders = participant
-                            .solution
-                            .orders()
-                            .iter()
-                            .map(|(id, order)| Order {
-                                id: *id,
-                                executed_amount: order.out_amount,
-                            })
-                            .collect();
                         if is_winner {
                             settlement.call_data = revealed.calldata.internalized.clone();
                             settlement.uninternalized_call_data =
