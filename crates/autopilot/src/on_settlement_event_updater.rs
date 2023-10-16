@@ -61,7 +61,7 @@ pub struct OnSettlementEventUpdater {
 
 impl OnSettlementEventUpdater {
     pub async fn run_forever(self, block_stream: CurrentBlockStream) -> ! {
-        let mut current_block = block_stream.borrow().clone();
+        let mut current_block = *block_stream.borrow();
         let mut block_stream = into_stream(block_stream);
         loop {
             match self.update(current_block.number).await {
