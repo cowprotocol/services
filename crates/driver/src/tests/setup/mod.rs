@@ -834,14 +834,22 @@ impl<'a> SolveOk<'a> {
         serde_json::from_str::<Body>(&self.body).unwrap().solutions
     }
 
-    /// Extracts the score from the response. Since response can contain
-    /// multiple solutions, it takes the score from the first solution.
-    pub fn score(&self) -> eth::U256 {
+    /// Extracts the first solution from the response. This is expected to be
+    /// always valid if there is a valid solution, as we expect from driver to
+    /// not send multiple solutions (yet).
+    fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
         assert_eq!(solution.as_object().unwrap().len(), 4);
+        solution
+    }
+
+    /// Extracts the score from the response. Since response can contain
+    /// multiple solutions, it takes the score from the first solution.
+    pub fn score(&self) -> eth::U256 {
+        let solution = self.solution();
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
         eth::U256::from_dec_str(score).unwrap()
@@ -888,12 +896,10 @@ impl<'a> SolveOk<'a> {
             })
             .sorted()
             .collect_vec();
-        let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
-        assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 4);
-        assert!(result.get("orders").is_some());
+        let solution = self.solution();
+        assert!(solution.get("orders").is_some());
         let order_uids = serde_json::from_value::<HashMap<String, serde_json::Value>>(
-            result.get("orders").unwrap().clone(),
+            solution.get("orders").unwrap().clone(),
         )
         .unwrap()
         .keys()
