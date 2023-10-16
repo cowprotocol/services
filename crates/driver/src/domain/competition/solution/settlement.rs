@@ -318,12 +318,18 @@ impl Settlement {
         self.boundary.solver
     }
 
-    /// The settled user orders.
-    pub fn orders(&self) -> HashSet<order::Uid> {
+    /// The settled user orders with their in/out amounts.
+    pub fn orders(&self) -> HashMap<order::Uid, competition::OrderAmounts> {
         self.solutions
             .values()
-            .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
-            .collect()
+            .fold(Default::default(), |mut acc, solution| {
+                for trade in solution.user_trades() {
+                    let order = acc.entry(trade.order().uid).or_default();
+                    order.in_amount = trade.order().target().into();
+                    order.out_amount.0 += trade.executed().0;
+                }
+                acc
+            })
     }
 }
 
