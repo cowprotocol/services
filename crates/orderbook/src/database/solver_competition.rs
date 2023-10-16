@@ -46,7 +46,7 @@ impl SolverCompetitionStoring for Postgres {
                 &ByteArray(order.0),
                 request.auction,
                 surplus_fee.as_ref(),
-                &u256_to_big_decimal(&execution.solver_fee),
+                Some(&u256_to_big_decimal(&execution.solver_fee)),
             )
             .await
             .context("order_execution::save")?;
