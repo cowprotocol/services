@@ -313,13 +313,26 @@ impl From<H256> for TxId {
 }
 
 /// An onchain transaction.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
+}
+
+impl std::fmt::Debug for Tx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} -> {:?} ({:?} ETH) {}",
+            self.from,
+            self.to,
+            self.value,
+            hex::encode(&self.input.0)
+        )
+    }
 }
 
 impl Tx {

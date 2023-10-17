@@ -78,11 +78,18 @@ impl Simulator {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx.clone(), tenderly::GenerateAccessList::Yes)
-                    .await?
+                    .await
+                    .map_err(with_tx(tx.clone()))?
                     .access_list
             }
-            Inner::Ethereum(ethereum) => ethereum.create_access_list(tx.clone()).await?,
-            Inner::Enso(_, ethereum) => ethereum.create_access_list(tx.clone()).await?,
+            Inner::Ethereum(ethereum) => ethereum
+                .create_access_list(tx.clone())
+                .await
+                .map_err(with_tx(tx.clone()))?,
+            Inner::Enso(_, ethereum) => ethereum
+                .create_access_list(tx.clone())
+                .await
+                .map_err(with_tx(tx.clone()))?,
         };
         Ok(tx.access_list.merge(access_list))
     }
@@ -95,13 +102,21 @@ impl Simulator {
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::No)
+                    .simulate(tx.clone(), tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
-                    .await?
+                    .await
+                    .map_err(with_tx(tx))?
                     .gas
             }
-            Inner::Ethereum(ethereum) => ethereum.estimate_gas(tx).await?,
-            Inner::Enso(enso, _) => enso.simulate(tx).measure("enso_simulate_gas").await?,
+            Inner::Ethereum(ethereum) => ethereum
+                .estimate_gas(tx.clone())
+                .await
+                .map_err(with_tx(tx))?,
+            Inner::Enso(enso, _) => enso
+                .simulate(tx.clone())
+                .measure("enso_simulate_gas")
+                .await
+                .map_err(with_tx(tx))?,
         })
     }
 }
@@ -114,11 +129,28 @@ enum Inner {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+#[error("err: {err}, tx: {tx:?}")]
+pub struct Error {
+    err: InnerError,
+    tx: eth::Tx,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InnerError {
     #[error("tenderly error: {0:?}")]
     Tenderly(#[from] tenderly::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
+}
+
+fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
+where
+    E: Into<InnerError>,
+{
+    move |err| Error {
+        tx,
+        err: err.into(),
+    }
 }
