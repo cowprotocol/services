@@ -94,8 +94,7 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::encoding_failed(self.solver.name(), id, err);
-                        //notify::encoding_failed(&self.solver, auction.id(),
-                        // id);
+                        notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
             })
