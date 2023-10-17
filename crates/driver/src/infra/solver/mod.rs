@@ -1,7 +1,8 @@
 use {
+    super::notify,
     crate::{
         domain::{
-            competition::{auction::Auction, solution::Solution, SolverTimeout},
+            competition::{auction, auction::Auction, solution::Solution, SolverTimeout},
             eth,
             liquidity,
         },
@@ -169,6 +170,19 @@ impl Solver {
 
         super::observe::solutions(&solutions);
         Ok(solutions)
+    }
+
+    pub fn notify(&self, auction_id: Option<auction::Id>, kind: notify::Kind) {
+        let body = serde_json::to_string(&dto::Notification::new(auction_id, kind)).unwrap();
+        super::observe::solver_request(&self.config.endpoint, &body);
+        let mut req = self.client.post(self.config.endpoint.clone()).body(body);
+        if let Some(id) = observe::request_id::get_task_local_storage() {
+            req = req.header("X-REQUEST-ID", id);
+        }
+        let future = async move {
+            let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+        };
+        tokio::task::spawn(future);
     }
 }
 
