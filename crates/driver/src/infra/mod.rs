@@ -4,6 +4,7 @@ pub mod cli;
 pub mod config;
 pub mod liquidity;
 pub mod mempool;
+pub mod notify;
 pub mod observe;
 pub mod simulator;
 pub mod solver;
