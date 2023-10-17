@@ -129,14 +129,7 @@ enum Inner {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("err: {err}, tx: {tx:?}")]
-pub struct Error {
-    err: InnerError,
-    tx: Option<eth::Tx>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum InnerError {
+pub enum SimulatorError {
     #[error("tenderly error: {0:?}")]
     Tenderly(#[from] tenderly::Error),
     #[error("blockchain error: {0:?}")]
@@ -145,24 +138,33 @@ pub enum InnerError {
     Enso(#[from] enso::Error),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("err: {err}, tx: {tx:?}")]
+pub struct Error {
+    err: SimulatorError,
+    /// Optional since we are not interested in the tx data for http
+    /// communication errors, for example.
+    tx: Option<eth::Tx>,
+}
+
 fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
 where
-    E: Into<InnerError>,
+    E: Into<SimulatorError>,
 {
     move |err| {
-        let err: InnerError = err.into();
+        let err: SimulatorError = err.into();
         let tx = match &err {
-            InnerError::Tenderly(err) => match err {
+            SimulatorError::Tenderly(err) => match err {
                 tenderly::Error::Http(_) => None,
                 tenderly::Error::Revert(_) => Some(tx),
             },
-            InnerError::Blockchain(err) => match err {
+            SimulatorError::Blockchain(err) => match err {
                 blockchain::Error::Method(_) => Some(tx),
                 blockchain::Error::Web3(_) => Some(tx),
                 blockchain::Error::Gas(_) => None,
                 blockchain::Error::Response(_) => None,
             },
-            InnerError::Enso(err) => match err {
+            SimulatorError::Enso(err) => match err {
                 enso::Error::Http(_) => None,
                 enso::Error::Revert(_) => Some(tx),
             },
