@@ -12,6 +12,8 @@ impl Notification {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::PriceViolation => Kind::PriceViolation,
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
+                notify::Kind::UntrustedInternalization => Kind::UntrustedInternalization,
+                notify::Kind::InsufficientBalance => Kind::InsufficientBalance,
             },
         }
     }
@@ -32,5 +34,7 @@ pub enum Kind {
     EmptySolution,
     PriceViolation,
     ScoringFailed,
+    UntrustedInternalization,
+    InsufficientBalance,
     // .. todo
 }
