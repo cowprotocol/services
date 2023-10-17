@@ -132,7 +132,7 @@ enum Inner {
 #[error("err: {err}, tx: {tx:?}")]
 pub struct Error {
     err: InnerError,
-    tx: eth::Tx,
+    tx: Option<eth::Tx>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -149,8 +149,24 @@ fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
 where
     E: Into<InnerError>,
 {
-    move |err| Error {
-        tx,
-        err: err.into(),
+    move |err| {
+        let err: InnerError = err.into();
+        let tx = match &err {
+            InnerError::Tenderly(err) => match err {
+                tenderly::Error::Http(_) => None,
+                tenderly::Error::Revert(_) => Some(tx),
+            },
+            InnerError::Blockchain(err) => match err {
+                blockchain::Error::Method(_) => Some(tx),
+                blockchain::Error::Web3(_) => Some(tx),
+                blockchain::Error::Gas(_) => None,
+                blockchain::Error::Response(_) => None,
+            },
+            InnerError::Enso(err) => match err {
+                enso::Error::Http(_) => None,
+                enso::Error::Revert(_) => Some(tx),
+            },
+        };
+        Error { tx, err }
     }
 }
