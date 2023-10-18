@@ -3,7 +3,10 @@ use crate::domain::{auction, dex};
 pub mod balancer;
 pub mod oneinch;
 pub mod paraswap;
+pub mod simulator;
 pub mod zeroex;
+
+pub use self::simulator::Simulator;
 
 /// A supported external DEX/DEX aggregator API.
 pub enum Dex {

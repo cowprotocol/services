@@ -10,7 +10,7 @@ use {
 async fn test() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "amms": {
                 "0x97b744df0b59d93a866304f97431d8efad29a08d": {
                     "address": "0x97b744df0b59d93a866304f97431d8efad29a08d",
@@ -65,7 +65,7 @@ async fn test() {
                     "external_price": null,
                 }
             }
-        }),
+        })),
         res: json!({
             "orders": {},
             "prices": {},

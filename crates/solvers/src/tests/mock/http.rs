@@ -71,9 +71,17 @@ pub enum Expectation {
     },
     Post {
         path: Path,
-        req: serde_json::Value,
+        req: RequestBody,
         res: serde_json::Value,
     },
+}
+
+#[derive(Clone, Debug)]
+pub enum RequestBody {
+    /// The received `[RequestBody]` has to match the provided value exactly.
+    Exact(serde_json::Value),
+    /// Any `[RequestBody]` will be accepted.
+    Any,
 }
 
 /// Drop handle that will verify that the server task didn't panic throughout
@@ -105,7 +113,11 @@ impl Drop for ServerHandle {
             !self.handle.is_finished(),
             "mock http server terminated before test ended"
         );
-        assert_eq!(self.expectations.lock().unwrap().len(), 0);
+        assert_eq!(
+            self.expectations.lock().unwrap().len(),
+            0,
+            "mock server did not receive enough requests"
+        );
         self.handle.abort();
     }
 }
@@ -226,7 +238,10 @@ fn post(
 
         let full_path = full_path(path, query);
         assert_eq!(full_path, expected_path, "POST request has unexpected path");
-        assert_eq!(req, expected_req, "POST request has unexpected body");
+        match expected_req {
+            RequestBody::Exact(value) => assert_eq!(req, value, "POST request has unexpected body"),
+            RequestBody::Any => (),
+        }
         res
     };
 
