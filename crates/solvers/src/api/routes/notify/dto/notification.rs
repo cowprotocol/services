@@ -15,7 +15,7 @@ impl Notification {
             kind: match self.kind {
                 Kind::EmptySolution => notification::Kind::EmptySolution,
                 Kind::ScoringFailed => notification::Kind::ScoringFailed,
-                Kind::UntrustedInternalization => notification::Kind::UntrustedInternalization,
+                Kind::NonBufferableTokensUsed => notification::Kind::NonBufferableTokensUsed,
                 Kind::InsufficientBalance => notification::Kind::InsufficientBalance,
             },
         }
@@ -37,7 +37,6 @@ pub struct Notification {
 pub enum Kind {
     EmptySolution,
     ScoringFailed,
-    UntrustedInternalization,
+    NonBufferableTokensUsed,
     InsufficientBalance,
-    // todo
 }

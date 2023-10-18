@@ -567,7 +567,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         notification::Kind::ScoringFailed => {
             AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
         }
-        notification::Kind::UntrustedInternalization => AuctionResult::Rejected(
+        notification::Kind::NonBufferableTokensUsed => AuctionResult::Rejected(
             SolverRejectionReason::NonBufferableTokensUsed(Default::default()),
         ),
         notification::Kind::InsufficientBalance => {

@@ -15,12 +15,7 @@ pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, notification::Kind::ScoringFailed);
 }
 
-pub fn encoding_failed(
-    solver: &Solver,
-    auction_id: Option<auction::Id>,
-    _solution_id: solution::Id,
-    err: &solution::Error,
-) {
+pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &solution::Error) {
     match err {
         solution::Error::UntrustedInternalization => {
             solver.notify(auction_id, notification::Kind::NonBufferableTokensUsed);

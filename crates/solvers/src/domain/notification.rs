@@ -13,6 +13,6 @@ pub struct Notification {
 pub enum Kind {
     EmptySolution,
     ScoringFailed,
-    UntrustedInternalization,
+    NonBufferableTokensUsed,
     InsufficientBalance,
 }

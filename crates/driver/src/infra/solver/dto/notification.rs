@@ -1,17 +1,17 @@
 use {
-    crate::{domain::competition, infra::notify},
+    crate::{domain::competition::auction, infra::notify},
     serde::Serialize,
     serde_with::serde_as,
 };
 
 impl Notification {
-    pub fn new(auction_id: Option<competition::auction::Id>, kind: notify::Kind) -> Self {
+    pub fn new(auction_id: Option<auction::Id>, kind: notify::Kind) -> Self {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
             kind: match kind {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
-                notify::Kind::NonBufferableTokensUsed => Kind::UntrustedInternalization,
+                notify::Kind::NonBufferableTokensUsed => Kind::NonBufferableTokensUsed,
                 notify::Kind::InsufficientBalance => Kind::InsufficientBalance,
             },
         }
@@ -32,6 +32,6 @@ pub struct Notification {
 pub enum Kind {
     EmptySolution,
     ScoringFailed,
-    UntrustedInternalization,
+    NonBufferableTokensUsed,
     InsufficientBalance,
 }

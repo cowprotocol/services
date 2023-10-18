@@ -173,6 +173,7 @@ impl Solver {
         Ok(solutions)
     }
 
+    /// Make a fire and forget POST request to notify the solver about an event.
     pub fn notify(&self, auction_id: Option<auction::Id>, kind: notify::Kind) {
         let body = serde_json::to_string(&dto::Notification::new(auction_id, kind)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "notify");
