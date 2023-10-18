@@ -79,18 +79,12 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
 
     let dex: T = unwrap_or_log(config.dex.try_into(), &path);
 
-    let web3 = blockchain::rpc(&config.node_url);
-    let chain_id = web3
-        .eth()
-        .chain_id()
-        .await
-        .expect("failed to read chain id from RPC");
-    let contracts =
-        contracts::Contracts::for_chain(eth::ChainId::new(chain_id).unwrap_or_else(|_| {
-            panic!("RPC is connected to chain id {chain_id:?} which is not supported")
-        }));
+    // Take advantage of the fact that deterministic deployment means that all
+    // CoW Protocol contracts have the same address.
+    let contracts = contracts::Contracts::for_chain(eth::ChainId::Mainnet);
     let (settlement, authenticator) = if let Some(settlement) = config.settlement {
         let authenticator = eth::ContractAddress({
+            let web3 = blockchain::rpc(&config.node_url);
             let settlement = ::contracts::GPv2Settlement::at(&web3, settlement);
             settlement
                 .methods()
