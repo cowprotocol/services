@@ -38,3 +38,7 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
         solution::Error::DifferentSolvers => (),
     }
 }
+
+pub fn timeout(solver: &Solver, auction_id: Option<auction::Id>) {
+    solver.notify(auction_id, notification::Kind::Timeout);
+}
