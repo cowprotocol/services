@@ -29,7 +29,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     EmptySolution,
     PriceViolation,

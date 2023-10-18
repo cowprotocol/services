@@ -477,6 +477,9 @@ pub enum SolverRejectionReason {
 
     /// It is expected for a score to be less or equal to the objective value.
     ScoreHigherThanObjective,
+
+    /// Solver too low balance to cover the execution costs.
+    InsufficientBalance,
 }
 
 #[derive(Debug, Serialize)]

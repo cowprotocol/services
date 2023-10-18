@@ -1,4 +1,4 @@
-use tracing::Instrument;
+use {super::Response, tracing::Instrument};
 
 mod dto;
 
@@ -9,7 +9,7 @@ pub async fn solve(
     auction: axum::extract::Json<dto::Auction>,
 ) -> (
     axum::http::StatusCode,
-    axum::response::Json<dto::Response<dto::Solutions>>,
+    axum::response::Json<Response<dto::Solutions>>,
 ) {
     let handle_request = async {
         let auction = match auction.to_domain() {
@@ -18,7 +18,7 @@ pub async fn solve(
                 tracing::warn!(?err, "invalid auction");
                 return (
                     axum::http::StatusCode::BAD_REQUEST,
-                    axum::response::Json(dto::Response::Err(err)),
+                    axum::response::Json(Response::Err(err)),
                 );
             }
         };
@@ -36,7 +36,7 @@ pub async fn solve(
         let solutions = dto::Solutions::from_domain(&solutions);
         (
             axum::http::StatusCode::OK,
-            axum::response::Json(dto::Response::Ok(solutions)),
+            axum::response::Json(Response::Ok(solutions)),
         )
     };
 

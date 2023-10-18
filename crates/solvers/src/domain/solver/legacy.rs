@@ -7,7 +7,7 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, solution},
+        domain::{auction, eth, notification, solution},
     },
     reqwest::Url,
 };
@@ -34,5 +34,9 @@ impl Legacy {
                 vec![]
             }
         }
+    }
+
+    pub fn notify(&self, notification: notification::Notification) {
+        self.0.notify(notification);
     }
 }

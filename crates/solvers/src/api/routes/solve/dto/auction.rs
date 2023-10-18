@@ -1,6 +1,6 @@
 use {
-    super::Error,
     crate::{
+        api::routes::Error,
         domain::{auction, eth, liquidity, order},
         util::{conv, serialize},
     },

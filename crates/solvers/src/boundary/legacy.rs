@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, order, solution},
+        domain::{auction, eth, liquidity, notification, order, solution},
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -12,6 +12,7 @@ use {
             model::{
                 AmmModel,
                 AmmParameters,
+                AuctionResult,
                 BatchAuctionModel,
                 ConcentratedPoolParameters,
                 ConstantProductPoolParameters,
@@ -19,6 +20,7 @@ use {
                 OrderModel,
                 Score,
                 SettledBatchAuctionModel,
+                SolverRejectionReason,
                 StablePoolParameters,
                 TokenAmount,
                 TokenInfoModel,
@@ -77,6 +79,12 @@ impl Legacy {
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
+    }
+
+    pub fn notify(&self, notification: notification::Notification) {
+        let (auction_id, auction_result) = to_boundary_auction_result(&notification);
+        self.solver
+            .notify_auction_result(auction_id, auction_result);
     }
 }
 
@@ -544,6 +552,33 @@ fn to_domain_solution(
             } => solution::Score::RiskAdjusted(success_probability),
         },
     })
+}
+
+fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
+    let auction_id = match notification.auction_id {
+        auction::Id::Solve(id) => id,
+        auction::Id::Quote => 0,
+    };
+
+    let auction_result = match notification.kind {
+        notification::Kind::EmptySolution => {
+            AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
+        }
+        notification::Kind::PriceViolation => {
+            AuctionResult::Rejected(SolverRejectionReason::PriceViolation)
+        }
+        notification::Kind::ScoringFailed => {
+            AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
+        } //todo
+        notification::Kind::UntrustedInternalization => AuctionResult::Rejected(
+            SolverRejectionReason::NonBufferableTokensUsed(Default::default()),
+        ),
+        notification::Kind::InsufficientBalance => {
+            AuctionResult::Rejected(SolverRejectionReason::InsufficientBalance)
+        }
+    };
+
+    (auction_id, auction_result)
 }
 
 fn to_big_rational(r: &eth::Rational) -> num::BigRational {

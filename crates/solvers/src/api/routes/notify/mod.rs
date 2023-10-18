@@ -1,9 +1,18 @@
 use {crate::domain::solver::Solver, std::sync::Arc, tracing::Instrument};
 
-pub async fn notify(_: axum::extract::State<Arc<Solver>>) -> axum::http::StatusCode {
+mod dto;
+
+pub async fn notify(
+    state: axum::extract::State<Arc<Solver>>,
+    notification: axum::extract::Json<dto::Notification>,
+) -> axum::http::StatusCode {
     let handle_request = async {
-        tracing::trace!("request received");
-        // todo
+        let notification = notification.to_domain();
+        let auction_id = notification.auction_id;
+
+        tracing::info!(id = %auction_id, "auction");
+        state.notify(notification);
+
         axum::http::StatusCode::OK
     };
 
