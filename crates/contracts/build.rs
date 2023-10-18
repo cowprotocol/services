@@ -560,6 +560,7 @@ fn generate_contract_with_config(
 
     config(
         ContractBuilder::new()
+            // for some reason formatting the generate code is broken on nightly
             .rustfmt(false)
             .visibility_modifier("pub"),
     )
