@@ -324,14 +324,13 @@ pub struct Tx {
 
 impl std::fmt::Debug for Tx {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?} -> {:?} ({:?} ETH) {}",
-            self.from,
-            self.to,
-            self.value,
-            hex::encode(&self.input.0)
-        )
+        f.debug_struct("Tx")
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("value", &self.value)
+            .field("input", &hex::encode(&self.input.0))
+            .field("access_list", &self.access_list)
+            .finish()
     }
 }
 

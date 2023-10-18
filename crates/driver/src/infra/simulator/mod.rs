@@ -139,12 +139,20 @@ pub enum SimulatorError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("err: {err}, tx: {tx:?}")]
-pub struct Error {
+#[error("err: {err:?}, tx: {tx:?}")]
+pub struct WithTxError {
     err: SimulatorError,
-    /// Optional since we are not interested in the tx data for http
-    /// communication errors, for example.
-    tx: Option<eth::Tx>,
+    tx: eth::Tx,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("basic: {0:?}")]
+    Basic(#[from] SimulatorError),
+    /// If a transaction reverted, forward that transaction together with the
+    /// error.
+    #[error("with tx: {0:?}")]
+    WithTx(#[from] WithTxError),
 }
 
 fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
@@ -169,6 +177,9 @@ where
                 enso::Error::Revert(_) => Some(tx),
             },
         };
-        Error { tx, err }
+        match tx {
+            Some(tx) => Error::WithTx(WithTxError { err, tx }),
+            None => Error::Basic(err),
+        }
     }
 }
