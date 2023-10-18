@@ -52,6 +52,10 @@ contract Swapper {
             return 0;
         }
 
+        // We first reset the allowance to 0 because some ERC20 tokens (e.g. USDT)
+        // require that due to this attack:
+        // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+        // Before approving the amount we actually need.
         IERC20(sell.token).safeApprove(address(settlement.vaultRelayer()), 0);
         IERC20(sell.token).safeApprove(address(settlement.vaultRelayer()), sell.amount);
 
