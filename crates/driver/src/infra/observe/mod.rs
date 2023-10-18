@@ -15,7 +15,7 @@ use {
                 Solution,
                 Solved,
             },
-            eth,
+            eth::{self, Gas},
             quote::{self, Quote},
             Liquidity,
         },
@@ -37,7 +37,7 @@ pub fn init(log: &str) {
 
 /// Observe a received auction.
 pub fn auction(auction: &Auction) {
-    tracing::info!(?auction, "received auction");
+    tracing::debug!(?auction, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
@@ -51,7 +51,7 @@ pub fn fetched_liquidity(liquidity: &[Liquidity]) {
     for liquidity in liquidity {
         *grouped.entry((&liquidity.kind).into()).or_default() += 1;
     }
-    tracing::info!(liquidity = ?grouped, "fetched liquidity sources");
+    tracing::debug!(liquidity = ?grouped, "fetched liquidity sources");
 }
 
 /// Observe that fetching liquidity failed.
@@ -61,12 +61,16 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
 
 /// Observe the solutions returned by the solver.
 pub fn solutions(solutions: &[Solution]) {
-    tracing::info!(?solutions, "computed solutions");
+    if !solutions.is_empty() {
+        tracing::info!(?solutions, "computed solutions");
+    } else {
+        tracing::debug!("no solutions");
+    }
 }
 
 /// Observe that a solution was discarded because it is empty.
 pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
-    tracing::info!(?id, "discarded solution: empty");
+    tracing::debug!(?id, "discarded solution: empty");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "EmptySolution"])
@@ -334,4 +338,9 @@ pub fn order_excluded_from_auction(
     reason: OrderExcludedFromAuctionReason,
 ) {
     tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
+}
+
+/// Observe that a settlement was simulated
+pub fn simulated(tx: &eth::Tx, gas: Gas) {
+    tracing::debug!(?tx, gas = ?gas.0, "simulated settlement");
 }
