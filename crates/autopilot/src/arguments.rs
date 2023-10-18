@@ -174,8 +174,8 @@ pub struct Arguments {
     pub score_cap: U256,
 
     /// The amount of time that the autopilot waits looking for a settlement
-    /// transaction onchain after a settlement has been confirmed by the
-    /// driver.
+    /// transaction onchain after the driver acknowledges the receipt of a
+    /// settlement.
     #[clap(
         long,
         env,
