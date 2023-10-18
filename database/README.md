@@ -211,6 +211,7 @@ Quotes that an order was created with. These quotes get stored persistently and 
  sell\_token\_price | double  | not null | ether-denominated price of sell\_token at the time of quoting. The ether value of `x` sell\_tokens is `x * sell_token_price`.
  sell\_amount       | numeric | not null | sell\_amount of the quote used to create the order with
  buy\_amount        | numeric | not null | buy\_amount of the quote used to create the order with
+ solver             | bytea   | not null | public address of the solver that provided this quote
 
 Indexes:
 - PRIMARY KEY: btree(`order_uid`)
@@ -282,6 +283,7 @@ Stores quotes in order to determine whether it makes sense to allow a user to cr
  sell\_token\_price    | double             | not null | price of sell\_token in ETH. Since fees get taken in the sell token the actual fee will be computed with `sell_token_price * gas_amount * gas_used`.
  id                    | bigint             | not null | unique identifier of this quote
  quote\_kind           | [enum](#quotekind) | not null | quotekind for which this quote is considered valid
+ solver                | bytea              | not null | public address of the solver that provided this quote
 
 Indexes:
 - PRIMARY KEY: btree(`id`)
