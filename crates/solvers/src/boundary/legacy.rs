@@ -21,7 +21,6 @@ use {
                 Score,
                 SettledBatchAuctionModel,
                 SolverRejectionReason,
-                SolverRunError,
                 StablePoolParameters,
                 TokenAmount,
                 TokenInfoModel,

@@ -15,8 +15,6 @@ pub struct Notification {
 
 #[derive(Debug)]
 pub enum Kind {
-    /// Solver engine did not respond in time.
-    Timeout, // todo, need properly propagated timeout errors
     /// The solution doesn't contain any user orders.
     EmptySolution(solution::Id),
     /// No valid score could be computed for the solution.
