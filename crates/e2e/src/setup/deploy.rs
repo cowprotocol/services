@@ -29,6 +29,37 @@ pub struct Contracts {
 }
 
 impl Contracts {
+    pub async fn at(web3: &Web3) -> Self {
+        let network_id = web3.net().version().await.expect("get network ID failed");
+        tracing::info!("connected to forked test network {}", network_id);
+
+        let gp_settlement = GPv2Settlement::deployed(web3).await.unwrap();
+
+        Self {
+            balancer_vault: BalancerV2Vault::deployed(web3).await.unwrap(),
+            gp_authenticator: GPv2AllowListAuthentication::deployed(web3).await.unwrap(),
+            uniswap_v2_factory: UniswapV2Factory::deployed(web3).await.unwrap(),
+            uniswap_v2_router: UniswapV2Router02::deployed(web3).await.unwrap(),
+            weth: WETH9::deployed(web3).await.unwrap(),
+            allowance: gp_settlement
+                .vault_relayer()
+                .call()
+                .await
+                .expect("Couldn't get vault relayer address"),
+            domain_separator: DomainSeparator(
+                gp_settlement
+                    .domain_separator()
+                    .call()
+                    .await
+                    .expect("Couldn't query domain separator")
+                    .0,
+            ),
+            ethflow: CoWSwapEthFlow::deployed(web3).await.unwrap(),
+            hooks: HooksTrampoline::deployed(web3).await.unwrap(),
+            gp_settlement,
+        }
+    }
+
     pub async fn deploy(web3: &Web3) -> Self {
         let network_id = web3.net().version().await.expect("get network ID failed");
         tracing::info!("connected to test network {}", network_id);
@@ -53,6 +84,7 @@ impl Contracts {
         let weth = deploy!(WETH9());
 
         let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
+        // @note balancer v2 vault at address
         let balancer_vault = deploy!(BalancerV2Vault(
             balancer_authorizer.address(),
             weth.address(),

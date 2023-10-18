@@ -120,8 +120,8 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    contract: ERC20Mintable,
-    minter: Account,
+    pub contract: ERC20Mintable,
+    pub minter: Account,
 }
 
 impl MintableToken {
@@ -212,6 +212,16 @@ impl OnchainComponents {
         }
     }
 
+    pub async fn at(web3: Web3) -> Self {
+        let contracts = Contracts::at(&web3).await;
+
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
     /// Generate next `N` accounts with the given initial balance.
     pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
@@ -238,6 +248,26 @@ impl OnchainComponents {
                 .expect("failed to add solver");
         }
 
+        solvers
+    }
+
+    /// Generate next `N` accounts with the given initial banace and
+    /// authenticate them as solvers on a forked network
+    pub async fn make_solvers_forked<const N: usize>(
+        &mut self,
+        with_wei: U256,
+        from_account: Account,
+    ) -> [TestAccount; N] {
+        let solvers = self.make_accounts::<N>(with_wei).await;
+        for solver in &solvers {
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver.address())
+                .from(from_account.clone())
+                .send()
+                .await
+                .expect("failed to add solver");
+        }
         solvers
     }
 

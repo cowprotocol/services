@@ -14,6 +14,7 @@ mod colocation_univ2;
 mod database;
 mod eth_integration;
 mod ethflow;
+mod forked_limit_orders;
 mod hooks;
 mod limit_orders;
 mod onchain_settlement;

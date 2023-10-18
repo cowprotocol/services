@@ -240,6 +240,7 @@ impl<'a> Services<'a> {
         &self,
         order: &OrderCreation,
     ) -> Result<OrderUid, (StatusCode, String)> {
+        // print api host and orders endpoint
         let placement = self
             .http
             .post(format!("{API_HOST}{ORDERS_ENDPOINT}"))

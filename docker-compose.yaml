@@ -33,14 +33,14 @@ services:
         source: ./database/sql/
         target: /flyway/sql
 
-  chain:
-    image: ghcr.io/foundry-rs/foundry:latest
-    restart: always
-    entrypoint: /usr/local/bin/anvil --gas-price 1 --gas-limit 10000000 --base-fee 0 --balance 1000000 --chain-id 1 --timestamp 1577836800
-    environment:
-      - ANVIL_IP_ADDR=0.0.0.0
-    ports:
-      - 8545:8545
+  # chain:
+  #   image: ghcr.io/foundry-rs/foundry:latest
+  #   restart: always
+  #   entrypoint: /usr/local/bin/anvil --gas-price 1 --gas-limit 10000000 --base-fee 0 --balance 1000000 --chain-id 1 --timestamp 1577836800
+  #   environment:
+  #     - ANVIL_IP_ADDR=0.0.0.0
+  #   ports:
+  #     - 8545:8545
 
 volumes:
   postgres:
