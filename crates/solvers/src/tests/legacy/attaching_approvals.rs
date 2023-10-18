@@ -10,7 +10,7 @@ use {
 async fn test() {
     let legacy_solver = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "amms": {},
             "metadata": {
                 "auction_id": 1234,
@@ -38,7 +38,7 @@ async fn test() {
                     "normalize_priority": 0,
                 }
             }
-        }),
+        })),
         res: json!({
             "orders": {},
             "prices": {},

@@ -13,13 +13,13 @@ use {
 async fn sell() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "sell",
             "amount": "1000000000000000000",
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -102,13 +102,13 @@ async fn sell() {
 async fn buy() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "buy",
             "amount": "100000000000000000000",
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
