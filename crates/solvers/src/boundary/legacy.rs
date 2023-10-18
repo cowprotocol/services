@@ -21,7 +21,6 @@ use {
                 Score,
                 SettledBatchAuctionModel,
                 SolverRejectionReason,
-                SolverRunError,
                 StablePoolParameters,
                 TokenAmount,
                 TokenInfoModel,
@@ -562,18 +561,12 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match notification.kind {
-        notification::Kind::Timeout => {
-            AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
-        }
         notification::Kind::EmptySolution => {
             AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
         }
-        notification::Kind::PriceViolation => {
-            AuctionResult::Rejected(SolverRejectionReason::PriceViolation)
-        }
         notification::Kind::ScoringFailed => {
             AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
-        } //todo
+        }
         notification::Kind::UntrustedInternalization => AuctionResult::Rejected(
             SolverRejectionReason::NonBufferableTokensUsed(Default::default()),
         ),

@@ -13,9 +13,7 @@ impl Notification {
                 None => auction::Id::Quote,
             },
             kind: match self.kind {
-                Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::PriceViolation => notification::Kind::PriceViolation,
                 Kind::ScoringFailed => notification::Kind::ScoringFailed,
                 Kind::UntrustedInternalization => notification::Kind::UntrustedInternalization,
                 Kind::InsufficientBalance => notification::Kind::InsufficientBalance,
@@ -37,9 +35,7 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    Timeout,
     EmptySolution,
-    PriceViolation,
     ScoringFailed,
     UntrustedInternalization,
     InsufficientBalance,

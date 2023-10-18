@@ -11,11 +11,8 @@ pub struct Notification {
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
-    Timeout,
     EmptySolution,
-    PriceViolation,
     ScoringFailed,
     UntrustedInternalization,
     InsufficientBalance,
-    // .. todo
 }

@@ -11,10 +11,6 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, notification::Kind::EmptySolution);
 }
 
-pub fn price_violation(solver: &Solver, auction_id: Option<auction::Id>) {
-    solver.notify(auction_id, notification::Kind::PriceViolation);
-}
-
 pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, notification::Kind::ScoringFailed);
 }
@@ -27,15 +23,11 @@ pub fn encoding_failed(
 ) {
     match err {
         solution::Error::UntrustedInternalization => {
-            solver.notify(auction_id, notification::Kind::UntrustedInternalization);
+            solver.notify(auction_id, notification::Kind::NonBufferableTokensUsed);
         }
         solution::Error::InsufficientBalance => {
             solver.notify(auction_id, notification::Kind::InsufficientBalance);
         }
         _ => (),
     }
-}
-
-pub fn timeout(solver: &Solver, auction_id: Option<auction::Id>) {
-    solver.notify(auction_id, notification::Kind::Timeout);
 }
