@@ -10,6 +10,9 @@ use {
 };
 
 pub struct Config {
+    pub node_url: reqwest::Url,
+    pub settlement: eth::ContractAddress,
+    pub authenticator: eth::ContractAddress,
     pub slippage: slippage::Limits,
     pub concurrent_requests: NonZeroUsize,
     pub smallest_partial_fill: eth::Ether,

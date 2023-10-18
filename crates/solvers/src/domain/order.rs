@@ -19,6 +19,13 @@ pub struct Order {
 }
 
 impl Order {
+    /// Returns the order's owner address.
+    pub fn owner(&self) -> Address {
+        let mut bytes = [0_u8; 20];
+        bytes.copy_from_slice(&self.uid.0[32..52]);
+        bytes.into()
+    }
+
     /// Returns the order's fee amount as an asset.
     pub fn fee(&self) -> eth::Asset {
         eth::Asset {
