@@ -9,6 +9,7 @@ impl Notification {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
             kind: match kind {
+                notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::PriceViolation => Kind::PriceViolation,
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
@@ -31,6 +32,7 @@ pub struct Notification {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     PriceViolation,
     ScoringFailed,
