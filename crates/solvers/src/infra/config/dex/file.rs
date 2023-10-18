@@ -100,8 +100,10 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
 
     let config = super::Config {
         node_url: config.node_url,
-        settlement,
-        authenticator,
+        contracts: super::Contracts {
+            settlement,
+            authenticator,
+        },
         slippage: slippage::Limits::new(
             config.relative_slippage,
             config.absolute_slippage.map(eth::Ether),

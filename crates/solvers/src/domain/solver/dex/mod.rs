@@ -41,8 +41,8 @@ impl Dex {
             dex,
             simulator: infra::dex::Simulator::new(
                 &config.node_url,
-                config.settlement,
-                config.authenticator,
+                config.contracts.settlement,
+                config.contracts.authenticator,
             ),
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,

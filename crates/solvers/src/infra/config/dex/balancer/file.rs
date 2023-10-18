@@ -40,7 +40,7 @@ pub async fn load(path: &Path) -> super::Config {
                 .vault
                 .map(eth::ContractAddress)
                 .unwrap_or(contracts.balancer_vault),
-            settlement: base.settlement,
+            settlement: base.contracts.settlement,
         },
         base,
     }
