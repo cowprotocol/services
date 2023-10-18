@@ -284,7 +284,7 @@ pub fn mempool_executed(
         Ok(txid) => {
             tracing::info!(
                 ?txid,
-                ?mempool,
+                %mempool,
                 ?settlement,
                 "sending transaction via mempool succeeded",
             );
@@ -292,7 +292,7 @@ pub fn mempool_executed(
         Err(err) => {
             tracing::warn!(
                 ?err,
-                ?mempool,
+                %mempool,
                 ?settlement,
                 "sending transaction via mempool failed",
             );
