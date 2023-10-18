@@ -113,7 +113,11 @@ impl Drop for ServerHandle {
             !self.handle.is_finished(),
             "mock http server terminated before test ended"
         );
-        assert_eq!(self.expectations.lock().unwrap().len(), 0);
+        assert_eq!(
+            self.expectations.lock().unwrap().len(),
+            0,
+            "mock server did not receive enough requests"
+        );
         self.handle.abort();
     }
 }
