@@ -195,7 +195,7 @@ impl OnSettlementEventUpdater {
                             .collect(),
                     });
                 }
-                Err(err) if matches!(err, DecodingError::InvalidSelector) => {
+                Err(DecodingError::InvalidSelector) => {
                     // we indexed a transaction initiated by solver, that was not a settlement
                     // for this case we want to have the entry in observations table but with zeros
                     update.auction_data = Some(Default::default());
