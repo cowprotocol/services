@@ -18,6 +18,9 @@ pub struct Dex {
     /// The DEX API client.
     dex: infra::dex::Dex,
 
+    /// A DEX swap gas simulator for computing limit order fees.
+    simulator: infra::dex::Simulator,
+
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
 
@@ -36,6 +39,11 @@ impl Dex {
     pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
         Self {
             dex,
+            simulator: infra::dex::Simulator::new(
+                &config.node_url,
+                config.contracts.settlement,
+                config.contracts.authenticator,
+            ),
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
@@ -115,7 +123,10 @@ impl Dex {
         let sell = tokens.reference_price(&order.sell.token);
         let score =
             solution::Score::RiskAdjusted(self.risk.success_probability(swap.gas, gas_price, 1));
-        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell, score) else {
+        let Some(solution) = swap
+            .into_solution(order.clone(), gas_price, sell, score, &self.simulator)
+            .await
+        else {
             tracing::debug!("no solution for swap");
             return None;
         };

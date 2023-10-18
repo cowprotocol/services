@@ -529,6 +529,10 @@ fn main() {
     generate_contract("Signatures");
     generate_contract("SimulateCode");
 
+    // Support contract used for solver fee simulations.
+    generate_contract("AnyoneAuthenticator");
+    generate_contract("Swapper");
+
     // Support contract used for global block stream.
     generate_contract("FetchBlock");
 

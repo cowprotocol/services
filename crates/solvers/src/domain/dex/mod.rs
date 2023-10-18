@@ -5,6 +5,7 @@
 use {
     crate::{
         domain::{auction, eth, order, solution},
+        infra,
         util,
     },
     ethereum_types::U256,
@@ -101,13 +102,28 @@ impl Swap {
 
     /// Constructs a single order `solution::Solution` for this swap. Returns
     /// `None` if the swap is not valid for the specified order.
-    pub fn into_solution(
+    pub async fn into_solution(
         self,
         order: order::Order,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
         score: solution::Score,
+        simulator: &infra::dex::Simulator,
     ) -> Option<solution::Solution> {
+        let gas = if order.class == order::Class::Limit {
+            match simulator.gas(order.owner(), &self).await {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(?err, "gas simulation failed");
+                    return None;
+                }
+            }
+        } else {
+            // We are fine with just using heuristic gas for market orders,
+            // since it doesn't really play a role in the final solution.
+            self.gas
+        };
+
         let allowance = self.allowance();
         let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {
             target: self.call.to.0,
@@ -124,7 +140,7 @@ impl Swap {
             input: self.input,
             output: self.output,
             interactions,
-            gas: self.gas,
+            gas,
         }
         .into_solution(gas_price, sell_token, score)
     }
