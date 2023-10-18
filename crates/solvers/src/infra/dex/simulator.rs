@@ -102,6 +102,11 @@ impl Simulator {
         // `Swapper.sol` contract for more details. In this case, use the
         // heuristic gas amount from the swap.
         Ok(if gas.is_zero() {
+            tracing::info!(
+                gas = ?swap.gas,
+                "could not simulate dex swap to get gas used; fall back to gas estimate provided \
+                 by dex API"
+            );
             swap.gas
         } else {
             eth::Gas(gas)
