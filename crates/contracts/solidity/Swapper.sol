@@ -78,6 +78,9 @@ contract Swapper {
             appData: bytes32(0),
             feeAmount: 0,
             flags: 0x40, // EIP-1271
+            // Actual amount is irrelevant because we configure a fill-or-kill
+            // order for which the settlement contract determines the
+            // `executedAmount` automatically.
             executedAmount: 0,
             signature: abi.encodePacked(address(this))
         });
