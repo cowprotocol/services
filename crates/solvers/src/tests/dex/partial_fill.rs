@@ -425,7 +425,30 @@ async fn moves_surplus_fee_to_buy_token() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
+    let simulation_node = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
+        req: mock::http::RequestBody::Any,
+        res: {
+            json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "result": "0x0000000000000000000000000000000000000000000000000000000000015B3C"
+            })
+        },
+    }])
+    .await;
+
+    let config = tests::Config::String(format!(
+        r"
+node-url = 'http://{}'
+risk-parameters = [0,0,0,0]
+[dex]
+endpoint = 'http://{}/sor'
+        ",
+        simulation_node.address, api.address,
+    ));
+
+    let engine = tests::SolverEngine::new("balancer", config).await;
 
     let auction = json!({
         "id": "1",
