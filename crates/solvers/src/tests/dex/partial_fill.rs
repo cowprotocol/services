@@ -432,7 +432,12 @@ async fn moves_surplus_fee_to_buy_token() {
             json!({
                 "id": 1,
                 "jsonrpc": "2.0",
-                "result": "0x0000000000000000000000000000000000000000000000000000000000015B3C"
+                // If the simulation logic returns 0 it means that the user did not have the
+                // required balance. This could be caused by a pre-interaction that acquires the
+                // necessary sell_token before the trade which is currently not supported by the
+                // simulation loic.
+                // In that case we fall back to the heuristic gas price we had in the past.
+                "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
             })
         },
     }])
