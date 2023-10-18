@@ -65,11 +65,18 @@ impl OnSettlementEventUpdater {
         let mut block_stream = into_stream(block_stream);
         loop {
             match self.update(current_block.number).await {
-                Ok(performed_update) => {
+                Ok(true) => {
                     tracing::debug!(
-                        ?performed_update,
                         block = current_block.number,
-                        "on settlement event updater ran for reorg safe events <= block"
+                        "on settlement event updater ran and processed event"
+                    );
+                    // Don't wait until next block in case there are more pending events to process.
+                    continue;
+                }
+                Ok(false) => {
+                    tracing::debug!(
+                        block = current_block.number,
+                        "on settlement event updater ran without update"
                     );
                 }
                 Err(err) => {
@@ -80,8 +87,7 @@ impl OnSettlementEventUpdater {
         }
     }
 
-    /// Update database for all reorg-safe settlement events that have not been
-    /// processed yet.
+    /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
     async fn update(&self, current_block: u64) -> Result<bool> {
@@ -92,139 +98,136 @@ impl OnSettlementEventUpdater {
             .context("convert block")?;
 
         let mut ex = self.db.0.begin().await.context("acquire DB connection")?;
-        let mut did_update = false;
-        while let Some(event) = database::auction_transaction::get_settlement_event_without_tx_info(
+        let event = match database::auction_transaction::get_settlement_event_without_tx_info(
             &mut ex,
             reorg_safe_block,
         )
         .await
         .context("get_settlement_event_without_tx_info")?
         {
-            let hash = H256(event.tx_hash.0);
-            tracing::debug!("updating settlement details for tx {hash:?}");
+            Some(event) => event,
+            None => return Ok(false),
+        };
 
-            let transaction = self
+        let hash = H256(event.tx_hash.0);
+        tracing::debug!("updating settlement details for tx {hash:?}");
+
+        let transaction = self
+            .web3
+            .eth()
+            .transaction(TransactionId::Hash(hash))
+            .await
+            .with_context(|| format!("get tx {hash:?}"))?
+            .with_context(|| format!("no tx {hash:?}"))?;
+        let tx_from = transaction
+            .from
+            .with_context(|| format!("no from {hash:?}"))?;
+        let tx_nonce: i64 = transaction
+            .nonce
+            .try_into()
+            .map_err(|err| anyhow!("{}", err))
+            .with_context(|| format!("convert nonce {hash:?}"))?;
+
+        let mut auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
+            .await?
+            .map(AuctionId::Colocated);
+        if auction_id.is_none() {
+            // This settlement was issued BEFORE solver-driver colocation.
+            auction_id = database::auction_transaction::get_auction_id(
+                &mut ex,
+                &ByteArray(tx_from.0),
+                tx_nonce,
+            )
+            .await?
+            .map(AuctionId::Centralized);
+        }
+
+        let mut update = SettlementUpdate {
+            block_number: event.block_number,
+            log_index: event.log_index,
+            tx_from,
+            tx_nonce,
+            auction_data: None,
+        };
+
+        // It is possible that auction_id does not exist for a transaction.
+        // This happens for production auctions queried from the staging environment and
+        // vice versa (because we have databases for both environments).
+        //
+        // If auction_id exists, we expect all other relevant information to exist as
+        // well.
+        if let Some(auction_id) = auction_id {
+            let receipt = self
                 .web3
                 .eth()
-                .transaction(TransactionId::Hash(hash))
-                .await
-                .with_context(|| format!("get tx {hash:?}"))?
-                .with_context(|| format!("no tx {hash:?}"))?;
-            let tx_from = transaction
-                .from
-                .with_context(|| format!("no from {hash:?}"))?;
-            let tx_nonce: i64 = transaction
-                .nonce
-                .try_into()
-                .map_err(|err| anyhow!("{}", err))
-                .with_context(|| format!("convert nonce {hash:?}"))?;
-
-            let mut auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
+                .transaction_receipt(hash)
                 .await?
-                .map(AuctionId::Colocated);
-            if auction_id.is_none() {
-                // This settlement was issued BEFORE solver-driver colocation.
-                auction_id = database::auction_transaction::get_auction_id(
-                    &mut ex,
-                    &ByteArray(tx_from.0),
-                    tx_nonce,
-                )
-                .await?
-                .map(AuctionId::Centralized);
-            }
+                .with_context(|| format!("no receipt {hash:?}"))?;
+            let gas_used = receipt
+                .gas_used
+                .with_context(|| format!("no gas used {hash:?}"))?;
+            let effective_gas_price = receipt
+                .effective_gas_price
+                .with_context(|| format!("no effective gas price {hash:?}"))?;
+            let auction_external_prices =
+                Postgres::get_auction_prices(&mut ex, auction_id.assume_verified())
+                    .await
+                    .with_context(|| {
+                        format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+                    })?;
+            let orders =
+                Postgres::order_executions_for_tx(&mut ex, &hash, auction_id.assume_verified())
+                    .await?;
+            let external_prices = ExternalPrices::try_from_auction_prices(
+                self.native_token,
+                auction_external_prices.clone(),
+            )?;
 
-            let mut update = SettlementUpdate {
-                block_number: event.block_number,
-                log_index: event.log_index,
-                tx_from,
-                tx_nonce,
-                auction_data: None,
-            };
+            tracing::debug!(
+                ?auction_id,
+                ?auction_external_prices,
+                ?orders,
+                ?external_prices,
+                "observations input"
+            );
 
-            // It is possible that auction_id does not exist for a transaction.
-            // This happens for production auctions queried from the staging environment and
-            // vice versa (because we have databases for both environments).
-            //
-            // If auction_id exists, we expect all other relevant information to exist as
-            // well.
-            if let Some(auction_id) = auction_id {
-                let receipt = self
-                    .web3
-                    .eth()
-                    .transaction_receipt(hash)
-                    .await?
-                    .with_context(|| format!("no receipt {hash:?}"))?;
-                let gas_used = receipt
-                    .gas_used
-                    .with_context(|| format!("no gas used {hash:?}"))?;
-                let effective_gas_price = receipt
-                    .effective_gas_price
-                    .with_context(|| format!("no effective gas price {hash:?}"))?;
-                let auction_external_prices =
-                    Postgres::get_auction_prices(&mut ex, auction_id.assume_verified())
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "no external prices for auction id {auction_id:?} and tx {hash:?}"
-                            )
-                        })?;
-                let orders =
-                    Postgres::order_executions_for_tx(&mut ex, &hash, auction_id.assume_verified())
-                        .await?;
-                let external_prices = ExternalPrices::try_from_auction_prices(
-                    self.native_token,
-                    auction_external_prices.clone(),
-                )?;
+            // surplus and fees calculation
+            match DecodedSettlement::new(&transaction.input.0) {
+                Ok(settlement) => {
+                    let surplus = settlement.total_surplus(&external_prices);
+                    let fee = settlement.total_fees(&external_prices, orders.clone());
+                    let order_executions = settlement.order_executions(&external_prices, orders);
 
-                tracing::debug!(
-                    ?auction_id,
-                    ?auction_external_prices,
-                    ?orders,
-                    ?external_prices,
-                    "observations input"
-                );
-
-                // surplus and fees calculation
-                match DecodedSettlement::new(&transaction.input.0) {
-                    Ok(settlement) => {
-                        let surplus = settlement.total_surplus(&external_prices);
-                        let fee = settlement.total_fees(&external_prices, orders.clone());
-                        let order_executions =
-                            settlement.order_executions(&external_prices, orders);
-
-                        update.auction_data = Some(AuctionData {
-                            auction_id,
-                            surplus,
-                            fee,
-                            gas_used,
-                            effective_gas_price,
-                            order_executions: order_executions
-                                .iter()
-                                .map(|fees| (fees.order, fees.sell))
-                                .collect(),
-                        });
-                    }
-                    Err(err) if matches!(err, DecodingError::InvalidSelector) => {
-                        // we indexed a transaction initiated by solver, that was not a settlement
-                        // for this case we want to have the entry in observations table but with
-                        // zeros
-                        update.auction_data = Some(Default::default());
-                    }
-                    Err(err) => {
-                        return Err(err.into());
-                    }
+                    update.auction_data = Some(AuctionData {
+                        auction_id,
+                        surplus,
+                        fee,
+                        gas_used,
+                        effective_gas_price,
+                        order_executions: order_executions
+                            .iter()
+                            .map(|fees| (fees.order, fees.sell))
+                            .collect(),
+                    });
+                }
+                Err(err) if matches!(err, DecodingError::InvalidSelector) => {
+                    // we indexed a transaction initiated by solver, that was not a settlement
+                    // for this case we want to have the entry in observations table but with zeros
+                    update.auction_data = Some(Default::default());
+                }
+                Err(err) => {
+                    return Err(err.into());
                 }
             }
-
-            tracing::debug!(?hash, ?update, "updating settlement details for tx");
-
-            Postgres::update_settlement_details(&mut ex, update.clone())
-                .await
-                .with_context(|| format!("insert_settlement_details: {update:?}"))?;
-            did_update = true;
         }
+
+        tracing::debug!(?hash, ?update, "updating settlement details for tx");
+
+        Postgres::update_settlement_details(&mut ex, update.clone())
+            .await
+            .with_context(|| format!("insert_settlement_details: {update:?}"))?;
         ex.commit().await?;
-        Ok(did_update)
+        Ok(true)
     }
 
     /// With solver driver colocation solvers are supposed to append the
