@@ -22,8 +22,8 @@ pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
 pub fn encoding_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: solution::Id,
-    err: solution::Error,
+    _solution_id: solution::Id,
+    err: &solution::Error,
 ) {
     match err {
         solution::Error::UntrustedInternalization => {

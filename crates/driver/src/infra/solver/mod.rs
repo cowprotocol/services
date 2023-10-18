@@ -148,17 +148,18 @@ impl Solver {
             weth,
         ))
         .unwrap();
-        super::observe::solver_request(&self.config.endpoint, &body);
+        let url = shared::url::join(&self.config.endpoint, "solve");
+        super::observe::solver_request(&url, &body);
         let mut req = self
             .client
-            .post(self.config.endpoint.clone())
+            .post(url.clone())
             .body(body)
             .timeout(timeout.duration().to_std().unwrap());
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        super::observe::solver_response(&self.config.endpoint, res.as_deref());
+        super::observe::solver_response(&url, res.as_deref());
         let res: dto::Solutions = serde_json::from_str(&res?)?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
@@ -174,8 +175,9 @@ impl Solver {
 
     pub fn notify(&self, auction_id: Option<auction::Id>, kind: notify::Kind) {
         let body = serde_json::to_string(&dto::Notification::new(auction_id, kind)).unwrap();
-        super::observe::solver_request(&self.config.endpoint, &body);
-        let mut req = self.client.post(self.config.endpoint.clone()).body(body);
+        let url = shared::url::join(&self.config.endpoint, "notify");
+        super::observe::solver_request(&url, &body);
+        let mut req = self.client.post(url).body(body);
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
