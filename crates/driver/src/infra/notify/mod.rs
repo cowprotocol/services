@@ -7,7 +7,7 @@ mod notification;
 
 pub use notification::{Kind, Notification, SettleKind};
 
-use crate::domain::{eth, mempools};
+use crate::domain::{eth, mempools::Error};
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
     solver.notify(auction_id, notification::Kind::EmptySolution(solution));
@@ -44,14 +44,12 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
 pub fn mempools_executed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    res: &Result<eth::TxId, mempools::Error>,
+    res: &Result<eth::TxId, Error>,
 ) {
     let kind = match res {
         Ok(hash) => notification::SettleKind::Settled(hash.clone()),
-        Err(err) => match err {
-            mempools::Error::Revert(hash) => notification::SettleKind::Reverted(hash.clone()),
-            mempools::Error::Other(_) => notification::SettleKind::Failed,
-        },
+        Err(Error::Revert(hash)) => notification::SettleKind::Reverted(hash.clone()),
+        Err(Error::Other(_)) => notification::SettleKind::Failed,
     };
 
     solver.notify(auction_id, notification::Kind::Settled(kind));
