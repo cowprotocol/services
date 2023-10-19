@@ -609,6 +609,7 @@ pub async fn run(args: Arguments) {
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
             score_cap: args.score_cap,
+            max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
