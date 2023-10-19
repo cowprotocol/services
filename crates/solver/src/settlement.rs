@@ -502,6 +502,17 @@ impl Settlement {
             None
         }
     }
+
+    pub fn objective_value(
+        &self,
+        external_prices: &ExternalPrices,
+        gas_price: &BigRational,
+        gas_amount: &BigRational,
+    ) -> BigRational {
+        let surplus = self.total_surplus(external_prices);
+        let solver_fees = self.total_solver_fees(external_prices);
+        surplus + solver_fees - gas_price * gas_amount
+    }
 }
 
 // The difference between what you were willing to sell (executed_amount *

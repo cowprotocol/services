@@ -3,7 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{self, auction, order, score, solution},
             eth,
             mempools,
         },
@@ -266,9 +266,22 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
-    ) -> Result<competition::Score, boundary::Error> {
-        self.boundary
-            .score(eth, auction, self.gas.estimate, revert_protection)
+    ) -> Result<competition::Score, score::Error> {
+        let objective_value = self
+            .boundary
+            .objective_value(eth, auction, self.gas.estimate)?;
+
+        match self.boundary.score() {
+            competition::SolverScore::Solver(score) => Ok(competition::Score(score)),
+            competition::SolverScore::RiskAdjusted(success_probability) => competition::Score::new(
+                auction.score_cap(),
+                revert_protection,
+                objective_value,
+                self.gas.estimate,
+                auction.gas_price(),
+                success_probability,
+            ),
+        }
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.
