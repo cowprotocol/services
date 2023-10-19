@@ -1,7 +1,14 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, notification, order, solution},
+        domain::{
+            auction,
+            eth,
+            liquidity,
+            notification::{self, SettleKind},
+            order,
+            solution,
+        },
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -22,6 +29,7 @@ use {
                 SettledBatchAuctionModel,
                 SolverRejectionReason,
                 StablePoolParameters,
+                SubmissionResult,
                 TokenAmount,
                 TokenInfoModel,
                 WeightedPoolTokenData,
@@ -562,7 +570,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match &notification.kind {
-        notification::Kind::EmptySolution(_) => {
+        notification::Kind::EmptySolution => {
             AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
         }
         notification::Kind::ScoringFailed => {
@@ -576,6 +584,11 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         notification::Kind::SolverAccountInsufficientBalance => {
             AuctionResult::Rejected(SolverRejectionReason::SolverAccountInsufficientBalance)
         }
+        notification::Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
+            SettleKind::Settled(hash) => SubmissionResult::Success(*hash),
+            SettleKind::Reverted(hash) => SubmissionResult::Revert(*hash),
+            SettleKind::Failed => SubmissionResult::Fail,
+        }),
     };
 
     (auction_id, auction_result)

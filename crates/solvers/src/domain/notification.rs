@@ -20,4 +20,13 @@ pub enum Kind {
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     SolverAccountInsufficientBalance,
+    Settled(SettleKind),
+}
+
+/// The result of winning solver trying to settle the transaction onchain.
+#[derive(Debug)]
+pub enum SettleKind {
+    Settled(eth::H256),
+    Reverted(eth::H256),
+    Failed,
 }

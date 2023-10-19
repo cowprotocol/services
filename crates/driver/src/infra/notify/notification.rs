@@ -23,5 +23,17 @@ pub enum Kind {
     /// keep in the settlement contract.
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
-    SolverAccountInsufficientBalance,
+    InsufficientBalance,
+    /// Result of winning solver trying to settle the transaction onchain.
+    Settled(SettleKind),
+}
+
+#[derive(Debug)]
+pub enum SettleKind {
+    /// Winning solver settled successfully transaction onchain.
+    Settled(eth::TxId),
+    /// Winning solver mined reverted transaction.
+    Reverted(eth::TxId),
+    /// Winning solver failed to settle the transaction onchain.
+    Failed,
 }

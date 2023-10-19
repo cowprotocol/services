@@ -28,7 +28,12 @@ impl Notification {
                 }
                 Kind::SolverAccountInsufficientBalance => {
                     notification::Kind::SolverAccountInsufficientBalance
-                }
+                },
+                Kind::Settled(kind) => notification::Kind::Settled(match kind {
+                    SettleKind::Settled(hash) => notification::SettleKind::Settled(*hash),
+                    SettleKind::Reverted(hash) => notification::SettleKind::Reverted(*hash),
+                    SettleKind::Failed => notification::SettleKind::Failed,
+                }),
             },
         }
     }
@@ -51,4 +56,14 @@ pub enum Kind {
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance,
+    Settled(SettleKind),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SettleKind {
+    Settled(H256),
+    Reverted(H256),
+    Failed,
 }

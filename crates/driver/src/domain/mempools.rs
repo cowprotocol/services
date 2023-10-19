@@ -1,4 +1,5 @@
 use {
+    super::{competition::auction, eth},
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{self, observe, solver::Solver},
