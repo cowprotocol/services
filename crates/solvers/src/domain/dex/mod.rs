@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        domain::{auction, eth, order, solution},
+        domain::{self, auction, eth, order, solution},
         infra,
         util,
     },
@@ -107,7 +107,7 @@ impl Swap {
         order: order::Order,
         gas_price: auction::GasPrice,
         sell_token: Option<auction::Price>,
-        score: solution::Score,
+        risk: &domain::Risk,
         simulator: &infra::dex::Simulator,
     ) -> Option<solution::Solution> {
         let gas = if order.class == order::Class::Limit {
@@ -123,6 +123,7 @@ impl Swap {
             // since it doesn't really play a role in the final solution.
             self.gas
         };
+        let score = solution::Score::RiskAdjusted(risk.success_probability(gas, gas_price, 1));
 
         let allowance = self.allowance();
         let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {
