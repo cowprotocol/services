@@ -559,12 +559,7 @@ impl PriceEstimatorCreating for HttpPriceEstimator {
 
 impl From<&LegacySolver> for HttpPriceEstimatorParams {
     fn from(solver: &LegacySolver) -> Self {
-        let base = {
-            let mut url = solver.url.clone();
-            url.set_path("");
-            url
-        };
-        let solve_path = solver.url.path().to_owned();
+        let (base, solve_path) = crate::url::split_at_path(&solver.url).unwrap();
         Self {
             base,
             solve_path,

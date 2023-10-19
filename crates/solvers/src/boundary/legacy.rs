@@ -44,9 +44,7 @@ pub struct Legacy {
 
 impl Legacy {
     pub fn new(config: crate::domain::solver::legacy::Config) -> Self {
-        let solve_path = config.endpoint.path().to_owned();
-        let mut base = config.endpoint;
-        base.set_path("");
+        let (base, solve_path) = shared::url::split_at_path(&config.endpoint).unwrap();
 
         Self {
             solver: DefaultHttpSolverApi {
