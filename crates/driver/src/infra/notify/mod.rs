@@ -28,7 +28,7 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
         }
         solution::Error::Blockchain(_) => (),
         solution::Error::Boundary(_) => (),
-        solution::Error::Simulation(_) => todo!(),
+        solution::Error::Simulation(_) => (), // todo,
         solution::Error::AssetFlow(_) => (),
         solution::Error::Execution(_) => (),
         solution::Error::FailingInternalization => (),
