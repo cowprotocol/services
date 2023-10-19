@@ -24,9 +24,12 @@ pub fn join(url: &Url, mut path: &str) -> Url {
 /// [`join`].
 pub fn split_at_path(url: &Url) -> Result<(Url, String)> {
     let base = format!(
-        "{}://{}/",
+        "{}://{}{}/",
         url.scheme(),
-        url.host().context("URL should have a host")?
+        url.host().context("URL should have a host")?,
+        url.port()
+            .map(|port| format!(":{port}"))
+            .unwrap_or_default()
     )
     .parse()
     .expect("stripping off the path is always safe");
@@ -57,6 +60,8 @@ mod tests {
             assert_eq!(url, join(&base, &endpoint));
         };
 
+        // base + port + path + multiple params + multiple fragments
+        round_trip("https://my.solver.xyz:1234/solve/1?param1=1&param2=2#fragment=1&fragment2=2");
         // base + path + multiple params + multiple fragments
         round_trip("https://my.solver.xyz/solve/1?param1=1&param2=2#fragment=1&fragment2=2");
         // base + path + multiple params
