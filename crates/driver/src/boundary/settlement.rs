@@ -220,9 +220,11 @@ impl Settlement {
                 .collect(),
         )?;
         let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let objective_value =
-            self.inner
-                .objective_value(&prices, &gas_price, &gas.0.to_big_rational());
+        let objective_value = {
+            let surplus = self.inner.total_surplus(&prices);
+            let solver_fees = self.inner.total_solver_fees(&prices);
+            surplus + solver_fees - gas_price * gas.0.to_big_rational()
+        };
         eth::U256::from_big_rational(&objective_value)
     }
 

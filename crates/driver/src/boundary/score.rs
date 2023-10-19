@@ -1,11 +1,13 @@
-use {crate::domain::competition, solver::settlement_rater::ScoringError};
 use {
     crate::{
-        domain::{self, competition::score, eth},
+        domain::{
+            self,
+            competition::{self, score},
+            eth,
+        },
         util::conv::u256::U256Ext,
     },
-    //anyhow::Result,
-    solver::settlement_rater::ScoreCalculator,
+    solver::settlement_rater::{ScoreCalculator, ScoringError},
 };
 
 type SuccessProbability = f64;
