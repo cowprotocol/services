@@ -11,8 +11,8 @@ async fn solver_score_winner() {
     let test = setup()
         .pool(ab_pool())
         .order(ab_order())
-        .solution(ab_solution().score(Score::Solver(DEFAULT_SCORE_MAX.into())))
-        .solution(ab_solution().score(Score::RiskAdjusted(0.6)))
+        .solution(ab_solution().score(Score::Solver(3000000000000000000u128.into()))) // not higher than objective value
+        .solution(ab_solution().score(Score::RiskAdjusted(0.6))) // 2982421280589416499
         .done()
         .await;
 
