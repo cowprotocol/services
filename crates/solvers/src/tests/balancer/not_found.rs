@@ -11,13 +11,13 @@ use {
 async fn test() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0x1111111111111111111111111111111111111111",
             "buyToken": "0x2222222222222222222222222222222222222222",
             "orderKind": "sell",
             "amount": "1000000000000000000",
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [],
             "swaps": [],

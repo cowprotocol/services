@@ -173,6 +173,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10000000000000000")]
     pub score_cap: U256,
 
+    /// The amount of time that the autopilot waits looking for a settlement
+    /// transaction onchain after the driver acknowledges the receipt of a
+    /// settlement.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_settlement_transaction_wait: Duration,
+
     /// Run the autopilot in a shadow mode by specifying an upstream CoW
     /// protocol deployment to pull auctions from. This will cause the autopilot
     /// to start a run loop where it performs solver competition on driver,
