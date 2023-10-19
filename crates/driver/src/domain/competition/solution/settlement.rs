@@ -271,8 +271,8 @@ impl Settlement {
             .boundary
             .objective_value(eth, auction, self.gas.estimate)?;
 
-        match self.boundary.score() {
-            competition::SolverScore::Solver(score) => Ok(competition::Score(score)),
+        let score = match self.boundary.score() {
+            competition::SolverScore::Solver(score) => competition::Score(score),
             competition::SolverScore::RiskAdjusted(success_probability) => competition::Score::new(
                 auction.score_cap(),
                 revert_protection,
@@ -280,8 +280,18 @@ impl Settlement {
                 self.gas.estimate,
                 auction.gas_price(),
                 success_probability,
-            ),
+            )?,
+        };
+
+        if score > objective_value.into() {
+            return Err(score::Error::ScoreHigherThanObjective);
         }
+
+        if score == eth::U256::zero().into() {
+            return Err(score::Error::ObjectiveValueNonPositive);
+        }
+
+        Ok(score)
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.
