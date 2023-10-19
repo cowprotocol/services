@@ -17,8 +17,11 @@ pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
 
 pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &solution::Error) {
     match err {
-        solution::Error::UntrustedInternalization => {
-            solver.notify(auction_id, notification::Kind::NonBufferableTokensUsed);
+        solution::Error::UntrustedInternalization(tokens) => {
+            solver.notify(
+                auction_id,
+                notification::Kind::NonBufferableTokensUsed(tokens.clone()),
+            );
         }
         solution::Error::InsufficientBalance => {
             solver.notify(auction_id, notification::Kind::InsufficientBalance);

@@ -1,4 +1,7 @@
-use super::auction;
+use {
+    super::{auction, eth::TokenAddress},
+    std::collections::BTreeSet,
+};
 
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
@@ -15,6 +18,6 @@ type SolutionId = u64;
 pub enum Kind {
     EmptySolution(SolutionId),
     ScoringFailed,
-    NonBufferableTokensUsed,
+    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     InsufficientBalance,
 }

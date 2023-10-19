@@ -1,4 +1,10 @@
-use crate::domain::competition::{auction, solution};
+use {
+    crate::domain::{
+        competition::{auction, solution},
+        eth::TokenAddress,
+    },
+    std::collections::BTreeSet,
+};
 
 /// A notification is sent to the solvers in case a solution failed validation.
 #[derive(Debug)]
@@ -15,7 +21,7 @@ pub enum Kind {
     ScoringFailed,
     /// Solution aimed to internalize tokens that are not considered safe to
     /// keep in the settlement contract.
-    NonBufferableTokensUsed,
+    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
     InsufficientBalance,
 }

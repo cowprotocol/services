@@ -558,16 +558,18 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         auction::Id::Quote => 0,
     };
 
-    let auction_result = match notification.kind {
+    let auction_result = match &notification.kind {
         notification::Kind::EmptySolution(_) => {
             AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
         }
         notification::Kind::ScoringFailed => {
             AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
         }
-        notification::Kind::NonBufferableTokensUsed => AuctionResult::Rejected(
-            SolverRejectionReason::NonBufferableTokensUsed(Default::default()),
-        ),
+        notification::Kind::NonBufferableTokensUsed(tokens) => {
+            AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
+                tokens.iter().map(|token| token.0).collect(),
+            ))
+        }
         notification::Kind::InsufficientBalance => {
             AuctionResult::Rejected(SolverRejectionReason::InsufficientBalance(
                 "No enough ETH balance on solver account to cover the settlement gas costs"

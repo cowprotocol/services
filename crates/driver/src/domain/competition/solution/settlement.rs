@@ -12,7 +12,7 @@ use {
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
-    std::collections::{HashMap, HashSet},
+    std::collections::{BTreeSet, HashMap, HashSet},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -110,7 +110,7 @@ impl Settlement {
             .flat_map(|interaction| interaction.inputs())
             .filter(|asset| !auction.tokens().get(asset.token).trusted)
             .map(|asset| asset.token)
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
         if !untrusted_tokens.is_empty() {
             return Err(Error::UntrustedInternalization(untrusted_tokens));
         }

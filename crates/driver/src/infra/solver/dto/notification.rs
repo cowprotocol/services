@@ -1,7 +1,9 @@
 use {
     crate::{domain::competition::auction, infra::notify},
+    primitive_types::H160,
     serde::Serialize,
     serde_with::serde_as,
+    std::collections::BTreeSet,
 };
 
 impl Notification {
@@ -11,7 +13,9 @@ impl Notification {
             kind: match kind {
                 notify::Kind::EmptySolution(solution) => Kind::EmptySolution(solution.0),
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
-                notify::Kind::NonBufferableTokensUsed => Kind::NonBufferableTokensUsed,
+                notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed(
+                    tokens.into_iter().map(|token| token.0 .0).collect(),
+                ),
                 notify::Kind::InsufficientBalance => Kind::InsufficientBalance,
             },
         }
@@ -32,6 +36,6 @@ pub struct Notification {
 pub enum Kind {
     EmptySolution(u64),
     ScoringFailed,
-    NonBufferableTokensUsed,
+    NonBufferableTokensUsed(BTreeSet<H160>),
     InsufficientBalance,
 }

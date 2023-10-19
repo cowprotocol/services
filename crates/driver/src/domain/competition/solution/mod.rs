@@ -15,7 +15,7 @@ use {
     },
     futures::future::try_join_all,
     itertools::Itertools,
-    std::collections::{HashMap, HashSet},
+    std::collections::{BTreeSet, HashMap},
     thiserror::Error,
 };
 
@@ -329,7 +329,7 @@ pub enum Error {
     #[error(
         "invalid internalization: solution attempts to internalize tokens which are not trusted"
     )]
-    UntrustedInternalization(HashSet<TokenAddress>),
+    UntrustedInternalization(BTreeSet<TokenAddress>),
     #[error("invalid internalization: uninternalized solution fails to simulate")]
     FailingInternalization,
     #[error("insufficient solver account Ether balance")]
