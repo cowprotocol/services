@@ -60,17 +60,19 @@ pub struct RunLoop {
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
+    pub min_time_between_runs: Duration,
 }
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
         loop {
+            let start = Instant::now();
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
                 self.single_run(id, &auction)
                     .instrument(tracing::info_span!("auction", id))
                     .await;
             };
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(self.min_time_between_runs.saturating_sub(start.elapsed())).await;
         }
     }
 
