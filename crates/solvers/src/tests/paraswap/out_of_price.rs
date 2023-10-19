@@ -14,7 +14,7 @@ async fn sell() {
     let api = mock::http::setup(vec![
         mock::http::Expectation::Get {
             path: mock::http::Path::exact(
-                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000&side=SELL&excludeDexs=UniswapV2&network=1&partner=cow",
+                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000&side=SELL&excludeDEXS=UniswapV2&network=1&partner=cow",
             ),
             res: json!({
               "priceRoute": {
@@ -207,7 +207,7 @@ async fn buy() {
     let api = mock::http::setup(vec![
         mock::http::Expectation::Get {
             path: mock::http::Path::exact(
-                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000000&side=BUY&excludeDexs=UniswapV2&network=1&partner=cow",
+                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000000&side=BUY&excludeDEXS=UniswapV2&network=1&partner=cow",
             ),
             res: json!({
               "priceRoute": {

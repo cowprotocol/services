@@ -4,7 +4,8 @@ relative-slippage = "0.001" # Percentage in the [0, 1] range
 risk-parameters = [0,0,0,0]
 
 [dex]
-exclude-dexs = [] # which dexs to ignore as liquidity sources
+# these 2 dexs should always be excluded because they are incompatible with `ignoreChecks`
+exclude-dexs = ["ParaSwapPool","ParaSwapLimitOrders"] # which dexs to ignore as liquidity sources
 address = "0xdd2e786980CD58ACc5F64807b354c981f4094936" # public address of the solver
 endpoint = "https://apiv5.paraswap.io" # paraswap API URL to use
 partner = "$YOUR_PARTNER_ID"
