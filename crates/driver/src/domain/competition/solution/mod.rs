@@ -3,7 +3,7 @@ use {
         boundary,
         domain::{
             competition::{self, order},
-            eth,
+            eth::{self, TokenAddress},
         },
         infra::{
             blockchain::{self, Ethereum},
@@ -15,7 +15,7 @@ use {
     },
     futures::future::try_join_all,
     itertools::Itertools,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
 
@@ -329,7 +329,7 @@ pub enum Error {
     #[error(
         "invalid internalization: solution attempts to internalize tokens which are not trusted"
     )]
-    UntrustedInternalization,
+    UntrustedInternalization(HashSet<TokenAddress>),
     #[error("invalid internalization: uninternalized solution fails to simulate")]
     FailingInternalization,
     #[error("insufficient solver account Ether balance")]

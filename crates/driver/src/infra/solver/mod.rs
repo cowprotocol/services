@@ -11,6 +11,7 @@ use {
     },
     std::collections::HashSet,
     thiserror::Error,
+    tracing::Instrument,
 };
 
 pub mod dto;
@@ -185,7 +186,7 @@ impl Solver {
         let future = async move {
             let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         };
-        tokio::task::spawn(future);
+        tokio::task::spawn(future.in_current_span());
     }
 }
 
