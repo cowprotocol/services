@@ -84,6 +84,12 @@ impl std::fmt::Debug for Mempool {
     }
 }
 
+impl std::fmt::Display for Mempool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Mempool({})", self.config.kind.format_variant())
+    }
+}
+
 impl Mempool {
     pub async fn new(config: Config, eth: Ethereum, pool: GlobalTxPool) -> Result<Self> {
         let gas_price_estimator = Arc::new(

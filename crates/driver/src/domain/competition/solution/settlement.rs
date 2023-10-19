@@ -7,7 +7,7 @@ use {
             eth,
             mempools,
         },
-        infra::{blockchain::Ethereum, Simulator},
+        infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
     bigdecimal::Signed,
@@ -241,8 +241,9 @@ impl Settlement {
         let tx = tx.set_access_list(access_list.clone());
 
         // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(tx).await?;
+        let gas = simulator.gas(tx.clone()).await?;
 
+        observe::simulated(&tx, gas);
         Ok((access_list, gas))
     }
 

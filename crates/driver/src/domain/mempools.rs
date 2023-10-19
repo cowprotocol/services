@@ -5,6 +5,7 @@ use {
     },
     futures::{future::select_ok, FutureExt},
     thiserror::Error,
+    tracing::Instrument,
 };
 
 /// The mempools used to execute settlements.
@@ -23,6 +24,8 @@ impl Mempools {
     /// Publish a settlement to the mempools. Wait until it is confirmed in the
     /// background.
     pub fn execute(&self, solver: &Solver, settlement: &Settlement) {
+        let auction_id = settlement.auction_id;
+        let solver_name = solver.name();
         tokio::spawn(select_ok(self.0.iter().cloned().map(|mempool| {
             let solver = solver.clone();
             let settlement = settlement.clone();
@@ -31,6 +34,11 @@ impl Mempools {
                 observe::mempool_executed(&mempool, &settlement, &result);
                 result
             }
+            .instrument(tracing::info_span!(
+                "execute",
+                solver = ?solver_name,
+                ?auction_id,
+            ))
             .boxed()
         })));
     }
