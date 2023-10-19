@@ -569,7 +569,10 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             SolverRejectionReason::NonBufferableTokensUsed(Default::default()),
         ),
         notification::Kind::InsufficientBalance => {
-            AuctionResult::Rejected(SolverRejectionReason::InsufficientBalance)
+            AuctionResult::Rejected(SolverRejectionReason::InsufficientBalance(
+                "No enough ETH balance on solver account to cover the settlement gas costs"
+                    .to_owned(),
+            ))
         }
     };
 
