@@ -8,10 +8,12 @@ pub struct Notification {
     pub kind: Kind,
 }
 
+type SolutionId = u64;
+
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
-    EmptySolution,
+    EmptySolution(SolutionId),
     ScoringFailed,
     NonBufferableTokensUsed,
     InsufficientBalance,

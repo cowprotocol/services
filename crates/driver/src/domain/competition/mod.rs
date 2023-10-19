@@ -70,7 +70,7 @@ impl Competition {
         let solutions = solutions.into_iter().filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
-                notify::empty_solution(&self.solver, auction.id());
+                notify::empty_solution(&self.solver, auction.id(), solution.id());
                 false
             } else {
                 true

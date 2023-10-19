@@ -9,7 +9,7 @@ impl Notification {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
             kind: match kind {
-                notify::Kind::EmptySolution => Kind::EmptySolution,
+                notify::Kind::EmptySolution(solution) => Kind::EmptySolution(solution.0),
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
                 notify::Kind::NonBufferableTokensUsed => Kind::NonBufferableTokensUsed,
                 notify::Kind::InsufficientBalance => Kind::InsufficientBalance,
@@ -30,7 +30,7 @@ pub struct Notification {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    EmptySolution,
+    EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed,
     InsufficientBalance,

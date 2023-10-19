@@ -13,7 +13,7 @@ impl Notification {
                 None => auction::Id::Quote,
             },
             kind: match self.kind {
-                Kind::EmptySolution => notification::Kind::EmptySolution,
+                Kind::EmptySolution(solution) => notification::Kind::EmptySolution(solution),
                 Kind::ScoringFailed => notification::Kind::ScoringFailed,
                 Kind::NonBufferableTokensUsed => notification::Kind::NonBufferableTokensUsed,
                 Kind::InsufficientBalance => notification::Kind::InsufficientBalance,
@@ -35,7 +35,7 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    EmptySolution,
+    EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed,
     InsufficientBalance,

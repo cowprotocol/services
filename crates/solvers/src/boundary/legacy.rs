@@ -559,7 +559,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match notification.kind {
-        notification::Kind::EmptySolution => {
+        notification::Kind::EmptySolution(_) => {
             AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
         }
         notification::Kind::ScoringFailed => {

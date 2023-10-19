@@ -7,8 +7,8 @@ mod notification;
 
 pub use notification::{Kind, Notification};
 
-pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>) {
-    solver.notify(auction_id, notification::Kind::EmptySolution);
+pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
+    solver.notify(auction_id, notification::Kind::EmptySolution(solution));
 }
 
 pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
