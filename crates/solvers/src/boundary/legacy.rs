@@ -29,6 +29,7 @@ use {
             HttpSolverApi,
             SolverConfig,
         },
+        network::network_name,
         sources::uniswap_v3::{
             graph_api::Token,
             pool_fetching::{PoolInfo, PoolState, PoolStats},
@@ -49,7 +50,11 @@ impl Legacy {
         Self {
             solver: DefaultHttpSolverApi {
                 name: config.solver_name,
-                network_name: format!("{:?}", config.chain_id),
+                network_name: network_name(
+                    config.chain_id.network_id(),
+                    config.chain_id.value().as_u64(),
+                )
+                .into(),
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
@@ -71,7 +76,8 @@ impl Legacy {
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
-        let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
+        let (mapping, auction_model) =
+            to_boundary_auction(&auction, self.weth, self.solver.network_name.clone());
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
@@ -99,6 +105,7 @@ enum Order<'a> {
 fn to_boundary_auction(
     auction: &auction::Auction,
     weth: eth::WethAddress,
+    network: String,
 ) -> (Mapping, BatchAuctionModel) {
     let gas = GasModel {
         native_token: weth.0,
@@ -131,7 +138,7 @@ fn to_boundary_auction(
             })
             .collect(),
         metadata: Some(MetadataModel {
-            environment: None,
+            environment: Some(network),
             auction_id: match auction.id {
                 auction::Id::Solve(id) => Some(id),
                 auction::Id::Quote => None,
