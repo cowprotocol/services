@@ -27,7 +27,7 @@ impl Mempools {
         &self,
         solver: &Solver,
         settlement: &Settlement,
-    ) -> Result<eth::TxId, AllFailed> {
+    ) -> Result<eth::TxId, Error> {
         let auction_id = settlement.auction_id;
         let solver_name = solver.name();
 
@@ -44,8 +44,7 @@ impl Mempools {
             ))
             .boxed()
         }))
-        .await
-        .map_err(|_| AllFailed)?;
+        .await?;
 
         Ok(tx_hash)
     }
@@ -77,10 +76,6 @@ pub enum RevertProtection {
     Enabled,
     Disabled,
 }
-
-#[derive(Debug, Error)]
-#[error("none of the submission strategies successfully submitted the solution")]
-pub struct AllFailed;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

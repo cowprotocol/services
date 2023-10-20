@@ -41,16 +41,12 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
     }
 }
 
-pub fn mempools_executed(
-    solver: &Solver,
-    auction_id: Option<auction::Id>,
-    res: &Result<eth::TxId, Error>,
-) {
+pub fn executed(solver: &Solver, auction_id: auction::Id, res: &Result<eth::TxId, Error>) {
     let kind = match res {
         Ok(hash) => notification::SettleKind::Settled(hash.clone()),
         Err(Error::Revert(hash)) => notification::SettleKind::Reverted(hash.clone()),
         Err(Error::Other(_)) => notification::SettleKind::Failed,
     };
 
-    solver.notify(auction_id, notification::Kind::Settled(kind));
+    solver.notify(Some(auction_id), notification::Kind::Settled(kind));
 }
