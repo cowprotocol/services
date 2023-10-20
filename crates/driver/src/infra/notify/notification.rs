@@ -22,7 +22,7 @@ pub enum Kind {
     /// Solution aimed to internalize tokens that are not considered safe to
     /// keep in the settlement contract.
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    /// Solver balance too low to cover the execution costs.
+    /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
     /// Result of winning solver trying to settle the transaction onchain.
     Settled(SettleKind),

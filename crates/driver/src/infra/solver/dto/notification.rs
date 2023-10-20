@@ -16,9 +16,9 @@ impl Notification {
             kind: match kind {
                 notify::Kind::EmptySolution(solution) => Kind::EmptySolution(solution.0),
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
-                notify::Kind::NonBufferableTokensUsed(tokens) => {
-                    Kind::NonBufferableTokensUsed(tokens.into_iter().map(|t| t.0 .0).collect())
-                }
+                notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed(
+                    tokens.into_iter().map(|token| token.0 .0).collect(),
+                ),
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
                     Kind::SolverAccountInsufficientBalance(required.0)
                 }
