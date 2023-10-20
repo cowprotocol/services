@@ -2,15 +2,16 @@ use {
     crate::{
         domain::{
             self,
-            competition::{self, score},
+            competition::{
+                self,
+                score::{self, SuccessProbability},
+            },
             eth,
         },
         util::conv::u256::U256Ext,
     },
     solver::settlement_rater::{ScoreCalculator, ScoringError},
 };
-
-type SuccessProbability = f64;
 
 #[derive(Debug, Clone)]
 pub struct Score {
@@ -41,7 +42,7 @@ impl Score {
         match self.inner.compute_score(
             &objective_value.to_big_rational(),
             &gas_cost,
-            success_probability,
+            success_probability.0,
         ) {
             Ok(score) => Ok(score.into()),
             Err(ScoringError::ObjectiveValueNonPositive(_)) => {

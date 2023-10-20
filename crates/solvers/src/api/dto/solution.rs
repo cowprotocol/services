@@ -135,7 +135,7 @@ impl Solutions {
                         .collect(),
                     score: match solution.score.clone() {
                         solution::Score::Solver(score) => Score::Solver(score),
-                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score),
+                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score.0),
                     },
                 })
                 .collect(),

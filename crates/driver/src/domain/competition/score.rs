@@ -34,7 +34,9 @@ impl From<eth::U256> for Score {
     }
 }
 
-type SuccessProbability = f64;
+/// Represents the probability that a solution will be successfully settled.
+#[derive(Debug, Clone)]
+pub struct SuccessProbability(pub f64);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
