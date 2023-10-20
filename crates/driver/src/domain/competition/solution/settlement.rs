@@ -356,6 +356,11 @@ impl Settlement {
             .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
             .collect()
     }
+
+    /// Settlements have Id composed of all ids of contained solutions.
+    pub fn id(&self) -> Vec<super::Id> {
+        self.solutions.keys().copied().collect()
+    }
 }
 
 /// Should the interactions be internalized?

@@ -4,12 +4,31 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
-    std::{collections::HashMap, slice},
+    std::{
+        collections::HashMap,
+        slice,
+        sync::atomic::{AtomicU64, Ordering},
+    },
 };
+
+static COUNTER: AtomicU64 = AtomicU64::new(1);
+pub fn solution_id() -> Id {
+    Id(COUNTER.fetch_add(1, Ordering::Relaxed))
+}
+
+#[derive(Debug, Default)]
+pub struct Id(pub u64);
+
+impl From<u64> for Id {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
 
 /// A solution to an auction.
 #[derive(Debug, Default)]
 pub struct Solution {
+    pub id: Id,
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
@@ -190,6 +209,7 @@ impl Single {
             order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
         Some(Solution {
+            id: solution_id(),
             prices: ClearingPrices::new([
                 (order.sell.token, buy),
                 (order.buy.token, sell.checked_sub(surplus_fee)?),
