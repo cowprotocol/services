@@ -322,6 +322,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
         competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
+        competition::Error::SubmissionError => "SubmissionError",
     }
 }
 

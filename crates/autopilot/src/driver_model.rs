@@ -194,6 +194,7 @@ pub mod reveal {
 pub mod settle {
     use {
         model::bytes_hex,
+        primitive_types::H256,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
@@ -212,6 +213,7 @@ pub mod settle {
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub calldata: Calldata,
+        pub tx_hash: H256,
     }
 
     #[serde_as]

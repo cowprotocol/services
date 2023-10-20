@@ -203,8 +203,8 @@ impl<'a> Submitter<'a> {
         submitted_transactions: SubTxPoolRef,
         web3: Web3,
         code_fetcher: &'a dyn CodeFetching,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             contract,
             account,
             nonce,
@@ -214,7 +214,7 @@ impl<'a> Submitter<'a> {
             submitted_transactions,
             web3,
             code_fetcher,
-        })
+        }
     }
 }
 
@@ -803,8 +803,7 @@ mod tests {
             submitted_transactions,
             web3.clone(),
             &code_fetcher,
-        )
-        .unwrap();
+        );
 
         let params = SubmitterParams {
             target_confirm_time: Duration::from_secs(0),
