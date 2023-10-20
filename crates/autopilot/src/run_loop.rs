@@ -111,7 +111,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
-        tracing::info!("solving");
+        tracing::info!(?auction, "solving");
 
         let solutions = {
             let mut solutions = self.competition(auction_id, auction).await;
