@@ -12,7 +12,7 @@ impl Score {
         gas_price: eth::GasPrice,
         success_probability: SuccessProbability,
     ) -> Result<Self, Error> {
-        let boundary = boundary::Score::new(score_cap, revert_protection);
+        let boundary = boundary::ScoreCalculator::new(score_cap, revert_protection);
         boundary.score(objective_value, gas, gas_price, success_probability)
     }
 }

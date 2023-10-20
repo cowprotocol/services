@@ -10,18 +10,18 @@ use {
         },
         util::conv::u256::U256Ext,
     },
-    solver::settlement_rater::{ScoreCalculator, ScoringError},
+    solver::settlement_rater::ScoringError,
 };
 
 #[derive(Debug, Clone)]
-pub struct Score {
-    pub inner: ScoreCalculator,
+pub struct ScoreCalculator {
+    pub inner: solver::settlement_rater::ScoreCalculator,
 }
 
-impl Score {
+impl ScoreCalculator {
     pub fn new(score_cap: eth::U256, revert_protection: &domain::RevertProtection) -> Self {
         Self {
-            inner: ScoreCalculator::new(
+            inner: solver::settlement_rater::ScoreCalculator::new(
                 score_cap.to_big_rational(),
                 matches!(revert_protection, domain::RevertProtection::Disabled),
             ),
