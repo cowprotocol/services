@@ -418,21 +418,15 @@ impl RunLoop {
             .collect_vec();
         self.database.store_order_events(&events).await;
 
-        let deadline = tokio::time::Instant::now() + self.max_settlement_transaction_wait;
         let request = settle::Request {
             solution_id: solved.id,
         };
-        let settle = driver.settle(&request);
 
-        let tx_hash = match tokio::time::timeout_at(deadline, settle).await {
-            Ok(Ok(res)) => res.tx_hash,
-            Ok(Err(err)) => return Err(SettleError::Failure(err)),
-            Err(_) => {
-                return Err(SettleError::Failure(anyhow::anyhow!(
-                    "submission deadline exceeded"
-                )))
-            }
-        };
+        let tx_hash = driver
+            .settle(&request, self.max_settlement_transaction_wait)
+            .await
+            .map_err(SettleError::Failure)?
+            .tx_hash;
 
         let events = revealed
             .orders
