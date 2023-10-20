@@ -133,6 +133,7 @@ async fn test(web3: Web3) {
     tracing::info!("waiting for solver competitions to get indexed");
     let competitions_indexed = || {
         futures::stream::iter(&trades).all(|trade| async {
+            onchain.mint_block().await;
             services
                 .get_solver_competition(trade.tx_hash.unwrap())
                 .await

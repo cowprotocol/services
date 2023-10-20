@@ -437,6 +437,15 @@ impl OnchainComponents {
         }
     }
 
+    pub async fn mint_block(&self) {
+        tracing::info!("mining block");
+        self.web3
+            .transport()
+            .execute("evm_mine", vec![])
+            .await
+            .unwrap();
+    }
+
     pub fn contracts(&self) -> &Contracts {
         &self.contracts
     }
