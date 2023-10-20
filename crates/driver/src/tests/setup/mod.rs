@@ -1045,10 +1045,8 @@ impl<'a> Settle<'a> {
             .unwrap()
             .is_empty());
 
-        let reported_tx_hash = serde_json::from_value::<eth::H256>(result
-            .get("txHash")
-            .unwrap()
-            .clone()).unwrap();
+        let reported_tx_hash =
+            serde_json::from_value::<eth::H256>(result.get("txHash").unwrap().clone()).unwrap();
 
         // Wait for the new block with the settlement to be mined.
         blockchain::wait_for_block(&self.test.blockchain.web3, self.old_block + 1).await;
