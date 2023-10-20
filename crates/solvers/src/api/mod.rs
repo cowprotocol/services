@@ -4,10 +4,9 @@ use {
     crate::domain::solver::Solver,
     std::{future::Future, net::SocketAddr, sync::Arc},
     tokio::sync::oneshot,
-    tracing::Instrument,
 };
 
-pub mod dto;
+mod routes;
 
 pub struct Api {
     pub addr: SocketAddr,
@@ -21,7 +20,8 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
         let app = axum::Router::new()
-            .route("/", axum::routing::post(solve))
+            .route("/solve", axum::routing::post(routes::solve))
+            .route("/notify", axum::routing::post(routes::notify))
             .layer(
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
@@ -36,45 +36,4 @@ impl Api {
 
         server.with_graceful_shutdown(shutdown).await
     }
-}
-
-async fn solve(
-    state: axum::extract::State<Arc<Solver>>,
-    auction: axum::extract::Json<dto::Auction>,
-) -> (
-    axum::http::StatusCode,
-    axum::response::Json<dto::Response<dto::Solutions>>,
-) {
-    let handle_request = async {
-        let auction = match auction.to_domain() {
-            Ok(value) => value,
-            Err(err) => {
-                tracing::warn!(?err, "invalid auction");
-                return (
-                    axum::http::StatusCode::BAD_REQUEST,
-                    axum::response::Json(dto::Response::Err(err)),
-                );
-            }
-        };
-
-        tracing::trace!(?auction);
-
-        let auction_id = auction.id;
-        let solutions = state
-            .solve(auction)
-            .instrument(tracing::info_span!("auction", id = %auction_id))
-            .await;
-
-        tracing::trace!(?solutions);
-
-        let solutions = dto::Solutions::from_domain(&solutions);
-        (
-            axum::http::StatusCode::OK,
-            axum::response::Json(dto::Response::Ok(solutions)),
-        )
-    };
-
-    handle_request
-        .instrument(tracing::info_span!("/solve"))
-        .await
 }

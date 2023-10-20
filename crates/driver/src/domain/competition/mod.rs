@@ -6,6 +6,7 @@ use {
         infra::{
             self,
             blockchain::Ethereum,
+            notify,
             observe,
             solver::{self, Solver},
             Simulator,
@@ -71,6 +72,7 @@ impl Competition {
         let solutions = solutions.into_iter().filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
+                notify::empty_solution(&self.solver, auction.id(), solution.id());
                 false
             } else {
                 true
@@ -92,7 +94,10 @@ impl Competition {
             .into_iter()
             .filter_map(|(id, result)| {
                 result
-                    .tap_err(|err| observe::encoding_failed(self.solver.name(), id, err))
+                    .tap_err(|err| {
+                        observe::encoding_failed(self.solver.name(), id, err);
+                        notify::encoding_failed(&self.solver, auction.id(), err);
+                    })
                     .ok()
             })
             .collect_vec();
@@ -152,7 +157,10 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| observe::scoring_failed(self.solver.name(), err))
+                    .tap_err(|err| {
+                        observe::scoring_failed(self.solver.name(), err);
+                        notify::scoring_failed(&self.solver, auction.id());
+                    })
                     .ok()
                     .map(|score| (score, settlement))
             })
