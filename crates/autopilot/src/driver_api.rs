@@ -29,21 +29,27 @@ impl Driver {
     }
 
     pub async fn solve(&self, request: &solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request).await
+        self.request_response("solve", request, None).await
     }
 
     pub async fn reveal(&self, request: &reveal::Request) -> Result<reveal::Response> {
-        self.request_response("reveal", request).await
+        self.request_response("reveal", request, None).await
     }
 
-    pub async fn settle(&self, request: &settle::Request) -> Result<settle::Response> {
-        self.request_response("settle", request).await
+    pub async fn settle(
+        &self,
+        request: &settle::Request,
+        timeout: std::time::Duration,
+    ) -> Result<settle::Response> {
+        self.request_response("settle", request, Some(timeout))
+            .await
     }
 
     async fn request_response<Response>(
         &self,
         path: &str,
         request: &impl serde::Serialize,
+        timeout: Option<std::time::Duration>,
     ) -> Result<Response>
     where
         Response: serde::de::DeserializeOwned,
@@ -54,13 +60,13 @@ impl Driver {
             body=%serde_json::to_string_pretty(request).unwrap(),
             "request",
         );
-        let mut response = self
-            .client
-            .post(url.clone())
-            .json(request)
-            .send()
-            .await
-            .context("send")?;
+        let mut request = self.client.post(url.clone()).json(request);
+
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
+
+        let mut response = request.send().await.context("send")?;
         let status = response.status().as_u16();
         let body = response_body_with_size_limit(&mut response, RESPONSE_SIZE_LIMIT)
             .await

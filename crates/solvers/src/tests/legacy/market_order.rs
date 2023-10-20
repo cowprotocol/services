@@ -19,7 +19,7 @@ async fn quote() {
                &auction_id=1\
                &request_id=0"
         ),
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "amms": {
                 "0x97b744df0b59d93a866304f97431d8efad29a08d": {
                     "address": "0x97b744df0b59d93a866304f97431d8efad29a08d",
@@ -85,12 +85,13 @@ async fn quote() {
                     "normalize_priority": 0
                 }
             }
-        }),
+        })),
         res: json!({
             "orders": {
                 "0": {
                     "exec_sell_amount": "133700000000000000",
                     "exec_buy_amount": "6000000000000000000000",
+                    "exec_fee_amount": "6900000000000000"
                 }
             },
             "prices": {
@@ -223,7 +224,7 @@ async fn solve() {
                &auction_id=1234\
                &request_id=0",
         ),
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "amms": {
                 "0x97b744df0b59d93a866304f97431d8efad29a08d": {
                     "address": "0x97b744df0b59d93a866304f97431d8efad29a08d",
@@ -289,12 +290,13 @@ async fn solve() {
                     "normalize_priority": 0
                 }
             }
-        }),
+        })),
         res: json!({
             "orders": {
                 "0": {
                     "exec_sell_amount": "133700000000000000",
                     "exec_buy_amount": "6000000000000000000000",
+                    "exec_fee_amount": "6900000000000000",
                 }
             },
             "prices": {

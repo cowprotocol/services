@@ -20,10 +20,6 @@ struct Config {
     /// Optional Balancer V2 Vault contract address. If not specified, the
     /// default Vault contract address will be used.
     vault: Option<H160>,
-
-    /// Optional CoW Protocol Settlement contract address. If not specified,
-    /// the default Settlement contract address will be used.
-    settlement: Option<H160>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -44,10 +40,7 @@ pub async fn load(path: &Path) -> super::Config {
                 .vault
                 .map(eth::ContractAddress)
                 .unwrap_or(contracts.balancer_vault),
-            settlement: config
-                .settlement
-                .map(eth::ContractAddress)
-                .unwrap_or(contracts.settlement),
+            settlement: base.contracts.settlement,
         },
         base,
     }

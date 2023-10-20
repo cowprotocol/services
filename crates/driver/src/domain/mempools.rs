@@ -1,10 +1,11 @@
 use {
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{competition::solution::Settlement, eth},
         infra::{self, observe, solver::Solver},
     },
     futures::{future::select_ok, FutureExt},
     thiserror::Error,
+    tracing::Instrument,
 };
 
 /// The mempools used to execute settlements.
@@ -20,19 +21,32 @@ impl Mempools {
         }
     }
 
-    /// Publish a settlement to the mempools. Wait until it is confirmed in the
-    /// background.
-    pub fn execute(&self, solver: &Solver, settlement: &Settlement) {
-        tokio::spawn(select_ok(self.0.iter().cloned().map(|mempool| {
-            let solver = solver.clone();
-            let settlement = settlement.clone();
+    /// Publish a settlement to the mempools.
+    pub async fn execute(
+        &self,
+        solver: &Solver,
+        settlement: &Settlement,
+    ) -> Result<eth::TxId, AllFailed> {
+        let auction_id = settlement.auction_id;
+        let solver_name = solver.name();
+
+        let (tx_hash, _remaining_futures) = select_ok(self.0.iter().cloned().map(|mempool| {
             async move {
-                let result = mempool.execute(&solver, settlement.clone()).await;
-                observe::mempool_executed(&mempool, &settlement, &result);
+                let result = mempool.execute(solver, settlement.clone()).await;
+                observe::mempool_executed(&mempool, settlement, &result);
                 result
             }
+            .instrument(tracing::info_span!(
+                "execute",
+                solver = ?solver_name,
+                ?auction_id,
+            ))
             .boxed()
-        })));
+        }))
+        .await
+        .map_err(|_| AllFailed)?;
+
+        Ok(tx_hash)
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -62,3 +76,7 @@ pub enum RevertProtection {
     Enabled,
     Disabled,
 }
+
+#[derive(Debug, Error)]
+#[error("none of the submission strategies successfully submitted the solution")]
+pub struct AllFailed;

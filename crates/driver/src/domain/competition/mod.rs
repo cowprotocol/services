@@ -1,8 +1,8 @@
 use {
     self::solution::settlement,
-    super::{eth, Mempools},
+    super::Mempools,
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
@@ -21,11 +21,13 @@ use {
 
 pub mod auction;
 pub mod order;
+pub mod score;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
+    score::Score,
     solution::{Solution, SolverScore, SolverTimeout},
 };
 
@@ -206,21 +208,25 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        self.mempools.execute(&self.solver, &settlement);
-        Ok(Settled {
-            internalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )
-                .into(),
-            uninternalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Disable,
-                )
-                .into(),
-        })
+
+        match self.mempools.execute(&self.solver, &settlement).await {
+            Err(_) => Err(Error::SubmissionError),
+            Ok(tx_hash) => Ok(Settled {
+                internalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Enable,
+                    )
+                    .into(),
+                uninternalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Disable,
+                    )
+                    .into(),
+                tx_hash,
+            }),
+        }
     }
 
     /// The ID of the auction being competed on.
@@ -230,23 +236,6 @@ impl Competition {
             .unwrap()
             .as_ref()
             .map(|s| s.auction_id)
-    }
-}
-
-/// Represents a single value suitable for comparing/ranking solutions.
-/// This is a final score that is observed by the autopilot.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub eth::U256);
-
-impl From<Score> for eth::U256 {
-    fn from(value: Score) -> Self {
-        value.0
-    }
-}
-
-impl From<eth::U256> for Score {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
     }
 }
 
@@ -279,6 +268,8 @@ pub struct Settled {
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
     pub uninternalized_calldata: Bytes<Vec<u8>>,
+    /// The transaction hash in which the solution was submitted.
+    pub tx_hash: eth::TxId,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -292,4 +283,6 @@ pub enum Error {
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("failed to submit the solution")]
+    SubmissionError,
 }

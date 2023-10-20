@@ -575,11 +575,10 @@ pub async fn run(args: Arguments) {
             contract: settlement_contract,
             native_token: native_token.address(),
             db: db.clone(),
-            current_block: current_block_stream.clone(),
         };
     tokio::task::spawn(
         on_settlement_event_updater
-            .run_forever()
+            .run_forever(current_block_stream.clone())
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
@@ -609,6 +608,7 @@ pub async fn run(args: Arguments) {
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
             score_cap: args.score_cap,
+            max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         };
         run.run_forever().await;
         unreachable!("run loop exited");

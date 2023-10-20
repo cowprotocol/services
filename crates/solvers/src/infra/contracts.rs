@@ -4,6 +4,7 @@ use crate::domain::eth;
 pub struct Contracts {
     pub weth: eth::WethAddress,
     pub settlement: eth::ContractAddress,
+    pub authenticator: eth::ContractAddress,
     pub balancer_vault: eth::ContractAddress,
 }
 
@@ -21,6 +22,7 @@ impl Contracts {
         Self {
             weth: eth::WethAddress(a(contracts::WETH9::raw_contract()).0),
             settlement: a(contracts::GPv2Settlement::raw_contract()),
+            authenticator: a(contracts::GPv2AllowListAuthentication::raw_contract()),
             balancer_vault: a(contracts::BalancerV2Vault::raw_contract()),
         }
     }

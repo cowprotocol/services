@@ -13,13 +13,13 @@ use {
 async fn tested_amounts_adjust_depending_on_response() {
     // observe::tracing::initialize_reentrant("solvers=trace");
     let inner_request = |amount| {
-        json!({
+        mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "sell",
             "amount": amount,
             "gasPrice": "15000000000",
-        })
+        }))
     };
 
     let no_swap_found_response = json!({
@@ -94,7 +94,30 @@ async fn tested_amounts_adjust_depending_on_response() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
+    let simulation_node = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
+        req: mock::http::RequestBody::Any,
+        res: {
+            json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "result": "0x0000000000000000000000000000000000000000000000000000000000015B3C"
+            })
+        },
+    }])
+    .await;
+
+    let config = tests::Config::String(format!(
+        r"
+node-url = 'http://{}'
+risk-parameters = [0,0,0,0]
+[dex]
+endpoint = 'http://{}/sor'
+        ",
+        simulation_node.address, api.address,
+    ));
+
+    let engine = tests::SolverEngine::new("balancer", config).await;
 
     let auction = json!({
         "id": "1",
@@ -251,13 +274,13 @@ async fn tested_amounts_wrap_around() {
     .into_iter()
     .map(|amount| mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "buy",
             "amount": amount,
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [],
             "swaps": [],
@@ -344,13 +367,13 @@ async fn moves_surplus_fee_to_buy_token() {
     let api = mock::http::setup(vec![
         mock::http::Expectation::Post {
             path: mock::http::Path::Any,
-            req: json!({
+            req: mock::http::RequestBody::Exact(json!({
                 "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                 "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
                 "orderKind": "sell",
                 "amount": "2000000000000000000",
                 "gasPrice": "6000000000000",
-            }),
+            })),
             res: json!({
                 "tokenAddresses": [],
                 "swaps": [],
@@ -366,13 +389,13 @@ async fn moves_surplus_fee_to_buy_token() {
         },
         mock::http::Expectation::Post {
             path: mock::http::Path::Any,
-            req: json!({
+            req: mock::http::RequestBody::Exact(json!({
                 "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                 "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
                 "orderKind": "sell",
                 "amount": "1000000000000000000",
                 "gasPrice": "6000000000000",
-            }),
+            })),
             res: json!({
                 "tokenAddresses": [
                     "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -402,7 +425,35 @@ async fn moves_surplus_fee_to_buy_token() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("balancer", balancer::config(&api.address)).await;
+    let simulation_node = mock::http::setup(vec![mock::http::Expectation::Post {
+        path: mock::http::Path::Any,
+        req: mock::http::RequestBody::Any,
+        res: {
+            json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                // If the simulation logic returns 0 it means that the user did not have the
+                // required balance. This could be caused by a pre-interaction that acquires the
+                // necessary sell_token before the trade which is currently not supported by the
+                // simulation loic.
+                // In that case we fall back to the heuristic gas price we had in the past.
+                "result": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            })
+        },
+    }])
+    .await;
+
+    let config = tests::Config::String(format!(
+        r"
+node-url = 'http://{}'
+risk-parameters = [0,0,0,0]
+[dex]
+endpoint = 'http://{}/sor'
+        ",
+        simulation_node.address, api.address,
+    ));
+
+    let engine = tests::SolverEngine::new("balancer", config).await;
 
     let auction = json!({
         "id": "1",
@@ -542,13 +593,13 @@ async fn moves_surplus_fee_to_buy_token() {
 async fn insufficient_room_for_surplus_fee() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "sell",
             "amount": "1000000000000000000",
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -643,13 +694,13 @@ async fn insufficient_room_for_surplus_fee() {
 async fn market() {
     let api = mock::http::setup(vec![mock::http::Expectation::Post {
         path: mock::http::Path::Any,
-        req: json!({
+        req: mock::http::RequestBody::Exact(json!({
             "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
             "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
             "orderKind": "sell",
             "amount": "1000000000000000000",
             "gasPrice": "15000000000",
-        }),
+        })),
         res: json!({
             "tokenAddresses": [
                 "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
