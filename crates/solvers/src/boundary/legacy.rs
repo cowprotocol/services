@@ -405,9 +405,12 @@ fn to_domain_solution(
                         order::Side::Buy => execution.exec_buy_amount,
                         order::Side::Sell => execution.exec_sell_amount,
                     },
-                    match execution.exec_fee_amount {
-                        Some(fee) => solution::Fee::Surplus(fee),
-                        None => solution::Fee::Protocol,
+                    match order.solver_determines_fee() {
+                        true => execution
+                            .exec_fee_amount
+                            .map(solution::Fee::Surplus)
+                            .context("no surplus fee")?,
+                        false => solution::Fee::Protocol,
                     },
                 )
                 .context("invalid trade execution")?,
