@@ -12,7 +12,7 @@ use {
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
-    std::collections::{HashMap, HashSet},
+    std::collections::{BTreeSet, HashMap, HashSet},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -103,18 +103,16 @@ impl Settlement {
 
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.
-        if !solution
+        let untrusted_tokens = solution
             .interactions
             .iter()
             .filter(|interaction| interaction.internalize())
-            .all(|interaction| {
-                interaction
-                    .inputs()
-                    .iter()
-                    .all(|asset| auction.tokens().get(asset.token).trusted)
-            })
-        {
-            return Err(Error::UntrustedInternalization);
+            .flat_map(|interaction| interaction.inputs())
+            .filter(|asset| !auction.tokens().get(asset.token).trusted)
+            .map(|asset| asset.token)
+            .collect::<BTreeSet<_>>();
+        if !untrusted_tokens.is_empty() {
+            return Err(Error::UntrustedInternalization(untrusted_tokens));
         }
 
         // Encode the solution into a settlement.
@@ -184,7 +182,7 @@ impl Settlement {
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
-            return Err(Error::InsufficientBalance);
+            return Err(Error::SolverAccountInsufficientBalance);
         }
 
         // Is at least one interaction internalized?
