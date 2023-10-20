@@ -1,6 +1,5 @@
 use {
     crate::{
-        domain,
         domain::{
             competition::{
                 self,
@@ -161,7 +160,7 @@ impl Settlement {
             competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
-                    success_probability,
+                    success_probability: success_probability.0,
                     gas_amount: None,
                 }
             }
@@ -202,50 +201,43 @@ impl Settlement {
         }
     }
 
-    pub fn score(
+    pub fn objective_value(
         &self,
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-        revert_protection: &domain::RevertProtection,
-    ) -> Result<competition::Score> {
-        let score = match self.inner.score {
-            http_solver::model::Score::Solver { score } => score,
+    ) -> Result<eth::U256> {
+        let prices = ExternalPrices::try_from_auction_prices(
+            eth.contracts().weth().address(),
+            auction
+                .tokens()
+                .iter()
+                .filter_map(|token| {
+                    token
+                        .price
+                        .map(|price| (token.address.into(), price.into()))
+                })
+                .collect(),
+        )?;
+        let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
+        let objective_value = {
+            let surplus = self.inner.total_surplus(&prices);
+            let solver_fees = self.inner.total_solver_fees(&prices);
+            surplus + solver_fees - gas_price * gas.0.to_big_rational()
+        };
+        eth::U256::from_big_rational(&objective_value)
+    }
+
+    pub fn score(&self) -> competition::SolverScore {
+        match self.inner.score {
+            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
-                gas_amount,
-            } => {
-                let prices = ExternalPrices::try_from_auction_prices(
-                    eth.contracts().weth().address(),
-                    auction
-                        .tokens()
-                        .iter()
-                        .filter_map(|token| {
-                            token
-                                .price
-                                .map(|price| (token.address.into(), price.into()))
-                        })
-                        .collect(),
-                )?;
-                let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-                let inputs = solver::objective_value::Inputs::from_settlement(
-                    &self.inner,
-                    &prices,
-                    gas_price.clone(),
-                    &gas_amount.unwrap_or(gas.into()),
-                );
-                solver::settlement_rater::ScoreCalculator::new(
-                    auction.score_cap().to_big_rational(),
-                    matches!(revert_protection, domain::RevertProtection::Disabled),
-                )
-                .compute_score(
-                    &inputs.objective_value(),
-                    &inputs.gas_cost(),
-                    success_probability,
-                )?
-            }
-        };
-        Ok(score.into())
+                ..
+            } => competition::SolverScore::RiskAdjusted(competition::score::SuccessProbability(
+                success_probability,
+            )),
+        }
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {

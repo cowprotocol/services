@@ -10,6 +10,7 @@ use {
         domain::{
             competition::{
                 self,
+                score,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
@@ -61,7 +62,7 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
 
 /// Observe the solutions returned by the solver.
 pub fn solutions(solutions: &[Solution]) {
-    if !solutions.is_empty() {
+    if solutions.iter().any(|s| !s.is_empty()) {
         tracing::info!(?solutions, "computed solutions");
     } else {
         tracing::debug!("no solutions");
@@ -120,7 +121,7 @@ pub fn scoring(settlement: &Settlement) {
 }
 
 /// Observe that scoring failed.
-pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
+pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
     tracing::info!(%solver, ?err, "discarded solution: scoring failed");
     metrics::get()
         .dropped_solutions
@@ -322,6 +323,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
         competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
+        competition::Error::SubmissionError => "SubmissionError",
     }
 }
 

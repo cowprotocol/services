@@ -1,4 +1,5 @@
 use {
+    super::score::SuccessProbability,
     crate::{
         boundary,
         domain::{
@@ -282,9 +283,6 @@ impl SolverTimeout {
         Self(self.0 - duration)
     }
 }
-
-/// Represents the probability that a solution will be successfully settled.
-type SuccessProbability = f64;
 
 /// Carries information how the score should be calculated.
 #[derive(Debug, Clone)]

@@ -575,11 +575,10 @@ pub async fn run(args: Arguments) {
             contract: settlement_contract,
             native_token: native_token.address(),
             db: db.clone(),
-            current_block: current_block_stream.clone(),
         };
     tokio::task::spawn(
         on_settlement_event_updater
-            .run_forever()
+            .run_forever(current_block_stream.clone())
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 

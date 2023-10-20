@@ -3,6 +3,7 @@ use {
         domain::eth,
         infra::blockchain::{self, Ethereum},
     },
+    ethcontract::errors::ExecutionError,
     observe::future::Measure,
 };
 
@@ -78,11 +79,18 @@ impl Simulator {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx.clone(), tenderly::GenerateAccessList::Yes)
-                    .await?
+                    .await
+                    .map_err(with_tx(tx.clone()))?
                     .access_list
             }
-            Inner::Ethereum(ethereum) => ethereum.create_access_list(tx.clone()).await?,
-            Inner::Enso(_, ethereum) => ethereum.create_access_list(tx.clone()).await?,
+            Inner::Ethereum(ethereum) => ethereum
+                .create_access_list(tx.clone())
+                .await
+                .map_err(with_tx(tx.clone()))?,
+            Inner::Enso(_, ethereum) => ethereum
+                .create_access_list(tx.clone())
+                .await
+                .map_err(with_tx(tx.clone()))?,
         };
         Ok(tx.access_list.merge(access_list))
     }
@@ -95,13 +103,21 @@ impl Simulator {
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
-                    .simulate(tx, tenderly::GenerateAccessList::No)
+                    .simulate(tx.clone(), tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
-                    .await?
+                    .await
+                    .map_err(with_tx(tx))?
                     .gas
             }
-            Inner::Ethereum(ethereum) => ethereum.estimate_gas(tx).await?,
-            Inner::Enso(enso, _) => enso.simulate(tx).measure("enso_simulate_gas").await?,
+            Inner::Ethereum(ethereum) => ethereum
+                .estimate_gas(tx.clone())
+                .await
+                .map_err(with_tx(tx))?,
+            Inner::Enso(enso, _) => enso
+                .simulate(tx.clone())
+                .measure("enso_simulate_gas")
+                .await
+                .map_err(with_tx(tx))?,
         })
     }
 }
@@ -114,11 +130,63 @@ enum Inner {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum SimulatorError {
     #[error("tenderly error: {0:?}")]
     Tenderly(#[from] tenderly::Error),
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
     #[error("enso error: {0:?}")]
     Enso(#[from] enso::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("err: {err:?}, tx: {tx:?}")]
+pub struct WithTxError {
+    err: SimulatorError,
+    tx: eth::Tx,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("basic: {0:?}")]
+    Basic(#[from] SimulatorError),
+    /// If a transaction reverted, forward that transaction together with the
+    /// error.
+    #[error("with tx: {0:?}")]
+    WithTx(#[from] WithTxError),
+}
+
+fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
+where
+    E: Into<SimulatorError>,
+{
+    move |err| {
+        let err: SimulatorError = err.into();
+        let tx = match &err {
+            SimulatorError::Tenderly(tenderly::Error::Http(_)) => None,
+            SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx),
+            SimulatorError::Blockchain(blockchain::Error::Method(error))
+                if matches!(error.inner, ExecutionError::Revert(_)) =>
+            {
+                Some(tx)
+            }
+            SimulatorError::Blockchain(blockchain::Error::Method(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Web3(inner)) => {
+                let error = ExecutionError::from(inner.clone());
+                if matches!(error, ExecutionError::Revert(_)) {
+                    Some(tx)
+                } else {
+                    None
+                }
+            }
+            SimulatorError::Blockchain(blockchain::Error::Gas(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Response(_)) => None,
+            SimulatorError::Enso(enso::Error::Http(_)) => None,
+            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
+        };
+        match tx {
+            Some(tx) => Error::WithTx(WithTxError { err, tx }),
+            None => Error::Basic(err),
+        }
+    }
 }

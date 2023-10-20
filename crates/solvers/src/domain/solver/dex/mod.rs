@@ -121,10 +121,8 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let score =
-            solution::Score::RiskAdjusted(self.risk.success_probability(swap.gas, gas_price, 1));
         let Some(solution) = swap
-            .into_solution(order.clone(), gas_price, sell, score, &self.simulator)
+            .into_solution(order.clone(), gas_price, sell, &self.risk, &self.simulator)
             .await
         else {
             tracing::debug!("no solution for swap");

@@ -91,6 +91,7 @@ async fn quote() {
                 "0": {
                     "exec_sell_amount": "133700000000000000",
                     "exec_buy_amount": "6000000000000000000000",
+                    "exec_fee_amount": "6900000000000000"
                 }
             },
             "prices": {
@@ -295,6 +296,7 @@ async fn solve() {
                 "0": {
                     "exec_sell_amount": "133700000000000000",
                     "exec_buy_amount": "6000000000000000000000",
+                    "exec_fee_amount": "6900000000000000",
                 }
             },
             "prices": {
