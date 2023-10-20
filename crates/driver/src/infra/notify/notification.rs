@@ -16,12 +16,32 @@ pub struct Notification {
 #[derive(Debug)]
 pub enum Kind {
     /// The solution doesn't contain any user orders.
-    EmptySolution(solution::Id),
+    EmptySolution {
+        solution: solution::Id
+    },
     /// No valid score could be computed for the solution.
-    ScoringFailed,
+    ScoringFailed {
+        kind: score::Kind,
+        solution: solution::Id,
+    },
     /// Solution aimed to internalize tokens that are not considered safe to
     /// keep in the settlement contract.
-    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
+    NonBufferableTokensUsed {
+        tokens: BTreeSet<TokenAddress>,
+        solution: solution::Id,
+    },
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
 }
+
+mod score {
+    use crate::domain::competition::score::SuccessProbability;
+
+    #[derive(Debug)]
+    pub enum Kind {
+        SuccessProbabilityOutOfRange(SuccessProbability),
+        ObjectiveValueNonPositive,
+        ScoreHigherThanObjective,
+    }
+}
+

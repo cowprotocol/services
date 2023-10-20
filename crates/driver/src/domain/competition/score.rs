@@ -40,9 +40,11 @@ pub struct SuccessProbability(pub f64);
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive,
+    ObjectiveValueNonPositive(#[from] boundary::settlement::Error),
     #[error("objective value is higher than the objective")]
     ScoreHigherThanObjective,
+    #[error("success probability is out of range {0:?}")]
+    SuccessProbabilityOutOfRange(SuccessProbability),
     #[error("invalid objective value")]
     Boundary(#[from] boundary::Error),
 }

@@ -159,7 +159,7 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
-                        notify::scoring_failed(&self.solver, auction.id());
+                        notify::scoring_failed(&self.solver, auction.id(), err);
                     })
                     .ok()
                     .map(|score| (score, settlement))

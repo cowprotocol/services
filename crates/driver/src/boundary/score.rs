@@ -30,9 +30,9 @@ pub fn score(
         Err(ScoringError::ScoreHigherThanObjective(_)) => {
             Err(score::Error::ScoreHigherThanObjective)
         }
-        Err(ScoringError::SuccessProbabilityOutOfRange(_)) => Err(score::Error::Boundary(
-            anyhow::anyhow!("unreachable, should have been checked by solvers"),
-        )),
+        Err(ScoringError::SuccessProbabilityOutOfRange(value)) => Err(
+            score::Error::SuccessProbabilityOutOfRange(SuccessProbability(value)),
+        ),
         Err(ScoringError::InternalError(err)) => Err(score::Error::Boundary(err)),
     }
 }

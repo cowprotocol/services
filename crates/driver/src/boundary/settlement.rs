@@ -14,6 +14,7 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Result},
+    bigdecimal::Signed,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -206,7 +207,7 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         gas: eth::Gas,
-    ) -> Result<eth::U256> {
+    ) -> Result<eth::U256, Error> {
         let prices = ExternalPrices::try_from_auction_prices(
             eth.contracts().weth().address(),
             auction
@@ -225,7 +226,12 @@ impl Settlement {
             let solver_fees = self.inner.total_solver_fees(&prices);
             surplus + solver_fees - gas_price * gas.0.to_big_rational()
         };
-        eth::U256::from_big_rational(&objective_value)
+
+        if !objective_value.is_positive() {
+            return Err(Error::ObjectiveValueNonPositive);
+        }
+
+        Ok(eth::U256::from_big_rational(&objective_value)?)
     }
 
     pub fn score(&self) -> competition::SolverScore {
@@ -458,4 +464,12 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("objective value is non-positive")]
+    ObjectiveValueNonPositive,
+    #[error("invalid objective value")]
+    Boundary(#[from] crate::boundary::Error),
 }

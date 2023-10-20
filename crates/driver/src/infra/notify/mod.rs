@@ -7,11 +7,22 @@ mod notification;
 
 pub use notification::{Kind, Notification};
 
+use crate::domain::competition::score;
+
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
     solver.notify(auction_id, notification::Kind::EmptySolution(solution));
 }
 
-pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>) {
+pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &score::Error) {
+    match err {
+        score::Error::ObjectiveValueNonPositive(_) => solver.notify(
+            auction_id,
+            notification::Kind::NonBufferableTokensUsed(tokens.clone()),
+        ),
+        score::Error::ScoreHigherThanObjective => todo!(),
+        score::Error::SuccessProbabilityOutOfRange(_) => todo!(),
+        score::Error::Boundary(_) => todo!(),
+    }
     solver.notify(auction_id, notification::Kind::ScoringFailed);
 }
 
