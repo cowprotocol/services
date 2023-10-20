@@ -1,6 +1,6 @@
 use {
-    crate::domain::{auction, notification},
-    ethereum_types::{H160, H256},
+    crate::domain::{auction, eth, notification},
+    ethereum_types::{H160, H256, U256},
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
     std::collections::BTreeSet,
@@ -26,8 +26,8 @@ impl Notification {
                             .collect(),
                     )
                 }
-                Kind::SolverAccountInsufficientBalance => {
-                    notification::Kind::SolverAccountInsufficientBalance
+                Kind::SolverAccountInsufficientBalance(required) => {
+                    notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     SettleKind::Settled(hash) => notification::SettleKind::Settled(*hash),
@@ -55,7 +55,7 @@ pub enum Kind {
     EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
-    SolverAccountInsufficientBalance,
+    SolverAccountInsufficientBalance(U256),
     Settled(SettleKind),
 }
 

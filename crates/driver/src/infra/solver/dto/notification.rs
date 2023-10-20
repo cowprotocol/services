@@ -3,7 +3,7 @@ use {
         domain::{competition::auction, eth},
         infra::notify,
     },
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
@@ -19,8 +19,8 @@ impl Notification {
                 notify::Kind::NonBufferableTokensUsed(tokens) => {
                     Kind::NonBufferableTokensUsed(tokens.into_iter().map(|t| t.0 .0).collect())
                 }
-                notify::Kind::SolverAccountInsufficientBalance => {
-                    Kind::SolverAccountInsufficientBalance
+                notify::Kind::SolverAccountInsufficientBalance(required) => {
+                    Kind::SolverAccountInsufficientBalance(required.0)
                 }
                 notify::Kind::Settled(kind) => Kind::Settled(match kind {
                     notify::SettleKind::Settled(hash) => SettleKind::Settled(hash.0),
@@ -47,7 +47,7 @@ pub enum Kind {
     EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
-    SolverAccountInsufficientBalance,
+    SolverAccountInsufficientBalance(U256),
     Settled(SettleKind),
 }
 

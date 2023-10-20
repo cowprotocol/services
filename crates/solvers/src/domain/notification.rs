@@ -1,7 +1,7 @@
 use {
     super::{
         auction,
-        eth::{self, TokenAddress},
+        eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
 };
@@ -22,7 +22,7 @@ pub enum Kind {
     EmptySolution(SolutionId),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    SolverAccountInsufficientBalance,
+    SolverAccountInsufficientBalance(Ether),
     Settled(SettleKind),
 }
 

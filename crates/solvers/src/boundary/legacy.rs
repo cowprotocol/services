@@ -581,9 +581,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                 tokens.iter().map(|token| token.0).collect(),
             ))
         }
-        notification::Kind::SolverAccountInsufficientBalance => {
-            AuctionResult::Rejected(SolverRejectionReason::SolverAccountInsufficientBalance)
-        }
+        notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
+            SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
+        ),
         notification::Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
             SettleKind::Settled(hash) => SubmissionResult::Success(*hash),
             SettleKind::Reverted(hash) => SubmissionResult::Revert(*hash),
