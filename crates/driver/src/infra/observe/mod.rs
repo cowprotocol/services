@@ -61,7 +61,7 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
 
 /// Observe the solutions returned by the solver.
 pub fn solutions(solutions: &[Solution]) {
-    if !solutions.is_empty() {
+    if solutions.iter().any(|s| !s.is_empty()) {
         tracing::info!(?solutions, "computed solutions");
     } else {
         tracing::debug!("no solutions");
