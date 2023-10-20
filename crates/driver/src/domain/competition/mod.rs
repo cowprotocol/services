@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::{eth, Mempools},
+    super::Mempools,
     crate::{
         domain::competition::solution::Settlement,
         infra::{
@@ -21,11 +21,13 @@ use {
 
 pub mod auction;
 pub mod order;
+pub mod score;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
+    score::Score,
     solution::{Solution, SolverScore, SolverTimeout},
 };
 
@@ -230,23 +232,6 @@ impl Competition {
             .unwrap()
             .as_ref()
             .map(|s| s.auction_id)
-    }
-}
-
-/// Represents a single value suitable for comparing/ranking solutions.
-/// This is a final score that is observed by the autopilot.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub eth::U256);
-
-impl From<Score> for eth::U256 {
-    fn from(value: Score) -> Self {
-        value.0
-    }
-}
-
-impl From<eth::U256> for Score {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
     }
 }
 

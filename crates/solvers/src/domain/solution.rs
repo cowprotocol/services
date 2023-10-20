@@ -29,9 +29,9 @@ impl Solution {
         gas_price: auction::GasPrice,
     ) -> Self {
         let nmb_orders = self.trades.len();
-        self.with_score(Score::RiskAdjusted(
+        self.with_score(Score::RiskAdjusted(SuccessProbability(
             risk.success_probability(gas, gas_price, nmb_orders),
-        ))
+        )))
     }
 
     /// Returns `self` with eligible interactions internalized using the
@@ -373,7 +373,8 @@ pub struct Allowance {
 }
 
 /// Represents the probability that a solution will be successfully settled.
-type SuccessProbability = f64;
+#[derive(Debug, Clone)]
+pub struct SuccessProbability(pub f64);
 
 /// A score for a solution. The score is used to rank solutions.
 #[derive(Debug, Clone)]
@@ -389,7 +390,7 @@ pub enum Score {
 
 impl Default for Score {
     fn default() -> Self {
-        Self::RiskAdjusted(1.0)
+        Self::RiskAdjusted(SuccessProbability(1.0))
     }
 }
 

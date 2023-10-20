@@ -96,6 +96,7 @@ pub struct SettlementRater {
     pub settlement_contract: GPv2Settlement,
     pub web3: Web3,
     pub score_calculator: ScoreCalculator,
+    pub consider_cost_failure: bool,
 }
 
 impl SettlementRater {
@@ -263,11 +264,17 @@ impl SettlementRating for SettlementRater {
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
-                &objective_value,
-                &inputs.gas_cost(),
-                success_probability,
-            )?),
+            } => {
+                let cost_fail = self
+                    .consider_cost_failure
+                    .then(|| inputs.gas_cost())
+                    .unwrap_or_else(zero);
+                Score::ProtocolWithSolverRisk(self.score_calculator.compute_score(
+                    &objective_value,
+                    cost_fail,
+                    success_probability,
+                )?)
+            }
         };
 
         let rated_settlement = RatedSettlement {
@@ -322,30 +329,17 @@ impl From<ScoringError> for anyhow::Error {
 #[derive(Debug, Clone)]
 pub struct ScoreCalculator {
     score_cap: BigRational,
-    consider_cost_failure: bool,
 }
 
 impl ScoreCalculator {
-    pub fn new(score_cap: BigRational, consider_cost_failure: bool) -> Self {
-        Self {
-            score_cap,
-            consider_cost_failure,
-        }
-    }
-
-    fn cost_fail(&self, gas_cost: &BigRational) -> BigRational {
-        // The cost in case of a revert can deviate non-deterministically from the cost
-        // in case of success and it is often significantly smaller. Thus, we go with
-        // the full cost as a safe assumption.
-        self.consider_cost_failure
-            .then(|| gas_cost.clone())
-            .unwrap_or_else(zero)
+    pub fn new(score_cap: BigRational) -> Self {
+        Self { score_cap }
     }
 
     pub fn compute_score(
         &self,
         objective_value: &BigRational,
-        gas_cost: &BigRational,
+        cost_fail: BigRational,
         success_probability: f64,
     ) -> Result<U256, ScoringError> {
         if objective_value <= &zero() {
@@ -360,7 +354,6 @@ impl ScoreCalculator {
         }
 
         let success_probability = BigRational::from_float(success_probability).unwrap();
-        let cost_fail = self.cost_fail(gas_cost);
         let optimal_score = compute_optimal_score(
             objective_value.clone(),
             success_probability,
@@ -520,17 +513,17 @@ fn profit(
 
 #[cfg(test)]
 mod tests {
-    use {num::BigRational, primitive_types::U256, shared::conversions::U256Ext};
+    use {
+        num::{BigRational, Zero},
+        primitive_types::U256,
+        shared::conversions::U256Ext,
+    };
 
-    fn calculate_score(
-        objective_value: &BigRational,
-        gas_cost: &BigRational,
-        success_probability: f64,
-    ) -> U256 {
+    fn calculate_score(objective_value: &BigRational, success_probability: f64) -> U256 {
         let score_cap = BigRational::from_float(1e16).unwrap();
-        let score_calculator = super::ScoreCalculator::new(score_cap, false);
+        let score_calculator = super::ScoreCalculator::new(score_cap);
         score_calculator
-            .compute_score(objective_value, gas_cost, success_probability)
+            .compute_score(objective_value, BigRational::zero(), success_probability)
             .unwrap()
     }
 
@@ -538,10 +531,8 @@ mod tests {
     fn compute_score_with_success_probability_case_1() {
         // testing case `payout_score_minus_cap >= zero() && payout_cap <= zero()`
         let objective_value = num::BigRational::from_float(1e16).unwrap();
-        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 0.9;
-        let score =
-            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
+        let score = calculate_score(&objective_value, success_probability).to_f64_lossy();
         assert_eq!(score, 9e15);
     }
 
@@ -549,10 +540,8 @@ mod tests {
     fn compute_score_with_success_probability_case_2() {
         // testing case `payout_score_minus_cap >= zero() && payout_cap > zero()`
         let objective_value = num::BigRational::from_float(1e17).unwrap();
-        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 2.0 / 3.0;
-        let score =
-            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
+        let score = calculate_score(&objective_value, success_probability).to_f64_lossy();
         assert_eq!(score, 94999999999999999.);
     }
 
@@ -560,10 +549,8 @@ mod tests {
     fn compute_score_with_success_probability_case_3() {
         // testing case `payout_score_minus_cap < zero() && payout_cap <= zero()`
         let objective_value = num::BigRational::from_float(1e17).unwrap();
-        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 1.0 / 3.0;
-        let score =
-            calculate_score(&objective_value, &gas_cost, success_probability).to_f64_lossy();
+        let score = calculate_score(&objective_value, success_probability).to_f64_lossy();
         assert_eq!(score, 4999999999999999.);
     }
 
@@ -572,9 +559,8 @@ mod tests {
         // if success_probability is 1.0, the score should be equal to the objective
         // value
         let objective_value = num::BigRational::from_float(1e16).unwrap();
-        let gas_cost = BigRational::from_float(1e16).unwrap();
         let success_probability = 1.;
-        let score = calculate_score(&objective_value, &gas_cost, success_probability);
+        let score = calculate_score(&objective_value, success_probability);
         assert_eq!(score.to_big_rational(), objective_value);
     }
 }
