@@ -60,19 +60,25 @@ pub struct RunLoop {
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
-    pub min_time_between_runs: Duration,
 }
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
+        let mut last_auction_id = None;
+        let mut last_block = None;
         loop {
-            let start = Instant::now();
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
-                self.single_run(id, &auction)
-                    .instrument(tracing::info_span!("auction", id))
-                    .await;
+                let current_block = self.current_block.borrow().hash;
+                // Only run the solvers if the auction or block has changed.
+                if last_auction_id.replace(id) != Some(id)
+                    || last_block.replace(current_block) != Some(current_block)
+                {
+                    self.single_run(id, &auction)
+                        .instrument(tracing::info_span!("auction", id))
+                        .await;
+                }
             };
-            tokio::time::sleep(self.min_time_between_runs.saturating_sub(start.elapsed())).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
