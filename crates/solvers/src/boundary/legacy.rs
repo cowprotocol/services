@@ -539,7 +539,7 @@ fn to_domain_solution(
             Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => solution::Score::RiskAdjusted(success_probability),
+            } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
         },
     })
 }
