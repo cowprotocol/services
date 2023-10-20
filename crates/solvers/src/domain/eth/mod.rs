@@ -15,6 +15,12 @@ pub struct ContractAddress(pub H160);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenAddress(pub H160);
 
+impl From<H160> for TokenAddress {
+    fn from(inner: H160) -> Self {
+        Self(inner)
+    }
+}
+
 /// The WETH token (or equivalent) for the EVM compatible network.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WethAddress(pub H160);

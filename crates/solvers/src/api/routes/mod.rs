@@ -1,9 +1,9 @@
-mod auction;
-mod solution;
-
 use serde::Serialize;
 
-pub use self::{auction::Auction, solution::Solutions};
+mod notify;
+mod solve;
+
+pub(super) use {notify::notify, solve::solve};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
