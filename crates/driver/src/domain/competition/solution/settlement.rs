@@ -287,7 +287,7 @@ impl Settlement {
             return Err(score::Error::ScoreHigherThanObjective);
         }
 
-        if score == eth::U256::zero().into() {
+        if score.0.is_zero() {
             return Err(score::Error::ObjectiveValueNonPositive);
         }
 
