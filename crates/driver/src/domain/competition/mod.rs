@@ -2,7 +2,7 @@ use {
     self::solution::settlement,
     super::Mempools,
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
@@ -208,21 +208,25 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        self.mempools.execute(&self.solver, &settlement);
-        Ok(Settled {
-            internalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )
-                .into(),
-            uninternalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Disable,
-                )
-                .into(),
-        })
+
+        match self.mempools.execute(&self.solver, &settlement).await {
+            Err(_) => Err(Error::SubmissionError),
+            Ok(tx_hash) => Ok(Settled {
+                internalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Enable,
+                    )
+                    .into(),
+                uninternalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Disable,
+                    )
+                    .into(),
+                tx_hash,
+            }),
+        }
     }
 
     /// The ID of the auction being competed on.
@@ -264,6 +268,8 @@ pub struct Settled {
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
     pub uninternalized_calldata: Bytes<Vec<u8>>,
+    /// The transaction hash in which the solution was submitted.
+    pub tx_hash: eth::TxId,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -277,4 +283,6 @@ pub enum Error {
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("failed to submit the solution")]
+    SubmissionError,
 }
