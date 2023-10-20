@@ -1,19 +1,18 @@
-use crate::{
-    boundary,
-    domain::{eth, mempools},
-};
+use crate::{boundary, domain::eth};
 
 impl Score {
     pub fn new(
         score_cap: eth::U256,
-        revert_protection: &mempools::RevertProtection,
         objective_value: eth::U256,
-        gas: eth::Gas,
-        gas_price: eth::GasPrice,
         success_probability: SuccessProbability,
+        failure_cost: eth::U256,
     ) -> Result<Self, Error> {
-        let boundary = boundary::ScoreCalculator::new(score_cap, revert_protection);
-        boundary.score(objective_value, gas, gas_price, success_probability)
+        boundary::score::score(
+            score_cap,
+            objective_value,
+            success_probability,
+            failure_cost,
+        )
     }
 }
 

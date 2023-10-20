@@ -273,14 +273,21 @@ impl Settlement {
 
         let score = match self.boundary.score() {
             competition::SolverScore::Solver(score) => competition::Score(score),
-            competition::SolverScore::RiskAdjusted(success_probability) => competition::Score::new(
-                auction.score_cap(),
-                revert_protection,
-                objective_value,
-                self.gas.estimate,
-                auction.gas_price(),
-                success_probability,
-            )?,
+            competition::SolverScore::RiskAdjusted(success_probability) => {
+                // The cost in case of a revert can deviate non-deterministically from the cost
+                // in case of success and it is often significantly smaller. Thus, we go with
+                // the full cost as a safe assumption.
+                let failure_cost =
+                    matches!(revert_protection, mempools::RevertProtection::Disabled)
+                        .then(|| self.gas.estimate.0 * auction.gas_price().effective().0 .0)
+                        .unwrap_or(eth::U256::zero());
+                competition::Score::new(
+                    auction.score_cap(),
+                    objective_value,
+                    success_probability,
+                    failure_cost,
+                )?
+            }
         };
 
         if score > objective_value.into() {

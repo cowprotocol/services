@@ -36,7 +36,6 @@ pub use {
     contracts,
     mempool::Mempool,
     model::order::OrderData,
-    score::ScoreCalculator,
     settlement::Settlement,
     shared::ethrpc::Web3,
 };
