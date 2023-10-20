@@ -5,7 +5,7 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification, SettleKind};
+pub use notification::{Kind, Notification, Settlement};
 
 use crate::domain::{eth, mempools::Error};
 
@@ -43,9 +43,9 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
 
 pub fn executed(solver: &Solver, auction_id: auction::Id, res: &Result<eth::TxId, Error>) {
     let kind = match res {
-        Ok(hash) => notification::SettleKind::Settled(hash.clone()),
-        Err(Error::Revert(hash)) => notification::SettleKind::Reverted(hash.clone()),
-        Err(Error::Other(_)) => notification::SettleKind::Failed,
+        Ok(hash) => notification::Settlement::Success(hash.clone()),
+        Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
+        Err(Error::Other(_)) => notification::Settlement::Fail,
     };
 
     solver.notify(Some(auction_id), notification::Kind::Settled(kind));

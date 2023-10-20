@@ -25,15 +25,15 @@ pub enum Kind {
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
     /// Result of winning solver trying to settle the transaction onchain.
-    Settled(SettleKind),
+    Settled(Settlement),
 }
 
 #[derive(Debug)]
-pub enum SettleKind {
+pub enum Settlement {
     /// Winning solver settled successfully transaction onchain.
-    Settled(eth::TxId),
+    Success(eth::TxId),
     /// Winning solver mined reverted transaction.
-    Reverted(eth::TxId),
+    Revert(eth::TxId),
     /// Winning solver failed to settle the transaction onchain.
-    Failed,
+    Fail,
 }

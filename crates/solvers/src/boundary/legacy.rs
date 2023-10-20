@@ -5,7 +5,7 @@ use {
             auction,
             eth,
             liquidity,
-            notification::{self, SettleKind},
+            notification::{self, Settlement},
             order,
             solution,
         },
@@ -585,9 +585,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
         notification::Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
-            SettleKind::Settled(hash) => SubmissionResult::Success(*hash),
-            SettleKind::Reverted(hash) => SubmissionResult::Revert(*hash),
-            SettleKind::Failed => SubmissionResult::Fail,
+            Settlement::Success(hash) => SubmissionResult::Success(*hash),
+            Settlement::Revert(hash) => SubmissionResult::Revert(*hash),
+            Settlement::Fail => SubmissionResult::Fail,
         }),
     };
 
