@@ -16,7 +16,9 @@ impl Notification {
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed(
                     tokens.into_iter().map(|token| token.0 .0).collect(),
                 ),
-                notify::Kind::InsufficientBalance => Kind::InsufficientBalance,
+                notify::Kind::SolverAccountInsufficientBalance => {
+                    Kind::SolverAccountInsufficientBalance
+                }
             },
         }
     }
@@ -37,5 +39,5 @@ pub enum Kind {
     EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
-    InsufficientBalance,
+    SolverAccountInsufficientBalance,
 }

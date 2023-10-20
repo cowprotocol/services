@@ -19,5 +19,5 @@ pub enum Kind {
     EmptySolution(SolutionId),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    InsufficientBalance,
+    SolverAccountInsufficientBalance,
 }

@@ -23,5 +23,5 @@ pub enum Kind {
     /// keep in the settlement contract.
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
-    InsufficientBalance,
+    SolverAccountInsufficientBalance,
 }

@@ -479,7 +479,7 @@ pub enum SolverRejectionReason {
     ScoreHigherThanObjective,
 
     /// Solver balance too low to cover the execution costs.
-    InsufficientBalance(String),
+    SolverAccountInsufficientBalance,
 }
 
 #[derive(Debug, Serialize)]

@@ -26,7 +26,9 @@ impl Notification {
                             .collect(),
                     )
                 }
-                Kind::InsufficientBalance => notification::Kind::InsufficientBalance,
+                Kind::SolverAccountInsufficientBalance => {
+                    notification::Kind::SolverAccountInsufficientBalance
+                }
             },
         }
     }
@@ -48,5 +50,5 @@ pub enum Kind {
     EmptySolution(u64),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
-    InsufficientBalance,
+    SolverAccountInsufficientBalance,
 }
