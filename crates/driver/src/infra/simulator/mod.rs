@@ -3,6 +3,7 @@ use {
         domain::eth,
         infra::blockchain::{self, Ethereum},
     },
+    ethcontract::errors::ExecutionError,
     observe::future::Measure,
 };
 
@@ -162,20 +163,26 @@ where
     move |err| {
         let err: SimulatorError = err.into();
         let tx = match &err {
-            SimulatorError::Tenderly(err) => match err {
-                tenderly::Error::Http(_) => None,
-                tenderly::Error::Revert(_) => Some(tx),
-            },
-            SimulatorError::Blockchain(err) => match err {
-                blockchain::Error::Method(_) => Some(tx),
-                blockchain::Error::Web3(_) => Some(tx),
-                blockchain::Error::Gas(_) => None,
-                blockchain::Error::Response(_) => None,
-            },
-            SimulatorError::Enso(err) => match err {
-                enso::Error::Http(_) => None,
-                enso::Error::Revert(_) => Some(tx),
-            },
+            SimulatorError::Tenderly(tenderly::Error::Http(_)) => None,
+            SimulatorError::Tenderly(tenderly::Error::Revert(_)) => Some(tx),
+            SimulatorError::Blockchain(blockchain::Error::Method(error))
+                if matches!(error.inner, ExecutionError::Revert(_)) =>
+            {
+                Some(tx)
+            }
+            SimulatorError::Blockchain(blockchain::Error::Method(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Web3(inner)) => {
+                let error = ExecutionError::from(inner.clone());
+                if matches!(error, ExecutionError::Revert(_)) {
+                    Some(tx)
+                } else {
+                    None
+                }
+            }
+            SimulatorError::Blockchain(blockchain::Error::Gas(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Response(_)) => None,
+            SimulatorError::Enso(enso::Error::Http(_)) => None,
+            SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
         };
         match tx {
             Some(tx) => Error::WithTx(WithTxError { err, tx }),
