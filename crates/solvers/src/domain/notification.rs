@@ -1,5 +1,8 @@
 use {
-    super::{auction, eth::TokenAddress},
+    super::{
+        auction,
+        eth::{self, TokenAddress},
+    },
     std::collections::BTreeSet,
 };
 

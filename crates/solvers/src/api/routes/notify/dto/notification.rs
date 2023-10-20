@@ -1,6 +1,6 @@
 use {
     crate::domain::{auction, notification},
-    ethereum_types::H160,
+    ethereum_types::{H160, H256},
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
     std::collections::BTreeSet,
@@ -28,7 +28,7 @@ impl Notification {
                 }
                 Kind::SolverAccountInsufficientBalance => {
                     notification::Kind::SolverAccountInsufficientBalance
-                },
+                }
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     SettleKind::Settled(hash) => notification::SettleKind::Settled(*hash),
                     SettleKind::Reverted(hash) => notification::SettleKind::Reverted(*hash),

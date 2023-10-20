@@ -1,7 +1,7 @@
 use {
-    super::{competition::auction, eth},
+    super::eth,
     crate::{
-        domain::{competition::solution::Settlement, eth},
+        domain::competition::solution::Settlement,
         infra::{self, observe, solver::Solver},
     },
     futures::{future::select_ok, FutureExt},
@@ -81,3 +81,11 @@ pub enum RevertProtection {
 #[derive(Debug, Error)]
 #[error("none of the submission strategies successfully submitted the solution")]
 pub struct AllFailed;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Mined reverted transaction: {0:?}")]
+    Revert(eth::TxId),
+    #[error("Failed to submit: {0:?}")]
+    Other(#[from] anyhow::Error),
+}
