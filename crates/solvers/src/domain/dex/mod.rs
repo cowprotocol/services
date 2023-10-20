@@ -123,7 +123,9 @@ impl Swap {
             // since it doesn't really play a role in the final solution.
             self.gas
         };
-        let score = solution::Score::RiskAdjusted(risk.success_probability(gas, gas_price, 1));
+        let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
+            risk.success_probability(gas, gas_price, 1),
+        ));
 
         let allowance = self.allowance();
         let interactions = vec![solution::Interaction::Custom(solution::CustomInteraction {

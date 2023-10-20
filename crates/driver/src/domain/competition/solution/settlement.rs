@@ -3,7 +3,7 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{self, auction, order, score, solution},
             eth,
             mempools,
         },
@@ -266,9 +266,39 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
-    ) -> Result<competition::Score, boundary::Error> {
-        self.boundary
-            .score(eth, auction, self.gas.estimate, revert_protection)
+    ) -> Result<competition::Score, score::Error> {
+        let objective_value = self
+            .boundary
+            .objective_value(eth, auction, self.gas.estimate)?;
+
+        let score = match self.boundary.score() {
+            competition::SolverScore::Solver(score) => competition::Score(score),
+            competition::SolverScore::RiskAdjusted(success_probability) => {
+                // The cost in case of a revert can deviate non-deterministically from the cost
+                // in case of success and it is often significantly smaller. Thus, we go with
+                // the full cost as a safe assumption.
+                let failure_cost =
+                    matches!(revert_protection, mempools::RevertProtection::Disabled)
+                        .then(|| self.gas.estimate.0 * auction.gas_price().effective().0 .0)
+                        .unwrap_or(eth::U256::zero());
+                competition::Score::new(
+                    auction.score_cap(),
+                    objective_value,
+                    success_probability,
+                    failure_cost,
+                )?
+            }
+        };
+
+        if score > objective_value.into() {
+            return Err(score::Error::ScoreHigherThanObjective);
+        }
+
+        if score.0.is_zero() {
+            return Err(score::Error::ObjectiveValueNonPositive);
+        }
+
+        Ok(score)
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.

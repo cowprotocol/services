@@ -10,6 +10,7 @@ use {
         domain::{
             competition::{
                 self,
+                score,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
@@ -120,7 +121,7 @@ pub fn scoring(settlement: &Settlement) {
 }
 
 /// Observe that scoring failed.
-pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
+pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
     tracing::info!(%solver, ?err, "discarded solution: scoring failed");
     metrics::get()
         .dropped_solutions
