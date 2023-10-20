@@ -182,7 +182,9 @@ impl Settlement {
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
-            return Err(Error::SolverAccountInsufficientBalance);
+            return Err(Error::SolverAccountInsufficientBalance(
+                gas.required_balance(),
+            ));
         }
 
         // Is at least one interaction internalized?

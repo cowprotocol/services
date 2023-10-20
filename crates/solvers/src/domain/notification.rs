@@ -1,5 +1,8 @@
 use {
-    super::{auction, eth::TokenAddress},
+    super::{
+        auction,
+        eth::{Ether, TokenAddress},
+    },
     std::collections::BTreeSet,
 };
 
@@ -19,5 +22,5 @@ pub enum Kind {
     EmptySolution(SolutionId),
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    SolverAccountInsufficientBalance,
+    SolverAccountInsufficientBalance(Ether),
 }

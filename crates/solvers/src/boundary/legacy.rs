@@ -573,9 +573,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                 tokens.iter().map(|token| token.0).collect(),
             ))
         }
-        notification::Kind::SolverAccountInsufficientBalance => {
-            AuctionResult::Rejected(SolverRejectionReason::SolverAccountInsufficientBalance)
-        }
+        notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
+            SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
+        ),
     };
 
     (auction_id, auction_result)

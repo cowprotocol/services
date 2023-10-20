@@ -23,10 +23,10 @@ pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &s
                 notification::Kind::NonBufferableTokensUsed(tokens.clone()),
             );
         }
-        solution::Error::SolverAccountInsufficientBalance => {
+        solution::Error::SolverAccountInsufficientBalance(required) => {
             solver.notify(
                 auction_id,
-                notification::Kind::SolverAccountInsufficientBalance,
+                notification::Kind::SolverAccountInsufficientBalance(*required),
             );
         }
         solution::Error::Blockchain(_) => (),

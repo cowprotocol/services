@@ -1,7 +1,7 @@
 use {
     crate::domain::{
         competition::{auction, solution},
-        eth::TokenAddress,
+        eth::{Ether, TokenAddress},
     },
     std::collections::BTreeSet,
 };
@@ -23,5 +23,5 @@ pub enum Kind {
     /// keep in the settlement contract.
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
-    SolverAccountInsufficientBalance,
+    SolverAccountInsufficientBalance(Ether),
 }
