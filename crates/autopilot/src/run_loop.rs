@@ -59,15 +59,24 @@ pub struct RunLoop {
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
+    pub max_settlement_transaction_wait: Duration,
 }
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
+        let mut last_auction_id = None;
+        let mut last_block = None;
         loop {
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
-                self.single_run(id, &auction)
-                    .instrument(tracing::info_span!("auction", id))
-                    .await;
+                let current_block = self.current_block.borrow().hash;
+                // Only run the solvers if the auction or block has changed.
+                if last_auction_id.replace(id) != Some(id)
+                    || last_block.replace(current_block) != Some(current_block)
+                {
+                    self.single_run(id, &auction)
+                        .instrument(tracing::info_span!("auction", id))
+                        .await;
+                }
             };
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -110,7 +119,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
-        tracing::info!("solving");
+        tracing::info!(?auction, "solving");
 
         let solutions = {
             let mut solutions = self.competition(auction_id, auction).await;
@@ -449,13 +458,13 @@ impl RunLoop {
         id: AuctionId,
         submission_address: H160,
     ) -> Result<Option<Transaction>, SettleError> {
-        const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
         // Start earlier than current block because there might be a delay when
         // receiving the Solver's /execute response during which it already
         // started broadcasting the tx.
         let start_offset = MAX_REORG_BLOCK_COUNT;
-        let max_wait_time_blocks =
-            (MAX_WAIT_TIME.as_secs_f32() / self.network_block_interval.as_secs_f32()).ceil() as u64;
+        let max_wait_time_blocks = (self.max_settlement_transaction_wait.as_secs_f32()
+            / self.network_block_interval.as_secs_f32())
+        .ceil() as u64;
         let current = self.current_block.borrow().number;
         let start = current.saturating_sub(start_offset);
         let deadline = current.saturating_add(max_wait_time_blocks);

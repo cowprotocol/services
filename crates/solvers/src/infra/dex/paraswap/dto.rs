@@ -40,7 +40,7 @@ pub struct PriceQuery {
     pub side: Side,
 
     /// The list of DEXs to exclude from the computed price route.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", rename = "excludeDEXS")]
     #[serde_as(as = "serialize::CommaSeparated")]
     pub exclude_dexs: Vec<String>,
 

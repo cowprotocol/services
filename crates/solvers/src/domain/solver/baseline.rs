@@ -122,10 +122,9 @@ impl Inner {
                             output.amount = cmp::min(output.amount, order.buy.amount);
                         }
 
-                        let score = solution::Score::RiskAdjusted(self.risk.success_probability(
-                            route.gas(),
-                            auction.gas_price,
-                            1,
+                        let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
+                            self.risk
+                                .success_probability(route.gas(), auction.gas_price, 1),
                         ));
 
                         Some(
