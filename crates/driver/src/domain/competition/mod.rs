@@ -2,7 +2,7 @@ use {
     self::solution::settlement,
     super::Mempools,
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
