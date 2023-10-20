@@ -30,20 +30,15 @@ use {
         },
     },
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    shared::{
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        remaining_amounts,
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
     tracing::Instrument,
-    web3::types::Transaction,
 };
 
 pub const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
@@ -290,7 +285,7 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
-            match self.settle(driver, auction_id, solution, &revealed).await {
+            match self.settle(driver, solution, &revealed).await {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
@@ -413,7 +408,6 @@ impl RunLoop {
     async fn settle(
         &self,
         driver: &Driver,
-        id: AuctionId,
         solved: &Solution,
         revealed: &reveal::Response,
     ) -> Result<(), SettleError> {
@@ -424,93 +418,25 @@ impl RunLoop {
             .collect_vec();
         self.database.store_order_events(&events).await;
 
-        driver
-            .settle(&settle::Request {
-                solution_id: solved.id,
-            })
-            .await
-            .map_err(SettleError::Failure)?;
+        let request = settle::Request {
+            solution_id: solved.id,
+        };
 
-        // TODO: React to deadline expiring.
-        let transaction = self
-            .wait_for_settlement_transaction(id, solved.account)
-            .await?;
-        if let Some(tx) = transaction {
-            let events = revealed
-                .orders
-                .iter()
-                .map(|uid| (*uid, OrderEventLabel::Traded))
-                .collect_vec();
-            self.database.store_order_events(&events).await;
-            tracing::debug!("settled in tx {:?}", tx.hash);
-        } else {
-            tracing::warn!("could not find a mined transaction in time");
-        }
+        let tx_hash = driver
+            .settle(&request, self.max_settlement_transaction_wait)
+            .await
+            .map_err(SettleError::Failure)?
+            .tx_hash;
+
+        let events = revealed
+            .orders
+            .iter()
+            .map(|uid| (*uid, OrderEventLabel::Traded))
+            .collect_vec();
+        self.database.store_order_events(&events).await;
+        tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
-    ///
-    /// Returns None if no transaction was found within the deadline.
-    async fn wait_for_settlement_transaction(
-        &self,
-        id: AuctionId,
-        submission_address: H160,
-    ) -> Result<Option<Transaction>, SettleError> {
-        // Start earlier than current block because there might be a delay when
-        // receiving the Solver's /execute response during which it already
-        // started broadcasting the tx.
-        let start_offset = MAX_REORG_BLOCK_COUNT;
-        let max_wait_time_blocks = (self.max_settlement_transaction_wait.as_secs_f32()
-            / self.network_block_interval.as_secs_f32())
-        .ceil() as u64;
-        let current = self.current_block.borrow().number;
-        let start = current.saturating_sub(start_offset);
-        let deadline = current.saturating_add(max_wait_time_blocks);
-        tracing::debug!(
-            %current, %start, %deadline, ?id, ?submission_address,
-            "waiting for settlement",
-        );
-
-        // Use the existing event indexing infrastructure to find the transaction. We
-        // query all settlement events in the block range to get tx hashes and
-        // query the node for the full calldata.
-        //
-        // If the block range was large, we would make the query more efficient by
-        // moving the starting block up while taking reorgs into account. With
-        // the current range of 30 blocks this isn't necessary.
-        //
-        // We do keep track of hashes we have already seen to reduce load from the node.
-
-        let mut seen_transactions: HashSet<H256> = Default::default();
-        while self.current_block.borrow().number <= deadline {
-            let mut hashes = self
-                .database
-                .recent_settlement_tx_hashes(start..deadline + 1)
-                .await
-                .map_err(SettleError::Database)?;
-            hashes.retain(|hash| !seen_transactions.contains(hash));
-            for hash in hashes {
-                let Some(tx) = self
-                    .web3
-                    .eth()
-                    .transaction(web3::types::TransactionId::Hash(hash))
-                    .await
-                    .map_err(|err| SettleError::TransactionFetch(hash, err))?
-                else {
-                    continue;
-                };
-                if tx.input.0.ends_with(&id.to_be_bytes()) && tx.from == Some(submission_address) {
-                    return Ok(Some(tx));
-                }
-                seen_transactions.insert(hash);
-            }
-            // It would be more correct to wait until just after the last event update run,
-            // but that is hard to synchronize.
-            tokio::time::sleep(self.network_block_interval.div_f32(2.)).await;
-        }
-        Ok(None)
     }
 
     /// Saves the competition data to the database
@@ -632,10 +558,6 @@ enum RevealError {
 
 #[derive(Debug, thiserror::Error)]
 enum SettleError {
-    #[error("unexpected database error: {0}")]
-    Database(anyhow::Error),
-    #[error("error fetching transaction receipts for {0:?}: {1}")]
-    TransactionFetch(H256, web3::Error),
     #[error(transparent)]
     Failure(anyhow::Error),
 }
@@ -732,8 +654,6 @@ impl Metrics {
 
     fn settle_err(driver: &Driver, err: &SettleError) {
         let label = match err {
-            SettleError::Database(_) => "internal_error",
-            SettleError::TransactionFetch(..) => "tx_error",
             SettleError::Failure(_) => "error",
         };
         Self::get()

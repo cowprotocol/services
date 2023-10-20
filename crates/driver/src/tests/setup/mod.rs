@@ -1027,7 +1027,7 @@ impl<'a> Settle<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 1);
+        assert_eq!(result.as_object().unwrap().len(), 2);
         assert!(!result
             .get("calldata")
             .unwrap()
@@ -1045,6 +1045,9 @@ impl<'a> Settle<'a> {
             .unwrap()
             .is_empty());
 
+        let reported_tx_hash =
+            serde_json::from_value::<eth::H256>(result.get("txHash").unwrap().clone()).unwrap();
+
         // Wait for the new block with the settlement to be mined.
         blockchain::wait_for_block(&self.test.blockchain.web3, self.old_block + 1).await;
 
@@ -1061,10 +1064,12 @@ impl<'a> Settle<'a> {
             .await
             .unwrap()
             .unwrap();
+
         let input = tx.input.0;
         let len = input.len();
         let tx_auction_id = u64::from_be_bytes((&input[len - 8..]).try_into().unwrap());
         assert_eq!(tx_auction_id.to_string(), "1");
+        assert_eq!(reported_tx_hash, tx.hash);
 
         // Ensure that the internalized calldata returned by the driver is equal to the
         // calldata published to the blockchain.

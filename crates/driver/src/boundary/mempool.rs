@@ -166,7 +166,7 @@ impl Mempool {
             self.submitted_transactions.clone(),
             web3.clone(),
             &web3,
-        )?;
+        );
         let receipt = submitter
             .submit(
                 settlement.boundary.inner,
