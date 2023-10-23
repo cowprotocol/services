@@ -27,7 +27,7 @@ pub enum Kind {
 #[derive(Debug)]
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(SuccessProbability),
-    ObjectiveValueNonPositive(f64),
+    ObjectiveValueNonPositive,
     ScoreHigherThanObjective(Score),
 }
 

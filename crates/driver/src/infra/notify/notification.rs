@@ -1,10 +1,6 @@
 use {
     crate::domain::{
-        competition::{
-            self,
-            auction,
-            score::{ObjectiveValue, SuccessProbability},
-        },
+        competition::{self, auction, score::SuccessProbability},
         eth::{Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -33,6 +29,6 @@ pub enum Kind {
 #[derive(Debug)]
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(SuccessProbability),
-    ObjectiveValueNonPositive(ObjectiveValue),
+    ObjectiveValueNonPositive,
     ScoreHigherThanObjective(competition::Score),
 }

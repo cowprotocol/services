@@ -1,6 +1,5 @@
 use {
     crate::{domain::competition::auction, infra::notify},
-    bigdecimal::ToPrimitive,
     primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
@@ -13,11 +12,9 @@ impl Notification {
             auction_id: auction_id.as_ref().map(ToString::to_string),
             kind: match kind {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive(
-                    objective_value,
-                )) => Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(
-                    objective_value.0.to_f64().unwrap_or(f64::NAN),
-                )),
+                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
+                    Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
+                }
                 notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanObjective(score)) => {
                     Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(score.0))
                 }
@@ -60,6 +57,6 @@ pub enum Kind {
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(f64),
-    ObjectiveValueNonPositive(f64),
+    ObjectiveValueNonPositive,
     ScoreHigherThanObjective(U256),
 }

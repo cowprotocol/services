@@ -577,7 +577,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
 
     let auction_result = match &notification.kind {
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(_)) => {
+        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }
         Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(_)) => {

@@ -16,9 +16,9 @@ impl Notification {
             },
             kind: match &self.kind {
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(value)) => {
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
                     notification::Kind::ScoringFailed(
-                        notification::ScoreKind::ObjectiveValueNonPositive(*value),
+                        notification::ScoreKind::ObjectiveValueNonPositive,
                     )
                 }
                 Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(score)) => {
@@ -74,6 +74,6 @@ pub enum Kind {
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(f64),
-    ObjectiveValueNonPositive(f64),
+    ObjectiveValueNonPositive,
     ScoreHigherThanObjective(U256),
 }

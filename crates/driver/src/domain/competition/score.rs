@@ -1,7 +1,4 @@
-use {
-    crate::{boundary, domain::eth},
-    num::BigRational,
-};
+use crate::{boundary, domain::eth};
 
 impl Score {
     pub fn new(
@@ -46,19 +43,10 @@ impl From<f64> for SuccessProbability {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ObjectiveValue(pub BigRational);
-
-impl From<BigRational> for ObjectiveValue {
-    fn from(value: BigRational) -> Self {
-        Self(value)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive(ObjectiveValue),
+    ObjectiveValueNonPositive,
     #[error("objective value is higher than the objective")]
     ScoreHigherThanObjective(Score),
     #[error("success probability is out of range {0:?}")]

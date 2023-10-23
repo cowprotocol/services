@@ -24,9 +24,9 @@ pub fn score(
         success_probability.0,
     ) {
         Ok(score) => Ok(score.into()),
-        Err(ScoringError::ObjectiveValueNonPositive(objective_value)) => Err(
-            score::Error::ObjectiveValueNonPositive(objective_value.into()),
-        ),
+        Err(ScoringError::ObjectiveValueNonPositive(_)) => {
+            Err(score::Error::ObjectiveValueNonPositive)
+        }
         Err(ScoringError::ScoreHigherThanObjective(score)) => {
             Err(score::Error::ScoreHigherThanObjective(
                 eth::U256::from_big_rational(&score)

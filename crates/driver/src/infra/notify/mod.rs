@@ -15,10 +15,8 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, _solutio
 
 pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &score::Error) {
     let notification = match err {
-        score::Error::ObjectiveValueNonPositive(objective_value) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive(
-                objective_value.clone(),
-            ))
+        score::Error::ObjectiveValueNonPositive => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
         }
         score::Error::ScoreHigherThanObjective(score) => notification::Kind::ScoringFailed(
             notification::ScoreKind::ScoreHigherThanObjective(*score),

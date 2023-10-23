@@ -5,7 +5,6 @@ use {
                 self,
                 auction,
                 order,
-                score::ObjectiveValue,
                 solution::settlement::{self, Internalization},
             },
             eth,
@@ -465,7 +464,7 @@ pub mod objective_value {
             };
 
             if !objective_value.is_positive() {
-                return Err(Error::ObjectiveValueNonPositive(objective_value.into()));
+                return Err(Error::ObjectiveValueNonPositive);
             }
 
             Ok(eth::U256::from_big_rational(&objective_value)?)
@@ -475,7 +474,7 @@ pub mod objective_value {
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
         #[error("objective value is non-positive")]
-        ObjectiveValueNonPositive(ObjectiveValue),
+        ObjectiveValueNonPositive,
         #[error("invalid objective value")]
         Boundary(#[from] crate::boundary::Error),
     }
@@ -483,9 +482,7 @@ pub mod objective_value {
     impl From<Error> for competition::score::Error {
         fn from(err: Error) -> Self {
             match err {
-                Error::ObjectiveValueNonPositive(objective_value) => {
-                    Self::ObjectiveValueNonPositive(objective_value)
-                }
+                Error::ObjectiveValueNonPositive => Self::ObjectiveValueNonPositive,
                 Error::Boundary(err) => Self::Boundary(err),
             }
         }
