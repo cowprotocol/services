@@ -64,26 +64,33 @@ pub struct Ethereum {
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API.
+    ///
+    /// # Panics 
+    ///
+    /// Since this type is essential for the program this method will panic on any initialization
+    /// error.
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         let Rpc { web3, network } = rpc;
-        let contracts = Contracts::new(&web3, &network.id, addresses).await?;
+        let contracts = Contracts::new(&web3, &network.id, addresses)
+            .await
+            .expect("could not initialize important smart contracts");
 
-        Ok(Self {
+        Self {
             current_block: ethrpc::current_block::current_block_stream(
                 Arc::new(web3.clone()),
                 std::time::Duration::from_millis(500),
             )
             .await
-            .unwrap(),
+            .expect("couldn't initialize current block stream"),
             web3,
             network,
             contracts,
             gas,
-        })
+        }
     }
 
     pub fn network(&self) -> &Network {
