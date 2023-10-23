@@ -7,7 +7,7 @@ mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind};
 
-use crate::{boundary, domain::competition::score};
+use crate::domain::competition::score;
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, _solution: solution::Id) {
     solver.notify(auction_id, notification::Kind::EmptySolution);
@@ -15,12 +15,11 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, _solutio
 
 pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &score::Error) {
     let notification = match err {
-        score::Error::ObjectiveValueNonPositive(
-            boundary::settlement::Error::ObjectiveValueNonPositive(objective_value),
-        ) => notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive(
-            objective_value.clone(),
-        )),
-        score::Error::ObjectiveValueNonPositive(_) => return,
+        score::Error::ObjectiveValueNonPositive(objective_value) => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive(
+                objective_value.clone(),
+            ))
+        }
         score::Error::ScoreHigherThanObjective(score) => notification::Kind::ScoringFailed(
             notification::ScoreKind::ScoreHigherThanObjective(*score),
         ),

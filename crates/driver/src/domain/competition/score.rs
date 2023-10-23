@@ -58,11 +58,22 @@ impl From<BigRational> for ObjectiveValue {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive(#[from] boundary::settlement::Error),
+    ObjectiveValueNonPositive(ObjectiveValue),
     #[error("objective value is higher than the objective")]
     ScoreHigherThanObjective(Score),
     #[error("success probability is out of range {0:?}")]
     SuccessProbabilityOutOfRange(SuccessProbability),
     #[error("invalid objective value")]
     Boundary(#[from] boundary::Error),
+}
+
+impl From<boundary::settlement::Error> for Error {
+    fn from(err: boundary::settlement::Error) -> Self {
+        match err {
+            boundary::settlement::Error::ObjectiveValueNonPositive(objective_value) => {
+                Self::ObjectiveValueNonPositive(objective_value)
+            }
+            boundary::settlement::Error::Boundary(err) => Self::Boundary(err),
+        }
+    }
 }
