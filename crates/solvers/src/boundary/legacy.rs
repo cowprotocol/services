@@ -591,11 +591,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
-        notification::Kind::DuplicatedSolutionId => {
-            AuctionResult::Rejected(SolverRejectionReason::DuplicatedSolutionId(
-                notification.solution_id.iter().map(|id| id.0).collect(),
-            ))
-        }
+        notification::Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
+        ),
     };
 
     (auction_id, auction_result)

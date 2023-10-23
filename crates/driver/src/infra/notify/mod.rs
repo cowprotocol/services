@@ -7,26 +7,24 @@ mod notification;
 
 pub use notification::{Kind, Notification};
 
-pub fn empty_solution(
-    solver: &Solver,
-    auction_id: Option<auction::Id>,
-    solution_id: &[solution::Id],
-) {
+pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution_id: solution::Id) {
     solver.notify(auction_id, solution_id, notification::Kind::EmptySolution);
 }
 
 pub fn scoring_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: &[solution::Id],
+    solution_id: Option<solution::Id>,
 ) {
-    solver.notify(auction_id, solution_id, notification::Kind::ScoringFailed);
+    if let Some(solution_id) = solution_id {
+        solver.notify(auction_id, solution_id, notification::Kind::ScoringFailed);
+    }
 }
 
 pub fn encoding_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: &[solution::Id],
+    solution_id: solution::Id,
     err: &solution::Error,
 ) {
     match err {
@@ -57,7 +55,7 @@ pub fn encoding_failed(
 pub fn duplicated_solution_id(
     solver: &Solver,
     auction_id: Option<auction::Id>,
-    solution_id: &[solution::Id],
+    solution_id: solution::Id,
 ) {
     solver.notify(
         auction_id,

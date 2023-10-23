@@ -357,9 +357,11 @@ impl Settlement {
             .collect()
     }
 
-    /// Settlements have Id composed of all ids of contained solutions.
-    pub fn id(&self) -> Vec<super::Id> {
-        self.solutions.keys().copied().collect()
+    /// Settlements have valid notify ID only if they are originated from a
+    /// single solution. Otherwise, for merged settlements, no notifications
+    /// are sent, therefore, notify id is None.
+    pub fn notify_id(&self) -> Option<super::Id> {
+        self.solutions.keys().next().copied()
     }
 }
 

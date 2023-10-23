@@ -173,7 +173,7 @@ impl Solver {
         for solution in &solutions {
             if !ids.insert(solution.id()) {
                 super::observe::duplicated_solution_id(solution.id());
-                notify::duplicated_solution_id(self, auction.id(), &[solution.id()]);
+                notify::duplicated_solution_id(self, auction.id(), solution.id());
                 return Err(Error::DuplicatedSolutionId);
             }
         }
@@ -186,7 +186,7 @@ impl Solver {
     pub fn notify(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: &[solution::Id],
+        solution_id: solution::Id,
         kind: notify::Kind,
     ) {
         let body =

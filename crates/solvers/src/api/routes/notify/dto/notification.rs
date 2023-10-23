@@ -14,12 +14,7 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
-            solution_id: self
-                .solution_ids
-                .clone()
-                .into_iter()
-                .map(Into::into)
-                .collect(),
+            solution_id: self.solution_id.into(),
             kind: match &self.kind {
                 Kind::EmptySolution => notification::Kind::EmptySolution,
                 Kind::ScoringFailed => notification::Kind::ScoringFailed,
@@ -47,7 +42,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
-    solution_ids: Vec<u64>,
+    solution_id: u64,
     kind: Kind,
 }
 

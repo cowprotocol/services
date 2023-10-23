@@ -12,12 +12,12 @@ use {
 impl Notification {
     pub fn new(
         auction_id: Option<auction::Id>,
-        solution_id: &[solution::Id],
+        solution_id: solution::Id,
         kind: notify::Kind,
     ) -> Self {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
-            solution_id: solution_id.iter().map(|id| id.0).collect(),
+            solution_id: solution_id.0,
             kind: match kind {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::ScoringFailed => Kind::ScoringFailed,
@@ -38,7 +38,7 @@ impl Notification {
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     auction_id: Option<String>,
-    solution_id: Vec<u64>,
+    solution_id: u64,
     kind: Kind,
 }
 

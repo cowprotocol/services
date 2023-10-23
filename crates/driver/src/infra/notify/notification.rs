@@ -10,7 +10,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
-    pub solution_id: Vec<solution::Id>,
+    pub solution_id: solution::Id,
     pub kind: Kind,
 }
 

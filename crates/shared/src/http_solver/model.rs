@@ -482,7 +482,7 @@ pub enum SolverRejectionReason {
     SolverAccountInsufficientBalance(U256),
 
     /// Solution received from solver engine don't have unique id.
-    DuplicatedSolutionId(Vec<u64>),
+    DuplicatedSolutionId(u64),
 }
 
 #[derive(Debug, Serialize)]
