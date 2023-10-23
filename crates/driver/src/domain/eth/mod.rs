@@ -328,8 +328,7 @@ impl std::fmt::Debug for Tx {
             .field("from", &self.from)
             .field("to", &self.to)
             .field("value", &self.value)
-            .field("input", &hex::encode(&self.input.0))
-            .field("access_list", &self.access_list)
+            .field("input", &self.input)
             .finish()
     }
 }
