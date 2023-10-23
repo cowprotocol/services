@@ -12,9 +12,6 @@ use {
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
-pub fn solution_id() -> Id {
-    Id(COUNTER.fetch_add(1, Ordering::Relaxed))
-}
 
 #[derive(Debug, Default)]
 pub struct Id(pub u64);
@@ -22,6 +19,12 @@ pub struct Id(pub u64);
 impl From<u64> for Id {
     fn from(id: u64) -> Self {
         Self(id)
+    }
+}
+
+impl Id {
+    pub fn generate() -> Self {
+        Id(COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -209,7 +212,7 @@ impl Single {
             order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
         Some(Solution {
-            id: solution_id(),
+            id: solution::Id::generate(),
             prices: ClearingPrices::new([
                 (order.sell.token, buy),
                 (order.buy.token, sell.checked_sub(surplus_fee)?),

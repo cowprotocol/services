@@ -7,7 +7,7 @@ use {
             liquidity,
             notification,
             order,
-            solution::{self, solution_id},
+            solution::{self},
         },
     },
     anyhow::{Context as _, Result},
@@ -547,7 +547,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
-        id: solution_id(),
+        id: solution::Id::generate(),
         prices: solution::ClearingPrices(
             model
                 .prices
