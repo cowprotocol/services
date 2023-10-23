@@ -65,10 +65,10 @@ pub struct Ethereum {
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API.
     ///
-    /// # Panics 
+    /// # Panics
     ///
-    /// Since this type is essential for the program this method will panic on any initialization
-    /// error.
+    /// Since this type is essential for the program this method will panic on
+    /// any initialization error.
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
