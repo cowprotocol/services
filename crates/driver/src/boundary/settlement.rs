@@ -203,38 +203,6 @@ impl Settlement {
         }
     }
 
-    pub fn objective_value(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-        gas: eth::Gas,
-    ) -> Result<eth::U256, Error> {
-        let prices = ExternalPrices::try_from_auction_prices(
-            eth.contracts().weth().address(),
-            auction
-                .tokens()
-                .iter()
-                .filter_map(|token| {
-                    token
-                        .price
-                        .map(|price| (token.address.into(), price.into()))
-                })
-                .collect(),
-        )?;
-        let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-        let objective_value = {
-            let surplus = self.inner.total_surplus(&prices);
-            let solver_fees = self.inner.total_solver_fees(&prices);
-            surplus + solver_fees - gas_price * gas.0.to_big_rational()
-        };
-
-        if !objective_value.is_positive() {
-            return Err(Error::ObjectiveValueNonPositive(objective_value.into()));
-        }
-
-        Ok(eth::U256::from_big_rational(&objective_value)?)
-    }
-
     pub fn score(&self) -> competition::SolverScore {
         match self.inner.score {
             http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
@@ -467,10 +435,59 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive(ObjectiveValue),
-    #[error("invalid objective value")]
-    Boundary(#[from] crate::boundary::Error),
+pub mod objective_value {
+    use super::*;
+
+    impl Settlement {
+        pub fn objective_value(
+            &self,
+            eth: &Ethereum,
+            auction: &competition::Auction,
+            gas: eth::Gas,
+        ) -> Result<eth::U256, Error> {
+            let prices = ExternalPrices::try_from_auction_prices(
+                eth.contracts().weth().address(),
+                auction
+                    .tokens()
+                    .iter()
+                    .filter_map(|token| {
+                        token
+                            .price
+                            .map(|price| (token.address.into(), price.into()))
+                    })
+                    .collect(),
+            )?;
+            let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
+            let objective_value = {
+                let surplus = self.inner.total_surplus(&prices);
+                let solver_fees = self.inner.total_solver_fees(&prices);
+                surplus + solver_fees - gas_price * gas.0.to_big_rational()
+            };
+
+            if !objective_value.is_positive() {
+                return Err(Error::ObjectiveValueNonPositive(objective_value.into()));
+            }
+
+            Ok(eth::U256::from_big_rational(&objective_value)?)
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        #[error("objective value is non-positive")]
+        ObjectiveValueNonPositive(ObjectiveValue),
+        #[error("invalid objective value")]
+        Boundary(#[from] crate::boundary::Error),
+    }
+
+    impl From<Error> for competition::score::Error {
+        fn from(err: Error) -> Self {
+            match err {
+                Error::ObjectiveValueNonPositive(objective_value) => {
+                    Self::ObjectiveValueNonPositive(objective_value)
+                }
+                Error::Boundary(err) => Self::Boundary(err),
+            }
+        }
+    }
 }

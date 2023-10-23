@@ -66,14 +66,3 @@ pub enum Error {
     #[error("invalid objective value")]
     Boundary(#[from] boundary::Error),
 }
-
-impl From<boundary::settlement::Error> for Error {
-    fn from(err: boundary::settlement::Error) -> Self {
-        match err {
-            boundary::settlement::Error::ObjectiveValueNonPositive(objective_value) => {
-                Self::ObjectiveValueNonPositive(objective_value)
-            }
-            boundary::settlement::Error::Boundary(err) => Self::Boundary(err),
-        }
-    }
-}
