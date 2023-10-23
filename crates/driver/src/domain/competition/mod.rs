@@ -191,27 +191,20 @@ impl Competition {
         // gets picked by the procotol.
         if let Ok(deadline) = auction.deadline().timeout() {
             let score_ref = &mut score;
-            let wait_and_resimulate = async move {
+            let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::current_block::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    match settlement.score(&self.eth, auction, &self.mempools.revert_protection()) {
-                        Ok(score) => *score_ref = Some(Solved { score }),
-                        Err(err) => {
-                            tracing::warn!(
-                                block = block.number,
-                                ?err,
-                                "solution reverts on new block"
-                            );
-                            *score_ref = None;
-                            *self.settlement.lock().unwrap() = None;
-                            return;
-                        }
+                    if let Err(err) = self.simulate_settlement(&settlement).await {
+                        tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+                        *score_ref = None;
+                        *self.settlement.lock().unwrap() = None;
+                        return;
                     }
                 }
             };
             let timeout = deadline.duration().to_std().unwrap_or_default();
-            let _ = tokio::time::timeout(timeout, wait_and_resimulate).await;
+            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 
         Ok(score)
@@ -279,6 +272,26 @@ impl Competition {
             .unwrap()
             .as_ref()
             .map(|s| s.auction_id)
+    }
+
+    /// Returns whether the settlement can be executed or would revert.
+    async fn simulate_settlement(
+        &self,
+        settlement: &Settlement,
+    ) -> Result<(), infra::simulator::Error> {
+        self.simulator
+            .gas(eth::Tx {
+                from: self.solver.address(),
+                to: settlement.solver(),
+                value: eth::Ether(0.into()),
+                input: crate::util::Bytes(settlement.calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )),
+                access_list: settlement.access_list.clone(),
+            })
+            .await
+            .map(|_| ())
     }
 }
 
