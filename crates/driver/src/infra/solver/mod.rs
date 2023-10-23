@@ -10,6 +10,7 @@ use {
         util,
     },
     std::collections::HashSet,
+    tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -161,7 +162,9 @@ impl Solver {
         }
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
         super::observe::solver_response(&url, res.as_deref());
-        let res: dto::Solutions = serde_json::from_str(&res?)?;
+        let res = res?;
+        let res: dto::Solutions = serde_json::from_str(&res)
+            .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
         // Ensure that solution IDs are unique.
