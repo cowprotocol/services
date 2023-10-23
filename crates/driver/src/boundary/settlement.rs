@@ -5,6 +5,7 @@ use {
                 self,
                 auction,
                 order,
+                score::ObjectiveValue,
                 solution::settlement::{self, Internalization},
             },
             eth,
@@ -228,7 +229,7 @@ impl Settlement {
         };
 
         if !objective_value.is_positive() {
-            return Err(Error::ObjectiveValueNonPositive);
+            return Err(Error::ObjectiveValueNonPositive(objective_value.into()));
         }
 
         Ok(eth::U256::from_big_rational(&objective_value)?)
@@ -469,7 +470,7 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive,
+    ObjectiveValueNonPositive(ObjectiveValue),
     #[error("invalid objective value")]
     Boundary(#[from] crate::boundary::Error),
 }

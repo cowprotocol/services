@@ -15,8 +15,24 @@ impl Notification {
                 None => auction::Id::Quote,
             },
             kind: match &self.kind {
-                Kind::EmptySolution(solution) => notification::Kind::EmptySolution(*solution),
-                Kind::ScoringFailed => notification::Kind::ScoringFailed,
+                Kind::EmptySolution => notification::Kind::EmptySolution,
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(value)) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ObjectiveValueNonPositive(*value),
+                    )
+                }
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(score)) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ScoreHigherThanObjective((*score).into()),
+                    )
+                }
+                Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(probability)) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::SuccessProbabilityOutOfRange(
+                            (*probability).into(),
+                        ),
+                    )
+                }
                 Kind::NonBufferableTokensUsed(tokens) => {
                     notification::Kind::NonBufferableTokensUsed(
                         tokens
@@ -47,8 +63,17 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    EmptySolution(u64),
-    ScoringFailed,
+    EmptySolution,
+    ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScoreKind {
+    SuccessProbabilityOutOfRange(f64),
+    ObjectiveValueNonPositive(f64),
+    ScoreHigherThanObjective(U256),
 }

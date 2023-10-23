@@ -1,7 +1,14 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, notification, order, solution},
+        domain::{
+            auction,
+            eth,
+            liquidity,
+            notification::{self, Kind, ScoreKind},
+            order,
+            solution,
+        },
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -569,18 +576,22 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match &notification.kind {
-        notification::Kind::EmptySolution(_) => {
-            AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
+        Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(_)) => {
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }
-        notification::Kind::ScoringFailed => {
-            AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
+        Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(_)) => {
+            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanObjective)
         }
-        notification::Kind::NonBufferableTokensUsed(tokens) => {
+        Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(_)) => {
+            AuctionResult::Rejected(SolverRejectionReason::SuccessProbabilityOutOfRange)
+        }
+        Kind::NonBufferableTokensUsed(tokens) => {
             AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
                 tokens.iter().map(|token| token.0).collect(),
             ))
         }
-        notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
+        Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
     };

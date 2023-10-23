@@ -1,4 +1,5 @@
 use {
+    super::settlement,
     crate::{
         domain::{
             competition::{
@@ -24,11 +25,17 @@ pub fn score(
         success_probability.0,
     ) {
         Ok(score) => Ok(score.into()),
-        Err(ScoringError::ObjectiveValueNonPositive(_)) => {
-            Err(score::Error::ObjectiveValueNonPositive)
+        Err(ScoringError::ObjectiveValueNonPositive(objective_value)) => {
+            Err(score::Error::ObjectiveValueNonPositive(
+                settlement::Error::ObjectiveValueNonPositive(objective_value.into()),
+            ))
         }
-        Err(ScoringError::ScoreHigherThanObjective(_)) => {
-            Err(score::Error::ScoreHigherThanObjective)
+        Err(ScoringError::ScoreHigherThanObjective(score)) => {
+            Err(score::Error::ScoreHigherThanObjective(
+                eth::U256::from_big_rational(&score)
+                    .unwrap_or_default()
+                    .into(),
+            ))
         }
         Err(ScoringError::SuccessProbabilityOutOfRange(value)) => Err(
             score::Error::SuccessProbabilityOutOfRange(SuccessProbability(value)),

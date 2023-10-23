@@ -5,25 +5,34 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification};
+pub use notification::{Kind, Notification, ScoreKind};
 
-use crate::domain::competition::score;
+use crate::{boundary, domain::competition::score};
 
-pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
-    solver.notify(auction_id, notification::Kind::EmptySolution(solution));
+pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, _solution: solution::Id) {
+    solver.notify(auction_id, notification::Kind::EmptySolution);
 }
 
 pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &score::Error) {
-    match err {
-        score::Error::ObjectiveValueNonPositive(_) => solver.notify(
-            auction_id,
-            notification::Kind::NonBufferableTokensUsed(tokens.clone()),
+    let notification = match err {
+        score::Error::ObjectiveValueNonPositive(
+            boundary::settlement::Error::ObjectiveValueNonPositive(objective_value),
+        ) => notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive(
+            objective_value.clone(),
+        )),
+        score::Error::ObjectiveValueNonPositive(_) => return,
+        score::Error::ScoreHigherThanObjective(score) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::ScoreHigherThanObjective(*score),
         ),
-        score::Error::ScoreHigherThanObjective => todo!(),
-        score::Error::SuccessProbabilityOutOfRange(_) => todo!(),
-        score::Error::Boundary(_) => todo!(),
-    }
-    solver.notify(auction_id, notification::Kind::ScoringFailed);
+        score::Error::SuccessProbabilityOutOfRange(success_probability) => {
+            notification::Kind::ScoringFailed(
+                notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
+            )
+        }
+        score::Error::Boundary(_) => return,
+    };
+
+    solver.notify(auction_id, notification);
 }
 
 pub fn encoding_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &solution::Error) {

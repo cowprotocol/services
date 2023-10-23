@@ -1,6 +1,10 @@
 use {
     crate::domain::{
-        competition::{auction, solution},
+        competition::{
+            self,
+            auction,
+            score::{ObjectiveValue, SuccessProbability},
+        },
         eth::{Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -16,32 +20,19 @@ pub struct Notification {
 #[derive(Debug)]
 pub enum Kind {
     /// The solution doesn't contain any user orders.
-    EmptySolution {
-        solution: solution::Id
-    },
+    EmptySolution,
     /// No valid score could be computed for the solution.
-    ScoringFailed {
-        kind: score::Kind,
-        solution: solution::Id,
-    },
+    ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to
     /// keep in the settlement contract.
-    NonBufferableTokensUsed {
-        tokens: BTreeSet<TokenAddress>,
-        solution: solution::Id,
-    },
+    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
 }
 
-mod score {
-    use crate::domain::competition::score::SuccessProbability;
-
-    #[derive(Debug)]
-    pub enum Kind {
-        SuccessProbabilityOutOfRange(SuccessProbability),
-        ObjectiveValueNonPositive,
-        ScoreHigherThanObjective,
-    }
+#[derive(Debug)]
+pub enum ScoreKind {
+    SuccessProbabilityOutOfRange(SuccessProbability),
+    ObjectiveValueNonPositive(ObjectiveValue),
+    ScoreHigherThanObjective(competition::Score),
 }
-
