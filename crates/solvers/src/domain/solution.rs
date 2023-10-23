@@ -23,8 +23,14 @@ impl From<u64> for Id {
 }
 
 impl Id {
+    /// Generates a new solution id that is unique per /solve request.
     pub fn generate() -> Self {
         Id(COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Resets the solution id counter to 0.
+    pub fn reset() {
+        COUNTER.store(0, Ordering::Relaxed);
     }
 }
 

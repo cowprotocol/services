@@ -1,4 +1,4 @@
-use {super::Response, tracing::Instrument};
+use {super::Response, crate::domain::solution, tracing::Instrument};
 
 mod dto;
 
@@ -12,6 +12,9 @@ pub async fn solve(
     axum::response::Json<Response<dto::Solutions>>,
 ) {
     let handle_request = async {
+        // Each separate /solve call has a new solution ID space.
+        solution::Id::reset();
+
         let auction = match auction.to_domain() {
             Ok(value) => value,
             Err(err) => {
