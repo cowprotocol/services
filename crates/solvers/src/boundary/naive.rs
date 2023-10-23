@@ -115,7 +115,7 @@ pub fn solve(
 
     let swap = pool_handler.swap.lock().unwrap().take();
     Some(solution::Solution {
-        id: solution::Id::generate(),
+        id: Default::default(),
         prices: solution::ClearingPrices::new(
             boundary_solution
                 .clearing_prices()

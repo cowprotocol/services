@@ -547,7 +547,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
-        id: solution::Id::generate(),
+        id: Default::default(),
         prices: solution::ClearingPrices(
             model
                 .prices

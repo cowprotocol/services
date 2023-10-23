@@ -4,14 +4,8 @@ use {
         util,
     },
     ethereum_types::{Address, U256},
-    std::{
-        collections::HashMap,
-        slice,
-        sync::atomic::{AtomicU64, Ordering},
-    },
+    std::{collections::HashMap, slice},
 };
-
-static COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Default)]
 pub struct Id(pub u64);
@@ -19,18 +13,6 @@ pub struct Id(pub u64);
 impl From<u64> for Id {
     fn from(id: u64) -> Self {
         Self(id)
-    }
-}
-
-impl Id {
-    /// Generates a new solution id that is unique per /solve request.
-    pub fn generate() -> Self {
-        Id(COUNTER.fetch_add(1, Ordering::Relaxed))
-    }
-
-    /// Resets the solution id counter to 0.
-    pub fn reset() {
-        COUNTER.store(0, Ordering::Relaxed);
     }
 }
 
@@ -45,6 +27,11 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Returns `self` with a new id.
+    pub fn with_id(self, id: Id) -> Self {
+        Self { id, ..self }
+    }
+
     /// Returns `self` with a new score.
     pub fn with_score(self, score: Score) -> Self {
         Self { score, ..self }
@@ -218,7 +205,7 @@ impl Single {
             order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
         Some(Solution {
-            id: solution::Id::generate(),
+            id: Default::default(),
             prices: ClearingPrices::new([
                 (order.sell.token, buy),
                 (order.buy.token, sell.checked_sub(surplus_fee)?),
