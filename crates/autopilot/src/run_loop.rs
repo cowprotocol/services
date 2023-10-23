@@ -318,40 +318,38 @@ impl RunLoop {
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
             let result = self.solve(driver, request).await;
-            (start.elapsed(), result)
-        }))
-        .await
-        .into_iter()
-        .zip(&self.drivers)
-        .fold(Vec::new(), |mut solutions, ((elapsed, result), driver)| {
-            for solution in match result {
+            let solutions = match result {
                 Ok(solutions) => {
-                    Metrics::solve_ok(driver, elapsed);
+                    Metrics::solve_ok(driver, start.elapsed());
                     solutions
                 }
                 Err(err) => {
-                    Metrics::solve_err(driver, elapsed, &err);
+                    Metrics::solve_err(driver, start.elapsed(), &err);
                     if matches!(err, SolveError::NoSolutions) {
                         tracing::debug!(driver = %driver.name, "solver found no solution");
                     } else {
                         tracing::warn!(?err, driver = %driver.name, "solve error");
                     }
-                    return solutions;
+                    vec![]
                 }
-            } {
-                match solution {
-                    Ok(solution) => {
-                        Metrics::solution_ok(driver);
-                        solutions.push(Participant { driver, solution })
-                    }
-                    Err(err) => {
-                        Metrics::solution_err(driver, &err);
-                        tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
-                    }
+            };
+
+            solutions.into_iter().filter_map(|solution| match solution {
+                Ok(solution) => {
+                    Metrics::solution_ok(driver);
+                    Some(Participant { driver, solution })
                 }
-            }
-            solutions
-        })
+                Err(err) => {
+                    Metrics::solution_err(driver, &err);
+                    tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
+                    None
+                }
+            })
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Computes a driver's solutions for the solver competition.
