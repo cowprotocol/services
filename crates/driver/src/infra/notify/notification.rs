@@ -1,7 +1,7 @@
 use {
     crate::domain::{
-        eth::{self, Ether, TokenAddress},
         competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
+        eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
 };

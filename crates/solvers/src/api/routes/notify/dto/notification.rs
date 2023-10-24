@@ -52,7 +52,7 @@ impl Notification {
                 }
                 Kind::SolverAccountInsufficientBalance(required) => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
-                },
+                }
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     Settlement::Success(hash) => notification::Settlement::Success(*hash),

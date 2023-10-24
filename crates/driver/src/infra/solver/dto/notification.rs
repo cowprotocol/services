@@ -1,7 +1,9 @@
 use {
     crate::{
-        domain::{competition::auction, eth},
-        domain::competition::solution,
+        domain::{
+            competition::{auction, solution},
+            eth,
+        },
         infra::notify,
     },
     primitive_types::{H160, U256},
@@ -44,7 +46,7 @@ impl Notification {
                 ),
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
                     Kind::SolverAccountInsufficientBalance(required.0)
-                },
+                }
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
                 notify::Kind::Settled(kind) => Kind::Settled(match kind {
                     notify::Settlement::Success(hash) => Settlement::Success(hash.0),
@@ -95,5 +97,3 @@ pub enum Settlement {
     Revert(eth::H256),
     Fail,
 }
-
-

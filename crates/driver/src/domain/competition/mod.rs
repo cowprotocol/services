@@ -251,7 +251,12 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
 
         let executed = self.mempools.execute(&self.solver, &settlement).await;
-        notify::executed(&self.solver, settlement.auction_id, &executed);
+        notify::executed(
+            &self.solver,
+            settlement.auction_id,
+            settlement.notify_id(),
+            &executed,
+        );
 
         match executed {
             Err(_) => Err(Error::SubmissionError),
