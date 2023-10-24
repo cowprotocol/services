@@ -289,7 +289,7 @@ impl RunLoop {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
-                    tracing::error!(?err, driver = %driver.name, "settlement failed");
+                    tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
         }
