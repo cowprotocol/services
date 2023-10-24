@@ -17,6 +17,19 @@ pub fn install() {
     std::panic::set_hook(Box::new(new_hook));
 }
 
+/// Installs a panic handler that executes [`handler`] plus whatever panic
+/// handler was already set up.
+/// This can be useful to make absolutely sure to clean up some resources like
+/// running processes on a panic.
+pub fn prepend_panic_handler(handler: Box<dyn Fn(&std::panic::PanicInfo) + Send + Sync>) {
+    let previous_hook = std::panic::take_hook();
+    let new_hook = move |info: &std::panic::PanicInfo| {
+        handler(info);
+        previous_hook(info);
+    };
+    std::panic::set_hook(Box::new(new_hook));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
