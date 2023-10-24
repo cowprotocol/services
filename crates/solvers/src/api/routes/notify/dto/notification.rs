@@ -14,9 +14,33 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
+            solution_id: self.solution_id.into(),
             kind: match &self.kind {
-                Kind::EmptySolution(solution) => notification::Kind::EmptySolution(*solution),
-                Kind::ScoringFailed => notification::Kind::ScoringFailed,
+                Kind::EmptySolution => notification::Kind::EmptySolution,
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ObjectiveValueNonPositive,
+                    )
+                }
+                Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+                    notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+                }
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
+                    score,
+                    objective_value,
+                }) => notification::Kind::ScoringFailed(
+                    notification::ScoreKind::ScoreHigherThanObjective(
+                        (*score).into(),
+                        (*objective_value).into(),
+                    ),
+                ),
+                Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(probability)) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::SuccessProbabilityOutOfRange(
+                            (*probability).into(),
+                        ),
+                    )
+                }
                 Kind::NonBufferableTokensUsed(tokens) => {
                     notification::Kind::NonBufferableTokensUsed(
                         tokens
@@ -28,7 +52,8 @@ impl Notification {
                 }
                 Kind::SolverAccountInsufficientBalance(required) => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
-                }
+                },
+                Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     Settlement::Success(hash) => notification::Settlement::Success(*hash),
                     Settlement::Revert(hash) => notification::Settlement::Revert(*hash),
@@ -45,6 +70,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
+    solution_id: u64,
     kind: Kind,
 }
 
@@ -52,11 +78,22 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    EmptySolution(u64),
-    ScoringFailed,
+    EmptySolution,
+    ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
+    DuplicatedSolutionId,
     Settled(Settlement),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScoreKind {
+    ZeroScore,
+    ObjectiveValueNonPositive,
+    SuccessProbabilityOutOfRange(f64),
+    ScoreHigherThanObjective { score: U256, objective_value: U256 },
 }
 
 #[serde_as]

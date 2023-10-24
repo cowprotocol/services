@@ -5,7 +5,7 @@ use {
             auction,
             eth,
             liquidity,
-            notification::{self, Settlement},
+            notification::{self, Kind, ScoreKind, Settlement},
             order,
             solution,
         },
@@ -39,6 +39,7 @@ use {
             HttpSolverApi,
             SolverConfig,
         },
+        network::network_name,
         sources::uniswap_v3::{
             graph_api::Token,
             pool_fetching::{PoolInfo, PoolState, PoolStats},
@@ -59,7 +60,11 @@ impl Legacy {
         Self {
             solver: DefaultHttpSolverApi {
                 name: config.solver_name,
-                network_name: format!("{:?}", config.chain_id),
+                network_name: network_name(
+                    config.chain_id.network_id(),
+                    config.chain_id.value().as_u64(),
+                )
+                .into(),
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
@@ -81,7 +86,8 @@ impl Legacy {
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
-        let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
+        let (mapping, auction_model) =
+            to_boundary_auction(&auction, self.weth, self.solver.network_name.clone());
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
@@ -115,6 +121,7 @@ enum Order<'a> {
 fn to_boundary_auction(
     auction: &auction::Auction,
     weth: eth::WethAddress,
+    network: String,
 ) -> (Mapping, BatchAuctionModel) {
     let gas = GasModel {
         native_token: weth.0,
@@ -147,7 +154,7 @@ fn to_boundary_auction(
             })
             .collect(),
         metadata: Some(MetadataModel {
-            environment: None,
+            environment: Some(network),
             auction_id: match auction.id {
                 auction::Id::Solve(id) => Some(id),
                 auction::Id::Quote => None,
@@ -541,6 +548,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
+        id: Default::default(),
         prices: solution::ClearingPrices(
             model
                 .prices
@@ -570,21 +578,31 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match &notification.kind {
-        notification::Kind::EmptySolution(_) => {
-            AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
+        Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }
-        notification::Kind::ScoringFailed => {
+        Kind::ScoringFailed(ScoreKind::ZeroScore) => {
             AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
         }
-        notification::Kind::NonBufferableTokensUsed(tokens) => {
+        Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(_, _)) => {
+            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanObjective)
+        }
+        Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(_)) => {
+            AuctionResult::Rejected(SolverRejectionReason::SuccessProbabilityOutOfRange)
+        }
+        Kind::NonBufferableTokensUsed(tokens) => {
             AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
                 tokens.iter().map(|token| token.0).collect(),
             ))
         }
-        notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
+        Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
-        notification::Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
+        Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
+        ),
+        Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
             Settlement::Success(hash) => SubmissionResult::Success(*hash),
             Settlement::Revert(hash) => SubmissionResult::Revert(*hash),
             Settlement::Fail => SubmissionResult::Fail,

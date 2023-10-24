@@ -7,7 +7,7 @@ use {
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
-    futures::{future, stream, StreamExt},
+    futures::{future, stream, FutureExt, StreamExt},
     std::num::NonZeroUsize,
     tracing::Instrument,
 };
@@ -75,9 +75,11 @@ impl Dex {
         auction: &'a auction::Auction,
     ) -> impl stream::Stream<Item = solution::Solution> + 'a {
         stream::iter(auction.orders.iter().filter_map(order::UserOrder::new))
-            .map(|order| {
+            .enumerate()
+            .map(|(i, order)| {
                 let span = tracing::info_span!("solve", order = %order.get().uid);
                 self.solve_order(order, &auction.tokens, auction.gas_price)
+                    .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
                     .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())

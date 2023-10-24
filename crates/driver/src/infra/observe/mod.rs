@@ -61,6 +61,10 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
+pub fn duplicated_solution_id(id: solution::Id) {
+    tracing::warn!(?id, "duplicated solution id");
+}
+
 /// Observe the solutions returned by the solver.
 pub fn solutions(solutions: &[Solution]) {
     if solutions.iter().any(|s| !s.is_empty()) {
@@ -246,8 +250,8 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::Solver(solver::Error::Deserialize(_)) => {
                             "SolverDeserializeError"
                         }
-                        quote::Error::Solver(solver::Error::RepeatedSolutionIds) => {
-                            "RepeatedSolutionIds"
+                        quote::Error::Solver(solver::Error::DuplicatedSolutionId) => {
+                            "DuplicatedSolutionId"
                         }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
@@ -322,7 +326,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
-        competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
+        competition::Error::Solver(solver::Error::DuplicatedSolutionId) => "DuplicatedSolutionId",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
     }

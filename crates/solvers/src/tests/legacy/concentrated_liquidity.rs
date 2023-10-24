@@ -49,7 +49,7 @@ async fn test() {
             },
             "metadata": {
                 "auction_id": 1,
-                "environment": null,
+                "environment": "Ethereum / Mainnet",
                 "gas_price": 15000000000.0,
                 "native_token": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                 "run_id": null
