@@ -45,6 +45,8 @@ pub enum Settlement {
     Success(eth::TxId),
     /// Winning solver mined reverted transaction.
     Revert(eth::TxId),
+    /// Transaction started reverting during the submission.
+    SimulationRevert,
     /// Winning solver failed to settle the transaction onchain.
     Fail,
 }

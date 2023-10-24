@@ -51,6 +51,7 @@ impl Notification {
                 notify::Kind::Settled(kind) => Kind::Settled(match kind {
                     notify::Settlement::Success(hash) => Settlement::Success(hash.0),
                     notify::Settlement::Revert(hash) => Settlement::Revert(hash.0),
+                    notify::Settlement::SimulationRevert => Settlement::SimulationRevert,
                     notify::Settlement::Fail => Settlement::Fail,
                 }),
             },
@@ -95,5 +96,6 @@ pub enum ScoreKind {
 pub enum Settlement {
     Success(eth::H256),
     Revert(eth::H256),
+    SimulationRevert,
     Fail,
 }

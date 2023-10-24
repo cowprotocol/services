@@ -20,6 +20,7 @@ use {
                 TransactionSubmitting,
             },
             SubTxPoolRef,
+            SubmissionError,
         },
     },
     std::{fmt::Debug, sync::Arc},
@@ -190,7 +191,11 @@ impl Mempool {
                 kind = self.config.kind.format_variant()
             ))
             .await
-            .map_err(anyhow::Error::from)?;
+            .map_err(|err| match err {
+                SubmissionError::SimulationRevert(_) => mempools::Error::SimulationRevert,
+                SubmissionError::Revert(hash) => mempools::Error::Revert(hash.into()),
+                _ => mempools::Error::Other(anyhow::Error::from(err)),
+            })?;
         Ok(receipt.transaction_hash.into())
     }
 

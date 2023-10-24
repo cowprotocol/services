@@ -32,6 +32,7 @@ pub enum Kind {
 pub enum Settlement {
     Success(eth::H256),
     Revert(eth::H256),
+    SimulationRevert,
     Fail,
 }
 

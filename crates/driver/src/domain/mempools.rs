@@ -81,6 +81,8 @@ pub enum RevertProtection {
 pub enum Error {
     #[error("Mined reverted transaction: {0:?}")]
     Revert(eth::TxId),
+    #[error("Simulation started reverting during submission")]
+    SimulationRevert,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
 }

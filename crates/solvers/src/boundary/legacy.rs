@@ -605,6 +605,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
             Settlement::Success(hash) => SubmissionResult::Success(*hash),
             Settlement::Revert(hash) => SubmissionResult::Revert(*hash),
+            Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
             Settlement::Fail => SubmissionResult::Fail,
         }),
     };

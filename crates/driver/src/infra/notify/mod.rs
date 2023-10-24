@@ -91,6 +91,7 @@ pub fn executed(
     let kind = match res {
         Ok(hash) => notification::Settlement::Success(hash.clone()),
         Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
+        Err(Error::SimulationRevert) => notification::Settlement::SimulationRevert,
         Err(Error::Other(_)) => notification::Settlement::Fail,
     };
 
