@@ -2,6 +2,7 @@ use {
     self::contracts::ContractAt,
     crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
+    ethrpc::current_block::CurrentBlockStream,
     std::{fmt, sync::Arc},
     thiserror::Error,
     web3::Transport,
@@ -58,24 +59,38 @@ pub struct Ethereum {
     network: Network,
     contracts: Contracts,
     gas: Arc<GasPriceEstimator>,
+    current_block: CurrentBlockStream,
 }
 
 impl Ethereum {
     /// Access the Ethereum blockchain through an RPC API.
+    ///
+    /// # Panics
+    ///
+    /// Since this type is essential for the program this method will panic on
+    /// any initialization error.
     pub async fn new(
         rpc: Rpc,
         addresses: contracts::Addresses,
         gas: Arc<GasPriceEstimator>,
-    ) -> Result<Self, Error> {
+    ) -> Self {
         let Rpc { web3, network } = rpc;
-        let contracts = Contracts::new(&web3, &network.id, addresses).await?;
+        let contracts = Contracts::new(&web3, &network.id, addresses)
+            .await
+            .expect("could not initialize important smart contracts");
 
-        Ok(Self {
+        Self {
+            current_block: ethrpc::current_block::current_block_stream(
+                Arc::new(web3.clone()),
+                std::time::Duration::from_millis(500),
+            )
+            .await
+            .expect("couldn't initialize current block stream"),
             web3,
             network,
             contracts,
             gas,
-        })
+        }
     }
 
     pub fn network(&self) -> &Network {
@@ -96,6 +111,12 @@ impl Ethereum {
     pub async fn is_contract(&self, address: eth::Address) -> Result<bool, Error> {
         let code = self.web3.eth().code(address.into(), None).await?;
         Ok(!code.0.is_empty())
+    }
+
+    /// Returns a type that monitors the block chain to inform about the current
+    /// block.
+    pub fn current_block(&self) -> &CurrentBlockStream {
+        &self.current_block
     }
 
     /// Create access list used by a transaction.
