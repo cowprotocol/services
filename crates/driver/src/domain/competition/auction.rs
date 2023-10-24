@@ -1,5 +1,5 @@
 use {
-    super::order,
+    super::{order, Score},
     crate::{
         domain::{
             competition::{self, solution},
@@ -28,7 +28,7 @@ pub struct Auction {
     tokens: Tokens,
     gas_price: eth::GasPrice,
     deadline: Deadline,
-    score_cap: eth::U256,
+    score_cap: Score,
 }
 
 impl Auction {
@@ -38,7 +38,7 @@ impl Auction {
         tokens: impl Iterator<Item = Token>,
         deadline: Deadline,
         eth: &Ethereum,
-        score_cap: eth::U256,
+        score_cap: Score,
     ) -> Result<Self, Error> {
         let tokens = Tokens(tokens.map(|token| (token.address, token)).collect());
 
@@ -250,7 +250,7 @@ impl Auction {
         self.deadline
     }
 
-    pub fn score_cap(&self) -> eth::U256 {
+    pub fn score_cap(&self) -> Score {
         self.score_cap
     }
 }

@@ -435,7 +435,7 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
 }
 
 pub mod objective_value {
-    use super::*;
+    use {super::*, crate::domain::competition::score};
 
     impl Settlement {
         pub fn objective_value(
@@ -443,7 +443,7 @@ pub mod objective_value {
             eth: &Ethereum,
             auction: &competition::Auction,
             gas: eth::Gas,
-        ) -> Result<eth::U256, Error> {
+        ) -> Result<score::ObjectiveValue, Error> {
             let prices = ExternalPrices::try_from_auction_prices(
                 eth.contracts().weth().address(),
                 auction
@@ -467,7 +467,7 @@ pub mod objective_value {
                 return Err(Error::ObjectiveValueNonPositive);
             }
 
-            Ok(eth::U256::from_big_rational(&objective_value)?)
+            Ok(eth::U256::from_big_rational(&objective_value)?.into())
         }
     }
 

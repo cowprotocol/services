@@ -1,11 +1,14 @@
-use crate::{boundary, domain::eth};
+use {
+    crate::{boundary, domain::eth},
+    std::cmp::Ordering,
+};
 
 impl Score {
     pub fn new(
-        score_cap: eth::U256,
-        objective_value: eth::U256,
+        score_cap: Score,
+        objective_value: ObjectiveValue,
         success_probability: SuccessProbability,
-        failure_cost: eth::U256,
+        failure_cost: eth::Ether,
     ) -> Result<Self, Error> {
         boundary::score::score(
             score_cap,
@@ -40,6 +43,30 @@ pub struct SuccessProbability(pub f64);
 impl From<f64> for SuccessProbability {
     fn from(value: f64) -> Self {
         Self(value)
+    }
+}
+
+/// Represents the objective value of a solution. This is not an artifical value
+/// like score. This is a real value that solution provides and it's based on
+/// the surplus and fees of the solution.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct ObjectiveValue(pub eth::U256);
+
+impl From<eth::U256> for ObjectiveValue {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+impl std::cmp::PartialEq<ObjectiveValue> for Score {
+    fn eq(&self, other: &ObjectiveValue) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl std::cmp::PartialOrd<ObjectiveValue> for Score {
+    fn partial_cmp(&self, other: &ObjectiveValue) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
     }
 }
 

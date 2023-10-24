@@ -12,6 +12,7 @@ use {
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
+    num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
 
@@ -279,8 +280,8 @@ impl Settlement {
                 // the full cost as a safe assumption.
                 let failure_cost =
                     matches!(revert_protection, mempools::RevertProtection::Disabled)
-                        .then(|| self.gas.estimate.0 * auction.gas_price().effective().0 .0)
-                        .unwrap_or(eth::U256::zero());
+                        .then(|| self.gas.estimate * auction.gas_price())
+                        .unwrap_or(zero());
                 competition::Score::new(
                     auction.score_cap(),
                     objective_value,
@@ -290,7 +291,7 @@ impl Settlement {
             }
         };
 
-        if score > objective_value.into() {
+        if score > objective_value {
             return Err(score::Error::ScoreHigherThanObjective(score));
         }
 
