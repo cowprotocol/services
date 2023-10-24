@@ -2,6 +2,7 @@ use {
     super::{
         auction,
         eth::{Ether, TokenAddress},
+        solution,
     },
     std::collections::BTreeSet,
 };
@@ -11,6 +12,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
+    pub solution_id: solution::Id,
     pub kind: Kind,
 }
 
@@ -19,8 +21,9 @@ type SolutionId = u64;
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
-    EmptySolution(SolutionId),
+    EmptySolution,
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     SolverAccountInsufficientBalance(Ether),
+    DuplicatedSolutionId,
 }

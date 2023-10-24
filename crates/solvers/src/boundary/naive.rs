@@ -1,7 +1,12 @@
 use {
     crate::{
         boundary::liquidity::constant_product::to_boundary_pool,
-        domain::{eth, liquidity, order, solution},
+        domain::{
+            eth,
+            liquidity,
+            order,
+            solution::{self},
+        },
     },
     ethereum_types::H160,
     itertools::Itertools,
@@ -110,6 +115,7 @@ pub fn solve(
 
     let swap = pool_handler.swap.lock().unwrap().take();
     Some(solution::Solution {
+        id: Default::default(),
         prices: solution::ClearingPrices::new(
             boundary_solution
                 .clearing_prices()

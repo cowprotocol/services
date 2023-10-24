@@ -356,6 +356,13 @@ impl Settlement {
             .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
             .collect()
     }
+
+    /// Settlements have valid notify ID only if they are originated from a
+    /// single solution. Otherwise, for merged settlements, no notifications
+    /// are sent, therefore, notify id is None.
+    pub fn notify_id(&self) -> Option<super::Id> {
+        self.solutions.keys().next().copied()
+    }
 }
 
 /// Should the interactions be internalized?

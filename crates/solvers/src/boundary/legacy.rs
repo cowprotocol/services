@@ -1,7 +1,14 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, notification, order, solution},
+        domain::{
+            auction,
+            eth,
+            liquidity,
+            notification,
+            order,
+            solution::{self},
+        },
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -540,6 +547,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
+        id: Default::default(),
         prices: solution::ClearingPrices(
             model
                 .prices
@@ -569,7 +577,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match &notification.kind {
-        notification::Kind::EmptySolution(_) => {
+        notification::Kind::EmptySolution => {
             AuctionResult::Rejected(SolverRejectionReason::NoUserOrders)
         }
         notification::Kind::ScoringFailed => {
@@ -582,6 +590,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         }
         notification::Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
+        ),
+        notification::Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
         ),
     };
 
