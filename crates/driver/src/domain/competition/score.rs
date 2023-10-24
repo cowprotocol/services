@@ -76,6 +76,9 @@ impl From<eth::U256> for ObjectiveValue {
     }
 }
 
+/// Comparing scores and objective values is needed to make sure the score is
+/// not higher than the objective value, which is a requirement for the score to
+/// be valid.
 impl std::cmp::PartialEq<ObjectiveValue> for Score {
     fn eq(&self, other: &ObjectiveValue) -> bool {
         self.0.eq(&other.0)
