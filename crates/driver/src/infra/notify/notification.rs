@@ -1,6 +1,6 @@
 use {
     crate::domain::{
-        competition::{auction, ObjectiveValue, Score, SuccessProbability},
+        competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
         eth::{Ether, TokenAddress},
     },
     std::collections::BTreeSet,

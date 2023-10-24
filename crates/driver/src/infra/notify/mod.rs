@@ -13,11 +13,16 @@ pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution
     solver.notify(auction_id, solution, notification::Kind::EmptySolution);
 }
 
-pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, solution_id: Option<solution::Id>, err: &score::Error) {
+pub fn scoring_failed(
+    solver: &Solver,
+    auction_id: Option<auction::Id>,
+    solution_id: Option<solution::Id>,
+    err: &score::Error,
+) {
     if solution_id.is_none() {
         return;
     }
-    
+
     let notification = match err {
         score::Error::ObjectiveValueNonPositive => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
