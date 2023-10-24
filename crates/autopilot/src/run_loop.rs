@@ -41,8 +41,6 @@ use {
     tracing::Instrument,
 };
 
-pub const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
-
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub database: Postgres,
@@ -55,6 +53,7 @@ pub struct RunLoop {
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
+    pub solve_deadline: Duration,
 }
 
 impl RunLoop {
@@ -302,6 +301,7 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
+            self.solve_deadline,
         );
         let request = &request;
 
@@ -358,7 +358,7 @@ impl RunLoop {
         driver: &Driver,
         request: &solve::Request,
     ) -> Result<Vec<Result<Solution, ZeroScoreError>>, SolveError> {
-        let response = tokio::time::timeout(SOLVE_TIME_LIMIT, driver.solve(request))
+        let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
             .map_err(SolveError::Failure)?;
@@ -448,6 +448,7 @@ pub fn solve_request(
     auction: &Auction,
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
+    time_limit: Duration,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -516,7 +517,7 @@ pub fn solve_request(
             }))
             .unique_by(|token| token.address)
             .collect(),
-        deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
+        deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
         score_cap,
     }
 }

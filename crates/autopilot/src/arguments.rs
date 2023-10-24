@@ -194,6 +194,15 @@ pub struct Arguments {
     /// being specified separately.
     #[clap(long, env)]
     pub shadow: Option<Url>,
+
+    /// Time in seconds solvers have to compute a score per auction.
+    #[clap(
+        long,
+        env,
+        default_value = "15",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub solve_deadline: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -253,6 +262,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
+        writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
         Ok(())
     }
 }
