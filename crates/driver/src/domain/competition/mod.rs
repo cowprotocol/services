@@ -96,7 +96,7 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::encoding_failed(self.solver.name(), id, err);
-                        notify::encoding_failed(&self.solver, auction.id(), err);
+                        notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
             })
@@ -159,7 +159,7 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
-                        notify::scoring_failed(&self.solver, auction.id());
+                        notify::scoring_failed(&self.solver, auction.id(), settlement.notify_id());
                     })
                     .ok()
                     .map(|score| (score, settlement))

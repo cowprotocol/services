@@ -14,8 +14,9 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
+            solution_id: self.solution_id.into(),
             kind: match &self.kind {
-                Kind::EmptySolution(solution) => notification::Kind::EmptySolution(*solution),
+                Kind::EmptySolution => notification::Kind::EmptySolution,
                 Kind::ScoringFailed => notification::Kind::ScoringFailed,
                 Kind::NonBufferableTokensUsed(tokens) => {
                     notification::Kind::NonBufferableTokensUsed(
@@ -29,6 +30,7 @@ impl Notification {
                 Kind::SolverAccountInsufficientBalance(required) => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
+                Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
             },
         }
     }
@@ -40,6 +42,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
+    solution_id: u64,
     kind: Kind,
 }
 
@@ -47,8 +50,9 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    EmptySolution(u64),
+    EmptySolution,
     ScoringFailed,
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
+    DuplicatedSolutionId,
 }

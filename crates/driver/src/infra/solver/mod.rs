@@ -2,7 +2,11 @@ use {
     super::notify,
     crate::{
         domain::{
-            competition::{auction, auction::Auction, solution::Solution, SolverTimeout},
+            competition::{
+                auction::{self, Auction},
+                solution::{self, Solution},
+                SolverTimeout,
+            },
             eth,
             liquidity,
         },
@@ -168,9 +172,13 @@ impl Solver {
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
         // Ensure that solution IDs are unique.
-        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id()).collect();
-        if ids.len() != solutions.len() {
-            return Err(Error::RepeatedSolutionIds);
+        let mut ids = HashSet::new();
+        for solution in &solutions {
+            if !ids.insert(solution.id()) {
+                super::observe::duplicated_solution_id(solution.id());
+                notify::duplicated_solution_id(self, auction.id(), solution.id());
+                return Err(Error::DuplicatedSolutionId);
+            }
         }
 
         super::observe::solutions(&solutions);
@@ -178,8 +186,14 @@ impl Solver {
     }
 
     /// Make a fire and forget POST request to notify the solver about an event.
-    pub fn notify(&self, auction_id: Option<auction::Id>, kind: notify::Kind) {
-        let body = serde_json::to_string(&dto::Notification::new(auction_id, kind)).unwrap();
+    pub fn notify(
+        &self,
+        auction_id: Option<auction::Id>,
+        solution_id: solution::Id,
+        kind: notify::Kind,
+    ) {
+        let body =
+            serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "notify");
         super::observe::solver_request(&url, &body);
         let mut req = self.client.post(url).body(body);
@@ -199,8 +213,8 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("solution ids are not unique")]
-    RepeatedSolutionIds,
+    #[error("solution id is not unique")]
+    DuplicatedSolutionId,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
 }

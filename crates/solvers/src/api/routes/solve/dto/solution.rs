@@ -15,9 +15,8 @@ impl Solutions {
         Self {
             solutions: solutions
                 .iter()
-                .enumerate()
-                .map(|(i, solution)| Solution {
-                    id: i.try_into().unwrap(),
+                .map(|solution| Solution {
+                    id: solution.id.0,
                     prices: solution
                         .prices
                         .0

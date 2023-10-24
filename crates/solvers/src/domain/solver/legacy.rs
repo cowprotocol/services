@@ -28,7 +28,7 @@ impl Legacy {
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
         match self.0.solve(auction).await {
-            Ok(solution) => vec![solution],
+            Ok(solution) => vec![solution.with_id(solution::Id(0))],
             Err(err) => {
                 tracing::warn!(?err, "failed to solve auction");
                 vec![]

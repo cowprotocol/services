@@ -480,6 +480,9 @@ pub enum SolverRejectionReason {
 
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
+
+    /// Solution received from solver engine don't have unique id.
+    DuplicatedSolutionId(u64),
 }
 
 #[derive(Debug, Serialize)]

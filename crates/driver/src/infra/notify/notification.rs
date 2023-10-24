@@ -10,13 +10,14 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
+    pub solution_id: solution::Id,
     pub kind: Kind,
 }
 
 #[derive(Debug)]
 pub enum Kind {
     /// The solution doesn't contain any user orders.
-    EmptySolution(solution::Id),
+    EmptySolution,
     /// No valid score could be computed for the solution.
     ScoringFailed,
     /// Solution aimed to internalize tokens that are not considered safe to
@@ -24,4 +25,6 @@ pub enum Kind {
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
+    /// Solution received from solver engine don't have unique id.
+    DuplicatedSolutionId,
 }
