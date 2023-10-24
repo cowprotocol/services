@@ -28,13 +28,22 @@ pub enum Kind {
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(SuccessProbability),
     ObjectiveValueNonPositive,
-    ScoreHigherThanObjective(Score),
+    ScoreHigherThanObjective(Score, ObjectiveValue),
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Score(pub eth::U256);
 
 impl From<eth::U256> for Score {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ObjectiveValue(pub eth::U256);
+
+impl From<eth::U256> for ObjectiveValue {
     fn from(value: eth::U256) -> Self {
         Self(value)
     }

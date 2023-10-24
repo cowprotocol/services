@@ -28,7 +28,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
-    score::Score,
+    score::{ObjectiveValue, Score, SuccessProbability},
     solution::{Solution, SolverScore, SolverTimeout},
 };
 

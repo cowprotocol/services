@@ -74,8 +74,8 @@ impl std::cmp::PartialOrd<ObjectiveValue> for Score {
 pub enum Error {
     #[error("objective value is non-positive")]
     ObjectiveValueNonPositive,
-    #[error("objective value is higher than the objective")]
-    ScoreHigherThanObjective(Score),
+    #[error("objective value {0:?} is higher than the objective {1:?}")]
+    ScoreHigherThanObjective(Score, ObjectiveValue),
     #[error("success probability is out of range {0:?}")]
     SuccessProbabilityOutOfRange(SuccessProbability),
     #[error("invalid objective value")]

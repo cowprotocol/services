@@ -18,9 +18,12 @@ pub fn scoring_failed(solver: &Solver, auction_id: Option<auction::Id>, err: &sc
         score::Error::ObjectiveValueNonPositive => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
         }
-        score::Error::ScoreHigherThanObjective(score) => notification::Kind::ScoringFailed(
-            notification::ScoreKind::ScoreHigherThanObjective(*score),
-        ),
+        score::Error::ScoreHigherThanObjective(score, objective_value) => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanObjective(
+                *score,
+                *objective_value,
+            ))
+        }
         score::Error::SuccessProbabilityOutOfRange(success_probability) => {
             notification::Kind::ScoringFailed(
                 notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),

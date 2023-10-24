@@ -15,9 +15,13 @@ impl Notification {
                 notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
                     Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanObjective(score)) => {
-                    Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(score.0))
-                }
+                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanObjective(
+                    score,
+                    objective_value,
+                )) => Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
+                    score: score.0,
+                    objective_value: objective_value.0,
+                }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
                 )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(
@@ -58,5 +62,5 @@ pub enum Kind {
 pub enum ScoreKind {
     SuccessProbabilityOutOfRange(f64),
     ObjectiveValueNonPositive,
-    ScoreHigherThanObjective(U256),
+    ScoreHigherThanObjective { score: U256, objective_value: U256 },
 }

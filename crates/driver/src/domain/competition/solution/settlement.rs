@@ -292,7 +292,10 @@ impl Settlement {
         };
 
         if score > objective_value {
-            return Err(score::Error::ScoreHigherThanObjective(score));
+            return Err(score::Error::ScoreHigherThanObjective(
+                score,
+                objective_value,
+            ));
         }
 
         Ok(score)
