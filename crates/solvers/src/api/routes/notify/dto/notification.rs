@@ -17,6 +17,12 @@ impl Notification {
             solution_id: self.solution_id.into(),
             kind: match &self.kind {
                 Kind::EmptySolution => notification::Kind::EmptySolution,
+                Kind::SimulationFailed(tx) => notification::Kind::SimulationFailed(eth::Tx {
+                    from: tx.from.into(),
+                    to: tx.to.into(),
+                    input: tx.input.clone().into(),
+                    value: tx.value.into(),
+                }),
                 Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive,
@@ -74,10 +80,21 @@ pub struct Notification {
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     EmptySolution,
+    SimulationFailed(Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
     DuplicatedSolutionId,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Tx {
+    from: H160,
+    to: H160,
+    input: Vec<u8>,
+    value: U256,
 }
 
 #[serde_as]

@@ -1,7 +1,7 @@
 use {
     crate::domain::{
         competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
-        eth::{Ether, TokenAddress},
+        eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
 };
@@ -18,6 +18,8 @@ pub struct Notification {
 pub enum Kind {
     /// The solution doesn't contain any user orders.
     EmptySolution,
+    /// Failed simulation during competition.
+    SimulationFailed(eth::Tx),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to

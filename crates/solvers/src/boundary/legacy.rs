@@ -23,14 +23,17 @@ use {
                 BatchAuctionModel,
                 ConcentratedPoolParameters,
                 ConstantProductPoolParameters,
+                InternalizationStrategy,
                 MetadataModel,
                 OrderModel,
                 Score,
                 SettledBatchAuctionModel,
+                SimulatedTransaction,
                 SolverRejectionReason,
                 StablePoolParameters,
                 TokenAmount,
                 TokenInfoModel,
+                TransactionWithError,
                 WeightedPoolTokenData,
                 WeightedProductPoolParameters,
             },
@@ -578,6 +581,22 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
 
     let auction_result = match &notification.kind {
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+        Kind::SimulationFailed(tx) => AuctionResult::Rejected(
+            SolverRejectionReason::SimulationFailure(TransactionWithError {
+                error: "".to_string(),
+                transaction: SimulatedTransaction {
+                    from: tx.from.into(),
+                    to: tx.to.into(),
+                    data: tx.input.clone().into(),
+                    internalization: InternalizationStrategy::SkipInternalizableInteraction,
+                    block_number: Default::default(),
+                    tx_index: Default::default(),
+                    access_list: Default::default(),
+                    max_fee_per_gas: Default::default(),
+                    max_priority_fee_per_gas: Default::default(),
+                },
+            }),
+        ),
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }

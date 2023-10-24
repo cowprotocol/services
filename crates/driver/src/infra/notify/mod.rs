@@ -6,8 +6,7 @@ use {
 mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind};
-
-use crate::domain::competition::score;
+use {super::simulator, crate::domain::competition::score};
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
     solver.notify(auction_id, solution, notification::Kind::EmptySolution);
@@ -53,29 +52,26 @@ pub fn encoding_failed(
     solution_id: solution::Id,
     err: &solution::Error,
 ) {
-    match err {
+    let notification = match err {
         solution::Error::UntrustedInternalization(tokens) => {
-            solver.notify(
-                auction_id,
-                solution_id,
-                notification::Kind::NonBufferableTokensUsed(tokens.clone()),
-            );
+            notification::Kind::NonBufferableTokensUsed(tokens.clone())
         }
         solution::Error::SolverAccountInsufficientBalance(required) => {
-            solver.notify(
-                auction_id,
-                solution_id,
-                notification::Kind::SolverAccountInsufficientBalance(*required),
-            );
+            notification::Kind::SolverAccountInsufficientBalance(*required)
         }
-        solution::Error::Blockchain(_) => (),
-        solution::Error::Boundary(_) => (),
-        solution::Error::Simulation(_) => (), // todo,
-        solution::Error::AssetFlow(_) => (),
-        solution::Error::Execution(_) => (),
-        solution::Error::FailingInternalization => (),
-        solution::Error::DifferentSolvers => (),
-    }
+        solution::Error::Blockchain(_) => return,
+        solution::Error::Boundary(_) => return,
+        solution::Error::Simulation(simulator::Error::WithTx(error)) => {
+            notification::Kind::SimulationFailed(error.tx.clone())
+        }
+        solution::Error::Simulation(simulator::Error::Basic(_)) => return,
+        solution::Error::AssetFlow(_) => return,
+        solution::Error::Execution(_) => return,
+        solution::Error::FailingInternalization => return,
+        solution::Error::DifferentSolvers => return,
+    };
+
+    solver.notify(auction_id, solution_id, notification);
 }
 
 pub fn duplicated_solution_id(

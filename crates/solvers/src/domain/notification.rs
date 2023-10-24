@@ -20,6 +20,7 @@ pub struct Notification {
 #[derive(Debug)]
 pub enum Kind {
     EmptySolution,
+    SimulationFailed(eth::Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     SolverAccountInsufficientBalance(Ether),
