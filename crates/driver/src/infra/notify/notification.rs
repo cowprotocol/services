@@ -1,6 +1,6 @@
 use {
     crate::domain::{
-        competition::{auction, solution},
+        competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
         eth::{Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -19,7 +19,7 @@ pub enum Kind {
     /// The solution doesn't contain any user orders.
     EmptySolution,
     /// No valid score could be computed for the solution.
-    ScoringFailed,
+    ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to
     /// keep in the settlement contract.
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
@@ -27,4 +27,12 @@ pub enum Kind {
     SolverAccountInsufficientBalance(Ether),
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId,
+}
+
+#[derive(Debug)]
+pub enum ScoreKind {
+    ZeroScore,
+    ObjectiveValueNonPositive,
+    SuccessProbabilityOutOfRange(SuccessProbability),
+    ScoreHigherThanObjective(Score, ObjectiveValue),
 }

@@ -17,7 +17,30 @@ impl Notification {
             solution_id: self.solution_id.into(),
             kind: match &self.kind {
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::ScoringFailed => notification::Kind::ScoringFailed,
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ObjectiveValueNonPositive,
+                    )
+                }
+                Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+                    notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+                }
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
+                    score,
+                    objective_value,
+                }) => notification::Kind::ScoringFailed(
+                    notification::ScoreKind::ScoreHigherThanObjective(
+                        (*score).into(),
+                        (*objective_value).into(),
+                    ),
+                ),
+                Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(probability)) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::SuccessProbabilityOutOfRange(
+                            (*probability).into(),
+                        ),
+                    )
+                }
                 Kind::NonBufferableTokensUsed(tokens) => {
                     notification::Kind::NonBufferableTokensUsed(
                         tokens
@@ -51,8 +74,18 @@ pub struct Notification {
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     EmptySolution,
-    ScoringFailed,
+    ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
     DuplicatedSolutionId,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScoreKind {
+    ZeroScore,
+    ObjectiveValueNonPositive,
+    SuccessProbabilityOutOfRange(f64),
+    ScoreHigherThanObjective { score: U256, objective_value: U256 },
 }

@@ -10,8 +10,9 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::Signed,
+    bigdecimal::{Signed, Zero},
     futures::future::try_join_all,
+    num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
 
@@ -279,8 +280,8 @@ impl Settlement {
                 // the full cost as a safe assumption.
                 let failure_cost =
                     matches!(revert_protection, mempools::RevertProtection::Disabled)
-                        .then(|| self.gas.estimate.0 * auction.gas_price().effective().0 .0)
-                        .unwrap_or(eth::U256::zero());
+                        .then(|| self.gas.estimate * auction.gas_price())
+                        .unwrap_or(zero());
                 competition::Score::new(
                     auction.score_cap(),
                     objective_value,
@@ -290,12 +291,15 @@ impl Settlement {
             }
         };
 
-        if score > objective_value.into() {
-            return Err(score::Error::ScoreHigherThanObjective);
+        if score.is_zero() {
+            return Err(score::Error::ZeroScore);
         }
 
-        if score.0.is_zero() {
-            return Err(score::Error::ObjectiveValueNonPositive);
+        if score > objective_value {
+            return Err(score::Error::ScoreHigherThanObjective(
+                score,
+                objective_value,
+            ));
         }
 
         Ok(score)
