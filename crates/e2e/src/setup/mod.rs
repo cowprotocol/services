@@ -5,7 +5,7 @@ pub mod onchain_components;
 mod services;
 
 use {
-    crate::nodes::{forked_node::Forker, local_node::Resetter, TestNode, NODE_HOST},
+    crate::nodes::{Node, NODE_HOST},
     anyhow::{anyhow, Result},
     ethcontract::{futures::FutureExt, H160},
     shared::ethrpc::{create_test_transport, Web3},
@@ -93,7 +93,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), None, None).await
+    run(f, empty::<&str>(), None).await
 }
 
 pub async fn run_test_with_extra_filters<F, Fut, T>(
@@ -104,7 +104,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, None, None).await
+    run(f, extra_filters, None).await
 }
 
 pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
@@ -112,7 +112,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), Some(solver_address), Some(fork_url)).await
+    run(f, empty::<&str>(), Some((solver_address, fork_url))).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
@@ -125,15 +125,11 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, Some(solver_address), Some(fork_url)).await
+    run(f, extra_filters, Some((solver_address, fork_url))).await
 }
 
-async fn run<F, Fut, T>(
-    f: F,
-    filters: impl IntoIterator<Item = T>,
-    solver_address: Option<H160>,
-    fork_url: Option<String>,
-) where
+async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
+where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
@@ -148,17 +144,29 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    let node = Arc::new(Mutex::new(Some(Node::new().await)));
+    let node = match &fork {
+        Some((_, fork)) => Node::forked(fork).await,
+        None => Node::new().await,
+    };
+
+    let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
     observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
         // Drop node in panic handler because `.catch_unwind()` does not catch all
         // panics
         let _ = node_panic_handle.lock().unwrap().take();
     }));
+
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-    services::clear_database().await;
+    if let Some((solver, _)) = &fork {
+        Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
+            .impersonate(solver)
+            .await
+            .unwrap();
+    }
 
+    services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
@@ -173,99 +181,5 @@ async fn run<F, Fut, T>(
 
     if let Err(err) = result {
         panic::resume_unwind(err);
-    }
-}
-
-/// A blockchain node for development purposes. Dropping this type will
-/// terminate the node.
-struct Node {
-    process: Option<tokio::process::Child>,
-}
-
-impl Node {
-    /// Spawn a new node instance.
-    async fn new() -> Self {
-        use tokio::io::AsyncBufReadExt as _;
-
-        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
-        // For example if you set up a command that spins up a docker container.
-        let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
-
-        let mut process = tokio::process::Command::new(command)
-            .arg("--port")
-            .arg("8545")
-            .arg("--gas-price")
-            .arg("1")
-            .arg("--gas-limit")
-            .arg("10000000")
-            .arg("--base-fee")
-            .arg("0")
-            .arg("--balance")
-            .arg("1000000")
-            .arg("--chain-id")
-            .arg("1")
-            .arg("--timestamp")
-            .arg("1577836800")
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let stdout = process.stdout.take().unwrap();
-        let (sender, receiver) = tokio::sync::oneshot::channel::<String>();
-
-        tokio::task::spawn(async move {
-            let mut sender = Some(sender);
-            const NEEDLE: &str = "Listening on ";
-            let mut reader = tokio::io::BufReader::new(stdout).lines();
-            while let Some(line) = reader.next_line().await.unwrap() {
-                tracing::trace!(line);
-                if let Some(addr) = line.strip_prefix(NEEDLE) {
-                    match sender.take() {
-                        Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
-                        None => tracing::error!(addr, "detected multiple anvil endpoints"),
-                    }
-                }
-            }
-        });
-
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
-            .await
-            .expect("finding anvil URL timed out")
-            .unwrap();
-        Self {
-            process: Some(process),
-        }
-    }
-
-    /// Most reliable way to kill the process. If you get the chance to manually
-    /// clean up the [`Node`] do it because the [`Drop::drop`]
-    /// implementation can not be as reliable due to missing async support.
-    async fn kill(&mut self) {
-        let mut process = match self.process.take() {
-            Some(node) => node,
-            // Somebody already called `Node::kill()`
-            None => return,
-        };
-
-        if let Err(err) = process.kill().await {
-            tracing::error!(?err, "failed to kill node process");
-        }
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        let mut process = match self.process.take() {
-            Some(process) => process,
-            // Somebody already called `Node::kill()`
-            None => return,
-        };
-
-        // This only sends SIGKILL to the process but does not wait for the process to
-        // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough.
-        if let Err(err) = process.start_kill() {
-            tracing::error!("failed to kill anvil: {err:?}");
-        }
     }
 }
