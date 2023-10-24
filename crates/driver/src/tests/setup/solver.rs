@@ -208,8 +208,7 @@ impl Solver {
             },
             gas,
         )
-        .await
-        .unwrap();
+        .await;
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(

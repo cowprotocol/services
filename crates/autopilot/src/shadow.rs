@@ -33,6 +33,7 @@ pub struct RunLoop {
     auction: AuctionId,
     block: u64,
     score_cap: U256,
+    solve_deadline: Duration,
 }
 
 impl RunLoop {
@@ -41,6 +42,7 @@ impl RunLoop {
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
+        solve_deadline: Duration,
     ) -> Self {
         Self {
             orderbook,
@@ -49,6 +51,7 @@ impl RunLoop {
             auction: 0,
             block: 0,
             score_cap,
+            solve_deadline,
         }
     }
 
@@ -173,8 +176,13 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let request =
-            run_loop::solve_request(id, auction, &self.trusted_tokens.all(), self.score_cap);
+        let request = run_loop::solve_request(
+            id,
+            auction,
+            &self.trusted_tokens.all(),
+            self.score_cap,
+            self.solve_deadline,
+        );
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -190,7 +198,7 @@ impl RunLoop {
         driver: &Driver,
         request: &solve::Request,
     ) -> Result<Solution, Error> {
-        let proposed = tokio::time::timeout(run_loop::SOLVE_TIME_LIMIT, driver.solve(request))
+        let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| Error::Timeout)?
             .map_err(Error::Solve)?;

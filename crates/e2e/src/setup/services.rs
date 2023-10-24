@@ -88,6 +88,7 @@ impl<'a> Services<'a> {
             "--auction-update-interval=1".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
+            "--solve-deadline=2".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

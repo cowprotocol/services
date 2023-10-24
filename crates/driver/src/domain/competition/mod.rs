@@ -13,7 +13,7 @@ use {
         },
         util::Bytes,
     },
-    futures::future::join_all,
+    futures::{future::join_all, StreamExt},
     itertools::Itertools,
     rand::seq::SliceRandom,
     std::{collections::HashSet, sync::Mutex},
@@ -172,13 +172,41 @@ impl Competition {
         }
 
         // Pick the best-scoring settlement.
-        let (score, settlement) = scores
+        let (mut score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .map(|(score, settlement)| (Solved { score }, settlement))
             .unzip();
 
-        *self.settlement.lock().unwrap() = settlement;
+        *self.settlement.lock().unwrap() = settlement.clone();
+
+        let settlement = match settlement {
+            Some(settlement) => settlement,
+            // Don't wait for the deadline because we can't produce a solution anyway.
+            None => return Ok(score),
+        };
+
+        // Re-simulate the solution on every new block until the deadline ends to make
+        // sure we actually submit a working solution close to when the winner
+        // gets picked by the procotol.
+        if let Ok(deadline) = auction.deadline().timeout() {
+            let score_ref = &mut score;
+            let simulate_on_new_blocks = async move {
+                let mut stream =
+                    ethrpc::current_block::into_stream(self.eth.current_block().clone());
+                while let Some(block) = stream.next().await {
+                    if let Err(err) = self.simulate_settlement(&settlement).await {
+                        tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+                        *score_ref = None;
+                        *self.settlement.lock().unwrap() = None;
+                        return;
+                    }
+                }
+            };
+            let timeout = deadline.duration().to_std().unwrap_or_default();
+            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
+        }
+
         Ok(score)
     }
 
@@ -244,6 +272,26 @@ impl Competition {
             .unwrap()
             .as_ref()
             .map(|s| s.auction_id)
+    }
+
+    /// Returns whether the settlement can be executed or would revert.
+    async fn simulate_settlement(
+        &self,
+        settlement: &Settlement,
+    ) -> Result<(), infra::simulator::Error> {
+        self.simulator
+            .gas(eth::Tx {
+                from: self.solver.address(),
+                to: settlement.solver(),
+                value: eth::Ether(0.into()),
+                input: crate::util::Bytes(settlement.calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )),
+                access_list: settlement.access_list.clone(),
+            })
+            .await
+            .map(|_| ())
     }
 }
 

@@ -609,6 +609,7 @@ pub async fn run(args: Arguments) {
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
+            solve_deadline: args.solve_deadline,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -662,7 +663,13 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let shadow = shadow::RunLoop::new(orderbook, drivers, trusted_tokens, args.score_cap);
+    let shadow = shadow::RunLoop::new(
+        orderbook,
+        drivers,
+        trusted_tokens,
+        args.score_cap,
+        args.solve_deadline,
+    );
     shadow.run_forever().await;
 
     unreachable!("shadow run loop exited");
