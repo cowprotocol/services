@@ -10,6 +10,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
+    pub solution_id: solution::Id,
     pub kind: Kind,
 }
 
@@ -24,6 +25,8 @@ pub enum Kind {
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(Ether),
+    /// Solution received from solver engine don't have unique id.
+    DuplicatedSolutionId,
 }
 
 #[derive(Debug)]

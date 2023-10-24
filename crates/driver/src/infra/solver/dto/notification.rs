@@ -1,5 +1,8 @@
 use {
-    crate::{domain::competition::auction, infra::notify},
+    crate::{
+        domain::competition::{auction, solution},
+        infra::notify,
+    },
     primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
@@ -7,9 +10,14 @@ use {
 };
 
 impl Notification {
-    pub fn new(auction_id: Option<auction::Id>, kind: notify::Kind) -> Self {
+    pub fn new(
+        auction_id: Option<auction::Id>,
+        solution_id: solution::Id,
+        kind: notify::Kind,
+    ) -> Self {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
+            solution_id: solution_id.0,
             kind: match kind {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
@@ -36,6 +44,7 @@ impl Notification {
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
                     Kind::SolverAccountInsufficientBalance(required.0)
                 }
+                notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
             },
         }
     }
@@ -46,6 +55,7 @@ impl Notification {
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     auction_id: Option<String>,
+    solution_id: u64,
     kind: Kind,
 }
 
@@ -57,6 +67,7 @@ pub enum Kind {
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<H160>),
     SolverAccountInsufficientBalance(U256),
+    DuplicatedSolutionId,
 }
 
 #[serde_as]

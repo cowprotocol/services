@@ -88,8 +88,9 @@ impl Inner {
         auction
             .orders
             .iter()
+            .enumerate()
             .take_while(|_| auction.deadline.remaining().is_some())
-            .filter_map(|order| {
+            .filter_map(|(i, order)| {
                 let sell_token = auction.tokens.reference_price(&order.sell.token);
                 self.requests_for_order(UserOrder::new(order)?)
                     .find_map(|request| {
@@ -136,6 +137,7 @@ impl Inner {
                                 gas: route.gas(),
                             }
                             .into_solution(auction.gas_price, sell_token, score)?
+                            .with_id(solution::Id(i as u64))
                             .with_buffers_internalizations(&auction.tokens),
                         )
                     })

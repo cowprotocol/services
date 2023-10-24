@@ -547,6 +547,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
+        id: Default::default(),
         prices: solution::ClearingPrices(
             model
                 .prices
@@ -597,6 +598,10 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
+        notification::Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
+        ),
+        Kind::DuplicatedSolutionId => todo!(),
     };
 
     (auction_id, auction_result)

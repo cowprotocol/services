@@ -2,7 +2,7 @@ use {
     super::{
         auction,
         eth::{self, Ether, TokenAddress},
-        solution::SuccessProbability,
+        solution::{self, SuccessProbability},
     },
     std::collections::BTreeSet,
 };
@@ -12,6 +12,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
+    pub solution_id: solution::Id,
     pub kind: Kind,
 }
 
@@ -22,6 +23,7 @@ pub enum Kind {
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     SolverAccountInsufficientBalance(Ether),
+    DuplicatedSolutionId,
 }
 
 #[derive(Debug)]
