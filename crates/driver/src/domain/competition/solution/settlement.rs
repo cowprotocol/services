@@ -10,7 +10,7 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::Signed,
+    bigdecimal::{Signed, Zero},
     futures::future::try_join_all,
     num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
@@ -290,6 +290,10 @@ impl Settlement {
                 )?
             }
         };
+
+        if score.is_zero() {
+            return Err(score::Error::ZeroScore);
+        }
 
         if score > objective_value {
             return Err(score::Error::ScoreHigherThanObjective(

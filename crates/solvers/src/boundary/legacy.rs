@@ -580,6 +580,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }
+        Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+            AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
+        }
         Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(_, _)) => {
             AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanObjective)
         }

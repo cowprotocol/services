@@ -336,6 +336,7 @@ impl ScoreCalculator {
         Self { score_cap }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn compute_score(
         &self,
         objective_value: &BigRational,

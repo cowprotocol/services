@@ -21,6 +21,9 @@ impl Notification {
                         notification::ScoreKind::ObjectiveValueNonPositive,
                     )
                 }
+                Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+                    notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+                }
                 Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
                     score,
                     objective_value,
@@ -77,7 +80,8 @@ pub enum Kind {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
-    SuccessProbabilityOutOfRange(f64),
+    ZeroScore,
     ObjectiveValueNonPositive,
+    SuccessProbabilityOutOfRange(f64),
     ScoreHigherThanObjective { score: U256, objective_value: U256 },
 }

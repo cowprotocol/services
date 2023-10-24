@@ -36,6 +36,24 @@ impl From<eth::U256> for Score {
     }
 }
 
+impl std::ops::Add for Score {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl num::Zero for Score {
+    fn zero() -> Self {
+        Self(eth::U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 /// Represents the probability that a solution will be successfully settled.
 #[derive(Debug, Copy, Clone)]
 pub struct SuccessProbability(pub f64);
@@ -74,6 +92,8 @@ impl std::cmp::PartialOrd<ObjectiveValue> for Score {
 pub enum Error {
     #[error("objective value is non-positive")]
     ObjectiveValueNonPositive,
+    #[error("score is zero")]
+    ZeroScore,
     #[error("objective value {0:?} is higher than the objective {1:?}")]
     ScoreHigherThanObjective(Score, ObjectiveValue),
     #[error("success probability is out of range {0:?}")]
