@@ -35,6 +35,7 @@ tracing = { workspace = true }
 web3 = { workspace = true }
 bollard = { workspace = true }
 futures = { workspace = true }
+once_cell = { workspace = true }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }

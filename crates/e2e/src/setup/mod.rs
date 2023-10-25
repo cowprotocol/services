@@ -1,7 +1,6 @@
 use bollard::{
-    container::{Config, CreateContainerOptions, ListContainersOptions},
-    image::BuildImageOptions,
-    service::{HostConfig, PortBinding},
+    container::{Config, ListContainersOptions},
+    service::HostConfig,
 };
 pub mod colocation;
 mod deploy;
@@ -10,7 +9,7 @@ pub mod onchain_components;
 mod services;
 
 use {
-    crate::nodes::{Node, NODE_HOST},
+    crate::nodes::Node,
     anyhow::{anyhow, Result},
     ethcontract::{futures::FutureExt, H160},
     futures::StreamExt,
@@ -68,8 +67,6 @@ where
     }
     Ok(())
 }
-
-static NODE_MUTEX: Mutex<()> = Mutex::new(());
 
 const DEFAULT_FILTERS: [&str; 9] = [
     "warn",
@@ -155,14 +152,6 @@ where
     observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
     observe::panic_hook::install();
 
-    // The mutex guarantees that no more than a test at a time is running on
-    // the testing node.
-    // Note that the mutex is expected to become poisoned if a test panics. This
-    // is not relevant for us as we are not interested in the data stored in
-    // it but rather in the locked state.
-    let _lock = NODE_MUTEX.lock();
-
-    // generate random container name
     let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
     let postgres = docker
@@ -179,16 +168,6 @@ where
                 host_config: Some(HostConfig {
                     auto_remove: Some(true),
                     publish_all_ports: Some(true),
-                    // port_bindings: Some(
-                    //     [(
-                    //         "5432/tcp".into(),
-                    //         Some(vec![PortBinding {
-                    //             host_ip: Some("localhost".into()),
-                    //             host_port: Some("5432".into()),
-                    //         }]),
-                    //     )]
-                    //     .into(),
-                    // ),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -196,7 +175,6 @@ where
         )
         .await
         .unwrap();
-
 
     docker
         .start_container::<&str>(&postgres.id, None)
@@ -208,7 +186,8 @@ where
             filters: [("id".into(), vec![postgres.id.clone()])].into(),
             ..Default::default()
         }))
-        .await.unwrap();
+        .await
+        .unwrap();
     let db_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
 
     let migrations = docker
@@ -217,9 +196,9 @@ where
             Config {
                 image: Some("migrations"),
                 cmd: Some(vec!["migrate"]),
-                env: Some(vec![
-                    &format!("FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="),
-                ]),
+                env: Some(vec![&format!(
+                    "FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="
+                )]),
                 network_disabled: Some(false),
                 host_config: Some(HostConfig {
                     auto_remove: Some(true),
@@ -259,7 +238,12 @@ where
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let url = node.lock().unwrap().as_ref().map(|node| node.url.clone()).unwrap();
+    let url = node
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|node| node.url.clone())
+        .unwrap();
     let http = create_test_transport(url.as_str());
     let web3 = Web3::new(http);
     if let Some((solver, _)) = &fork {
@@ -276,7 +260,9 @@ where
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone(), db_url)).catch_unwind().await;
+    let result = AssertUnwindSafe(f(web3.clone(), db_url))
+        .catch_unwind()
+        .await;
 
     let node = node.lock().unwrap().take();
     if let Some(mut node) = node {

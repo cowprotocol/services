@@ -23,7 +23,6 @@ async fn test(web3: Web3, db: DbUrl) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -43,8 +42,6 @@ async fn test(web3: Web3, db: DbUrl) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
     let services = Services::new(onchain.contracts(), db).await;
     services

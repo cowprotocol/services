@@ -70,10 +70,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!("running order book with validated arguments:\n{}", args);
     observe::panic_hook::install();
     observe::metrics::setup_registry(Some("gp_v2_api".into()), None);
-    run(args).await;
+    run(args, None).await;
 }
 
-pub async fn run(args: Arguments) {
+pub async fn run(args: Arguments, bind: Option<tokio::sync::oneshot::Sender<SocketAddr>>) {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
     let web3 = shared::ethrpc::web3(
@@ -537,6 +537,7 @@ pub async fn run(args: Arguments) {
         },
         args.shared.solver_competition_auth,
         native_price_estimator,
+        bind,
     );
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
@@ -607,6 +608,7 @@ fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
+    bind: Option<tokio::sync::oneshot::Sender<SocketAddr>>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
@@ -620,11 +622,11 @@ fn serve_api(
     tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
     let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
-    let server = hyper::Server::bind(&address)
-        .serve(warp_svc)
-        .with_graceful_shutdown(shutdown_receiver)
-        .map(|_| ());
-    task::spawn(server)
+    let server = hyper::Server::bind(&address).serve(warp_svc);
+    if let Some(bind) = bind {
+        bind.send(server.local_addr()).unwrap();
+    }
+    tokio::spawn(server.with_graceful_shutdown(shutdown_receiver).map(|_| ()))
 }
 
 /// Check that important constants such as the EIP 712 Domain Separator and

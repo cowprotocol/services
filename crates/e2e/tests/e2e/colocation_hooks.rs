@@ -70,12 +70,12 @@ async fn allowance(web3: Web3, db: DbUrl) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    let driver_url = colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver).await;
 
     let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        format!("--drivers=test_solver|{}/test_solver", driver_url.as_str()),
     ]);
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])
@@ -248,12 +248,12 @@ async fn signature(web3: Web3, db: DbUrl) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    let driver_url = colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver).await;
 
     let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        format!("--drivers=test_solver|{}/test_solver", driver_url.as_str()),
     ]);
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])
@@ -355,12 +355,12 @@ async fn partial_fills(web3: Web3, db: DbUrl) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    let driver_url = colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver).await;
 
     let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        format!("--drivers=test_solver|{}/test_solver", driver_url.as_str()),
     ]);
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])

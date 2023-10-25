@@ -91,6 +91,7 @@ async fn order_cancellation(web3: Web3, db: DbUrl) {
 
     let cancel_order = |order_uid: OrderUid| {
         let client = services.client();
+        let api_url = services.api_url();
         let cancellation = OrderCancellation::for_order(
             order_uid,
             &onchain.contracts().domain_separator,
@@ -99,7 +100,10 @@ async fn order_cancellation(web3: Web3, db: DbUrl) {
 
         async move {
             let cancellation = client
-                .delete(&format!("{API_HOST}{ORDERS_ENDPOINT}/{order_uid}"))
+                .delete(&format!(
+                    "{}{ORDERS_ENDPOINT}/{order_uid}",
+                    api_url.as_str()
+                ))
                 .json(&CancellationPayload {
                     signature: cancellation.signature,
                     signing_scheme: cancellation.signing_scheme,
@@ -114,6 +118,7 @@ async fn order_cancellation(web3: Web3, db: DbUrl) {
 
     let cancel_orders = |order_uids: Vec<OrderUid>| {
         let client = services.client();
+        let api_url = services.api_url();
         let cancellations = OrderCancellations { order_uids };
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let signature = EcdsaSignature::sign(
@@ -131,7 +136,7 @@ async fn order_cancellation(web3: Web3, db: DbUrl) {
 
         async move {
             let cancellation = client
-                .delete(&format!("{API_HOST}{ORDERS_ENDPOINT}"))
+                .delete(&format!("{}{ORDERS_ENDPOINT}", api_url.as_str()))
                 .json(&signed_cancellations)
                 .send()
                 .await

@@ -1,9 +1,9 @@
 use {
-    crate::{nodes::NODE_HOST, setup::*},
+    crate::setup::*,
     ethcontract::{H160, H256},
+    ethrpc::http::HttpTransport,
     reqwest::Url,
     shared::sources::uniswap_v2::UNISWAP_INIT,
-    tokio::task::JoinHandle,
 };
 
 pub async fn start_solver(weth: H160) -> Url {
@@ -18,6 +18,7 @@ risk-parameters = [0,0,0,0]
     ));
     let args = vec![
         "solvers".to_string(),
+        "--addr=127.0.0.1:0".to_string(),
         "baseline".to_string(),
         format!("--config={}", config_file.display()),
     ];
@@ -32,11 +33,11 @@ risk-parameters = [0,0,0,0]
     format!("http://{solver_addr}").parse().unwrap()
 }
 
-pub fn start_driver(
+pub async fn start_driver(
     contracts: &Contracts,
     solver_endpoint: &Url,
     solver_account: &TestAccount,
-) -> JoinHandle<()> {
+) -> Url {
     let config_file = config_tmp_file(format!(
         r#"
 [contracts]
@@ -68,14 +69,27 @@ mempool = "public"
         contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),
     ));
+    let node_url = contracts
+        .weth
+        .raw_instance()
+        .web3()
+        .transport()
+        .downcast::<HttpTransport>()
+        .unwrap()
+        .url()
+        .clone();
     let args = vec![
         "driver".to_string(),
+        "--addr=127.0.0.1:0".to_string(),
         format!("--config={}", config_file.display()),
-        format!("--ethrpc={NODE_HOST}"),
+        format!("--ethrpc={}", node_url.as_str()),
     ];
 
+    let (bind, bind_receiver) = tokio::sync::oneshot::channel();
     tokio::task::spawn(async move {
         let _config_file = config_file;
-        driver::run(args.into_iter(), None).await;
-    })
+        driver::run(args.into_iter(), Some(bind)).await;
+    });
+    let driver_addr = bind_receiver.await.unwrap();
+    format!("http://{driver_addr}").parse().unwrap()
 }

@@ -1,12 +1,9 @@
-use ethrpc::http::HttpTransport;
-use super::DbUrl;
 use {
-    crate::{
-        nodes::NODE_HOST,
-        setup::{wait_for_condition, Contracts, TIMEOUT},
-    },
+    super::DbUrl,
+    crate::setup::{wait_for_condition, Contracts, TIMEOUT},
     clap::Parser,
     ethcontract::{H160, H256},
+    ethrpc::http::HttpTransport,
     model::{
         app_data::{AppDataDocument, AppDataHash},
         auction::AuctionWithId,
@@ -20,7 +17,6 @@ use {
     std::time::Duration,
 };
 
-pub const API_HOST: &str = "http://127.0.0.1:8080";
 pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
 pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
@@ -36,6 +32,7 @@ pub struct Services<'a> {
     http: Client,
     db: Db,
     db_url: DbUrl,
+    api_url: once_cell::sync::OnceCell<Url>,
 }
 
 impl<'a> Services<'a> {
@@ -48,6 +45,7 @@ impl<'a> Services<'a> {
                 .unwrap(),
             db_url: db.clone(),
             db: sqlx::PgPool::connect(db.0.as_str()).await.unwrap(),
+            api_url: Default::default(),
         }
     }
 
@@ -63,7 +61,6 @@ impl<'a> Services<'a> {
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
-        let node_url = self.contracts.weth.raw_instance().web3().transport().downcast::<HttpTransport>().unwrap().url().to_string();
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1".to_string(),
@@ -82,8 +79,8 @@ impl<'a> Services<'a> {
                 "--balancer-v2-vault-address={:?}",
                 self.contracts.balancer_vault.address()
             ),
-            format!("--node-url={node_url}"),
-            format!("--simulation-node-url={node_url}"),
+            format!("--node-url={}", self.node_url().as_str()),
+            format!("--simulation-node-url={}", self.node_url().as_str()),
         ]
         .into_iter()
     }
@@ -113,6 +110,7 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
+            "--address=127.0.0.1:0".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
@@ -124,9 +122,14 @@ impl<'a> Services<'a> {
         .chain(extra_args.into_iter());
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(orderbook::run(args));
+        let (bind, bind_receiver) = tokio::sync::oneshot::channel();
+        tokio::task::spawn(orderbook::run(args, Some(bind)));
+        let api_addr = bind_receiver.await.unwrap();
+        self.api_url
+            .set(format!("http://{api_addr}").parse().unwrap())
+            .unwrap();
 
-        Self::wait_for_api_to_come_up().await;
+        self.wait_for_api_to_come_up().await;
     }
 
     /// Start the solver service in a background task.
@@ -135,7 +138,10 @@ impl<'a> Services<'a> {
             "solver".to_string(),
             format!("--solver-account={}", hex::encode(private_key)),
             "--settle-interval=1".to_string(),
-            format!("--transaction-submission-nodes={NODE_HOST}"),
+            format!(
+                "--transaction-submission-nodes={}",
+                self.node_url().as_str()
+            ),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
         ]
         .into_iter()
@@ -166,7 +172,10 @@ impl<'a> Services<'a> {
             "--solvers=None".to_string(),
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
-            format!("--transaction-submission-nodes={NODE_HOST}"),
+            format!(
+                "--transaction-submission-nodes={}",
+                self.node_url().as_str()
+            ),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
         ]
         .into_iter()
@@ -177,9 +186,9 @@ impl<'a> Services<'a> {
         tokio::task::spawn(solver::run(args));
     }
 
-    async fn wait_for_api_to_come_up() {
+    async fn wait_for_api_to_come_up(&self) {
         let is_up = || async {
-            reqwest::get(format!("{API_HOST}{VERSION_ENDPOINT}"))
+            reqwest::get(format!("{}{VERSION_ENDPOINT}", self.api_url().as_str()))
                 .await
                 .is_ok()
         };
@@ -193,7 +202,7 @@ impl<'a> Services<'a> {
     pub async fn get_auction(&self) -> AuctionWithId {
         let response = self
             .http
-            .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))
+            .get(format!("{}{AUCTION_ENDPOINT}", self.api_url().as_str()))
             .send()
             .await
             .unwrap();
@@ -213,7 +222,8 @@ impl<'a> Services<'a> {
         let response = self
             .http
             .get(format!(
-                "{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/by_tx_hash/{hash:?}"
+                "{}{SOLVER_COMPETITION_ENDPOINT}/by_tx_hash/{hash:?}",
+                self.api_url().as_str()
             ))
             .send()
             .await
@@ -229,7 +239,7 @@ impl<'a> Services<'a> {
     }
 
     pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
-        let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
+        let url = format!("{}/api/v1/trades?orderUid={order}", self.api_url().as_str());
         let response = self.http.get(url).send().await.unwrap();
 
         let status = response.status();
@@ -250,7 +260,7 @@ impl<'a> Services<'a> {
     ) -> Result<OrderUid, (StatusCode, String)> {
         let placement = self
             .http
-            .post(format!("{API_HOST}{ORDERS_ENDPOINT}"))
+            .post(format!("{}{ORDERS_ENDPOINT}", self.api_url().as_str()))
             .json(order)
             .send()
             .await
@@ -273,7 +283,7 @@ impl<'a> Services<'a> {
     ) -> Result<OrderQuoteResponse, (StatusCode, String)> {
         let quoting = self
             .http
-            .post(&format!("{API_HOST}{QUOTING_ENDPOINT}"))
+            .post(&format!("{}{QUOTING_ENDPOINT}", self.api_url().as_str()))
             .json(&quote)
             .send()
             .await
@@ -297,7 +307,10 @@ impl<'a> Services<'a> {
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Order, (StatusCode, String)> {
         let response = self
             .http
-            .get(format!("{API_HOST}{ORDERS_ENDPOINT}/{uid}"))
+            .get(format!(
+                "{}{ORDERS_ENDPOINT}/{uid}",
+                self.api_url().as_str()
+            ))
             .send()
             .await
             .unwrap();
@@ -317,7 +330,10 @@ impl<'a> Services<'a> {
     ) -> Result<AppDataDocument, (StatusCode, String)> {
         let response = self
             .http
-            .get(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
+            .get(format!(
+                "{}/api/v1/app_data/{app_data:?}",
+                self.api_url().as_str()
+            ))
             .send()
             .await
             .unwrap();
@@ -345,7 +361,10 @@ impl<'a> Services<'a> {
     ) -> Result<(), (StatusCode, String)> {
         let response = self
             .http
-            .put(format!("{API_HOST}/api/v1/app_data/{app_data:?}"))
+            .put(format!(
+                "{}/api/v1/app_data/{app_data:?}",
+                self.api_url().as_str()
+            ))
             .json(&document)
             .send()
             .await
@@ -383,6 +402,22 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
+    }
+
+    fn node_url(&self) -> Url {
+        self.contracts
+            .weth
+            .raw_instance()
+            .web3()
+            .transport()
+            .downcast::<HttpTransport>()
+            .unwrap()
+            .url()
+            .clone()
+    }
+
+    pub fn api_url(&self) -> Url {
+        self.api_url.get().expect("api already initialized").clone()
     }
 }
 

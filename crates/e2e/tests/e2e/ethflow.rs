@@ -37,7 +37,7 @@ use {
         ethflow_order::EthflowOrder,
         refund_service::{INVALIDATED_OWNER, NO_OWNER},
     },
-    reqwest::Client,
+    reqwest::{Client, Url},
     shared::signature_validator::check_erc1271_result,
 };
 
@@ -115,6 +115,7 @@ async fn eth_flow_tx(web3: Web3, db: DbUrl) {
         &ethflow_order,
         &trader.address(),
         onchain.contracts(),
+        &services.api_url(),
     )
     .await;
 }
@@ -255,7 +256,15 @@ async fn test_order_availability_in_api(
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
     for address in [owner, &contracts.ethflow.address()] {
-        test_account_query(address, services.client(), order, owner, contracts).await;
+        test_account_query(
+            address,
+            services.client(),
+            order,
+            owner,
+            contracts,
+            &services.api_url(),
+        )
+        .await;
     }
 
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
@@ -270,18 +279,20 @@ async fn test_trade_availability_in_api(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    api_url: &Url,
 ) {
     test_trade_query(
         &TradeQuery::ByUid(order.uid(contracts).await),
         client,
         contracts,
+        api_url,
     )
     .await;
 
     // Api returns eth flow orders for both eth-flow contract address and actual
     // owner
     for address in [owner, &contracts.ethflow.address()] {
-        test_trade_query(&TradeQuery::ByOwner(*address), client, contracts).await;
+        test_trade_query(&TradeQuery::ByOwner(*address), client, contracts, api_url).await;
     }
 }
 
@@ -321,10 +332,12 @@ async fn test_account_query(
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
+    api_url: &Url,
 ) {
     let query = client
         .get(&format!(
-            "{API_HOST}{ACCOUNT_ENDPOINT}/{queried_account:?}/orders",
+            "{}{ACCOUNT_ENDPOINT}/{queried_account:?}/orders",
+            api_url.as_str(),
         ))
         .send()
         .await
@@ -351,9 +364,14 @@ enum TradeQuery {
     ByOwner(H160),
 }
 
-async fn test_trade_query(query_type: &TradeQuery, client: &Client, contracts: &Contracts) {
+async fn test_trade_query(
+    query_type: &TradeQuery,
+    client: &Client,
+    contracts: &Contracts,
+    api_url: &Url,
+) {
     let query = client
-        .get(&format!("{API_HOST}{TRADES_ENDPOINT}",))
+        .get(&format!("{}{TRADES_ENDPOINT}", api_url.as_str()))
         .query(&[match query_type {
             TradeQuery::ByUid(uid) => ("orderUid", format!("{uid:?}")),
             TradeQuery::ByOwner(owner) => ("owner", format!("{owner:?}")),
