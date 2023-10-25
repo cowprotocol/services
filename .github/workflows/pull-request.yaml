@@ -33,10 +33,13 @@ jobs:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
+      - uses: taiki-e/install-action@nextest
+      - run: cargo build --tests
+      - run: cargo nextest run
 
   test-db:
     timeout-minutes: 60
@@ -45,17 +48,19 @@ jobs:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p orderbook -p database --tests &
+      - uses: taiki-e/install-action@nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo test postgres -p orderbook -p database -- --ignored --test-threads 1
+      - run: cargo nextest run postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only
 
   test-local-node:
     timeout-minutes: 60
@@ -64,6 +69,7 @@ jobs:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
       - uses: foundry-rs/foundry-toolchain@v1
@@ -71,11 +77,12 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
+      - uses: taiki-e/install-action@nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo test -p e2e local_node -- --ignored --test-threads 1 --nocapture
+      - run: cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 60
@@ -84,14 +91,16 @@ jobs:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
       - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
       # Build the driver's tests.
       - run: cargo build -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
-      - run: cargo test -p driver -- --ignored
+      - run: cargo nextest run -p driver --run-ignored ignored-only
 
   openapi:
     timeout-minutes: 60
