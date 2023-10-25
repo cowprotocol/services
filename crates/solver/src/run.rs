@@ -214,32 +214,37 @@ pub async fn run(args: Arguments) {
             .balancer_factories
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
-        let balancer_pool_fetcher = Arc::new(
-            BalancerPoolFetcher::new(
-                chain_id,
-                block_retriever.clone(),
-                token_info_fetcher.clone(),
-                cache_config,
-                current_block_stream.clone(),
-                http_factory.create(),
-                web3.clone(),
-                &contracts,
-                args.shared.balancer_pool_deny_list,
-            )
-            .await
-            .expect(
-                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
-                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
-                 from the --baseline-sources until the graph recovers)",
-            ),
-        );
-        maintainers.push(balancer_pool_fetcher.clone());
-        liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
+        match BalancerPoolFetcher::new(
+            chain_id,
+            block_retriever.clone(),
+            token_info_fetcher.clone(),
+            cache_config,
+            current_block_stream.clone(),
+            http_factory.create(),
             web3.clone(),
-            balancer_pool_fetcher,
-            settlement_contract.clone(),
-            contracts.vault,
-        )));
+            &contracts,
+            args.shared.balancer_pool_deny_list,
+        )
+        .await
+        {
+            Ok(balancer_pool_fetcher) => {
+                let balancer_pool_fetcher = Arc::new(balancer_pool_fetcher);
+                maintainers.push(balancer_pool_fetcher.clone());
+                liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
+                    web3.clone(),
+                    balancer_pool_fetcher,
+                    settlement_contract.clone(),
+                    contracts.vault,
+                )));
+            }
+            Err(err) => {
+                tracing::error!(
+                    "failed to create BalancerV2 pool fetcher, this is most likely due to \
+                     temporary issues with the graph (in that case consider manually restarting \
+                     services once the graph is back online)): {err}"
+                );
+            }
+        }
     }
 
     let uniswap_like_liquidity: Vec<Box<dyn LiquidityCollecting>> = univ2_sources
@@ -418,28 +423,33 @@ pub async fn run(args: Arguments) {
     }
 
     if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                web3.clone(),
-                http_factory.create(),
-                block_retriever,
-                args.shared.max_pools_to_initialize_cache,
-            )
-            .await
-            .expect(
-                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
-                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
-                 from the --baseline-sources until the graph recovers)",
-            ),
-        );
-        maintainers.push(uniswap_v3_pool_fetcher.clone());
-        liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
-            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-            settlement_contract.clone(),
+        match UniswapV3PoolFetcher::new(
+            chain_id,
             web3.clone(),
-            uniswap_v3_pool_fetcher,
-        )));
+            http_factory.create(),
+            block_retriever,
+            args.shared.max_pools_to_initialize_cache,
+        )
+        .await
+        {
+            Ok(uniswap_v3_pool_fetcher) => {
+                let uniswap_v3_pool_fetcher = Arc::new(uniswap_v3_pool_fetcher);
+                maintainers.push(uniswap_v3_pool_fetcher.clone());
+                liquidity_sources.push(Box::new(UniswapV3Liquidity::new(
+                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+                    settlement_contract.clone(),
+                    web3.clone(),
+                    uniswap_v3_pool_fetcher,
+                )));
+            }
+            Err(err) => {
+                tracing::error!(
+                    "failed to create UniswapV3 pool fetcher, this is most likely due to \
+                     temporary issues with the graph (in that case consider manually restarting \
+                     services once the graph is back online)): {err}"
+                );
+            }
+        }
     }
 
     let liquidity_collector = LiquidityCollector {
