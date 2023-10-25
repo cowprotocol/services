@@ -66,6 +66,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
       - uses: actions/checkout@v3
+      - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
@@ -73,7 +74,7 @@ jobs:
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
-          up-opts: -d db migrations chain
+          up-opts: -d db migrations
       - run: cargo test -p e2e local_node -- --ignored --test-threads 1 --nocapture
 
   test-driver:

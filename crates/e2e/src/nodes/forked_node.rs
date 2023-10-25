@@ -1,48 +1,10 @@
 use {
-    super::TestNode,
     ethcontract::H160,
-    reqwest::{IntoUrl, Url},
+    reqwest::Url,
     serde_json::json,
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-
-pub struct Forker<T> {
-    forked_node_api: ForkedNodeApi<T>,
-    fork_url: Url,
-}
-
-impl<T: Transport> Forker<T> {
-    pub async fn new(web3: &web3::Web3<T>, solver_address: H160, fork_url: impl IntoUrl) -> Self {
-        let fork_url = fork_url.into_url().expect("Invalid fork URL");
-
-        let forked_node_api = web3.api::<ForkedNodeApi<_>>();
-        forked_node_api
-            .fork(&fork_url)
-            .await
-            .expect("Test network must support anvil_reset");
-
-        forked_node_api
-            .impersonate(&solver_address)
-            .await
-            .expect("Test network must support anvil_impersonateAccount");
-
-        Self {
-            forked_node_api,
-            fork_url,
-        }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl<T: Transport> TestNode for Forker<T> {
-    async fn reset(&self) {
-        self.forked_node_api
-            .fork(&self.fork_url)
-            .await
-            .expect("Test network must support anvil_reset");
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ForkedNodeApi<T> {
