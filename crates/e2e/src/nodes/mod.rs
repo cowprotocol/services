@@ -11,8 +11,7 @@ pub struct Node {
 }
 
 impl Node {
-    /// Spawns a new node that is forked from the given URL. It also
-    /// impersonates the given `solver` address.
+    /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
         Self::spawn_process(&["--port", "8545", "--fork-url", fork.as_str()]).await
     }
@@ -105,7 +104,7 @@ impl Drop for Node {
 
         // This only sends SIGKILL to the process but does not wait for the process to
         // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough.
+        // should be good enough in many cases.
         if let Err(err) = process.start_kill() {
             tracing::error!(?err, "failed to kill node process");
         }
