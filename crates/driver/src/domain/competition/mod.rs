@@ -28,7 +28,7 @@ pub mod solution;
 pub use {
     auction::Auction,
     order::Order,
-    score::Score,
+    score::{ObjectiveValue, Score, SuccessProbability},
     solution::{Solution, SolverScore, SolverTimeout},
 };
 
@@ -159,7 +159,12 @@ impl Competition {
                 result
                     .tap_err(|err| {
                         observe::scoring_failed(self.solver.name(), err);
-                        notify::scoring_failed(&self.solver, auction.id(), settlement.notify_id());
+                        notify::scoring_failed(
+                            &self.solver,
+                            auction.id(),
+                            settlement.notify_id(),
+                            err,
+                        );
                     })
                     .ok()
                     .map(|score| (score, settlement))

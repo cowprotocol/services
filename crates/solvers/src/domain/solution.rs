@@ -389,8 +389,14 @@ pub struct Allowance {
 }
 
 /// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct SuccessProbability(pub f64);
+
+impl From<f64> for SuccessProbability {
+    fn from(value: f64) -> Self {
+        Self(value)
+    }
+}
 
 /// A score for a solution. The score is used to rank solutions.
 #[derive(Debug, Clone)]

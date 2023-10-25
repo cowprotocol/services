@@ -290,6 +290,24 @@ impl From<i32> for Ether {
     }
 }
 
+impl std::ops::Add for Ether {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for Ether {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 /// Block number.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);

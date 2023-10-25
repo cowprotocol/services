@@ -107,3 +107,11 @@ impl From<EffectiveGasPrice> for U256 {
         value.0.into()
     }
 }
+
+impl ops::Mul<GasPrice> for Gas {
+    type Output = Ether;
+
+    fn mul(self, rhs: GasPrice) -> Self::Output {
+        (self.0 * rhs.effective().0 .0).into()
+    }
+}

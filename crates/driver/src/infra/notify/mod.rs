@@ -5,20 +5,46 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification};
+pub use notification::{Kind, Notification, ScoreKind};
 
-pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution_id: solution::Id) {
-    solver.notify(auction_id, solution_id, notification::Kind::EmptySolution);
+use crate::domain::competition::score;
+
+pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
+    solver.notify(auction_id, solution, notification::Kind::EmptySolution);
 }
 
 pub fn scoring_failed(
     solver: &Solver,
     auction_id: Option<auction::Id>,
     solution_id: Option<solution::Id>,
+    err: &score::Error,
 ) {
-    if let Some(solution_id) = solution_id {
-        solver.notify(auction_id, solution_id, notification::Kind::ScoringFailed);
+    if solution_id.is_none() {
+        return;
     }
+
+    let notification = match err {
+        score::Error::ObjectiveValueNonPositive => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
+        }
+        score::Error::ZeroScore => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
+        }
+        score::Error::ScoreHigherThanObjective(score, objective_value) => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanObjective(
+                *score,
+                *objective_value,
+            ))
+        }
+        score::Error::SuccessProbabilityOutOfRange(success_probability) => {
+            notification::Kind::ScoringFailed(
+                notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
+            )
+        }
+        score::Error::Boundary(_) => return,
+    };
+
+    solver.notify(auction_id, solution_id.unwrap(), notification);
 }
 
 pub fn encoding_failed(

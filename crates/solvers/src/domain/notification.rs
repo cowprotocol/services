@@ -1,8 +1,8 @@
 use {
     super::{
         auction,
-        eth::{Ether, TokenAddress},
-        solution,
+        eth::{self, Ether, TokenAddress},
+        solution::{self, SuccessProbability},
     },
     std::collections::BTreeSet,
 };
@@ -16,14 +16,38 @@ pub struct Notification {
     pub kind: Kind,
 }
 
-type SolutionId = u64;
-
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
     EmptySolution,
-    ScoringFailed,
+    ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     SolverAccountInsufficientBalance(Ether),
     DuplicatedSolutionId,
+}
+
+#[derive(Debug)]
+pub enum ScoreKind {
+    ZeroScore,
+    ObjectiveValueNonPositive,
+    SuccessProbabilityOutOfRange(SuccessProbability),
+    ScoreHigherThanObjective(Score, ObjectiveValue),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Score(pub eth::U256);
+
+impl From<eth::U256> for Score {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ObjectiveValue(pub eth::U256);
+
+impl From<eth::U256> for ObjectiveValue {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
 }

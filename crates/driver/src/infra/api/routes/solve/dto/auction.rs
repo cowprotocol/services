@@ -129,7 +129,7 @@ impl Auction {
             }),
             self.deadline.into(),
             eth,
-            self.score_cap,
+            self.score_cap.into(),
         )
         .await
         .map_err(Into::into)
