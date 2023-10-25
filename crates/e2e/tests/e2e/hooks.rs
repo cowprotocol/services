@@ -17,7 +17,7 @@ async fn local_node_test() {
     run_test(test).await;
 }
 
-async fn test(web3: Web3) {
+async fn test(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -51,7 +51,7 @@ async fn test(web3: Web3) {
     )
     .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])

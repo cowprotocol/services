@@ -21,7 +21,7 @@ async fn local_node_order_creation_checks_metadata_signer() {
     run_test(order_creation_checks_metadata_signer).await;
 }
 
-async fn order_creation_checks_metadata_signer(web3: Web3) {
+async fn order_creation_checks_metadata_signer(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
     let [trader, adversary, safe_owner] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
@@ -64,7 +64,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3) {
         )
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_api(vec![]).await;
 
     // Accepted: custom hashes that aren't found in the DB.

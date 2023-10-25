@@ -55,7 +55,7 @@ async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
 
-async fn eth_flow_tx(web3: Web3) {
+async fn eth_flow_tx(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
@@ -76,7 +76,7 @@ async fn eth_flow_tx(web3: Web3) {
         receiver,
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -119,7 +119,7 @@ async fn eth_flow_tx(web3: Web3) {
     .await;
 }
 
-async fn eth_flow_indexing_after_refund(web3: Web3) {
+async fn eth_flow_indexing_after_refund(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
@@ -128,7 +128,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

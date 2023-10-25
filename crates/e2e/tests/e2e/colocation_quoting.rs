@@ -12,7 +12,7 @@ async fn local_node_uses_stale_liquidity() {
     run_test(uses_stale_liquidity).await;
 }
 
-async fn uses_stale_liquidity(web3: Web3) {
+async fn uses_stale_liquidity(web3: Web3, db: DbUrl) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -39,7 +39,7 @@ async fn uses_stale_liquidity(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),

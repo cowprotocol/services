@@ -1,3 +1,5 @@
+use ethrpc::http::HttpTransport;
+use super::DbUrl;
 use {
     crate::{
         nodes::NODE_HOST,
@@ -26,7 +28,6 @@ pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
-const LOCAL_DB_URL: &str = "postgresql://";
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
@@ -34,31 +35,35 @@ pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
     db: Db,
+    db_url: DbUrl,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts) -> Services<'a> {
+    pub async fn new(contracts: &'a Contracts, db: DbUrl) -> Services<'a> {
         Self {
             contracts,
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
-            db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+            db_url: db.clone(),
+            db: sqlx::PgPool::connect(db.0.as_str()).await.unwrap(),
         }
     }
 
-    fn api_autopilot_arguments() -> impl Iterator<Item = String> {
+    fn api_autopilot_arguments(&self) -> impl Iterator<Item = String> {
         [
             "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
             "--native-price-estimators=Baseline".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval-seconds=1".to_string(),
+            format!("--db-url={}", self.db_url.0.as_str()),
         ]
         .into_iter()
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
+        let node_url = self.contracts.weth.raw_instance().web3().transport().downcast::<HttpTransport>().unwrap().url().to_string();
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1".to_string(),
@@ -77,6 +82,8 @@ impl<'a> Services<'a> {
                 "--balancer-v2-vault-address={:?}",
                 self.contracts.balancer_vault.address()
             ),
+            format!("--node-url={node_url}"),
+            format!("--simulation-node-url={node_url}"),
         ]
         .into_iter()
     }
@@ -92,7 +99,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(Self::api_autopilot_arguments())
+        .chain(self.api_autopilot_arguments())
         .chain(extra_args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
@@ -113,7 +120,7 @@ impl<'a> Services<'a> {
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
-        .chain(Self::api_autopilot_arguments())
+        .chain(self.api_autopilot_arguments())
         .chain(extra_args.into_iter());
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
@@ -381,6 +388,7 @@ impl<'a> Services<'a> {
 
 pub async fn clear_database() {
     tracing::info!("Clearing database.");
+    const LOCAL_DB_URL: &str = "postgresql://";
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
     let mut db = db.begin().await.unwrap();
     database::clear_DANGER_(&mut db).await.unwrap();

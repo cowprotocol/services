@@ -18,7 +18,7 @@ async fn local_node_eth_integration() {
     run_test(eth_integration).await;
 }
 
-async fn eth_integration(web3: Web3) {
+async fn eth_integration(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -44,7 +44,7 @@ async fn eth_integration(web3: Web3) {
     let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
     let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

@@ -8,19 +8,20 @@ pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 /// terminate the node.
 pub struct Node {
     process: Option<tokio::process::Child>,
+    pub url: reqwest::Url,
 }
 
 impl Node {
     /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_process(&["--port", "8545", "--fork-url", fork.as_str()]).await
+        Self::spawn_process(&["--port", "0", "--fork-url", fork.as_str()]).await
     }
 
     /// Spawns a new local test net with some default parameters.
     pub async fn new() -> Self {
         Self::spawn_process(&[
             "--port",
-            "8545",
+            "0",
             "--gas-price",
             "1",
             "--gas-limit",
@@ -69,12 +70,14 @@ impl Node {
             }
         });
 
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
+        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
+
         Self {
             process: Some(process),
+            url: url.parse().unwrap(),
         }
     }
 

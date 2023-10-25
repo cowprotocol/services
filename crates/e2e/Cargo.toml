@@ -33,9 +33,10 @@ tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
 web3 = { workspace = true }
+bollard = { workspace = true }
+futures = { workspace = true }
 
 [dev-dependencies]
 app-data-hash = { path = "../app-data-hash" }
-futures = { workspace = true }
 rand = { workspace = true }
 refunder = { path = "../refunder" }

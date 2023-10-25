@@ -16,7 +16,7 @@ async fn local_node_onchain_settlement_without_liquidity() {
     run_test(onchain_settlement_without_liquidity).await;
 }
 
-async fn onchain_settlement_without_liquidity(web3: Web3) {
+async fn onchain_settlement_without_liquidity(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -82,7 +82,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

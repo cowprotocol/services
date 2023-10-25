@@ -28,7 +28,7 @@ async fn local_node_order_cancellation() {
     run_test(order_cancellation).await;
 }
 
-async fn order_cancellation(web3: Web3) {
+async fn order_cancellation(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [_] = onchain.make_solvers(to_wei(1)).await;
@@ -45,7 +45,7 @@ async fn order_cancellation(web3: Web3) {
         token.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

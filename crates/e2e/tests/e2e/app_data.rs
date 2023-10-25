@@ -19,7 +19,7 @@ async fn local_node_app_data() {
 }
 
 // Test that orders can be placed with the new app data format.
-async fn app_data(web3: Web3) {
+async fn app_data(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
@@ -55,7 +55,7 @@ async fn app_data(web3: Web3) {
         order
     };
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_api(vec![]).await;
 
     // Temporarily custom hashes are still accepted.

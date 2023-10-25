@@ -20,7 +20,7 @@ async fn local_node_partially_fillable_observed_score() {
 /// Sets up a big partially fillable trade. Waits until 2 partial fills
 /// happened and then asserts that the solver competition entries for these 2 tx
 /// only contain their respectively filled amounts and fees.
-async fn test(web3: Web3) {
+async fn test(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -73,7 +73,7 @@ async fn test(web3: Web3) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services
         .start_api(vec![

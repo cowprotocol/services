@@ -19,7 +19,7 @@ async fn local_node_test() {
 // Test that quoting works as expected, specifically, that we can quote for a
 // token pair and additional gas from ERC-1271 and hooks are included in the
 // quoted fee amount.
-async fn test(web3: Web3) {
+async fn test(web3: Web3, db: DbUrl) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 
@@ -46,7 +46,7 @@ async fn test(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;

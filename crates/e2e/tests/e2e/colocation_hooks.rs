@@ -34,7 +34,7 @@ async fn local_node_partial_fills() {
     run_test(partial_fills).await;
 }
 
-async fn allowance(web3: Web3) {
+async fn allowance(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -72,7 +72,7 @@ async fn allowance(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
@@ -177,7 +177,7 @@ async fn allowance(web3: Web3) {
     assert_eq!(allowance, U256::max_value());
 }
 
-async fn signature(web3: Web3) {
+async fn signature(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let chain_id = web3.eth().chain_id().await.unwrap();
@@ -250,7 +250,7 @@ async fn signature(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
@@ -325,7 +325,7 @@ async fn signature(web3: Web3) {
     wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }
 
-async fn partial_fills(web3: Web3) {
+async fn partial_fills(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -357,7 +357,7 @@ async fn partial_fills(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),

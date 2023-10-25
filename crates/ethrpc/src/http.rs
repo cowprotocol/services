@@ -56,6 +56,11 @@ impl HttpTransport {
     fn new_request(&self) -> (Client, Arc<Inner>) {
         (self.client.clone(), self.inner.clone())
     }
+
+    /// Returns the underlying RPC URL.
+    pub fn url(&self) -> &Url {
+        &self.inner.url
+    }
 }
 
 impl Debug for HttpTransport {

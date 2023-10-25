@@ -1,3 +1,8 @@
+use bollard::{
+    container::{Config, CreateContainerOptions, ListContainersOptions},
+    image::BuildImageOptions,
+    service::{HostConfig, PortBinding},
+};
 pub mod colocation;
 mod deploy;
 #[macro_use]
@@ -8,6 +13,7 @@ use {
     crate::nodes::{Node, NODE_HOST},
     anyhow::{anyhow, Result},
     ethcontract::{futures::FutureExt, H160},
+    futures::StreamExt,
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
@@ -27,6 +33,13 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
     file.write_all(content.as_ref()).unwrap();
     file.into_temp_path()
 }
+
+// TODO wrap DB in constructor
+// have fn to await migrations container
+// remove container on drop
+// remove containers on ctrl-c and panic
+// figure out how to pass around DB URL
+// rewrite anvil to use a container as well
 
 /// Reasonable default timeout for `wait_for_condition`.
 ///
@@ -90,7 +103,7 @@ where
 /// Note that tests calling with this function will not be run simultaneously.
 pub async fn run_test<F, Fut>(f: F)
 where
-    F: FnOnce(Web3) -> Fut,
+    F: FnOnce(Web3, DbUrl) -> Fut,
     Fut: Future<Output = ()>,
 {
     run(f, empty::<&str>(), None).await
@@ -100,7 +113,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     f: F,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
-    F: FnOnce(Web3) -> Fut,
+    F: FnOnce(Web3, DbUrl) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
@@ -109,7 +122,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
 
 pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
 where
-    F: FnOnce(Web3) -> Fut,
+    F: FnOnce(Web3, DbUrl) -> Fut,
     Fut: Future<Output = ()>,
 {
     run(f, empty::<&str>(), Some((solver_address, fork_url))).await
@@ -121,16 +134,21 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     fork_url: String,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
-    F: FnOnce(Web3) -> Fut,
+    F: FnOnce(Web3, DbUrl) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
     run(f, extra_filters, Some((solver_address, fork_url))).await
 }
 
+#[derive(Debug, Clone)]
+pub struct DbUrl(pub reqwest::Url);
+
+const POSTGRES_IMAGE: &str = "postgres:latest";
+
 async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
 where
-    F: FnOnce(Web3) -> Fut,
+    F: FnOnce(Web3, DbUrl) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
@@ -143,6 +161,90 @@ where
     // is not relevant for us as we are not interested in the data stored in
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
+
+    // generate random container name
+    let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
+
+    let postgres = docker
+        .create_container::<&str, _>(
+            None,
+            Config {
+                image: Some(POSTGRES_IMAGE),
+                env: Some(vec![
+                    "POSTGRES_HOST_AUTH_METHOD=trust",
+                    "POSTGRES_USER=martin",
+                    "POSTGRES_PASSWORD=123",
+                ]),
+                cmd: Some(vec!["-d", "postgres"]),
+                host_config: Some(HostConfig {
+                    auto_remove: Some(true),
+                    publish_all_ports: Some(true),
+                    // port_bindings: Some(
+                    //     [(
+                    //         "5432/tcp".into(),
+                    //         Some(vec![PortBinding {
+                    //             host_ip: Some("localhost".into()),
+                    //             host_port: Some("5432".into()),
+                    //         }]),
+                    //     )]
+                    //     .into(),
+                    // ),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+
+    docker
+        .start_container::<&str>(&postgres.id, None)
+        .await
+        .unwrap();
+
+    let summary = docker
+        .list_containers(Some(ListContainersOptions {
+            filters: [("id".into(), vec![postgres.id.clone()])].into(),
+            ..Default::default()
+        }))
+        .await.unwrap();
+    let db_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
+
+    let migrations = docker
+        .create_container::<&str, _>(
+            None,
+            Config {
+                image: Some("migrations"),
+                cmd: Some(vec!["migrate"]),
+                env: Some(vec![
+                    &format!("FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="),
+                ]),
+                network_disabled: Some(false),
+                host_config: Some(HostConfig {
+                    auto_remove: Some(true),
+                    network_mode: Some("host".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    docker
+        .start_container::<&str>(&migrations.id, None)
+        .await
+        .unwrap();
+
+    // wait until migrations are done
+    assert!(docker
+        .wait_container::<&str>(&migrations.id, None)
+        .next()
+        .await
+        .unwrap()
+        .unwrap()
+        .error
+        .is_none());
 
     let node = match &fork {
         Some((_, fork)) => Node::forked(fork).await,
@@ -157,7 +259,8 @@ where
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let http = create_test_transport(NODE_HOST);
+    let url = node.lock().unwrap().as_ref().map(|node| node.url.clone()).unwrap();
+    let http = create_test_transport(url.as_str());
     let web3 = Web3::new(http);
     if let Some((solver, _)) = &fork {
         Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
@@ -166,18 +269,20 @@ where
             .unwrap();
     }
 
-    services::clear_database().await;
+    let db_url: reqwest::Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
+    let db_url = DbUrl(db_url);
+
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
+    let result = AssertUnwindSafe(f(web3.clone(), db_url)).catch_unwind().await;
 
     let node = node.lock().unwrap().take();
     if let Some(mut node) = node {
         node.kill().await;
     }
-    services::clear_database().await;
+    let _ = docker.kill_container::<&str>(&postgres.id, None).await;
 
     if let Err(err) = result {
         panic::resume_unwind(err);

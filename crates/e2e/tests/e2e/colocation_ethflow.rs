@@ -21,7 +21,7 @@ async fn local_node_eth_flow() {
     run_test(eth_flow_tx).await;
 }
 
-async fn eth_flow_tx(web3: Web3) {
+async fn eth_flow_tx(web3: Web3, db: DbUrl) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
@@ -45,7 +45,7 @@ async fn eth_flow_tx(web3: Web3) {
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
 
-    let services = Services::new(onchain.contracts()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
