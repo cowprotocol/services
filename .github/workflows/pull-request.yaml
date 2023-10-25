@@ -54,8 +54,8 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p orderbook -p database --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
       - uses: taiki-e/install-action@nextest
+      - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
@@ -75,8 +75,8 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
       - uses: taiki-e/install-action@nextest
+      - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations chain
