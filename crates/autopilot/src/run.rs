@@ -309,45 +309,54 @@ pub async fn run(args: Arguments) {
             .clone()
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
-        let balancer_pool_fetcher = Arc::new(
-            BalancerPoolFetcher::new(
-                chain_id,
-                block_retriever.clone(),
-                token_info_fetcher.clone(),
-                cache_config,
-                current_block_stream.clone(),
-                http_factory.create(),
-                web3.clone(),
-                &contracts,
-                args.shared.balancer_pool_deny_list.clone(),
-            )
-            .await
-            .expect(
-                "failed to create BalancerV2 pool fetcher, this is most likely due to temporary \
-                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
-                 from the --baseline-sources until the graph recovers)",
-            ),
-        );
-        Some(balancer_pool_fetcher)
+        match BalancerPoolFetcher::new(
+            chain_id,
+            block_retriever.clone(),
+            token_info_fetcher.clone(),
+            cache_config,
+            current_block_stream.clone(),
+            http_factory.create(),
+            web3.clone(),
+            &contracts,
+            args.shared.balancer_pool_deny_list.clone(),
+        )
+        .await
+        {
+            Ok(fetcher) => Some(Arc::new(fetcher)),
+            Err(err) => {
+                tracing::error!(
+                    "failed to create BalancerV2 pool fetcher, this is most likely due to \
+                     temporary issues with the graph (in that case consider manually restarting \
+                     services once the graph is back online): {:?}",
+                    err
+                );
+                None
+            }
+        }
     } else {
         None
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        Some(Arc::new(
-            UniswapV3PoolFetcher::new(
-                chain_id,
-                web3.clone(),
-                http_factory.create(),
-                block_retriever,
-                args.shared.max_pools_to_initialize_cache,
-            )
-            .await
-            .expect(
-                "failed to create UniswapV3 pool fetcher, this is most likely due to temporary \
-                 issues with the graph (in that case consider removing BalancerV2 and UniswapV3 \
-                 from the --baseline-sources until the graph recovers)",
-            ),
-        ))
+        match UniswapV3PoolFetcher::new(
+            chain_id,
+            web3.clone(),
+            http_factory.create(),
+            block_retriever,
+            args.shared.max_pools_to_initialize_cache,
+        )
+        .await
+        {
+            Ok(fetcher) => Some(Arc::new(fetcher)),
+            Err(err) => {
+                tracing::error!(
+                    "failed to create UniswapV3 pool fetcher, this is most likely due to \
+                     temporary issues with the graph (in that case consider manually restarting \
+                     services once the graph is back online): {:?}",
+                    err
+                );
+                None
+            }
+        }
     } else {
         None
     };
