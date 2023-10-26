@@ -81,7 +81,7 @@ impl Competition {
         });
 
         // Empty solutions aren't useful, so discard them.
-        let solutions = solutions.into_iter().filter(|solution| {
+        let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id());
