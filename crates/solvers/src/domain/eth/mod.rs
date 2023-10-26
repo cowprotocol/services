@@ -69,21 +69,10 @@ impl From<Address> for H160 {
 }
 
 /// An onchain transaction.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
-}
-
-impl std::fmt::Debug for Tx {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Tx")
-            .field("from", &self.from)
-            .field("to", &self.to)
-            .field("value", &self.value)
-            .field("input", &self.input)
-            .finish()
-    }
 }
