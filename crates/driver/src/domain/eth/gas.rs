@@ -1,7 +1,6 @@
 use {
     super::{Ether, U256},
-    crate::domain::competition::score::Quality,
-    std::{cmp::Ordering, ops},
+    std::ops,
 };
 
 /// Gas amount in gas units.
@@ -126,7 +125,7 @@ impl From<Ether> for GasCost {
     }
 }
 
-impl std::ops::Add for GasCost {
+impl ops::Add for GasCost {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -141,19 +140,5 @@ impl num::Zero for GasCost {
 
     fn is_zero(&self) -> bool {
         self.0.is_zero()
-    }
-}
-
-/// Quality is commonly compared to GasCost to ensure that ObjectiveValue is
-/// valid (positive). ObjectiveValue = Quality - GasCost
-impl std::cmp::PartialEq<GasCost> for Quality {
-    fn eq(&self, other: &GasCost) -> bool {
-        self.0.eq(&other.0 .0)
-    }
-}
-
-impl std::cmp::PartialOrd<GasCost> for Quality {
-    fn partial_cmp(&self, other: &GasCost) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0 .0)
     }
 }

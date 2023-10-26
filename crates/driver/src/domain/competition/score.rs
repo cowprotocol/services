@@ -115,6 +115,24 @@ impl From<eth::U256> for ObjectiveValue {
     }
 }
 
+impl std::ops::Add for ObjectiveValue {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl num::Zero for ObjectiveValue {
+    fn zero() -> Self {
+        Self(eth::U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("score is zero")]
