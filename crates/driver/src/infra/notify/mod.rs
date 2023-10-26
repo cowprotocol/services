@@ -5,9 +5,9 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification, ScoreKind};
+pub use notification::{Kind, Notification, ScoreKind, Settlement};
 
-use crate::domain::competition::score;
+use crate::domain::{competition::score, eth, mempools::Error};
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
     solver.notify(auction_id, solution, notification::Kind::EmptySolution);
@@ -76,6 +76,30 @@ pub fn encoding_failed(
         solution::Error::FailingInternalization => (),
         solution::Error::DifferentSolvers => (),
     }
+}
+
+pub fn executed(
+    solver: &Solver,
+    auction_id: auction::Id,
+    solution_id: Option<solution::Id>,
+    res: &Result<eth::TxId, Error>,
+) {
+    if solution_id.is_none() {
+        return;
+    };
+
+    let kind = match res {
+        Ok(hash) => notification::Settlement::Success(hash.clone()),
+        Err(Error::Revert(hash)) => notification::Settlement::Revert(hash.clone()),
+        Err(Error::SimulationRevert) => notification::Settlement::SimulationRevert,
+        Err(Error::Other(_)) => notification::Settlement::Fail,
+    };
+
+    solver.notify(
+        Some(auction_id),
+        solution_id.unwrap(),
+        notification::Kind::Settled(kind),
+    );
 }
 
 pub fn duplicated_solution_id(

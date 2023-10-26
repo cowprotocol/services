@@ -16,14 +16,29 @@ pub struct Notification {
     pub kind: Kind,
 }
 
+pub type RequiredEther = Ether;
+pub type TokensUsed = BTreeSet<TokenAddress>;
+
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
     EmptySolution,
-    ScoringFailed(ScoreKind),
-    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    SolverAccountInsufficientBalance(Ether),
     DuplicatedSolutionId,
+    ScoringFailed(ScoreKind),
+    NonBufferableTokensUsed(TokensUsed),
+    SolverAccountInsufficientBalance(RequiredEther),
+    Settled(Settlement),
+}
+
+pub type TransactionHash = eth::H256;
+
+/// The result of winning solver trying to settle the transaction onchain.
+#[derive(Debug)]
+pub enum Settlement {
+    Success(TransactionHash),
+    Revert(TransactionHash),
+    SimulationRevert,
+    Fail,
 }
 
 #[derive(Debug)]
