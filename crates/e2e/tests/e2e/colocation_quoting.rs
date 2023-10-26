@@ -42,11 +42,11 @@ async fn uses_stale_liquidity(web3: Web3, db: DbUrl) {
     let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
-        format!("--drivers=solver|{}/test_solver", driver_url.as_str()),
+        format!("--drivers=solver|{}test_solver", driver_url.as_str()),
     ]);
     services
         .start_api(vec![format!(
-            "--price-estimation-drivers=solver|{}/test_solver",
+            "--price-estimation-drivers=solver|{}test_solver",
             driver_url.as_str()
         )])
         .await;

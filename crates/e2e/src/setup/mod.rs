@@ -152,6 +152,7 @@ where
     observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
     observe::panic_hook::install();
 
+    tracing::info!("setting up test environment");
     let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
     let postgres = docker
@@ -255,6 +256,8 @@ where
 
     let db_url: reqwest::Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
     let db_url = DbUrl(db_url);
+
+    tracing::info!("test environment ready");
 
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node

@@ -35,6 +35,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
 
+    #[clap(long, env, default_value = "0.0.0.0:9586")]
+    pub metrics_address: SocketAddr,
+
     /// Url of the Postgres database. By default connects to locally running
     /// postgres.
     #[clap(long, env, default_value = "postgresql://")]

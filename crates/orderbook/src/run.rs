@@ -29,7 +29,7 @@ use {
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
-        metrics::{serve_metrics, DEFAULT_METRICS_PORT},
+        metrics::serve_metrics,
         network::network_name,
         oneinch_api::OneInchClientImpl,
         order_quoting::{self, OrderQuoter, QuoteHandler},
@@ -543,10 +543,7 @@ pub async fn run(args: Arguments, bind: Option<tokio::sync::oneshot::Sender<Sock
     let service_maintainer = ServiceMaintenance::new(maintainers);
     task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
-    let mut metrics_address = args.bind_address;
-    metrics_address.set_port(DEFAULT_METRICS_PORT);
-    tracing::info!(%metrics_address, "serving metrics");
-    let metrics_task = serve_metrics(orderbook, metrics_address);
+    let metrics_task = serve_metrics(orderbook, args.metrics_address);
 
     futures::pin_mut!(serve_api);
     tokio::select! {
@@ -619,13 +616,13 @@ fn serve_api(
         native_price_estimator,
     )
     .boxed();
-    tracing::info!(%address, "serving order book");
     let warp_svc = warp::service(filter);
     let warp_svc = observe::make_service_with_task_local_storage!(warp_svc);
     let server = hyper::Server::bind(&address).serve(warp_svc);
     if let Some(bind) = bind {
         bind.send(server.local_addr()).unwrap();
     }
+    tracing::info!(addr = server.local_addr().to_string(), "serving order book");
     tokio::spawn(server.with_graceful_shutdown(shutdown_receiver).map(|_| ()))
 }
 

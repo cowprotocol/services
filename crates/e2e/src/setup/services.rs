@@ -17,13 +17,13 @@ use {
     std::time::Duration,
 };
 
-pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
-pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
-pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
-pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
-pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
-pub const VERSION_ENDPOINT: &str = "/api/v1/version";
-pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v1/solver_competition";
+pub const ORDERS_ENDPOINT: &str = "api/v1/orders";
+pub const QUOTING_ENDPOINT: &str = "api/v1/quote";
+pub const ACCOUNT_ENDPOINT: &str = "api/v1/account";
+pub const AUCTION_ENDPOINT: &str = "api/v1/auction";
+pub const TRADES_ENDPOINT: &str = "api/v1/trades";
+pub const VERSION_ENDPOINT: &str = "api/v1/version";
+pub const SOLVER_COMPETITION_ENDPOINT: &str = "api/v1/solver_competition";
 
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
@@ -93,6 +93,7 @@ impl<'a> Services<'a> {
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
             "--solve-deadline=2".to_string(),
+            "--metrics-address=127.0.0.1:0".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -110,7 +111,8 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
-            "--address=127.0.0.1:0".to_string(),
+            "--bind-address=127.0.0.1:0".to_string(),
+            "--metrics-address=127.0.0.1:0".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
@@ -239,7 +241,7 @@ impl<'a> Services<'a> {
     }
 
     pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
-        let url = format!("{}/api/v1/trades?orderUid={order}", self.api_url().as_str());
+        let url = format!("{}api/v1/trades?orderUid={order}", self.api_url().as_str());
         let response = self.http.get(url).send().await.unwrap();
 
         let status = response.status();
@@ -331,7 +333,7 @@ impl<'a> Services<'a> {
         let response = self
             .http
             .get(format!(
-                "{}/api/v1/app_data/{app_data:?}",
+                "{}api/v1/app_data/{app_data:?}",
                 self.api_url().as_str()
             ))
             .send()
@@ -362,7 +364,7 @@ impl<'a> Services<'a> {
         let response = self
             .http
             .put(format!(
-                "{}/api/v1/app_data/{app_data:?}",
+                "{}api/v1/app_data/{app_data:?}",
                 self.api_url().as_str()
             ))
             .json(&document)

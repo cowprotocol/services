@@ -5,8 +5,6 @@ use {
     warp::{Filter, Rejection, Reply},
 };
 
-pub const DEFAULT_METRICS_PORT: u16 = 9586;
-
 #[async_trait::async_trait]
 pub trait LivenessChecking: Send + Sync {
     async fn is_alive(&self) -> bool;
@@ -14,8 +12,9 @@ pub trait LivenessChecking: Send + Sync {
 
 pub fn serve_metrics(liveness: Arc<dyn LivenessChecking>, address: SocketAddr) -> JoinHandle<()> {
     let filter = handle_metrics().or(handle_liveness(liveness));
-    tracing::info!(%address, "serving metrics");
-    task::spawn(warp::serve(filter).bind(address))
+    let (addr, server) = warp::serve(filter).bind_ephemeral(address);
+    tracing::info!(%addr, "serving metrics");
+    task::spawn(server)
 }
 
 // `/metrics` route exposing encoded prometheus data to monitoring system
