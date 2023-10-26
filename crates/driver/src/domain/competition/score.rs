@@ -104,8 +104,8 @@ impl std::cmp::PartialOrd<Quality> for Score {
 }
 
 /// Represents the objective value of a solution. This is not an artifical value
-/// like score. This is a real value that solution provides and it's based on
-/// formula observed quality - gas costs.
+/// like score. This is a real value that solution provides and it's defined as
+/// Quality - GasCost.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct ObjectiveValue(pub eth::U256);
 
