@@ -148,11 +148,11 @@ pub struct WithTxError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("{0:?}")]
+    #[error(transparent)]
     Basic(#[from] SimulatorError),
     /// If a transaction reverted, forward that transaction together with the
     /// error.
-    #[error("{0:?}")]
+    #[error(transparent)]
     WithTx(#[from] WithTxError),
 }
 

@@ -104,7 +104,9 @@ pub enum Kind {
 pub struct Tx {
     pub from: eth::H160,
     pub to: eth::H160,
+    #[serde_as(as = "serialize::Hex")]
     pub input: Vec<u8>,
+    #[serde_as(as = "serialize::U256")]
     pub value: eth::U256,
 }
 
