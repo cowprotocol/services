@@ -7,7 +7,10 @@ mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind, Settlement};
 
-use crate::domain::{competition::score, eth, mempools::Error};
+use crate::{
+    boundary,
+    domain::{competition::score, eth, mempools::Error},
+};
 
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
     solver.notify(auction_id, solution, notification::Kind::EmptySolution);
@@ -33,14 +36,15 @@ pub fn scoring_failed(
                 *objective_value,
             ))
         }
-        score::Error::SuccessProbabilityOutOfRange(success_probability) => {
-            notification::Kind::ScoringFailed(
-                notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
-            )
-        }
-        score::Error::ObjectiveValueNonPositive => {
+        score::Error::RiskAdjusted(boundary::score::Error::SuccessProbabilityOutOfRange(
+            success_probability,
+        )) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
+        ),
+        score::Error::RiskAdjusted(boundary::score::Error::ObjectiveValueNonPositive) => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
         }
+        score::Error::RiskAdjusted(boundary::score::Error::Boundary(_)) => return,
         score::Error::Boundary(_) => return,
     };
 

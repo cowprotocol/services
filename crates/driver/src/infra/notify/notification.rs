@@ -48,12 +48,12 @@ pub enum ScoreKind {
     ScoreHigherThanQuality(Score, Quality),
     /// Solution has success probability that is outside of the allowed range
     /// [0, 1]
-    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
     SuccessProbabilityOutOfRange(SuccessProbability),
     /// Objective value is defined as surplus + fees - gas costs. Protocol
     /// doesn't allow solutions that cost more than they bring to the users and
     /// protocol.
-    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
     ObjectiveValueNonPositive,
 }
 

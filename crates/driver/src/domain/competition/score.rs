@@ -13,12 +13,12 @@ impl Score {
         success_probability: SuccessProbability,
         failure_cost: eth::GasCost,
     ) -> Result<Self, Error> {
-        boundary::score::score(
+        Ok(boundary::score::score(
             score_cap,
             objective_value,
             success_probability,
             failure_cost,
-        )
+        )?)
     }
 }
 
@@ -135,16 +135,21 @@ impl num::Zero for ObjectiveValue {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// The solution has zero score. Zero score solutions are not allowed as per
+    /// CIP20 definition. The main reason being that reference score is zero,
+    /// and if only one solution is in competition with zero score, that
+    /// solution would receive 0 reward (reward = score - reference score).
     #[error("score is zero")]
     ZeroScore,
+    /// Protocol does not allow solutions that are claimed to be "better" than
+    /// the actual value they bring (quality). It is expected that score
+    /// is always lower than quality, because there is always some
+    /// revert risk that needs to be incorporated into the score and lower it.
     #[error("score {0:?} is higher than the quality {1:?}")]
     ScoreHigherThanQuality(Score, Quality),
-    #[error("success probability is out of range {0:?}")]
-    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
-    SuccessProbabilityOutOfRange(SuccessProbability),
-    #[error("objective value is non-positive")]
-    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
-    ObjectiveValueNonPositive,
+    /// Errors only applicable to scores that use success probability.
+    #[error(transparent)]
+    RiskAdjusted(#[from] boundary::score::Error),
     #[error(transparent)]
     Boundary(#[from] boundary::Error),
 }
