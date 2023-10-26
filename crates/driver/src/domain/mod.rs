@@ -1,7 +1,7 @@
 pub mod competition;
 pub mod eth;
 pub mod liquidity;
-mod mempools;
+pub mod mempools;
 pub mod quote;
 
 pub use {

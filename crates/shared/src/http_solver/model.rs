@@ -402,6 +402,7 @@ pub struct ExecutionPlanCoordinatesModel {
 pub enum SubmissionResult {
     Success(H256),
     Revert(H256),
+    SimulationRevert,
     Fail,
 }
 

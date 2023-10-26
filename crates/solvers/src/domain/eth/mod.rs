@@ -2,7 +2,7 @@ mod chain;
 
 pub use {
     self::chain::ChainId,
-    ethereum_types::{H160, U256},
+    ethereum_types::{H160, H256, U256},
 };
 
 /// A contract address.
