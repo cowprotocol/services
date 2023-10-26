@@ -1,24 +1,33 @@
+use bollard::{
+    container::{Config, ListContainersOptions},
+    service::HostConfig,
+};
+
 pub mod forked_node;
 pub mod local_node;
 
 /// A blockchain node for development purposes. Dropping this type will
 /// terminate the node.
 pub struct Node {
-    process: Option<tokio::process::Child>,
+    container_id: String,
     pub url: reqwest::Url,
 }
+
+const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
 
 impl Node {
     /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_process(&["--port", "0", "--fork-url", fork.as_str()]).await
+        Self::spawn_container(vec!["--port", "8545", "--fork-url", fork.as_str()]).await
     }
 
     /// Spawns a new local test net with some default parameters.
     pub async fn new() -> Self {
-        Self::spawn_process(&[
+        Self::spawn_container(vec![
             "--port",
-            "0",
+            "8545",
+            "--host",
+            "0.0.0.0",
             "--gas-price",
             "1",
             "--gas-limit",
@@ -36,45 +45,50 @@ impl Node {
     }
 
     /// Spawn a new node instance using the list of given arguments.
-    async fn spawn_process(args: &[&str]) -> Self {
-        use tokio::io::AsyncBufReadExt as _;
+    async fn spawn_container(args: Vec<&str>) -> Self {
+        let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
-        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
-        // For example if you set up a command that spins up a docker container.
-        let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
-
-        let mut process = tokio::process::Command::new(command)
-            .args(args)
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let stdout = process.stdout.take().unwrap();
-        let (sender, receiver) = tokio::sync::oneshot::channel::<String>();
-
-        tokio::task::spawn(async move {
-            let mut sender = Some(sender);
-            const NEEDLE: &str = "Listening on ";
-            let mut reader = tokio::io::BufReader::new(stdout).lines();
-            while let Some(line) = reader.next_line().await.unwrap() {
-                tracing::trace!(line);
-                if let Some(addr) = line.strip_prefix(NEEDLE) {
-                    match sender.take() {
-                        Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
-                        None => tracing::error!(addr, "detected multiple anvil endpoints"),
-                    }
-                }
-            }
-        });
-
-        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
+        let container = docker
+            .create_container::<&str, _>(
+                None,
+                Config {
+                    image: Some(FOUNDRY_IMAGE),
+                    entrypoint: Some(vec!["anvil"]),
+                    cmd: Some(args),
+                    // Expose anvil's default listening port so `publish_all_ports` will actually
+                    // cause the dynamically allocated host port to show up when listing the
+                    // container.
+                    exposed_ports: Some([("8545/tcp".into(), Default::default())].into()),
+                    host_config: Some(HostConfig {
+                        auto_remove: Some(true),
+                        publish_all_ports: Some(true),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
             .await
-            .expect("finding anvil URL timed out")
             .unwrap();
+
+        docker
+            .start_container::<&str>(&container.id, None)
+            .await
+            .unwrap();
+
+        let summary = docker
+            .list_containers(Some(ListContainersOptions {
+                filters: [("id".into(), vec![container.id.clone()])].into(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+
+        let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
+        let url = format!("http://127.0.0.1:{rpc_port}").parse().unwrap();
 
         Self {
-            process: Some(process),
-            url: url.parse().unwrap(),
+            container_id: container.id,
+            url,
         }
     }
 
@@ -82,31 +96,31 @@ impl Node {
     /// clean up the [`Node`] do it because the [`Drop::drop`]
     /// implementation can not be as reliable due to missing async support.
     pub async fn kill(&mut self) {
-        let mut process = match self.process.take() {
-            Some(node) => node,
-            // Somebody already called `Node::kill()`
-            None => return,
-        };
-
-        if let Err(err) = process.kill().await {
-            tracing::error!(?err, "failed to kill node process");
+        let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
+        if let Err(err) = docker
+            .kill_container::<&str>(&self.container_id, None)
+            .await
+        {
+            tracing::error!(?err, "could not kill anvil container");
         }
     }
 }
 
-impl Drop for Node {
-    fn drop(&mut self) {
-        let mut process = match self.process.take() {
-            Some(process) => process,
-            // Somebody already called `Node::kill()`
-            None => return,
-        };
+// Find some way to kill container in a sync manner.
+// Maybe a background tasks would work here?
+// impl Drop for Node {
+//     fn drop(&mut self) {
+//         let mut process = match self.process.take() {
+//             Some(process) => process,
+//             // Somebody already called `Node::kill()`
+//             None => return,
+//         };
 
-        // This only sends SIGKILL to the process but does not wait for the process to
-        // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough in many cases.
-        if let Err(err) = process.start_kill() {
-            tracing::error!(?err, "failed to kill node process");
-        }
-    }
-}
+//         // This only sends SIGKILL to the process but does not wait for the
+// process to         // actually terminate. But since `anvil` is fairly well
+// behaved that         // should be good enough in many cases.
+//         if let Err(err) = process.start_kill() {
+//             tracing::error!(?err, "failed to kill node process");
+//         }
+//     }
+// }

@@ -200,7 +200,6 @@ where
                 env: Some(vec![&format!(
                     "FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="
                 )]),
-                network_disabled: Some(false),
                 host_config: Some(HostConfig {
                     auto_remove: Some(true),
                     network_mode: Some("host".into()),
@@ -217,12 +216,19 @@ where
         .unwrap();
 
     // wait until migrations are done
-    let _ = docker.wait_container::<&str>(&migrations.id, None).next().await;
+    let _ = docker
+        .wait_container::<&str>(&migrations.id, None)
+        .next()
+        .await;
 
     let node = match &fork {
         Some((_, fork)) => Node::forked(fork).await,
         None => Node::new().await,
     };
+
+    // Idea: write a function that spawns a blocking task that cleans up all the
+    // containers. This can be called at the end of the function or in a
+    // panic/signal handler.
 
     let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
