@@ -30,12 +30,9 @@ pub fn scoring_failed(
         score::Error::ZeroScore => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
         }
-        score::Error::ScoreHigherThanQuality(score, objective_value) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanQuality(
-                *score,
-                *objective_value,
-            ))
-        }
+        score::Error::ScoreHigherThanQuality(score, quality) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::ScoreHigherThanQuality(*score, *quality),
+        ),
         score::Error::RiskAdjusted(boundary::score::Error::SuccessProbabilityOutOfRange(
             success_probability,
         )) => notification::Kind::ScoringFailed(

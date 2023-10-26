@@ -359,10 +359,12 @@ impl ScoreCalculator {
         )?;
         if optimal_score > *objective_value {
             tracing::error!(
-                "Score higher than objective, should never happen unless a bug in a computation"
+                "Sanity check failed, score higher than objective, should never happen unless a \
+                 bug in a computation"
             );
             return Err(anyhow!(
-                "Score higher than objective, should never happen unless a bug in a computation"
+                "Sanity check failed, score higher than objective, should never happen unless a \
+                 bug in a computation"
             )
             .into());
         }

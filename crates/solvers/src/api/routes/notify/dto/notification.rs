@@ -28,15 +28,14 @@ impl Notification {
                 Kind::ScoringFailed(ScoreKind::ZeroScore) => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality {
-                    score,
-                    quality: objective_value,
-                }) => notification::Kind::ScoringFailed(
-                    notification::ScoreKind::ScoreHigherThanQuality(
-                        (*score).into(),
-                        (*objective_value).into(),
-                    ),
-                ),
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality { score, quality }) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ScoreHigherThanQuality(
+                            (*score).into(),
+                            (*quality).into(),
+                        ),
+                    )
+                }
                 Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange { probability }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::SuccessProbabilityOutOfRange(
