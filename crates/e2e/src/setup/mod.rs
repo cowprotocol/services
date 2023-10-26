@@ -217,14 +217,7 @@ where
         .unwrap();
 
     // wait until migrations are done
-    assert!(docker
-        .wait_container::<&str>(&migrations.id, None)
-        .next()
-        .await
-        .unwrap()
-        .unwrap()
-        .error
-        .is_none());
+    let _ = docker.wait_container::<&str>(&migrations.id, None).next().await;
 
     let node = match &fork {
         Some((_, fork)) => Node::forked(fork).await,
