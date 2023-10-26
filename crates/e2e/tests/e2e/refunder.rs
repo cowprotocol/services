@@ -7,7 +7,6 @@ use {
     model::quote::{OrderQuoteRequest, OrderQuoteSide, QuoteSigningScheme, Validity},
     number::nonzero::U256 as NonZeroU256,
     refunder::refund_service::RefundService,
-    sqlx::PgPool,
 };
 
 #[tokio::test]
@@ -24,7 +23,7 @@ async fn refunder_tx(web3: Web3, db: DbUrl) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(onchain.contracts(), db.clone()).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -86,9 +85,8 @@ async fn refunder_tx(web3: Web3, db: DbUrl) {
         .expect("Unable to mine next block");
 
     // Create the refund service and execute the refund tx
-    let pg_pool = PgPool::connect_lazy("postgresql://").expect("failed to create database");
     let mut refunder = RefundService::new(
-        pg_pool,
+        services.db().clone(),
         web3,
         onchain.contracts().ethflow.clone(),
         validity_duration as i64 / 2,

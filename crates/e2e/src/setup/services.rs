@@ -140,11 +140,13 @@ impl<'a> Services<'a> {
             "solver".to_string(),
             format!("--solver-account={}", hex::encode(private_key)),
             "--settle-interval=1".to_string(),
+            "--metrics-port=0".to_string(),
             format!(
                 "--transaction-submission-nodes={}",
                 self.node_url().as_str()
             ),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!("--orderbook-url={}", self.api_url().as_str()),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
