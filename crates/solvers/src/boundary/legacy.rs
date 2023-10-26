@@ -574,6 +574,8 @@ fn to_domain_solution(
     })
 }
 
+const UNKNOWN_BLOCK_NUMBER: u64 = 0;
+
 fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
     let auction_id = match notification.auction_id {
         auction::Id::Solve(id) => id,
@@ -590,7 +592,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                     to: tx.to.into(),
                     data: tx.input.clone().into(),
                     internalization: InternalizationStrategy::SkipInternalizableInteraction,
-                    block_number: Default::default(),
+                    block_number: UNKNOWN_BLOCK_NUMBER, // todo #2018
                     tx_index: Default::default(),
                     access_list: Default::default(),
                     max_fee_per_gas: Default::default(),
