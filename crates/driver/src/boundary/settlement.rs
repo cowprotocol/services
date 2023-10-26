@@ -209,9 +209,9 @@ impl Settlement {
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => competition::SolverScore::RiskAdjusted(competition::score::SuccessProbability(
-                success_probability,
-            )),
+            } => competition::SolverScore::RiskAdjusted(
+                competition::score::risk::SuccessProbability(success_probability),
+            ),
         }
     }
 

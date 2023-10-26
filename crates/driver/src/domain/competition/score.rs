@@ -6,22 +6,6 @@ use {
     std::cmp::Ordering,
 };
 
-impl Score {
-    pub fn new(
-        score_cap: Score,
-        objective_value: ObjectiveValue,
-        success_probability: SuccessProbability,
-        failure_cost: eth::GasCost,
-    ) -> Result<Self, Error> {
-        Ok(boundary::score::score(
-            score_cap,
-            objective_value,
-            success_probability,
-            failure_cost,
-        )?)
-    }
-}
-
 /// Represents a single value suitable for comparing/ranking solutions.
 /// This is a final score that is observed by the autopilot.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -54,16 +38,6 @@ impl num::Zero for Score {
 
     fn is_zero(&self) -> bool {
         self.0.is_zero()
-    }
-}
-
-/// Represents the probability that a solution will be successfully settled.
-#[derive(Debug, Copy, Clone)]
-pub struct SuccessProbability(pub f64);
-
-impl From<f64> for SuccessProbability {
-    fn from(value: f64) -> Self {
-        Self(value)
     }
 }
 
@@ -149,7 +123,67 @@ pub enum Error {
     ScoreHigherThanQuality(Score, Quality),
     /// Errors only applicable to scores that use success probability.
     #[error(transparent)]
-    RiskAdjusted(#[from] boundary::score::Error),
+    RiskAdjusted(#[from] risk::Error),
     #[error(transparent)]
     Boundary(#[from] boundary::Error),
+}
+
+pub mod risk {
+    /// Contains functionality and error types for scores that are based on
+    /// success probability.
+    use {
+        super::{ObjectiveValue, Score},
+        crate::{boundary, domain::eth},
+        bigdecimal::Zero,
+    };
+
+    /// Constructs a score based on the success probability of a solution.
+    impl Score {
+        pub fn new(
+            score_cap: Score,
+            objective_value: ObjectiveValue,
+            success_probability: SuccessProbability,
+            failure_cost: eth::GasCost,
+        ) -> Result<Self, Error> {
+            if objective_value.is_zero() {
+                return Err(Error::ObjectiveValueNonPositive);
+            }
+            if !(0.0..=1.0).contains(&success_probability.0) {
+                return Err(Error::SuccessProbabilityOutOfRange(success_probability));
+            }
+            Ok(boundary::score::score(
+                score_cap,
+                objective_value,
+                success_probability,
+                failure_cost,
+            )?)
+        }
+    }
+
+    /// Represents the probability that a solution will be successfully settled.
+    #[derive(Debug, Copy, Clone)]
+    pub struct SuccessProbability(pub f64);
+
+    impl From<f64> for SuccessProbability {
+        fn from(value: f64) -> Self {
+            Self(value)
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        /// Solution has success probability that is outside of the allowed
+        /// range [0, 1]
+        #[error("success probability is out of range {0:?}")]
+        SuccessProbabilityOutOfRange(SuccessProbability),
+        /// Objective value is defined as surplus + fees - gas costs. Protocol
+        /// doesn't allow solutions that cost more than they bring to the users
+        /// and protocol. Score calculator does not make sense for such
+        /// solutions, since score calculator is expected to return
+        /// value (0, ObjectiveValue]
+        #[error("objective value is non-positive")]
+        ObjectiveValueNonPositive,
+        #[error(transparent)]
+        Boundary(#[from] boundary::Error),
+    }
 }

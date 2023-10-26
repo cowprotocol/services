@@ -284,7 +284,7 @@ impl Settlement {
                 let objective_value = quality - gas_cost;
                 if objective_value.is_zero() {
                     return Err(score::Error::RiskAdjusted(
-                        boundary::score::Error::ObjectiveValueNonPositive,
+                        score::risk::Error::ObjectiveValueNonPositive,
                     ));
                 }
 

@@ -1,5 +1,5 @@
 use {
-    super::score::SuccessProbability,
+    super::score::risk::SuccessProbability,
     crate::{
         boundary,
         domain::{
