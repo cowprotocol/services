@@ -61,8 +61,12 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
-pub fn duplicated_solution_id(id: solution::Id) {
-    tracing::warn!(?id, "duplicated solution id");
+pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+    tracing::debug!(?id, "discarded solution: duplicated solution id");
+    metrics::get()
+        .dropped_solutions
+        .with_label_values(&[solver.as_str(), "DuplicatedSolutionId"])
+        .inc();
 }
 
 /// Observe the solutions returned by the solver.
