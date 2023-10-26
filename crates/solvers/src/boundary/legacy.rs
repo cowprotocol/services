@@ -5,7 +5,7 @@ use {
             auction,
             eth,
             liquidity,
-            notification::{self, Kind, ScoreKind},
+            notification::{self, Kind, ScoreKind, Settlement},
             order,
             solution,
         },
@@ -31,6 +31,7 @@ use {
                 SimulatedTransaction,
                 SolverRejectionReason,
                 StablePoolParameters,
+                SubmissionResult,
                 TokenAmount,
                 TokenInfoModel,
                 TransactionWithError,
@@ -617,9 +618,15 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
-        notification::Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+        Kind::DuplicatedSolutionId => AuctionResult::Rejected(
             SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
         ),
+        Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
+            Settlement::Success(hash) => SubmissionResult::Success(*hash),
+            Settlement::Revert(hash) => SubmissionResult::Revert(*hash),
+            Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
+            Settlement::Fail => SubmissionResult::Fail,
+        }),
     };
 
     (auction_id, auction_result)

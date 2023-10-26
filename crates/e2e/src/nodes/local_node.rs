@@ -1,39 +1,9 @@
 use {
-    super::TestNode,
     chrono::{DateTime, Utc},
     ethcontract::{H160, U256},
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-
-pub struct Resetter<T> {
-    test_node_api: TestNodeApi<T>,
-    snapshot_id: U256,
-}
-
-impl<T: Transport> Resetter<T> {
-    pub async fn new(web3: &web3::Web3<T>) -> Self {
-        let test_node_api = web3.api::<TestNodeApi<_>>();
-        let snapshot_id = test_node_api
-            .snapshot()
-            .await
-            .expect("Test network must support evm_snapshot");
-        Self {
-            test_node_api,
-            snapshot_id,
-        }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl<T: Transport> TestNode for Resetter<T> {
-    async fn reset(&self) {
-        self.test_node_api
-            .revert(&self.snapshot_id)
-            .await
-            .expect("Test network must support evm_revert");
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct TestNodeApi<T> {

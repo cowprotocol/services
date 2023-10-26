@@ -365,7 +365,10 @@ impl Settlement {
     /// single solution. Otherwise, for merged settlements, no notifications
     /// are sent, therefore, notify id is None.
     pub fn notify_id(&self) -> Option<super::Id> {
-        self.solutions.keys().next().copied()
+        match self.solutions.len() {
+            1 => self.solutions.keys().next().copied(),
+            _ => None,
+        }
     }
 }
 

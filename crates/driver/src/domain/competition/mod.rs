@@ -250,7 +250,15 @@ impl Competition {
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
 
-        match self.mempools.execute(&self.solver, &settlement).await {
+        let executed = self.mempools.execute(&self.solver, &settlement).await;
+        notify::executed(
+            &self.solver,
+            settlement.auction_id,
+            settlement.notify_id(),
+            &executed,
+        );
+
+        match executed {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
                 internalized_calldata: settlement

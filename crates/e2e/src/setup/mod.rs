@@ -5,7 +5,7 @@ pub mod onchain_components;
 mod services;
 
 use {
-    crate::nodes::{forked_node::Forker, local_node::Resetter, TestNode, NODE_HOST},
+    crate::nodes::{Node, NODE_HOST},
     anyhow::{anyhow, Result},
     ethcontract::{futures::FutureExt, H160},
     shared::ethrpc::{create_test_transport, Web3},
@@ -14,7 +14,7 @@ use {
         io::Write,
         iter::empty,
         panic::{self, AssertUnwindSafe},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::Duration,
     },
     tempfile::TempPath,
@@ -93,7 +93,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), None, None).await
+    run(f, empty::<&str>(), None).await
 }
 
 pub async fn run_test_with_extra_filters<F, Fut, T>(
@@ -104,7 +104,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, None, None).await
+    run(f, extra_filters, None).await
 }
 
 pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
@@ -112,7 +112,7 @@ where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), Some(solver_address), Some(fork_url)).await
+    run(f, empty::<&str>(), Some((solver_address, fork_url))).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
@@ -125,15 +125,11 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, Some(solver_address), Some(fork_url)).await
+    run(f, extra_filters, Some((solver_address, fork_url))).await
 }
 
-async fn run<F, Fut, T>(
-    f: F,
-    filters: impl IntoIterator<Item = T>,
-    solver_address: Option<H160>,
-    fork_url: Option<String>,
-) where
+async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
+where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
@@ -148,25 +144,39 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
+    let node = match &fork {
+        Some((_, fork)) => Node::forked(fork).await,
+        None => Node::new().await,
+    };
+
+    let node = Arc::new(Mutex::new(Some(node)));
+    let node_panic_handle = node.clone();
+    observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
+        // Drop node in panic handler because `.catch_unwind()` does not catch all
+        // panics
+        let _ = node_panic_handle.lock().unwrap().take();
+    }));
+
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-
-    let test_node: Box<dyn TestNode> =
-        if let (Some(fork_url), Some(solver_address)) = (fork_url, solver_address) {
-            Box::new(Forker::new(&web3, solver_address, fork_url).await)
-        } else {
-            Box::new(Resetter::new(&web3).await)
-        };
+    if let Some((solver, _)) = &fork {
+        Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
+            .impersonate(solver)
+            .await
+            .unwrap();
+    }
 
     services::clear_database().await;
-
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
     let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
 
-    test_node.reset().await;
+    let node = node.lock().unwrap().take();
+    if let Some(mut node) = node {
+        node.kill().await;
+    }
     services::clear_database().await;
 
     if let Err(err) = result {

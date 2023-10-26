@@ -7,6 +7,11 @@ use {
     std::collections::BTreeSet,
 };
 
+type RequiredEther = Ether;
+type TokensUsed = BTreeSet<TokenAddress>;
+type TransactionHash = eth::H256;
+type Transaction = eth::Tx;
+
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
 #[derive(Debug)]
@@ -20,11 +25,21 @@ pub struct Notification {
 #[derive(Debug)]
 pub enum Kind {
     EmptySolution,
-    SimulationFailed(eth::Tx),
-    ScoringFailed(ScoreKind),
-    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
-    SolverAccountInsufficientBalance(Ether),
     DuplicatedSolutionId,
+    SimulationFailed(Transaction),
+    ScoringFailed(ScoreKind),
+    NonBufferableTokensUsed(TokensUsed),
+    SolverAccountInsufficientBalance(RequiredEther),
+    Settled(Settlement),
+}
+
+/// The result of winning solver trying to settle the transaction onchain.
+#[derive(Debug)]
+pub enum Settlement {
+    Success(TransactionHash),
+    Revert(TransactionHash),
+    SimulationRevert,
+    Fail,
 }
 
 #[derive(Debug)]

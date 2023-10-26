@@ -1,9 +1,12 @@
 use {
     crate::{
-        domain::competition::{auction, solution},
+        domain::{
+            competition::{auction, solution},
+            eth,
+        },
         infra::notify,
+        util::serialize,
     },
-    primitive_types::{H160, U256},
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
@@ -41,16 +44,28 @@ impl Notification {
                 }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
-                )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(
-                    success_probability.0,
-                )),
-                notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed(
-                    tokens.into_iter().map(|token| token.0 .0).collect(),
-                ),
+                )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange {
+                    probability: success_probability.0,
+                }),
+                notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
+                    tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
+                },
                 notify::Kind::SolverAccountInsufficientBalance(required) => {
-                    Kind::SolverAccountInsufficientBalance(required.0)
+                    Kind::SolverAccountInsufficientBalance {
+                        required: required.0,
+                    }
                 }
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
+                notify::Kind::Settled(kind) => Kind::Settled(match kind {
+                    notify::Settlement::Success(hash) => Settlement::Success {
+                        transaction: hash.0,
+                    },
+                    notify::Settlement::Revert(hash) => Settlement::Revert {
+                        transaction: hash.0,
+                    },
+                    notify::Settlement::SimulationRevert => Settlement::SimulationRevert,
+                    notify::Settlement::Fail => Settlement::Fail,
+                }),
             },
         }
     }
@@ -70,21 +85,27 @@ pub struct Notification {
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     EmptySolution,
+    DuplicatedSolutionId,
     SimulationFailed(Tx),
     ScoringFailed(ScoreKind),
-    NonBufferableTokensUsed(BTreeSet<H160>),
-    SolverAccountInsufficientBalance(U256),
-    DuplicatedSolutionId,
+    NonBufferableTokensUsed {
+        tokens: BTreeSet<eth::H160>,
+    },
+    SolverAccountInsufficientBalance {
+        #[serde_as(as = "serialize::U256")]
+        required: eth::U256,
+    },
+    Settled(Settlement),
 }
 
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Tx {
-    pub from: H160,
-    pub to: H160,
+    pub from: eth::H160,
+    pub to: eth::H160,
     pub input: Vec<u8>,
-    pub value: U256,
+    pub value: eth::U256,
 }
 
 #[serde_as]
@@ -93,6 +114,24 @@ pub struct Tx {
 pub enum ScoreKind {
     ZeroScore,
     ObjectiveValueNonPositive,
-    SuccessProbabilityOutOfRange(f64),
-    ScoreHigherThanObjective { score: U256, objective_value: U256 },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ScoreHigherThanObjective {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+        #[serde_as(as = "serialize::U256")]
+        objective_value: eth::U256,
+    },
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Settlement {
+    Success { transaction: eth::H256 },
+    Revert { transaction: eth::H256 },
+    SimulationRevert,
+    Fail,
 }

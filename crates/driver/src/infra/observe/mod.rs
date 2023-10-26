@@ -17,6 +17,7 @@ use {
                 Solved,
             },
             eth::{self, Gas},
+            mempools,
             quote::{self, Quote},
             Liquidity,
         },
@@ -287,7 +288,7 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
 pub fn mempool_executed(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<eth::TxId, boundary::Error>,
+    res: &Result<eth::TxId, mempools::Error>,
 ) {
     match res {
         Ok(txid) => {
