@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{competition::solution::settlement::Settlement, eth},
+        domain::{competition::solution::settlement::Settlement, eth, mempools},
         infra::{blockchain::Ethereum, solver::Solver},
     },
     async_trait::async_trait,
@@ -20,6 +20,7 @@ use {
                 TransactionSubmitting,
             },
             SubTxPoolRef,
+            SubmissionError,
         },
     },
     std::{fmt::Debug, sync::Arc},
@@ -128,12 +129,17 @@ impl Mempool {
     }
 
     /// Publish the settlement and wait for it to be confirmed.
-    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<eth::TxId> {
+    pub async fn execute(
+        &self,
+        solver: &Solver,
+        settlement: Settlement,
+    ) -> Result<eth::TxId, mempools::Error> {
         let web3 = boundary::web3(&self.eth);
         let nonce = web3
             .eth()
             .transaction_count(solver.address().into(), None)
-            .await?;
+            .await
+            .map_err(anyhow::Error::from)?;
         let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
@@ -184,7 +190,12 @@ impl Mempool {
                 "mempool",
                 kind = self.config.kind.format_variant()
             ))
-            .await?;
+            .await
+            .map_err(|err| match err {
+                SubmissionError::SimulationRevert(_) => mempools::Error::SimulationRevert,
+                SubmissionError::Revert(hash) => mempools::Error::Revert(hash.into()),
+                _ => mempools::Error::Other(anyhow::Error::from(err)),
+            })?;
         Ok(receipt.transaction_hash.into())
     }
 
