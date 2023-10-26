@@ -299,7 +299,6 @@ impl SettlementRating for SettlementRater {
 pub enum ScoringError {
     ObjectiveValueNonPositive(BigRational),
     SuccessProbabilityOutOfRange(f64),
-    ScoreHigherThanObjective(BigRational, BigRational),
     InternalError(anyhow::Error),
 }
 
@@ -318,9 +317,6 @@ impl From<ScoringError> for anyhow::Error {
             }
             ScoringError::SuccessProbabilityOutOfRange(success_probability) => {
                 anyhow!("Success probability out of range {}", success_probability)
-            }
-            ScoringError::ScoreHigherThanObjective(score, objective) => {
-                anyhow!("Score {} higher than objective {}", score, objective)
             }
         }
     }
@@ -362,10 +358,13 @@ impl ScoreCalculator {
             self.score_cap.clone(),
         )?;
         if optimal_score > *objective_value {
-            return Err(ScoringError::ScoreHigherThanObjective(
-                optimal_score,
-                objective_value.clone(),
-            ));
+            tracing::error!(
+                "Score higher than objective, should never happen unless a bug in a computation"
+            );
+            return Err(anyhow!(
+                "Score higher than objective, should never happen unless a bug in a computation"
+            )
+            .into());
         }
         let score = big_rational_to_u256(&optimal_score).context("Bad conversion")?;
         Ok(score)

@@ -23,24 +23,24 @@ impl Notification {
             solution_id: solution_id.0,
             kind: match kind {
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
-                    Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
-                }
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanObjective(
+                notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanQuality(
                     score,
-                    objective_value,
-                )) => Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
+                    quality,
+                )) => Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality {
                     score: score.0,
-                    objective_value: objective_value.0,
+                    quality: quality.0,
                 }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
                 )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange {
                     probability: success_probability.0,
                 }),
+                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
+                    Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
+                }
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -96,17 +96,16 @@ pub enum Kind {
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ScoreHigherThanObjective {
+    ScoreHigherThanQuality {
         #[serde_as(as = "serialize::U256")]
         score: eth::U256,
         #[serde_as(as = "serialize::U256")]
-        objective_value: eth::U256,
+        quality: eth::U256,
     },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    ObjectiveValueNonPositive,
 }
 
 #[serde_as]

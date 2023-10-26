@@ -24,14 +24,11 @@ pub fn scoring_failed(
     }
 
     let notification = match err {
-        score::Error::ObjectiveValueNonPositive => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
-        }
         score::Error::ZeroScore => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
         }
-        score::Error::ScoreHigherThanObjective(score, objective_value) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanObjective(
+        score::Error::ScoreHigherThanQuality(score, objective_value) => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanQuality(
                 *score,
                 *objective_value,
             ))
@@ -40,6 +37,9 @@ pub fn scoring_failed(
             notification::Kind::ScoringFailed(
                 notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
             )
+        }
+        score::Error::ObjectiveValueNonPositive => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
         }
         score::Error::Boundary(_) => return,
     };

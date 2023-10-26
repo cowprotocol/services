@@ -1,6 +1,6 @@
 use {
     crate::domain::{
-        competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
+        competition::{auction, score::Quality, solution, Score, SuccessProbability},
         eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -41,18 +41,20 @@ pub enum ScoreKind {
     /// and if only one solution is in competition with zero score, that
     /// solution would receive 0 reward (reward = score - reference score).
     ZeroScore,
+    /// Protocol does not allow solutions that are claimed to be "better" than
+    /// the actual value they bring (quality). It is expected that score
+    /// is always lower than quality, because there is always some
+    /// revert risk that needs to be incorporated into the score and lower it.
+    ScoreHigherThanQuality(Score, Quality),
+    /// Solution has success probability that is outside of the allowed range
+    /// [0, 1]
+    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
+    SuccessProbabilityOutOfRange(SuccessProbability),
     /// Objective value is defined as surplus + fees - gas costs. Protocol
     /// doesn't allow solutions that cost more than they bring to the users and
     /// protocol.
+    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
     ObjectiveValueNonPositive,
-    /// Solution has success probability that is outside of the allowed range
-    /// [0, 1]
-    SuccessProbabilityOutOfRange(SuccessProbability),
-    /// Protocol does not allow solutions that are claimed to be "better" than
-    /// the actual value they bring (objective value). It is expected that score
-    /// is always lower than objective value, because there is always some
-    /// revert risk that needs to be incorporated into the score and lower it.
-    ScoreHigherThanObjective(Score, ObjectiveValue),
 }
 
 type TransactionHash = eth::TxId;

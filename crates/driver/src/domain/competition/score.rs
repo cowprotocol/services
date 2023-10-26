@@ -1,5 +1,8 @@
 use {
-    crate::{boundary, domain::eth},
+    crate::{
+        boundary,
+        domain::{eth, eth::GasCost},
+    },
     std::cmp::Ordering,
 };
 
@@ -8,7 +11,7 @@ impl Score {
         score_cap: Score,
         objective_value: ObjectiveValue,
         success_probability: SuccessProbability,
-        failure_cost: eth::Ether,
+        failure_cost: eth::GasCost,
     ) -> Result<Self, Error> {
         boundary::score::score(
             score_cap,
@@ -64,9 +67,45 @@ impl From<f64> for SuccessProbability {
     }
 }
 
+/// Represents the observed quality of a solution. This is not an artifical
+/// value like score. This is a real value that solution provides and it's
+/// defined as surplus + fees.
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+pub struct Quality(pub eth::U256);
+
+impl From<eth::U256> for Quality {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+/// ObjectiveValue = Quality - GasCost
+impl std::ops::Sub<GasCost> for Quality {
+    type Output = ObjectiveValue;
+
+    fn sub(self, other: GasCost) -> Self::Output {
+        ObjectiveValue(self.0.saturating_sub(other.0 .0))
+    }
+}
+
+/// Comparing scores and observed quality is needed to make sure the score is
+/// not higher than the observed quality, which is a requirement for the score
+/// to be valid.
+impl std::cmp::PartialEq<Quality> for Score {
+    fn eq(&self, other: &Quality) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl std::cmp::PartialOrd<Quality> for Score {
+    fn partial_cmp(&self, other: &Quality) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
 /// Represents the objective value of a solution. This is not an artifical value
 /// like score. This is a real value that solution provides and it's based on
-/// the surplus and fees of the solution.
+/// formula observed quality - gas costs.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct ObjectiveValue(pub eth::U256);
 
@@ -76,31 +115,18 @@ impl From<eth::U256> for ObjectiveValue {
     }
 }
 
-/// Comparing scores and objective values is needed to make sure the score is
-/// not higher than the objective value, which is a requirement for the score to
-/// be valid.
-impl std::cmp::PartialEq<ObjectiveValue> for Score {
-    fn eq(&self, other: &ObjectiveValue) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-
-impl std::cmp::PartialOrd<ObjectiveValue> for Score {
-    fn partial_cmp(&self, other: &ObjectiveValue) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("objective value is non-positive")]
-    ObjectiveValueNonPositive,
     #[error("score is zero")]
     ZeroScore,
-    #[error("objective value {0:?} is higher than the objective {1:?}")]
-    ScoreHigherThanObjective(Score, ObjectiveValue),
+    #[error("score {0:?} is higher than the quality {1:?}")]
+    ScoreHigherThanQuality(Score, Quality),
     #[error("success probability is out of range {0:?}")]
+    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
     SuccessProbabilityOutOfRange(SuccessProbability),
-    #[error("invalid objective value")]
+    #[error("objective value is non-positive")]
+    /// [ONLY APPLICABLE TO SUCCESS PROBABILITY SCORES]
+    ObjectiveValueNonPositive,
+    #[error(transparent)]
     Boundary(#[from] boundary::Error),
 }

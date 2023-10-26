@@ -28,11 +28,11 @@ impl Notification {
                 Kind::ScoringFailed(ScoreKind::ZeroScore) => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality {
                     score,
-                    objective_value,
+                    quality: objective_value,
                 }) => notification::Kind::ScoringFailed(
-                    notification::ScoreKind::ScoreHigherThanObjective(
+                    notification::ScoreKind::ScoreHigherThanQuality(
                         (*score).into(),
                         (*objective_value).into(),
                     ),
@@ -104,17 +104,16 @@ pub enum Kind {
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ScoreHigherThanObjective {
+    ScoreHigherThanQuality {
         #[serde_as(as = "serialize::U256")]
         score: U256,
         #[serde_as(as = "serialize::U256")]
-        objective_value: U256,
+        quality: U256,
     },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    ObjectiveValueNonPositive,
 }
 
 #[serde_as]

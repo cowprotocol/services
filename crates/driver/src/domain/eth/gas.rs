@@ -1,6 +1,7 @@
 use {
     super::{Ether, U256},
-    std::ops,
+    crate::domain::competition::score::Quality,
+    std::{cmp::Ordering, ops},
 };
 
 /// Gas amount in gas units.
@@ -109,9 +110,50 @@ impl From<EffectiveGasPrice> for U256 {
 }
 
 impl ops::Mul<GasPrice> for Gas {
-    type Output = Ether;
+    type Output = GasCost;
 
     fn mul(self, rhs: GasPrice) -> Self::Output {
-        (self.0 * rhs.effective().0 .0).into()
+        Ether::from(self.0 * rhs.effective().0 .0).into()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GasCost(pub Ether);
+
+impl From<Ether> for GasCost {
+    fn from(value: Ether) -> Self {
+        Self(value)
+    }
+}
+
+impl std::ops::Add for GasCost {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for GasCost {
+    fn zero() -> Self {
+        Self(Ether::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
+/// Quality is commonly compared to GasCost to ensure that ObjectiveValue is
+/// valid (positive). ObjectiveValue = Quality - GasCost
+impl std::cmp::PartialEq<GasCost> for Quality {
+    fn eq(&self, other: &GasCost) -> bool {
+        self.0.eq(&other.0 .0)
+    }
+}
+
+impl std::cmp::PartialOrd<GasCost> for Quality {
+    fn partial_cmp(&self, other: &GasCost) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0 .0)
     }
 }

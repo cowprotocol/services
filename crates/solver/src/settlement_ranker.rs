@@ -225,9 +225,6 @@ impl SettlementRanker {
                         ScoringError::SuccessProbabilityOutOfRange(_) => {
                             Some(SolverRejectionReason::SuccessProbabilityOutOfRange)
                         }
-                        ScoringError::ScoreHigherThanObjective(_, _) => {
-                            Some(SolverRejectionReason::ScoreHigherThanObjective)
-                        }
                         ScoringError::InternalError(_) => None,
                     };
                     if let Some(reason) = reason {
@@ -284,11 +281,9 @@ impl SettlementRanker {
                 );
                 solver.notify_auction_result(
                     auction_id,
-                    AuctionResult::Rejected(SolverRejectionReason::TooHighScore {
-                        surplus,
-                        fees,
-                        max_score,
-                        submitted_score: settlement.score.score(),
+                    AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
+                        score: settlement.score.score(),
+                        quality: max_score,
                     }),
                 );
             }
