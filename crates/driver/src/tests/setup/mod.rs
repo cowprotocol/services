@@ -86,7 +86,7 @@ impl ExecutionDiff {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Score {
     Solver(eth::U256),
     RiskAdjusted(f64),

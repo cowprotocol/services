@@ -71,7 +71,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Kind {
     EmptySolution,
     ScoringFailed(ScoreKind),
@@ -82,7 +82,7 @@ pub enum Kind {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ScoreKind {
     ZeroScore,
     ObjectiveValueNonPositive,

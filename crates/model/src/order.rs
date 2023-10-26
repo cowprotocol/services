@@ -885,7 +885,7 @@ impl<'de> Deserialize<'de> for OrderUid {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum OrderKind {
     #[default]
     Buy,

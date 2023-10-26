@@ -15,7 +15,7 @@ use {
 
 /// See [`Signature`].
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum SigningScheme {
     #[default]
     Eip712,
@@ -206,7 +206,7 @@ impl TryFrom<JsonSignature> for Signature {
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "lowercase")]
+̵#[serde(rename_all = "camelCase")]
 pub enum EcdsaSigningScheme {
     Eip712,
     EthSign,

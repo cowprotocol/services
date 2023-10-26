@@ -216,7 +216,7 @@ struct JitOrder {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
@@ -293,7 +293,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -302,7 +302,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -310,7 +310,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -320,7 +320,7 @@ enum SigningScheme {
 
 /// A score for a solution. The score is used to rank solutions.
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Score {
     Solver(U256),
     RiskAdjusted(f64),

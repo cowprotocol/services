@@ -117,14 +117,14 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
@@ -226,7 +226,7 @@ struct WeightedProductReserve {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum WeightedProductVersion {
     V0,
     V3Plus,
