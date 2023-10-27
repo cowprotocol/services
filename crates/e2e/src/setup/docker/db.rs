@@ -65,7 +65,7 @@ impl Db {
             .create_container::<&str, _>(
                 None,
                 Config {
-                    image: Some("main-migrations"),
+                    image: Some("migrations"),
                     cmd: Some(vec!["migrate"]),
                     env: Some(vec![&format!(
                         "FLYWAY_URL=jdbc:postgresql://127.0.0.1:{db_port}/?user=admin&password="
