@@ -102,7 +102,7 @@ jobs:
         with:
           name: nextest-archive
       # run with profile ci to retry slow and flaky tests
-      - run: cargo nextest run --archive-file nextest-archive.tar.zst --nocapture --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" -p e2e local_node --run-ignored ignored-only
+      - run: cargo nextest run --archive-file nextest-archive.tar.zst --nocapture --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 20
