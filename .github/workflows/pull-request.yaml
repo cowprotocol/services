@@ -7,7 +7,7 @@ on:
     branches: [main]
 jobs:
   lint:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -27,7 +27,7 @@ jobs:
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
 
   unit-tests:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -42,7 +42,7 @@ jobs:
       - run: cargo nextest run
 
   test-db:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -63,7 +63,7 @@ jobs:
       - run: cargo nextest run postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only
 
   test-local-node:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -81,7 +81,7 @@ jobs:
       - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration . && cargo nextest run -p e2e local_node --failure-output final --run-ignored ignored-only -j 4
 
   test-driver:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -99,7 +99,7 @@ jobs:
       - run: cargo nextest run -p driver --run-ignored ignored-only
 
   openapi:
-    timeout-minutes: 60
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
