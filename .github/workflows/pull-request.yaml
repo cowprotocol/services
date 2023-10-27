@@ -77,8 +77,11 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p e2e --tests &
+      # build migrations container to make it available for e2e tests
+      - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration .
       - uses: taiki-e/install-action@nextest
-      - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration . && cargo nextest run -p e2e local_node --failure-output final --run-ignored ignored-only -j 4
+      # run with profile ci to retry slow and flaky tests
+      - run: cargo nextest run --profile ci -p e2e local_node --failure-output final --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 20
