@@ -18,7 +18,7 @@ const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
 impl Node {
     /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_container(vec!["--port", "8545", "--fork-url", fork.as_str()]).await
+        Self::spawn_container(vec!["--port", "8545", "--host", "0.0.0.0", "--fork-url", fork.as_str()]).await
     }
 
     /// Spawns a new local test net with some default parameters.
@@ -84,7 +84,10 @@ impl Node {
             .unwrap();
 
         let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
-        let url = format!("http://127.0.0.1:{rpc_port}").parse().unwrap();
+        let url = format!("http://localhost:{rpc_port}").parse().unwrap();
+
+        // Anvil needs some time before it's able to handle requests.
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
         Self {
             container_id: container.id,
