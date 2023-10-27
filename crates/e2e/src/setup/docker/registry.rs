@@ -61,6 +61,6 @@ impl ContainerRegistry {
             None,
         );
         // consume stream until we are done
-        while let Some(_) = stream.next().await {}
+        while stream.next().await.is_some() {}
     }
 }
