@@ -68,8 +68,20 @@ impl Competition {
             .solve(auction, &liquidity, auction.deadline().timeout()?)
             .await?;
 
-        // Empty solutions aren't useful, so discard them.
+        // Discard solutions that don't have unique ID.
+        let mut ids = HashSet::new();
         let solutions = solutions.into_iter().filter(|solution| {
+            if !ids.insert(solution.id()) {
+                observe::duplicated_solution_id(self.solver.name(), solution.id());
+                notify::duplicated_solution_id(&self.solver, auction.id(), solution.id());
+                false
+            } else {
+                true
+            }
+        });
+
+        // Empty solutions aren't useful, so discard them.
+        let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id());

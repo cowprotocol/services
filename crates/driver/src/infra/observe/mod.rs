@@ -61,8 +61,12 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
-pub fn duplicated_solution_id(id: solution::Id) {
-    tracing::warn!(?id, "duplicated solution id");
+pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+    tracing::debug!(?id, "discarded solution: duplicated id");
+    metrics::get()
+        .dropped_solutions
+        .with_label_values(&[solver.as_str(), "DuplicateId"])
+        .inc();
 }
 
 /// Observe the solutions returned by the solver.
@@ -90,10 +94,10 @@ pub fn encoding(id: solution::Id) {
 
 /// Observe that settlement encoding failed.
 pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
-    tracing::info!(?id, ?err, "discarded solution: settlement encoding failed");
+    tracing::info!(?id, ?err, "discarded solution: settlement encoding");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "SettlementEncodingFailed"])
+        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
         .inc();
 }
 
@@ -127,10 +131,10 @@ pub fn scoring(settlement: &Settlement) {
 
 /// Observe that scoring failed.
 pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
-    tracing::info!(%solver, ?err, "discarded solution: scoring failed");
+    tracing::info!(%solver, ?err, "discarded solution: scoring");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "ScoringFailed"])
+        .with_label_values(&[solver.as_str(), "Scoring"])
         .inc();
 }
 
