@@ -92,7 +92,7 @@ impl Db {
             .next()
             .await;
 
-        let url: Url = format!("http://postgres/127.0.0.1:{db_port}")
+        let url: Url = format!("postgres://127.0.0.1:{db_port}")
             .parse()
             .unwrap();
         Self {
