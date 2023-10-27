@@ -157,17 +157,16 @@ where
                 .unwrap();
         }
 
-        tracing::info!("test environment ready");
+        tracing::info!("test environment ready; beginning test");
 
-        // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
-        // does not catch some types of panics. In this cases, the state of the node
-        // is not restored. This is not considered an issue since this function
-        // is supposed to be used in a test environment.
-        AssertUnwindSafe(f(web3.clone(), db.clone()))
-            .catch_unwind()
-            .await
+        f(web3.clone(), db.clone()).await
     };
 
+    // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
+    // does not catch some types of panics. In this cases, the state of the node
+    // is not restored. This is not considered an issue since this function
+    // is supposed to be used in a test environment.
+    let set_up_and_run = AssertUnwindSafe(set_up_and_run).catch_unwind();
     futures::pin_mut!(set_up_and_run);
 
     tokio::select! {
