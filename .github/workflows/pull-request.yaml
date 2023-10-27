@@ -62,30 +62,47 @@ jobs:
           up-opts: -d db migrations
       - run: cargo nextest run postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only
 
+  build-e2e-tests:
+    name: Build e2e test artifacts
+    runs-on: ubuntu-latest
+    env:
+      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@nextest
+      - name: Build and archive tests
+      - run: cargo nextest archive --archive-file nextest-archive.tar.zst -p e2e --tests
+      - name: Upload archive to workflow
+        uses: actions/upload-artifact@v3
+        with:
+          name: nextest-archive
+          path: nextest-archive.tar.zst
+
   test-local-node:
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    needs: build-e2e-tests
     strategy:
       matrix:
         ci_node_total: [4]
         ci_node_index: [1, 2, 3, 4]
     env:
-      # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
-      - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
-      # Start the build process in the background. The following cargo test command will automatically
-      # wait for the build process to be done before proceeding.
-      - run: cargo build -p e2e --tests &
       # build migrations container to make it available for e2e tests
       - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration .
       - uses: taiki-e/install-action@nextest
+      - name: Download test archive
+        uses: actions/download-artifact@v3
+        with:
+          name: nextest-archive
       # run with profile ci to retry slow and flaky tests
-      - run: cargo nextest run --nocapture --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" -p e2e local_node --run-ignored ignored-only
+      - run: cargo nextest run --archive-file nextest-archive.tar.zst --nocapture --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" -p e2e local_node --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 20
