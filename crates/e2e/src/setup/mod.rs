@@ -157,7 +157,7 @@ where
                 .unwrap();
         }
 
-        tracing::info!("test environment ready; beginning test");
+        tracing::info!("test environment ready; begin test");
 
         f(web3.clone(), db.clone()).await
     };
