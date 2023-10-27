@@ -1,6 +1,5 @@
 use {
-    super::DbUrl,
-    crate::setup::{wait_for_condition, Contracts, TIMEOUT},
+    crate::setup::{db::Db, wait_for_condition, Contracts, TIMEOUT},
     clap::Parser,
     ethcontract::{H160, H256},
     ethrpc::http::HttpTransport,
@@ -30,21 +29,19 @@ pub const SOLVER_COMPETITION_ENDPOINT: &str = "api/v1/solver_competition";
 pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
-    db: Db,
-    db_url: DbUrl,
+    db: &'a Db,
     api_url: once_cell::sync::OnceCell<Url>,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts, db: DbUrl) -> Services<'a> {
+    pub async fn new(contracts: &'a Contracts, db: &'a Db) -> Services<'a> {
         Self {
             contracts,
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
                 .unwrap(),
-            db_url: db.clone(),
-            db: sqlx::PgPool::connect(db.0.as_str()).await.unwrap(),
+            db,
             api_url: Default::default(),
         }
     }
@@ -55,7 +52,7 @@ impl<'a> Services<'a> {
             "--native-price-estimators=Baseline".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
             "--block-stream-poll-interval-seconds=1".to_string(),
-            format!("--db-url={}", self.db_url.0.as_str()),
+            format!("--db-url={}", self.db.url().as_str()),
         ]
         .into_iter()
     }
@@ -404,8 +401,8 @@ impl<'a> Services<'a> {
 
     /// Returns the underlying postgres connection pool that can be used do
     /// execute raw SQL queries.
-    pub fn db(&self) -> &Db {
-        &self.db
+    pub fn db(&self) -> &DbConnection {
+        self.db.connection()
     }
 
     fn node_url(&self) -> Url {
@@ -434,4 +431,4 @@ pub async fn clear_database() {
     db.commit().await.unwrap();
 }
 
-pub type Db = sqlx::Pool<sqlx::Postgres>;
+pub type DbConnection = sqlx::Pool<sqlx::Postgres>;

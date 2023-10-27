@@ -1,18 +1,15 @@
-use bollard::{
-    container::{Config, ListContainersOptions},
-    service::HostConfig,
-};
 pub mod colocation;
 mod deploy;
 #[macro_use]
 pub mod onchain_components;
+mod db;
 mod services;
 
 use {
     crate::nodes::Node,
     anyhow::{anyhow, Result},
-    ethcontract::{futures::FutureExt, H160},
-    futures::StreamExt,
+    db::Db,
+    ethcontract::H160,
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
@@ -22,6 +19,7 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
+    futures::FutureExt,
     tempfile::TempPath,
 };
 pub use {deploy::*, onchain_components::*, services::*};
@@ -100,7 +98,7 @@ where
 /// Note that tests calling with this function will not be run simultaneously.
 pub async fn run_test<F, Fut>(f: F)
 where
-    F: FnOnce(Web3, DbUrl) -> Fut,
+    F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
 {
     run(f, empty::<&str>(), None).await
@@ -110,7 +108,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     f: F,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
-    F: FnOnce(Web3, DbUrl) -> Fut,
+    F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
@@ -119,7 +117,7 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
 
 pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
 where
-    F: FnOnce(Web3, DbUrl) -> Fut,
+    F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
 {
     run(f, empty::<&str>(), Some((solver_address, fork_url))).await
@@ -131,21 +129,16 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     fork_url: String,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
-    F: FnOnce(Web3, DbUrl) -> Fut,
+    F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
     run(f, extra_filters, Some((solver_address, fork_url))).await
 }
 
-#[derive(Debug, Clone)]
-pub struct DbUrl(pub reqwest::Url);
-
-const POSTGRES_IMAGE: &str = "postgres:latest";
-
 async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
 where
-    F: FnOnce(Web3, DbUrl) -> Fut,
+    F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
@@ -153,74 +146,8 @@ where
     observe::panic_hook::install();
 
     tracing::info!("setting up test environment");
-    let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
-    let postgres = docker
-        .create_container::<&str, _>(
-            None,
-            Config {
-                image: Some(POSTGRES_IMAGE),
-                env: Some(vec![
-                    "POSTGRES_HOST_AUTH_METHOD=trust",
-                    "POSTGRES_USER=martin",
-                    "POSTGRES_PASSWORD=123",
-                ]),
-                cmd: Some(vec!["-d", "postgres"]),
-                host_config: Some(HostConfig {
-                    auto_remove: Some(true),
-                    publish_all_ports: Some(true),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-    docker
-        .start_container::<&str>(&postgres.id, None)
-        .await
-        .unwrap();
-
-    let summary = docker
-        .list_containers(Some(ListContainersOptions {
-            filters: [("id".into(), vec![postgres.id.clone()])].into(),
-            ..Default::default()
-        }))
-        .await
-        .unwrap();
-    let db_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
-
-    let migrations = docker
-        .create_container::<&str, _>(
-            None,
-            Config {
-                image: Some("migrations"),
-                cmd: Some(vec!["migrate"]),
-                env: Some(vec![&format!(
-                    "FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="
-                )]),
-                host_config: Some(HostConfig {
-                    auto_remove: Some(true),
-                    network_mode: Some("host".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    docker
-        .start_container::<&str>(&migrations.id, None)
-        .await
-        .unwrap();
-
-    // wait until migrations are done
-    let _ = docker
-        .wait_container::<&str>(&migrations.id, None)
-        .next()
-        .await;
-
+    let db = Db::new().await;
     let node = match &fork {
         Some((_, fork)) => Node::forked(fork).await,
         None => Node::new().await,
@@ -253,16 +180,13 @@ where
             .unwrap();
     }
 
-    let db_url: reqwest::Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
-    let db_url = DbUrl(db_url);
-
     tracing::info!("test environment ready");
 
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone(), db_url))
+    let result = AssertUnwindSafe(f(web3.clone(), db))
         .catch_unwind()
         .await;
 
@@ -270,7 +194,8 @@ where
     if let Some(mut node) = node {
         node.kill().await;
     }
-    let _ = docker.kill_container::<&str>(&postgres.id, None).await;
+
+    // db.kill().await;
 
     if let Err(err) = result {
         panic::resume_unwind(err);

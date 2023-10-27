@@ -18,7 +18,15 @@ const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
 impl Node {
     /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_container(vec!["--port", "8545", "--host", "0.0.0.0", "--fork-url", fork.as_str()]).await
+        Self::spawn_container(vec![
+            "--port",
+            "8545",
+            "--host",
+            "0.0.0.0",
+            "--fork-url",
+            fork.as_str(),
+        ])
+        .await
     }
 
     /// Spawns a new local test net with some default parameters.
@@ -58,7 +66,7 @@ impl Node {
                     // Expose anvil's default listening port so `publish_all_ports` will actually
                     // cause the dynamically allocated host port to show up when listing the
                     // container.
-                    exposed_ports: Some([("8545/tcp".into(), Default::default())].into()),
+                    exposed_ports: Some([("8545/tcp", Default::default())].into()),
                     host_config: Some(HostConfig {
                         auto_remove: Some(true),
                         publish_all_ports: Some(true),

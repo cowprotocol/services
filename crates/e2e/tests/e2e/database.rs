@@ -3,14 +3,14 @@
 
 use {
     database::{byte_array::ByteArray, order_events, Address, TransactionHash},
-    e2e::setup::Db,
+    e2e::setup::DbConnection,
     futures::TryStreamExt,
     model::order::OrderUid,
     std::ops::DerefMut,
 };
 
 /// Returns all events of that order in the order they happend (old to new).
-pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::OrderEvent> {
+pub async fn events_of_order(db: &DbConnection, uid: &OrderUid) -> Vec<order_events::OrderEvent> {
     const QUERY: &str = "SELECT * FROM order_events WHERE order_uid = $1 ORDER BY timestamp ASC";
     let mut db = db.acquire().await.unwrap();
     sqlx::query_as(QUERY)
@@ -45,7 +45,7 @@ pub struct Cip20Data {
 
 /// Returns `Some(data)` if the all the expected CIP-20 data has been indexed
 /// for the most recent `auction_transaction`.
-pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
+pub async fn most_recent_cip_20_data(db: &DbConnection) -> Option<Cip20Data> {
     let mut db = db.acquire().await.unwrap();
 
     const LAST_AUCTION_ID: &str =
