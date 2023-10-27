@@ -16,7 +16,6 @@ use {
         io::Write,
         iter::empty,
         panic::{self, AssertUnwindSafe},
-        sync::{Arc, Mutex},
         time::Duration,
     },
     tempfile::TempPath,
@@ -34,8 +33,6 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
 // have fn to await migrations container
 // remove container on drop
 // remove containers on ctrl-c and panic
-// figure out how to pass around DB URL
-// rewrite anvil to use a container as well
 
 /// Reasonable default timeout for `wait_for_condition`.
 ///
@@ -142,36 +139,19 @@ where
     T: AsRef<str>,
 {
     observe::tracing::initialize_reentrant(&with_default_filters(filters).join(","));
-    observe::panic_hook::install();
 
     tracing::info!("setting up test environment");
 
-    let db = Db::new().await;
-    let node = match &fork {
-        Some((_, fork)) => Node::forked(fork).await,
-        None => Node::new().await,
+    let start_db = Db::new();
+    let start_node = match &fork {
+        Some((_, fork)) => Node::forked(fork).boxed(),
+        None => Node::new().boxed(),
     };
+    let (db, node) = futures::join!(start_db, start_node);
 
-    // Idea: write a function that spawns a blocking task that cleans up all the
-    // containers. This can be called at the end of the function or in a
-    // panic/signal handler.
-
-    let node = Arc::new(Mutex::new(Some(node)));
-    let node_panic_handle = node.clone();
-    observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
-        // Drop node in panic handler because `.catch_unwind()` does not catch all
-        // panics
-        let _ = node_panic_handle.lock().unwrap().take();
-    }));
-
-    let url = node
-        .lock()
-        .unwrap()
-        .as_ref()
-        .map(|node| node.url.clone())
-        .unwrap();
-    let http = create_test_transport(url.as_str());
+    let http = create_test_transport(node.url.as_str());
     let web3 = Web3::new(http);
+
     if let Some((solver, _)) = &fork {
         Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
             .impersonate(solver)
@@ -185,14 +165,11 @@ where
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone(), db)).catch_unwind().await;
+    let result = AssertUnwindSafe(f(web3.clone(), db.clone()))
+        .catch_unwind()
+        .await;
 
-    let node = node.lock().unwrap().take();
-    if let Some(mut node) = node {
-        node.kill().await;
-    }
-
-    // db.kill().await;
+    futures::join!(node.kill(), db.kill());
 
     if let Err(err) = result {
         panic::resume_unwind(err);

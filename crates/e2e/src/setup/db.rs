@@ -11,7 +11,7 @@ use {
 const POSTGRES_IMAGE: &str = "postgres:latest";
 
 /// Handle to a dockerized postgres database.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Db {
     container: String,
     url: Url,
@@ -61,6 +61,8 @@ impl Db {
             .unwrap();
         let db_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
 
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
         let migrations = docker
             .create_container::<&str, _>(
                 None,
@@ -68,7 +70,7 @@ impl Db {
                     image: Some("migrations"),
                     cmd: Some(vec!["migrate"]),
                     env: Some(vec![&format!(
-                        "FLYWAY_URL=jdbc:postgresql://localhost:{db_port}/?user=martin&password="
+                        "FLYWAY_URL=jdbc:postgresql://127.0.0.1:{db_port}/?user=martin&password="
                     )]),
                     host_config: Some(HostConfig {
                         auto_remove: Some(true),
@@ -92,22 +94,12 @@ impl Db {
             .next()
             .await;
 
-        let url: Url = format!("postgres://127.0.0.1:{db_port}")
-            .parse()
-            .unwrap();
+        let url: Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
+
         Self {
             container: postgres.id.clone(),
             connection: sqlx::PgPool::connect(url.as_str()).await.unwrap(),
             url,
-        }
-    }
-
-    /// Terminates the underlying docker container.
-    pub async fn kill(&self) {
-        let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
-
-        if let Err(err) = docker.kill_container::<&str>(&self.container, None).await {
-            tracing::error!(?err, "failed to kill DB container");
         }
     }
 
@@ -119,5 +111,14 @@ impl Db {
     /// Returns a connection to the dockerized database.
     pub fn connection(&self) -> &DbConnection {
         &self.connection
+    }
+
+    /// Terminates the underlying docker container.
+    pub(crate) async fn kill(&self) {
+        let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
+
+        if let Err(err) = docker.kill_container::<&str>(&self.container, None).await {
+            tracing::error!(?err, "failed to kill DB container");
+        }
     }
 }

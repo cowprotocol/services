@@ -94,6 +94,7 @@ impl Node {
         let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
         let url = format!("http://localhost:{rpc_port}").parse().unwrap();
 
+        // TODO properly wait to for the node to be available.
         // Anvil needs some time before it's able to handle requests.
         tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
 
@@ -106,7 +107,7 @@ impl Node {
     /// Most reliable way to kill the process. If you get the chance to manually
     /// clean up the [`Node`] do it because the [`Drop::drop`]
     /// implementation can not be as reliable due to missing async support.
-    pub async fn kill(&mut self) {
+    pub async fn kill(&self) {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
         if let Err(err) = docker
             .kill_container::<&str>(&self.container_id, None)
@@ -116,22 +117,3 @@ impl Node {
         }
     }
 }
-
-// Find some way to kill container in a sync manner.
-// Maybe a background tasks would work here?
-// impl Drop for Node {
-//     fn drop(&mut self) {
-//         let mut process = match self.process.take() {
-//             Some(process) => process,
-//             // Somebody already called `Node::kill()`
-//             None => return,
-//         };
-
-//         // This only sends SIGKILL to the process but does not wait for the
-// process to         // actually terminate. But since `anvil` is fairly well
-// behaved that         // should be good enough in many cases.
-//         if let Err(err) = process.start_kill() {
-//             tracing::error!(?err, "failed to kill node process");
-//         }
-//     }
-// }
