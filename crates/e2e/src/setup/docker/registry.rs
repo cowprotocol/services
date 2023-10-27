@@ -46,11 +46,10 @@ impl ContainerRegistry {
     async fn terminate_container(docker: &Docker, container_id: &String) {
         match docker.kill_container::<&str>(container_id, None).await {
             // Success
-            Ok(_)
+            Ok(_) => {}
             // Container already dead
-            | Err(Error::DockerResponseServerError {
-                status_code: 409, ..
-            }) => {}
+            Err(Error::DockerResponseServerError { message, .. })
+                if message.contains("no such container") => {}
             Err(err) => tracing::error!(?err, ?container_id, "could not kill container"),
         }
     }
