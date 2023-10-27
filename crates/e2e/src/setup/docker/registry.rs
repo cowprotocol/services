@@ -49,7 +49,7 @@ impl ContainerRegistry {
             Ok(_) => {}
             // Container already dead
             Err(Error::DockerResponseServerError { message, .. })
-                if message.contains("no such container") => {}
+                if message.contains("No such container") => {}
             Err(err) => tracing::error!(?err, ?container_id, "could not kill container"),
         }
     }
