@@ -1,6 +1,7 @@
 use {
+    super::eth,
     crate::{
-        domain::{competition::solution::Settlement, eth},
+        domain::competition::solution::Settlement,
         infra::{self, observe, solver::Solver},
     },
     futures::{future::select_ok, FutureExt},
@@ -26,7 +27,7 @@ impl Mempools {
         &self,
         solver: &Solver,
         settlement: &Settlement,
-    ) -> Result<eth::TxId, AllFailed> {
+    ) -> Result<eth::TxId, Error> {
         let auction_id = settlement.auction_id;
         let solver_name = solver.name();
 
@@ -43,8 +44,7 @@ impl Mempools {
             ))
             .boxed()
         }))
-        .await
-        .map_err(|_| AllFailed)?;
+        .await?;
 
         Ok(tx_hash)
     }
@@ -77,6 +77,12 @@ pub enum RevertProtection {
     Disabled,
 }
 
-#[derive(Debug, Error)]
-#[error("none of the submission strategies successfully submitted the solution")]
-pub struct AllFailed;
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Mined reverted transaction: {0:?}")]
+    Revert(eth::TxId),
+    #[error("Simulation started reverting during submission")]
+    SimulationRevert,
+    #[error("Failed to submit: {0:?}")]
+    Other(#[from] anyhow::Error),
+}

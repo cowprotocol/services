@@ -13,7 +13,6 @@ use {
         infra::blockchain::Ethereum,
         util,
     },
-    std::collections::HashSet,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -170,16 +169,6 @@ impl Solver {
         let res: dto::Solutions = serde_json::from_str(&res)
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
-
-        // Ensure that solution IDs are unique.
-        let mut ids = HashSet::new();
-        for solution in &solutions {
-            if !ids.insert(solution.id()) {
-                super::observe::duplicated_solution_id(solution.id());
-                notify::duplicated_solution_id(self, auction.id(), solution.id());
-                return Err(Error::DuplicatedSolutionId);
-            }
-        }
 
         super::observe::solutions(&solutions);
         Ok(solutions)
