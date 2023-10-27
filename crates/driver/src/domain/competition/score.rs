@@ -118,7 +118,8 @@ pub enum Error {
     /// Protocol does not allow solutions that are claimed to be "better" than
     /// the actual value they bring (quality). It is expected that score
     /// is always lower than quality, because there is always some
-    /// revert risk that needs to be incorporated into the score and lower it.
+    /// execution cost that needs to be incorporated into the score and lower
+    /// it.
     #[error("score {0:?} is higher than the quality {1:?}")]
     ScoreHigherThanQuality(Score, Quality),
     /// Errors only applicable to scores that use success probability.

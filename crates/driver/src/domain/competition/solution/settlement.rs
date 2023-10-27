@@ -282,12 +282,6 @@ impl Settlement {
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
                 let objective_value = quality - gas_cost;
-                if objective_value.is_zero() {
-                    return Err(score::Error::RiskAdjusted(
-                        score::risk::Error::ObjectiveValueNonPositive,
-                    ));
-                }
-
                 competition::Score::new(
                     auction.score_cap(),
                     objective_value,
