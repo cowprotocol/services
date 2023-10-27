@@ -34,7 +34,7 @@ async fn local_node_partial_fills() {
     run_test(partial_fills).await;
 }
 
-async fn allowance(web3: Web3, db: DbUrl) {
+async fn allowance(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -177,7 +177,7 @@ async fn allowance(web3: Web3, db: DbUrl) {
     assert_eq!(allowance, U256::max_value());
 }
 
-async fn signature(web3: Web3, db: DbUrl) {
+async fn signature(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let chain_id = web3.eth().chain_id().await.unwrap();
@@ -325,7 +325,7 @@ async fn signature(web3: Web3, db: DbUrl) {
     wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }
 
-async fn partial_fills(web3: Web3, db: DbUrl) {
+async fn partial_fills(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

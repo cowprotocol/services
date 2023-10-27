@@ -8,8 +8,8 @@ mod services;
 use {
     crate::nodes::Node,
     anyhow::{anyhow, Result},
-    db::Db,
     ethcontract::H160,
+    futures::FutureExt,
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
@@ -19,10 +19,9 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
-    futures::FutureExt,
     tempfile::TempPath,
 };
-pub use {deploy::*, onchain_components::*, services::*};
+pub use {db::Db, deploy::*, onchain_components::*, services::*};
 
 /// Create a temporary file with the given content.
 pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
@@ -186,9 +185,7 @@ where
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
     // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone(), db))
-        .catch_unwind()
-        .await;
+    let result = AssertUnwindSafe(f(web3.clone(), db)).catch_unwind().await;
 
     let node = node.lock().unwrap().take();
     if let Some(mut node) = node {

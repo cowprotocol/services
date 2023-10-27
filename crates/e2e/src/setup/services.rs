@@ -29,12 +29,12 @@ pub const SOLVER_COMPETITION_ENDPOINT: &str = "api/v1/solver_competition";
 pub struct Services<'a> {
     contracts: &'a Contracts,
     http: Client,
-    db: &'a Db,
+    db: Db,
     api_url: once_cell::sync::OnceCell<Url>,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts, db: &'a Db) -> Services<'a> {
+    pub async fn new(contracts: &'a Contracts, db: Db) -> Services<'a> {
         Self {
             contracts,
             http: Client::builder()

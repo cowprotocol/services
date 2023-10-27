@@ -16,7 +16,7 @@ async fn local_node_partially_fillable_pool() {
     run_test(test).await;
 }
 
-async fn test(web3: Web3, db: DbUrl) {
+async fn test(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

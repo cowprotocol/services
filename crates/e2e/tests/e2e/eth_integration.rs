@@ -18,7 +18,7 @@ async fn local_node_eth_integration() {
     run_test(eth_integration).await;
 }
 
-async fn eth_integration(web3: Web3, db: DbUrl) {
+async fn eth_integration(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

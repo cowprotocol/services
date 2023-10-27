@@ -21,7 +21,7 @@ async fn local_node_eth_flow() {
     run_test(eth_flow_tx).await;
 }
 
-async fn eth_flow_tx(web3: Web3, db: DbUrl) {
+async fn eth_flow_tx(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;

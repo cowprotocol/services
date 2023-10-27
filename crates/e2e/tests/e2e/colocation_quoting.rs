@@ -12,7 +12,7 @@ async fn local_node_uses_stale_liquidity() {
     run_test(uses_stale_liquidity).await;
 }
 
-async fn uses_stale_liquidity(web3: Web3, db: DbUrl) {
+async fn uses_stale_liquidity(web3: Web3, db: Db) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 

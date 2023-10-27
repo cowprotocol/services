@@ -15,7 +15,7 @@ async fn local_node_smart_contract_orders() {
     run_test(smart_contract_orders).await;
 }
 
-async fn smart_contract_orders(web3: Web3, db: DbUrl) {
+async fn smart_contract_orders(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

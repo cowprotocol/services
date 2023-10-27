@@ -16,7 +16,7 @@ async fn local_node_vault_balances() {
     run_test(vault_balances).await;
 }
 
-async fn vault_balances(web3: Web3, db: DbUrl) {
+async fn vault_balances(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

@@ -34,7 +34,7 @@ async fn local_node_mixed_limit_and_market_orders() {
     run_test(mixed_limit_and_market_orders_test).await;
 }
 
-async fn single_limit_order_test(web3: Web3, db: DbUrl) {
+async fn single_limit_order_test(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -132,7 +132,7 @@ async fn single_limit_order_test(web3: Web3, db: DbUrl) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
 }
 
-async fn two_limit_orders_test(web3: Web3, db: DbUrl) {
+async fn two_limit_orders_test(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -260,7 +260,7 @@ async fn two_limit_orders_test(web3: Web3, db: DbUrl) {
     assert!(balance_after_b.checked_sub(balance_before_b).unwrap() >= to_wei(2));
 }
 
-async fn mixed_limit_and_market_orders_test(web3: Web3, db: DbUrl) {
+async fn mixed_limit_and_market_orders_test(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -389,7 +389,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3, db: DbUrl) {
     assert!(balance_after_b.checked_sub(balance_before_b).unwrap() >= to_wei(2));
 }
 
-async fn too_many_limit_orders_test(web3: Web3, db: DbUrl) {
+async fn too_many_limit_orders_test(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;

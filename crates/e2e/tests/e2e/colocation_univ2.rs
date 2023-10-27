@@ -17,7 +17,7 @@ async fn local_node_test() {
     run_test(test).await;
 }
 
-async fn test(web3: Web3, db: DbUrl) {
+async fn test(web3: Web3, db: Db) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
 

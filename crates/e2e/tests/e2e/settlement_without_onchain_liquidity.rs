@@ -16,7 +16,7 @@ async fn local_node_onchain_settlement_without_liquidity() {
     run_test(onchain_settlement_without_liquidity).await;
 }
 
-async fn onchain_settlement_without_liquidity(web3: Web3, db: DbUrl) {
+async fn onchain_settlement_without_liquidity(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;

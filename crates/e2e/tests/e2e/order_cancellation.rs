@@ -28,7 +28,7 @@ async fn local_node_order_cancellation() {
     run_test(order_cancellation).await;
 }
 
-async fn order_cancellation(web3: Web3, db: DbUrl) {
+async fn order_cancellation(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [_] = onchain.make_solvers(to_wei(1)).await;

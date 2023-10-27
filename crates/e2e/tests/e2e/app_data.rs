@@ -19,7 +19,7 @@ async fn local_node_app_data() {
 }
 
 // Test that orders can be placed with the new app data format.
-async fn app_data(web3: Web3, db: DbUrl) {
+async fn app_data(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain

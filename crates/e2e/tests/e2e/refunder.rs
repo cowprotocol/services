@@ -15,7 +15,7 @@ async fn local_node_refunder_tx() {
     run_test(refunder_tx).await;
 }
 
-async fn refunder_tx(web3: Web3, db: DbUrl) {
+async fn refunder_tx(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [user, refunder] = onchain.make_accounts(to_wei(10)).await;
@@ -23,7 +23,7 @@ async fn refunder_tx(web3: Web3, db: DbUrl) {
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
 
-    let services = Services::new(onchain.contracts(), db.clone()).await;
+    let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

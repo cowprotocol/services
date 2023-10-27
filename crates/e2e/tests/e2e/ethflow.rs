@@ -55,7 +55,7 @@ async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
 
-async fn eth_flow_tx(web3: Web3, db: DbUrl) {
+async fn eth_flow_tx(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
@@ -120,7 +120,7 @@ async fn eth_flow_tx(web3: Web3, db: DbUrl) {
     .await;
 }
 
-async fn eth_flow_indexing_after_refund(web3: Web3, db: DbUrl) {
+async fn eth_flow_indexing_after_refund(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
