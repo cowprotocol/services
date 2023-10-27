@@ -85,7 +85,7 @@ jobs:
       - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration .
       - uses: taiki-e/install-action@nextest
       # run with profile ci to retry slow and flaky tests
-      - run: cargo nextest run --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" -p e2e local_node --failure-output final --run-ignored ignored-only
+      - run: cargo nextest run --nocapture --profile ci --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" -p e2e local_node --failure-output final --run-ignored ignored-only
 
   test-driver:
     timeout-minutes: 20
