@@ -61,6 +61,8 @@ impl Node {
     async fn spawn_container(args: Vec<&str>, registry: &ContainerRegistry) -> Self {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
+        registry.pull_image(FOUNDRY_IMAGE).await;
+
         let container = docker
             .create_container::<&str, _>(
                 None,

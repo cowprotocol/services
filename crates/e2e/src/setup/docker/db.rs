@@ -24,6 +24,8 @@ impl Db {
     pub async fn new(registry: &super::ContainerRegistry) -> Self {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
+        registry.pull_image(POSTGRES_IMAGE).await;
+
         let postgres = docker
             .create_container::<&str, _>(
                 None,
@@ -87,7 +89,9 @@ impl Db {
             .next()
             .await;
 
-        let url: Url = format!("postgres://127.0.0.1:{db_port}/?user=admin").parse().unwrap();
+        let url: Url = format!("postgres://127.0.0.1:{db_port}/?user=admin")
+            .parse()
+            .unwrap();
 
         Self {
             connection: sqlx::PgPool::connect(url.as_str()).await.unwrap(),

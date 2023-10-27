@@ -1,4 +1,9 @@
-use {bollard::Docker, std::collections::HashSet, tokio::sync::Mutex};
+use {
+    bollard::{image::CreateImageOptions, Docker},
+    futures::StreamExt,
+    std::collections::HashSet,
+    tokio::sync::Mutex,
+};
 
 /// Component that starts and manages docker containers. Mainly used to ensure
 /// that all containers spawned for a test will also be terminated.
@@ -42,5 +47,20 @@ impl ContainerRegistry {
         if let Err(err) = docker.kill_container::<&str>(container_id, None).await {
             tracing::error!(?err, ?container_id, "could not kill container");
         }
+    }
+
+    /// Pulls the given image.
+    pub async fn pull_image(&self, image: &str) {
+        tracing::info!(image, "pulling docker image");
+        let mut stream = self.docker.create_image(
+            Some(CreateImageOptions {
+                from_image: image,
+                ..Default::default()
+            }),
+            None,
+            None,
+        );
+        // consume stream until we are done
+        while let Some(_) = stream.next().await {}
     }
 }
