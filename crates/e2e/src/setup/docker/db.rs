@@ -13,7 +13,6 @@ const POSTGRES_IMAGE: &str = "postgres:latest";
 /// Handle to a dockerized postgres database.
 #[derive(Debug, Clone)]
 pub struct Db {
-    container: String,
     url: Url,
     connection: DbConnection,
 }
@@ -22,7 +21,7 @@ pub type DbConnection = sqlx::Pool<sqlx::Postgres>;
 
 impl Db {
     /// Spawns a new dockerized postrgres database.
-    pub async fn new() -> Self {
+    pub async fn new(registry: &super::ContainerRegistry) -> Self {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
         let postgres = docker
@@ -47,10 +46,7 @@ impl Db {
             .await
             .unwrap();
 
-        docker
-            .start_container::<&str>(&postgres.id, None)
-            .await
-            .unwrap();
+        registry.start(postgres.id.clone()).await;
 
         let summary = docker
             .list_containers(Some(ListContainersOptions {
@@ -83,10 +79,7 @@ impl Db {
             .await
             .unwrap();
 
-        docker
-            .start_container::<&str>(&migrations.id, None)
-            .await
-            .unwrap();
+        registry.start(migrations.id.clone()).await;
 
         // wait until migrations are done
         let _ = docker
@@ -97,7 +90,6 @@ impl Db {
         let url: Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
 
         Self {
-            container: postgres.id.clone(),
             connection: sqlx::PgPool::connect(url.as_str()).await.unwrap(),
             url,
         }
@@ -111,14 +103,5 @@ impl Db {
     /// Returns a connection to the dockerized database.
     pub fn connection(&self) -> &DbConnection {
         &self.connection
-    }
-
-    /// Terminates the underlying docker container.
-    pub(crate) async fn kill(&self) {
-        let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
-
-        if let Err(err) = docker.kill_container::<&str>(&self.container, None).await {
-            tracing::error!(?err, "failed to kill DB container");
-        }
     }
 }

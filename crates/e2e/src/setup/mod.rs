@@ -2,12 +2,12 @@ pub mod colocation;
 mod deploy;
 #[macro_use]
 pub mod onchain_components;
-mod db;
+mod docker;
 mod services;
 
 use {
-    crate::nodes::Node,
     anyhow::{anyhow, Result},
+    docker::{ContainerRegistry, Node},
     ethcontract::H160,
     futures::FutureExt,
     shared::ethrpc::{create_test_transport, Web3},
@@ -20,7 +20,7 @@ use {
     },
     tempfile::TempPath,
 };
-pub use {db::Db, deploy::*, onchain_components::*, services::*};
+pub use {deploy::*, docker::Db, onchain_components::*, services::*};
 
 /// Create a temporary file with the given content.
 pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
@@ -28,11 +28,6 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
     file.write_all(content.as_ref()).unwrap();
     file.into_temp_path()
 }
-
-// TODO wrap DB in constructor
-// have fn to await migrations container
-// remove container on drop
-// remove containers on ctrl-c and panic
 
 /// Reasonable default timeout for `wait_for_condition`.
 ///
@@ -142,36 +137,77 @@ where
 
     tracing::info!("setting up test environment");
 
-    let start_db = Db::new();
-    let start_node = match &fork {
-        Some((_, fork)) => Node::forked(fork).boxed(),
-        None => Node::new().boxed(),
-    };
-    let (db, node) = futures::join!(start_db, start_node);
+    let registry = ContainerRegistry::default();
 
-    let http = create_test_transport(node.url.as_str());
-    let web3 = Web3::new(http);
+    let set_up_and_run = async {
+        let start_db = Db::new(&registry);
+        let start_node = match &fork {
+            Some((_, fork)) => Node::forked(fork, &registry).boxed(),
+            None => Node::new(&registry).boxed(),
+        };
+        let (db, node) = futures::join!(start_db, start_node);
 
-    if let Some((solver, _)) = &fork {
-        Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
-            .impersonate(solver)
+        let http = create_test_transport(node.url.as_str());
+        let web3 = Web3::new(http);
+
+        if let Some((solver, _)) = &fork {
+            Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
+                .impersonate(solver)
+                .await
+                .unwrap();
+        }
+
+        tracing::info!("test environment ready");
+
+        // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
+        // does not catch some types of panics. In this cases, the state of the node
+        // is not restored. This is not considered an issue since this function
+        // is supposed to be used in a test environment.
+        AssertUnwindSafe(f(web3.clone(), db.clone()))
+            .catch_unwind()
             .await
-            .unwrap();
+    };
+
+    futures::pin_mut!(set_up_and_run);
+
+    tokio::select! {
+        result = &mut set_up_and_run => {
+            registry.kill_all().await;
+            if let Err(err) = result {
+                panic::resume_unwind(err);
+            }
+        },
+        _ = shutdown_signal() => {
+            tracing::error!("test aborted");
+            registry.kill_all().await;
+            std::process::exit(1);
+        }
     }
+}
 
-    tracing::info!("test environment ready");
+#[cfg(unix)]
+async fn shutdown_signal() {
+    // Intercept main signals for graceful shutdown
+    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
+    let sigterm = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .unwrap()
+            .recv()
+            .await
+    };
+    let sigint = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+            .unwrap()
+            .recv()
+            .await;
+    };
+    futures::pin_mut!(sigint);
+    futures::pin_mut!(sigterm);
+    futures::future::select(sigterm, sigint).await;
+}
 
-    // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
-    // does not catch some types of panics. In this cases, the state of the node
-    // is not restored. This is not considered an issue since this function
-    // is supposed to be used in a test environment.
-    let result = AssertUnwindSafe(f(web3.clone(), db.clone()))
-        .catch_unwind()
-        .await;
-
-    futures::join!(node.kill(), db.kill());
-
-    if let Err(err) = result {
-        panic::resume_unwind(err);
-    }
+#[cfg(windows)]
+async fn shutdown_signal() {
+    // We don't support signal handling on windows
+    std::future::pending().await
 }

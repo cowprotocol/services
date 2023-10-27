@@ -1,5 +1,5 @@
 use {
-    crate::setup::{db::Db, wait_for_condition, Contracts, TIMEOUT},
+    crate::setup::{docker::Db, wait_for_condition, Contracts, TIMEOUT},
     clap::Parser,
     ethcontract::{H160, H256},
     ethrpc::http::HttpTransport,
