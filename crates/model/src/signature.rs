@@ -206,7 +206,7 @@ impl TryFrom<JsonSignature> for Signature {
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
-̵#[serde(rename_all = "camelCase" )]
+#[serde(rename_all = "camelCase")]
 pub enum EcdsaSigningScheme {
     Eip712,
     EthSign,
