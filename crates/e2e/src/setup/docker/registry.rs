@@ -1,5 +1,5 @@
 use {
-    bollard::{image::CreateImageOptions, Docker},
+    bollard::{errors::Error, image::CreateImageOptions, Docker},
     futures::StreamExt,
     std::collections::HashSet,
     tokio::sync::Mutex,
@@ -44,8 +44,14 @@ impl ContainerRegistry {
 
     /// Terminates the given container without updating the registry.
     async fn terminate_container(docker: &Docker, container_id: &String) {
-        if let Err(err) = docker.kill_container::<&str>(container_id, None).await {
-            tracing::error!(?err, ?container_id, "could not kill container");
+        match docker.kill_container::<&str>(container_id, None).await {
+            // Success
+            Ok(_)
+            // Container already dead
+            | Err(Error::DockerResponseServerError {
+                status_code: 409, ..
+            }) => {}
+            Err(err) => tracing::error!(?err, ?container_id, "could not kill container"),
         }
     }
 
