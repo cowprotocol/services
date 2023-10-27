@@ -31,7 +31,7 @@ impl Db {
                     image: Some(POSTGRES_IMAGE),
                     env: Some(vec![
                         "POSTGRES_HOST_AUTH_METHOD=trust",
-                        "POSTGRES_USER=martin",
+                        "POSTGRES_USER=admin",
                         "POSTGRES_PASSWORD=123",
                     ]),
                     cmd: Some(vec!["-d", "postgres"]),
@@ -66,7 +66,7 @@ impl Db {
                     image: Some("migrations"),
                     cmd: Some(vec!["migrate"]),
                     env: Some(vec![&format!(
-                        "FLYWAY_URL=jdbc:postgresql://127.0.0.1:{db_port}/?user=martin&password="
+                        "FLYWAY_URL=jdbc:postgresql://127.0.0.1:{db_port}/?user=admin&password="
                     )]),
                     host_config: Some(HostConfig {
                         auto_remove: Some(true),
@@ -87,7 +87,7 @@ impl Db {
             .next()
             .await;
 
-        let url: Url = format!("postgres://127.0.0.1:{db_port}").parse().unwrap();
+        let url: Url = format!("postgres://127.0.0.1:{db_port}/?user=admin").parse().unwrap();
 
         Self {
             connection: sqlx::PgPool::connect(url.as_str()).await.unwrap(),
