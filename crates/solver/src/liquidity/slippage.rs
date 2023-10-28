@@ -335,7 +335,7 @@ impl SlippageCalculator {
 
             let max_relative_slippage_respecting_absolute_limit = max_absolute_slippage
                 .checked_div(&amount)
-                .context("divide is zero")?;
+                .context("amount is zero")?;
 
             cmp::min(
                 Cow::Owned(max_relative_slippage_respecting_absolute_limit),
