@@ -98,10 +98,37 @@ impl Node {
         let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
         let url = format!("http://localhost:{rpc_port}").parse().unwrap();
 
-        // TODO properly wait to for the node to be available.
-        // Anvil needs some time before it's able to handle requests.
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        Self::wait_until_node_ready(&url).await;
 
         Self { url }
+    }
+
+    /// The node might not be able to handle requests right after being spawned.
+    /// To not fail tests due to synchronization issues we periodically query
+    /// the node until it returned the first successful response.
+    async fn wait_until_node_ready(url: &Url) {
+        let client = reqwest::Client::new();
+
+        let query_node = || {
+            client
+                .post(url.clone())
+                .json(&serde_json::json!({
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                    "method": "web3_clientVersion"
+                }))
+                .send()
+        };
+
+        let start = std::time::Instant::now();
+
+        while !query_node()
+            .await
+            .is_ok_and(|res| res.status().is_success())
+        {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        tracing::debug!(start_up = ?start.elapsed(), "node is ready to use");
     }
 }
