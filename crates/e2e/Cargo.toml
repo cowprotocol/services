@@ -32,7 +32,7 @@ sqlx = { workspace = true }
 tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
-web3 = { workspace = true }
+web3 = { workspace = true, features = ["ws-tokio"] }
 bollard = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }

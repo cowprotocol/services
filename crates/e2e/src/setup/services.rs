@@ -2,7 +2,6 @@ use {
     crate::setup::{docker::Db, wait_for_condition, Contracts, TIMEOUT},
     clap::Parser,
     ethcontract::{H160, H256},
-    ethrpc::http::HttpTransport,
     model::{
         app_data::{AppDataDocument, AppDataHash},
         auction::AuctionWithId,
@@ -406,15 +405,7 @@ impl<'a> Services<'a> {
     }
 
     fn node_url(&self) -> Url {
-        self.contracts
-            .weth
-            .raw_instance()
-            .web3()
-            .transport()
-            .downcast::<HttpTransport>()
-            .unwrap()
-            .url()
-            .clone()
+        self.db.node_url.as_ref().unwrap().clone()
     }
 
     pub fn api_url(&self) -> Url {

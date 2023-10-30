@@ -9,8 +9,9 @@ use {
     anyhow::{anyhow, Result},
     docker::{ContainerRegistry, Node},
     ethcontract::H160,
+    ethrpc::Web3Transport,
     futures::FutureExt,
-    shared::ethrpc::{create_test_transport, Web3},
+    shared::ethrpc::Web3,
     std::{
         future::Future,
         io::Write,
@@ -145,10 +146,16 @@ where
             Some((_, fork)) => Node::forked(fork, &registry).boxed(),
             None => Node::new(&registry).boxed(),
         };
-        let (db, node) = futures::join!(start_db, start_node);
+        let (mut db, node) = futures::join!(start_db, start_node);
 
-        let http = create_test_transport(node.url.as_str());
-        let web3 = Web3::new(http);
+        let transport = Web3Transport::new(
+            web3::transports::WebSocket::new(&format!("ws://127.0.0.1:{}", node.port))
+                .await
+                .unwrap(),
+        );
+        let web3 = Web3::new(transport);
+
+        db.node_url = Some(format!("http://127.0.0.1:{}", node.port).parse().unwrap());
 
         if let Some((solver, _)) = &fork {
             Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)

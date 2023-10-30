@@ -4,12 +4,12 @@ use {
         container::{Config, ListContainersOptions},
         service::HostConfig,
     },
-    reqwest::{IntoUrl, Url},
+    reqwest::IntoUrl,
 };
 
 /// A dockerized blockchain node for testing purposes.
 pub struct Node {
-    pub url: Url,
+    pub port: u16,
 }
 
 const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
@@ -96,27 +96,26 @@ impl Node {
             .unwrap();
 
         let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
-        let url = format!("http://localhost:{rpc_port}").parse().unwrap();
 
         tokio::time::timeout(
             tokio::time::Duration::from_millis(10_000),
-            Self::wait_until_node_ready(&url),
+            Self::wait_until_node_ready(rpc_port),
         )
         .await
         .expect("timed out waiting for the node to get ready");
 
-        Self { url }
+        Self { port: rpc_port }
     }
 
     /// The node might not be able to handle requests right after being spawned.
     /// To not fail tests due to synchronization issues we periodically query
     /// the node until it returned the first successful response.
-    async fn wait_until_node_ready(url: &Url) {
+    async fn wait_until_node_ready(port: u16) {
         let client = reqwest::Client::new();
 
         let query_node = || {
             client
-                .post(url.clone())
+                .post(format!("http://127.0.0.1:{port}"))
                 .json(&serde_json::json!({
                     "id": 1,
                     "jsonrpc": "2.0",
