@@ -98,7 +98,12 @@ impl Node {
         let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
         let url = format!("http://localhost:{rpc_port}").parse().unwrap();
 
-        Self::wait_until_node_ready(&url).await;
+        tokio::time::timeout(
+            tokio::time::Duration::from_millis(10_000),
+            Self::wait_until_node_ready(&url),
+        )
+        .await
+        .expect("timed out waiting for the node to get ready");
 
         Self { url }
     }
