@@ -1,7 +1,6 @@
 use {
     crate::setup::*,
     ethcontract::{H160, H256},
-    ethrpc::http::HttpTransport,
     reqwest::Url,
     shared::sources::uniswap_v2::UNISWAP_INIT,
 };
@@ -37,6 +36,7 @@ pub async fn start_driver(
     contracts: &Contracts,
     solver_endpoint: &Url,
     solver_account: &TestAccount,
+    node_url: &str,
 ) -> Url {
     let config_file = config_tmp_file(format!(
         r#"
@@ -69,20 +69,11 @@ mempool = "public"
         contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),
     ));
-    let node_url = contracts
-        .weth
-        .raw_instance()
-        .web3()
-        .transport()
-        .downcast::<HttpTransport>()
-        .unwrap()
-        .url()
-        .clone();
     let args = vec![
         "driver".to_string(),
         "--addr=127.0.0.1:0".to_string(),
         format!("--config={}", config_file.display()),
-        format!("--ethrpc={}", node_url.as_str()),
+        format!("--ethrpc={node_url}"),
     ];
 
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();

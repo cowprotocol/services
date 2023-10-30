@@ -43,7 +43,13 @@ async fn eth_flow_tx(web3: Web3, db: Db) {
     };
 
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    let driver_url = colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver).await;
+    let driver_url = colocation::start_driver(
+        onchain.contracts(),
+        &solver_endpoint,
+        &solver,
+        db.node_url.as_ref().unwrap().as_str(),
+    )
+    .await;
 
     let services = Services::new(onchain.contracts(), db).await;
     services.start_autopilot(vec![
