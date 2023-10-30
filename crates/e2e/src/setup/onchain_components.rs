@@ -120,8 +120,8 @@ impl Iterator for AccountGenerator {
 
 #[derive(Debug)]
 pub struct MintableToken {
-    pub contract: ERC20Mintable,
-    pub minter: Account,
+    contract: ERC20Mintable,
+    minter: Account,
 }
 
 impl MintableToken {
@@ -259,6 +259,7 @@ impl OnchainComponents {
         from_account: Account,
     ) -> [TestAccount; N] {
         let solvers = self.make_accounts::<N>(with_wei).await;
+
         for solver in &solvers {
             self.contracts
                 .gp_authenticator
@@ -268,6 +269,7 @@ impl OnchainComponents {
                 .await
                 .expect("failed to add solver");
         }
+
         solvers
     }
 

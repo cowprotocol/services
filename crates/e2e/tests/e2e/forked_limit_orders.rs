@@ -1,7 +1,7 @@
 use {
-    contracts::ERC20Mintable,
+    contracts::ERC20,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
-    ethcontract::{prelude::U256, H160},
+    ethcontract::prelude::U256,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -19,7 +19,7 @@ async fn forked_node_single_limit_order_mainnet() {
         "0x0ab21031124af2165586fbb495d93725a372c227"
             .parse()
             .unwrap(),
-        std::env::var("FORK_URL").unwrap(),
+        std::env::var("FORK_URL").expect("FORK_URL must be set to run forked tests"),
     )
     .await;
 }
@@ -58,30 +58,24 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     let [trader_a] = onchain.make_accounts(to_wei(1)).await;
 
-    let token_usdc = MintableToken {
-        contract: ERC20Mintable::at(
-            &web3,
-            "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-                .parse()
-                .unwrap(),
-        ),
-        minter: ethcontract::Account::Local(H160::zero(), None),
-    };
+    let token_usdc = ERC20::at(
+        &web3,
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            .parse()
+            .unwrap(),
+    );
 
-    let token_usdt = MintableToken {
-        contract: ERC20Mintable::at(
-            &web3,
-            "0xdac17f958d2ee523a2206206994597c13d831ec7"
-                .parse()
-                .unwrap(),
-        ),
-        minter: ethcontract::Account::Local(H160::zero(), None),
-    };
+    let token_usdt = ERC20::at(
+        &web3,
+        "0xdac17f958d2ee523a2206206994597c13d831ec7"
+            .parse()
+            .unwrap(),
+    );
 
     // Approve GPv2 for trading
     tx!(
         trader_a.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_wei(10))
+        token_usdc.approve(onchain.contracts().allowance, 1_000_000u128.into())
     );
 
     // Place Orders
@@ -91,9 +85,9 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_wei(10),
+        sell_amount: 1_000_000u128.into(),
         buy_token: token_usdt.address(),
-        buy_amount: to_wei(5),
+        buy_amount: 500_000u128.into(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -131,5 +125,5 @@ async fn forked_single_limit_order_test(web3: Web3) {
         .call()
         .await
         .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= to_wei(5));
+    assert!(balance_after.checked_sub(balance_before).unwrap() >= 500_000u128.into());
 }

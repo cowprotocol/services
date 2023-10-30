@@ -118,7 +118,7 @@ impl<T: Transport> ForkedNodeApi<T> {
 
     pub fn set_balance(&self, address: &H160, balance: U256) -> CallFuture<(), T::Out> {
         let json_address = serde_json::json!(address);
-        let json_balance = serde_json::json!(balance);
+        let json_balance = serde_json::json!(format!("{:#032x}", balance));
         CallFuture::new(
             self.transport
                 .execute("anvil_setBalance", vec![json_address, json_balance]),

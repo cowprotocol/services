@@ -84,7 +84,6 @@ impl Contracts {
         let weth = deploy!(WETH9());
 
         let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
-        // @note balancer v2 vault at address
         let balancer_vault = deploy!(BalancerV2Vault(
             balancer_authorizer.address(),
             weth.address(),
