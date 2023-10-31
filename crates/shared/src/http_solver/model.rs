@@ -463,8 +463,7 @@ pub enum SolverRejectionReason {
 
     /// Objective value is too low.
     #[serde(rename_all = "camelCase")]
-    #[serde(rename = "objectiveValueNonPositive")]
-    ObjectiveValueNonPositiveColocated {
+    ObjectiveValueNonPositive {
         #[serde_as(as = "HexOrDecimalU256")]
         quality: U256,
         #[serde_as(as = "HexOrDecimalU256")]
@@ -1239,7 +1238,7 @@ mod tests {
     #[test]
     fn serialize_objective_value_non_positive_colocated() {
         let auction_result =
-            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositiveColocated {
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
                 quality: U256::from(1),
                 gas_cost: U256::from(2),
             });
@@ -1265,6 +1264,27 @@ mod tests {
             serde_json::to_value(auction_result).unwrap(),
             json!({
                 "rejected": "nonPositiveScore",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_score_higher_than_quality() {
+        let auction_result =
+            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
+                score: U256::from(1),
+                quality: U256::from(2),
+            });
+
+        assert_eq!(
+            serde_json::to_value(auction_result).unwrap(),
+            json!({
+                "rejected": {
+                    "scoreHigherThanQuality": {
+                        "score": "1",
+                        "quality": "2",
+                    },
+                }
             }),
         );
     }
