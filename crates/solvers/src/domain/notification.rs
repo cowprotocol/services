@@ -12,7 +12,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
 
@@ -22,6 +22,7 @@ pub type TokensUsed = BTreeSet<TokenAddress>;
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
     ScoringFailed(ScoreKind),

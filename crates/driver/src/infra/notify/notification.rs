@@ -10,7 +10,7 @@ use {
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
 
@@ -19,6 +19,8 @@ pub type TokensUsed = BTreeSet<TokenAddress>;
 
 #[derive(Debug)]
 pub enum Kind {
+    /// Solver engine timed out.
+    Timeout,
     /// The solution doesn't contain any user orders.
     EmptySolution,
     /// Solution received from solver engine don't have unique id.

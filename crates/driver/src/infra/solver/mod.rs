@@ -13,7 +13,6 @@ use {
         infra::blockchain::Ethereum,
         util,
     },
-    std::collections::HashSet,
     tap::TapFallible,
     thiserror::Error,
     tracing::Instrument,
@@ -171,16 +170,6 @@ impl Solver {
             .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
 
-        // Ensure that solution IDs are unique.
-        let mut ids = HashSet::new();
-        for solution in &solutions {
-            if !ids.insert(solution.id()) {
-                super::observe::duplicated_solution_id(solution.id());
-                notify::duplicated_solution_id(self, auction.id(), solution.id());
-                return Err(Error::DuplicatedSolutionId);
-            }
-        }
-
         super::observe::solutions(&solutions);
         Ok(solutions)
     }
@@ -189,7 +178,7 @@ impl Solver {
     pub fn notify(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
         let body =
@@ -213,8 +202,15 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("solution id is not unique")]
-    DuplicatedSolutionId,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+}
+
+impl Error {
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Self::Http(util::http::Error::Response(err)) => err.is_timeout(),
+            _ => false,
+        }
+    }
 }

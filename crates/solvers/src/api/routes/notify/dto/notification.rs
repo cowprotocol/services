@@ -17,8 +17,9 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
-            solution_id: self.solution_id.into(),
+            solution_id: self.solution_id.map(Into::into),
             kind: match &self.kind {
+                Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
                 Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
                     notification::Kind::ScoringFailed(
@@ -77,7 +78,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
-    solution_id: u64,
+    solution_id: Option<u64>,
     kind: Kind,
 }
 
@@ -85,6 +86,7 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
     ScoringFailed(ScoreKind),
