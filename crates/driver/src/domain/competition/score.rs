@@ -4,16 +4,15 @@ use {
         boundary,
         domain::{eth, eth::GasCost},
     },
-    number::nonzero,
     std::cmp::Ordering,
 };
 
 /// Represents a single value suitable for comparing/ranking solutions.
 /// This is a final score that is observed by the autopilot.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub nonzero::U256);
+pub struct Score(pub eth::NonZeroU256);
 
-impl From<Score> for nonzero::U256 {
+impl From<Score> for eth::NonZeroU256 {
     fn from(value: Score) -> Self {
         value.0
     }
@@ -23,7 +22,7 @@ impl TryFrom<eth::U256> for Score {
     type Error = Error;
 
     fn try_from(value: eth::U256) -> Result<Self, Self::Error> {
-        Ok(Self(nonzero::U256::new(value).ok_or(Error::ZeroScore)?))
+        Ok(Self(eth::NonZeroU256::new(value).ok_or(Error::ZeroScore)?))
     }
 }
 
@@ -45,7 +44,7 @@ impl std::ops::Sub<GasCost> for Quality {
     fn sub(self, other: GasCost) -> Self::Output {
         if self.0 > other.0 .0 {
             Some(ObjectiveValue(
-                nonzero::U256::new(self.0 - other.0 .0).unwrap(),
+                eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
             ))
         } else {
             None
@@ -96,7 +95,6 @@ pub mod risk {
     use {
         super::Score,
         crate::{boundary, domain::eth},
-        number::nonzero,
     };
 
     /// Constructs a score based on the success probability of a solution.
@@ -135,7 +133,7 @@ pub mod risk {
     /// value like score. This is a real value that solution provides and
     /// it's defined as Quality - GasCost.
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-    pub struct ObjectiveValue(pub nonzero::U256);
+    pub struct ObjectiveValue(pub eth::NonZeroU256);
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
