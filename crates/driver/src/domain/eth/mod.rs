@@ -12,8 +12,8 @@ pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasCost, GasPrice},
-    primitive_types::{H160, H256, U256},
     number::nonzero::U256 as NonZeroU256,
+    primitive_types::{H160, H256, U256},
 };
 
 // TODO This module is getting a little hectic with all kinds of different

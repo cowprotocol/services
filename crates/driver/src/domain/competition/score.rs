@@ -90,15 +90,15 @@ pub enum Error {
 }
 
 pub mod risk {
-    /// Contains functionality and error types for scores that are based on
-    /// success probability.
+    //! Contains functionality and error types for scores that are based on
+    //! success probability.
     use {
         super::Score,
         crate::{boundary, domain::eth},
     };
 
-    /// Constructs a score based on the success probability of a solution.
     impl Score {
+        /// Constructs a score based on the success probability of a solution.
         pub fn new(
             score_cap: Score,
             objective_value: ObjectiveValue,
