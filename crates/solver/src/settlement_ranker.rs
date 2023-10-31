@@ -272,8 +272,8 @@ impl SettlementRanker {
         rated_settlements.retain(|(solver, settlement)| {
             let surplus = big_rational_to_u256(&settlement.surplus).unwrap_or(U256::MAX);
             let fees = big_rational_to_u256(&settlement.solver_fees).unwrap_or(U256::MAX);
-            let max_score = surplus.saturating_add(fees);
-            let valid_score = settlement.score.score() < max_score;
+            let quality = surplus.saturating_add(fees);
+            let valid_score = settlement.score.score() < quality;
             if !valid_score {
                 tracing::debug!(
                     solver_name = %solver.name(),
@@ -283,7 +283,7 @@ impl SettlementRanker {
                     auction_id,
                     AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
                         score: settlement.score.score(),
-                        quality: max_score,
+                        quality,
                     }),
                 );
             }

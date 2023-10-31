@@ -353,18 +353,18 @@ impl ScoreCalculator {
         let success_probability = BigRational::from_float(success_probability).unwrap();
         let optimal_score = compute_optimal_score(
             objective_value.clone(),
-            success_probability,
-            cost_fail,
+            success_probability.clone(),
+            cost_fail.clone(),
             self.score_cap.clone(),
         )?;
         if optimal_score > *objective_value {
-            tracing::error!(
-                "Sanity check failed, score higher than objective, should never happen unless a \
-                 bug in a computation"
+            tracing::error!(%optimal_score, %objective_value, %success_probability, %cost_fail,
+                "Sanity check failed, score higher than objective, should never happen unless \
+                 there's a bug in a computation"
             );
             return Err(anyhow!(
-                "Sanity check failed, score higher than objective, should never happen unless a \
-                 bug in a computation"
+                "Sanity check failed, score higher than objective, should never happen unless \
+                 there's a bug in a computation"
             )
             .into());
         }
