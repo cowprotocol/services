@@ -2,12 +2,15 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::score::{self, risk::SuccessProbability},
+            competition::score::{
+                self,
+                risk::{ObjectiveValue, SuccessProbability},
+            },
             eth,
         },
         util::conv::u256::U256Ext,
     },
-    score::{ObjectiveValue, Score},
+    score::Score,
     solver::settlement_rater::ScoreCalculator,
 };
 
@@ -17,12 +20,12 @@ pub fn score(
     success_probability: SuccessProbability,
     failure_cost: eth::GasCost,
 ) -> Result<Score, boundary::Error> {
-    match ScoreCalculator::new(score_cap.0.to_big_rational()).compute_score(
+    match ScoreCalculator::new(score_cap.0.get().to_big_rational()).compute_score(
         &objective_value.0.get().to_big_rational(),
         failure_cost.0 .0.to_big_rational(),
         success_probability.0,
     ) {
-        Ok(score) => Ok(score.into()),
+        Ok(score) => Ok(score.try_into()?),
         Err(err) => Err(err.into()),
     }
 }

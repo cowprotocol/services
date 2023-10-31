@@ -30,7 +30,7 @@ impl Notification {
                     score,
                     quality,
                 )) => Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality {
-                    score: score.0,
+                    score: score.0.get(),
                     quality: quality.0,
                 }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(

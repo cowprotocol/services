@@ -10,7 +10,7 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::{Signed, Zero},
+    bigdecimal::Signed,
     futures::future::try_join_all,
     num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
@@ -271,7 +271,7 @@ impl Settlement {
         let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => competition::Score(score),
+            competition::SolverScore::Solver(score) => competition::Score(score.try_into()?),
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 let gas_cost = self.gas.estimate * auction.gas_price();
                 let success_probability = success_probability.try_into()?;
@@ -293,10 +293,6 @@ impl Settlement {
                 )?
             }
         };
-
-        if score.is_zero() {
-            return Err(score::Error::ZeroScore);
-        }
 
         if score > quality {
             return Err(score::Error::ScoreHigherThanQuality(score, quality));

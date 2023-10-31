@@ -1,4 +1,5 @@
 use {
+    self::risk::ObjectiveValue,
     crate::{
         boundary,
         domain::{eth, eth::GasCost},
@@ -10,35 +11,19 @@ use {
 /// Represents a single value suitable for comparing/ranking solutions.
 /// This is a final score that is observed by the autopilot.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub eth::U256);
+pub struct Score(pub nonzero::U256);
 
-impl From<Score> for eth::U256 {
+impl From<Score> for nonzero::U256 {
     fn from(value: Score) -> Self {
         value.0
     }
 }
 
-impl From<eth::U256> for Score {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
+impl TryFrom<eth::U256> for Score {
+    type Error = Error;
 
-impl std::ops::Add for Score {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0)
-    }
-}
-
-impl num::Zero for Score {
-    fn zero() -> Self {
-        Self(eth::U256::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
+    fn try_from(value: eth::U256) -> Result<Self, Self::Error> {
+        Ok(Self(nonzero::U256::new(value).ok_or(Error::ZeroScore)?))
     }
 }
 
@@ -73,21 +58,15 @@ impl std::ops::Sub<GasCost> for Quality {
 /// to be valid.
 impl std::cmp::PartialEq<Quality> for Score {
     fn eq(&self, other: &Quality) -> bool {
-        self.0.eq(&other.0)
+        self.0.get().eq(&other.0)
     }
 }
 
 impl std::cmp::PartialOrd<Quality> for Score {
     fn partial_cmp(&self, other: &Quality) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
+        self.0.get().partial_cmp(&other.0)
     }
 }
-
-/// Represents the objective value of a solution. This is not an artifical value
-/// like score. This is a real value that solution provides and it's defined as
-/// Quality - GasCost.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct ObjectiveValue(pub nonzero::U256);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -115,8 +94,9 @@ pub mod risk {
     /// Contains functionality and error types for scores that are based on
     /// success probability.
     use {
-        super::{ObjectiveValue, Score},
+        super::Score,
         crate::{boundary, domain::eth},
+        number::nonzero,
     };
 
     /// Constructs a score based on the success probability of a solution.
@@ -150,6 +130,12 @@ pub mod risk {
             Ok(Self(value))
         }
     }
+
+    /// Represents the objective value of a solution. This is not an artifical
+    /// value like score. This is a real value that solution provides and
+    /// it's defined as Quality - GasCost.
+    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+    pub struct ObjectiveValue(pub nonzero::U256);
 
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
