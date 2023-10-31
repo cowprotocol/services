@@ -16,9 +16,6 @@ pub struct Metrics {
     /// The results of the quoting process.
     #[metric(labels("solver", "result"))]
     pub quotes: prometheus::IntCounterVec,
-    /// Number of timeouts per solver engine.
-    #[metric(labels("solver"))]
-    pub timeout: prometheus::IntCounterVec,
 }
 
 /// Setup the metrics registry.

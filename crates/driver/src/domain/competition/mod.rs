@@ -69,7 +69,6 @@ impl Competition {
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
-                    observe::solver_timeout(self.solver.name(), auction.id());
                     notify::solver_timeout(&self.solver, auction.id());
                 }
             })?;

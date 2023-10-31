@@ -10,7 +10,6 @@ use {
         domain::{
             competition::{
                 self,
-                auction,
                 score,
                 solution::{self, Settlement},
                 Auction,
@@ -60,14 +59,6 @@ pub fn fetched_liquidity(liquidity: &[Liquidity]) {
 /// Observe that fetching liquidity failed.
 pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
-}
-
-pub fn solver_timeout(solver: &solver::Name, auction_id: Option<auction::Id>) {
-    tracing::debug!(%solver, auction_id = %auction_id.unwrap_or(auction::Id(0)), "solver engine timeout");
-    metrics::get()
-        .timeout
-        .with_label_values(&[solver.as_str()])
-        .inc();
 }
 
 pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
