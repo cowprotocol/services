@@ -18,7 +18,7 @@ pub fn score(
     failure_cost: eth::GasCost,
 ) -> Result<Score, boundary::Error> {
     match ScoreCalculator::new(score_cap.0.to_big_rational()).compute_score(
-        &objective_value.0.to_big_rational(),
+        &objective_value.0.get().to_big_rational(),
         failure_cost.0 .0.to_big_rational(),
         success_probability.0,
     ) {

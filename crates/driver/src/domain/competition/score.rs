@@ -3,6 +3,7 @@ use {
         boundary,
         domain::{eth, eth::GasCost},
     },
+    number::nonzero,
     std::cmp::Ordering,
 };
 
@@ -53,13 +54,14 @@ impl From<eth::U256> for Quality {
 }
 
 /// ObjectiveValue = Quality - GasCost
-/// ObjectiveValue is valid only if it is positive.
 impl std::ops::Sub<GasCost> for Quality {
     type Output = Option<ObjectiveValue>;
 
     fn sub(self, other: GasCost) -> Self::Output {
         if self.0 > other.0 .0 {
-            Some(ObjectiveValue(self.0 - other.0 .0))
+            Some(ObjectiveValue(
+                nonzero::U256::new(self.0 - other.0 .0).unwrap(),
+            ))
         } else {
             None
         }
@@ -85,31 +87,7 @@ impl std::cmp::PartialOrd<Quality> for Score {
 /// like score. This is a real value that solution provides and it's defined as
 /// Quality - GasCost.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct ObjectiveValue(pub eth::U256);
-
-impl From<eth::U256> for ObjectiveValue {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
-    }
-}
-
-impl std::ops::Add for ObjectiveValue {
-    type Output = Self;
-
-    fn add(self, other: Self) -> Self {
-        Self(self.0 + other.0)
-    }
-}
-
-impl num::Zero for ObjectiveValue {
-    fn zero() -> Self {
-        Self(eth::U256::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
-    }
-}
+pub struct ObjectiveValue(pub nonzero::U256);
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
