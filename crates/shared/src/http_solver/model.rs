@@ -536,6 +536,7 @@ pub enum InternalizationStrategy {
     EncodeAllInteractions,
     #[serde(rename = "Enabled")]
     SkipInternalizableInteraction,
+    Unknown,
 }
 
 #[cfg(test)]

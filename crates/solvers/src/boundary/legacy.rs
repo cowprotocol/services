@@ -595,7 +595,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                     from: tx.from.into(),
                     to: tx.to.into(),
                     data: tx.input.clone().into(),
-                    internalization: InternalizationStrategy::SkipInternalizableInteraction,
+                    internalization: InternalizationStrategy::Unknown,
                     block_number: UNKNOWN_BLOCK_NUMBER, // todo #2018
                     tx_index: Default::default(),
                     access_list: Default::default(),
