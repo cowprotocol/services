@@ -41,9 +41,8 @@ impl num::Zero for Score {
     }
 }
 
-/// Represents the observed quality of a solution. This is not an artifical
-/// value like score. This is a real value that solution provides and it's
-/// defined as surplus + fees.
+/// Represents the observed quality of a solution. It's defined as surplus +
+/// fees.
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub struct Quality(pub eth::U256);
 
