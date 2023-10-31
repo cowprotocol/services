@@ -32,23 +32,21 @@ pub fn scoring_failed(
     }
 
     let notification = match err {
-        score::Error::ObjectiveValueNonPositive => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
-        }
         score::Error::ZeroScore => {
             notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
         }
-        score::Error::ScoreHigherThanObjective(score, objective_value) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ScoreHigherThanObjective(
-                *score,
-                *objective_value,
-            ))
+        score::Error::ScoreHigherThanQuality(score, quality) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::ScoreHigherThanQuality(*score, *quality),
+        ),
+        score::Error::RiskAdjusted(score::risk::Error::SuccessProbabilityOutOfRange(
+            success_probability,
+        )) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
+        ),
+        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive) => {
+            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
         }
-        score::Error::SuccessProbabilityOutOfRange(success_probability) => {
-            notification::Kind::ScoringFailed(
-                notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
-            )
-        }
+        score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
         score::Error::Boundary(_) => return,
     };
 

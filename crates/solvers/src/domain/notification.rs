@@ -45,9 +45,9 @@ pub enum Settlement {
 #[derive(Debug)]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
+    ScoreHigherThanQuality(Score, Quality),
     SuccessProbabilityOutOfRange(SuccessProbability),
-    ScoreHigherThanObjective(Score, ObjectiveValue),
+    ObjectiveValueNonPositive,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -60,9 +60,9 @@ impl From<eth::U256> for Score {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ObjectiveValue(pub eth::U256);
+pub struct Quality(pub eth::U256);
 
-impl From<eth::U256> for ObjectiveValue {
+impl From<eth::U256> for Quality {
     fn from(value: eth::U256) -> Self {
         Self(value)
     }
