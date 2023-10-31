@@ -1,4 +1,4 @@
-use crate::util::bytes::Bytes;
+use {crate::util::bytes::Bytes, web3::types::AccessList};
 
 mod chain;
 
@@ -75,4 +75,5 @@ pub struct Tx {
     pub to: Address,
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
+    pub access_list: AccessList,
 }

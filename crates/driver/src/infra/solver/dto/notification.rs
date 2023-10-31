@@ -10,6 +10,7 @@ use {
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
+    web3::types::AccessList,
 };
 
 impl Notification {
@@ -29,6 +30,7 @@ impl Notification {
                     to: tx.to.into(),
                     input: tx.input.into(),
                     value: tx.value.into(),
+                    access_list: tx.access_list.into(),
                 }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
@@ -110,6 +112,7 @@ pub struct Tx {
     pub input: Vec<u8>,
     #[serde_as(as = "serialize::U256")]
     pub value: eth::U256,
+    pub access_list: AccessList,
 }
 
 #[serde_as]
