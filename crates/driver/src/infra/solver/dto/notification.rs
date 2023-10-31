@@ -15,13 +15,14 @@ use {
 impl Notification {
     pub fn new(
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) -> Self {
         Self {
             auction_id: auction_id.as_ref().map(ToString::to_string),
-            solution_id: solution_id.0,
+            solution_id: solution_id.map(|id| id.0),
             kind: match kind {
+                notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
                 notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
                     Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
@@ -70,7 +71,7 @@ impl Notification {
 #[serde(rename_all = "camelCase")]
 pub struct Notification {
     auction_id: Option<String>,
-    solution_id: u64,
+    solution_id: Option<u64>,
     kind: Kind,
 }
 
@@ -78,6 +79,7 @@ pub struct Notification {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
     ScoringFailed(ScoreKind),

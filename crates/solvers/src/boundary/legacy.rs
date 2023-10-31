@@ -28,6 +28,7 @@ use {
                 Score,
                 SettledBatchAuctionModel,
                 SolverRejectionReason,
+                SolverRunError,
                 StablePoolParameters,
                 SubmissionResult,
                 TokenAmount,
@@ -578,6 +579,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
     };
 
     let auction_result = match &notification.kind {
+        Kind::Timeout => {
+            AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
+        }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
@@ -599,9 +603,14 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
-        Kind::DuplicatedSolutionId => AuctionResult::Rejected(
-            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
-        ),
+        Kind::DuplicatedSolutionId => {
+            AuctionResult::Rejected(SolverRejectionReason::DuplicatedSolutionId(
+                notification
+                    .solution_id
+                    .expect("duplicated solution ID notification must have a solution ID")
+                    .0,
+            ))
+        }
         Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
             Settlement::Success(hash) => SubmissionResult::Success(*hash),
             Settlement::Revert(hash) => SubmissionResult::Revert(*hash),

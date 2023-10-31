@@ -66,7 +66,13 @@ impl Competition {
         let solutions = self
             .solver
             .solve(auction, &liquidity, auction.deadline().timeout()?)
-            .await?;
+            .await
+            .tap_err(|err| {
+                if err.is_timeout() {
+                    observe::solver_timeout(self.solver.name(), auction.id());
+                    notify::solver_timeout(&self.solver, auction.id());
+                }
+            })?;
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
