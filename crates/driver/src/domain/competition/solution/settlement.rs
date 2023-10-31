@@ -3,16 +3,17 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, auction, order, solution},
+            competition::{self, auction, order, score, solution},
             eth,
             mempools,
         },
-        infra::{blockchain::Ethereum, Simulator},
+        infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::Signed,
+    bigdecimal::{Signed, Zero},
     futures::future::try_join_all,
-    std::collections::{HashMap, HashSet},
+    num::zero,
+    std::collections::{BTreeSet, HashMap, HashSet},
 };
 
 /// A transaction calling into our settlement contract on the blockchain, ready
@@ -103,18 +104,16 @@ impl Settlement {
 
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.
-        if !solution
+        let untrusted_tokens = solution
             .interactions
             .iter()
             .filter(|interaction| interaction.internalize())
-            .all(|interaction| {
-                interaction
-                    .inputs()
-                    .iter()
-                    .all(|asset| auction.tokens().get(asset.token).trusted)
-            })
-        {
-            return Err(Error::UntrustedInternalization);
+            .flat_map(|interaction| interaction.inputs())
+            .filter(|asset| !auction.tokens().get(asset.token).trusted)
+            .map(|asset| asset.token)
+            .collect::<BTreeSet<_>>();
+        if !untrusted_tokens.is_empty() {
+            return Err(Error::UntrustedInternalization(untrusted_tokens));
         }
 
         // Encode the solution into a settlement.
@@ -184,7 +183,9 @@ impl Settlement {
 
         // Ensure that the solver has sufficient balance for the settlement to be mined.
         if eth.balance(settlement.solver).await? < gas.required_balance() {
-            return Err(Error::InsufficientBalance);
+            return Err(Error::SolverAccountInsufficientBalance(
+                gas.required_balance(),
+            ));
         }
 
         // Is at least one interaction internalized?
@@ -241,8 +242,9 @@ impl Settlement {
         let tx = tx.set_access_list(access_list.clone());
 
         // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(tx).await?;
+        let gas = simulator.gas(tx.clone()).await?;
 
+        observe::simulated(&tx, gas);
         Ok((access_list, gas))
     }
 
@@ -265,9 +267,42 @@ impl Settlement {
         eth: &Ethereum,
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
-    ) -> Result<competition::Score, boundary::Error> {
-        self.boundary
-            .score(eth, auction, self.gas.estimate, revert_protection)
+    ) -> Result<competition::Score, score::Error> {
+        let objective_value = self
+            .boundary
+            .objective_value(eth, auction, self.gas.estimate)?;
+
+        let score = match self.boundary.score() {
+            competition::SolverScore::Solver(score) => competition::Score(score),
+            competition::SolverScore::RiskAdjusted(success_probability) => {
+                // The cost in case of a revert can deviate non-deterministically from the cost
+                // in case of success and it is often significantly smaller. Thus, we go with
+                // the full cost as a safe assumption.
+                let failure_cost =
+                    matches!(revert_protection, mempools::RevertProtection::Disabled)
+                        .then(|| self.gas.estimate * auction.gas_price())
+                        .unwrap_or(zero());
+                competition::Score::new(
+                    auction.score_cap(),
+                    objective_value,
+                    success_probability,
+                    failure_cost,
+                )?
+            }
+        };
+
+        if score.is_zero() {
+            return Err(score::Error::ZeroScore);
+        }
+
+        if score > objective_value {
+            return Err(score::Error::ScoreHigherThanObjective(
+                score,
+                objective_value,
+            ));
+        }
+
+        Ok(score)
     }
 
     // TODO(#1478): merge() should be defined on Solution rather than Settlement.
@@ -324,6 +359,16 @@ impl Settlement {
             .values()
             .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
             .collect()
+    }
+
+    /// Settlements have valid notify ID only if they are originated from a
+    /// single solution. Otherwise, for merged settlements, no notifications
+    /// are sent, therefore, notify id is None.
+    pub fn notify_id(&self) -> Option<super::Id> {
+        match self.solutions.len() {
+            1 => self.solutions.keys().next().copied(),
+            _ => None,
+        }
     }
 }
 

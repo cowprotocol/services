@@ -1,6 +1,6 @@
 use {
     crate::{
-        api::dto::Error,
+        api::routes::Error,
         domain::{auction, eth, liquidity, order},
         util::{conv, serialize},
     },

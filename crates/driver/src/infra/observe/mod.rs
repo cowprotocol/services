@@ -10,12 +10,14 @@ use {
         domain::{
             competition::{
                 self,
+                score,
                 solution::{self, Settlement},
                 Auction,
                 Solution,
                 Solved,
             },
-            eth,
+            eth::{self, Gas},
+            mempools,
             quote::{self, Quote},
             Liquidity,
         },
@@ -37,7 +39,7 @@ pub fn init(log: &str) {
 
 /// Observe a received auction.
 pub fn auction(auction: &Auction) {
-    tracing::info!(?auction, "received auction");
+    tracing::debug!(?auction, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
@@ -51,7 +53,7 @@ pub fn fetched_liquidity(liquidity: &[Liquidity]) {
     for liquidity in liquidity {
         *grouped.entry((&liquidity.kind).into()).or_default() += 1;
     }
-    tracing::info!(liquidity = ?grouped, "fetched liquidity sources");
+    tracing::debug!(liquidity = ?grouped, "fetched liquidity sources");
 }
 
 /// Observe that fetching liquidity failed.
@@ -59,14 +61,26 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
+pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+    tracing::debug!(?id, "discarded solution: duplicated id");
+    metrics::get()
+        .dropped_solutions
+        .with_label_values(&[solver.as_str(), "DuplicateId"])
+        .inc();
+}
+
 /// Observe the solutions returned by the solver.
 pub fn solutions(solutions: &[Solution]) {
-    tracing::info!(?solutions, "computed solutions");
+    if solutions.iter().any(|s| !s.is_empty()) {
+        tracing::info!(?solutions, "computed solutions");
+    } else {
+        tracing::debug!("no solutions");
+    }
 }
 
 /// Observe that a solution was discarded because it is empty.
 pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
-    tracing::info!(?id, "discarded solution: empty");
+    tracing::debug!(?id, "discarded solution: empty");
     metrics::get()
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "EmptySolution"])
@@ -80,10 +94,10 @@ pub fn encoding(id: solution::Id) {
 
 /// Observe that settlement encoding failed.
 pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
-    tracing::info!(?id, ?err, "discarded solution: settlement encoding failed");
+    tracing::info!(?id, ?err, "discarded solution: settlement encoding");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "SettlementEncodingFailed"])
+        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
         .inc();
 }
 
@@ -116,11 +130,11 @@ pub fn scoring(settlement: &Settlement) {
 }
 
 /// Observe that scoring failed.
-pub fn scoring_failed(solver: &solver::Name, err: &boundary::Error) {
-    tracing::info!(%solver, ?err, "discarded solution: scoring failed");
+pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
+    tracing::info!(%solver, ?err, "discarded solution: scoring");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "ScoringFailed"])
+        .with_label_values(&[solver.as_str(), "Scoring"])
         .inc();
 }
 
@@ -240,8 +254,8 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::Solver(solver::Error::Deserialize(_)) => {
                             "SolverDeserializeError"
                         }
-                        quote::Error::Solver(solver::Error::RepeatedSolutionIds) => {
-                            "RepeatedSolutionIds"
+                        quote::Error::Solver(solver::Error::DuplicatedSolutionId) => {
+                            "DuplicatedSolutionId"
                         }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
@@ -278,13 +292,13 @@ pub fn solver_response(endpoint: &Url, res: Result<&str, &http::Error>) {
 pub fn mempool_executed(
     mempool: &Mempool,
     settlement: &Settlement,
-    res: &Result<eth::TxId, boundary::Error>,
+    res: &Result<eth::TxId, mempools::Error>,
 ) {
     match res {
         Ok(txid) => {
             tracing::info!(
                 ?txid,
-                ?mempool,
+                %mempool,
                 ?settlement,
                 "sending transaction via mempool succeeded",
             );
@@ -292,7 +306,7 @@ pub fn mempool_executed(
         Err(err) => {
             tracing::warn!(
                 ?err,
-                ?mempool,
+                %mempool,
                 ?settlement,
                 "sending transaction via mempool failed",
             );
@@ -316,8 +330,9 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
-        competition::Error::Solver(solver::Error::RepeatedSolutionIds) => "RepeatedSolutionIds",
+        competition::Error::Solver(solver::Error::DuplicatedSolutionId) => "DuplicatedSolutionId",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
+        competition::Error::SubmissionError => "SubmissionError",
     }
 }
 
@@ -334,4 +349,9 @@ pub fn order_excluded_from_auction(
     reason: OrderExcludedFromAuctionReason,
 ) {
     tracing::trace!(uid=?order.uid, ?reason, "order excluded from auction");
+}
+
+/// Observe that a settlement was simulated
+pub fn simulated(tx: &eth::Tx, gas: Gas) {
+    tracing::debug!(?tx, gas = ?gas.0, "simulated settlement");
 }

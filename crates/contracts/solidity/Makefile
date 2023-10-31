@@ -8,12 +8,14 @@ TARGETDIR   := ../../../target/solidity
 ARTIFACTDIR := ../artifacts
 
 CONTRACTS := \
+	AnyoneAuthenticator.sol \
 	Balances.sol \
 	FetchBlock.sol \
 	Multicall.sol \
 	Signatures.sol \
 	SimulateCode.sol \
 	Solver.sol \
+	Swapper.sol \
 	Trader.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 

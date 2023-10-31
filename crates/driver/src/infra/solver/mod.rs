@@ -1,15 +1,21 @@
 use {
+    super::notify,
     crate::{
         domain::{
-            competition::{auction::Auction, solution::Solution, SolverTimeout},
+            competition::{
+                auction::{self, Auction},
+                solution::{self, Solution},
+                SolverTimeout,
+            },
             eth,
             liquidity,
         },
         infra::blockchain::Ethereum,
         util,
     },
-    std::collections::HashSet,
+    tap::TapFallible,
     thiserror::Error,
+    tracing::Instrument,
 };
 
 pub mod dto;
@@ -147,28 +153,46 @@ impl Solver {
             weth,
         ))
         .unwrap();
-        super::observe::solver_request(&self.config.endpoint, &body);
+        let url = shared::url::join(&self.config.endpoint, "solve");
+        super::observe::solver_request(&url, &body);
         let mut req = self
             .client
-            .post(self.config.endpoint.clone())
+            .post(url.clone())
             .body(body)
             .timeout(timeout.duration().to_std().unwrap());
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
         let res = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
-        super::observe::solver_response(&self.config.endpoint, res.as_deref());
-        let res: dto::Solutions = serde_json::from_str(&res?)?;
+        super::observe::solver_response(&url, res.as_deref());
+        let res = res?;
+        let res: dto::Solutions = serde_json::from_str(&res)
+            .tap_err(|err| tracing::warn!(res, ?err, "failed to parse solver response"))?;
         let solutions = res.into_domain(auction, liquidity, weth, self.clone())?;
-
-        // Ensure that solution IDs are unique.
-        let ids: HashSet<_> = solutions.iter().map(|solution| solution.id()).collect();
-        if ids.len() != solutions.len() {
-            return Err(Error::RepeatedSolutionIds);
-        }
 
         super::observe::solutions(&solutions);
         Ok(solutions)
+    }
+
+    /// Make a fire and forget POST request to notify the solver about an event.
+    pub fn notify(
+        &self,
+        auction_id: Option<auction::Id>,
+        solution_id: solution::Id,
+        kind: notify::Kind,
+    ) {
+        let body =
+            serde_json::to_string(&dto::Notification::new(auction_id, solution_id, kind)).unwrap();
+        let url = shared::url::join(&self.config.endpoint, "notify");
+        super::observe::solver_request(&url, &body);
+        let mut req = self.client.post(url).body(body);
+        if let Some(id) = observe::request_id::get_task_local_storage() {
+            req = req.header("X-REQUEST-ID", id);
+        }
+        let future = async move {
+            let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+        };
+        tokio::task::spawn(future.in_current_span());
     }
 }
 
@@ -178,8 +202,8 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("solution ids are not unique")]
-    RepeatedSolutionIds,
+    #[error("solution id is not unique")]
+    DuplicatedSolutionId,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
 }

@@ -82,29 +82,31 @@ struct SubmissionConfig {
     max_confirm_time_secs: u64,
 
     /// The mempools to submit settlement transactions to. Can be the public
-    /// mempool of a node or the private Flashbots mempool.
+    /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mempool")]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
+    #[serde(rename_all = "kebab-case")]
     Public {
         /// Don't submit transactions with high revert risk (i.e. transactions
         /// that interact with on-chain AMMs) to the public mempool.
         /// This can be enabled to avoid MEV when private transaction
         /// submission strategies are available.
         #[serde(default)]
-        disable_high_risk_public_mempool_transactions: bool,
+        revert_protection: bool,
     },
-    Flashbots {
-        /// The Flashbots URL to use.
+    #[serde(rename_all = "kebab-case")]
+    MevBlocker {
+        /// The MEVBlocker URL to use.
         url: Url,
         /// Maximum additional tip in Gwei that we are willing to give to
-        /// Flashbots above regular gas price estimation.
-        #[serde(default = "default_max_additional_flashbots_tip")]
+        /// MEVBlocker above regular gas price estimation.
+        #[serde(default = "default_max_additional_tip")]
         max_additional_tip: f64,
         /// Configures whether the submission logic is allowed to assume the
         /// submission nodes implement soft cancellations. With soft
@@ -120,8 +122,9 @@ fn default_additional_tip_percentage() -> f64 {
     0.05
 }
 
+/// 1000 gwei
 fn default_gas_price_cap() -> f64 {
-    1e9
+    1e12
 }
 
 fn default_target_confirm_time_secs() -> u64 {
@@ -136,8 +139,9 @@ fn default_max_confirm_time_secs() -> u64 {
     120
 }
 
-fn default_max_additional_flashbots_tip() -> f64 {
-    3.0
+/// 3 gwei
+fn default_max_additional_tip() -> f64 {
+    3e9
 }
 
 fn default_soft_cancellations_flag() -> bool {

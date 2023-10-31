@@ -1826,7 +1826,7 @@ mod tests {
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), &solver_fee)
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
             .await
             .unwrap();
 
@@ -1878,7 +1878,7 @@ mod tests {
             &order_uid,
             auction_id,
             None,
-            &bigdecimal(463182886014406361088),
+            Some(&bigdecimal(463182886014406361088)),
         )
         .await
         .unwrap();
@@ -1958,10 +1958,10 @@ mod tests {
 
         insert_order(&mut db, &order).await.unwrap();
 
-        crate::order_execution::save(&mut db, &order.uid, 1, None, &bigdecimal(1))
+        crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
             .await
             .unwrap();
-        crate::order_execution::save(&mut db, &order.uid, 42, None, &bigdecimal(42))
+        crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
             .await
             .unwrap();
 

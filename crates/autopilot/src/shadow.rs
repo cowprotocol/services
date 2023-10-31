@@ -33,6 +33,7 @@ pub struct RunLoop {
     auction: AuctionId,
     block: u64,
     score_cap: U256,
+    solve_deadline: Duration,
 }
 
 impl RunLoop {
@@ -41,6 +42,7 @@ impl RunLoop {
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
+        solve_deadline: Duration,
     ) -> Self {
         Self {
             orderbook,
@@ -49,6 +51,7 @@ impl RunLoop {
             auction: 0,
             block: 0,
             score_cap,
+            solve_deadline,
         }
     }
 
@@ -128,14 +131,14 @@ impl RunLoop {
                 .expect("reference score unexpectedly larger than winner's score");
 
             tracing::info!(
-                driver =% driver.url,
+                driver =% driver.name,
                 score =% solution.score,
                 %reward,
                 "winner"
             );
             Metrics::get()
                 .performance_rewards
-                .with_label_values(&[driver.url.as_str()])
+                .with_label_values(&[&driver.name])
                 .inc_by(reward.to_f64_lossy());
         }
 
@@ -148,7 +151,7 @@ impl RunLoop {
                         .then(|| hex(&solution.calldata.uninternalized));
 
                     tracing::debug!(
-                        driver =% driver.url,
+                        driver =% driver.name,
                         score =% solution.score,
                         account =? solution.account,
                         calldata =% hex(&solution.calldata.internalized),
@@ -157,14 +160,14 @@ impl RunLoop {
                     );
                     Metrics::get()
                         .results
-                        .with_label_values(&[driver.url.as_str(), "ok"])
+                        .with_label_values(&[&driver.name, "ok"])
                         .inc();
                 }
                 Err(err) => {
-                    tracing::warn!(%err, driver =% driver.url, "driver error");
+                    tracing::warn!(%err, driver =% driver.name, "driver error");
                     Metrics::get()
                         .results
-                        .with_label_values(&[driver.url.as_str(), err.label()])
+                        .with_label_values(&[&driver.name, err.label()])
                         .inc();
                 }
             };
@@ -173,8 +176,13 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let request =
-            run_loop::solve_request(id, auction, &self.trusted_tokens.all(), self.score_cap);
+        let request = run_loop::solve_request(
+            id,
+            auction,
+            &self.trusted_tokens.all(),
+            self.score_cap,
+            self.solve_deadline,
+        );
         let request = &request;
 
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -190,7 +198,7 @@ impl RunLoop {
         driver: &Driver,
         request: &solve::Request,
     ) -> Result<Solution, Error> {
-        let proposed = tokio::time::timeout(run_loop::SOLVE_TIME_LIMIT, driver.solve(request))
+        let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| Error::Timeout)?
             .map_err(Error::Solve)?;

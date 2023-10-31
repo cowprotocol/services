@@ -7,7 +7,7 @@ use {
         domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
         infra,
     },
-    futures::{future, stream, StreamExt},
+    futures::{future, stream, FutureExt, StreamExt},
     std::num::NonZeroUsize,
     tracing::Instrument,
 };
@@ -17,6 +17,9 @@ mod fills;
 pub struct Dex {
     /// The DEX API client.
     dex: infra::dex::Dex,
+
+    /// A DEX swap gas simulator for computing limit order fees.
+    simulator: infra::dex::Simulator,
 
     /// The slippage configuration to use for the solver.
     slippage: slippage::Limits,
@@ -36,6 +39,11 @@ impl Dex {
     pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
         Self {
             dex,
+            simulator: infra::dex::Simulator::new(
+                &config.node_url,
+                config.contracts.settlement,
+                config.contracts.authenticator,
+            ),
             slippage: config.slippage,
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
@@ -67,9 +75,11 @@ impl Dex {
         auction: &'a auction::Auction,
     ) -> impl stream::Stream<Item = solution::Solution> + 'a {
         stream::iter(auction.orders.iter().filter_map(order::UserOrder::new))
-            .map(|order| {
+            .enumerate()
+            .map(|(i, order)| {
                 let span = tracing::info_span!("solve", order = %order.get().uid);
                 self.solve_order(order, &auction.tokens, auction.gas_price)
+                    .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
                     .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())
@@ -113,9 +123,10 @@ impl Dex {
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);
-        let score =
-            solution::Score::RiskAdjusted(self.risk.success_probability(swap.gas, gas_price, 1));
-        let Some(solution) = swap.into_solution(order.clone(), gas_price, sell, score) else {
+        let Some(solution) = swap
+            .into_solution(order.clone(), gas_price, sell, &self.risk, &self.simulator)
+            .await
+        else {
             tracing::debug!("no solution for swap");
             return None;
         };

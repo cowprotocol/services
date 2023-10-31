@@ -208,12 +208,11 @@ impl Solver {
             },
             gas,
         )
-        .await
-        .unwrap();
+        .await;
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
-            "/",
+            "/solve",
             axum::routing::post(
                 move |axum::extract::State(state): axum::extract::State<State>,
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {

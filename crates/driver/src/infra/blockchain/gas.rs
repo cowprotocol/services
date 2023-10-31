@@ -25,11 +25,11 @@ impl GasPriceEstimator {
             .map_err(Error::Gas)?;
         let additional_tip = mempools
             .iter()
-            .find(|mempool| matches!(mempool.kind, mempool::Kind::Flashbots { .. }))
+            .find(|mempool| matches!(mempool.kind, mempool::Kind::MEVBlocker { .. }))
             .map(|mempool| {
                 (
                     match mempool.kind {
-                        mempool::Kind::Flashbots {
+                        mempool::Kind::MEVBlocker {
                             max_additional_tip, ..
                         } => max_additional_tip,
                         _ => unreachable!(),

@@ -7,7 +7,7 @@ use {
     clap::{Parser, ValueEnum as _},
     ethcontract::{H160, U256},
     model::order::OrderKind,
-    num::{BigInt, BigRational, Integer as _, ToPrimitive as _},
+    num::{BigInt, BigRational, CheckedDiv, Integer as _, ToPrimitive as _},
     once_cell::sync::OnceCell,
     shared::{external_prices::ExternalPrices, http_solver::model::TokenAmount},
     std::{
@@ -327,10 +327,15 @@ impl SlippageCalculator {
     ) -> Result<(Cow<BigRational>, BigInt)> {
         let relative = if let Some(max_absolute_native_token) = self.absolute.clone() {
             let price = price.context("missing token price")?;
-            let max_absolute_slippage =
-                BigRational::new(max_absolute_native_token, 1.into()) / price;
+            let max_absolute_slippage = BigRational::new(max_absolute_native_token, 1.into())
+                .checked_div(price)
+                .context("price is zero")?;
 
-            let max_relative_slippage_respecting_absolute_limit = max_absolute_slippage / &amount;
+            let amount = BigRational::new(amount.clone(), 1.into());
+
+            let max_relative_slippage_respecting_absolute_limit = max_absolute_slippage
+                .checked_div(&amount)
+                .context("amount is zero")?;
 
             cmp::min(
                 Cow::Owned(max_relative_slippage_respecting_absolute_limit),

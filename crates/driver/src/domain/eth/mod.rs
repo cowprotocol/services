@@ -290,6 +290,24 @@ impl From<i32> for Ether {
     }
 }
 
+impl std::ops::Add for Ether {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for Ether {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 /// Block number.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
@@ -313,13 +331,24 @@ impl From<H256> for TxId {
 }
 
 /// An onchain transaction.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Tx {
     pub from: Address,
     pub to: Address,
     pub value: Ether,
     pub input: Bytes<Vec<u8>>,
     pub access_list: AccessList,
+}
+
+impl std::fmt::Debug for Tx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tx")
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("value", &self.value)
+            .field("input", &self.input)
+            .finish()
+    }
 }
 
 impl Tx {

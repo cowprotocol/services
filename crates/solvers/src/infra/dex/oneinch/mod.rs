@@ -60,15 +60,12 @@ impl OneInch {
             Liquidity::Any => None,
             Liquidity::Only(protocols) => Some(protocols),
             Liquidity::Exclude(excluded) => {
-                let request = client
-                    .get(util::url::join(&endpoint, "liquidity-sources"))
-                    .build()?;
-                tracing::trace!(request = %request.url(), "fetching 1inch liquidity sources");
-                let response = client.execute(request).await?;
-                let status = response.status();
-                let body = response.text().await?;
-                tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch liquidity sources");
-                let liquidity: dto::Liquidity = serde_json::from_str(&body)?;
+                let liquidity = util::http::roundtrip!(
+                    <dto::Liquidity, dto::Error>;
+                    client.get(util::url::join(&endpoint, "liquidity-sources"))
+                )
+                .await?;
+
                 let protocols = liquidity
                     .protocols
                     .into_iter()
@@ -89,15 +86,14 @@ impl OneInch {
             ..Default::default()
         };
 
-        let request = client
-            .get(util::url::join(&endpoint, "approve/spender"))
-            .build()?;
-        tracing::trace!(request = %request.url(), "fetching 1inch spender address");
-        let response = client.execute(request).await?;
-        let status = response.status();
-        let body = response.text().await?;
-        tracing::trace!(status = %status.as_u16(), %body, "fetched 1inch spender address");
-        let spender = eth::ContractAddress(serde_json::from_str::<dto::Spender>(&body)?.address);
+        let spender = eth::ContractAddress(
+            util::http::roundtrip!(
+                <dto::Spender, dto::Error>;
+                client.get(util::url::join(&endpoint, "approve/spender"))
+            )
+            .await?
+            .address,
+        );
 
         Ok(Self {
             client,
@@ -151,18 +147,14 @@ impl OneInch {
     }
 
     async fn quote(&self, query: &dto::Query) -> Result<dto::Swap, Error> {
-        let request = self
-            .client
-            .get(util::url::join(&self.endpoint, "swap"))
-            .query(query)
-            .build()?;
-        tracing::trace!(request = %request.url(), "quoting");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let body = response.text().await?;
-        tracing::trace!(status = %status.as_u16(), %body, "quoted");
+        let swap = util::http::roundtrip!(
+            <dto::Swap, dto::Error>;
+            self.client
+                .get(util::url::join(&self.endpoint, "swap"))
+                .query(query)
+        )
+        .await?;
 
-        let swap = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
         Ok(swap)
     }
 }
@@ -176,22 +168,25 @@ pub enum Error {
     #[error("api error {code}: {description}")]
     Api { code: i32, description: String },
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Http(#[from] reqwest::Error),
+    Http(util::http::Error),
 }
 
-impl From<dto::Error> for Error {
-    fn from(err: dto::Error) -> Self {
-        // Unfortunately, AFAIK these codes aren't documented anywhere. These
-        // based on empirical observations of what the API has returned in the
-        // past.
-        match err.description.as_str() {
-            "insufficient liquidity" => Self::NotFound,
-            _ => Self::Api {
-                code: err.status_code,
-                description: err.description,
-            },
+impl From<util::http::RoundtripError<dto::Error>> for Error {
+    fn from(err: util::http::RoundtripError<dto::Error>) -> Self {
+        match err {
+            util::http::RoundtripError::Http(err) => Self::Http(err),
+            util::http::RoundtripError::Api(err) => {
+                // Unfortunately, AFAIK these codes aren't documented anywhere. These
+                // based on empirical observations of what the API has returned in the
+                // past.
+                match err.description.as_str() {
+                    "insufficient liquidity" => Self::NotFound,
+                    _ => Self::Api {
+                        code: err.status_code,
+                        description: err.description,
+                    },
+                }
+            }
         }
     }
 }

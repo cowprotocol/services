@@ -2,7 +2,7 @@ mod chain;
 
 pub use {
     self::chain::ChainId,
-    ethereum_types::{H160, U256},
+    ethereum_types::{H160, H256, U256},
 };
 
 /// A contract address.
@@ -14,6 +14,12 @@ pub struct ContractAddress(pub H160);
 /// https://eips.ethereum.org/EIPS/eip-20
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenAddress(pub H160);
+
+impl From<H160> for TokenAddress {
+    fn from(inner: H160) -> Self {
+        Self(inner)
+    }
+}
 
 /// The WETH token (or equivalent) for the EVM compatible network.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

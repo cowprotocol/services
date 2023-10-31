@@ -48,6 +48,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let ethrpc = ethrpc(&args).await;
     let config = config::file::load(ethrpc.network(), &args.config).await;
+    tracing::info!("running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = ethereum(&config, ethrpc).await;
@@ -132,9 +133,7 @@ async fn ethereum(config: &infra::Config, ethrpc: blockchain::Rpc) -> Ethereum {
             .await
             .expect("initialize gas price estimator"),
     );
-    Ethereum::new(ethrpc, config.contracts, gas)
-        .await
-        .expect("initialize ethereum RPC API")
+    Ethereum::new(ethrpc, config.contracts, gas).await
 }
 
 fn solvers(config: &config::Config, eth: &Ethereum) -> Vec<Solver> {

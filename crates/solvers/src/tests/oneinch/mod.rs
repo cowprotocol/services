@@ -8,6 +8,7 @@ mod out_of_price;
 pub fn config(solver_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
+node-url = 'http://localhost:8545'
 risk-parameters = [0,0,0,0]
 [dex]
 chain-id = '1'

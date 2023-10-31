@@ -14,7 +14,7 @@ async fn sell() {
     let api = mock::http::setup(vec![
         mock::http::Expectation::Get {
             path: mock::http::Path::exact(
-                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000&side=SELL&excludeDexs=UniswapV2&network=1&partner=cow",
+                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000&side=SELL&excludeDEXS=UniswapV2&network=1&partner=cow",
             ),
             res: json!({
               "priceRoute": {
@@ -75,7 +75,7 @@ async fn sell() {
         },
         mock::http::Expectation::Post {
             path: mock::http::Path::exact("transactions/1?ignoreChecks=true"),
-            req: json!({
+            req: mock::http::RequestBody::Exact(json!({
               "srcToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
               "destToken": "0xe41d2489571d322189246dafa5ebde1f4699f498",
               "srcAmount": "1000000000000000000",
@@ -138,7 +138,7 @@ async fn sell() {
               },
               "userAddress": "0xe0b3700e0aadcb18ed8d4bff648bc99896a18ad1",
               "partner": "cow"
-            }),
+            })),
             res: json!({
               "from": "0xe0b3700e0aadcb18ed8d4bff648bc99896a18ad1",
               "to": "0xDEF171Fe48CF0115B1d80b88dc8eAB59176FEe57",
@@ -207,7 +207,7 @@ async fn buy() {
     let api = mock::http::setup(vec![
         mock::http::Expectation::Get {
             path: mock::http::Path::exact(
-                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000000&side=BUY&excludeDexs=UniswapV2&network=1&partner=cow",
+                "prices?srcToken=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&destToken=0xe41d2489571d322189246dafa5ebde1f4699f498&srcDecimals=18&destDecimals=18&amount=1000000000000000000000&side=BUY&excludeDEXS=UniswapV2&network=1&partner=cow",
             ),
             res: json!({
               "priceRoute": {
@@ -276,7 +276,7 @@ async fn buy() {
         },
         mock::http::Expectation::Post {
             path: mock::http::Path::exact("transactions/1?ignoreChecks=true"),
-            req: json!({
+            req: mock::http::RequestBody::Exact(json!({
               "srcToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
               "destToken": "0xe41d2489571d322189246dafa5ebde1f4699f498",
               "srcAmount": "124940475326949378",
@@ -347,7 +347,7 @@ async fn buy() {
               },
               "userAddress": "0xe0b3700e0aadcb18ed8d4bff648bc99896a18ad1",
               "partner": "cow"
-            }),
+            })),
             res: json!({
               "from": "0xe0b3700e0aadcb18ed8d4bff648bc99896a18ad1",
               "to": "0xDEF171Fe48CF0115B1d80b88dc8eAB59176FEe57",

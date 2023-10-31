@@ -15,9 +15,8 @@ impl Solutions {
         Self {
             solutions: solutions
                 .iter()
-                .enumerate()
-                .map(|(i, solution)| Solution {
-                    id: i.try_into().unwrap(),
+                .map(|solution| Solution {
+                    id: solution.id.0,
                     prices: solution
                         .prices
                         .0
@@ -135,7 +134,7 @@ impl Solutions {
                         .collect(),
                     score: match solution.score.clone() {
                         solution::Score::Solver(score) => Score::Solver(score),
-                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score),
+                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score.0),
                     },
                 })
                 .collect(),

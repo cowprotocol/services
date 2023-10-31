@@ -1,7 +1,7 @@
 use {
     crate::{
         boundary::{self, Result},
-        domain::{competition::solution::settlement::Settlement, eth},
+        domain::{competition::solution::settlement::Settlement, eth, mempools},
         infra::{blockchain::Ethereum, solver::Solver},
     },
     async_trait::async_trait,
@@ -20,9 +20,11 @@ use {
                 TransactionSubmitting,
             },
             SubTxPoolRef,
+            SubmissionError,
         },
     },
     std::{fmt::Debug, sync::Arc},
+    tracing::Instrument,
     web3::types::AccessList,
 };
 pub use {gas_estimation::GasPriceEstimating, solver::settlement_submission::GlobalTxPool};
@@ -40,17 +42,27 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
-    Public(HighRisk),
-    /// The Flashbots private mempool.
-    Flashbots {
+    Public(RevertProtection),
+    /// The MEVBlocker private mempool.
+    MEVBlocker {
         url: reqwest::Url,
         max_additional_tip: f64,
         use_soft_cancellations: bool,
     },
 }
 
+impl Kind {
+    /// for instrumentization purposes
+    pub fn format_variant(&self) -> &'static str {
+        match self {
+            Kind::Public(_) => "PublicMempool",
+            Kind::MEVBlocker { .. } => "MEVBlocker",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
-pub enum HighRisk {
+pub enum RevertProtection {
     Enabled,
     Disabled,
 }
@@ -73,6 +85,12 @@ impl std::fmt::Debug for Mempool {
     }
 }
 
+impl std::fmt::Display for Mempool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Mempool({})", self.config.kind.format_variant())
+    }
+}
+
 impl Mempool {
     pub async fn new(config: Config, eth: Ethereum, pool: GlobalTxPool) -> Result<Self> {
         let gas_price_estimator = Arc::new(
@@ -87,20 +105,20 @@ impl Mempool {
             .await?,
         );
         Ok(match &config.kind {
-            Kind::Public(high_risk) => Self {
+            Kind::Public(revert_protection) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
                     vec![SubmissionNode::new(
                         SubmissionNodeKind::Broadcast,
                         boundary::web3(&eth),
                     )],
-                    matches!(high_risk, HighRisk::Disabled),
+                    matches!(revert_protection, RevertProtection::Enabled),
                 )),
                 submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),
                 gas_price_estimator,
                 config,
                 eth,
             },
-            Kind::Flashbots { url, .. } => Self {
+            Kind::MEVBlocker { url, .. } => Self {
                 submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url.to_owned())?),
                 submitted_transactions: pool.add_sub_pool(Strategy::Flashbots),
                 gas_price_estimator,
@@ -111,12 +129,17 @@ impl Mempool {
     }
 
     /// Publish the settlement and wait for it to be confirmed.
-    pub async fn execute(&self, solver: &Solver, settlement: Settlement) -> Result<eth::TxId> {
+    pub async fn execute(
+        &self,
+        solver: &Solver,
+        settlement: Settlement,
+    ) -> Result<eth::TxId, mempools::Error> {
         let web3 = boundary::web3(&self.eth);
         let nonce = web3
             .eth()
             .transaction_count(solver.address().into(), None)
-            .await?;
+            .await
+            .map_err(anyhow::Error::from)?;
         let max_fee_per_gas = eth::U256::from(settlement.gas.price).to_f64_lossy();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: self.gas_price_estimator.as_ref(),
@@ -124,14 +147,14 @@ impl Mempool {
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
             max_additional_tip: match self.config.kind {
                 Kind::Public(_) => 0.,
-                Kind::Flashbots {
+                Kind::MEVBlocker {
                     max_additional_tip, ..
                 } => max_additional_tip,
             },
         };
         let use_soft_cancellations = match self.config.kind {
             Kind::Public(_) => false,
-            Kind::Flashbots {
+            Kind::MEVBlocker {
                 use_soft_cancellations,
                 ..
             } => use_soft_cancellations,
@@ -149,7 +172,7 @@ impl Mempool {
             self.submitted_transactions.clone(),
             web3.clone(),
             &web3,
-        )?;
+        );
         let receipt = submitter
             .submit(
                 settlement.boundary.inner,
@@ -163,7 +186,16 @@ impl Mempool {
                     use_soft_cancellations,
                 },
             )
-            .await?;
+            .instrument(tracing::info_span!(
+                "mempool",
+                kind = self.config.kind.format_variant()
+            ))
+            .await
+            .map_err(|err| match err {
+                SubmissionError::SimulationRevert(_) => mempools::Error::SimulationRevert,
+                SubmissionError::Revert(hash) => mempools::Error::Revert(hash.into()),
+                _ => mempools::Error::Other(anyhow::Error::from(err)),
+            })?;
         Ok(receipt.transaction_hash.into())
     }
 

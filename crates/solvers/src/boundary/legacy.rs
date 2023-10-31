@@ -1,7 +1,14 @@
 use {
     crate::{
         boundary,
-        domain::{auction, eth, liquidity, order, solution},
+        domain::{
+            auction,
+            eth,
+            liquidity,
+            notification::{self, Kind, ScoreKind, Settlement},
+            order,
+            solution,
+        },
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -12,6 +19,7 @@ use {
             model::{
                 AmmModel,
                 AmmParameters,
+                AuctionResult,
                 BatchAuctionModel,
                 ConcentratedPoolParameters,
                 ConstantProductPoolParameters,
@@ -19,7 +27,9 @@ use {
                 OrderModel,
                 Score,
                 SettledBatchAuctionModel,
+                SolverRejectionReason,
                 StablePoolParameters,
+                SubmissionResult,
                 TokenAmount,
                 TokenInfoModel,
                 WeightedPoolTokenData,
@@ -29,6 +39,7 @@ use {
             HttpSolverApi,
             SolverConfig,
         },
+        network::network_name,
         sources::uniswap_v3::{
             graph_api::Token,
             pool_fetching::{PoolInfo, PoolState, PoolStats},
@@ -44,14 +55,16 @@ pub struct Legacy {
 
 impl Legacy {
     pub fn new(config: crate::domain::solver::legacy::Config) -> Self {
-        let solve_path = config.endpoint.path().to_owned();
-        let mut base = config.endpoint;
-        base.set_path("");
+        let (base, solve_path) = shared::url::split_at_path(&config.endpoint).unwrap();
 
         Self {
             solver: DefaultHttpSolverApi {
                 name: config.solver_name,
-                network_name: format!("{:?}", config.chain_id),
+                network_name: network_name(
+                    config.chain_id.network_id(),
+                    config.chain_id.value().as_u64(),
+                )
+                .into(),
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
@@ -73,10 +86,17 @@ impl Legacy {
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
-        let (mapping, auction_model) = to_boundary_auction(&auction, self.weth);
+        let (mapping, auction_model) =
+            to_boundary_auction(&auction, self.weth, self.solver.network_name.clone());
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping)
+    }
+
+    pub fn notify(&self, notification: notification::Notification) {
+        let (auction_id, auction_result) = to_boundary_auction_result(&notification);
+        self.solver
+            .notify_auction_result(auction_id, auction_result);
     }
 }
 
@@ -101,6 +121,7 @@ enum Order<'a> {
 fn to_boundary_auction(
     auction: &auction::Auction,
     weth: eth::WethAddress,
+    network: String,
 ) -> (Mapping, BatchAuctionModel) {
     let gas = GasModel {
         native_token: weth.0,
@@ -133,7 +154,7 @@ fn to_boundary_auction(
             })
             .collect(),
         metadata: Some(MetadataModel {
-            environment: None,
+            environment: Some(network),
             auction_id: match auction.id {
                 auction::Id::Solve(id) => Some(id),
                 auction::Id::Quote => None,
@@ -407,9 +428,12 @@ fn to_domain_solution(
                         order::Side::Buy => execution.exec_buy_amount,
                         order::Side::Sell => execution.exec_sell_amount,
                     },
-                    match execution.exec_fee_amount {
-                        Some(fee) => solution::Fee::Surplus(fee),
-                        None => solution::Fee::Protocol,
+                    match order.solver_determines_fee() {
+                        true => execution
+                            .exec_fee_amount
+                            .map(solution::Fee::Surplus)
+                            .context("no surplus fee")?,
+                        false => solution::Fee::Protocol,
                     },
                 )
                 .context("invalid trade execution")?,
@@ -524,6 +548,7 @@ fn to_domain_solution(
     }
 
     Ok(solution::Solution {
+        id: Default::default(),
         prices: solution::ClearingPrices(
             model
                 .prices
@@ -541,9 +566,51 @@ fn to_domain_solution(
             Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => solution::Score::RiskAdjusted(success_probability),
+            } => solution::Score::RiskAdjusted(solution::SuccessProbability(success_probability)),
         },
     })
+}
+
+fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
+    let auction_id = match notification.auction_id {
+        auction::Id::Solve(id) => id,
+        auction::Id::Quote => 0,
+    };
+
+    let auction_result = match &notification.kind {
+        Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
+        }
+        Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+            AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)
+        }
+        Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective(_, _)) => {
+            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanObjective)
+        }
+        Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange(_)) => {
+            AuctionResult::Rejected(SolverRejectionReason::SuccessProbabilityOutOfRange)
+        }
+        Kind::NonBufferableTokensUsed(tokens) => {
+            AuctionResult::Rejected(SolverRejectionReason::NonBufferableTokensUsed(
+                tokens.iter().map(|token| token.0).collect(),
+            ))
+        }
+        Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
+            SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
+        ),
+        Kind::DuplicatedSolutionId => AuctionResult::Rejected(
+            SolverRejectionReason::DuplicatedSolutionId(notification.solution_id.0),
+        ),
+        Kind::Settled(kind) => AuctionResult::SubmittedOnchain(match kind {
+            Settlement::Success(hash) => SubmissionResult::Success(*hash),
+            Settlement::Revert(hash) => SubmissionResult::Revert(*hash),
+            Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
+            Settlement::Fail => SubmissionResult::Fail,
+        }),
+    };
+
+    (auction_id, auction_result)
 }
 
 fn to_big_rational(r: &eth::Rational) -> num::BigRational {

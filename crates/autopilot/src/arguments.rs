@@ -1,7 +1,7 @@
 use {
     primitive_types::{H160, U256},
     shared::{
-        arguments::{display_list, display_option},
+        arguments::{display_list, display_option, ExternalSolver},
         bad_token::token_owner_finder,
         http_client,
         price_estimation::{self, NativePriceEstimators},
@@ -153,9 +153,9 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub enable_colocation: bool,
 
-    /// Driver base URLs.
+    /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
-    pub drivers: Vec<Url>,
+    pub drivers: Vec<ExternalSolver>,
 
     /// The maximum number of blocks to wait for a settlement to appear on
     /// chain.
@@ -173,6 +173,17 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10000000000000000")]
     pub score_cap: U256,
 
+    /// The amount of time that the autopilot waits looking for a settlement
+    /// transaction onchain after the driver acknowledges the receipt of a
+    /// settlement.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub max_settlement_transaction_wait: Duration,
+
     /// Run the autopilot in a shadow mode by specifying an upstream CoW
     /// protocol deployment to pull auctions from. This will cause the autopilot
     /// to start a run loop where it performs solver competition on driver,
@@ -183,6 +194,15 @@ pub struct Arguments {
     /// being specified separately.
     #[clap(long, env)]
     pub shadow: Option<Url>,
+
+    /// Time in seconds solvers have to compute a score per auction.
+    #[clap(
+        long,
+        env,
+        default_value = "15",
+        value_parser = shared::arguments::duration_from_seconds,
+    )]
+    pub solve_deadline: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -232,6 +252,13 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor
         )?;
+        display_option(f, "trusted_tokens_url", &self.trusted_tokens_url)?;
+        writeln!(f, "trusted_tokens: {:?}", self.trusted_tokens)?;
+        writeln!(
+            f,
+            "trusted_tokens_update_interval: {:?}",
+            self.trusted_tokens_update_interval
+        )?;
         writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
         display_list(f, "drivers", self.drivers.iter())?;
         writeln!(f, "submission_deadline: {}", self.submission_deadline)?;
@@ -242,6 +269,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
+        writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
         Ok(())
     }
 }

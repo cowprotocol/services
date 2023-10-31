@@ -5,12 +5,13 @@ use {
 };
 
 impl Settled {
-    pub fn new(calldata: competition::Settled) -> Self {
+    pub fn new(settled: competition::Settled) -> Self {
         Self {
             calldata: CalldataInner {
-                internalized: calldata.internalized_calldata.into(),
-                uninternalized: calldata.uninternalized_calldata.into(),
+                internalized: settled.internalized_calldata.into(),
+                uninternalized: settled.uninternalized_calldata.into(),
             },
+            tx_hash: settled.tx_hash.0,
         }
     }
 }
@@ -20,6 +21,7 @@ impl Settled {
 #[serde(rename_all = "camelCase")]
 pub struct Settled {
     calldata: CalldataInner,
+    tx_hash: primitive_types::H256,
 }
 
 #[serde_as]

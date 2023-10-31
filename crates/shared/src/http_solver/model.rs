@@ -402,6 +402,7 @@ pub struct ExecutionPlanCoordinatesModel {
 pub enum SubmissionResult {
     Success(H256),
     Revert(H256),
+    SimulationRevert,
     Fail,
 }
 
@@ -477,6 +478,12 @@ pub enum SolverRejectionReason {
 
     /// It is expected for a score to be less or equal to the objective value.
     ScoreHigherThanObjective,
+
+    /// Solver balance too low to cover the execution costs.
+    SolverAccountInsufficientBalance(U256),
+
+    /// Solution received from solver engine don't have unique id.
+    DuplicatedSolutionId(u64),
 }
 
 #[derive(Debug, Serialize)]

@@ -30,23 +30,16 @@ use {
         },
     },
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, H256, U256},
+    primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    shared::{
-        event_handling::MAX_REORG_BLOCK_COUNT,
-        remaining_amounts,
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
     tracing::Instrument,
-    web3::types::Transaction,
 };
-
-pub const SOLVE_TIME_LIMIT: Duration = Duration::from_secs(15);
 
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -59,15 +52,25 @@ pub struct RunLoop {
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
     pub score_cap: U256,
+    pub max_settlement_transaction_wait: Duration,
+    pub solve_deadline: Duration,
 }
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
+        let mut last_auction_id = None;
+        let mut last_block = None;
         loop {
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
-                self.single_run(id, &auction)
-                    .instrument(tracing::info_span!("auction", id))
-                    .await;
+                let current_block = self.current_block.borrow().hash;
+                // Only run the solvers if the auction or block has changed.
+                if last_auction_id.replace(id) != Some(id)
+                    || last_block.replace(current_block) != Some(current_block)
+                {
+                    self.single_run(id, &auction)
+                        .instrument(tracing::info_span!("auction", id))
+                        .await;
+                }
             };
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -110,7 +113,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
-        tracing::info!("solving");
+        tracing::info!(?auction, "solving");
 
         let solutions = {
             let mut solutions = self.competition(auction_id, auction).await;
@@ -128,7 +131,7 @@ impl RunLoop {
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
-            tracing::info!(driver = %driver.url, solution = %solution.id, "winner");
+            tracing::info!(driver = %driver.name, solution = %solution.id, "winner");
 
             let revealed = match self.reveal(driver, auction_id, solution.id).await {
                 Ok(result) => {
@@ -137,7 +140,7 @@ impl RunLoop {
                 }
                 Err(err) => {
                     Metrics::reveal_err(driver, &err);
-                    tracing::warn!(driver = %driver.url, ?err, "failed to reveal winning solution");
+                    tracing::warn!(driver = %driver.name, ?err, "failed to reveal winning solution");
                     return;
                 }
             };
@@ -228,6 +231,7 @@ impl RunLoop {
                     .map(|(index, participant)| {
                         let is_winner = solutions.len() - index == 1;
                         let mut settlement = SolverSettlement {
+                            solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
                             score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
@@ -279,12 +283,12 @@ impl RunLoop {
                 return;
             }
 
-            tracing::info!(driver = %driver.url, "settling");
-            match self.settle(driver, auction_id, solution, &revealed).await {
+            tracing::info!(driver = %driver.name, "settling");
+            match self.settle(driver, solution, &revealed).await {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
-                    tracing::error!(?err, driver = %driver.url, "settlement failed");
+                    tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
         }
@@ -297,6 +301,7 @@ impl RunLoop {
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
+            self.solve_deadline,
         );
         let request = &request;
 
@@ -313,40 +318,38 @@ impl RunLoop {
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
             let result = self.solve(driver, request).await;
-            (start.elapsed(), result)
-        }))
-        .await
-        .into_iter()
-        .zip(&self.drivers)
-        .fold(Vec::new(), |mut solutions, ((elapsed, result), driver)| {
-            for solution in match result {
+            let solutions = match result {
                 Ok(solutions) => {
-                    Metrics::solve_ok(driver, elapsed);
+                    Metrics::solve_ok(driver, start.elapsed());
                     solutions
                 }
                 Err(err) => {
-                    Metrics::solve_err(driver, elapsed, &err);
+                    Metrics::solve_err(driver, start.elapsed(), &err);
                     if matches!(err, SolveError::NoSolutions) {
-                        tracing::debug!(driver = %driver.url, "solver found no solution");
+                        tracing::debug!(driver = %driver.name, "solver found no solution");
                     } else {
-                        tracing::warn!(?err, driver = %driver.url, "solve error");
+                        tracing::warn!(?err, driver = %driver.name, "solve error");
                     }
-                    return solutions;
+                    vec![]
                 }
-            } {
-                match solution {
-                    Ok(solution) => {
-                        Metrics::solution_ok(driver);
-                        solutions.push(Participant { driver, solution })
-                    }
-                    Err(err) => {
-                        Metrics::solution_err(driver, &err);
-                        tracing::debug!(?err, driver = %driver.url, "invalid proposed solution");
-                    }
+            };
+
+            solutions.into_iter().filter_map(|solution| match solution {
+                Ok(solution) => {
+                    Metrics::solution_ok(driver);
+                    Some(Participant { driver, solution })
                 }
-            }
-            solutions
-        })
+                Err(err) => {
+                    Metrics::solution_err(driver, &err);
+                    tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
+                    None
+                }
+            })
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Computes a driver's solutions for the solver competition.
@@ -355,7 +358,7 @@ impl RunLoop {
         driver: &Driver,
         request: &solve::Request,
     ) -> Result<Vec<Result<Solution, ZeroScoreError>>, SolveError> {
-        let response = tokio::time::timeout(SOLVE_TIME_LIMIT, driver.solve(request))
+        let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await
             .map_err(|_| SolveError::Timeout)?
             .map_err(SolveError::Failure)?;
@@ -403,7 +406,6 @@ impl RunLoop {
     async fn settle(
         &self,
         driver: &Driver,
-        id: AuctionId,
         solved: &Solution,
         revealed: &reveal::Response,
     ) -> Result<(), SettleError> {
@@ -414,93 +416,25 @@ impl RunLoop {
             .collect_vec();
         self.database.store_order_events(&events).await;
 
-        driver
-            .settle(&settle::Request {
-                solution_id: solved.id,
-            })
-            .await
-            .map_err(SettleError::Failure)?;
+        let request = settle::Request {
+            solution_id: solved.id,
+        };
 
-        // TODO: React to deadline expiring.
-        let transaction = self
-            .wait_for_settlement_transaction(id, solved.account)
-            .await?;
-        if let Some(tx) = transaction {
-            let events = revealed
-                .orders
-                .iter()
-                .map(|uid| (*uid, OrderEventLabel::Traded))
-                .collect_vec();
-            self.database.store_order_events(&events).await;
-            tracing::debug!("settled in tx {:?}", tx.hash);
-        } else {
-            tracing::warn!("could not find a mined transaction in time");
-        }
+        let tx_hash = driver
+            .settle(&request, self.max_settlement_transaction_wait)
+            .await
+            .map_err(SettleError::Failure)?
+            .tx_hash;
+
+        let events = revealed
+            .orders
+            .iter()
+            .map(|uid| (*uid, OrderEventLabel::Traded))
+            .collect_vec();
+        self.database.store_order_events(&events).await;
+        tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag`.
-    ///
-    /// Returns None if no transaction was found within the deadline.
-    async fn wait_for_settlement_transaction(
-        &self,
-        id: AuctionId,
-        submission_address: H160,
-    ) -> Result<Option<Transaction>, SettleError> {
-        const MAX_WAIT_TIME: Duration = Duration::from_secs(60);
-        // Start earlier than current block because there might be a delay when
-        // receiving the Solver's /execute response during which it already
-        // started broadcasting the tx.
-        let start_offset = MAX_REORG_BLOCK_COUNT;
-        let max_wait_time_blocks =
-            (MAX_WAIT_TIME.as_secs_f32() / self.network_block_interval.as_secs_f32()).ceil() as u64;
-        let current = self.current_block.borrow().number;
-        let start = current.saturating_sub(start_offset);
-        let deadline = current.saturating_add(max_wait_time_blocks);
-        tracing::debug!(
-            %current, %start, %deadline, ?id, ?submission_address,
-            "waiting for settlement",
-        );
-
-        // Use the existing event indexing infrastructure to find the transaction. We
-        // query all settlement events in the block range to get tx hashes and
-        // query the node for the full calldata.
-        //
-        // If the block range was large, we would make the query more efficient by
-        // moving the starting block up while taking reorgs into account. With
-        // the current range of 30 blocks this isn't necessary.
-        //
-        // We do keep track of hashes we have already seen to reduce load from the node.
-
-        let mut seen_transactions: HashSet<H256> = Default::default();
-        while self.current_block.borrow().number <= deadline {
-            let mut hashes = self
-                .database
-                .recent_settlement_tx_hashes(start..deadline + 1)
-                .await
-                .map_err(SettleError::Database)?;
-            hashes.retain(|hash| !seen_transactions.contains(hash));
-            for hash in hashes {
-                let Some(tx) = self
-                    .web3
-                    .eth()
-                    .transaction(web3::types::TransactionId::Hash(hash))
-                    .await
-                    .map_err(|err| SettleError::TransactionFetch(hash, err))?
-                else {
-                    continue;
-                };
-                if tx.input.0.ends_with(&id.to_be_bytes()) && tx.from == Some(submission_address) {
-                    return Ok(Some(tx));
-                }
-                seen_transactions.insert(hash);
-            }
-            // It would be more correct to wait until just after the last event update run,
-            // but that is hard to synchronize.
-            tokio::time::sleep(self.network_block_interval.div_f32(2.)).await;
-        }
-        Ok(None)
     }
 
     /// Saves the competition data to the database
@@ -514,6 +448,7 @@ pub fn solve_request(
     auction: &Auction,
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
+    time_limit: Duration,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -582,7 +517,7 @@ pub fn solve_request(
             }))
             .unique_by(|token| token.address)
             .collect(),
-        deadline: Utc::now() + chrono::Duration::from_std(SOLVE_TIME_LIMIT).unwrap(),
+        deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
         score_cap,
     }
 }
@@ -622,10 +557,6 @@ enum RevealError {
 
 #[derive(Debug, thiserror::Error)]
 enum SettleError {
-    #[error("unexpected database error: {0}")]
-    Database(anyhow::Error),
-    #[error("error fetching transaction receipts for {0:?}: {1}")]
-    TransactionFetch(H256, web3::Error),
     #[error(transparent)]
     Failure(anyhow::Error),
 }
@@ -665,7 +596,7 @@ impl Metrics {
     fn solve_ok(driver: &Driver, elapsed: Duration) {
         Self::get()
             .solve
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .observe(elapsed.as_secs_f64())
     }
 
@@ -677,28 +608,28 @@ impl Metrics {
         };
         Self::get()
             .solve
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .observe(elapsed.as_secs_f64())
     }
 
     fn solution_ok(driver: &Driver) {
         Self::get()
             .solutions
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
     fn solution_err(driver: &Driver, _: &ZeroScoreError) {
         Self::get()
             .solutions
-            .with_label_values(&[driver.url.as_str(), "zero_score"])
+            .with_label_values(&[&driver.name, "zero_score"])
             .inc();
     }
 
     fn reveal_ok(driver: &Driver) {
         Self::get()
             .reveal
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
@@ -709,26 +640,24 @@ impl Metrics {
         };
         Self::get()
             .reveal
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .inc();
     }
 
     fn settle_ok(driver: &Driver) {
         Self::get()
             .settle
-            .with_label_values(&[driver.url.as_str(), "success"])
+            .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
     fn settle_err(driver: &Driver, err: &SettleError) {
         let label = match err {
-            SettleError::Database(_) => "internal_error",
-            SettleError::TransactionFetch(..) => "tx_error",
             SettleError::Failure(_) => "error",
         };
         Self::get()
             .settle
-            .with_label_values(&[driver.url.as_str(), label])
+            .with_label_values(&[&driver.name, label])
             .inc();
     }
 }

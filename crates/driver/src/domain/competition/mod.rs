@@ -1,18 +1,19 @@
 use {
     self::solution::settlement,
-    super::{eth, Mempools},
+    super::Mempools,
     crate::{
-        domain::competition::solution::Settlement,
+        domain::{competition::solution::Settlement, eth},
         infra::{
             self,
             blockchain::Ethereum,
+            notify,
             observe,
             solver::{self, Solver},
             Simulator,
         },
         util::Bytes,
     },
-    futures::future::join_all,
+    futures::{future::join_all, StreamExt},
     itertools::Itertools,
     rand::seq::SliceRandom,
     std::{collections::HashSet, sync::Mutex},
@@ -21,11 +22,13 @@ use {
 
 pub mod auction;
 pub mod order;
+pub mod score;
 pub mod solution;
 
 pub use {
     auction::Auction,
     order::Order,
+    score::{ObjectiveValue, Score, SuccessProbability},
     solution::{Solution, SolverScore, SolverTimeout},
 };
 
@@ -65,10 +68,23 @@ impl Competition {
             .solve(auction, &liquidity, auction.deadline().timeout()?)
             .await?;
 
-        // Empty solutions aren't useful, so discard them.
+        // Discard solutions that don't have unique ID.
+        let mut ids = HashSet::new();
         let solutions = solutions.into_iter().filter(|solution| {
+            if !ids.insert(solution.id()) {
+                observe::duplicated_solution_id(self.solver.name(), solution.id());
+                notify::duplicated_solution_id(&self.solver, auction.id(), solution.id());
+                false
+            } else {
+                true
+            }
+        });
+
+        // Empty solutions aren't useful, so discard them.
+        let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
+                notify::empty_solution(&self.solver, auction.id(), solution.id());
                 false
             } else {
                 true
@@ -90,7 +106,10 @@ impl Competition {
             .into_iter()
             .filter_map(|(id, result)| {
                 result
-                    .tap_err(|err| observe::encoding_failed(self.solver.name(), id, err))
+                    .tap_err(|err| {
+                        observe::encoding_failed(self.solver.name(), id, err);
+                        notify::encoding_failed(&self.solver, auction.id(), id, err);
+                    })
                     .ok()
             })
             .collect_vec();
@@ -150,7 +169,15 @@ impl Competition {
             .into_iter()
             .filter_map(|(result, settlement)| {
                 result
-                    .tap_err(|err| observe::scoring_failed(self.solver.name(), err))
+                    .tap_err(|err| {
+                        observe::scoring_failed(self.solver.name(), err);
+                        notify::scoring_failed(
+                            &self.solver,
+                            auction.id(),
+                            settlement.notify_id(),
+                            err,
+                        );
+                    })
                     .ok()
                     .map(|score| (score, settlement))
             })
@@ -162,13 +189,41 @@ impl Competition {
         }
 
         // Pick the best-scoring settlement.
-        let (score, settlement) = scores
+        let (mut score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .map(|(score, settlement)| (Solved { score }, settlement))
             .unzip();
 
-        *self.settlement.lock().unwrap() = settlement;
+        *self.settlement.lock().unwrap() = settlement.clone();
+
+        let settlement = match settlement {
+            Some(settlement) => settlement,
+            // Don't wait for the deadline because we can't produce a solution anyway.
+            None => return Ok(score),
+        };
+
+        // Re-simulate the solution on every new block until the deadline ends to make
+        // sure we actually submit a working solution close to when the winner
+        // gets picked by the procotol.
+        if let Ok(deadline) = auction.deadline().timeout() {
+            let score_ref = &mut score;
+            let simulate_on_new_blocks = async move {
+                let mut stream =
+                    ethrpc::current_block::into_stream(self.eth.current_block().clone());
+                while let Some(block) = stream.next().await {
+                    if let Err(err) = self.simulate_settlement(&settlement).await {
+                        tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+                        *score_ref = None;
+                        *self.settlement.lock().unwrap() = None;
+                        return;
+                    }
+                }
+            };
+            let timeout = deadline.duration().to_std().unwrap_or_default();
+            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
+        }
+
         Ok(score)
     }
 
@@ -206,21 +261,33 @@ impl Competition {
             .unwrap()
             .take()
             .ok_or(Error::SolutionNotAvailable)?;
-        self.mempools.execute(&self.solver, &settlement);
-        Ok(Settled {
-            internalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Enable,
-                )
-                .into(),
-            uninternalized_calldata: settlement
-                .calldata(
-                    self.eth.contracts().settlement(),
-                    settlement::Internalization::Disable,
-                )
-                .into(),
-        })
+
+        let executed = self.mempools.execute(&self.solver, &settlement).await;
+        notify::executed(
+            &self.solver,
+            settlement.auction_id,
+            settlement.notify_id(),
+            &executed,
+        );
+
+        match executed {
+            Err(_) => Err(Error::SubmissionError),
+            Ok(tx_hash) => Ok(Settled {
+                internalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Enable,
+                    )
+                    .into(),
+                uninternalized_calldata: settlement
+                    .calldata(
+                        self.eth.contracts().settlement(),
+                        settlement::Internalization::Disable,
+                    )
+                    .into(),
+                tx_hash,
+            }),
+        }
     }
 
     /// The ID of the auction being competed on.
@@ -231,22 +298,25 @@ impl Competition {
             .as_ref()
             .map(|s| s.auction_id)
     }
-}
 
-/// Represents a single value suitable for comparing/ranking solutions.
-/// This is a final score that is observed by the autopilot.
-#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub struct Score(pub eth::U256);
-
-impl From<Score> for eth::U256 {
-    fn from(value: Score) -> Self {
-        value.0
-    }
-}
-
-impl From<eth::U256> for Score {
-    fn from(value: eth::U256) -> Self {
-        Self(value)
+    /// Returns whether the settlement can be executed or would revert.
+    async fn simulate_settlement(
+        &self,
+        settlement: &Settlement,
+    ) -> Result<(), infra::simulator::Error> {
+        self.simulator
+            .gas(eth::Tx {
+                from: self.solver.address(),
+                to: settlement.solver(),
+                value: eth::Ether(0.into()),
+                input: crate::util::Bytes(settlement.calldata(
+                    self.eth.contracts().settlement(),
+                    settlement::Internalization::Enable,
+                )),
+                access_list: settlement.access_list.clone(),
+            })
+            .await
+            .map(|_| ())
     }
 }
 
@@ -279,6 +349,8 @@ pub struct Settled {
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
     pub uninternalized_calldata: Bytes<Vec<u8>>,
+    /// The transaction hash in which the solution was submitted.
+    pub tx_hash: eth::TxId,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -292,4 +364,6 @@ pub enum Error {
     DeadlineExceeded(#[from] solution::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
+    #[error("failed to submit the solution")]
+    SubmissionError,
 }

@@ -125,18 +125,13 @@ impl ZeroEx {
     }
 
     async fn quote(&self, query: &dto::Query) -> Result<dto::Quote, Error> {
-        let request = self
-            .client
-            .get(util::url::join(&self.endpoint, "quote"))
-            .query(query)
-            .build()?;
-        tracing::trace!(request = %request.url(), "quoting");
-        let response = self.client.execute(request).await?;
-        let status = response.status();
-        let body = response.text().await?;
-        tracing::trace!(status = %status.as_u16(), %body, "quoted");
-
-        let quote = serde_json::from_str::<dto::Response>(&body)?.into_result()?;
+        let quote = util::http::roundtrip!(
+            <dto::Quote, dto::Error>;
+            self.client
+                .get(util::url::join(&self.endpoint, "quote"))
+                .query(query)
+        )
+        .await?;
         Ok(quote)
     }
 }
@@ -158,22 +153,25 @@ pub enum Error {
     #[error("api error code {code}: {reason}")]
     Api { code: i64, reason: String },
     #[error(transparent)]
-    Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Http(#[from] reqwest::Error),
+    Http(util::http::Error),
 }
 
-impl From<dto::Error> for Error {
-    fn from(err: dto::Error) -> Self {
-        // Unfortunately, AFAIK these codes aren't documented anywhere. These
-        // based on empirical observations of what the API has returned in the
-        // past.
-        match err.code {
-            100 => Self::NotFound,
-            _ => Self::Api {
-                code: err.code,
-                reason: err.reason,
-            },
+impl From<util::http::RoundtripError<dto::Error>> for Error {
+    fn from(err: util::http::RoundtripError<dto::Error>) -> Self {
+        match err {
+            util::http::RoundtripError::Http(err) => Self::Http(err),
+            util::http::RoundtripError::Api(err) => {
+                // Unfortunately, AFAIK these codes aren't documented anywhere. These
+                // based on empirical observations of what the API has returned in the
+                // past.
+                match err.code {
+                    100 => Self::NotFound,
+                    _ => Self::Api {
+                        code: err.code,
+                        reason: err.reason,
+                    },
+                }
+            }
         }
     }
 }

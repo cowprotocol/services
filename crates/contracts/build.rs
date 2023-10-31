@@ -531,6 +531,10 @@ fn main() {
     generate_contract("Signatures");
     generate_contract("SimulateCode");
 
+    // Support contract used for solver fee simulations.
+    generate_contract("AnyoneAuthenticator");
+    generate_contract("Swapper");
+
     // Support contract used for global block stream.
     generate_contract("FetchBlock");
 
@@ -560,11 +564,16 @@ fn generate_contract_with_config(
 
     println!("cargo:rerun-if-changed={}", path.display());
 
-    config(ContractBuilder::new().visibility_modifier("pub"))
-        .generate(&contract)
-        .unwrap()
-        .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
-        .unwrap();
+    config(
+        ContractBuilder::new()
+            // for some reason formatting the generate code is broken on nightly
+            .rustfmt(false)
+            .visibility_modifier("pub"),
+    )
+    .generate(&contract)
+    .unwrap()
+    .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
+    .unwrap();
 }
 
 fn addr(s: &str) -> Address {

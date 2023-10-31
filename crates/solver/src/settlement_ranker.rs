@@ -225,7 +225,7 @@ impl SettlementRanker {
                         ScoringError::SuccessProbabilityOutOfRange(_) => {
                             Some(SolverRejectionReason::SuccessProbabilityOutOfRange)
                         }
-                        ScoringError::ScoreHigherThanObjective(_) => {
+                        ScoringError::ScoreHigherThanObjective(_, _) => {
                             Some(SolverRejectionReason::ScoreHigherThanObjective)
                         }
                         ScoringError::InternalError(_) => None,

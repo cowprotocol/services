@@ -1,74 +1,10 @@
 use {
-    super::TestNode,
-    crate::setup::to_wei,
     ethcontract::{H160, U256},
-    ethrpc::{create_test_transport, Web3},
-    reqwest::{IntoUrl, Url},
+    reqwest::Url,
     serde_json::json,
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
-
-pub struct Forker<T> {
-    forked_node_api: ForkedNodeApi<T>,
-    fork_url: Url,
-}
-
-impl<T: Transport> Forker<T> {
-    pub async fn new(web3: &web3::Web3<T>, solver_address: H160, fork_url: impl IntoUrl) -> Self {
-        let fork_url = fork_url.into_url().expect("Invalid fork URL");
-        let forked_node_api = web3.api::<ForkedNodeApi<_>>();
-
-        let http = create_test_transport(fork_url.as_str());
-        let remote_web3 = Web3::new(http);
-
-        let chain_id = remote_web3
-            .eth()
-            .chain_id()
-            .await
-            .expect("Error getting chain ID")
-            .as_u64();
-
-        forked_node_api
-            .set_chain_id(chain_id)
-            .await
-            .expect("Test network must support anvil_setChainId");
-
-        forked_node_api
-            .fork(&fork_url)
-            .await
-            .expect("Test network must support anvil_reset");
-
-        // fund default accounts, as tests expect them to have a balance
-        let default_accounts = web3.eth().accounts().await.expect("Error getting accounts");
-        for account in default_accounts {
-            forked_node_api
-                .set_balance(&account, to_wei(10000))
-                .await
-                .expect("Test network must support anvil_setBalance");
-        }
-
-        forked_node_api
-            .impersonate(&solver_address)
-            .await
-            .expect("Test network must support anvil_impersonateAccount");
-
-        Self {
-            forked_node_api,
-            fork_url,
-        }
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl<T: Transport> TestNode for Forker<T> {
-    async fn reset(&self) {
-        self.forked_node_api
-            .fork(&self.fork_url)
-            .await
-            .expect("Test network must support anvil_reset");
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct ForkedNodeApi<T> {

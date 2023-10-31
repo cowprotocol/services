@@ -1,6 +1,5 @@
 use {
     crate::{
-        domain,
         domain::{
             competition::{
                 self,
@@ -15,6 +14,7 @@ use {
         util::conv::u256::U256Ext,
     },
     anyhow::{anyhow, Context, Result},
+    bigdecimal::Signed,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -161,7 +161,7 @@ impl Settlement {
             competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
-                    success_probability,
+                    success_probability: success_probability.0,
                     gas_amount: None,
                 }
             }
@@ -202,50 +202,16 @@ impl Settlement {
         }
     }
 
-    pub fn score(
-        &self,
-        eth: &Ethereum,
-        auction: &competition::Auction,
-        gas: eth::Gas,
-        revert_protection: &domain::RevertProtection,
-    ) -> Result<competition::Score> {
-        let score = match self.inner.score {
-            http_solver::model::Score::Solver { score } => score,
+    pub fn score(&self) -> competition::SolverScore {
+        match self.inner.score {
+            http_solver::model::Score::Solver { score } => competition::SolverScore::Solver(score),
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
-                gas_amount,
-            } => {
-                let prices = ExternalPrices::try_from_auction_prices(
-                    eth.contracts().weth().address(),
-                    auction
-                        .tokens()
-                        .iter()
-                        .filter_map(|token| {
-                            token
-                                .price
-                                .map(|price| (token.address.into(), price.into()))
-                        })
-                        .collect(),
-                )?;
-                let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
-                let inputs = solver::objective_value::Inputs::from_settlement(
-                    &self.inner,
-                    &prices,
-                    gas_price.clone(),
-                    &gas_amount.unwrap_or(gas.into()),
-                );
-                solver::settlement_rater::ScoreCalculator::new(
-                    auction.score_cap().to_big_rational(),
-                    matches!(revert_protection, domain::RevertProtection::Disabled),
-                )
-                .compute_score(
-                    &inputs.objective_value(),
-                    &inputs.gas_cost(),
-                    success_probability,
-                )?
-            }
-        };
-        Ok(score.into())
+                ..
+            } => competition::SolverScore::RiskAdjusted(competition::score::SuccessProbability(
+                success_probability,
+            )),
+        }
     }
 
     pub fn merge(self, other: Self) -> Result<Self> {
@@ -466,4 +432,59 @@ fn to_big_decimal(value: bigdecimal::BigDecimal) -> num::BigRational {
     let ten = num::BigRational::new(10.into(), 1.into());
     let numerator = num::BigRational::new(base, 1.into());
     numerator / ten.pow(exp.try_into().expect("should not overflow"))
+}
+
+pub mod objective_value {
+    use {super::*, crate::domain::competition::score};
+
+    impl Settlement {
+        pub fn objective_value(
+            &self,
+            eth: &Ethereum,
+            auction: &competition::Auction,
+            gas: eth::Gas,
+        ) -> Result<score::ObjectiveValue, Error> {
+            let prices = ExternalPrices::try_from_auction_prices(
+                eth.contracts().weth().address(),
+                auction
+                    .tokens()
+                    .iter()
+                    .filter_map(|token| {
+                        token
+                            .price
+                            .map(|price| (token.address.into(), price.into()))
+                    })
+                    .collect(),
+            )?;
+            let gas_price = eth::U256::from(auction.gas_price().effective()).to_big_rational();
+            let objective_value = {
+                let surplus = self.inner.total_surplus(&prices);
+                let solver_fees = self.inner.total_solver_fees(&prices);
+                surplus + solver_fees - gas_price * gas.0.to_big_rational()
+            };
+
+            if !objective_value.is_positive() {
+                return Err(Error::ObjectiveValueNonPositive);
+            }
+
+            Ok(eth::U256::from_big_rational(&objective_value)?.into())
+        }
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    pub enum Error {
+        #[error("objective value is non-positive")]
+        ObjectiveValueNonPositive,
+        #[error("invalid objective value")]
+        Boundary(#[from] crate::boundary::Error),
+    }
+
+    impl From<Error> for competition::score::Error {
+        fn from(err: Error) -> Self {
+            match err {
+                Error::ObjectiveValueNonPositive => Self::ObjectiveValueNonPositive,
+                Error::Boundary(err) => Self::Boundary(err),
+            }
+        }
+    }
 }

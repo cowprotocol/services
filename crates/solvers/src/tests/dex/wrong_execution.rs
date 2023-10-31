@@ -42,7 +42,7 @@ async fn test() {
     ] {
         let api = mock::http::setup(vec![mock::http::Expectation::Post {
             path: mock::http::Path::Any,
-            req: json!({
+            req: mock::http::RequestBody::Exact(json!({
                 "sellToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
                 "buyToken": "0xba100000625a3754423978a60c9317c58a424e3d",
                 "orderKind": side,
@@ -52,7 +52,7 @@ async fn test() {
                     "227598784442065388110"
                 },
                 "gasPrice": "15000000000",
-            }),
+            })),
             res: json!({
                 "tokenAddresses": [
                     "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",

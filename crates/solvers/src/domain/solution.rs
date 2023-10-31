@@ -7,9 +7,19 @@ use {
     std::{collections::HashMap, slice},
 };
 
+#[derive(Debug, Default)]
+pub struct Id(pub u64);
+
+impl From<u64> for Id {
+    fn from(id: u64) -> Self {
+        Self(id)
+    }
+}
+
 /// A solution to an auction.
 #[derive(Debug, Default)]
 pub struct Solution {
+    pub id: Id,
     pub prices: ClearingPrices,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
@@ -17,6 +27,11 @@ pub struct Solution {
 }
 
 impl Solution {
+    /// Returns `self` with a new id.
+    pub fn with_id(self, id: Id) -> Self {
+        Self { id, ..self }
+    }
+
     /// Returns `self` with a new score.
     pub fn with_score(self, score: Score) -> Self {
         Self { score, ..self }
@@ -29,9 +44,9 @@ impl Solution {
         gas_price: auction::GasPrice,
     ) -> Self {
         let nmb_orders = self.trades.len();
-        self.with_score(Score::RiskAdjusted(
+        self.with_score(Score::RiskAdjusted(SuccessProbability(
             risk.success_probability(gas, gas_price, nmb_orders),
-        ))
+        )))
     }
 
     /// Returns `self` with eligible interactions internalized using the
@@ -190,6 +205,7 @@ impl Single {
             order::Side::Sell => sell.checked_sub(surplus_fee)?,
         };
         Some(Solution {
+            id: Default::default(),
             prices: ClearingPrices::new([
                 (order.sell.token, buy),
                 (order.buy.token, sell.checked_sub(surplus_fee)?),
@@ -373,7 +389,14 @@ pub struct Allowance {
 }
 
 /// Represents the probability that a solution will be successfully settled.
-type SuccessProbability = f64;
+#[derive(Debug, Copy, Clone)]
+pub struct SuccessProbability(pub f64);
+
+impl From<f64> for SuccessProbability {
+    fn from(value: f64) -> Self {
+        Self(value)
+    }
+}
 
 /// A score for a solution. The score is used to rank solutions.
 #[derive(Debug, Clone)]
@@ -389,7 +412,7 @@ pub enum Score {
 
 impl Default for Score {
     fn default() -> Self {
-        Self::RiskAdjusted(1.0)
+        Self::RiskAdjusted(SuccessProbability(1.0))
     }
 }
 
