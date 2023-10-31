@@ -29,6 +29,7 @@ hyper = "0.14"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.11"
 num = "0.4"
+number = { path = "../number" }
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
 rand = "0.8"

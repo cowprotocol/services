@@ -109,9 +109,36 @@ impl From<EffectiveGasPrice> for U256 {
 }
 
 impl ops::Mul<GasPrice> for Gas {
-    type Output = Ether;
+    type Output = GasCost;
 
     fn mul(self, rhs: GasPrice) -> Self::Output {
-        (self.0 * rhs.effective().0 .0).into()
+        Ether::from(self.0 * rhs.effective().0 .0).into()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GasCost(pub Ether);
+
+impl From<Ether> for GasCost {
+    fn from(value: Ether) -> Self {
+        Self(value)
+    }
+}
+
+impl ops::Add for GasCost {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num::Zero for GasCost {
+    fn zero() -> Self {
+        Self(Ether::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
