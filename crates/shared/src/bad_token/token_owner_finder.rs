@@ -300,6 +300,33 @@ pub struct TokenOwnerFinder {
 }
 
 impl TokenOwnerFinder {
+    pub async fn from_web3(web3: Web3) -> Self {
+        let chain_id: u64 = web3
+            .net()
+            .version()
+            .await
+            .expect("get network ID failed")
+            .parse()
+            .unwrap();
+
+        let http_factory = HttpClientFactory::default();
+
+        let blockscout = Arc::new(
+            BlockscoutTokenOwnerFinder::try_with_network(http_factory.create(), 1)
+                .expect("failed to create blockscout finder"),
+        );
+
+        let ethplorer = Arc::new(
+            EthplorerTokenOwnerFinder::try_with_network(http_factory.create(), None, chain_id)
+                .expect("failed to create ethplorer finder"),
+        );
+
+        Self {
+            web3,
+            proposers: vec![blockscout, ethplorer],
+        }
+    }
+
     /// Stream of addresses that might own the token.
     fn candidate_owners(&self, token: H160) -> impl Stream<Item = H160> + '_ {
         // Combine the results of all finders into a single stream.

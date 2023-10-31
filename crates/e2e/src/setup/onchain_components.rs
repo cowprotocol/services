@@ -37,6 +37,10 @@ macro_rules! tx {
     };
 }
 
+pub fn to_mwei(base: u32) -> U256 {
+    U256::from(base) * U256::exp10(6)
+}
+
 pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::exp10(18)
 }

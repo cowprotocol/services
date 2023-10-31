@@ -107,29 +107,40 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     run(f, extra_filters, None).await
 }
 
-pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
+pub async fn run_forked_test<F, Fut>(f: F, fork_url: String)
 where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), Some((solver_address, fork_url))).await
+    run(f, empty::<&str>(), Some((fork_url, None))).await
+}
+
+pub async fn run_forked_test_with_solver<F, Fut>(f: F, fork_url: String, solver_address: H160)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    run(f, empty::<&str>(), Some((fork_url, Some(solver_address)))).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     f: F,
-    solver_address: H160,
     fork_url: String,
+    solver_address: H160,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, Some((solver_address, fork_url))).await
+    run(f, extra_filters, Some((fork_url, Some(solver_address)))).await
 }
 
-async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
-where
+async fn run<F, Fut, T>(
+    f: F,
+    filters: impl IntoIterator<Item = T>,
+    fork: Option<(String, Option<H160>)>,
+) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
@@ -145,7 +156,7 @@ where
     let _lock = NODE_MUTEX.lock();
 
     let node = match &fork {
-        Some((_, fork)) => Node::forked(fork).await,
+        Some((fork, _)) => Node::forked(fork).await,
         None => Node::new().await,
     };
 
@@ -159,11 +170,9 @@ where
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-    if let Some((solver, _)) = &fork {
-        Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
-            .impersonate(solver)
-            .await
-            .unwrap();
+    if let Some((_, Some(solver))) = &fork {
+        let forked_node_api = Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3);
+        forked_node_api.impersonate(solver).await.unwrap();
     }
 
     services::clear_database().await;
