@@ -62,7 +62,7 @@ pub fn encoding_failed(
     err: &solution::Error,
 ) {
     let notification = match err {
-        solution::Error::UntrustedInternalization(tokens) => {
+        solution::Error::NonBufferableTokensUsed(tokens) => {
             notification::Kind::NonBufferableTokensUsed(tokens.clone())
         }
         solution::Error::SolverAccountInsufficientBalance(required) => {
