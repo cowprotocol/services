@@ -39,15 +39,15 @@ impl From<eth::U256> for Quality {
 
 /// ObjectiveValue = Quality - GasCost
 impl std::ops::Sub<GasCost> for Quality {
-    type Output = Option<ObjectiveValue>;
+    type Output = Result<ObjectiveValue, risk::Error>;
 
     fn sub(self, other: GasCost) -> Self::Output {
         if self.0 > other.0 .0 {
-            Some(ObjectiveValue(
+            Ok(ObjectiveValue(
                 eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
             ))
         } else {
-            None
+            Err(risk::Error::ObjectiveValueNonPositive)
         }
     }
 }

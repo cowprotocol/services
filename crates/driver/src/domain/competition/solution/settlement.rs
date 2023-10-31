@@ -275,9 +275,7 @@ impl Settlement {
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 let gas_cost = self.gas.estimate * auction.gas_price();
                 let success_probability = success_probability.try_into()?;
-                let objective_value = (quality - gas_cost).ok_or(score::Error::RiskAdjusted(
-                    score::risk::Error::ObjectiveValueNonPositive,
-                ))?;
+                let objective_value = (quality - gas_cost)?;
                 // The cost in case of a revert can deviate non-deterministically from the cost
                 // in case of success and it is often significantly smaller. Thus, we go with
                 // the full cost as a safe assumption.
