@@ -36,7 +36,7 @@ impl Notification {
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
                 )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange {
-                    probability: success_probability.0,
+                    probability: success_probability,
                 }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
                     Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)

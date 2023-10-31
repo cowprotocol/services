@@ -53,11 +53,16 @@ impl From<eth::U256> for Quality {
 }
 
 /// ObjectiveValue = Quality - GasCost
+/// ObjectiveValue is valid only if it is positive.
 impl std::ops::Sub<GasCost> for Quality {
-    type Output = ObjectiveValue;
+    type Output = Option<ObjectiveValue>;
 
     fn sub(self, other: GasCost) -> Self::Output {
-        ObjectiveValue(self.0.saturating_sub(other.0 .0))
+        if self.0 > other.0 .0 {
+            Some(ObjectiveValue(self.0 - other.0 .0))
+        } else {
+            None
+        }
     }
 }
 
@@ -134,7 +139,6 @@ pub mod risk {
     use {
         super::{ObjectiveValue, Score},
         crate::{boundary, domain::eth},
-        bigdecimal::Zero,
     };
 
     /// Constructs a score based on the success probability of a solution.
@@ -145,12 +149,6 @@ pub mod risk {
             success_probability: SuccessProbability,
             failure_cost: eth::GasCost,
         ) -> Result<Self, Error> {
-            if objective_value.is_zero() {
-                return Err(Error::ObjectiveValueNonPositive);
-            }
-            if !(0.0..=1.0).contains(&success_probability.0) {
-                return Err(Error::SuccessProbabilityOutOfRange(success_probability));
-            }
             Ok(boundary::score::score(
                 score_cap,
                 objective_value,
@@ -164,9 +162,14 @@ pub mod risk {
     #[derive(Debug, Copy, Clone)]
     pub struct SuccessProbability(pub f64);
 
-    impl From<f64> for SuccessProbability {
-        fn from(value: f64) -> Self {
-            Self(value)
+    impl TryFrom<f64> for SuccessProbability {
+        type Error = Error;
+
+        fn try_from(value: f64) -> Result<Self, Self::Error> {
+            if !(0.0..=1.0).contains(&value) {
+                return Err(Error::SuccessProbabilityOutOfRange(value));
+            }
+            Ok(Self(value))
         }
     }
 
@@ -175,7 +178,7 @@ pub mod risk {
         /// Solution has success probability that is outside of the allowed
         /// range [0, 1]
         #[error("success probability is out of range {0:?}")]
-        SuccessProbabilityOutOfRange(SuccessProbability),
+        SuccessProbabilityOutOfRange(f64),
         /// Objective value is defined as surplus + fees - gas costs. Protocol
         /// doesn't allow solutions that cost more than they bring to the users
         /// and protocol. Score calculator does not make sense for such

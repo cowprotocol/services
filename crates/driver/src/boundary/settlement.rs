@@ -162,7 +162,7 @@ impl Settlement {
             competition::SolverScore::Solver(score) => http_solver::model::Score::Solver { score },
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 http_solver::model::Score::RiskAdjusted {
-                    success_probability: success_probability.0,
+                    success_probability,
                     gas_amount: None,
                 }
             }
@@ -209,9 +209,7 @@ impl Settlement {
             http_solver::model::Score::RiskAdjusted {
                 success_probability,
                 ..
-            } => competition::SolverScore::RiskAdjusted(
-                competition::score::risk::SuccessProbability(success_probability),
-            ),
+            } => competition::SolverScore::RiskAdjusted(success_probability),
         }
     }
 

@@ -1,6 +1,6 @@
 use {
     crate::domain::{
-        competition::{auction, score::Quality, solution, Score, SuccessProbability},
+        competition::{auction, score::Quality, solution, Score},
         eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -50,7 +50,7 @@ pub enum ScoreKind {
     /// Solution has success probability that is outside of the allowed range
     /// [0, 1]
     /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
-    SuccessProbabilityOutOfRange(SuccessProbability),
+    SuccessProbabilityOutOfRange(f64),
     /// Objective value is defined as surplus + fees - gas costs. Protocol
     /// doesn't allow solutions that cost more than they bring to the users and
     /// protocol.
