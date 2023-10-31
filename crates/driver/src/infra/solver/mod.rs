@@ -178,7 +178,7 @@ impl Solver {
     pub fn notify(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
         let body =
@@ -202,8 +202,15 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("solution id is not unique")]
-    DuplicatedSolutionId,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+}
+
+impl Error {
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Self::Http(util::http::Error::Response(err)) => err.is_timeout(),
+            _ => false,
+        }
+    }
 }

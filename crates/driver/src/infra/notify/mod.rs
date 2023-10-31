@@ -9,8 +9,16 @@ pub use notification::{Kind, Notification, ScoreKind, Settlement};
 
 use crate::domain::{competition::score, eth, mempools::Error};
 
+pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
+    solver.notify(auction_id, None, notification::Kind::Timeout);
+}
+
 pub fn empty_solution(solver: &Solver, auction_id: Option<auction::Id>, solution: solution::Id) {
-    solver.notify(auction_id, solution, notification::Kind::EmptySolution);
+    solver.notify(
+        auction_id,
+        Some(solution),
+        notification::Kind::EmptySolution,
+    );
 }
 
 pub fn scoring_failed(
@@ -44,7 +52,7 @@ pub fn scoring_failed(
         score::Error::Boundary(_) => return,
     };
 
-    solver.notify(auction_id, solution_id.unwrap(), notification);
+    solver.notify(auction_id, solution_id, notification);
 }
 
 pub fn encoding_failed(
@@ -57,14 +65,14 @@ pub fn encoding_failed(
         solution::Error::UntrustedInternalization(tokens) => {
             solver.notify(
                 auction_id,
-                solution_id,
+                Some(solution_id),
                 notification::Kind::NonBufferableTokensUsed(tokens.clone()),
             );
         }
         solution::Error::SolverAccountInsufficientBalance(required) => {
             solver.notify(
                 auction_id,
-                solution_id,
+                Some(solution_id),
                 notification::Kind::SolverAccountInsufficientBalance(*required),
             );
         }
@@ -97,7 +105,7 @@ pub fn executed(
 
     solver.notify(
         Some(auction_id),
-        solution_id.unwrap(),
+        solution_id,
         notification::Kind::Settled(kind),
     );
 }
@@ -109,7 +117,7 @@ pub fn duplicated_solution_id(
 ) {
     solver.notify(
         auction_id,
-        solution_id,
+        Some(solution_id),
         notification::Kind::DuplicatedSolutionId,
     );
 }
