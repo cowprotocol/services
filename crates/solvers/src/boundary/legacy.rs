@@ -583,8 +583,11 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
-            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
+        Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(quality, gas_cost)) => {
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositiveColocated {
+                quality: quality.0,
+                gas_cost: gas_cost.0,
+            })
         }
         Kind::ScoringFailed(ScoreKind::ZeroScore) => {
             AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore)

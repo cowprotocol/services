@@ -47,7 +47,7 @@ impl std::ops::Sub<GasCost> for Quality {
                 eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
             ))
         } else {
-            Err(risk::Error::ObjectiveValueNonPositive)
+            Err(risk::Error::ObjectiveValueNonPositive(self, other))
         }
     }
 }
@@ -92,9 +92,13 @@ pub enum Error {
 pub mod risk {
     //! Contains functionality and error types for scores that are based on
     //! success probability.
+
     use {
-        super::Score,
-        crate::{boundary, domain::eth},
+        super::{Quality, Score},
+        crate::{
+            boundary,
+            domain::{eth, eth::GasCost},
+        },
     };
 
     impl Score {
@@ -146,8 +150,8 @@ pub mod risk {
         /// and protocol. Score calculator does not make sense for such
         /// solutions, since score calculator is expected to return
         /// value (0, ObjectiveValue]
-        #[error("objective value is non-positive")]
-        ObjectiveValueNonPositive,
+        #[error("objective value is non-positive, quality {0:?}, gas cost {1:?}")]
+        ObjectiveValueNonPositive(Quality, GasCost),
         #[error(transparent)]
         Boundary(#[from] boundary::Error),
     }
