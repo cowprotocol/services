@@ -17,13 +17,14 @@ type Transaction = eth::Tx;
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
 
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
     SimulationFailed(Transaction),
@@ -45,9 +46,9 @@ pub enum Settlement {
 #[derive(Debug)]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
+    ScoreHigherThanQuality(Score, Quality),
     SuccessProbabilityOutOfRange(SuccessProbability),
-    ScoreHigherThanObjective(Score, ObjectiveValue),
+    ObjectiveValueNonPositive,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -60,9 +61,9 @@ impl From<eth::U256> for Score {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ObjectiveValue(pub eth::U256);
+pub struct Quality(pub eth::U256);
 
-impl From<eth::U256> for ObjectiveValue {
+impl From<eth::U256> for Quality {
     fn from(value: eth::U256) -> Self {
         Self(value)
     }

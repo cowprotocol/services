@@ -252,6 +252,13 @@ impl std::fmt::Display for Arguments {
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor
         )?;
+        display_option(f, "trusted_tokens_url", &self.trusted_tokens_url)?;
+        writeln!(f, "trusted_tokens: {:?}", self.trusted_tokens)?;
+        writeln!(
+            f,
+            "trusted_tokens_update_interval: {:?}",
+            self.trusted_tokens_update_interval
+        )?;
         writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
         display_list(f, "drivers", self.drivers.iter())?;
         writeln!(f, "submission_deadline: {}", self.submission_deadline)?;

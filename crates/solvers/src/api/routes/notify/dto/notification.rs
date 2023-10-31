@@ -17,8 +17,9 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
-            solution_id: self.solution_id.into(),
+            solution_id: self.solution_id.map(Into::into),
             kind: match &self.kind {
+                Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
                 Kind::SimulationFailed(tx) => notification::Kind::SimulationFailed(eth::Tx {
                     from: tx.from.into(),
@@ -34,15 +35,14 @@ impl Notification {
                 Kind::ScoringFailed(ScoreKind::ZeroScore) => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
-                    score,
-                    objective_value,
-                }) => notification::Kind::ScoringFailed(
-                    notification::ScoreKind::ScoreHigherThanObjective(
-                        (*score).into(),
-                        (*objective_value).into(),
-                    ),
-                ),
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality { score, quality }) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ScoreHigherThanQuality(
+                            (*score).into(),
+                            (*quality).into(),
+                        ),
+                    )
+                }
                 Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange { probability }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::SuccessProbabilityOutOfRange(
@@ -84,7 +84,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
-    solution_id: u64,
+    solution_id: Option<u64>,
     kind: Kind,
 }
 
@@ -92,6 +92,7 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
     SimulationFailed(Tx),
@@ -123,17 +124,16 @@ pub struct Tx {
 #[serde(rename_all = "lowercase")]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ScoreHigherThanObjective {
+    ScoreHigherThanQuality {
         #[serde_as(as = "serialize::U256")]
         score: U256,
         #[serde_as(as = "serialize::U256")]
-        objective_value: U256,
+        quality: U256,
     },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    ObjectiveValueNonPositive,
 }
 
 #[serde_as]

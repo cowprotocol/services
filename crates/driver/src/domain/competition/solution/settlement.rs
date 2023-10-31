@@ -10,7 +10,7 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::{Signed, Zero},
+    bigdecimal::Signed,
     futures::future::try_join_all,
     num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
@@ -268,20 +268,21 @@ impl Settlement {
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
-        let objective_value = self
-            .boundary
-            .objective_value(eth, auction, self.gas.estimate)?;
+        let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => competition::Score(score),
+            competition::SolverScore::Solver(score) => competition::Score(score.try_into()?),
             competition::SolverScore::RiskAdjusted(success_probability) => {
+                let gas_cost = self.gas.estimate * auction.gas_price();
+                let success_probability = success_probability.try_into()?;
+                let objective_value = (quality - gas_cost)?;
                 // The cost in case of a revert can deviate non-deterministically from the cost
                 // in case of success and it is often significantly smaller. Thus, we go with
                 // the full cost as a safe assumption.
-                let failure_cost =
-                    matches!(revert_protection, mempools::RevertProtection::Disabled)
-                        .then(|| self.gas.estimate * auction.gas_price())
-                        .unwrap_or(zero());
+                let failure_cost = match revert_protection {
+                    mempools::RevertProtection::Enabled => zero(),
+                    mempools::RevertProtection::Disabled => gas_cost,
+                };
                 competition::Score::new(
                     auction.score_cap(),
                     objective_value,
@@ -291,15 +292,8 @@ impl Settlement {
             }
         };
 
-        if score.is_zero() {
-            return Err(score::Error::ZeroScore);
-        }
-
-        if score > objective_value {
-            return Err(score::Error::ScoreHigherThanObjective(
-                score,
-                objective_value,
-            ));
+        if score > quality {
+            return Err(score::Error::ScoreHigherThanQuality(score, quality));
         }
 
         Ok(score)

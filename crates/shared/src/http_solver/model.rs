@@ -456,28 +456,21 @@ pub enum SolverRejectionReason {
     /// only if the objective value is negative.
     NonPositiveScore,
 
-    /// The solution has a score that is too high. This can happen if the
-    /// score is higher than the maximum score (surplus + fees)
-    #[serde(rename_all = "camelCase")]
-    TooHighScore {
-        #[serde_as(as = "HexOrDecimalU256")]
-        surplus: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        fees: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        max_score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        submitted_score: U256,
-    },
-
     /// Objective value is too low.
     ObjectiveValueNonPositive,
 
     /// Success probability is out of the allowed range [0, 1]
     SuccessProbabilityOutOfRange,
 
-    /// It is expected for a score to be less or equal to the objective value.
-    ScoreHigherThanObjective,
+    /// It is expected for a score to be less or equal to the quality (surplus +
+    /// fees).
+    #[serde(rename_all = "camelCase")]
+    ScoreHigherThanQuality {
+        #[serde_as(as = "HexOrDecimalU256")]
+        score: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        quality: U256,
+    },
 
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
@@ -1214,27 +1207,6 @@ mod tests {
             .unwrap(),
             json!({
                 "nonBufferableTokensUsed": ["0x0000000000000000000000000000000000000001", "0x0000000000000000000000000000000000000002"],
-            }),
-        );
-    }
-
-    #[test]
-    fn serialize_rejection_too_high_score() {
-        assert_eq!(
-            serde_json::to_value(SolverRejectionReason::TooHighScore {
-                surplus: 1300.into(),
-                fees: 37.into(),
-                max_score: 1337.into(),
-                submitted_score: 1338.into(),
-            })
-            .unwrap(),
-            json!({
-                "tooHighScore": {
-                    "surplus": "1300",
-                    "fees": "37",
-                    "maxScore": "1337",
-                    "submittedScore": "1338",
-                },
             }),
         );
     }

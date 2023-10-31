@@ -1,6 +1,6 @@
 use {
     crate::domain::{
-        competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
+        competition::{auction, score::Quality, solution, Score},
         eth::{self, Ether, TokenAddress},
     },
     std::collections::BTreeSet,
@@ -15,12 +15,14 @@ type Transaction = eth::Tx;
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
 
 #[derive(Debug)]
 pub enum Kind {
+    /// Solver engine timed out.
+    Timeout,
     /// The solution doesn't contain any user orders.
     EmptySolution,
     /// Solution received from solver engine don't have unique id.
@@ -45,18 +47,21 @@ pub enum ScoreKind {
     /// and if only one solution is in competition with zero score, that
     /// solution would receive 0 reward (reward = score - reference score).
     ZeroScore,
+    /// Protocol does not allow solutions that are claimed to be "better" than
+    /// the actual value they bring (quality). It is expected that score
+    /// is always lower than quality, because there is always some
+    /// execution cost that needs to be incorporated into the score and lower
+    /// it.
+    ScoreHigherThanQuality(Score, Quality),
+    /// Solution has success probability that is outside of the allowed range
+    /// [0, 1]
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
+    SuccessProbabilityOutOfRange(f64),
     /// Objective value is defined as surplus + fees - gas costs. Protocol
     /// doesn't allow solutions that cost more than they bring to the users and
     /// protocol.
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
     ObjectiveValueNonPositive,
-    /// Solution has success probability that is outside of the allowed range
-    /// [0, 1]
-    SuccessProbabilityOutOfRange(SuccessProbability),
-    /// Protocol does not allow solutions that are claimed to be "better" than
-    /// the actual value they bring (objective value). It is expected that score
-    /// is always lower than objective value, because there is always some
-    /// revert risk that needs to be incorporated into the score and lower it.
-    ScoreHigherThanObjective(Score, ObjectiveValue),
 }
 
 #[derive(Debug)]
