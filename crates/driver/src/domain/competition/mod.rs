@@ -352,13 +352,13 @@ pub struct Revealed {
 
 #[derive(Debug)]
 pub struct Settled {
+    /// The transaction hash in which the solution was submitted.
+    pub tx_hash: eth::TxId,
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
     pub uninternalized_calldata: Bytes<Vec<u8>>,
-    /// The transaction hash in which the solution was submitted.
-    pub tx_hash: eth::TxId,
 }
 
 #[derive(Debug, thiserror::Error)]

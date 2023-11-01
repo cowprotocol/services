@@ -108,37 +108,43 @@ impl From<EffectiveGasPrice> for U256 {
     }
 }
 
-impl ops::Mul<GasPrice> for Gas {
+impl ops::Mul<EffectiveGasPrice> for Gas {
     type Output = GasCost;
 
-    fn mul(self, rhs: GasPrice) -> Self::Output {
-        Ether::from(self.0 * rhs.effective().0 .0).into()
+    fn mul(self, rhs: EffectiveGasPrice) -> Self::Output {
+        GasCost::new(self, rhs)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct GasCost(pub Ether);
+#[derive(Clone, Copy)]
+pub struct GasCost {
+    gas: Gas,
+    price: EffectiveGasPrice,
+}
 
-impl From<Ether> for GasCost {
-    fn from(value: Ether) -> Self {
-        Self(value)
+impl GasCost {
+    pub fn new(gas: Gas, price: EffectiveGasPrice) -> Self {
+        Self { gas, price }
+    }
+
+    pub fn get(&self) -> Ether {
+        (self.gas.0 * self.price.0 .0).into()
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            gas: U256::zero().into(),
+            price: U256::zero().into(),
+        }
     }
 }
 
-impl ops::Add for GasCost {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl num::Zero for GasCost {
-    fn zero() -> Self {
-        Self(Ether::zero())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.is_zero()
+impl std::fmt::Debug for GasCost {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("GasCost")
+            .field("gas", &self.gas.0)
+            .field("price", &self.price.0 .0)
+            .field("gas_cost", &self.get().0)
+            .finish()
     }
 }
