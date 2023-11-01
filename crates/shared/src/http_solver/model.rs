@@ -509,6 +509,7 @@ pub struct SimulatedTransaction {
     /// on
     pub tx_index: u64,
     /// Is transaction simulated with internalized interactions or without
+    /// TODO: remove field once the colocation is enabled.
     pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some
     /// error happened while estimating the access list.
