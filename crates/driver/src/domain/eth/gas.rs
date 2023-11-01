@@ -1,6 +1,8 @@
 use {
     super::{Ether, U256},
-    std::ops,
+    bigdecimal::Zero,
+    num::zero,
+    std::{ops, ops::Add},
 };
 
 /// Gas amount in gas units.
@@ -25,6 +27,24 @@ impl From<u64> for Gas {
 impl From<Gas> for U256 {
     fn from(value: Gas) -> Self {
         value.0
+    }
+}
+
+impl Add for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Zero for Gas {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 
@@ -108,6 +128,24 @@ impl From<EffectiveGasPrice> for U256 {
     }
 }
 
+impl Add for EffectiveGasPrice {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Zero for EffectiveGasPrice {
+    fn zero() -> Self {
+        Self(Ether::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
+    }
+}
+
 impl ops::Mul<EffectiveGasPrice> for Gas {
     type Output = GasCost;
 
@@ -116,6 +154,9 @@ impl ops::Mul<EffectiveGasPrice> for Gas {
     }
 }
 
+/// Gas cost in Ether.
+///
+/// The amount of Ether that is paid in transaction fees.
 #[derive(Clone, Copy)]
 pub struct GasCost {
     gas: Gas,
@@ -133,8 +174,8 @@ impl GasCost {
 
     pub fn zero() -> Self {
         Self {
-            gas: U256::zero().into(),
-            price: U256::zero().into(),
+            gas: zero(),
+            price: zero(),
         }
     }
 }
