@@ -29,7 +29,7 @@ pub struct Contracts {
 }
 
 impl Contracts {
-    pub async fn at(web3: &Web3) -> Self {
+    pub async fn deployed(web3: &Web3) -> Self {
         let network_id = web3.net().version().await.expect("get network ID failed");
         tracing::info!("connected to forked test network {}", network_id);
 

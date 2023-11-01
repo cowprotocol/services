@@ -1,5 +1,5 @@
 use {
-    crate::setup::deploy::Contracts,
+    crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, U256},
     hex_literal::hex,
@@ -216,8 +216,8 @@ impl OnchainComponents {
         }
     }
 
-    pub async fn at(web3: Web3) -> Self {
-        let contracts = Contracts::at(&web3).await;
+    pub async fn deployed(web3: Web3) -> Self {
+        let contracts = Contracts::deployed(&web3).await;
 
         Self {
             web3,
@@ -255,20 +255,33 @@ impl OnchainComponents {
         solvers
     }
 
-    /// Generate next `N` accounts with the given initial banace and
-    /// authenticate them as solvers on a forked network
+    /// Generate next `N` accounts with the given initial balance and
+    /// authenticate them as solvers on a forked network.
     pub async fn make_solvers_forked<const N: usize>(
         &mut self,
         with_wei: U256,
-        from_account: Account,
     ) -> [TestAccount; N] {
+        let auth_manager = self
+            .contracts
+            .gp_authenticator
+            .manager()
+            .call()
+            .await
+            .unwrap();
+
+        let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
+
+        forked_node_api.impersonate(&auth_manager).await.unwrap();
+
+        let auth_manager = ethcontract::Account::Local(auth_manager, None);
+
         let solvers = self.make_accounts::<N>(with_wei).await;
 
         for solver in &solvers {
             self.contracts
                 .gp_authenticator
                 .add_solver(solver.address())
-                .from(from_account.clone())
+                .from(auth_manager.clone())
                 .send()
                 .await
                 .expect("failed to add solver");

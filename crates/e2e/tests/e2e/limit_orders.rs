@@ -459,22 +459,10 @@ async fn too_many_limit_orders_test(web3: Web3) {
 }
 
 async fn forked_single_limit_order_test(web3: Web3) {
-    let mut onchain = OnchainComponents::at(web3.clone()).await;
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
-    let auth_manager = onchain
-        .contracts()
-        .gp_authenticator
-        .manager()
-        .call()
-        .await
-        .unwrap();
-
-    forked_node_api.impersonate(&auth_manager).await.unwrap();
-
-    let [solver] = onchain
-        .make_solvers_forked(to_wei(1), ethcontract::Account::Local(auth_manager, None))
-        .await;
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 

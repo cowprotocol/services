@@ -91,19 +91,4 @@ impl<T: Transport> ForkedNodeApi<T> {
         ))
         .await
     }
-
-    pub fn set_storage_at(
-        &self,
-        address: &H160,
-        slot: &str,
-        value: &str,
-    ) -> CallFuture<bool, T::Out> {
-        let json_address = serde_json::json!(address);
-        let json_slot = serde_json::json!(slot);
-        let json_value = serde_json::json!(value);
-        CallFuture::new(self.transport.execute(
-            "anvil_setStorageAt",
-            vec![json_address, json_slot, json_value],
-        ))
-    }
 }
