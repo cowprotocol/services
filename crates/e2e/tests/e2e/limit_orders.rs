@@ -486,13 +486,13 @@ async fn forked_single_limit_order_test(web3: Web3) {
     let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
     tx!(
         usdc_whale,
-        token_usdc.transfer(trader.address(), to_mwei(1000))
+        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
     );
 
     // Approve GPv2 for trading
     tx!(
         trader.account(),
-        token_usdc.approve(onchain.contracts().allowance, to_mwei(1000))
+        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
     );
 
     // Place Orders
@@ -502,9 +502,9 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
-        sell_amount: to_mwei(1000),
+        sell_amount: to_wei_with_exp(1000, 6),
         buy_token: token_usdt.address(),
-        buy_amount: to_mwei(500),
+        buy_amount: to_wei_with_exp(500, 6),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
