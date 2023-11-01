@@ -24,7 +24,7 @@ use {
 pub use {deploy::*, docker::Db, onchain_components::*, services::*};
 
 /// Create a temporary file with the given content.
-pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
+fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
     let mut file = tempfile::NamedTempFile::new().unwrap();
     file.write_all(content.as_ref()).unwrap();
     file.into_temp_path()
@@ -58,7 +58,7 @@ where
     Ok(())
 }
 
-const DEFAULT_FILTERS: [&str; 9] = [
+const DEFAULT_FILTERS: &[&str] = &[
     "warn",
     "autopilot=debug",
     "driver=debug",
@@ -74,7 +74,7 @@ fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<S
 where
     T: AsRef<str>,
 {
-    let mut default_filters: Vec<_> = DEFAULT_FILTERS.into_iter().map(String::from).collect();
+    let mut default_filters: Vec<_> = DEFAULT_FILTERS.iter().map(|f| String::from(*f)).collect();
     default_filters.extend(custom_filters.into_iter().map(|f| f.as_ref().to_owned()));
 
     default_filters
