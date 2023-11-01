@@ -170,7 +170,7 @@ pub struct Arguments {
     pub additional_deadline_for_rewards: usize,
 
     /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
-    #[clap(long, env, default_value = "10000000000000000")]
+    #[clap(long, env, default_value = "10000000000000000", value_parser = shared::arguments::parse_u256)]
     pub score_cap: U256,
 
     /// The amount of time that the autopilot waits looking for a settlement
