@@ -13,32 +13,35 @@ pub struct Node {
 impl Node {
     /// Spawns a new node that is forked from the given URL.
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_process(&["--port", "8545", "--fork-url", fork.as_str()]).await
+        Self::spawn_process(&["--port", "8545", "--fork-url", fork.as_str()], true).await
     }
 
     /// Spawns a new local test net with some default parameters.
     pub async fn new() -> Self {
-        Self::spawn_process(&[
-            "--port",
-            "8545",
-            "--gas-price",
-            "1",
-            "--gas-limit",
-            "10000000",
-            "--base-fee",
-            "0",
-            "--balance",
-            "1000000",
-            "--chain-id",
-            "1",
-            "--timestamp",
-            "1577836800",
-        ])
+        Self::spawn_process(
+            &[
+                "--port",
+                "8545",
+                "--gas-price",
+                "1",
+                "--gas-limit",
+                "10000000",
+                "--base-fee",
+                "0",
+                "--balance",
+                "1000000",
+                "--chain-id",
+                "1",
+                "--timestamp",
+                "1577836800",
+            ],
+            false,
+        )
         .await
     }
 
     /// Spawn a new node instance using the list of given arguments.
-    async fn spawn_process(args: &[&str]) -> Self {
+    async fn spawn_process(args: &[&str], delay_for_fork: bool) -> Self {
         use tokio::io::AsyncBufReadExt as _;
 
         // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
@@ -69,10 +72,16 @@ impl Node {
             }
         });
 
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(2), receiver)
-            .await
-            .expect("finding anvil URL timed out")
-            .unwrap();
+        let anvil_spawn_timeout = if delay_for_fork { 5 } else { 1 };
+
+        let _url = tokio::time::timeout(
+            tokio::time::Duration::from_secs(anvil_spawn_timeout),
+            receiver,
+        )
+        .await
+        .expect("finding anvil URL timed out")
+        .unwrap();
+
         Self {
             process: Some(process),
         }
