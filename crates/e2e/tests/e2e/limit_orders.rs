@@ -1,8 +1,10 @@
-use e2e::nodes::forked_node::USDC_WHALE;
-
 use {
     contracts::ERC20,
-    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
+    e2e::{
+        nodes::forked_node::{ForkedNodeApi, USDC_WHALE},
+        setup::*,
+        tx,
+    },
     ethcontract::prelude::U256,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},

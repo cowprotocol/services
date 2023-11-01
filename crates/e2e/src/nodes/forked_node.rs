@@ -49,7 +49,7 @@ impl<T: Transport> ForkedNodeApi<T> {
             .execute("anvil_impersonateAccount", vec![json_address])
             .await?;
 
-        Ok(Account::Local(address.clone(), None))
+        Ok(Account::Local(*address, None))
     }
 
     pub fn set_chain_id(&self, chain_id: u64) -> CallFuture<(), T::Out> {

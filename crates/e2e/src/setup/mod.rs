@@ -172,7 +172,10 @@ async fn run<F, Fut, T>(
     let web3 = Web3::new(http);
     if let Some((_, Some(solver))) = &fork {
         let forked_node_api = Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3);
-        forked_node_api.impersonate(solver).await.expect("could not impersonate solver");
+        forked_node_api
+            .impersonate(solver)
+            .await
+            .expect("could not impersonate solver");
     }
 
     services::clear_database().await;
