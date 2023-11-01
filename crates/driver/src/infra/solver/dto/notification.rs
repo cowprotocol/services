@@ -47,9 +47,13 @@ impl Notification {
                 )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange {
                     probability: success_probability,
                 }),
-                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive) => {
-                    Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive)
-                }
+                notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive(
+                    quality,
+                    gas_cost,
+                )) => Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive {
+                    quality: quality.0,
+                    gas_cost: gas_cost.0 .0,
+                }),
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -129,7 +133,13 @@ pub enum ScoreKind {
     SuccessProbabilityOutOfRange {
         probability: f64,
     },
-    ObjectiveValueNonPositive,
+    #[serde(rename_all = "camelCase")]
+    ObjectiveValueNonPositive {
+        #[serde_as(as = "serialize::U256")]
+        quality: eth::U256,
+        #[serde_as(as = "serialize::U256")]
+        gas_cost: eth::U256,
+    },
 }
 
 #[serde_as]

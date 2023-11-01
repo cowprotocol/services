@@ -220,7 +220,7 @@ impl SettlementRanker {
                     );
                     let reason = match error {
                         ScoringError::ObjectiveValueNonPositive(_) => {
-                            Some(SolverRejectionReason::ObjectiveValueNonPositive)
+                            Some(SolverRejectionReason::ObjectiveValueNonPositiveLegacy)
                         }
                         ScoringError::SuccessProbabilityOutOfRange(_) => {
                             Some(SolverRejectionReason::SuccessProbabilityOutOfRange)

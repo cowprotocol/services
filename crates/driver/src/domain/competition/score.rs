@@ -131,7 +131,7 @@ pub mod risk {
                     eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
                 ))
             } else {
-                Err(Error::ObjectiveValueNonPositive)
+                Err(Error::ObjectiveValueNonPositive(self, other))
             }
         }
     }
@@ -147,8 +147,8 @@ pub mod risk {
         /// and protocol. Score calculator does not make sense for such
         /// solutions, since score calculator is expected to return
         /// value (0, ObjectiveValue]
-        #[error("objective value is non-positive")]
-        ObjectiveValueNonPositive,
+        #[error("objective value is non-positive, quality {0:?}, gas cost {1:?}")]
+        ObjectiveValueNonPositive(Quality, GasCost),
         #[error(transparent)]
         Boundary(#[from] boundary::Error),
     }

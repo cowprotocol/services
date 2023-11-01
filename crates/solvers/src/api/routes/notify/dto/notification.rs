@@ -29,9 +29,12 @@ impl Notification {
                     value: tx.value.into(),
                     access_list: tx.access_list.clone(),
                 }),
-                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
                     notification::Kind::ScoringFailed(
-                        notification::ScoreKind::ObjectiveValueNonPositive,
+                        notification::ScoreKind::ObjectiveValueNonPositive(
+                            (*quality).into(),
+                            (*gas_cost).into(),
+                        ),
                     )
                 }
                 Kind::ScoringFailed(ScoreKind::ZeroScore) => {
@@ -136,7 +139,13 @@ pub enum ScoreKind {
     SuccessProbabilityOutOfRange {
         probability: f64,
     },
-    ObjectiveValueNonPositive,
+    #[serde(rename_all = "camelCase")]
+    ObjectiveValueNonPositive {
+        #[serde_as(as = "serialize::U256")]
+        quality: U256,
+        #[serde_as(as = "serialize::U256")]
+        gas_cost: U256,
+    },
 }
 
 #[serde_as]

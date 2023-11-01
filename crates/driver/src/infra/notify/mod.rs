@@ -45,9 +45,12 @@ pub fn scoring_failed(
         )) => notification::Kind::ScoringFailed(
             notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
         ),
-        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
-        }
+        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive(
+            quality,
+            gas_cost,
+        )) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::ObjectiveValueNonPositive(*quality, *gas_cost),
+        ),
         score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
         score::Error::Boundary(_) => return,
     };
