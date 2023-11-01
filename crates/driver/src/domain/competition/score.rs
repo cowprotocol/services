@@ -126,9 +126,9 @@ pub mod risk {
         type Output = Result<ObjectiveValue, Error>;
 
         fn sub(self, other: GasCost) -> Self::Output {
-            if self.0 > other.0 .0 {
+            if self.0 > other.get().0 {
                 Ok(ObjectiveValue(
-                    eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
+                    eth::NonZeroU256::new(self.0 - other.get().0).unwrap(),
                 ))
             } else {
                 Err(Error::ObjectiveValueNonPositive(self, other))
