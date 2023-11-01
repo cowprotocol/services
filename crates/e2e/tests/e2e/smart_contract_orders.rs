@@ -6,7 +6,6 @@ use {
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::Signature,
     },
-    shared::ethrpc::Web3,
 };
 
 #[tokio::test]
@@ -16,12 +15,12 @@ async fn local_node_smart_contract_orders() {
 }
 
 async fn smart_contract_orders(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe = Safe::deploy(trader, &web3).await;
+    let safe = Safe::deploy(trader, onchain.rpc()).await;
 
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(100_000), to_wei(100_000))
@@ -32,7 +31,7 @@ async fn smart_contract_orders(web3: Web3, db: Db) {
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
         .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

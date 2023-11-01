@@ -12,7 +12,6 @@ use {
     },
     secp256k1::SecretKey,
     serde_json::json,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -74,11 +73,11 @@ async fn allowance(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=test_solver|{}test_solver", driver_url.as_str()),
@@ -184,14 +183,14 @@ async fn allowance(web3: Web3, db: Db) {
 }
 
 async fn signature(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
-    let chain_id = web3.eth().chain_id().await.unwrap();
+    let chain_id = onchain.rpc().eth().chain_id().await.unwrap();
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(1)).await;
 
-    let safe_infra = safe::Infrastructure::new(&web3).await;
+    let safe_infra = safe::Infrastructure::new(onchain.rpc()).await;
 
     // Prepare the Safe creation transaction, but don't execute it! This will
     // be executed as a pre-hook.
@@ -223,7 +222,7 @@ async fn signature(web3: Web3, db: Db) {
     let safe_address = safe_creation_builder.clone().view().call().await.unwrap();
     let safe = Safe::deployed(
         chain_id,
-        GnosisSafe::at(&web3, safe_address),
+        GnosisSafe::at(onchain.rpc(), safe_address),
         trader.clone(),
     );
 
@@ -258,11 +257,11 @@ async fn signature(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=test_solver|{}test_solver", driver_url.as_str()),
@@ -304,7 +303,12 @@ async fn signature(web3: Web3, db: Db) {
     assert_eq!(balance, to_wei(5));
 
     // Check that the Safe really hasn't been deployed yet.
-    let code = web3.eth().code(safe.address(), None).await.unwrap();
+    let code = onchain
+        .rpc()
+        .eth()
+        .code(safe.address(), None)
+        .await
+        .unwrap();
     assert_eq!(code.0.len(), 0);
 
     tracing::info!("Waiting for trade.");
@@ -329,7 +333,12 @@ async fn signature(web3: Web3, db: Db) {
     assert!(balance >= order.buy_amount);
 
     // Check Safe was deployed
-    let code = web3.eth().code(safe.address(), None).await.unwrap();
+    let code = onchain
+        .rpc()
+        .eth()
+        .code(safe.address(), None)
+        .await
+        .unwrap();
     assert_ne!(code.0.len(), 0);
 
     tracing::info!("Waiting for auction to be cleared.");
@@ -338,12 +347,12 @@ async fn signature(web3: Web3, db: Db) {
 }
 
 async fn partial_fills(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader] = onchain.make_accounts(to_wei(3)).await;
 
-    let counter = contracts::test::Counter::builder(&web3)
+    let counter = contracts::test::Counter::builder(onchain.rpc())
         .deploy()
         .await
         .unwrap();
@@ -371,11 +380,11 @@ async fn partial_fills(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=test_solver|{}test_solver", driver_url.as_str()),

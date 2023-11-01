@@ -6,7 +6,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -46,11 +45,11 @@ async fn test(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=test_solver|{}test_solver", driver_url.as_str()),

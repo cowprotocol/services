@@ -6,7 +6,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -69,7 +68,7 @@ async fn test(web3: Web3, db: Db) {
         token_a.approve(onchain.contracts().allowance, to_wei(500))
     );
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services
         .start_api(vec![

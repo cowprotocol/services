@@ -11,7 +11,6 @@ use {
     },
     reqwest::StatusCode,
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -22,7 +21,7 @@ async fn local_node_order_creation_checks_metadata_signer() {
 }
 
 async fn order_creation_checks_metadata_signer(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
     let [trader, adversary, safe_owner] = onchain.make_accounts(to_wei(1)).await;
     let [token_a, token_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
@@ -64,7 +63,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3, db: Db) {
         )
     };
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_api(vec![]).await;
 
     // Accepted: custom hashes that aren't found in the DB.
@@ -108,7 +107,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3, db: Db) {
 
     // EIP-1271
 
-    let safe = Safe::deploy(safe_owner.clone(), &web3).await;
+    let safe = Safe::deploy(safe_owner.clone(), onchain.rpc()).await;
     token_a.mint(safe.address(), to_wei(10)).await;
     safe.exec_call(token_a.approve(onchain.contracts().allowance, to_wei(10)))
         .await;

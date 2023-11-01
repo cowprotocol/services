@@ -18,7 +18,6 @@ use {
     },
     number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -45,7 +44,7 @@ async fn order_cancellation(web3: Web3, db: Db) {
         token.approve(onchain.contracts().allowance, to_wei(10))
     );
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 

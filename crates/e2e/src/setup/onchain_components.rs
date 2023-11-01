@@ -1,4 +1,5 @@
 use {
+    super::Web3,
     crate::setup::deploy::Contracts,
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, U256},
@@ -10,7 +11,6 @@ use {
         TokenPair,
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     std::{borrow::BorrowMut, ops::Deref},
     web3::{signing, signing::SecretKeyRef, Transport},
 };
@@ -196,17 +196,19 @@ impl Deref for CowToken {
 /// Exposes various utility methods for tests.
 /// Deterministically generates unique accounts.
 pub struct OnchainComponents {
-    web3: Web3,
+    web3: ethrpc::Web3,
+    rpc_port: u16,
     contracts: Contracts,
     accounts: AccountGenerator,
 }
 
 impl OnchainComponents {
     pub async fn deploy(web3: Web3) -> Self {
-        let contracts = Contracts::deploy(&web3).await;
+        let contracts = Contracts::deploy(&web3.client).await;
 
         Self {
-            web3,
+            web3: web3.client,
+            rpc_port: web3.port,
             contracts,
             accounts: Default::default(),
         }
@@ -448,5 +450,15 @@ impl OnchainComponents {
 
     pub fn contracts(&self) -> &Contracts {
         &self.contracts
+    }
+
+    /// Returns the port to the locally running ethereum node.
+    pub fn rpc_port(&self) -> u16 {
+        self.rpc_port
+    }
+
+    /// Returns the RPC client connected to an ethereum node.
+    pub fn rpc(&self) -> &ethrpc::Web3 {
+        &self.web3
     }
 }

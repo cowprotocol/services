@@ -11,7 +11,6 @@ use {
     ethcontract::H160,
     ethrpc::Web3Transport,
     futures::FutureExt,
-    shared::ethrpc::Web3,
     std::{
         future::Future,
         io::Write,
@@ -22,6 +21,16 @@ use {
     tempfile::TempPath,
 };
 pub use {deploy::*, docker::Db, onchain_components::*, services::*};
+
+/// Component containing all ethereum RPC relevant data for testing purposes.
+#[derive(Clone, Debug)]
+pub struct Web3 {
+    /// The client that's used to actually communicate with the node.
+    pub client: ethrpc::Web3,
+    /// We only expose the port because the host is always localhost and the
+    /// caller might want to use different schemes like http or websockets.
+    pub port: u16,
+}
 
 /// Create a temporary file with the given content.
 fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
@@ -146,19 +155,21 @@ where
             Some((_, fork)) => Node::forked(fork, &registry).boxed(),
             None => Node::new(&registry).boxed(),
         };
-        let (mut db, node) = futures::join!(start_db, start_node);
+        let (db, node) = futures::join!(start_db, start_node);
 
         let transport = Web3Transport::new(
             web3::transports::WebSocket::new(&format!("ws://127.0.0.1:{}", node.port))
                 .await
                 .unwrap(),
         );
-        let web3 = Web3::new(transport);
 
-        db.node_url = Some(format!("http://127.0.0.1:{}", node.port).parse().unwrap());
+        let web3 = Web3 {
+            client: ethrpc::Web3::new(transport),
+            port: node.port,
+        };
 
         if let Some((solver, _)) = &fork {
-            Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
+            ethrpc::Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3.client)
                 .impersonate(solver)
                 .await
                 .unwrap();

@@ -1,5 +1,6 @@
 use {
-    crate::setup::{docker::Db, wait_for_condition, Contracts, TIMEOUT},
+    super::OnchainComponents,
+    crate::setup::{docker::Db, wait_for_condition, TIMEOUT},
     clap::Parser,
     ethcontract::{H160, H256},
     model::{
@@ -26,16 +27,16 @@ pub const SOLVER_COMPETITION_ENDPOINT: &str = "api/v1/solver_competition";
 /// Wrapper over offchain services.
 /// Exposes various utility methods for tests.
 pub struct Services<'a> {
-    contracts: &'a Contracts,
+    onchain: &'a OnchainComponents,
     http: Client,
     db: Db,
     api_url: once_cell::sync::OnceCell<Url>,
 }
 
 impl<'a> Services<'a> {
-    pub async fn new(contracts: &'a Contracts, db: Db) -> Services<'a> {
+    pub async fn new(onchain: &'a OnchainComponents, db: Db) -> Services<'a> {
         Self {
-            contracts,
+            onchain,
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()
@@ -57,26 +58,30 @@ impl<'a> Services<'a> {
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
+        let node_url = format!("http://localhost:{}", self.onchain.rpc_port());
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
-                self.contracts.uniswap_v2_router.address(),
+                self.onchain.contracts().uniswap_v2_router.address(),
                 H256(shared::sources::uniswap_v2::UNISWAP_INIT),
             ),
             format!(
                 "--settlement-contract-address={:?}",
-                self.contracts.gp_settlement.address()
+                self.onchain.contracts().gp_settlement.address()
             ),
-            format!("--native-token-address={:?}", self.contracts.weth.address()),
+            format!(
+                "--native-token-address={:?}",
+                self.onchain.contracts().weth.address()
+            ),
             format!(
                 "--balancer-v2-vault-address={:?}",
-                self.contracts.balancer_vault.address()
+                self.onchain.contracts().balancer_vault.address()
             ),
-            format!("--node-url={}", self.node_url().as_str()),
-            format!("--simulation-node-url={}", self.node_url().as_str()),
+            format!("--node-url={node_url}"),
+            format!("--simulation-node-url={node_url}"),
         ]
         .into_iter()
     }
@@ -86,7 +91,10 @@ impl<'a> Services<'a> {
         let args = [
             "autopilot".to_string(),
             "--auction-update-interval=1".to_string(),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!(
+                "--ethflow-contract={:?}",
+                self.onchain.contracts().ethflow.address()
+            ),
             "--skip-event-sync=true".to_string(),
             "--solve-deadline=2".to_string(),
             "--metrics-address=127.0.0.1:0".to_string(),
@@ -111,7 +119,7 @@ impl<'a> Services<'a> {
             "--metrics-address=127.0.0.1:0".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
-                self.contracts.hooks.address()
+                self.onchain.contracts().hooks.address()
             ),
         ]
         .into_iter()
@@ -138,10 +146,13 @@ impl<'a> Services<'a> {
             "--settle-interval=1".to_string(),
             "--metrics-port=0".to_string(),
             format!(
-                "--transaction-submission-nodes={}",
-                self.node_url().as_str()
+                "--transaction-submission-nodes=http://localhost:{}",
+                self.onchain.rpc_port()
             ),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!(
+                "--ethflow-contract={:?}",
+                self.onchain.contracts().ethflow.address()
+            ),
             format!("--orderbook-url={}", self.api_url().as_str()),
         ]
         .into_iter()
@@ -173,10 +184,13 @@ impl<'a> Services<'a> {
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!(
-                "--transaction-submission-nodes={}",
-                self.node_url().as_str()
+                "--transaction-submission-nodes=http://localhost:{}",
+                self.onchain.rpc_port()
             ),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            format!(
+                "--ethflow-contract={:?}",
+                self.onchain.contracts().ethflow.address()
+            ),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -402,10 +416,6 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &DbConnection {
         self.db.connection()
-    }
-
-    fn node_url(&self) -> Url {
-        self.db.node_url.as_ref().unwrap().clone()
     }
 
     pub fn api_url(&self) -> Url {

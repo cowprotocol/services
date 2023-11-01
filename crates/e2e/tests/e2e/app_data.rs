@@ -8,7 +8,6 @@ use {
     },
     reqwest::StatusCode,
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -55,7 +54,7 @@ async fn app_data(web3: Web3, db: Db) {
         order
     };
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_api(vec![]).await;
 
     // Temporarily custom hashes are still accepted.

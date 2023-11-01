@@ -6,7 +6,6 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -35,7 +34,7 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 async fn single_limit_order_test(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a] = onchain.make_accounts(to_wei(1)).await;
@@ -91,7 +90,7 @@ async fn single_limit_order_test(web3: Web3, db: Db) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -133,7 +132,7 @@ async fn single_limit_order_test(web3: Web3, db: Db) {
 }
 
 async fn two_limit_orders_test(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
@@ -194,7 +193,7 @@ async fn two_limit_orders_test(web3: Web3, db: Db) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -261,7 +260,7 @@ async fn two_limit_orders_test(web3: Web3, db: Db) {
 }
 
 async fn mixed_limit_and_market_orders_test(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
@@ -322,7 +321,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3, db: Db) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -390,7 +389,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3, db: Db) {
 }
 
 async fn too_many_limit_orders_test(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_a] = onchain
@@ -405,7 +404,7 @@ async fn too_many_limit_orders_test(web3: Web3, db: Db) {
     );
 
     // Place Orders
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services
         .start_api(vec!["--max-limit-orders-per-user=1".into()])
         .await;

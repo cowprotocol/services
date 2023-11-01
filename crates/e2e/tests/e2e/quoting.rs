@@ -7,7 +7,6 @@ use {
     },
     number::nonzero::U256 as NonZeroU256,
     serde_json::json,
-    shared::ethrpc::Web3,
 };
 
 #[tokio::test]
@@ -43,7 +42,7 @@ async fn test(web3: Web3, db: Db) {
 
     tracing::info!("Starting services.");
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;

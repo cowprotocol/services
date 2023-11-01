@@ -4,7 +4,7 @@ use {
     contracts::ERC20Mintable,
     e2e::setup::*,
     ethcontract::{Account, H160, U256},
-    ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
+    ethrpc::current_block::timestamp_of_current_block_in_seconds,
     model::{
         order::{EthflowData, OnchainOrderData, Order, OrderClass, OrderUid},
         quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide},
@@ -22,7 +22,7 @@ async fn local_node_eth_flow() {
 }
 
 async fn eth_flow_tx(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
     let [trader] = onchain.make_accounts(to_wei(2)).await;
@@ -47,11 +47,11 @@ async fn eth_flow_tx(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=test_solver|{}test_solver", driver_url.as_str()),
@@ -65,7 +65,9 @@ async fn eth_flow_tx(web3: Web3, db: Db) {
     .await;
 
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
-        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + timestamp_of_current_block_in_seconds(onchain.rpc())
+            .await
+            .unwrap()
         + 3600;
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
@@ -85,7 +87,7 @@ async fn eth_flow_tx(web3: Web3, db: Db) {
         .await
         .unwrap();
 
-    test_order_was_settled(&services, &ethflow_order, &web3).await;
+    test_order_was_settled(&services, &ethflow_order, onchain.rpc()).await;
 
     test_trade_availability_in_api(
         services.client(),
@@ -201,7 +203,7 @@ async fn test_trade_availability_in_api(
 async fn test_order_was_settled(
     services: &Services<'_>,
     ethflow_order: &ExtendedEthFlowOrder,
-    web3: &Web3,
+    web3: &ethrpc::Web3,
 ) {
     let auction_is_empty = || async { services.solvable_orders().await == 0 };
     wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();

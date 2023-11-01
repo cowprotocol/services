@@ -15,10 +15,6 @@ const POSTGRES_IMAGE: &str = "postgres:latest";
 pub struct Db {
     url: Url,
     connection: DbConnection,
-    // Ugly work around to test reliability of web sockets. This avoids lots of code changes
-    // passing around the address properly before we even know whether websockets improve the
-    // situation.
-    pub node_url: Option<Url>,
 }
 
 pub type DbConnection = sqlx::Pool<sqlx::Postgres>;
@@ -100,7 +96,6 @@ impl Db {
         Self {
             connection: sqlx::PgPool::connect(url.as_str()).await.unwrap(),
             url,
-            node_url: None,
         }
     }
 

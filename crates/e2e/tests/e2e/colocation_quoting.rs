@@ -3,7 +3,6 @@ use {
     ethcontract::U256,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::nonzero::U256 as NonZeroU256,
-    shared::ethrpc::Web3,
 };
 
 #[tokio::test]
@@ -14,7 +13,7 @@ async fn local_node_uses_stale_liquidity() {
 
 async fn uses_stale_liquidity(web3: Web3, db: Db) {
     tracing::info!("Setting up chain state.");
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(2)).await;
@@ -41,11 +40,11 @@ async fn uses_stale_liquidity(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        db.node_url.as_ref().unwrap().as_str(),
+        &format!("http://localhost:{}", onchain.rpc_port()),
     )
     .await;
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!("--drivers=solver|{}test_solver", driver_url.as_str()),

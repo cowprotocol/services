@@ -8,7 +8,6 @@ use {
     },
     number::nonzero::U256 as NonZeroU256,
     secp256k1::SecretKey,
-    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -19,7 +18,7 @@ async fn local_node_eth_integration() {
 }
 
 async fn eth_integration(web3: Web3, db: Db) {
-    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+    let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
     let [trader_a, trader_b] = onchain.make_accounts(to_wei(1)).await;
@@ -41,10 +40,20 @@ async fn eth_integration(web3: Web3, db: Db) {
         token.approve(onchain.contracts().allowance, to_wei(51))
     );
 
-    let trader_a_eth_balance_before = web3.eth().balance(trader_a.address(), None).await.unwrap();
-    let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
+    let trader_a_eth_balance_before = onchain
+        .rpc()
+        .eth()
+        .balance(trader_a.address(), None)
+        .await
+        .unwrap();
+    let trader_b_eth_balance_before = onchain
+        .rpc()
+        .eth()
+        .balance(trader_b.address(), None)
+        .await
+        .unwrap();
 
-    let services = Services::new(onchain.contracts(), db).await;
+    let services = Services::new(&onchain, db).await;
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
@@ -113,15 +122,35 @@ async fn eth_integration(web3: Web3, db: Db) {
     services.start_old_driver(solver.private_key(), vec![]);
 
     let trade_happened = || async {
-        let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
-        let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
+        let balance_a = onchain
+            .rpc()
+            .eth()
+            .balance(trader_a.address(), None)
+            .await
+            .unwrap();
+        let balance_b = onchain
+            .rpc()
+            .eth()
+            .balance(trader_b.address(), None)
+            .await
+            .unwrap();
         balance_a != trader_a_eth_balance_before && balance_b != trader_b_eth_balance_before
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
-    let trader_a_eth_balance_after = web3.eth().balance(trader_a.address(), None).await.unwrap();
-    let trader_b_eth_balance_after = web3.eth().balance(trader_b.address(), None).await.unwrap();
+    let trader_a_eth_balance_after = onchain
+        .rpc()
+        .eth()
+        .balance(trader_a.address(), None)
+        .await
+        .unwrap();
+    let trader_b_eth_balance_after = onchain
+        .rpc()
+        .eth()
+        .balance(trader_b.address(), None)
+        .await
+        .unwrap();
     assert_eq!(
         trader_a_eth_balance_after - trader_a_eth_balance_before,
         to_wei(49)
