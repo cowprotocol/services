@@ -1,6 +1,8 @@
 pub mod forked_node;
 pub mod local_node;
 
+use self::forked_node::FORK_BLOCK;
+
 /// The default node URL that should be used for e2e tests.
 pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
@@ -11,9 +13,17 @@ pub struct Node {
 }
 
 impl Node {
-    /// Spawns a new node that is forked from the given URL.
+    /// Spawns a new node that is forked from the given URL at [FORK_BLOCK].
     pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_process(&["--port", "8545", "--fork-url", fork.as_str()]).await
+        Self::spawn_process(&[
+            "--port",
+            "8545",
+            "--fork-url",
+            fork.as_str(),
+            "--fork-block-number",
+            &FORK_BLOCK.to_string(),
+        ])
+        .await
     }
 
     /// Spawns a new local test net with some default parameters.

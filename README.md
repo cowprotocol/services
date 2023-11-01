@@ -68,11 +68,17 @@ The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
 
 **Note:** Requires postgres database running (see below).
 
-### E2E Tests
+### E2E Tests - Local Node:
 
-`cargo test -p e2e -- --ignored`.
+`cargo test -p e2e local_node -- --ignored`.
 
 **Note:** Requires postgres database and local test network with smart contracts deployed (see below).
+
+### E2E Tests - Forked Node:
+
+`FORK_URL=<mainnet archive node RPC URL> cargo test -p e2e forked_node -- --ignored`.
+
+**Note:** Requires postgres database (see below).
 
 ### Clippy
 

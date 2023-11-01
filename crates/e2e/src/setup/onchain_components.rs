@@ -271,9 +271,10 @@ impl OnchainComponents {
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
-        forked_node_api.impersonate(&auth_manager).await.unwrap();
-
-        let auth_manager = ethcontract::Account::Local(auth_manager, None);
+        let auth_manager = forked_node_api
+            .impersonate(&auth_manager)
+            .await
+            .expect("could not impersonate auth_manager");
 
         let solvers = self.make_accounts::<N>(with_wei).await;
 

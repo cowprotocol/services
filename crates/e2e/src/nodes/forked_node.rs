@@ -1,13 +1,17 @@
 use {
-    crate::setup::to_wei,
-    contracts::ERC20,
-    ethcontract::{H160, U256},
+    ethcontract::{Account, H160, U256},
     reqwest::Url,
     serde_json::json,
-    shared::bad_token::token_owner_finder::{TokenOwnerFinder, TokenOwnerFinding},
     std::fmt::Debug,
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
+
+/// The block number from which we will fetch state for forked e2e tests.
+pub const FORK_BLOCK: u64 = 18477910;
+/// USDC whale address as per [FORK_BLOCK].
+pub const USDC_WHALE: H160 = H160(hex_literal::hex!(
+    "28c6c06298d514db089934071355e5743bf21d60"
+));
 
 #[derive(Debug, Clone)]
 pub struct ForkedNodeApi<T> {
@@ -39,12 +43,13 @@ impl<T: Transport> ForkedNodeApi<T> {
         ))
     }
 
-    pub fn impersonate(&self, address: &H160) -> CallFuture<(), T::Out> {
+    pub async fn impersonate(&self, address: &H160) -> Result<Account, web3::Error> {
         let json_address = serde_json::json!(address);
-        CallFuture::new(
-            self.transport
-                .execute("anvil_impersonateAccount", vec![json_address]),
-        )
+        self.transport
+            .execute("anvil_impersonateAccount", vec![json_address])
+            .await?;
+
+        Ok(Account::Local(address.clone(), None))
     }
 
     pub fn set_chain_id(&self, chain_id: u64) -> CallFuture<(), T::Out> {
@@ -62,33 +67,5 @@ impl<T: Transport> ForkedNodeApi<T> {
             self.transport
                 .execute("anvil_setBalance", vec![json_address, json_balance]),
         )
-    }
-
-    pub async fn set_erc20_balance(
-        &self,
-        address: H160,
-        token: &ERC20,
-        balance: U256,
-        finder: TokenOwnerFinder,
-    ) -> Result<U256, web3::Error> {
-        let owner = finder
-            .find_owner(token.address(), balance)
-            .await
-            .expect("could not find owner for token with at least balance")
-            .expect("could not find owner for token with at least balance")
-            .0;
-
-        self.set_balance(&owner, to_wei(1)).await.unwrap();
-
-        let json_owner = serde_json::json!(owner);
-        let json_to = serde_json::json!(token.address());
-        let bytes = token.transfer(address, balance).tx.data.unwrap();
-        let json_data = serde_json::json!(bytes);
-
-        CallFuture::new(self.transport.execute(
-            "eth_sendUnsignedTransaction",
-            vec![json!({"from": json_owner, "to": json_to, "data": json_data})],
-        ))
-        .await
     }
 }

@@ -1,3 +1,5 @@
+use e2e::nodes::forked_node::USDC_WHALE;
+
 use {
     contracts::ERC20,
     e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
@@ -7,7 +9,7 @@ use {
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
-    shared::{bad_token::token_owner_finder::TokenOwnerFinder, ethrpc::Web3},
+    shared::ethrpc::Web3,
     web3::signing::SecretKeyRef,
 };
 
@@ -481,11 +483,11 @@ async fn forked_single_limit_order_test(web3: Web3) {
     );
 
     // Give trader some USDC
-    let finder = TokenOwnerFinder::from_web3(web3.clone()).await;
-    forked_node_api
-        .set_erc20_balance(trader.address(), &token_usdc, to_mwei(1000), finder)
-        .await
-        .unwrap();
+    let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
+    tx!(
+        usdc_whale,
+        token_usdc.transfer(trader.address(), to_mwei(1000))
+    );
 
     // Approve GPv2 for trading
     tx!(
