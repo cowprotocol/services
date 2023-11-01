@@ -271,7 +271,7 @@ impl Settlement {
         let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => competition::Score(score.try_into()?),
+            competition::SolverScore::Solver(score) => score.try_into()?,
             competition::SolverScore::RiskAdjusted(success_probability) => {
                 let gas_cost = self.gas.estimate * auction.gas_price();
                 let success_probability = success_probability.try_into()?;
