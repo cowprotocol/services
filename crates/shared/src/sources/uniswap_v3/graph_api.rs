@@ -175,10 +175,12 @@ impl UniV3SubgraphClient {
         ids: &[H160],
         block_number: u64,
     ) -> Result<Vec<PoolData>> {
+        let start = std::time::Instant::now();
         let (pools, ticks) = futures::try_join!(
             self.get_pools_by_pool_ids(ids, block_number),
             self.get_ticks_by_pools_ids(ids, block_number)
         )?;
+        tracing::debug!(requested = ids.len(), time = ?start.elapsed(), "fetched pool ticks");
 
         // group ticks by pool ids
         let mut ticks_mapped = HashMap::new();
