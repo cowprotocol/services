@@ -7,6 +7,11 @@ use {
     std::collections::BTreeSet,
 };
 
+type RequiredEther = Ether;
+type TokensUsed = BTreeSet<TokenAddress>;
+type TransactionHash = eth::H256;
+type Transaction = eth::Tx;
+
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
 #[derive(Debug)]
@@ -16,22 +21,18 @@ pub struct Notification {
     pub kind: Kind,
 }
 
-pub type RequiredEther = Ether;
-pub type TokensUsed = BTreeSet<TokenAddress>;
-
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
+    SimulationFailed(Transaction),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),
     Settled(Settlement),
 }
-
-pub type TransactionHash = eth::H256;
 
 /// The result of winning solver trying to settle the transaction onchain.
 #[derive(Debug)]

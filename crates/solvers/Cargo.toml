@@ -33,6 +33,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "tim
 toml = "0.7"
 tower = "0.4"
 tower-http = { version = "0.4", features = ["trace"] }
+web3 = "0.19"
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and
 # remove/re-evaluate these dependencies.

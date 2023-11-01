@@ -6,6 +6,11 @@ use {
     std::collections::BTreeSet,
 };
 
+type RequiredEther = Ether;
+type TokensUsed = BTreeSet<TokenAddress>;
+type TransactionHash = eth::TxId;
+type Transaction = eth::Tx;
+
 /// A notification sent to solvers in case of important events in the driver.
 #[derive(Debug)]
 pub struct Notification {
@@ -13,9 +18,6 @@ pub struct Notification {
     pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
-
-pub type RequiredEther = Ether;
-pub type TokensUsed = BTreeSet<TokenAddress>;
 
 #[derive(Debug)]
 pub enum Kind {
@@ -25,6 +27,8 @@ pub enum Kind {
     EmptySolution,
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId,
+    /// Failed simulation during competition.
+    SimulationFailed(Transaction),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to
@@ -59,8 +63,6 @@ pub enum ScoreKind {
     /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
     ObjectiveValueNonPositive,
 }
-
-type TransactionHash = eth::TxId;
 
 #[derive(Debug)]
 pub enum Settlement {

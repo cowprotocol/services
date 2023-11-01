@@ -113,7 +113,7 @@ impl Settlement {
             .map(|asset| asset.token)
             .collect::<BTreeSet<_>>();
         if !untrusted_tokens.is_empty() {
-            return Err(Error::UntrustedInternalization(untrusted_tokens));
+            return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
         // Encode the solution into a settlement.

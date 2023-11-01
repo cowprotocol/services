@@ -10,6 +10,7 @@ use {
     serde::Serialize,
     serde_with::serde_as,
     std::collections::BTreeSet,
+    web3::types::AccessList,
 };
 
 impl Notification {
@@ -24,6 +25,13 @@ impl Notification {
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
+                notify::Kind::SimulationFailed(tx) => Kind::SimulationFailed(Tx {
+                    from: tx.from.into(),
+                    to: tx.to.into(),
+                    input: tx.input.into(),
+                    value: tx.value.into(),
+                    access_list: tx.access_list.into(),
+                }),
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
                 }
@@ -82,6 +90,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
+    SimulationFailed(Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
@@ -91,6 +100,19 @@ pub enum Kind {
         required: eth::U256,
     },
     Settled(Settlement),
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tx {
+    pub from: eth::H160,
+    pub to: eth::H160,
+    #[serde_as(as = "serialize::Hex")]
+    pub input: Vec<u8>,
+    #[serde_as(as = "serialize::U256")]
+    pub value: eth::U256,
+    pub access_list: AccessList,
 }
 
 #[serde_as]

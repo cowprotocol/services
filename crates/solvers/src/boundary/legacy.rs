@@ -23,16 +23,19 @@ use {
                 BatchAuctionModel,
                 ConcentratedPoolParameters,
                 ConstantProductPoolParameters,
+                InternalizationStrategy,
                 MetadataModel,
                 OrderModel,
                 Score,
                 SettledBatchAuctionModel,
+                SimulatedTransaction,
                 SolverRejectionReason,
                 SolverRunError,
                 StablePoolParameters,
                 SubmissionResult,
                 TokenAmount,
                 TokenInfoModel,
+                TransactionWithError,
                 WeightedPoolTokenData,
                 WeightedProductPoolParameters,
             },
@@ -572,6 +575,8 @@ fn to_domain_solution(
     })
 }
 
+const UNKNOWN_BLOCK_NUMBER: u64 = 0;
+
 fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
     let auction_id = match notification.auction_id {
         auction::Id::Solve(id) => id,
@@ -583,6 +588,22 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
+        Kind::SimulationFailed(tx) => AuctionResult::Rejected(
+            SolverRejectionReason::SimulationFailure(TransactionWithError {
+                error: "".to_string(),
+                transaction: SimulatedTransaction {
+                    from: tx.from.into(),
+                    to: tx.to.into(),
+                    data: tx.input.clone().into(),
+                    internalization: InternalizationStrategy::Unknown,
+                    block_number: UNKNOWN_BLOCK_NUMBER, // todo #2018
+                    tx_index: Default::default(),
+                    access_list: Default::default(),
+                    max_fee_per_gas: Default::default(),
+                    max_priority_fee_per_gas: Default::default(),
+                },
+            }),
+        ),
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive)
         }
