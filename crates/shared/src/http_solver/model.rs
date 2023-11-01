@@ -456,28 +456,32 @@ pub enum SolverRejectionReason {
     /// only if the objective value is negative.
     NonPositiveScore,
 
-    /// The solution has a score that is too high. This can happen if the
-    /// score is higher than the maximum score (surplus + fees)
-    #[serde(rename_all = "camelCase")]
-    TooHighScore {
-        #[serde_as(as = "HexOrDecimalU256")]
-        surplus: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        fees: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        max_score: U256,
-        #[serde_as(as = "HexOrDecimalU256")]
-        submitted_score: U256,
-    },
+    /// Objective value is too low.
+    /// [TODO] Remove once the colocation is finalized.
+    #[serde(rename = "objectiveValueNonPositive")]
+    ObjectiveValueNonPositiveLegacy,
 
     /// Objective value is too low.
-    ObjectiveValueNonPositive,
+    #[serde(rename_all = "camelCase")]
+    ObjectiveValueNonPositive {
+        #[serde_as(as = "HexOrDecimalU256")]
+        quality: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        gas_cost: U256,
+    },
 
     /// Success probability is out of the allowed range [0, 1]
     SuccessProbabilityOutOfRange,
 
-    /// It is expected for a score to be less or equal to the objective value.
-    ScoreHigherThanObjective,
+    /// It is expected for a score to be less or equal to the quality (surplus +
+    /// fees).
+    #[serde(rename_all = "camelCase")]
+    ScoreHigherThanQuality {
+        #[serde_as(as = "HexOrDecimalU256")]
+        score: U256,
+        #[serde_as(as = "HexOrDecimalU256")]
+        quality: U256,
+    },
 
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
@@ -516,6 +520,7 @@ pub struct SimulatedTransaction {
     /// on
     pub tx_index: u64,
     /// Is transaction simulated with internalized interactions or without
+    /// TODO: remove field once the colocation is enabled.
     pub internalization: InternalizationStrategy,
     /// Which storage the settlement tries to access. Contains `None` if some
     /// error happened while estimating the access list.
@@ -543,6 +548,7 @@ pub enum InternalizationStrategy {
     EncodeAllInteractions,
     #[serde(rename = "Enabled")]
     SkipInternalizableInteraction,
+    Unknown,
 }
 
 #[cfg(test)]
@@ -1219,22 +1225,68 @@ mod tests {
     }
 
     #[test]
-    fn serialize_rejection_too_high_score() {
+    fn serialize_objective_value_non_positive_legacy() {
+        let auction_result =
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositiveLegacy);
+
         assert_eq!(
-            serde_json::to_value(SolverRejectionReason::TooHighScore {
-                surplus: 1300.into(),
-                fees: 37.into(),
-                max_score: 1337.into(),
-                submitted_score: 1338.into(),
-            })
-            .unwrap(),
+            serde_json::to_value(auction_result).unwrap(),
             json!({
-                "tooHighScore": {
-                    "surplus": "1300",
-                    "fees": "37",
-                    "maxScore": "1337",
-                    "submittedScore": "1338",
-                },
+                "rejected": "objectiveValueNonPositive",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_objective_value_non_positive_colocated() {
+        let auction_result =
+            AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
+                quality: U256::from(1),
+                gas_cost: U256::from(2),
+            });
+
+        assert_eq!(
+            serde_json::to_value(auction_result).unwrap(),
+            json!({
+                "rejected": {
+                    "objectiveValueNonPositive": {
+                        "quality": "1",
+                        "gasCost": "2",
+                    },
+                }
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_non_positive_score() {
+        let auction_result = AuctionResult::Rejected(SolverRejectionReason::NonPositiveScore);
+
+        assert_eq!(
+            serde_json::to_value(auction_result).unwrap(),
+            json!({
+                "rejected": "nonPositiveScore",
+            }),
+        );
+    }
+
+    #[test]
+    fn serialize_score_higher_than_quality() {
+        let auction_result =
+            AuctionResult::Rejected(SolverRejectionReason::ScoreHigherThanQuality {
+                score: U256::from(1),
+                quality: U256::from(2),
+            });
+
+        assert_eq!(
+            serde_json::to_value(auction_result).unwrap(),
+            json!({
+                "rejected": {
+                    "scoreHigherThanQuality": {
+                        "score": "1",
+                        "quality": "2",
+                    },
+                }
             }),
         );
     }

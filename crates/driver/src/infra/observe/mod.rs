@@ -254,9 +254,6 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::Solver(solver::Error::Deserialize(_)) => {
                             "SolverDeserializeError"
                         }
-                        quote::Error::Solver(solver::Error::DuplicatedSolutionId) => {
-                            "DuplicatedSolutionId"
-                        }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
                     },
@@ -330,7 +327,6 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
-        competition::Error::Solver(solver::Error::DuplicatedSolutionId) => "DuplicatedSolutionId",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
     }
@@ -353,5 +349,5 @@ pub fn order_excluded_from_auction(
 
 /// Observe that a settlement was simulated
 pub fn simulated(tx: &eth::Tx, gas: Gas) {
-    tracing::debug!(?tx, gas = ?gas.0, "simulated settlement");
+    tracing::debug!(gas = ?gas.0, ?tx, "simulated settlement");
 }

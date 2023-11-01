@@ -142,17 +142,17 @@ pub enum SimulatorError {
 #[derive(Debug, thiserror::Error)]
 #[error("err: {err:?}, tx: {tx:?}")]
 pub struct WithTxError {
-    err: SimulatorError,
-    tx: eth::Tx,
+    pub err: SimulatorError,
+    pub tx: eth::Tx,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("basic: {0:?}")]
+    #[error(transparent)]
     Basic(#[from] SimulatorError),
     /// If a transaction reverted, forward that transaction together with the
     /// error.
-    #[error("with tx: {0:?}")]
+    #[error(transparent)]
     WithTx(#[from] WithTxError),
 }
 
