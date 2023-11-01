@@ -532,12 +532,6 @@ pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     Ok(in_gwei * 1e9)
 }
 
-// default values are expected to be expressed in decimal format
-pub fn parse_u256(s: &str) -> anyhow::Result<U256> {
-    let in_decimal = s.parse::<BigDecimal>()?;
-    number::conversions::big_decimal_to_u256(&in_decimal).context("invalid U256 value")
-}
-
 impl FromStr for ExternalSolver {
     type Err = anyhow::Error;
 
@@ -673,13 +667,5 @@ mod test {
             "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
         )
         .is_err());
-    }
-
-    #[test]
-    fn parse_u256_test() {
-        assert_eq!(
-            parse_u256("10000000000000000").unwrap(),
-            U256::from(10_000_000_000_000_000u64)
-        );
     }
 }
