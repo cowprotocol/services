@@ -79,7 +79,11 @@ impl Db {
                 },
             )
             .await
-            .unwrap();
+            .expect(
+                "Could not find \"migrations\" docker image. Run \"docker build -t \
+                 migrations:latest -f ./docker/Dockerfile.migration .\" from the root of the \
+                 repository.",
+            );
 
         registry.start(migrations.id.clone()).await;
 
