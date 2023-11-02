@@ -82,6 +82,7 @@ pub async fn run(args: Arguments) {
         &args.shared.node_url,
         "base",
     );
+
     let simulation_web3 = args.shared.simulation_node_url.as_ref().map(|node_url| {
         shared::ethrpc::web3(&args.shared.ethrpc, &http_factory, node_url, "simulation")
     });
