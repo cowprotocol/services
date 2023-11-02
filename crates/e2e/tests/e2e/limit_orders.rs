@@ -529,11 +529,17 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    let balance_before = token_usdt
+    let sell_token_balance_before = token_usdc
         .balance_of(trader.address())
         .call()
         .await
         .unwrap();
+    let buy_token_balance_before = token_usdt
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
         .await
         .unwrap();
@@ -543,10 +549,17 @@ async fn forked_single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
 
-    let balance_after = token_usdt
+    let sell_token_balance_after = token_usdc
         .balance_of(trader.address())
         .call()
         .await
         .unwrap();
-    assert!(balance_after.checked_sub(balance_before).unwrap() >= 500_000u128.into());
+    let buy_token_balance_after = token_usdt
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
+    assert!(sell_token_balance_before > sell_token_balance_after);
+    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6));
 }
