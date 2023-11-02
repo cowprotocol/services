@@ -1,8 +1,6 @@
 pub mod forked_node;
 pub mod local_node;
 
-use self::forked_node::FORK_BLOCK;
-
 /// The default node URL that should be used for e2e tests.
 pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 
@@ -13,17 +11,19 @@ pub struct Node {
 }
 
 impl Node {
-    /// Spawns a new node that is forked from the given URL at [FORK_BLOCK].
-    pub async fn forked(fork: impl reqwest::IntoUrl) -> Self {
-        Self::spawn_process(&[
-            "--port",
-            "8545",
-            "--fork-url",
-            fork.as_str(),
-            "--fork-block-number",
-            &FORK_BLOCK.to_string(),
-        ])
-        .await
+    /// Spawns a new node that is forked from the given URL at `block_number` or
+    /// if not set, latest.
+    pub async fn forked(fork: impl reqwest::IntoUrl, block_number: Option<u64>) -> Self {
+        let mut args = ["--port", "8545", "--fork-url", fork.as_str()]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
+
+        if let Some(block_number) = block_number {
+            args.extend(["--fork-block-number".to_string(), block_number.to_string()]);
+        }
+
+        Self::spawn_process(args).await
     }
 
     /// Spawns a new local test net with some default parameters.
@@ -48,7 +48,10 @@ impl Node {
     }
 
     /// Spawn a new node instance using the list of given arguments.
-    async fn spawn_process(args: &[&str]) -> Self {
+    async fn spawn_process<T>(args: impl IntoIterator<Item = T>) -> Self
+    where
+        T: AsRef<str> + std::convert::AsRef<std::ffi::OsStr>,
+    {
         use tokio::io::AsyncBufReadExt as _;
 
         // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.

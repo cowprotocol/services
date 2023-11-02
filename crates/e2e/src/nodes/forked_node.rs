@@ -6,13 +6,6 @@ use {
     web3::{api::Namespace, helpers::CallFuture, Transport},
 };
 
-/// The block number from which we will fetch state for forked e2e tests.
-pub const FORK_BLOCK: u64 = 18477910;
-/// USDC whale address as per [FORK_BLOCK].
-pub const USDC_WHALE: H160 = H160(hex_literal::hex!(
-    "28c6c06298d514db089934071355e5743bf21d60"
-));
-
 #[derive(Debug, Clone)]
 pub struct ForkedNodeApi<T> {
     transport: T,
