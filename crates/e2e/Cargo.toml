@@ -28,12 +28,12 @@ serde_json = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
 solvers = { path = "../solvers" }
+docker = { path = "../docker" }
 sqlx = { workspace = true }
 tempfile = "3.3.0"
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
-web3 = { workspace = true, features = ["ws-tokio"] }
-bollard = { workspace = true }
+web3 = { workspace = true }
 futures = { workspace = true }
 once_cell = { workspace = true }
 

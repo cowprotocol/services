@@ -1,7 +1,8 @@
 use {
     super::OnchainComponents,
-    crate::setup::{docker::Db, wait_for_condition, TIMEOUT},
+    crate::setup::{wait_for_condition, TIMEOUT},
     clap::Parser,
+    docker::Db,
     ethcontract::{H160, H256},
     model::{
         app_data::{AppDataDocument, AppDataHash},

@@ -2,7 +2,6 @@ pub mod colocation;
 mod deploy;
 #[macro_use]
 pub mod onchain_components;
-mod docker;
 mod services;
 
 use {

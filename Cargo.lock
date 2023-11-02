@@ -1652,6 +1652,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "docker"
+version = "1.0.0"
+dependencies = [
+ "bollard",
+ "futures",
+ "reqwest",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "web3",
+]
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,11 +1737,11 @@ dependencies = [
  "app-data-hash",
  "async-trait",
  "autopilot",
- "bollard",
  "chrono",
  "clap",
  "contracts",
  "database",
+ "docker",
  "driver",
  "ethcontract",
  "ethrpc",

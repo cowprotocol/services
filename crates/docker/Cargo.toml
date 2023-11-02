@@ -1,0 +1,21 @@
+[package]
+name = "docker"
+version = "1.0.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "docker"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+bollard = "0.15.0"
+futures = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+tracing = { workspace = true }
+web3 = { workspace = true, features = ["ws-tokio"] }
