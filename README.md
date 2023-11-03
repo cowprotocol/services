@@ -56,27 +56,21 @@ There are additional crates that live in the cargo workspace.
 
 ## Testing
 
-The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
+The CI runs static analysis, a formatter, unit tests, e2e tests and database tests.  
+The tests require docker to be installed and running using the default port.
+Tests that need a database or a local node spawn and kill the required docker containers automatically.
+The only thing you have to ensure is that you have the `migrations` docker image available.
+This can be achieved by running following command from the repository root directory:  
+`docker build -t migrations:latest -f ./docker/Dockerfile.migration .`  
 
-### Unit Tests:
+Be aware that some tests might not terminate docker containers correctly when the tests panics or gets aborted. It's recommended to keep an eye on left over docker containers in those instances.
 
-`cargo test`
-
-### Integration Tests:
-
-`cargo test --jobs 1 -- --ignored --test-threads 1 --skip http_solver`
-
-**Note:** Requires postgres database running (see below).
-
-### E2E Tests
-
-`cargo test -p e2e -- --ignored`.
-
-**Note:** Requires postgres database and local test network with smart contracts deployed (see below).
-
-### Clippy
-
-`cargo clippy --all-features --all-targets -- -D warnings`
+static analysis: `cargo clippy --all-features --all-targets -- -D warnings`  
+formatting: `cargo +nightly fmt --all`  
+unit tests: `cargo test`  
+e2e tests: `cargo test -p e2e -- --ignored`  
+driver tests: `cargo nextest run -p driver --nocapture --run-ignored ignored-only`
+database tests: `cargo test postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only`  
 
 ## Development Setup
 
