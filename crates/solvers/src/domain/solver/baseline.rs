@@ -127,11 +127,19 @@ impl Inner {
                                 liquidity: segment.liquidity.clone(),
                                 input: segment.input,
                                 output: segment.output,
+                                // TODO does the baseline solver know about this
+                                // optimization?
                                 internalize: false,
                             })
                         })
                         .collect();
 
+                    // The baseline solver generates a path with swapping
+                    // for exact output token amounts. This leads to
+                    // potential rounding errors for buy orders, where we
+                    // can buy slightly more than intended. Fix this by
+                    // capping the output amount to the order's buy amount
+                    // for buy orders.
                     let mut output = route.output();
                     if let order::Side::Buy = order.side {
                         output.amount = cmp::min(output.amount, order.buy.amount);
