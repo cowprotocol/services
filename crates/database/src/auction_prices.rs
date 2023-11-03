@@ -41,51 +41,51 @@ pub async fn fetch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
     async fn postgres_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let auction_1 = vec![
+                AuctionPrice {
+                    auction_id: 1,
+                    token: ByteArray([2; 20]),
+                    price: 4.into(),
+                },
+                AuctionPrice {
+                    auction_id: 1,
+                    token: ByteArray([3; 20]),
+                    price: 5.into(),
+                },
+            ];
+            let auction_2 = vec![AuctionPrice {
+                auction_id: 2,
+                token: ByteArray([4; 20]),
+                price: 6.into(),
+            }];
+            let auction_3 = vec![AuctionPrice {
+                auction_id: 3,
+                token: ByteArray([5; 20]),
+                price: 7.into(),
+            }];
 
-        let auction_1 = vec![
-            AuctionPrice {
-                auction_id: 1,
-                token: ByteArray([2; 20]),
-                price: 4.into(),
-            },
-            AuctionPrice {
-                auction_id: 1,
-                token: ByteArray([3; 20]),
-                price: 5.into(),
-            },
-        ];
-        let auction_2 = vec![AuctionPrice {
-            auction_id: 2,
-            token: ByteArray([4; 20]),
-            price: 6.into(),
-        }];
-        let auction_3 = vec![AuctionPrice {
-            auction_id: 3,
-            token: ByteArray([5; 20]),
-            price: 7.into(),
-        }];
+            insert(&mut db, &auction_1).await.unwrap();
+            insert(&mut db, &auction_2).await.unwrap();
+            insert(&mut db, &auction_3).await.unwrap();
 
-        insert(&mut db, &auction_1).await.unwrap();
-        insert(&mut db, &auction_2).await.unwrap();
-        insert(&mut db, &auction_3).await.unwrap();
-
-        // check that all auctions are there
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(output, auction_1);
-        let output = fetch(&mut db, 2).await.unwrap();
-        assert_eq!(output, auction_2);
-        let output = fetch(&mut db, 3).await.unwrap();
-        assert_eq!(output, auction_3);
-        // non-existent auction
-        let output = fetch(&mut db, 4).await.unwrap();
-        assert!(output.is_empty());
+            // check that all auctions are there
+            let output = fetch(&mut db, 1).await.unwrap();
+            assert_eq!(output, auction_1);
+            let output = fetch(&mut db, 2).await.unwrap();
+            assert_eq!(output, auction_2);
+            let output = fetch(&mut db, 3).await.unwrap();
+            assert_eq!(output, auction_3);
+            // non-existent auction
+            let output = fetch(&mut db, 4).await.unwrap();
+            assert!(output.is_empty());
+        })
+        .await;
     }
 }
