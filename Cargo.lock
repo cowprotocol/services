@@ -4172,6 +4172,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "web3",
 ]
 
 [[package]]

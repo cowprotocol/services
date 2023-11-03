@@ -6,8 +6,10 @@ use {
 mod notification;
 
 pub use notification::{Kind, Notification, ScoreKind, Settlement};
-
-use crate::domain::{competition::score, eth, mempools::Error};
+use {
+    super::simulator,
+    crate::domain::{competition::score, eth, mempools::Error},
+};
 
 pub fn solver_timeout(solver: &Solver, auction_id: Option<auction::Id>) {
     solver.notify(auction_id, None, notification::Kind::Timeout);
@@ -43,9 +45,12 @@ pub fn scoring_failed(
         )) => notification::Kind::ScoringFailed(
             notification::ScoreKind::SuccessProbabilityOutOfRange(*success_probability),
         ),
-        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive) => {
-            notification::Kind::ScoringFailed(notification::ScoreKind::ObjectiveValueNonPositive)
-        }
+        score::Error::RiskAdjusted(score::risk::Error::ObjectiveValueNonPositive(
+            quality,
+            gas_cost,
+        )) => notification::Kind::ScoringFailed(
+            notification::ScoreKind::ObjectiveValueNonPositive(*quality, *gas_cost),
+        ),
         score::Error::RiskAdjusted(score::risk::Error::Boundary(_)) => return,
         score::Error::Boundary(_) => return,
     };
@@ -59,29 +64,26 @@ pub fn encoding_failed(
     solution_id: solution::Id,
     err: &solution::Error,
 ) {
-    match err {
-        solution::Error::UntrustedInternalization(tokens) => {
-            solver.notify(
-                auction_id,
-                Some(solution_id),
-                notification::Kind::NonBufferableTokensUsed(tokens.clone()),
-            );
+    let notification = match err {
+        solution::Error::NonBufferableTokensUsed(tokens) => {
+            notification::Kind::NonBufferableTokensUsed(tokens.clone())
         }
         solution::Error::SolverAccountInsufficientBalance(required) => {
-            solver.notify(
-                auction_id,
-                Some(solution_id),
-                notification::Kind::SolverAccountInsufficientBalance(*required),
-            );
+            notification::Kind::SolverAccountInsufficientBalance(*required)
         }
-        solution::Error::Blockchain(_) => (),
-        solution::Error::Boundary(_) => (),
-        solution::Error::Simulation(_) => (), // todo,
-        solution::Error::AssetFlow(_) => (),
-        solution::Error::Execution(_) => (),
-        solution::Error::FailingInternalization => (),
-        solution::Error::DifferentSolvers => (),
-    }
+        solution::Error::Blockchain(_) => return,
+        solution::Error::Boundary(_) => return,
+        solution::Error::Simulation(simulator::Error::WithTx(error)) => {
+            notification::Kind::SimulationFailed(error.tx.clone())
+        }
+        solution::Error::Simulation(simulator::Error::Basic(_)) => return,
+        solution::Error::AssetFlow(_) => return,
+        solution::Error::Execution(_) => return,
+        solution::Error::FailingInternalization => return,
+        solution::Error::DifferentSolvers => return,
+    };
+
+    solver.notify(auction_id, Some(solution_id), notification);
 }
 
 pub fn executed(

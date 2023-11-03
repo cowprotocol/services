@@ -324,9 +324,9 @@ pub enum Error {
     #[error(transparent)]
     Execution(#[from] trade::ExecutionError),
     #[error(
-        "invalid internalization: solution attempts to internalize tokens which are not trusted"
+        "non bufferable tokens used: solution attempts to internalize tokens which are not trusted"
     )]
-    UntrustedInternalization(BTreeSet<TokenAddress>),
+    NonBufferableTokensUsed(BTreeSet<TokenAddress>),
     #[error("invalid internalization: uninternalized solution fails to simulate")]
     FailingInternalization,
     #[error("insufficient solver account Ether balance, required {0:?}")]

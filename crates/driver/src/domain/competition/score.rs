@@ -1,9 +1,5 @@
 use {
-    self::risk::ObjectiveValue,
-    crate::{
-        boundary,
-        domain::{eth, eth::GasCost},
-    },
+    crate::{boundary, domain::eth},
     std::cmp::Ordering,
 };
 
@@ -34,21 +30,6 @@ pub struct Quality(pub eth::U256);
 impl From<eth::U256> for Quality {
     fn from(value: eth::U256) -> Self {
         Self(value)
-    }
-}
-
-/// ObjectiveValue = Quality - GasCost
-impl std::ops::Sub<GasCost> for Quality {
-    type Output = Result<ObjectiveValue, risk::Error>;
-
-    fn sub(self, other: GasCost) -> Self::Output {
-        if self.0 > other.0 .0 {
-            Ok(ObjectiveValue(
-                eth::NonZeroU256::new(self.0 - other.0 .0).unwrap(),
-            ))
-        } else {
-            Err(risk::Error::ObjectiveValueNonPositive)
-        }
     }
 }
 
@@ -92,9 +73,13 @@ pub enum Error {
 pub mod risk {
     //! Contains functionality and error types for scores that are based on
     //! success probability.
+
     use {
-        super::Score,
-        crate::{boundary, domain::eth},
+        super::{Quality, Score},
+        crate::{
+            boundary,
+            domain::{eth, eth::GasCost},
+        },
     };
 
     impl Score {
@@ -104,13 +89,13 @@ pub mod risk {
             objective_value: ObjectiveValue,
             success_probability: SuccessProbability,
             failure_cost: eth::GasCost,
-        ) -> Result<Self, Error> {
-            Ok(boundary::score::score(
+        ) -> Result<Self, super::Error> {
+            boundary::score::score(
                 score_cap,
                 objective_value,
                 success_probability,
                 failure_cost,
-            )?)
+            )
         }
     }
 
@@ -135,6 +120,22 @@ pub mod risk {
     #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
     pub struct ObjectiveValue(pub eth::NonZeroU256);
 
+    /// Substitution for constructor of ObjectiveValue
+    /// ObjectiveValue = Quality - GasCost
+    impl std::ops::Sub<GasCost> for Quality {
+        type Output = Result<ObjectiveValue, Error>;
+
+        fn sub(self, other: GasCost) -> Self::Output {
+            if self.0 > other.get().0 {
+                Ok(ObjectiveValue(
+                    eth::NonZeroU256::new(self.0 - other.get().0).unwrap(),
+                ))
+            } else {
+                Err(Error::ObjectiveValueNonPositive(self, other))
+            }
+        }
+    }
+
     #[derive(Debug, thiserror::Error)]
     pub enum Error {
         /// Solution has success probability that is outside of the allowed
@@ -146,8 +147,8 @@ pub mod risk {
         /// and protocol. Score calculator does not make sense for such
         /// solutions, since score calculator is expected to return
         /// value (0, ObjectiveValue]
-        #[error("objective value is non-positive")]
-        ObjectiveValueNonPositive,
+        #[error("objective value is non-positive, quality {0:?}, gas cost {1:?}")]
+        ObjectiveValueNonPositive(Quality, GasCost),
         #[error(transparent)]
         Boundary(#[from] boundary::Error),
     }

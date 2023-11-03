@@ -4,7 +4,7 @@ use {
         boundary,
         domain::{
             competition::{self, auction, order, score, solution},
-            eth,
+            eth::{self, GasCost},
             mempools,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
@@ -12,7 +12,6 @@ use {
     },
     bigdecimal::Signed,
     futures::future::try_join_all,
-    num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
 
@@ -113,7 +112,7 @@ impl Settlement {
             .map(|asset| asset.token)
             .collect::<BTreeSet<_>>();
         if !untrusted_tokens.is_empty() {
-            return Err(Error::UntrustedInternalization(untrusted_tokens));
+            return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
         // Encode the solution into a settlement.
@@ -271,16 +270,16 @@ impl Settlement {
         let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => competition::Score(score.try_into()?),
+            competition::SolverScore::Solver(score) => score.try_into()?,
             competition::SolverScore::RiskAdjusted(success_probability) => {
-                let gas_cost = self.gas.estimate * auction.gas_price();
+                let gas_cost = self.gas.estimate * auction.gas_price().effective();
                 let success_probability = success_probability.try_into()?;
                 let objective_value = (quality - gas_cost)?;
                 // The cost in case of a revert can deviate non-deterministically from the cost
                 // in case of success and it is often significantly smaller. Thus, we go with
                 // the full cost as a safe assumption.
                 let failure_cost = match revert_protection {
-                    mempools::RevertProtection::Enabled => zero(),
+                    mempools::RevertProtection::Enabled => GasCost::zero(),
                     mempools::RevertProtection::Disabled => gas_cost,
                 };
                 competition::Score::new(
