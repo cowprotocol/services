@@ -92,16 +92,14 @@ pub type OrderUid = ByteArray<56>;
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        sqlx::{Connection, PgConnection},
-    };
+    use super::*;
 
     #[tokio::test]
     #[ignore]
     async fn postgres_clear() {
-        let mut con = PgConnection::connect("postgresql://").await.unwrap();
-        let mut con = con.begin().await.unwrap();
-        clear_DANGER_(&mut con).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut con = db.connection().begin().await.unwrap();
+            clear_DANGER_(&mut con).await.unwrap();
+        }).await;
     }
 }
