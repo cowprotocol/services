@@ -103,16 +103,16 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_count_rows_in_table_() {
-        let db = Postgres::new("postgresql://").await.unwrap();
-        let mut ex = db.0.begin().await.unwrap();
-        database::clear_DANGER_(&mut ex).await.unwrap();
-
-        let count = count_rows_in_table(&mut ex, "orders").await.unwrap();
-        assert_eq!(count, 0);
-        database::orders::insert_order(&mut ex, &Default::default())
-            .await
-            .unwrap();
-        let count = count_rows_in_table(&mut ex, "orders").await.unwrap();
-        assert_eq!(count, 1);
+        docker::db::run_test(|db| async move {
+            let mut ex = db.connection().begin().await.unwrap();
+            let count = count_rows_in_table(&mut ex, "orders").await.unwrap();
+            assert_eq!(count, 0);
+            database::orders::insert_order(&mut ex, &Default::default())
+                .await
+                .unwrap();
+            let count = count_rows_in_table(&mut ex, "orders").await.unwrap();
+            assert_eq!(count, 1);
+        })
+        .await;
     }
 }

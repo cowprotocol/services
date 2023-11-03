@@ -126,7 +126,6 @@ mod tests {
     use {
         super::*,
         crate::events::{Event, EventIndex, Settlement},
-        sqlx::Connection,
         std::ops::DerefMut,
     };
 
@@ -140,179 +139,179 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_double_insert_error() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
+                .await
+                .unwrap();
 
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
+            // Doesn't error because whole row is the same.
+            upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
+                .await
+                .unwrap();
 
-        // Doesn't error because whole row is the same.
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        // Errors because of primary key violation.
-        let err = upsert_auction_transaction(&mut db, 0, &Default::default(), 1)
-            .await
-            .unwrap_err();
-        assert!(is_duplicate_auction_id_error(&err));
+            // Errors because of primary key violation.
+            let err = upsert_auction_transaction(&mut db, 0, &Default::default(), 1)
+                .await
+                .unwrap_err();
+            assert!(is_duplicate_auction_id_error(&err));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn upsert_auction_transaction_() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
+                .await
+                .unwrap();
 
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
+            // same account-nonce other auction_id
+            upsert_auction_transaction(&mut db, 1, &Default::default(), 0)
+                .await
+                .unwrap();
 
-        // same account-nonce other auction_id
-        upsert_auction_transaction(&mut db, 1, &Default::default(), 0)
-            .await
-            .unwrap();
+            let auction_id: i64 = sqlx::query_scalar("SELECT auction_id FROM auction_transaction")
+                .fetch_one(db.deref_mut())
+                .await
+                .unwrap();
+            assert_eq!(auction_id, 1);
 
-        let auction_id: i64 = sqlx::query_scalar("SELECT auction_id FROM auction_transaction")
-            .fetch_one(db.deref_mut())
-            .await
-            .unwrap();
-        assert_eq!(auction_id, 1);
-
-        // reusing auction-id fails
-        let result = upsert_auction_transaction(&mut db, 1, &Default::default(), 1).await;
-        assert!(result.is_err());
+            // reusing auction-id fails
+            let result = upsert_auction_transaction(&mut db, 1, &Default::default(), 1).await;
+            assert!(result.is_err());
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn insert_settlement_tx_info_() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let index = EventIndex::default();
+            let event = Event::Settlement(Settlement {
+                solver: Default::default(),
+                transaction_hash: Default::default(),
+            });
+            crate::events::append(&mut db, &[(index, event)])
+                .await
+                .unwrap();
 
-        let index = EventIndex::default();
-        let event = Event::Settlement(Settlement {
-            solver: Default::default(),
-            transaction_hash: Default::default(),
-        });
-        crate::events::append(&mut db, &[(index, event)])
-            .await
-            .unwrap();
+            let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
+                .fetch_one(db.deref_mut())
+                .await
+                .unwrap();
+            assert_eq!(auction_id, None);
 
-        let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
-            .fetch_one(db.deref_mut())
-            .await
-            .unwrap();
-        assert_eq!(auction_id, None);
+            insert_settlement_tx_info(&mut db, 0, 0, &Default::default(), 1)
+                .await
+                .unwrap();
 
-        insert_settlement_tx_info(&mut db, 0, 0, &Default::default(), 1)
-            .await
-            .unwrap();
-
-        let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
-            .fetch_one(db.deref_mut())
-            .await
-            .unwrap();
-        assert_eq!(auction_id, Some(1));
+            let auction_id: Option<i64> = sqlx::query_scalar("SELECT tx_nonce FROM settlements")
+                .fetch_one(db.deref_mut())
+                .await
+                .unwrap();
+            assert_eq!(auction_id, Some(1));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn get_settlement_event_without_tx_info_() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event = get_settlement_event_without_tx_info(&mut db, 10)
+                .await
+                .unwrap();
+            assert!(event.is_none());
 
-        let event = get_settlement_event_without_tx_info(&mut db, 10)
-            .await
-            .unwrap();
-        assert!(event.is_none());
+            // event at block 0
+            let index = EventIndex::default();
+            let event = Event::Settlement(Settlement {
+                solver: Default::default(),
+                transaction_hash: Default::default(),
+            });
+            crate::events::append(&mut db, &[(index, event)])
+                .await
+                .unwrap();
 
-        // event at block 0
-        let index = EventIndex::default();
-        let event = Event::Settlement(Settlement {
-            solver: Default::default(),
-            transaction_hash: Default::default(),
-        });
-        crate::events::append(&mut db, &[(index, event)])
-            .await
-            .unwrap();
+            // is found
+            let event = get_settlement_event_without_tx_info(&mut db, 10)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(event.block_number, 0);
 
-        // is found
-        let event = get_settlement_event_without_tx_info(&mut db, 10)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(event.block_number, 0);
+            // gets tx info
+            insert_settlement_tx_info(&mut db, 0, 0, &Default::default(), 1)
+                .await
+                .unwrap();
 
-        // gets tx info
-        insert_settlement_tx_info(&mut db, 0, 0, &Default::default(), 1)
-            .await
-            .unwrap();
+            // no longer found
+            let event = get_settlement_event_without_tx_info(&mut db, 10)
+                .await
+                .unwrap();
+            assert!(event.is_none());
 
-        // no longer found
-        let event = get_settlement_event_without_tx_info(&mut db, 10)
-            .await
-            .unwrap();
-        assert!(event.is_none());
+            // event at 11
+            let index = EventIndex {
+                block_number: 11,
+                log_index: 0,
+            };
+            let event = Event::Settlement(Settlement {
+                solver: Default::default(),
+                transaction_hash: Default::default(),
+            });
+            crate::events::append(&mut db, &[(index, event)])
+                .await
+                .unwrap();
 
-        // event at 11
-        let index = EventIndex {
-            block_number: 11,
-            log_index: 0,
-        };
-        let event = Event::Settlement(Settlement {
-            solver: Default::default(),
-            transaction_hash: Default::default(),
-        });
-        crate::events::append(&mut db, &[(index, event)])
-            .await
-            .unwrap();
-
-        // not found because block number too large
-        let event = get_settlement_event_without_tx_info(&mut db, 10)
-            .await
-            .unwrap();
-        assert!(event.is_none());
+            // not found because block number too large
+            let event = get_settlement_event_without_tx_info(&mut db, 10)
+                .await
+                .unwrap();
+            assert!(event.is_none());
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn get_auction_id_test() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            upsert_auction_transaction(&mut db, 5, &Default::default(), 3)
+                .await
+                .unwrap();
 
-        upsert_auction_transaction(&mut db, 5, &Default::default(), 3)
-            .await
-            .unwrap();
-
-        let auction_id = get_auction_id(&mut db, &Default::default(), 3)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(auction_id, 5);
+            let auction_id = get_auction_id(&mut db, &Default::default(), 3)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(auction_id, 5);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn try_insert_auction_transaction_test() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+                .await
+                .unwrap();
+            assert!(inserted);
 
-        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
-            .await
-            .unwrap();
-        assert!(inserted);
-
-        let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
-            .await
-            .unwrap();
-        assert!(!inserted);
+            let inserted = try_insert_auction_transaction(&mut db, 3, &Default::default(), 1)
+                .await
+                .unwrap();
+            assert!(!inserted);
+        })
+        .await;
     }
 }

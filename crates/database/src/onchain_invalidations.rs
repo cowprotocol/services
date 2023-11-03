@@ -62,106 +62,106 @@ pub async fn read_onchain_invalidation(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
     async fn postgres_invalidation_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order_uid = OrderUid::default();
-        let event_index = EventIndex::default();
-        insert_onchain_invalidation(&mut db, &event_index, &order_uid)
-            .await
-            .unwrap();
-        let row = read_onchain_invalidation(&mut db, &order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainInvalidationRow {
-            uid: order_uid,
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
-        };
-        assert_eq!(expected_row, row);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order_uid = OrderUid::default();
+            let event_index = EventIndex::default();
+            insert_onchain_invalidation(&mut db, &event_index, &order_uid)
+                .await
+                .unwrap();
+            let row = read_onchain_invalidation(&mut db, &order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainInvalidationRow {
+                uid: order_uid,
+                block_number: event_index.block_number,
+                log_index: event_index.log_index,
+            };
+            assert_eq!(expected_row, row);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_delete_invalidations() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event_index_1 = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            let event_index_2 = EventIndex {
+                block_number: 2,
+                log_index: 0,
+            };
 
-        let event_index_1 = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        let event_index_2 = EventIndex {
-            block_number: 2,
-            log_index: 0,
-        };
-
-        let order_uid_1: OrderUid = ByteArray([1; 56]);
-        let order_uid_2: OrderUid = ByteArray([2; 56]);
-        insert_onchain_invalidations(
-            &mut db,
-            &[(event_index_1, order_uid_1), (event_index_2, order_uid_2)],
-        )
-        .await
-        .unwrap();
-        delete_invalidations(&mut db, 2).await.unwrap();
-        let row = read_onchain_invalidation(&mut db, &order_uid_1)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainInvalidationRow {
-            uid: order_uid_1,
-            block_number: event_index_1.block_number,
-            log_index: event_index_1.log_index,
-        };
-        assert_eq!(expected_row, row);
-        let row = read_onchain_invalidation(&mut db, &order_uid_2)
+            let order_uid_1: OrderUid = ByteArray([1; 56]);
+            let order_uid_2: OrderUid = ByteArray([2; 56]);
+            insert_onchain_invalidations(
+                &mut db,
+                &[(event_index_1, order_uid_1), (event_index_2, order_uid_2)],
+            )
             .await
             .unwrap();
-        assert_eq!(None, row);
+            delete_invalidations(&mut db, 2).await.unwrap();
+            let row = read_onchain_invalidation(&mut db, &order_uid_1)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainInvalidationRow {
+                uid: order_uid_1,
+                block_number: event_index_1.block_number,
+                log_index: event_index_1.log_index,
+            };
+            assert_eq!(expected_row, row);
+            let row = read_onchain_invalidation(&mut db, &order_uid_2)
+                .await
+                .unwrap();
+            assert_eq!(None, row);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_order_conflict_handling() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let event_index_1 = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        let event_index_2 = EventIndex {
-            block_number: 2,
-            log_index: 1,
-        };
-        let order_uid = ByteArray([1; 56]);
-        insert_onchain_invalidations(&mut db, &[(event_index_1, order_uid)])
-            .await
-            .unwrap();
-        let reorged_order = order_uid;
-        // Now, we insert the order again
-        insert_onchain_invalidations(&mut db, &[(event_index_2, reorged_order)])
-            .await
-            .unwrap();
-        let row = read_onchain_invalidation(&mut db, &order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainInvalidationRow {
-            uid: order_uid,
-            block_number: event_index_2.block_number,
-            log_index: event_index_2.log_index,
-        };
-        assert_eq!(expected_row, row);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event_index_1 = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            let event_index_2 = EventIndex {
+                block_number: 2,
+                log_index: 1,
+            };
+            let order_uid = ByteArray([1; 56]);
+            insert_onchain_invalidations(&mut db, &[(event_index_1, order_uid)])
+                .await
+                .unwrap();
+            let reorged_order = order_uid;
+            // Now, we insert the order again
+            insert_onchain_invalidations(&mut db, &[(event_index_2, reorged_order)])
+                .await
+                .unwrap();
+            let row = read_onchain_invalidation(&mut db, &order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainInvalidationRow {
+                uid: order_uid,
+                block_number: event_index_2.block_number,
+                log_index: event_index_2.log_index,
+            };
+            assert_eq!(expected_row, row);
+        })
+        .await;
     }
 }

@@ -51,27 +51,27 @@ WHERE order_uid = $2 AND auction_id = $3
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sqlx::Connection};
+    use super::*;
 
     #[tokio::test]
     #[ignore]
     async fn postgres_save() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            save(&mut db, &Default::default(), 0, None, Default::default())
+                .await
+                .unwrap();
 
-        save(&mut db, &Default::default(), 0, None, Default::default())
+            save(
+                &mut db,
+                &Default::default(),
+                1,
+                Some(&Default::default()),
+                Default::default(),
+            )
             .await
             .unwrap();
-
-        save(
-            &mut db,
-            &Default::default(),
-            1,
-            Some(&Default::default()),
-            Default::default(),
-        )
-        .await
-        .unwrap();
+        })
+        .await;
     }
 }

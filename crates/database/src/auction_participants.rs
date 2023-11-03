@@ -37,27 +37,27 @@ pub async fn fetch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
     async fn postgres_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let input = vec![
-            Participant {
-                auction_id: 1,
-                participant: ByteArray([2; 20]),
-            },
-            Participant {
-                auction_id: 1,
-                participant: ByteArray([3; 20]),
-            },
-        ];
-        insert(&mut db, &input).await.unwrap();
-        let output = fetch(&mut db, 1).await.unwrap();
-        assert_eq!(input, output);
+        docker::db::run_test(|db| async move {
+            let mut ex = db.connection().begin().await.unwrap();
+            let input = vec![
+                Participant {
+                    auction_id: 1,
+                    participant: ByteArray([2; 20]),
+                },
+                Participant {
+                    auction_id: 1,
+                    participant: ByteArray([3; 20]),
+                },
+            ];
+            insert(&mut ex, &input).await.unwrap();
+            let output = fetch(&mut ex, 1).await.unwrap();
+            assert_eq!(input, output);
+        })
+        .await;
     }
 }

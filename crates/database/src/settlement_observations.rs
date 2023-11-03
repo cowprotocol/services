@@ -42,11 +42,7 @@ WHERE s.tx_hash = $1
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::events::EventIndex,
-        sqlx::{Connection, PgConnection},
-    };
+    use {super::*, crate::events::EventIndex, sqlx::PgConnection};
 
     // helper function to make roundtrip possible
     pub async fn fetch(
@@ -65,30 +61,30 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let input = Observation {
-            gas_used: 1.into(),
-            effective_gas_price: 2.into(),
-            surplus: 3.into(),
-            fee: 4.into(),
-            block_number: 1,
-            log_index: 1,
-        };
-
-        insert(&mut db, input.clone()).await.unwrap();
-        let output = fetch(
-            &mut db,
-            &EventIndex {
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let input = Observation {
+                gas_used: 1.into(),
+                effective_gas_price: 2.into(),
+                surplus: 3.into(),
+                fee: 4.into(),
                 block_number: 1,
                 log_index: 1,
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert_eq!(input, output);
+            };
+
+            insert(&mut db, input.clone()).await.unwrap();
+            let output = fetch(
+                &mut db,
+                &EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(input, output);
+        })
+        .await;
     }
 }

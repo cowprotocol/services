@@ -50,35 +50,34 @@ WHERE contract_app_data = $1
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
     async fn postgres_app_data() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut tx = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut tx).await.unwrap();
-        tx.commit().await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let contract = ByteArray([0u8; 32]);
+            // fetch non existant app data
+            let result = fetch(&mut db, &contract).await.unwrap();
+            assert!(result.is_none());
 
-        let contract = ByteArray([0u8; 32]);
-        // fetch non existant app data
-        let result = fetch(&mut db, &contract).await.unwrap();
-        assert!(result.is_none());
+            let full = vec![1u8];
+            let result = insert(&mut db, &contract, &full).await.unwrap();
+            assert_eq!(result, None);
 
-        let full = vec![1u8];
-        let result = insert(&mut db, &contract, &full).await.unwrap();
-        assert_eq!(result, None);
+            // now exists
+            let result = fetch(&mut db, &contract).await.unwrap();
+            assert_eq!(result, Some(full.clone()));
 
-        // now exists
-        let result = fetch(&mut db, &contract).await.unwrap();
-        assert_eq!(result, Some(full.clone()));
+            // insert again with same app data
+            let result = insert(&mut db, &contract, &full).await.unwrap();
+            assert_eq!(result, Some(full.clone()));
 
-        // insert again with same app data
-        let result = insert(&mut db, &contract, &full).await.unwrap();
-        assert_eq!(result, Some(full.clone()));
-
-        // insert again with different app data fails
-        let result = insert(&mut db, &contract, &[4, 2]).await.unwrap();
-        assert_eq!(result, Some(full));
+            // insert again with different app data fails
+            let result = insert(&mut db, &contract, &[4, 2]).await.unwrap();
+            assert_eq!(result, Some(full));
+        })
+        .await;
     }
 }

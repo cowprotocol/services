@@ -58,6 +58,7 @@ mockall = { workspace = true }
 secp256k1 = { workspace = true }
 testlib = { path = "../testlib" }
 tokio = { workspace = true, features = ["test-util"] }
+docker = { path = "../docker" }
 
 [build-dependencies]
 anyhow = { workspace = true }

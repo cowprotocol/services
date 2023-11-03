@@ -31,23 +31,23 @@ pub async fn fetch(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sqlx::Connection};
+    use super::*;
 
     #[tokio::test]
     #[ignore]
     async fn postgres_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let input = SettlementCallData {
+                auction_id: 1,
+                call_data: vec![2; 20],
+                uninternalized_call_data: vec![3; 20],
+            };
+            insert(&mut db, input.clone()).await.unwrap();
 
-        let input = SettlementCallData {
-            auction_id: 1,
-            call_data: vec![2; 20],
-            uninternalized_call_data: vec![3; 20],
-        };
-        insert(&mut db, input.clone()).await.unwrap();
-
-        let output = fetch(&mut db, 1).await.unwrap().unwrap();
-        assert_eq!(input, output);
+            let output = fetch(&mut db, 1).await.unwrap().unwrap();
+            assert_eq!(input, output);
+        })
+        .await;
     }
 }

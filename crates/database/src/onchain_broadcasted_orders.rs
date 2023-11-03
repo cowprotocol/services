@@ -131,182 +131,184 @@ pub async fn read_order(
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::byte_array::ByteArray, sqlx::Connection};
+    use {super::*, crate::byte_array::ByteArray};
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
-        async fn round_trip_for_error(
-            db: &mut PgConnection,
-            placement_error: Option<OnchainOrderPlacementError>,
-        ) {
-            let order = OnchainOrderPlacement {
-                placement_error: placement_error.clone(),
-                ..Default::default()
-            };
-            let event_index = EventIndex::default();
-            insert_onchain_order(db, &event_index, &order)
-                .await
-                .unwrap();
-            let row = read_order(db, &order.order_uid).await.unwrap().unwrap();
-            let expected_row = OnchainOrderPlacementRow {
-                uid: order.order_uid,
-                sender: order.sender,
-                placement_error,
-                is_reorged: false,
-                block_number: event_index.block_number,
-                log_index: event_index.log_index,
-            };
-            assert_eq!(expected_row, row);
-        }
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        round_trip_for_error(&mut db, None).await;
-        for error in OnchainOrderPlacementError::into_iter() {
-            crate::clear_DANGER_(&mut db).await.unwrap();
-            round_trip_for_error(&mut db, Some(error)).await;
-        }
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            async fn round_trip_for_error(
+                db: &mut PgConnection,
+                placement_error: Option<OnchainOrderPlacementError>,
+            ) {
+                let order = OnchainOrderPlacement {
+                    placement_error: placement_error.clone(),
+                    ..Default::default()
+                };
+                let event_index = EventIndex::default();
+                insert_onchain_order(db, &event_index, &order)
+                    .await
+                    .unwrap();
+                let row = read_order(db, &order.order_uid).await.unwrap().unwrap();
+                let expected_row = OnchainOrderPlacementRow {
+                    uid: order.order_uid,
+                    sender: order.sender,
+                    placement_error,
+                    is_reorged: false,
+                    block_number: event_index.block_number,
+                    log_index: event_index.log_index,
+                };
+                assert_eq!(expected_row, row);
+            }
+            round_trip_for_error(&mut db, None).await;
+            for error in OnchainOrderPlacementError::into_iter() {
+                crate::clear_DANGER_(&mut db).await.unwrap();
+                round_trip_for_error(&mut db, Some(error)).await;
+            }
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_last_block() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let event_index = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        append(&mut db, &[(event_index, OnchainOrderPlacement::default())])
-            .await
-            .unwrap();
-        assert_eq!(last_block(&mut db).await.unwrap(), 1);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event_index = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            append(&mut db, &[(event_index, OnchainOrderPlacement::default())])
+                .await
+                .unwrap();
+            assert_eq!(last_block(&mut db).await.unwrap(), 1);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_sets_is_reorged_to_true() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event_index_1 = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            let event_index_2 = EventIndex {
+                block_number: 2,
+                log_index: 0,
+            };
 
-        let event_index_1 = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        let event_index_2 = EventIndex {
-            block_number: 2,
-            log_index: 0,
-        };
-
-        let order_1 = OnchainOrderPlacement {
-            order_uid: ByteArray([1; 56]),
-            sender: ByteArray([1; 20]),
-            placement_error: None,
-        };
-        let order_2 = OnchainOrderPlacement {
-            order_uid: ByteArray([2; 56]),
-            sender: ByteArray([2; 20]),
-            placement_error: None,
-        };
-        append(
-            &mut db,
-            &[
-                (event_index_1, order_1.clone()),
-                (event_index_2, order_2.clone()),
-            ],
-        )
-        .await
-        .unwrap();
-        mark_as_reorged(&mut db, 2).await.unwrap();
-        let row = read_order(&mut db, &order_1.order_uid)
+            let order_1 = OnchainOrderPlacement {
+                order_uid: ByteArray([1; 56]),
+                sender: ByteArray([1; 20]),
+                placement_error: None,
+            };
+            let order_2 = OnchainOrderPlacement {
+                order_uid: ByteArray([2; 56]),
+                sender: ByteArray([2; 20]),
+                placement_error: None,
+            };
+            append(
+                &mut db,
+                &[
+                    (event_index_1, order_1.clone()),
+                    (event_index_2, order_2.clone()),
+                ],
+            )
             .await
-            .unwrap()
             .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order_1.order_uid,
-            sender: order_1.sender,
-            placement_error: None,
-            is_reorged: false,
-            block_number: event_index_1.block_number,
-            log_index: event_index_1.log_index,
-        };
-        assert_eq!(expected_row, row);
-        let row = read_order(&mut db, &order_2.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order_2.order_uid,
-            sender: order_2.sender,
-            placement_error: None,
-            is_reorged: true, // <-- difference is here
-            block_number: event_index_2.block_number,
-            log_index: event_index_2.log_index,
-        };
-        assert_eq!(expected_row, row);
+            mark_as_reorged(&mut db, 2).await.unwrap();
+            let row = read_order(&mut db, &order_1.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order_1.order_uid,
+                sender: order_1.sender,
+                placement_error: None,
+                is_reorged: false,
+                block_number: event_index_1.block_number,
+                log_index: event_index_1.log_index,
+            };
+            assert_eq!(expected_row, row);
+            let row = read_order(&mut db, &order_2.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order_2.order_uid,
+                sender: order_2.sender,
+                placement_error: None,
+                is_reorged: true, // <-- difference is here
+                block_number: event_index_2.block_number,
+                log_index: event_index_2.log_index,
+            };
+            assert_eq!(expected_row, row);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_order_conflict_handling() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let event_index_1 = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        let event_index_2 = EventIndex {
-            block_number: 2,
-            log_index: 1,
-        };
-        let order_1 = OnchainOrderPlacement {
-            order_uid: ByteArray([1; 56]),
-            sender: ByteArray([1; 20]),
-            placement_error: None,
-        };
-        append(&mut db, &[(event_index_1, order_1.clone())])
-            .await
-            .unwrap();
-        mark_as_reorged(&mut db, 1).await.unwrap();
-        let row = read_order(&mut db, &order_1.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order_1.order_uid,
-            sender: order_1.sender,
-            is_reorged: true,
-            placement_error: None,
-            block_number: event_index_1.block_number,
-            log_index: event_index_1.log_index,
-        };
-        assert_eq!(expected_row, row);
-        let reorged_order = OnchainOrderPlacement {
-            order_uid: order_1.order_uid,
-            sender: ByteArray([2; 20]),
-            placement_error: None,
-        };
-        // Now, we insert the order again and then it should no longer be reorged
-        append(&mut db, &[(event_index_2, reorged_order.clone())])
-            .await
-            .unwrap();
-        let row = read_order(&mut db, &order_1.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        let expected_row = OnchainOrderPlacementRow {
-            uid: order_1.order_uid,
-            sender: reorged_order.sender,
-            is_reorged: false,
-            placement_error: None,
-            block_number: event_index_2.block_number,
-            log_index: event_index_2.log_index,
-        };
-        assert_eq!(expected_row, row);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let event_index_1 = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            let event_index_2 = EventIndex {
+                block_number: 2,
+                log_index: 1,
+            };
+            let order_1 = OnchainOrderPlacement {
+                order_uid: ByteArray([1; 56]),
+                sender: ByteArray([1; 20]),
+                placement_error: None,
+            };
+            append(&mut db, &[(event_index_1, order_1.clone())])
+                .await
+                .unwrap();
+            mark_as_reorged(&mut db, 1).await.unwrap();
+            let row = read_order(&mut db, &order_1.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order_1.order_uid,
+                sender: order_1.sender,
+                is_reorged: true,
+                placement_error: None,
+                block_number: event_index_1.block_number,
+                log_index: event_index_1.log_index,
+            };
+            assert_eq!(expected_row, row);
+            let reorged_order = OnchainOrderPlacement {
+                order_uid: order_1.order_uid,
+                sender: ByteArray([2; 20]),
+                placement_error: None,
+            };
+            // Now, we insert the order again and then it should no longer be reorged
+            append(&mut db, &[(event_index_2, reorged_order.clone())])
+                .await
+                .unwrap();
+            let row = read_order(&mut db, &order_1.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected_row = OnchainOrderPlacementRow {
+                uid: order_1.order_uid,
+                sender: reorged_order.sender,
+                is_reorged: false,
+                placement_error: None,
+                block_number: event_index_2.block_number,
+                log_index: event_index_2.log_index,
+            };
+            assert_eq!(expected_row, row);
+        })
+        .await;
     }
 }

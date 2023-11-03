@@ -1,5 +1,5 @@
-mod db;
+pub mod db;
 mod node;
 mod registry;
 
-pub use {db::Db, node::Node, registry::ContainerRegistry};
+pub use {node::Node, registry::ContainerRegistry};

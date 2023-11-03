@@ -113,3 +113,16 @@ impl Db {
         &self.connection
     }
 }
+
+/// Spins up a fresh postgres docker container, runs the given test and tears
+/// down the container.
+pub async fn run_test<T, F>(test: T)
+where
+    T: FnOnce(Db) -> F,
+    F: std::future::Future<Output = ()>,
+{
+    let registry = super::ContainerRegistry::default();
+    let db = Db::new(&registry).await;
+    test(db).await;
+    registry.kill_all().await;
+}

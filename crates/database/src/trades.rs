@@ -76,7 +76,6 @@ mod tests {
             PgTransaction,
         },
         futures::TryStreamExt,
-        sqlx::Connection,
     };
 
     async fn generate_owners_and_order_ids(
@@ -150,171 +149,172 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_without_filter() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+            assert_trades(&mut db, None, None, &[]).await;
+            let event_index_a = EventIndex {
+                block_number: 0,
+                log_index: 0,
+            };
+            let trade_a =
+                add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None).await;
+            assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
-        assert_trades(&mut db, None, None, &[]).await;
-        let event_index_a = EventIndex {
-            block_number: 0,
-            log_index: 0,
-        };
-        let trade_a =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_a, None).await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
-
-        let event_index_b = EventIndex {
-            block_number: 1,
-            log_index: 0,
-        };
-        let trade_b =
-            add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None).await;
-        assert_trades(&mut db, None, None, &[trade_b, trade_a]).await;
+            let event_index_b = EventIndex {
+                block_number: 1,
+                log_index: 0,
+            };
+            let trade_b =
+                add_order_and_trade(&mut db, owners[0], order_ids[1], event_index_b, None).await;
+            assert_trades(&mut db, None, None, &[trade_b, trade_a]).await;
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter_benchmark_test() {
-        // This test can be used for benchmarking. With i in 0..240
-        // and j 0..100, the query should be less than 5 ms.
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-        for i in 0..1u32 {
-            let mut owner_bytes = i.to_ne_bytes().to_vec();
-            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-            let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..1u32 {
-                let mut i_as_bytes = i.to_ne_bytes().to_vec();
-                let mut j_as_bytes = j.to_ne_bytes().to_vec();
-                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
-                order_uid_info.append(&mut j_as_bytes);
-                i_as_bytes.append(&mut order_uid_info);
-                let event_index_0 = EventIndex {
-                    block_number: 0,
-                    log_index: 0,
-                };
-                let order_uid = ByteArray(i_as_bytes.try_into().unwrap());
-                insert_onchain_order(
-                    &mut db,
-                    &event_index_0.clone(),
-                    &OnchainOrderPlacement {
-                        order_uid,
-                        ..Default::default()
-                    },
-                )
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            // This test can be used for benchmarking. With i in 0..240
+            // and j 0..100, the query should be less than 5 ms.
+            for i in 0..1u32 {
+                let mut owner_bytes = i.to_ne_bytes().to_vec();
+                owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+                let owner = ByteArray(owner_bytes.try_into().unwrap());
+                for j in 0..1u32 {
+                    let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                    let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                    let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                    order_uid_info.append(&mut j_as_bytes);
+                    i_as_bytes.append(&mut order_uid_info);
+                    let event_index_0 = EventIndex {
+                        block_number: 0,
+                        log_index: 0,
+                    };
+                    let order_uid = ByteArray(i_as_bytes.try_into().unwrap());
+                    insert_onchain_order(
+                        &mut db,
+                        &event_index_0.clone(),
+                        &OnchainOrderPlacement {
+                            order_uid,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                    add_order_and_trade(&mut db, owner, order_uid, event_index_0, None).await;
+                }
+            }
+
+            let now = std::time::Instant::now();
+            trades(&mut db, Some(&ByteArray([2u8; 20])), None)
+                .try_collect::<Vec<_>>()
                 .await
                 .unwrap();
-                add_order_and_trade(&mut db, owner, order_uid, event_index_0, None).await;
-            }
-        }
-
-        let now = std::time::Instant::now();
-        trades(&mut db, Some(&ByteArray([2u8; 20])), None)
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
-        let elapsed = now.elapsed();
-        println!("{elapsed:?}");
-        assert!(elapsed < std::time::Duration::from_secs(1));
+            let elapsed = now.elapsed();
+            println!("{elapsed:?}");
+            assert!(elapsed < std::time::Duration::from_secs(1));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(4, 4).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(4, 4).await;
+            let event_index_0 = EventIndex {
+                block_number: 0,
+                log_index: 0,
+            };
+            let trade_0 =
+                add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
 
-        let event_index_0 = EventIndex {
-            block_number: 0,
-            log_index: 0,
-        };
-        let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
+            let event_index_1 = EventIndex {
+                block_number: 0,
+                log_index: 1,
+            };
+            let trade_1 =
+                add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
 
-        let event_index_1 = EventIndex {
-            block_number: 0,
-            log_index: 1,
-        };
-        let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
+            assert_trades(&mut db, Some(&owners[0]), None, &[trade_0.clone()]).await;
+            assert_trades(&mut db, Some(&owners[1]), None, &[trade_1]).await;
+            assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
 
-        assert_trades(&mut db, Some(&owners[0]), None, &[trade_0.clone()]).await;
-        assert_trades(&mut db, Some(&owners[1]), None, &[trade_1]).await;
-        assert_trades(&mut db, Some(&owners[2]), None, &[]).await;
+            let onchain_order = OnchainOrderPlacement {
+                order_uid: ByteArray(order_ids[0].0),
+                sender: owners[3],
+                placement_error: None,
+            };
+            let event_index = EventIndex::default();
+            insert_onchain_order(&mut db, &event_index, &onchain_order)
+                .await
+                .unwrap();
+            assert_trades(&mut db, Some(&owners[3]), None, &[trade_0.clone()]).await;
 
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(order_ids[0].0),
-            sender: owners[3],
-            placement_error: None,
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
-            .await
-            .unwrap();
-        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0.clone()]).await;
-
-        add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None).await;
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(order_ids[3].0),
-            sender: owners[3],
-            placement_error: None,
-        };
-        insert_onchain_order(&mut db, &event_index_1, &onchain_order)
-            .await
-            .unwrap();
-        assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
+            add_order_and_trade(&mut db, owners[3], order_ids[3], event_index_1, None).await;
+            let onchain_order = OnchainOrderPlacement {
+                order_uid: ByteArray(order_ids[3].0),
+                sender: owners[3],
+                placement_error: None,
+            };
+            insert_onchain_order(&mut db, &event_index_1, &onchain_order)
+                .await
+                .unwrap();
+            assert_trades(&mut db, Some(&owners[3]), None, &[trade_0]).await;
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_order_uid_filter() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(2, 3).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 3).await;
+            let event_index_0 = EventIndex {
+                block_number: 0,
+                log_index: 0,
+            };
+            let trade_0 =
+                add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
 
-        let event_index_0 = EventIndex {
-            block_number: 0,
-            log_index: 0,
-        };
-        let trade_0 =
-            add_order_and_trade(&mut db, owners[0], order_ids[0], event_index_0, None).await;
+            let event_index_1 = EventIndex {
+                block_number: 0,
+                log_index: 1,
+            };
+            let trade_1 =
+                add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
 
-        let event_index_1 = EventIndex {
-            block_number: 0,
-            log_index: 1,
-        };
-        let trade_1 =
-            add_order_and_trade(&mut db, owners[1], order_ids[1], event_index_1, None).await;
-
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[trade_0]).await;
-        assert_trades(&mut db, None, Some(&order_ids[1]), &[trade_1]).await;
-        assert_trades(&mut db, None, Some(&order_ids[2]), &[]).await;
+            assert_trades(&mut db, None, Some(&order_ids[0]), &[trade_0]).await;
+            assert_trades(&mut db, None, Some(&order_ids[1]), &[trade_1]).await;
+            assert_trades(&mut db, None, Some(&order_ids[2]), &[]).await;
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trade_without_matching_order() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(1, 1).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(1, 1).await;
-
-        let event_index = EventIndex {
-            block_number: 0,
-            log_index: 0,
-        };
-        add_trade(&mut db, owners[0], order_ids[0], event_index, None).await;
-        // Trade exists in DB but no matching order
-        assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
-        assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
+            let event_index = EventIndex {
+                block_number: 0,
+                log_index: 0,
+            };
+            add_trade(&mut db, owners[0], order_ids[0], event_index, None).await;
+            // Trade exists in DB but no matching order
+            assert_trades(&mut db, None, Some(&order_ids[0]), &[]).await;
+            assert_trades(&mut db, Some(&owners[0]), None, &[]).await;
+        })
+        .await;
     }
 
     // Testing Trades with settlements
@@ -345,154 +345,154 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_having_same_settlement_with_and_without_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+            assert_trades(&mut db, None, None, &[]).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
-        assert_trades(&mut db, None, None, &[]).await;
+            let settlement = add_settlement(
+                &mut db,
+                EventIndex {
+                    block_number: 0,
+                    log_index: 4,
+                },
+                Default::default(),
+                Default::default(),
+            )
+            .await;
 
-        let settlement = add_settlement(
-            &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 4,
-            },
-            Default::default(),
-            Default::default(),
-        )
+            let trade_a = add_order_and_trade(
+                &mut db,
+                owners[0],
+                order_ids[0],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Some(settlement.transaction_hash),
+            )
+            .await;
+            assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
+
+            let trade_b = add_order_and_trade(
+                &mut db,
+                owners[0],
+                order_ids[1],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 1,
+                },
+                Some(settlement.transaction_hash),
+            )
+            .await;
+            assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        })
         .await;
-
-        let trade_a = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[0],
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Some(settlement.transaction_hash),
-        )
-        .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
-
-        let trade_b = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[1],
-            EventIndex {
-                block_number: 0,
-                log_index: 1,
-            },
-            Some(settlement.transaction_hash),
-        )
-        .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_same_settlement_no_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+            assert_trades(&mut db, None, None, &[]).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
-        assert_trades(&mut db, None, None, &[]).await;
+            let settlement = add_settlement(
+                &mut db,
+                EventIndex {
+                    block_number: 0,
+                    log_index: 4,
+                },
+                Default::default(),
+                Default::default(),
+            )
+            .await;
 
-        let settlement = add_settlement(
-            &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 4,
-            },
-            Default::default(),
-            Default::default(),
-        )
+            add_trade(
+                &mut db,
+                owners[0],
+                order_ids[0],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Some(settlement.transaction_hash),
+            )
+            .await;
+
+            add_trade(
+                &mut db,
+                owners[0],
+                order_ids[1],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 1,
+                },
+                Some(settlement.transaction_hash),
+            )
+            .await;
+            // Trades query returns nothing when there are no corresponding orders.
+            assert_trades(&mut db, None, None, &[]).await;
+        })
         .await;
-
-        add_trade(
-            &mut db,
-            owners[0],
-            order_ids[0],
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Some(settlement.transaction_hash),
-        )
-        .await;
-
-        add_trade(
-            &mut db,
-            owners[0],
-            order_ids[1],
-            EventIndex {
-                block_number: 0,
-                log_index: 1,
-            },
-            Some(settlement.transaction_hash),
-        )
-        .await;
-        // Trades query returns nothing when there are no corresponding orders.
-        assert_trades(&mut db, None, None, &[]).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_two_settlements_in_same_block() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
+            assert_trades(&mut db, None, None, &[]).await;
 
-        let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
-        assert_trades(&mut db, None, None, &[]).await;
+            let settlement_a = add_settlement(
+                &mut db,
+                EventIndex {
+                    block_number: 0,
+                    log_index: 1,
+                },
+                Default::default(),
+                Default::default(),
+            )
+            .await;
+            let settlement_b = add_settlement(
+                &mut db,
+                EventIndex {
+                    block_number: 0,
+                    log_index: 3,
+                },
+                Default::default(),
+                ByteArray([2; 32]),
+            )
+            .await;
 
-        let settlement_a = add_settlement(
-            &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 1,
-            },
-            Default::default(),
-            Default::default(),
-        )
-        .await;
-        let settlement_b = add_settlement(
-            &mut db,
-            EventIndex {
-                block_number: 0,
-                log_index: 3,
-            },
-            Default::default(),
-            ByteArray([2; 32]),
-        )
-        .await;
+            let trade_a = add_order_and_trade(
+                &mut db,
+                owners[0],
+                order_ids[0],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Some(settlement_a.transaction_hash),
+            )
+            .await;
+            assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
 
-        let trade_a = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[0],
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Some(settlement_a.transaction_hash),
-        )
+            let trade_b = add_order_and_trade(
+                &mut db,
+                owners[0],
+                order_ids[1],
+                EventIndex {
+                    block_number: 0,
+                    log_index: 2,
+                },
+                Some(settlement_b.transaction_hash),
+            )
+            .await;
+            assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        })
         .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone()]).await;
-
-        let trade_b = add_order_and_trade(
-            &mut db,
-            owners[0],
-            order_ids[1],
-            EventIndex {
-                block_number: 0,
-                log_index: 2,
-            },
-            Some(settlement_b.transaction_hash),
-        )
-        .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
     }
 }

@@ -27,6 +27,10 @@ impl Postgres {
             pool: PgPool::connect_lazy(uri)?,
         })
     }
+
+    pub fn from_raw(pool: PgPool) -> Self {
+        Self { pool }
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

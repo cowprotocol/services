@@ -769,7 +769,6 @@ mod tests {
         chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
         hex_literal::hex,
-        sqlx::Connection,
     };
 
     async fn read_order_interactions(
@@ -793,437 +792,439 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
+            let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert_eq!(order, order_);
 
-        let order = Order {
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(order, order_);
+            let full_order = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
 
-        let full_order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(order.uid, full_order.uid);
-        assert_eq!(order.owner, full_order.owner);
-        assert_eq!(order.creation_timestamp, full_order.creation_timestamp);
-        assert_eq!(order.sell_token, full_order.sell_token);
-        assert_eq!(order.buy_token, full_order.buy_token);
-        assert_eq!(order.sell_amount, full_order.sell_amount);
-        assert_eq!(order.buy_amount, full_order.buy_amount);
-        assert_eq!(order.valid_to, full_order.valid_to);
-        assert_eq!(order.app_data, full_order.app_data);
-        assert_eq!(order.fee_amount, full_order.fee_amount);
-        assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
-        assert_eq!(order.kind, full_order.kind);
-        assert_eq!(order.class, full_order.class);
-        assert_eq!(order.partially_fillable, full_order.partially_fillable);
-        assert_eq!(order.signature, full_order.signature);
-        assert_eq!(order.receiver, full_order.receiver);
-        assert_eq!(order.signing_scheme, full_order.signing_scheme);
-        assert_eq!(order.settlement_contract, full_order.settlement_contract);
-        assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
-        assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+            assert_eq!(order.uid, full_order.uid);
+            assert_eq!(order.owner, full_order.owner);
+            assert_eq!(order.creation_timestamp, full_order.creation_timestamp);
+            assert_eq!(order.sell_token, full_order.sell_token);
+            assert_eq!(order.buy_token, full_order.buy_token);
+            assert_eq!(order.sell_amount, full_order.sell_amount);
+            assert_eq!(order.buy_amount, full_order.buy_amount);
+            assert_eq!(order.valid_to, full_order.valid_to);
+            assert_eq!(order.app_data, full_order.app_data);
+            assert_eq!(order.fee_amount, full_order.fee_amount);
+            assert_eq!(order.full_fee_amount, full_order.full_fee_amount);
+            assert_eq!(order.kind, full_order.kind);
+            assert_eq!(order.class, full_order.class);
+            assert_eq!(order.partially_fillable, full_order.partially_fillable);
+            assert_eq!(order.signature, full_order.signature);
+            assert_eq!(order.receiver, full_order.receiver);
+            assert_eq!(order.signing_scheme, full_order.signing_scheme);
+            assert_eq!(order.settlement_contract, full_order.settlement_contract);
+            assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
+            assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip_with_function_irgnoring_duplications() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_order_and_ignore_conflicts(&mut db, &order)
-            .await
-            .unwrap();
-        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(order, order_);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order_and_ignore_conflicts(&mut db, &order)
+                .await
+                .unwrap();
+            let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert_eq!(order, order_);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_onchain_user_order_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        let sender = ByteArray([3u8; 20]);
-        insert_onchain_order(
-            &mut db,
-            &EventIndex::default(),
-            &OnchainOrderPlacement {
-                order_uid: OrderUid::default(),
-                sender,
-                placement_error: None,
-            },
-        )
-        .await
-        .unwrap();
-        insert_order(&mut db, &order).await.unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            let sender = ByteArray([3u8; 20]);
+            insert_onchain_order(
+                &mut db,
+                &EventIndex::default(),
+                &OnchainOrderPlacement {
+                    order_uid: OrderUid::default(),
+                    sender,
+                    placement_error: None,
+                },
+            )
             .await
-            .unwrap()
             .unwrap();
-        assert_eq!(Some(sender), order_.onchain_user);
+            insert_order(&mut db, &order).await.unwrap();
+            let order_ = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(Some(sender), order_.onchain_user);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_ethflow_data_order_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        let user_valid_to = 4i64;
-        insert_or_overwrite_ethflow_order(
-            &mut db,
-            &EthOrderPlacement {
-                uid: OrderUid::default(),
-                valid_to: user_valid_to,
-            },
-        )
-        .await
-        .unwrap();
-        insert_order(&mut db, &order).await.unwrap();
-        insert_refund_tx_hash(
-            &mut db,
-            &Refund {
-                order_uid: order.uid,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            let user_valid_to = 4i64;
+            insert_or_overwrite_ethflow_order(
+                &mut db,
+                &EthOrderPlacement {
+                    uid: OrderUid::default(),
+                    valid_to: user_valid_to,
+                },
+            )
             .await
-            .unwrap()
             .unwrap();
-        assert_eq!(
-            Some((Some(Default::default()), user_valid_to)),
-            order_.ethflow_data
-        );
+            insert_order(&mut db, &order).await.unwrap();
+            insert_refund_tx_hash(
+                &mut db,
+                &Refund {
+                    order_uid: order.uid,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let order_ = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                Some((Some(Default::default()), user_valid_to)),
+                order_.ethflow_data
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip_post_interactions() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_order(&mut db, &order).await.unwrap();
-        let post_interaction_0 = Interaction {
-            execution: ExecutionTime::Post,
-            ..Default::default()
-        };
-        let post_interaction_1 = Interaction {
-            target: ByteArray([1; 20]),
-            value: BigDecimal::new(10.into(), 1),
-            data: vec![0u8, 1u8],
-            index: 1,
-            execution: ExecutionTime::Post,
-        };
-        insert_interaction(&mut db, &order.uid, &post_interaction_0)
-            .await
-            .unwrap();
-        insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
-            .await
-            .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            vec![ByteArray::default(), ByteArray([1; 20])],
-            order_
-                .post_interactions
-                .clone()
-                .into_iter()
-                .map(|v| v.0)
-                .collect::<Vec<ByteArray<20>>>(),
-        );
-        assert_eq!(
-            vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
-            order_
-                .post_interactions
-                .clone()
-                .into_iter()
-                .map(|v| v.1)
-                .collect::<Vec<BigDecimal>>()
-        );
-        assert_eq!(
-            vec![vec![], vec![0u8, 1u8]],
-            order_
-                .post_interactions
-                .into_iter()
-                .map(|v| v.2)
-                .collect::<Vec<Vec<u8>>>()
-        );
-        let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
-            .await
-            .unwrap();
-        assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_0);
-        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
-
-        let post_interaction_overwrite_0 = Interaction {
-            target: ByteArray([2; 20]),
-            value: BigDecimal::new(100.into(), 1),
-            data: vec![0u8, 2u8],
-            index: 0,
-            execution: ExecutionTime::Post,
-        };
-        let post_interaction_overwrite_1 = Interaction {
-            index: 1,
-            ..post_interaction_overwrite_0.clone()
-        };
-        insert_or_overwrite_interaction(&mut db, &post_interaction_overwrite_0, &order.uid)
-            .await
-            .unwrap();
-        let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
-            .await
-            .unwrap();
-        assert_eq!(
-            *post_interactions.get(0).unwrap(),
-            post_interaction_overwrite_0
-        );
-        assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
-
-        // Duplicate key!
-        assert!(
-            insert_interaction(&mut db, &order.uid, &post_interaction_overwrite_1)
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order(&mut db, &order).await.unwrap();
+            let post_interaction_0 = Interaction {
+                execution: ExecutionTime::Post,
+                ..Default::default()
+            };
+            let post_interaction_1 = Interaction {
+                target: ByteArray([1; 20]),
+                value: BigDecimal::new(10.into(), 1),
+                data: vec![0u8, 1u8],
+                index: 1,
+                execution: ExecutionTime::Post,
+            };
+            insert_interaction(&mut db, &order.uid, &post_interaction_0)
                 .await
-                .is_err()
-        );
+                .unwrap();
+            insert_or_overwrite_interaction(&mut db, &post_interaction_1, &order.uid)
+                .await
+                .unwrap();
+            let order_ = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                vec![ByteArray::default(), ByteArray([1; 20])],
+                order_
+                    .post_interactions
+                    .clone()
+                    .into_iter()
+                    .map(|v| v.0)
+                    .collect::<Vec<ByteArray<20>>>(),
+            );
+            assert_eq!(
+                vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
+                order_
+                    .post_interactions
+                    .clone()
+                    .into_iter()
+                    .map(|v| v.1)
+                    .collect::<Vec<BigDecimal>>()
+            );
+            assert_eq!(
+                vec![vec![], vec![0u8, 1u8]],
+                order_
+                    .post_interactions
+                    .into_iter()
+                    .map(|v| v.2)
+                    .collect::<Vec<Vec<u8>>>()
+            );
+            let post_interactions =
+                read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
+                    .await
+                    .unwrap();
+            assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_0);
+            assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
+
+            let post_interaction_overwrite_0 = Interaction {
+                target: ByteArray([2; 20]),
+                value: BigDecimal::new(100.into(), 1),
+                data: vec![0u8, 2u8],
+                index: 0,
+                execution: ExecutionTime::Post,
+            };
+            let post_interaction_overwrite_1 = Interaction {
+                index: 1,
+                ..post_interaction_overwrite_0.clone()
+            };
+            insert_or_overwrite_interaction(&mut db, &post_interaction_overwrite_0, &order.uid)
+                .await
+                .unwrap();
+            let post_interactions =
+                read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                *post_interactions.get(0).unwrap(),
+                post_interaction_overwrite_0
+            );
+            assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
+
+            // Duplicate key!
+            assert!(
+                insert_interaction(&mut db, &order.uid, &post_interaction_overwrite_1)
+                    .await
+                    .is_err()
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip_pre_interactions() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_order(&mut db, &order).await.unwrap();
-        let pre_interaction_0 = Interaction::default();
-        let pre_interaction_1 = Interaction {
-            target: ByteArray([1; 20]),
-            value: BigDecimal::new(10.into(), 1),
-            data: vec![0u8, 1u8],
-            index: 1,
-            execution: ExecutionTime::Pre,
-        };
-        insert_interaction(&mut db, &order.uid, &pre_interaction_0)
-            .await
-            .unwrap();
-        insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
-            .await
-            .unwrap();
-        let order_ = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            vec![ByteArray::default(), ByteArray([1; 20])],
-            order_
-                .pre_interactions
-                .clone()
-                .into_iter()
-                .map(|v| v.0)
-                .collect::<Vec<ByteArray<20>>>(),
-        );
-        assert_eq!(
-            vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
-            order_
-                .pre_interactions
-                .clone()
-                .into_iter()
-                .map(|v| v.1)
-                .collect::<Vec<BigDecimal>>()
-        );
-        assert_eq!(
-            vec![vec![], vec![0u8, 1u8]],
-            order_
-                .pre_interactions
-                .into_iter()
-                .map(|v| v.2)
-                .collect::<Vec<Vec<u8>>>()
-        );
-        let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
-            .await
-            .unwrap();
-        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_0);
-        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
-
-        let pre_interaction_overwrite_0 = Interaction {
-            target: ByteArray([2; 20]),
-            value: BigDecimal::new(100.into(), 1),
-            data: vec![0u8, 2u8],
-            index: 0,
-            execution: ExecutionTime::Pre,
-        };
-        let pre_interaction_overwrite_1 = Interaction {
-            index: 1,
-            ..pre_interaction_overwrite_0.clone()
-        };
-        insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite_0, &order.uid)
-            .await
-            .unwrap();
-        let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
-            .await
-            .unwrap();
-        assert_eq!(
-            *pre_interactions.get(0).unwrap(),
-            pre_interaction_overwrite_0
-        );
-        assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
-
-        // Duplicate key!
-        assert!(
-            insert_interaction(&mut db, &order.uid, &pre_interaction_overwrite_1)
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order(&mut db, &order).await.unwrap();
+            let pre_interaction_0 = Interaction::default();
+            let pre_interaction_1 = Interaction {
+                target: ByteArray([1; 20]),
+                value: BigDecimal::new(10.into(), 1),
+                data: vec![0u8, 1u8],
+                index: 1,
+                execution: ExecutionTime::Pre,
+            };
+            insert_interaction(&mut db, &order.uid, &pre_interaction_0)
                 .await
-                .is_err()
-        );
+                .unwrap();
+            insert_or_overwrite_interaction(&mut db, &pre_interaction_1, &order.uid)
+                .await
+                .unwrap();
+            let order_ = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                vec![ByteArray::default(), ByteArray([1; 20])],
+                order_
+                    .pre_interactions
+                    .clone()
+                    .into_iter()
+                    .map(|v| v.0)
+                    .collect::<Vec<ByteArray<20>>>(),
+            );
+            assert_eq!(
+                vec![BigDecimal::default(), BigDecimal::new(10.into(), 1)],
+                order_
+                    .pre_interactions
+                    .clone()
+                    .into_iter()
+                    .map(|v| v.1)
+                    .collect::<Vec<BigDecimal>>()
+            );
+            assert_eq!(
+                vec![vec![], vec![0u8, 1u8]],
+                order_
+                    .pre_interactions
+                    .into_iter()
+                    .map(|v| v.2)
+                    .collect::<Vec<Vec<u8>>>()
+            );
+            let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
+                .await
+                .unwrap();
+            assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_0);
+            assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
+
+            let pre_interaction_overwrite_0 = Interaction {
+                target: ByteArray([2; 20]),
+                value: BigDecimal::new(100.into(), 1),
+                data: vec![0u8, 2u8],
+                index: 0,
+                execution: ExecutionTime::Pre,
+            };
+            let pre_interaction_overwrite_1 = Interaction {
+                index: 1,
+                ..pre_interaction_overwrite_0.clone()
+            };
+            insert_or_overwrite_interaction(&mut db, &pre_interaction_overwrite_0, &order.uid)
+                .await
+                .unwrap();
+            let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
+                .await
+                .unwrap();
+            assert_eq!(
+                *pre_interactions.get(0).unwrap(),
+                pre_interaction_overwrite_0
+            );
+            assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
+
+            // Duplicate key!
+            assert!(
+                insert_interaction(&mut db, &order.uid, &pre_interaction_overwrite_1)
+                    .await
+                    .is_err()
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_same_order_twice_fails() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_order(&mut db, &order).await.unwrap();
-        let err = insert_order(&mut db, &order).await.unwrap_err();
-        assert!(is_duplicate_record_error(&err));
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order(&mut db, &order).await.unwrap();
+            let err = insert_order(&mut db, &order).await.unwrap_err();
+            assert!(is_duplicate_record_error(&err));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_same_order_twice_results_in_only_one_order() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_order(&mut db, &order).await.unwrap();
-        insert_order_and_ignore_conflicts(&mut db, &order)
-            .await
-            .unwrap();
-        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(order, order_);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order(&mut db, &order).await.unwrap();
+            insert_order_and_ignore_conflicts(&mut db, &order)
+                .await
+                .unwrap();
+            let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert_eq!(order, order_);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_and_ignore_conflicts_ignores_the_conflict() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order::default();
-        insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
-            .await
-            .unwrap();
-        insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
-            .await
-            .unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
+                .await
+                .unwrap();
+            insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
+                .await
+                .unwrap();
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_quote_roundtrip_updating_on_conflict() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let quote = Quote {
-            order_uid: Default::default(),
-            gas_amount: 1.,
-            gas_price: 2.,
-            sell_token_price: 3.,
-            sell_amount: 4.into(),
-            buy_amount: 5.into(),
-            solver: ByteArray([1; 20]),
-        };
-        insert_quote(&mut db, &quote).await.unwrap();
-        insert_quote_and_update_on_conflict(&mut db, &quote)
-            .await
-            .unwrap();
-        let quote_ = read_quote(&mut db, &quote.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(quote, quote_);
-        let mut quote2 = quote.clone();
-        quote2.gas_amount = 2.0;
-        insert_quote_and_update_on_conflict(&mut db, &quote2)
-            .await
-            .unwrap();
-        let quote_ = read_quote(&mut db, &quote.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(quote2, quote_);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let quote = Quote {
+                order_uid: Default::default(),
+                gas_amount: 1.,
+                gas_price: 2.,
+                sell_token_price: 3.,
+                sell_amount: 4.into(),
+                buy_amount: 5.into(),
+                solver: ByteArray([1; 20]),
+            };
+            insert_quote(&mut db, &quote).await.unwrap();
+            insert_quote_and_update_on_conflict(&mut db, &quote)
+                .await
+                .unwrap();
+            let quote_ = read_quote(&mut db, &quote.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(quote, quote_);
+            let mut quote2 = quote.clone();
+            quote2.gas_amount = 2.0;
+            insert_quote_and_update_on_conflict(&mut db, &quote2)
+                .await
+                .unwrap();
+            let quote_ = read_quote(&mut db, &quote.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(quote2, quote_);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_quote_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let quote = Quote {
-            order_uid: Default::default(),
-            gas_amount: 1.,
-            gas_price: 2.,
-            sell_token_price: 3.,
-            sell_amount: 4.into(),
-            buy_amount: 5.into(),
-            solver: ByteArray([1; 20]),
-        };
-        insert_quote(&mut db, &quote).await.unwrap();
-        let quote_ = read_quote(&mut db, &quote.order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(quote, quote_);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let quote = Quote {
+                order_uid: Default::default(),
+                gas_amount: 1.,
+                gas_price: 2.,
+                sell_token_price: 3.,
+                sell_amount: 4.into(),
+                buy_amount: 5.into(),
+                solver: ByteArray([1; 20]),
+            };
+            insert_quote(&mut db, &quote).await.unwrap();
+            let quote_ = read_quote(&mut db, &quote.order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(quote, quote_);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_order() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order::default();
+            insert_order(&mut db, &order).await.unwrap();
+            let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert!(order.cancellation_timestamp.is_none());
 
-        let order = Order::default();
-        insert_order(&mut db, &order).await.unwrap();
-        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert!(order.cancellation_timestamp.is_none());
+            let time = Utc.timestamp_opt(1234567890, 0).unwrap();
+            cancel_order(&mut db, &order.uid, time).await.unwrap();
+            let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert_eq!(time, order.cancellation_timestamp.unwrap());
 
-        let time = Utc.timestamp_opt(1234567890, 0).unwrap();
-        cancel_order(&mut db, &order.uid, time).await.unwrap();
-        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(time, order.cancellation_timestamp.unwrap());
-
-        // Cancel again and verify that cancellation timestamp was not changed.
-        let irrelevant_time = Utc.timestamp_opt(1234567890, 1_000_000_000).unwrap();
-        assert_ne!(irrelevant_time, time);
-        cancel_order(&mut db, &order.uid, time).await.unwrap();
-        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
-        assert_eq!(time, order.cancellation_timestamp.unwrap());
+            // Cancel again and verify that cancellation timestamp was not changed.
+            let irrelevant_time = Utc.timestamp_opt(1234567890, 1_000_000_000).unwrap();
+            assert_ne!(irrelevant_time, time);
+            cancel_order(&mut db, &order.uid, time).await.unwrap();
+            let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+            assert_eq!(time, order.cancellation_timestamp.unwrap());
+        })
+        .await;
     }
 
     // In the schema we set the type of executed amounts in individual events to a
@@ -1239,271 +1240,271 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                kind: OrderKind::Sell,
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
 
-        let order = Order {
-            kind: OrderKind::Sell,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
+            let u256_max: BigInt = BigInt::from(2).pow(256) - 1;
+            let sell_amount_before_fees: BigInt = u256_max.clone() / 16;
+            let fee_amount: BigInt = u256_max.clone() / 16;
+            let sell_amount_including_fee: BigInt =
+                sell_amount_before_fees.clone() + fee_amount.clone();
+            for i in 0..16 {
+                crate::events::append(
+                    &mut db,
+                    &[(
+                        EventIndex {
+                            block_number: i,
+                            log_index: 0,
+                        },
+                        Event::Trade(Trade {
+                            order_uid: order.uid,
+                            sell_amount_including_fee: sell_amount_including_fee.clone().into(),
+                            buy_amount: u256_max.clone().into(),
+                            fee_amount: fee_amount.clone().into(),
+                        }),
+                    )],
+                )
+                .await
+                .unwrap();
+            }
 
-        let u256_max: BigInt = BigInt::from(2).pow(256) - 1;
-        let sell_amount_before_fees: BigInt = u256_max.clone() / 16;
-        let fee_amount: BigInt = u256_max.clone() / 16;
-        let sell_amount_including_fee: BigInt =
-            sell_amount_before_fees.clone() + fee_amount.clone();
-        for i in 0..16 {
-            crate::events::append(
-                &mut db,
-                &[(
-                    EventIndex {
-                        block_number: i,
-                        log_index: 0,
-                    },
-                    Event::Trade(Trade {
-                        order_uid: order.uid,
-                        sell_amount_including_fee: sell_amount_including_fee.clone().into(),
-                        buy_amount: u256_max.clone().into(),
-                        fee_amount: fee_amount.clone().into(),
-                    }),
-                )],
-            )
-            .await
-            .unwrap();
-        }
+            let order = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
 
-        let order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
+            let expected_sell_amount_including_fees: BigInt = sell_amount_including_fee * 16;
+            assert!(expected_sell_amount_including_fees > u256_max);
+            let expected_sell_amount_before_fees: BigInt = sell_amount_before_fees * 16;
+            let expected_buy_amount: BigInt = u256_max * 16;
+            assert!(expected_buy_amount.to_string().len() > 78);
+            let expected_fee_amount: BigInt = fee_amount * 16;
 
-        let expected_sell_amount_including_fees: BigInt = sell_amount_including_fee * 16;
-        assert!(expected_sell_amount_including_fees > u256_max);
-        let expected_sell_amount_before_fees: BigInt = sell_amount_before_fees * 16;
-        let expected_buy_amount: BigInt = u256_max * 16;
-        assert!(expected_buy_amount.to_string().len() > 78);
-        let expected_fee_amount: BigInt = fee_amount * 16;
-
-        assert_eq!(
-            order.sum_sell.to_bigint().unwrap(),
-            expected_sell_amount_including_fees
-        );
-        assert_eq!(
-            (order.sum_sell - order.sum_fee.clone())
-                .to_bigint()
-                .unwrap(),
-            expected_sell_amount_before_fees
-        );
-        assert_eq!(order.sum_buy.to_bigint().unwrap(), expected_buy_amount);
-        assert_eq!(order.sum_fee.to_bigint().unwrap(), expected_fee_amount);
+            assert_eq!(
+                order.sum_sell.to_bigint().unwrap(),
+                expected_sell_amount_including_fees
+            );
+            assert_eq!(
+                (order.sum_sell - order.sum_fee.clone())
+                    .to_bigint()
+                    .unwrap(),
+                expected_sell_amount_before_fees
+            );
+            assert_eq!(order.sum_buy.to_bigint().unwrap(), expected_buy_amount);
+            assert_eq!(order.sum_fee.to_bigint().unwrap(), expected_fee_amount);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_solvable_presign_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                signing_scheme: SigningScheme::PreSign,
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
 
-        let order = Order {
-            sell_amount: 1.into(),
-            buy_amount: 1.into(),
-            signing_scheme: SigningScheme::PreSign,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
+            async fn get_order(ex: &mut PgConnection) -> Option<FullOrder> {
+                solvable_orders(ex, 0).next().await.transpose().unwrap()
+            }
 
-        async fn get_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_orders(ex, 0).next().await.transpose().unwrap()
-        }
+            async fn pre_signature_event(
+                ex: &mut PgTransaction<'_>,
+                block_number: i64,
+                owner: Address,
+                order_uid: OrderUid,
+                signed: bool,
+            ) {
+                let events = [(
+                    EventIndex {
+                        block_number,
+                        log_index: 0,
+                    },
+                    Event::PreSignature(PreSignature {
+                        owner,
+                        order_uid,
+                        signed,
+                    }),
+                )];
+                crate::events::append(ex, &events).await.unwrap()
+            }
 
-        async fn pre_signature_event(
-            ex: &mut PgTransaction<'_>,
-            block_number: i64,
-            owner: Address,
-            order_uid: OrderUid,
-            signed: bool,
-        ) {
-            let events = [(
-                EventIndex {
-                    block_number,
-                    log_index: 0,
-                },
-                Event::PreSignature(PreSignature {
-                    owner,
-                    order_uid,
-                    signed,
-                }),
-            )];
-            crate::events::append(ex, &events).await.unwrap()
-        }
+            // not solvable because there is no presignature event.
+            assert!(get_order(&mut db).await.is_none());
 
-        // not solvable because there is no presignature event.
-        assert!(get_order(&mut db).await.is_none());
+            // solvable because once presignature event is observed.
+            pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
+            assert!(get_order(&mut db).await.is_some());
 
-        // solvable because once presignature event is observed.
-        pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.is_some());
+            // not solvable because "unsigned" presignature event.
+            pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
+            assert!(get_order(&mut db).await.is_none());
 
-        // not solvable because "unsigned" presignature event.
-        pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
-        assert!(get_order(&mut db).await.is_none());
-
-        // solvable once again because of new presignature event.
-        pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.is_some());
+            // solvable once again because of new presignature event.
+            pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
+            assert!(get_order(&mut db).await.is_some());
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_onchain_invalidated_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            uid: ByteArray([2u8; 56]),
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            valid_to: 3,
-            partially_fillable: true,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-        let result = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!result.invalidated);
-        insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
-            .await
-            .unwrap();
-        let result = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(result.invalidated);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                uid: ByteArray([2u8; 56]),
+                kind: OrderKind::Sell,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                valid_to: 3,
+                partially_fillable: true,
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
+            let result = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!result.invalidated);
+            insert_onchain_invalidation(&mut db, &EventIndex::default(), &order.uid)
+                .await
+                .unwrap();
+            let result = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(result.invalidated);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_solvable_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                kind: OrderKind::Sell,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                valid_to: 3,
+                partially_fillable: true,
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
 
-        let order = Order {
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 100.into(),
-            valid_to: 3,
-            partially_fillable: true,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
+            async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
+                solvable_orders(ex, min_valid_to)
+                    .next()
+                    .await
+                    .transpose()
+                    .unwrap()
+            }
 
-        async fn get_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_orders(ex, min_valid_to)
-                .next()
+            // not solvable because valid to
+            assert!(get_order(&mut db, 4).await.is_none());
+
+            // not solvable because fully executed
+            crate::events::append(
+                &mut db,
+                &[(
+                    EventIndex {
+                        block_number: 0,
+                        log_index: 0,
+                    },
+                    Event::Trade(Trade {
+                        order_uid: order.uid,
+                        sell_amount_including_fee: 10.into(),
+                        ..Default::default()
+                    }),
+                )],
+            )
+            .await
+            .unwrap();
+            assert!(get_order(&mut db, 0).await.is_none());
+            crate::events::delete(&mut db, 0).await.unwrap();
+
+            // not solvable because invalidated
+            crate::events::append(
+                &mut db,
+                &[(
+                    EventIndex {
+                        block_number: 0,
+                        log_index: 0,
+                    },
+                    Event::Invalidation(Invalidation {
+                        order_uid: order.uid,
+                    }),
+                )],
+            )
+            .await
+            .unwrap();
+            assert!(get_order(&mut db, 0).await.is_none());
+            crate::events::delete(&mut db, 0).await.unwrap();
+
+            // solvable
+            assert!(get_order(&mut db, 3).await.is_some());
+
+            // still solvable because only partially filled
+            crate::events::append(
+                &mut db,
+                &[(
+                    EventIndex {
+                        block_number: 0,
+                        log_index: 0,
+                    },
+                    Event::Trade(Trade {
+                        order_uid: order.uid,
+                        sell_amount_including_fee: 5.into(),
+                        ..Default::default()
+                    }),
+                )],
+            )
+            .await
+            .unwrap();
+            assert!(get_order(&mut db, 3).await.is_some());
+
+            //no longer solvable, if it is a ethflow-order
+            //with shorter user_valid_to from the ethflow
+            let ethflow_order = EthOrderPlacement {
+                uid: order.uid,
+                valid_to: 2,
+            };
+            insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
                 .await
-                .transpose()
-                .unwrap()
-        }
+                .unwrap();
 
-        // not solvable because valid to
-        assert!(get_order(&mut db, 4).await.is_none());
+            assert!(get_order(&mut db, 3).await.is_none());
+            assert!(get_order(&mut db, 2).await.is_some());
 
-        // not solvable because fully executed
-        crate::events::append(
-            &mut db,
-            &[(
-                EventIndex {
-                    block_number: 0,
-                    log_index: 0,
-                },
-                Event::Trade(Trade {
-                    order_uid: order.uid,
-                    sell_amount_including_fee: 10.into(),
-                    ..Default::default()
-                }),
-            )],
-        )
-        .await
-        .unwrap();
-        assert!(get_order(&mut db, 0).await.is_none());
-        crate::events::delete(&mut db, 0).await.unwrap();
+            // no longer solvable, if there was also a onchain order
+            // placement error
+            let onchain_order_placement = OnchainOrderPlacement {
+                placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
+                ..Default::default()
+            };
+            let event_index = EventIndex {
+                block_number: 0,
+                log_index: 0,
+            };
+            insert_onchain_order(&mut db, &event_index, &onchain_order_placement)
+                .await
+                .unwrap();
 
-        // not solvable because invalidated
-        crate::events::append(
-            &mut db,
-            &[(
-                EventIndex {
-                    block_number: 0,
-                    log_index: 0,
-                },
-                Event::Invalidation(Invalidation {
-                    order_uid: order.uid,
-                }),
-            )],
-        )
-        .await
-        .unwrap();
-        assert!(get_order(&mut db, 0).await.is_none());
-        crate::events::delete(&mut db, 0).await.unwrap();
-
-        // solvable
-        assert!(get_order(&mut db, 3).await.is_some());
-
-        // still solvable because only partially filled
-        crate::events::append(
-            &mut db,
-            &[(
-                EventIndex {
-                    block_number: 0,
-                    log_index: 0,
-                },
-                Event::Trade(Trade {
-                    order_uid: order.uid,
-                    sell_amount_including_fee: 5.into(),
-                    ..Default::default()
-                }),
-            )],
-        )
-        .await
-        .unwrap();
-        assert!(get_order(&mut db, 3).await.is_some());
-
-        //no longer solvable, if it is a ethflow-order
-        //with shorter user_valid_to from the ethflow
-        let ethflow_order = EthOrderPlacement {
-            uid: order.uid,
-            valid_to: 2,
-        };
-        insert_or_overwrite_ethflow_order(&mut db, &ethflow_order)
-            .await
-            .unwrap();
-
-        assert!(get_order(&mut db, 3).await.is_none());
-        assert!(get_order(&mut db, 2).await.is_some());
-
-        // no longer solvable, if there was also a onchain order
-        // placement error
-        let onchain_order_placement = OnchainOrderPlacement {
-            placement_error: Some(OnchainOrderPlacementError::QuoteNotFound),
-            ..Default::default()
-        };
-        let event_index = EventIndex {
-            block_number: 0,
-            log_index: 0,
-        };
-        insert_onchain_order(&mut db, &event_index, &onchain_order_placement)
-            .await
-            .unwrap();
-
-        assert!(get_order(&mut db, 2).await.is_none());
+            assert!(get_order(&mut db, 2).await.is_none());
+        })
+        .await;
     }
 
     type Data = ([u8; 56], Address, DateTime<Utc>);
@@ -1525,327 +1526,325 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_user_orders_performance_many_users_with_some_orders() {
-        // The following test can be used as performance test,
-        // if the values for i and j are increased ->i=100
-        // and j=1000 the query should still 10 ms
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        for i in 0..1u32 {
-            let mut owner_bytes = i.to_ne_bytes().to_vec();
-            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-            let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..10u32 {
-                let mut i_as_bytes = i.to_ne_bytes().to_vec();
-                let mut j_as_bytes = j.to_ne_bytes().to_vec();
-                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
-                order_uid_info.append(&mut j_as_bytes);
-                i_as_bytes.append(&mut order_uid_info);
-                let uid = ByteArray(i_as_bytes.try_into().unwrap());
-                let order = Order {
-                    owner,
-                    uid,
-                    creation_timestamp: Utc::now(),
-                    ..Default::default()
-                };
-                insert_order(&mut db, &order).await.unwrap();
-                if j % 10 == 0 {
-                    let onchain_order = OnchainOrderPlacement {
-                        order_uid: uid,
-                        sender: owner,
-                        placement_error: None,
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            // The following test can be used as performance test,
+            // if the values for i and j are increased ->i=100
+            // and j=1000 the query should still 10 ms
+            for i in 0..1u32 {
+                let mut owner_bytes = i.to_ne_bytes().to_vec();
+                owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+                let owner = ByteArray(owner_bytes.try_into().unwrap());
+                for j in 0..10u32 {
+                    let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                    let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                    let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                    order_uid_info.append(&mut j_as_bytes);
+                    i_as_bytes.append(&mut order_uid_info);
+                    let uid = ByteArray(i_as_bytes.try_into().unwrap());
+                    let order = Order {
+                        owner,
+                        uid,
+                        creation_timestamp: Utc::now(),
+                        ..Default::default()
                     };
-                    let event_index = EventIndex::default();
-                    insert_onchain_order(&mut db, &event_index, &onchain_order)
-                        .await
-                        .unwrap();
+                    insert_order(&mut db, &order).await.unwrap();
+                    if j % 10 == 0 {
+                        let onchain_order = OnchainOrderPlacement {
+                            order_uid: uid,
+                            sender: owner,
+                            placement_error: None,
+                        };
+                        let event_index = EventIndex::default();
+                        insert_onchain_order(&mut db, &event_index, &onchain_order)
+                            .await
+                            .unwrap();
+                    }
                 }
             }
-        }
 
-        let now = std::time::Instant::now();
-        let number_of_query_executions = 100;
-        for _ in 0..number_of_query_executions {
-            let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Time per execution {:?}",
-            elapsed / number_of_query_executions
-        );
-        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
+            let now = std::time::Instant::now();
+            let number_of_query_executions = 100;
+            for _ in 0..number_of_query_executions {
+                let _result = user_orders(&mut db, &ByteArray([2u8; 20]), 10, Some(10)).await;
+            }
+            let elapsed = now.elapsed();
+            println!(
+                "Time per execution {:?}",
+                elapsed / number_of_query_executions
+            );
+            assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_user_orders_performance_user_with_many_orders() {
-        // The following test can be used as performance test close to prod env,
-        // if the values for j increased ->j=100_000 query should still finish
-        // below 200 ms
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        for i in 0..1u32 {
-            let mut owner_bytes = i.to_ne_bytes().to_vec();
-            owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
-            let owner = ByteArray(owner_bytes.try_into().unwrap());
-            for j in 0..10u32 {
-                let mut i_as_bytes = i.to_ne_bytes().to_vec();
-                let mut j_as_bytes = j.to_ne_bytes().to_vec();
-                let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
-                order_uid_info.append(&mut j_as_bytes);
-                i_as_bytes.append(&mut order_uid_info);
-                let order = Order {
-                    owner,
-                    uid: ByteArray(i_as_bytes.try_into().unwrap()),
-                    creation_timestamp: Utc::now(),
-                    ..Default::default()
-                };
-                insert_order(&mut db, &order).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            // The following test can be used as performance test close to prod env,
+            // if the values for j increased ->j=100_000 query should still finish
+            // below 200 ms
+            for i in 0..1u32 {
+                let mut owner_bytes = i.to_ne_bytes().to_vec();
+                owner_bytes.append(&mut vec![0; 20 - owner_bytes.len()]);
+                let owner = ByteArray(owner_bytes.try_into().unwrap());
+                for j in 0..10u32 {
+                    let mut i_as_bytes = i.to_ne_bytes().to_vec();
+                    let mut j_as_bytes = j.to_ne_bytes().to_vec();
+                    let mut order_uid_info = vec![0; 56 - i_as_bytes.len() - j_as_bytes.len()];
+                    order_uid_info.append(&mut j_as_bytes);
+                    i_as_bytes.append(&mut order_uid_info);
+                    let order = Order {
+                        owner,
+                        uid: ByteArray(i_as_bytes.try_into().unwrap()),
+                        creation_timestamp: Utc::now(),
+                        ..Default::default()
+                    };
+                    insert_order(&mut db, &order).await.unwrap();
+                }
             }
-        }
 
-        let now = std::time::Instant::now();
-        let number_of_query_executions = 100;
-        for _ in 0..number_of_query_executions {
-            let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
-        }
-        let elapsed = now.elapsed();
-        println!(
-            "Time per execution {:?}",
-            elapsed / number_of_query_executions
-        );
-        assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
+            let now = std::time::Instant::now();
+            let number_of_query_executions = 100;
+            for _ in 0..number_of_query_executions {
+                let _result = user_orders(&mut db, &ByteArray([0u8; 20]), 10, Some(10)).await;
+            }
+            let elapsed = now.elapsed();
+            println!(
+                "Time per execution {:?}",
+                elapsed / number_of_query_executions
+            );
+            assert!(elapsed / number_of_query_executions < std::time::Duration::from_secs(1));
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_user_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
 
-        let owners: Vec<Address> = (0u8..3).map(|i| ByteArray([i; 20])).collect();
+            fn datetime(offset: u32) -> DateTime<Utc> {
+                Utc.timestamp_opt(offset as i64, 0).unwrap()
+            }
 
-        fn datetime(offset: u32) -> DateTime<Utc> {
-            Utc.timestamp_opt(offset as i64, 0).unwrap()
-        }
+            type Data = ([u8; 56], Address, DateTime<Utc>);
+            let orders = [
+                ([3u8; 56], owners[0], datetime(3)),
+                ([1u8; 56], owners[1], datetime(2)),
+                ([0u8; 56], owners[0], datetime(1)),
+                ([2u8; 56], owners[1], datetime(0)),
+            ];
 
-        type Data = ([u8; 56], Address, DateTime<Utc>);
-        let orders = [
-            ([3u8; 56], owners[0], datetime(3)),
-            ([1u8; 56], owners[1], datetime(2)),
-            ([0u8; 56], owners[0], datetime(1)),
-            ([2u8; 56], owners[1], datetime(0)),
-        ];
+            for order in &orders {
+                let order = Order {
+                    uid: ByteArray(order.0),
+                    owner: order.1,
+                    creation_timestamp: order.2,
+                    ..Default::default()
+                };
+                insert_order(&mut db, &order).await.unwrap();
+            }
 
-        for order in &orders {
-            let order = Order {
-                uid: ByteArray(order.0),
-                owner: order.1,
-                creation_timestamp: order.2,
-                ..Default::default()
+            async fn user_orders(
+                ex: &mut PgConnection,
+                owner: &Address,
+                offset: i64,
+                limit: Option<i64>,
+            ) -> Vec<Data> {
+                super::user_orders(ex, owner, offset, limit)
+                    .map(|o| {
+                        let o = o.unwrap();
+                        (o.uid.0, o.owner, o.creation_timestamp)
+                    })
+                    .collect::<Vec<_>>()
+                    .await
+            }
+
+            let result = user_orders(&mut db, &owners[0], 0, None).await;
+            assert_eq!(result, vec![orders[0], orders[2]]);
+
+            let result = user_orders(&mut db, &owners[1], 0, None).await;
+            assert_eq!(result, vec![orders[1], orders[3]]);
+
+            let result = user_orders(&mut db, &owners[0], 0, Some(1)).await;
+            assert_eq!(result, vec![orders[0]]);
+
+            let result = user_orders(&mut db, &owners[0], 1, Some(1)).await;
+            assert_eq!(result, vec![orders[2]]);
+
+            let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
+            assert_eq!(result, vec![]);
+
+            let onchain_order = OnchainOrderPlacement {
+                order_uid: ByteArray(orders[0].0),
+                sender: owners[2],
+                placement_error: None,
             };
-            insert_order(&mut db, &order).await.unwrap();
-        }
-
-        async fn user_orders(
-            ex: &mut PgConnection,
-            owner: &Address,
-            offset: i64,
-            limit: Option<i64>,
-        ) -> Vec<Data> {
-            super::user_orders(ex, owner, offset, limit)
-                .map(|o| {
-                    let o = o.unwrap();
-                    (o.uid.0, o.owner, o.creation_timestamp)
-                })
-                .collect::<Vec<_>>()
+            let event_index = EventIndex::default();
+            insert_onchain_order(&mut db, &event_index, &onchain_order)
                 .await
-        }
-
-        let result = user_orders(&mut db, &owners[0], 0, None).await;
-        assert_eq!(result, vec![orders[0], orders[2]]);
-
-        let result = user_orders(&mut db, &owners[1], 0, None).await;
-        assert_eq!(result, vec![orders[1], orders[3]]);
-
-        let result = user_orders(&mut db, &owners[0], 0, Some(1)).await;
-        assert_eq!(result, vec![orders[0]]);
-
-        let result = user_orders(&mut db, &owners[0], 1, Some(1)).await;
-        assert_eq!(result, vec![orders[2]]);
-
-        let result = user_orders(&mut db, &owners[0], 2, Some(1)).await;
-        assert_eq!(result, vec![]);
-
-        let onchain_order = OnchainOrderPlacement {
-            order_uid: ByteArray(orders[0].0),
-            sender: owners[2],
-            placement_error: None,
-        };
-        let event_index = EventIndex::default();
-        insert_onchain_order(&mut db, &event_index, &onchain_order)
-            .await
-            .unwrap();
-        let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
-        assert_eq!(result, vec![orders[0]]);
+                .unwrap();
+            let result = user_orders(&mut db, &owners[2], 0, Some(1)).await;
+            assert_eq!(result, vec![orders[0]]);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_orders_in_tx() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let uid = |i: u8| ByteArray([i; 56]);
+            let tx_hash = |i: u8| ByteArray([i; 32]);
+            let uid_to_order = |uid: &OrderUid| Order {
+                uid: *uid,
+                ..Default::default()
+            };
+            let trade = |block_number, log_index, order_uid| {
+                (
+                    EventIndex {
+                        block_number,
+                        log_index,
+                    },
+                    Event::Trade(Trade {
+                        order_uid,
+                        ..Default::default()
+                    }),
+                )
+            };
+            let settlement = |block_number, log_index, transaction_hash| {
+                (
+                    EventIndex {
+                        block_number,
+                        log_index,
+                    },
+                    Event::Settlement(Settlement {
+                        transaction_hash,
+                        ..Default::default()
+                    }),
+                )
+            };
 
-        let uid = |i: u8| ByteArray([i; 56]);
-        let tx_hash = |i: u8| ByteArray([i; 32]);
-        let uid_to_order = |uid: &OrderUid| Order {
-            uid: *uid,
-            ..Default::default()
-        };
-        let trade = |block_number, log_index, order_uid| {
-            (
-                EventIndex {
-                    block_number,
-                    log_index,
-                },
-                Event::Trade(Trade {
-                    order_uid,
-                    ..Default::default()
-                }),
-            )
-        };
-        let settlement = |block_number, log_index, transaction_hash| {
-            (
-                EventIndex {
-                    block_number,
-                    log_index,
-                },
-                Event::Settlement(Settlement {
-                    transaction_hash,
-                    ..Default::default()
-                }),
-            )
-        };
+            for i in 0..8 {
+                insert_order(&mut db, &uid_to_order(&uid(i))).await.unwrap();
+            }
+            let events = &[
+                // first block, 1 settlement, 1 order
+                trade(0, 0, uid(0)),
+                settlement(0, 1, tx_hash(0)),
+                // second block, 3 settlements with 2 orders each
+                trade(1, 0, uid(1)),
+                trade(1, 1, uid(2)),
+                settlement(1, 2, tx_hash(1)),
+                trade(1, 3, uid(3)),
+                trade(1, 4, uid(4)),
+                settlement(1, 5, tx_hash(2)),
+                trade(1, 6, uid(5)),
+                trade(1, 7, uid(6)),
+                settlement(1, 8, tx_hash(3)),
+                // third block, 1 settlement, 1 order
+                trade(2, 0, uid(7)),
+                settlement(2, 1, tx_hash(4)),
+            ];
+            crate::events::append(&mut db, events).await.unwrap();
 
-        for i in 0..8 {
-            insert_order(&mut db, &uid_to_order(&uid(i))).await.unwrap();
-        }
-        let events = &[
-            // first block, 1 settlement, 1 order
-            trade(0, 0, uid(0)),
-            settlement(0, 1, tx_hash(0)),
-            // second block, 3 settlements with 2 orders each
-            trade(1, 0, uid(1)),
-            trade(1, 1, uid(2)),
-            settlement(1, 2, tx_hash(1)),
-            trade(1, 3, uid(3)),
-            trade(1, 4, uid(4)),
-            settlement(1, 5, tx_hash(2)),
-            trade(1, 6, uid(5)),
-            trade(1, 7, uid(6)),
-            settlement(1, 8, tx_hash(3)),
-            // third block, 1 settlement, 1 order
-            trade(2, 0, uid(7)),
-            settlement(2, 1, tx_hash(4)),
-        ];
-        crate::events::append(&mut db, events).await.unwrap();
-
-        for (tx_hash, expected_uids) in [
-            (tx_hash(0), &[uid(0)] as &[OrderUid]),
-            (tx_hash(1), &[uid(1), uid(2)]),
-            (tx_hash(2), &[uid(3), uid(4)]),
-            (tx_hash(3), &[uid(5), uid(6)]),
-            (tx_hash(4), &[uid(7)]),
-        ] {
-            let actual = full_orders_in_tx(&mut db, &tx_hash)
-                .map_ok(|order| order.uid)
-                .try_collect::<Vec<_>>()
-                .await
-                .unwrap();
-            assert_eq!(actual, expected_uids);
-        }
+            for (tx_hash, expected_uids) in [
+                (tx_hash(0), &[uid(0)] as &[OrderUid]),
+                (tx_hash(1), &[uid(1), uid(2)]),
+                (tx_hash(2), &[uid(3), uid(4)]),
+                (tx_hash(3), &[uid(5), uid(6)]),
+                (tx_hash(4), &[uid(7)]),
+            ] {
+                let actual = full_orders_in_tx(&mut db, &tx_hash)
+                    .map_ok(|order| order.uid)
+                    .try_collect::<Vec<_>>()
+                    .await
+                    .unwrap();
+                assert_eq!(actual, expected_uids);
+            }
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_latest_settlement_block() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 0);
-        let event = (
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Event::Settlement(Default::default()),
-        );
-        crate::events::append(&mut db, &[event]).await.unwrap();
-        assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 0);
-        let event = (
-            EventIndex {
-                block_number: 3,
-                log_index: 0,
-            },
-            Event::Settlement(Default::default()),
-        );
-        crate::events::append(&mut db, &[event]).await.unwrap();
-        assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 3);
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 0);
+            let event = (
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Event::Settlement(Default::default()),
+            );
+            crate::events::append(&mut db, &[event]).await.unwrap();
+            assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 0);
+            let event = (
+                EventIndex {
+                    block_number: 3,
+                    log_index: 0,
+                },
+                Event::Settlement(Default::default()),
+            );
+            crate::events::append(&mut db, &[event]).await.unwrap();
+            assert_eq!(latest_settlement_block(&mut db).await.unwrap(), 3);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_limit_order_executed() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order_uid = ByteArray([1; 56]);
-        insert_order(
-            &mut db,
-            &Order {
-                uid: order_uid,
-                class: OrderClass::Limit,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let order = single_full_order(&mut db, &order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(order.executed_surplus_fee, 0.into());
-
-        let fee: BigDecimal = 1.into();
-        let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order_uid = ByteArray([1; 56]);
+            insert_order(
+                &mut db,
+                &Order {
+                    uid: order_uid,
+                    class: OrderClass::Limit,
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
 
-        let order = single_full_order(&mut db, &order_uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
-        assert_eq!(order.executed_solver_fee, solver_fee);
+            let order = single_full_order(&mut db, &order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(order.executed_surplus_fee, 0.into());
+
+            let fee: BigDecimal = 1.into();
+            let solver_fee: BigDecimal = 2.into();
+            crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
+                .await
+                .unwrap();
+
+            let order = single_full_order(&mut db, &order_uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(order.executed_surplus_fee, fee);
+            assert_eq!(order.executed_solver_fee, solver_fee);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_executions_in_tx() {
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
         let bigdecimal = |x: u128| x.to_string().parse().unwrap();
-
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
 
         let order_uid = ByteArray(hex!(
             "999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02
@@ -1937,107 +1936,107 @@ mod tests {
                 owner: ByteArray(hex!("b70cd1ebd3b24aeeaf90c6041446630338536e7f")),
             }]
         );
+        }).await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_executions_ignore_previous_auctions() {
-        let bigdecimal = |x: u128| x.to_string().parse().unwrap();
-
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            class: OrderClass::Limit,
-            kind: OrderKind::Sell,
-            sell_amount: bigdecimal(1),
-            buy_amount: bigdecimal(1),
-            ..Default::default()
-        };
-
-        insert_order(&mut db, &order).await.unwrap();
-
-        crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
-            .await
-            .unwrap();
-
-        crate::events::insert_trade(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                log_index: 0,
-            },
-            &Trade {
-                order_uid: order.uid,
-                sell_amount_including_fee: bigdecimal(1),
-                buy_amount: bigdecimal(1),
-                fee_amount: bigdecimal(0),
-            },
-        )
-        .await
-        .unwrap();
-
-        let transaction_hash = ByteArray([0x11; 32]);
-        crate::events::insert_settlement(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                log_index: 1,
-            },
-            &Settlement {
-                transaction_hash,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let executions = order_executions_in_tx(&mut db, &transaction_hash, 42)
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
-        assert_eq!(
-            executions,
-            vec![OrderExecution {
-                executed_solver_fee: Some(bigdecimal(42)),
-                kind: OrderKind::Sell,
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let bigdecimal = |x: u128| x.to_string().parse().unwrap();
+            let order = Order {
                 class: OrderClass::Limit,
+                kind: OrderKind::Sell,
                 sell_amount: bigdecimal(1),
                 buy_amount: bigdecimal(1),
-                executed_amount: bigdecimal(1),
                 ..Default::default()
-            }]
-        );
+            };
+
+            insert_order(&mut db, &order).await.unwrap();
+
+            crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
+                .await
+                .unwrap();
+            crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
+                .await
+                .unwrap();
+
+            crate::events::insert_trade(
+                &mut db,
+                &EventIndex {
+                    block_number: 1,
+                    log_index: 0,
+                },
+                &Trade {
+                    order_uid: order.uid,
+                    sell_amount_including_fee: bigdecimal(1),
+                    buy_amount: bigdecimal(1),
+                    fee_amount: bigdecimal(0),
+                },
+            )
+            .await
+            .unwrap();
+
+            let transaction_hash = ByteArray([0x11; 32]);
+            crate::events::insert_settlement(
+                &mut db,
+                &EventIndex {
+                    block_number: 1,
+                    log_index: 1,
+                },
+                &Settlement {
+                    transaction_hash,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+            let executions = order_executions_in_tx(&mut db, &transaction_hash, 42)
+                .try_collect::<Vec<_>>()
+                .await
+                .unwrap();
+            assert_eq!(
+                executions,
+                vec![OrderExecution {
+                    executed_solver_fee: Some(bigdecimal(42)),
+                    kind: OrderKind::Sell,
+                    class: OrderClass::Limit,
+                    sell_amount: bigdecimal(1),
+                    buy_amount: bigdecimal(1),
+                    executed_amount: bigdecimal(1),
+                    ..Default::default()
+                }]
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_app_data() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(full_order.full_app_data.is_none());
-        let full_app_data = vec![0u8, 1, 2];
-        crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
-            .await
-            .unwrap();
-        let full_order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(full_order.full_app_data, Some(full_app_data));
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let order = Order {
+                ..Default::default()
+            };
+            insert_order(&mut db, &order).await.unwrap();
+            let full_order = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(full_order.full_app_data.is_none());
+            let full_app_data = vec![0u8, 1, 2];
+            crate::app_data::insert(&mut db, &order.app_data, &full_app_data)
+                .await
+                .unwrap();
+            let full_order = single_full_order(&mut db, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(full_order.full_app_data, Some(full_app_data));
+        })
+        .await;
     }
 }

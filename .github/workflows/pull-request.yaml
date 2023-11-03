@@ -114,7 +114,6 @@ jobs:
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v3
-      - uses: foundry-rs/foundry-toolchain@v1
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       # Build the driver's tests.

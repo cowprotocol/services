@@ -2,7 +2,7 @@ use {
     super::OnchainComponents,
     crate::setup::{wait_for_condition, TIMEOUT},
     clap::Parser,
-    docker::Db,
+    docker::db::Db,
     ethcontract::{H160, H256},
     model::{
         app_data::{AppDataDocument, AppDataHash},

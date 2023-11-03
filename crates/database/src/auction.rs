@@ -31,38 +31,38 @@ pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Erro
 
 #[cfg(test)]
 mod tests {
-    use {super::*, sqlx::Connection};
+    use super::*;
 
     #[tokio::test]
     #[ignore]
     async fn postgres_roundtrip() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let value = JsonValue::Number(1.into());
+            let id = save(&mut db, &value).await.unwrap();
+            let (id_, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+            assert_eq!(id, id_);
+            assert_eq!(value, value_);
 
-        let value = JsonValue::Number(1.into());
-        let id = save(&mut db, &value).await.unwrap();
-        let (id_, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
-        assert_eq!(id, id_);
-        assert_eq!(value, value_);
+            let value = JsonValue::Number(2.into());
+            let id_ = save(&mut db, &value).await.unwrap();
+            assert_eq!(id + 1, id_);
+            let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+            assert_eq!(value, value_);
+            assert_eq!(id_, id);
 
-        let value = JsonValue::Number(2.into());
-        let id_ = save(&mut db, &value).await.unwrap();
-        assert_eq!(id + 1, id_);
-        let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
-        assert_eq!(value, value_);
-        assert_eq!(id_, id);
+            delete_all_auctions(&mut db).await.unwrap();
+            let result = load_most_recent(&mut db).await.unwrap();
+            assert!(result.is_none());
 
-        delete_all_auctions(&mut db).await.unwrap();
-        let result = load_most_recent(&mut db).await.unwrap();
-        assert!(result.is_none());
-
-        // id still increases after deletion
-        let value = JsonValue::Number(3.into());
-        let id_ = save(&mut db, &value).await.unwrap();
-        assert_eq!(id + 1, id_);
-        let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
-        assert_eq!(value, value_);
-        assert_eq!(id_, id);
+            // id still increases after deletion
+            let value = JsonValue::Number(3.into());
+            let id_ = save(&mut db, &value).await.unwrap();
+            assert_eq!(id + 1, id_);
+            let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+            assert_eq!(value, value_);
+            assert_eq!(id_, id);
+        })
+        .await;
     }
 }

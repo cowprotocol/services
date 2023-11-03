@@ -19,7 +19,7 @@ use {
     },
     tempfile::TempPath,
 };
-pub use {deploy::*, docker::Db, onchain_components::*, services::*};
+pub use {deploy::*, docker::db::Db, onchain_components::*, services::*};
 
 /// Component containing all ethereum RPC relevant data for testing purposes.
 #[derive(Clone, Debug)]

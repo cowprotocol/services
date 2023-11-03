@@ -56,4 +56,5 @@ web3 = { workspace = true }
 [dev-dependencies]
 mockall = { workspace = true }
 testlib = { path = "../testlib" }
+docker = { path = "../docker" }
 tokio = { workspace = true, features = ["test-util"] }

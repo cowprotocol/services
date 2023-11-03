@@ -146,12 +146,7 @@ WHERE expiration_timestamp < $1
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::byte_array::ByteArray,
-        chrono::Duration,
-        sqlx::{types::chrono::TimeZone, Connection},
-    };
+    use {super::*, crate::byte_array::ByteArray, chrono::Duration, sqlx::types::chrono::TimeZone};
 
     /// The postgres database in our CI has different datetime precision than
     /// the `DateTime` uses. This leads to issues comparing round-tripped data.
@@ -163,263 +158,263 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_save_and_get_quote_by_id() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let now = low_precision_now();
+            let mut quote = Quote {
+                id: Default::default(),
+                sell_token: ByteArray([1; 20]),
+                buy_token: ByteArray([2; 20]),
+                sell_amount: 3.into(),
+                buy_amount: 4.into(),
+                gas_amount: 5.,
+                gas_price: 6.,
+                sell_token_price: 7.,
+                order_kind: OrderKind::Sell,
+                expiration_timestamp: now,
+                quote_kind: QuoteKind::Standard,
+                solver: ByteArray([1; 20]),
+            };
+            let id = save(&mut db, &quote).await.unwrap();
+            quote.id = id;
+            assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
 
-        let now = low_precision_now();
-        let mut quote = Quote {
-            id: Default::default(),
-            sell_token: ByteArray([1; 20]),
-            buy_token: ByteArray([2; 20]),
-            sell_amount: 3.into(),
-            buy_amount: 4.into(),
-            gas_amount: 5.,
-            gas_price: 6.,
-            sell_token_price: 7.,
-            order_kind: OrderKind::Sell,
-            expiration_timestamp: now,
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([1; 20]),
-        };
-        let id = save(&mut db, &quote).await.unwrap();
-        quote.id = id;
-        assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
-
-        remove_expired_quotes(&mut db, now + Duration::seconds(30))
-            .await
-            .unwrap();
-        assert_eq!(get(&mut db, id).await.unwrap(), None);
+            remove_expired_quotes(&mut db, now + Duration::seconds(30))
+                .await
+                .unwrap();
+            assert_eq!(get(&mut db, id).await.unwrap(), None);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_save_and_find_quote() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let now = low_precision_now();
-        let token_a = ByteArray([1; 20]);
-        let quote_a = Quote {
-            id: Default::default(),
-            sell_token: token_a,
-            buy_token: ByteArray([3; 20]),
-            sell_amount: 4.into(),
-            buy_amount: 5.into(),
-            order_kind: OrderKind::Sell,
-            gas_amount: 1.,
-            gas_price: 1.,
-            sell_token_price: 1.,
-            expiration_timestamp: now,
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([1; 20]),
-        };
-
-        let token_b = ByteArray([2; 20]);
-        let quote_b = Quote {
-            id: Default::default(),
-            sell_token: token_b,
-            buy_token: token_a,
-            sell_amount: 200.into(),
-            buy_amount: 100.into(),
-            order_kind: OrderKind::Buy,
-            gas_amount: 20_000_u32.into(),
-            gas_price: 1.,
-            sell_token_price: 1.,
-            expiration_timestamp: now,
-            quote_kind: QuoteKind::Standard,
-            solver: ByteArray([2; 20]),
-        };
-
-        // Save two measurements for token_a
-        let quotes_a = [
-            {
-                let mut quote = Quote {
-                    expiration_timestamp: now,
-                    gas_amount: 100_u32.into(),
-                    ..quote_a.clone()
-                };
-                let id = save(&mut db, &quote).await.unwrap();
-                quote.id = id;
-                quote
-            },
-            {
-                let mut quote = Quote {
-                    expiration_timestamp: now + Duration::seconds(60),
-                    gas_amount: 200_u32.into(),
-                    ..quote_a.clone()
-                };
-                let id = save(&mut db, &quote).await.unwrap();
-                quote.id = id;
-                quote
-            },
-        ];
-
-        // Save one measurement for token_b
-        let quotes_b = [{
-            let mut quote = Quote {
-                expiration_timestamp: now,
-                gas_amount: 10_u32.into(),
-                ..quote_b.clone()
-            };
-            let id = save(&mut db, &quote).await.unwrap();
-            quote.id = id;
-            quote
-        }];
-
-        // Token A has readings valid until now and in 30s
-        let search_a = QuoteSearchParameters {
-            sell_token: quote_a.sell_token,
-            buy_token: quote_a.buy_token,
-            sell_amount_0: quote_a.sell_amount.clone(),
-            sell_amount_1: quote_a.sell_amount.clone(),
-            buy_amount: 1.into(),
-            kind: quote_a.order_kind,
-            expiration: now,
-            quote_kind: QuoteKind::Standard,
-        };
-        assert_eq!(
-            find(&mut db, &search_a).await.unwrap().unwrap(),
-            quotes_a[0],
-        );
-        assert_eq!(
-            find(
-                &mut db,
-                &QuoteSearchParameters {
-                    expiration: now + Duration::seconds(30),
-                    ..search_a.clone()
-                }
-            )
-            .await
-            .unwrap()
-            .unwrap(),
-            quotes_a[1]
-        );
-
-        // Token A has readings for sell + fee amount equal to quoted amount.
-        assert_eq!(
-            find(
-                &mut db,
-                &QuoteSearchParameters {
-                    sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
-                    sell_amount_1: quote_a.sell_amount.clone(),
-                    ..search_a.clone()
-                },
-            )
-            .await
-            .unwrap()
-            .unwrap(),
-            quotes_a[0],
-        );
-
-        // Token A has no reading for wrong filter
-        assert_eq!(
-            find(
-                &mut db,
-                &QuoteSearchParameters {
-                    sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
-                    sell_amount_1: quote_a.sell_amount.clone() - BigDecimal::from(1),
-                    ..search_a.clone()
-                }
-            )
-            .await
-            .unwrap(),
-            None
-        );
-
-        // Token B only has readings valid until now
-        let search_b = QuoteSearchParameters {
-            sell_token: quote_b.sell_token,
-            buy_token: quote_b.buy_token,
-            sell_amount_0: 999.into(),
-            sell_amount_1: 999.into(),
-            buy_amount: quote_b.buy_amount,
-            kind: quote_b.order_kind,
-            expiration: now,
-            quote_kind: QuoteKind::Standard,
-        };
-        assert_eq!(
-            find(&mut db, &search_b).await.unwrap().unwrap(),
-            quotes_b[0],
-        );
-        assert_eq!(
-            find(
-                &mut db,
-                &QuoteSearchParameters {
-                    expiration: now + Duration::seconds(30),
-                    ..search_b.clone()
-                }
-            )
-            .await
-            .unwrap(),
-            None
-        );
-
-        // Token B has no reading for wrong filter
-        assert_eq!(
-            find(
-                &mut db,
-                &QuoteSearchParameters {
-                    buy_amount: 99.into(),
-                    ..search_b.clone()
-                }
-            )
-            .await
-            .unwrap(),
-            None
-        );
-
-        // Query that previously succeeded after cleaning up expired measurements.
-        remove_expired_quotes(&mut db, now + Duration::seconds(120))
-            .await
-            .unwrap();
-        assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
-        assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_save_and_find_quote_and_differentiates_by_signing_scheme() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let now = low_precision_now();
-        let token_a = ByteArray([1; 20]);
-        let quote = {
-            let mut quote = Quote {
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let now = low_precision_now();
+            let token_a = ByteArray([1; 20]);
+            let quote_a = Quote {
                 id: Default::default(),
                 sell_token: token_a,
                 buy_token: ByteArray([3; 20]),
                 sell_amount: 4.into(),
                 buy_amount: 5.into(),
+                order_kind: OrderKind::Sell,
                 gas_amount: 1.,
                 gas_price: 1.,
                 sell_token_price: 1.,
-                order_kind: OrderKind::Sell,
                 expiration_timestamp: now,
-                quote_kind: QuoteKind::Eip1271OnchainOrder,
+                quote_kind: QuoteKind::Standard,
                 solver: ByteArray([1; 20]),
             };
-            let id = save(&mut db, &quote).await.unwrap();
-            quote.id = id;
-            quote
-        };
-        // Token A has readings valid until now and in 30s
-        let mut search_a = QuoteSearchParameters {
-            sell_token: quote.sell_token,
-            buy_token: quote.buy_token,
-            sell_amount_0: quote.sell_amount.clone(),
-            sell_amount_1: quote.sell_amount.clone(),
-            buy_amount: quote.buy_amount.clone(),
-            kind: quote.order_kind,
-            expiration: quote.expiration_timestamp,
-            quote_kind: quote.quote_kind.clone(),
-        };
 
-        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
-        search_a.quote_kind = QuoteKind::Standard;
-        assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+            let token_b = ByteArray([2; 20]);
+            let quote_b = Quote {
+                id: Default::default(),
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: 200.into(),
+                buy_amount: 100.into(),
+                order_kind: OrderKind::Buy,
+                gas_amount: 20_000_u32.into(),
+                gas_price: 1.,
+                sell_token_price: 1.,
+                expiration_timestamp: now,
+                quote_kind: QuoteKind::Standard,
+                solver: ByteArray([2; 20]),
+            };
+
+            // Save two measurements for token_a
+            let quotes_a = [
+                {
+                    let mut quote = Quote {
+                        expiration_timestamp: now,
+                        gas_amount: 100_u32.into(),
+                        ..quote_a.clone()
+                    };
+                    let id = save(&mut db, &quote).await.unwrap();
+                    quote.id = id;
+                    quote
+                },
+                {
+                    let mut quote = Quote {
+                        expiration_timestamp: now + Duration::seconds(60),
+                        gas_amount: 200_u32.into(),
+                        ..quote_a.clone()
+                    };
+                    let id = save(&mut db, &quote).await.unwrap();
+                    quote.id = id;
+                    quote
+                },
+            ];
+
+            // Save one measurement for token_b
+            let quotes_b = [{
+                let mut quote = Quote {
+                    expiration_timestamp: now,
+                    gas_amount: 10_u32.into(),
+                    ..quote_b.clone()
+                };
+                let id = save(&mut db, &quote).await.unwrap();
+                quote.id = id;
+                quote
+            }];
+
+            // Token A has readings valid until now and in 30s
+            let search_a = QuoteSearchParameters {
+                sell_token: quote_a.sell_token,
+                buy_token: quote_a.buy_token,
+                sell_amount_0: quote_a.sell_amount.clone(),
+                sell_amount_1: quote_a.sell_amount.clone(),
+                buy_amount: 1.into(),
+                kind: quote_a.order_kind,
+                expiration: now,
+                quote_kind: QuoteKind::Standard,
+            };
+            assert_eq!(
+                find(&mut db, &search_a).await.unwrap().unwrap(),
+                quotes_a[0],
+            );
+            assert_eq!(
+                find(
+                    &mut db,
+                    &QuoteSearchParameters {
+                        expiration: now + Duration::seconds(30),
+                        ..search_a.clone()
+                    }
+                )
+                .await
+                .unwrap()
+                .unwrap(),
+                quotes_a[1]
+            );
+
+            // Token A has readings for sell + fee amount equal to quoted amount.
+            assert_eq!(
+                find(
+                    &mut db,
+                    &QuoteSearchParameters {
+                        sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
+                        sell_amount_1: quote_a.sell_amount.clone(),
+                        ..search_a.clone()
+                    },
+                )
+                .await
+                .unwrap()
+                .unwrap(),
+                quotes_a[0],
+            );
+
+            // Token A has no reading for wrong filter
+            assert_eq!(
+                find(
+                    &mut db,
+                    &QuoteSearchParameters {
+                        sell_amount_0: quote_a.sell_amount.clone() - BigDecimal::from(1),
+                        sell_amount_1: quote_a.sell_amount.clone() - BigDecimal::from(1),
+                        ..search_a.clone()
+                    }
+                )
+                .await
+                .unwrap(),
+                None
+            );
+
+            // Token B only has readings valid until now
+            let search_b = QuoteSearchParameters {
+                sell_token: quote_b.sell_token,
+                buy_token: quote_b.buy_token,
+                sell_amount_0: 999.into(),
+                sell_amount_1: 999.into(),
+                buy_amount: quote_b.buy_amount,
+                kind: quote_b.order_kind,
+                expiration: now,
+                quote_kind: QuoteKind::Standard,
+            };
+            assert_eq!(
+                find(&mut db, &search_b).await.unwrap().unwrap(),
+                quotes_b[0],
+            );
+            assert_eq!(
+                find(
+                    &mut db,
+                    &QuoteSearchParameters {
+                        expiration: now + Duration::seconds(30),
+                        ..search_b.clone()
+                    }
+                )
+                .await
+                .unwrap(),
+                None
+            );
+
+            // Token B has no reading for wrong filter
+            assert_eq!(
+                find(
+                    &mut db,
+                    &QuoteSearchParameters {
+                        buy_amount: 99.into(),
+                        ..search_b.clone()
+                    }
+                )
+                .await
+                .unwrap(),
+                None
+            );
+
+            // Query that previously succeeded after cleaning up expired measurements.
+            remove_expired_quotes(&mut db, now + Duration::seconds(120))
+                .await
+                .unwrap();
+            assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
+            assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_save_and_find_quote_and_differentiates_by_signing_scheme() {
+        docker::db::run_test(|db| async move {
+            let mut db = db.connection().begin().await.unwrap();
+            let now = low_precision_now();
+            let token_a = ByteArray([1; 20]);
+            let quote = {
+                let mut quote = Quote {
+                    id: Default::default(),
+                    sell_token: token_a,
+                    buy_token: ByteArray([3; 20]),
+                    sell_amount: 4.into(),
+                    buy_amount: 5.into(),
+                    gas_amount: 1.,
+                    gas_price: 1.,
+                    sell_token_price: 1.,
+                    order_kind: OrderKind::Sell,
+                    expiration_timestamp: now,
+                    quote_kind: QuoteKind::Eip1271OnchainOrder,
+                    solver: ByteArray([1; 20]),
+                };
+                let id = save(&mut db, &quote).await.unwrap();
+                quote.id = id;
+                quote
+            };
+            // Token A has readings valid until now and in 30s
+            let mut search_a = QuoteSearchParameters {
+                sell_token: quote.sell_token,
+                buy_token: quote.buy_token,
+                sell_amount_0: quote.sell_amount.clone(),
+                sell_amount_1: quote.sell_amount.clone(),
+                buy_amount: quote.buy_amount.clone(),
+                kind: quote.order_kind,
+                expiration: quote.expiration_timestamp,
+                quote_kind: quote.quote_kind.clone(),
+            };
+
+            assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
+            search_a.quote_kind = QuoteKind::Standard;
+            assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+        })
+        .await;
     }
 }

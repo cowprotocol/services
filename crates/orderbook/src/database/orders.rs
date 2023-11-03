@@ -750,269 +750,273 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_replace_order() {
-        let owner = H160([0x77; 20]);
-
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let old_order = Order {
-            data: OrderData {
-                valid_to: u32::MAX,
+        docker::db::run_test(|db| async move {
+            let db = Postgres::from_raw(db.connection().clone());
+            let owner = H160([0x77; 20]);
+            let old_order = Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    owner,
+                    uid: OrderUid([1; 56]),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            metadata: OrderMetadata {
-                owner,
-                uid: OrderUid([1; 56]),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.insert_order(&old_order, None).await.unwrap();
+            };
+            db.insert_order(&old_order, None).await.unwrap();
 
-        let new_order = Order {
-            data: OrderData {
-                valid_to: u32::MAX,
+            let new_order = Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    owner,
+                    uid: OrderUid([2; 56]),
+                    creation_date: Utc::now(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            metadata: OrderMetadata {
-                owner,
-                uid: OrderUid([2; 56]),
-                creation_date: Utc::now(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.replace_order(&old_order.metadata.uid, &new_order, None)
-            .await
-            .unwrap();
-
-        let order_statuses = db
-            .user_orders(&owner, 0, None)
-            .await
-            .unwrap()
-            .iter()
-            .map(|order| (order.metadata.uid, order.metadata.status))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            order_statuses,
-            vec![
-                (new_order.metadata.uid, OrderStatus::Open),
-                (old_order.metadata.uid, OrderStatus::Cancelled),
-            ]
-        );
-
-        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
-            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
-                .bind(old_order.metadata.uid.0.as_ref())
-                .fetch_one(&db.pool)
+            };
+            db.replace_order(&old_order.metadata.uid, &new_order, None)
                 .await
                 .unwrap();
-        assert_eq!(
-            old_order_cancellation.unwrap().timestamp_millis(),
-            new_order.metadata.creation_date.timestamp_millis(),
-        );
+
+            let order_statuses = db
+                .user_orders(&owner, 0, None)
+                .await
+                .unwrap()
+                .iter()
+                .map(|order| (order.metadata.uid, order.metadata.status))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                order_statuses,
+                vec![
+                    (new_order.metadata.uid, OrderStatus::Open),
+                    (old_order.metadata.uid, OrderStatus::Cancelled),
+                ]
+            );
+
+            let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+                sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                    .bind(old_order.metadata.uid.0.as_ref())
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(
+                old_order_cancellation.unwrap().timestamp_millis(),
+                new_order.metadata.creation_date.timestamp_millis(),
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_replace_order_no_cancellation_on_error() {
-        let owner = H160([0x77; 20]);
-
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let old_order = Order {
-            metadata: OrderMetadata {
-                owner,
-                uid: OrderUid([1; 56]),
+        docker::db::run_test(|db| async move {
+            let db = Postgres::from_raw(db.connection().clone());
+            let owner = H160([0x77; 20]);
+            let old_order = Order {
+                metadata: OrderMetadata {
+                    owner,
+                    uid: OrderUid([1; 56]),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.insert_order(&old_order, None).await.unwrap();
+            };
+            db.insert_order(&old_order, None).await.unwrap();
 
-        let new_order = Order {
-            metadata: OrderMetadata {
-                owner,
-                uid: OrderUid([2; 56]),
-                creation_date: Utc::now(),
+            let new_order = Order {
+                metadata: OrderMetadata {
+                    owner,
+                    uid: OrderUid([2; 56]),
+                    creation_date: Utc::now(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.insert_order(&new_order, None).await.unwrap();
+            };
+            db.insert_order(&new_order, None).await.unwrap();
 
-        // Attempt to replace an old order with one that already exists should fail.
-        let err = db
-            .replace_order(&old_order.metadata.uid, &new_order, None)
-            .await
-            .unwrap_err();
-        assert!(matches!(err, InsertionError::DuplicatedRecord));
-
-        // Old order cancellation status should remain unchanged.
-        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
-            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
-                .bind(old_order.metadata.uid.0.as_ref())
-                .fetch_one(&db.pool)
+            // Attempt to replace an old order with one that already exists should fail.
+            let err = db
+                .replace_order(&old_order.metadata.uid, &new_order, None)
                 .await
-                .unwrap();
-        assert_eq!(old_order_cancellation, None);
+                .unwrap_err();
+            assert!(matches!(err, InsertionError::DuplicatedRecord));
+
+            // Old order cancellation status should remain unchanged.
+            let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+                sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                    .bind(old_order.metadata.uid.0.as_ref())
+                    .fetch_one(&db.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(old_order_cancellation, None);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_presignature_status() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-        let uid = OrderUid([0u8; 56]);
-        let order = Order {
-            data: OrderData {
-                valid_to: u32::MAX,
+        docker::db::run_test(|db| async move {
+            let db = Postgres::from_raw(db.connection().clone());
+            let uid = OrderUid([0u8; 56]);
+            let order = Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    uid,
+                    ..Default::default()
+                },
+                signature: Signature::default_with(SigningScheme::PreSign),
                 ..Default::default()
-            },
-            metadata: OrderMetadata {
-                uid,
-                ..Default::default()
-            },
-            signature: Signature::default_with(SigningScheme::PreSign),
-            ..Default::default()
-        };
-        db.insert_order(&order, None).await.unwrap();
+            };
+            db.insert_order(&order, None).await.unwrap();
 
-        let order_status = || async {
-            db.single_order(&order.metadata.uid)
-                .await
-                .unwrap()
-                .unwrap()
-                .metadata
-                .status
-        };
-        let block_number = AtomicI64::new(0);
-        let insert_presignature = |signed: bool| {
-            let db = db.clone();
-            let block_number = &block_number;
-            let owner = order.metadata.owner.as_bytes();
-            async move {
-                sqlx::query(
-                    "INSERT INTO presignature_events (block_number, log_index, owner, order_uid, \
-                     signed) VALUES ($1, $2, $3, $4, $5)",
-                )
-                .bind(block_number.fetch_add(1, Ordering::SeqCst))
-                .bind(0i64)
-                .bind(owner)
-                .bind(&uid.0[..])
-                .bind(signed)
-                .execute(&db.pool)
-                .await
-                .unwrap();
-            }
-        };
-
-        // "presign" order with no signature events has pending status.
-        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
-
-        // Inserting a presignature event changes the order status.
-        insert_presignature(true).await;
-        assert_eq!(order_status().await, OrderStatus::Open);
-
-        // "unsigning" the presignature makes the signature pending again.
-        insert_presignature(false).await;
-        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
-
-        // Multiple "unsign" events keep the signature pending.
-        insert_presignature(false).await;
-        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
-
-        // Re-signing sets the status back to open.
-        insert_presignature(true).await;
-        assert_eq!(order_status().await, OrderStatus::Open);
-
-        // Re-signing sets the status back to open.
-        insert_presignature(true).await;
-        assert_eq!(order_status().await, OrderStatus::Open);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_cancel_orders() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        // Define some helper closures to make the test easier to read.
-        let uid = |byte: u8| OrderUid([byte; 56]);
-        let order = |byte: u8| Order {
-            data: OrderData {
-                valid_to: u32::MAX,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                uid: uid(byte),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let order_status = |byte: u8| {
-            let db = &db;
-            let uid = &uid;
-            async move {
-                db.single_order(&uid(byte))
+            let order_status = || async {
+                db.single_order(&order.metadata.uid)
                     .await
                     .unwrap()
                     .unwrap()
                     .metadata
                     .status
-            }
-        };
+            };
+            let block_number = AtomicI64::new(0);
+            let insert_presignature = |signed: bool| {
+                let db = db.clone();
+                let block_number = &block_number;
+                let owner = order.metadata.owner.as_bytes();
+                async move {
+                    sqlx::query(
+                        "INSERT INTO presignature_events (block_number, log_index, owner, \
+                         order_uid, signed) VALUES ($1, $2, $3, $4, $5)",
+                    )
+                    .bind(block_number.fetch_add(1, Ordering::SeqCst))
+                    .bind(0i64)
+                    .bind(owner)
+                    .bind(&uid.0[..])
+                    .bind(signed)
+                    .execute(&db.pool)
+                    .await
+                    .unwrap();
+                }
+            };
 
-        db.insert_order(&order(1), None).await.unwrap();
-        db.insert_order(&order(2), None).await.unwrap();
-        db.insert_order(&order(3), None).await.unwrap();
+            // "presign" order with no signature events has pending status.
+            assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
-        assert_eq!(order_status(1).await, OrderStatus::Open);
-        assert_eq!(order_status(2).await, OrderStatus::Open);
-        assert_eq!(order_status(3).await, OrderStatus::Open);
+            // Inserting a presignature event changes the order status.
+            insert_presignature(true).await;
+            assert_eq!(order_status().await, OrderStatus::Open);
 
-        db.cancel_orders(vec![uid(1), uid(2)], Utc::now())
-            .await
-            .unwrap();
+            // "unsigning" the presignature makes the signature pending again.
+            insert_presignature(false).await;
+            assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
-        assert_eq!(order_status(1).await, OrderStatus::Cancelled);
-        assert_eq!(order_status(2).await, OrderStatus::Cancelled);
-        assert_eq!(order_status(3).await, OrderStatus::Open);
+            // Multiple "unsign" events keep the signature pending.
+            insert_presignature(false).await;
+            assert_eq!(order_status().await, OrderStatus::PresignaturePending);
+
+            // Re-signing sets the status back to open.
+            insert_presignature(true).await;
+            assert_eq!(order_status().await, OrderStatus::Open);
+
+            // Re-signing sets the status back to open.
+            insert_presignature(true).await;
+            assert_eq!(order_status().await, OrderStatus::Open);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_cancel_orders() {
+        docker::db::run_test(|db| async move {
+            let db = Postgres::from_raw(db.connection().clone());
+            // Define some helper closures to make the test easier to read.
+            let uid = |byte: u8| OrderUid([byte; 56]);
+            let order = |byte: u8| Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    uid: uid(byte),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let order_status = |byte: u8| {
+                let db = &db;
+                let uid = &uid;
+                async move {
+                    db.single_order(&uid(byte))
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .metadata
+                        .status
+                }
+            };
+
+            db.insert_order(&order(1), None).await.unwrap();
+            db.insert_order(&order(2), None).await.unwrap();
+            db.insert_order(&order(3), None).await.unwrap();
+
+            assert_eq!(order_status(1).await, OrderStatus::Open);
+            assert_eq!(order_status(2).await, OrderStatus::Open);
+            assert_eq!(order_status(3).await, OrderStatus::Open);
+
+            db.cancel_orders(vec![uid(1), uid(2)], Utc::now())
+                .await
+                .unwrap();
+
+            assert_eq!(order_status(1).await, OrderStatus::Cancelled);
+            assert_eq!(order_status(2).await, OrderStatus::Cancelled);
+            assert_eq!(order_status(3).await, OrderStatus::Open);
+        })
+        .await;
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_orders_with_interactions() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
+        docker::db::run_test(|db| async move {
+            let db = Postgres::from_raw(db.connection().clone());
+            let interaction = |byte: u8| InteractionData {
+                target: H160([byte; 20]),
+                value: byte.into(),
+                call_data: vec![byte; byte as _],
+            };
 
-        let interaction = |byte: u8| InteractionData {
-            target: H160([byte; 20]),
-            value: byte.into(),
-            call_data: vec![byte; byte as _],
-        };
-
-        let uid = OrderUid([0x42; 56]);
-        let order = Order {
-            data: OrderData {
-                valid_to: u32::MAX,
+            let uid = OrderUid([0x42; 56]);
+            let order = Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    uid,
+                    ..Default::default()
+                },
+                interactions: Interactions {
+                    pre: vec![interaction(1), interaction(2), interaction(3)],
+                    post: vec![interaction(4), interaction(5)],
+                },
                 ..Default::default()
-            },
-            metadata: OrderMetadata {
-                uid,
-                ..Default::default()
-            },
-            interactions: Interactions {
-                pre: vec![interaction(1), interaction(2), interaction(3)],
-                post: vec![interaction(4), interaction(5)],
-            },
-            ..Default::default()
-        };
+            };
 
-        db.insert_order(&order, None).await.unwrap();
+            db.insert_order(&order, None).await.unwrap();
 
-        let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
-        assert_eq!(interactions, order.interactions);
+            let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
+            assert_eq!(interactions, order.interactions);
+        })
+        .await;
     }
 }

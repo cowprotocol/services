@@ -451,126 +451,128 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_replace_order_verifies_signer_and_app_data() {
-        let old_order = Order {
-            metadata: OrderMetadata {
-                uid: OrderUid([1; 56]),
-                owner: H160([1; 20]),
+        docker::db::run_test(|db| async move {
+            let old_order = Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid([1; 56]),
+                    owner: H160([1; 20]),
+                    ..Default::default()
+                },
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            data: OrderData {
-                valid_to: u32::MAX,
+            };
+            let new_order_uid = OrderUid([2; 56]);
+            let cancellation = OrderCancellation {
+                order_uid: old_order.metadata.uid,
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let new_order_uid = OrderUid([2; 56]);
-        let cancellation = OrderCancellation {
-            order_uid: old_order.metadata.uid,
-            ..Default::default()
-        };
+            };
 
-        let mut database = MockOrderStoring::new();
-        database
-            .expect_single_order()
-            .with(eq(old_order.metadata.uid))
-            .returning({
-                let old_order = old_order.clone();
-                move |_| Ok(Some(old_order.clone()))
-            });
-        database.expect_replace_order().returning(|_, _, _| Ok(()));
+            let mut database = MockOrderStoring::new();
+            database
+                .expect_single_order()
+                .with(eq(old_order.metadata.uid))
+                .returning({
+                    let old_order = old_order.clone();
+                    move |_| Ok(Some(old_order.clone()))
+                });
+            database.expect_replace_order().returning(|_, _, _| Ok(()));
 
-        let mut order_validator = MockOrderValidating::new();
-        order_validator
-            .expect_validate_and_construct_order()
-            .returning(move |creation, _, _, _| {
-                Ok((
-                    Order {
-                        metadata: OrderMetadata {
-                            owner: creation.from.unwrap(),
-                            uid: new_order_uid,
+            let mut order_validator = MockOrderValidating::new();
+            order_validator
+                .expect_validate_and_construct_order()
+                .returning(move |creation, _, _, _| {
+                    Ok((
+                        Order {
+                            metadata: OrderMetadata {
+                                owner: creation.from.unwrap(),
+                                uid: new_order_uid,
+                                ..Default::default()
+                            },
+                            data: creation.data(),
+                            signature: creation.signature,
                             ..Default::default()
                         },
-                        data: creation.data(),
-                        signature: creation.signature,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                ))
-            });
+                        Default::default(),
+                    ))
+                });
 
-        let database = crate::database::Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&database.pool).await.unwrap();
-        database.insert_order(&old_order, None).await.unwrap();
-        let orderbook = Orderbook {
-            database,
-            order_validator: Arc::new(order_validator),
-            domain_separator: Default::default(),
-            settlement_contract: H160([0xba; 20]),
-            ipfs: None,
-        };
+            let database = crate::database::Postgres::from_raw(db.connection().clone());
+            database.insert_order(&old_order, None).await.unwrap();
+            let orderbook = Orderbook {
+                database,
+                order_validator: Arc::new(order_validator),
+                domain_separator: Default::default(),
+                settlement_contract: H160([0xba; 20]),
+                ipfs: None,
+            };
 
-        // App data does not encode cancellation.
-        assert!(matches!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::Eip712(Default::default()),
-                        ..Default::default()
-                    },
-                )
-                .await,
-            Err(ReplaceOrderError::InvalidReplacement)
-        ));
+            // App data does not encode cancellation.
+            assert!(matches!(
+                orderbook
+                    .replace_order(
+                        old_order.metadata.uid,
+                        OrderCreation {
+                            from: Some(old_order.metadata.owner),
+                            signature: Signature::Eip712(Default::default()),
+                            ..Default::default()
+                        },
+                    )
+                    .await,
+                Err(ReplaceOrderError::InvalidReplacement)
+            ));
 
-        // Different owner
-        assert!(matches!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(H160([2; 20])),
-                        signature: Signature::Eip712(Default::default()),
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
-                    },
-                )
-                .await,
-            Err(ReplaceOrderError::InvalidReplacement)
-        ));
+            // Different owner
+            assert!(matches!(
+                orderbook
+                    .replace_order(
+                        old_order.metadata.uid,
+                        OrderCreation {
+                            from: Some(H160([2; 20])),
+                            signature: Signature::Eip712(Default::default()),
+                            app_data: AppDataHash(cancellation.hash_struct()).into(),
+                            ..Default::default()
+                        },
+                    )
+                    .await,
+                Err(ReplaceOrderError::InvalidReplacement)
+            ));
 
-        // Non-signed order.
-        assert!(matches!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::PreSign,
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
-                    },
-                )
-                .await,
-            Err(ReplaceOrderError::InvalidReplacement)
-        ));
+            // Non-signed order.
+            assert!(matches!(
+                orderbook
+                    .replace_order(
+                        old_order.metadata.uid,
+                        OrderCreation {
+                            from: Some(old_order.metadata.owner),
+                            signature: Signature::PreSign,
+                            app_data: AppDataHash(cancellation.hash_struct()).into(),
+                            ..Default::default()
+                        },
+                    )
+                    .await,
+                Err(ReplaceOrderError::InvalidReplacement)
+            ));
 
-        // Stars align...
-        assert_eq!(
-            orderbook
-                .replace_order(
-                    old_order.metadata.uid,
-                    OrderCreation {
-                        from: Some(old_order.metadata.owner),
-                        signature: Signature::Eip712(Default::default()),
-                        app_data: AppDataHash(cancellation.hash_struct()).into(),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .unwrap(),
-            new_order_uid,
-        );
+            // Stars align...
+            assert_eq!(
+                orderbook
+                    .replace_order(
+                        old_order.metadata.uid,
+                        OrderCreation {
+                            from: Some(old_order.metadata.owner),
+                            signature: Signature::Eip712(Default::default()),
+                            app_data: AppDataHash(cancellation.hash_struct()).into(),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap(),
+                new_order_uid,
+            );
+        })
+        .await
     }
 }
