@@ -19,6 +19,7 @@ async fn no_valid_solutions() {
     let solve = test.solve().await;
 
     solve.ok().empty();
+    test.clean_up().await;
 }
 
 #[tokio::test]
@@ -38,4 +39,5 @@ async fn one_valid_solution() {
         .await;
     test.solve().await.ok().default_score();
     test.reveal().await.ok().orders(&[ab_order().name]);
+    test.clean_up().await;
 }

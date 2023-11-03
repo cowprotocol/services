@@ -1688,6 +1688,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "docker",
  "ethabi",
  "ethcontract",
  "ethereum-types",

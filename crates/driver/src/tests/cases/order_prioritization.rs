@@ -30,6 +30,7 @@ async fn sorting() {
     // Only check that the solve endpoint can be called successfully, which means
     // that the solver received the orders sorted.
     test.solve().await.ok();
+    test.clean_up().await;
 }
 
 /// If a user does not have enough tokens to settle all their orders filter out
@@ -72,4 +73,5 @@ async fn filtering() {
     // Only check that the solve endpoint can be called successfully, which means
     // that the solver received the orders sorted.
     test.solve().await.ok();
+    test.clean_up().await;
 }

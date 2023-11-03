@@ -32,6 +32,7 @@ async fn possible() {
         .await
         .cd_order_executed()
         .await;
+    test.clean_up().await;
 }
 
 /// Test that settlements are not merged if the clearing prices don't permit it.
@@ -57,4 +58,5 @@ async fn impossible() {
     test.solve().await.ok();
     test.reveal().await.ok().orders(&[ab_order().name]);
     test.settle().await.ok().await.ab_order_executed().await;
+    test.clean_up().await;
 }

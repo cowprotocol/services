@@ -21,6 +21,7 @@ async fn solver_score_winner() {
         2902421280589416499u128.into()
     );
     test.reveal().await.ok().orders(&[ab_order().name]);
+    test.clean_up().await;
 }
 
 #[tokio::test]
@@ -36,4 +37,5 @@ async fn risk_adjusted_score_winner() {
 
     assert!(test.solve().await.ok().score() != DEFAULT_SCORE_MIN.into());
     test.reveal().await.ok().orders(&[ab_order().name]);
+    test.clean_up().await;
 }

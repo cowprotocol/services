@@ -69,3 +69,9 @@ impl ContainerRegistry {
         while stream.next().await.is_some() {}
     }
 }
+
+impl std::fmt::Debug for ContainerRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "ContainerRegistry")
+    }
+}

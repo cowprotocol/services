@@ -576,16 +576,22 @@ impl Setup {
         let relative_slippage = 0.3;
         let absolute_slippage = 183.into();
 
+        let registry = docker::ContainerRegistry::default();
+        let node = docker::Node::new(&registry).await;
+
         // Create the necessary components for testing.
-        let blockchain = Blockchain::new(blockchain::Config {
-            pools,
-            trader_address,
-            trader_secret_key,
-            solver_address,
-            solver_secret_key,
-            fund_solver: self.fund_solver,
-            settlement_address: self.settlement_address,
-        })
+        let blockchain = Blockchain::new(
+            blockchain::Config {
+                pools,
+                trader_address,
+                trader_secret_key,
+                solver_address,
+                solver_secret_key,
+                fund_solver: self.fund_solver,
+                settlement_address: self.settlement_address,
+            },
+            node.port,
+        )
         .await;
         let mut solutions = Vec::new();
         for solution in self.solutions {
@@ -624,6 +630,7 @@ impl Setup {
         .await;
 
         Test {
+            registry,
             blockchain,
             driver,
             client: Default::default(),
@@ -650,6 +657,8 @@ impl Setup {
 }
 
 pub struct Test {
+    /// Keeps track of all the containers created for this test.
+    registry: docker::ContainerRegistry,
     quoted_orders: Vec<blockchain::QuotedOrder>,
     blockchain: Blockchain,
     driver: Driver,
@@ -796,6 +805,11 @@ impl Test {
                 .unwrap(),
         );
         balances
+    }
+
+    /// Tears down resources created by this test.
+    pub async fn clean_up(&self) {
+        self.registry.kill_all().await
     }
 }
 

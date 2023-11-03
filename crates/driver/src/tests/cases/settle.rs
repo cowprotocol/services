@@ -29,6 +29,7 @@ async fn matrix() {
 
             test.solve().await.ok().default_score();
             test.settle().await.ok().await.ab_order_executed().await;
+            test.clean_up().await;
         }
     }
 }
@@ -46,4 +47,5 @@ async fn solution_not_available() {
         .await;
 
     test.settle().await.err().kind("SolutionNotAvailable");
+    test.clean_up().await;
 }

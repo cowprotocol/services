@@ -25,6 +25,7 @@ async fn matrix() {
             let quote = test.quote().await;
 
             quote.ok().amount().interactions();
+            test.clean_up().await;
         }
     }
 }

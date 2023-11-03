@@ -16,4 +16,5 @@ async fn test() {
 
     test.solve().await.ok();
     test.settle().await.ok().await.eth_order_executed().await;
+    test.clean_up().await;
 }

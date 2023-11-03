@@ -39,6 +39,7 @@ async fn matrix() {
 
                 // TODO When we add metrics, assert that an invalid asset flow error is traced.
                 test.solve().await.ok().empty();
+                test.clean_up().await;
             }
         }
     }
@@ -76,6 +77,7 @@ async fn zero_sum() {
         .await;
 
     test.solve().await.ok();
+    test.clean_up().await;
 }
 
 /// Test that asset flow verification fails when sums of flows are negative.
@@ -111,6 +113,7 @@ async fn negative_sum() {
 
     // TODO When we add metrics, assert that an invalid asset flow error is traced.
     test.solve().await.ok().empty();
+    test.clean_up().await;
 }
 
 /// Test that asset flow verification passes when sums of flows are positive.
@@ -145,6 +148,7 @@ async fn positive_sum() {
         .await;
 
     test.solve().await.ok();
+    test.clean_up().await;
 }
 
 /// Test that asset flow verification passes, even in the case where market,
@@ -202,4 +206,5 @@ async fn mix() {
         .await;
 
     test.solve().await.ok();
+    test.clean_up().await;
 }

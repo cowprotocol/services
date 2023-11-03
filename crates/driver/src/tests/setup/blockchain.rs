@@ -7,9 +7,9 @@ use {
         },
         infra::time,
         tests::{self, boundary},
+        wait_for,
     },
     ethcontract::{dyns::DynWeb3, transport::DynTransport, Web3},
-    futures::Future,
     secp256k1::SecretKey,
     serde_json::json,
     std::collections::HashMap,
@@ -40,7 +40,6 @@ pub struct Blockchain {
     pub settlement: contracts::GPv2Settlement,
     pub ethflow: Option<ContractAddress>,
     pub domain_separator: boundary::DomainSeparator,
-    pub node: Node,
     pub pairs: Vec<Pair>,
 }
 
@@ -152,14 +151,15 @@ impl Blockchain {
     /// Start a local node and deploy the
     /// settlement contract, token contracts, and all supporting contracts
     /// for the settlement.
-    pub async fn new(config: Config) -> Self {
+    pub async fn new(config: Config, rpc_port: u16) -> Self {
         // TODO All these various deployments that are happening from the trader account
         // should be happening from the primary_account of the node, will do this
         // later
 
-        let node = Node::new().await;
         let web3 = Web3::new(DynTransport::new(
-            web3::transports::Http::new(&node.url()).expect("valid URL"),
+            web3::transports::WebSocket::new(&format!("ws://localhost:{}", rpc_port))
+                .await
+                .expect("valid URL"),
         ));
 
         let trader_account = ethcontract::Account::Offline(
@@ -173,7 +173,7 @@ impl Blockchain {
             .balance(primary_address(&web3).await, None)
             .await
             .unwrap();
-        wait_for(
+        wait_for!(
             &web3,
             web3.eth()
                 .send_transaction(web3::types::TransactionRequest {
@@ -181,12 +181,12 @@ impl Blockchain {
                     to: Some(config.trader_address),
                     value: Some(balance / 5),
                     ..Default::default()
-                }),
+                })
         )
         .await
         .unwrap();
         if config.fund_solver {
-            wait_for(
+            wait_for!(
                 &web3,
                 web3.eth()
                     .send_transaction(web3::types::TransactionRequest {
@@ -194,42 +194,42 @@ impl Blockchain {
                         to: Some(config.solver_address),
                         value: Some(balance / 5),
                         ..Default::default()
-                    }),
+                    })
             )
             .await
             .unwrap();
         }
 
         // Deploy WETH and wrap some funds in the primary account of the node.
-        let weth = wait_for(
+        let weth = wait_for!(
             &web3,
             contracts::WETH9::builder(&web3)
                 .from(trader_account.clone())
-                .deploy(),
+                .deploy()
         )
         .await
         .unwrap();
-        wait_for(
+        wait_for!(
             &web3,
             ethcontract::transaction::TransactionBuilder::new(web3.clone())
                 .from(primary_account(&web3).await)
                 .to(weth.address())
                 .value(balance / 5)
-                .send(),
+                .send()
         )
         .await
         .unwrap();
 
         // Set up the settlement contract and related contracts.
-        let vault_authorizer = wait_for(
+        let vault_authorizer = wait_for!(
             &web3,
             contracts::BalancerV2Authorizer::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
-                .deploy(),
+                .deploy()
         )
         .await
         .unwrap();
-        let vault = wait_for(
+        let vault = wait_for!(
             &web3,
             contracts::BalancerV2Vault::builder(
                 &web3,
@@ -239,23 +239,23 @@ impl Blockchain {
                 0.into(),
             )
             .from(trader_account.clone())
-            .deploy(),
+            .deploy()
         )
         .await
         .unwrap();
-        let authenticator = wait_for(
+        let authenticator = wait_for!(
             &web3,
             contracts::GPv2AllowListAuthentication::builder(&web3)
                 .from(trader_account.clone())
-                .deploy(),
+                .deploy()
         )
         .await
         .unwrap();
-        let mut settlement = wait_for(
+        let mut settlement = wait_for!(
             &web3,
             contracts::GPv2Settlement::builder(&web3, authenticator.address(), vault.address())
                 .from(trader_account.clone())
-                .deploy(),
+                .deploy()
         )
         .await
         .unwrap();
@@ -280,21 +280,21 @@ impl Blockchain {
 
             settlement = contracts::GPv2Settlement::at(&web3, settlement_address);
         }
-        wait_for(
+        wait_for!(
             &web3,
             authenticator
                 .initialize_manager(config.trader_address)
                 .from(trader_account.clone())
-                .send(),
+                .send()
         )
         .await
         .unwrap();
-        wait_for(
+        wait_for!(
             &web3,
             authenticator
                 .add_solver(config.solver_address)
                 .from(trader_account.clone())
-                .send(),
+                .send()
         )
         .await
         .unwrap();
@@ -306,22 +306,22 @@ impl Blockchain {
         let mut tokens = HashMap::new();
         for pool in config.pools.iter() {
             if pool.reserve_a.token != "WETH" && !tokens.contains_key(pool.reserve_a.token) {
-                let token = wait_for(
+                let token = wait_for!(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
-                        .deploy(),
+                        .deploy()
                 )
                 .await
                 .unwrap();
                 tokens.insert(pool.reserve_a.token, token);
             }
             if pool.reserve_b.token != "WETH" && !tokens.contains_key(pool.reserve_b.token) {
-                let token = wait_for(
+                let token = wait_for!(
                     &web3,
                     contracts::ERC20Mintable::builder(&web3)
                         .from(trader_account.clone())
-                        .deploy(),
+                        .deploy()
                 )
                 .await
                 .unwrap();
@@ -330,11 +330,11 @@ impl Blockchain {
         }
 
         // Create the uniswap factory.
-        let uniswap_factory = wait_for(
+        let uniswap_factory = wait_for!(
             &web3,
             contracts::UniswapV2Factory::builder(&web3, config.trader_address)
                 .from(trader_account.clone())
-                .deploy(),
+                .deploy()
         )
         .await
         .unwrap();
@@ -355,12 +355,12 @@ impl Blockchain {
                 tokens.get(pool.reserve_b.token).unwrap().address()
             };
             // Create the pair.
-            wait_for(
+            wait_for!(
                 &web3,
                 uniswap_factory
                     .create_pair(token_a, token_b)
                     .from(trader_account.clone())
-                    .send(),
+                    .send()
             )
             .await
             .unwrap();
@@ -380,88 +380,88 @@ impl Blockchain {
                 pool: pool.to_owned(),
             });
             if pool.reserve_a.token == "WETH" {
-                wait_for(
+                wait_for!(
                     &web3,
                     weth.transfer(pair.address(), pool.reserve_a.amount)
                         .from(primary_account(&web3).await)
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
-                wait_for(
+                wait_for!(
                     &web3,
                     weth.transfer(settlement.address(), pool.reserve_a.amount)
                         .from(primary_account(&web3).await)
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
             } else {
-                wait_for(
+                wait_for!(
                     &web3,
                     tokens
                         .get(pool.reserve_a.token)
                         .unwrap()
                         .mint(pair.address(), pool.reserve_a.amount)
                         .from(trader_account.clone())
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
-                wait_for(
+                wait_for!(
                     &web3,
                     tokens
                         .get(pool.reserve_a.token)
                         .unwrap()
                         .mint(settlement.address(), pool.reserve_a.amount)
                         .from(trader_account.clone())
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
             }
             if pool.reserve_b.token == "WETH" {
-                wait_for(
+                wait_for!(
                     &web3,
                     weth.transfer(pair.address(), pool.reserve_b.amount)
                         .from(primary_account(&web3).await)
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
-                wait_for(
+                wait_for!(
                     &web3,
                     weth.transfer(settlement.address(), pool.reserve_b.amount)
                         .from(primary_account(&web3).await)
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
             } else {
-                wait_for(
+                wait_for!(
                     &web3,
                     tokens
                         .get(pool.reserve_b.token)
                         .unwrap()
                         .mint(pair.address(), pool.reserve_b.amount)
                         .from(trader_account.clone())
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
-                wait_for(
+                wait_for!(
                     &web3,
                     tokens
                         .get(pool.reserve_b.token)
                         .unwrap()
                         .mint(settlement.address(), pool.reserve_b.amount)
                         .from(trader_account.clone())
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
             }
-            wait_for(
+            wait_for!(
                 &web3,
                 pair.mint(
                     "0x8270bA71b28CF60859B547A2346aCDE824D6ed40"
@@ -469,7 +469,7 @@ impl Blockchain {
                         .unwrap(),
                 )
                 .from(trader_account.clone())
-                .send(),
+                .send()
             )
             .await
             .unwrap();
@@ -497,8 +497,7 @@ impl Blockchain {
             weth,
             ethflow: None,
             web3,
-            web3_url: node.url(),
-            node,
+            web3_url: format!("http://127.0.0.1:{}", rpc_port),
             pairs,
         }
     }
@@ -570,7 +569,7 @@ impl Blockchain {
             if order.sell_token == "WETH" {
                 todo!("deposit trader funds into the weth contract, none of the tests do this yet")
             } else if order.funded {
-                wait_for(
+                wait_for!(
                     &self.web3,
                     self.tokens
                         .get(order.sell_token)
@@ -580,7 +579,7 @@ impl Blockchain {
                             eth::U256::from(100000000000u64) * quote.sell + order.user_fee,
                         )
                         .from(trader_account.clone())
-                        .send(),
+                        .send()
                 )
                 .await
                 .unwrap();
@@ -588,14 +587,14 @@ impl Blockchain {
 
             // Approve the tokens needed for the solution.
             let vault_relayer = self.settlement.vault_relayer().call().await.unwrap();
-            wait_for(
+            wait_for!(
                 &self.web3,
                 self.tokens
                     .get(order.sell_token)
                     .unwrap()
                     .approve(vault_relayer, ethcontract::U256::max_value())
                     .from(trader_account.clone())
-                    .send(),
+                    .send()
             )
             .await
             .unwrap();
@@ -707,78 +706,6 @@ async fn primary_account(web3: &DynWeb3) -> ethcontract::Account {
     ethcontract::Account::Local(web3.eth().accounts().await.unwrap()[0], None)
 }
 
-/// A blockchain node for development purposes. Dropping this type will
-/// terminate the node.
-pub struct Node {
-    process: tokio::process::Child,
-    url: String,
-}
-
-impl std::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Node").field("url", &self.url).finish()
-    }
-}
-
-impl Node {
-    /// Spawn a new node instance.
-    async fn new() -> Self {
-        use tokio::io::AsyncBufReadExt as _;
-
-        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
-        // For example if you set up a command that spins up a docker container.
-        let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
-
-        let mut process = tokio::process::Command::new(command)
-            .arg("--port")
-            .arg("0") // use 0 to let `anvil` use any open port
-            .arg("--balance")
-            .arg("1000000")
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let stdout = process.stdout.take().unwrap();
-        let (sender, receiver) = tokio::sync::oneshot::channel::<String>();
-
-        tokio::task::spawn(async move {
-            let mut sender = Some(sender);
-            const NEEDLE: &str = "Listening on ";
-            let mut reader = tokio::io::BufReader::new(stdout).lines();
-            while let Some(line) = reader.next_line().await.unwrap() {
-                tracing::trace!(line);
-                if let Some(addr) = line.strip_prefix(NEEDLE) {
-                    match sender.take() {
-                        Some(sender) => sender.send(format!("http://{addr}")).unwrap(),
-                        None => tracing::error!(addr, "detected multiple anvil endpoints"),
-                    }
-                }
-            }
-        });
-
-        let url = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver)
-            .await
-            .expect("finding anvil URL timed out")
-            .unwrap();
-        Self { process, url }
-    }
-
-    fn url(&self) -> String {
-        self.url.clone()
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        // This only sends SIGKILL to the process but does not wait for the process to
-        // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough.
-        if let Err(err) = self.process.start_kill() {
-            tracing::error!("failed to kill anvil: {err:?}");
-        }
-    }
-}
-
 /// Execute an asynchronous operation, then wait for the next block to be mined
 /// before proceeding.
 ///
@@ -788,11 +715,41 @@ impl Drop for Node {
 /// introduces a subtle race condition, so it's necessary to
 /// wait for transactions to be confirmed before proceeding with the test. When
 /// switching from geth back to hardhat, this function can be removed.
-pub async fn wait_for<T>(web3: &DynWeb3, fut: impl Future<Output = T>) -> T {
-    let block = web3.eth().block_number().await.unwrap().as_u64();
-    let result = fut.await;
-    wait_for_block(web3, block + 1).await;
-    result
+///
+/// Also this should be a macro for a very subtle reason. The intention of the
+/// function was to be called like `wait_for(web3, web3.eth().account())`.
+/// Intuitively you would assume that if you don't poll the future returned by
+/// `.account()` nothing would happen. And this even seems to be true when
+/// the web3 instance uses the `HttpTransport` under the hood.
+/// However, if you use the `WebSocket` transport calling `.account()` will
+/// prepare a request and send it into a channel. This channel gets polled by a
+/// background task.
+/// That means for this particular function this annoying race condition can
+/// happen:
+/// 1. call `.account()` to pass as the function argument
+/// 2. background task starts and finishes working on the request
+/// 3. we fetch the current block number
+/// 4. we keep fetching the current block number until it increases by 1
+///
+/// Because we already read the increase block number in `3` it will never
+/// increase again and we are stuck.
+///
+/// Using a macro will cause the `.account()` call to actually be evaluated
+/// **after** we fetched the current block number because the code building the
+/// future will simply be lowered into the macro invocation.
+/// To make a long story short: making this a macro and not a function will
+/// result in the expected behavior for both the http and websocket based
+/// transport.
+#[macro_export]
+macro_rules! wait_for {
+    ($web3:expr, $fut:expr) => {{
+        async {
+            let block = $web3.eth().block_number().await.unwrap().as_u64();
+            let result = $fut.await;
+            wait_for_block($web3, block + 1).await;
+            result
+        }
+    }};
 }
 
 /// Waits for the block height to be at least the specified value.

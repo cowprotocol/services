@@ -18,6 +18,7 @@ async fn valid() {
 
     test.solve().await.ok().default_score();
     test.reveal().await.ok().orders(&[ab_order().name]);
+    test.clean_up().await;
 }
 
 /// Test that the invalid solution is discarded when the /solve endpoint
@@ -35,4 +36,5 @@ async fn invalid() {
 
     test.solve().await.ok().default_score();
     test.reveal().await.ok().orders(&[ab_order().name]);
+    test.clean_up().await;
 }

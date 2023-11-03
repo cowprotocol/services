@@ -19,4 +19,5 @@ async fn test() {
     let solve = test.solve().await;
 
     solve.ok().empty();
+    test.clean_up().await;
 }

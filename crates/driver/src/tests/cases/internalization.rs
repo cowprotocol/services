@@ -23,6 +23,7 @@ async fn valid_internalization() {
     let solve = test.solve().await;
 
     solve.ok();
+    test.clean_up().await;
 }
 
 /// Test that if internalized interactions don't use trusted tokens, the
@@ -43,6 +44,7 @@ async fn untrusted_internalization() {
     // TODO When we add metrics, assert that an untrusted internalization error is
     // traced.
     solve.ok().empty();
+    test.clean_up().await;
 }
 
 /// Check that verification fails if the solution contains internalized
@@ -78,5 +80,6 @@ async fn non_internalized_simulation_fails() {
     let solve = test.solve().await;
 
     solve.err("FailingInternalization");
+    test.clean_up().await;
     */
 }
