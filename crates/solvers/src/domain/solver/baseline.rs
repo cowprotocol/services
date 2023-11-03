@@ -19,7 +19,7 @@ use {
         infra::config,
     },
     ethereum_types::U256,
-    std::{cmp, collections::HashSet, sync::Arc},
+    std::{cmp, collections::HashSet, sync::Arc, time::Duration},
 };
 
 pub struct Baseline(Arc<Inner>);
@@ -69,80 +69,102 @@ impl Baseline {
         // not lock up the [`tokio`] runtime and cause it to slow down handling
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
+        tracing::trace!("solving {} orders", auction.orders.len());
+
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(auction.orders.len());
+
         let inner = self.0.clone();
         let span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || {
+        let background_work = tokio::spawn(async move {
             let _entered = span.enter();
-            inner.solve(auction)
-        })
-        .await
-        .expect("baseline solver unexpected panic")
+            inner.solve(auction, sender).await;
+        });
+
+        // make sure the deadline is respected
+        let deadline = Duration::from_millis(150);
+        let begin = std::time::Instant::now();
+
+        let mut solutions = vec![];
+        while begin.elapsed() < deadline {
+            match receiver.try_recv() {
+                Ok(solution) => solutions.push(solution),
+                Err(_) => {
+                    if background_work.is_finished() {
+                        break;
+                    }
+                    // unblock sync code and wait for channel to populate
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }
+        }
+        tracing::trace!("solved {} orders", solutions.len());
+        solutions
     }
 }
 
 impl Inner {
-    fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
+    async fn solve(
+        &self,
+        auction: auction::Auction,
+        sender: tokio::sync::mpsc::Sender<solution::Solution>,
+    ) {
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
 
-        auction
-            .orders
-            .iter()
-            .enumerate()
-            .take_while(|_| auction.deadline.remaining().is_some())
-            .filter_map(|(i, order)| {
-                let sell_token = auction.tokens.reference_price(&order.sell.token);
-                self.requests_for_order(UserOrder::new(order)?)
-                    .find_map(|request| {
-                        tracing::trace!(order =% order.uid, ?request, "finding route");
+        for (i, order) in auction.orders.into_iter().enumerate() {
+            let sell_token = auction.tokens.reference_price(&order.sell.token);
+            let user_order = UserOrder::new(&order);
+            if let Some(user_order) = user_order {
+                let solution = self.requests_for_order(user_order).find_map(|request| {
+                    tracing::trace!(order =% order.uid, ?request, "finding route");
 
-                        let route = boundary_solver.route(request, self.max_hops)?;
-                        let interactions = route
-                            .segments
-                            .iter()
-                            .map(|segment| {
-                                solution::Interaction::Liquidity(solution::LiquidityInteraction {
-                                    liquidity: segment.liquidity.clone(),
-                                    input: segment.input,
-                                    output: segment.output,
-                                    // TODO does the baseline solver know about this
-                                    // optimization?
-                                    internalize: false,
-                                })
+                    let route = boundary_solver.route(request, self.max_hops)?;
+                    let interactions = route
+                        .segments
+                        .iter()
+                        .map(|segment| {
+                            solution::Interaction::Liquidity(solution::LiquidityInteraction {
+                                liquidity: segment.liquidity.clone(),
+                                input: segment.input,
+                                output: segment.output,
+                                internalize: false,
                             })
-                            .collect();
+                        })
+                        .collect();
 
-                        // The baseline solver generates a path with swapping
-                        // for exact output token amounts. This leads to
-                        // potential rounding errors for buy orders, where we
-                        // can buy slightly more than intended. Fix this by
-                        // capping the output amount to the order's buy amount
-                        // for buy orders.
-                        let mut output = route.output();
-                        if let order::Side::Buy = order.side {
-                            output.amount = cmp::min(output.amount, order.buy.amount);
+                    let mut output = route.output();
+                    if let order::Side::Buy = order.side {
+                        output.amount = cmp::min(output.amount, order.buy.amount);
+                    }
+
+                    let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
+                        self.risk
+                            .success_probability(route.gas(), auction.gas_price, 1),
+                    ));
+
+                    Some(
+                        solution::Single {
+                            order: order.clone(),
+                            input: route.input(),
+                            output,
+                            interactions,
+                            gas: route.gas(),
                         }
-
-                        let score = solution::Score::RiskAdjusted(solution::SuccessProbability(
-                            self.risk
-                                .success_probability(route.gas(), auction.gas_price, 1),
-                        ));
-
-                        Some(
-                            solution::Single {
-                                order: order.clone(),
-                                input: route.input(),
-                                output,
-                                interactions,
-                                gas: route.gas(),
-                            }
-                            .into_solution(auction.gas_price, sell_token, score)?
-                            .with_id(solution::Id(i as u64))
-                            .with_buffers_internalizations(&auction.tokens),
-                        )
-                    })
-            })
-            .collect()
+                        .into_solution(auction.gas_price, sell_token, score)?
+                        .with_id(solution::Id(i as u64))
+                        .with_buffers_internalizations(&auction.tokens),
+                    )
+                });
+                if let Some(solution) = solution {
+                    if sender.send(solution).await.is_err() {
+                        tracing::trace!("deadline hit, receiver dropped");
+                        break;
+                    }
+                }
+                // unblock sync code
+                tokio::task::yield_now().await;
+            }
+        }
     }
 
     fn requests_for_order(&self, order: UserOrder) -> impl Iterator<Item = Request> {
