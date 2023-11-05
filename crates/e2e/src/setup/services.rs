@@ -202,7 +202,7 @@ impl<'a> Services<'a> {
 
     async fn wait_for_api_to_come_up(&self) {
         let is_up = || async {
-            reqwest::get(format!("{}{VERSION_ENDPOINT}", self.api_url().as_str()))
+            reqwest::get(format!("{}{AUCTION_ENDPOINT}", self.api_url().as_str()))
                 .await
                 .is_ok()
         };
