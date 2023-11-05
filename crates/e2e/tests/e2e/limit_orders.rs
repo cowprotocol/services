@@ -405,6 +405,7 @@ async fn too_many_limit_orders_test(web3: Web3, db: Db) {
 
     // Place Orders
     let services = Services::new(&onchain, db).await;
+    let _ = services.start_autopilot(vec![]);
     services
         .start_api(vec!["--max-limit-orders-per-user=1".into()])
         .await;
