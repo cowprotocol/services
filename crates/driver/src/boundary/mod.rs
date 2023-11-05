@@ -59,6 +59,7 @@ pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
     let http_factory =
         shared::http_client::HttpClientFactory::new(&shared::http_client::Arguments {
             http_timeout: std::time::Duration::from_secs(10),
+            max_idle_connections: usize::MAX,
         });
     shared::ethrpc::web3(&ethrpc_args, &http_factory, ethrpc, "base")
 }

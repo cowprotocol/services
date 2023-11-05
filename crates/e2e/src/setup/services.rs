@@ -39,6 +39,7 @@ impl<'a> Services<'a> {
             onchain,
             http: Client::builder()
                 .timeout(Duration::from_secs(10))
+                .pool_max_idle_per_host(0)
                 .build()
                 .unwrap(),
             db,
@@ -82,6 +83,7 @@ impl<'a> Services<'a> {
             ),
             format!("--node-url={node_url}"),
             format!("--simulation-node-url={node_url}"),
+            "--max-idle-connections=0".to_string(),
         ]
         .into_iter()
     }
