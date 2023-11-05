@@ -1,10 +1,17 @@
 use {
+    crate::ContainerRegistry,
     bollard::{
         container::{Config, ListContainersOptions},
         service::HostConfig,
     },
-    futures::StreamExt,
+    futures::{FutureExt, StreamExt},
     reqwest::Url,
+    sqlx::{Executor, PgConnection},
+    std::{
+        panic::AssertUnwindSafe,
+        sync::atomic::{AtomicUsize, Ordering},
+    },
+    tokio::sync::Mutex,
 };
 
 /// The docker image used to spawn the postgres container.
@@ -36,7 +43,7 @@ impl Db {
                         "POSTGRES_USER=admin",
                         "POSTGRES_PASSWORD=123",
                     ]),
-                    cmd: Some(vec!["-d", "postgres"]),
+                    cmd: Some(vec!["-d", "postgres", "-c", "log_statement=all"]),
                     host_config: Some(HostConfig {
                         auto_remove: Some(true),
                         publish_all_ports: Some(true),
@@ -114,15 +121,79 @@ impl Db {
     }
 }
 
-/// Spins up a fresh postgres docker container, runs the given test and tears
-/// down the container.
+/// Delete all data in the database. Only used by tests.
+pub async fn clear_db(db: &mut PgConnection) {
+    let tables = sqlx::query_scalar::<_, String>(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';",
+    )
+    .fetch_all(db.as_mut())
+    .await
+    .unwrap();
+    for table in tables {
+        db.execute(format!("TRUNCATE TABLE {table};").as_str())
+            .await
+            .unwrap();
+    }
+}
+
+/// Mutex to ensure that at most 1 test is using the DB container at any time.
+static TEST_SETUP: Mutex<Option<TestSetup>> = Mutex::const_new(None);
+
+/// Number of tests waiting to reuse the `TEST_SETUP` to know when to clean up.
+static WAITING_TESTS: AtomicUsize = AtomicUsize::new(0);
+
+struct TestSetup {
+    registry: ContainerRegistry,
+    db_url: reqwest::Url,
+}
+
+impl TestSetup {
+    /// Spawns a new DB container and stores a handle to it.
+    async fn new() -> Self {
+        let registry = super::ContainerRegistry::default();
+        let db_url = Db::new(&registry).await.url;
+        Self { registry, db_url }
+    }
+}
+
+/// Runs a database test using an empty dockerized DB.
 pub async fn run_test<T, F>(test: T)
 where
     T: FnOnce(Db) -> F,
     F: std::future::Future<Output = ()>,
 {
-    let registry = super::ContainerRegistry::default();
-    let db = Db::new(&registry).await;
-    test(db).await;
-    registry.kill_all().await;
+    WAITING_TESTS.fetch_add(1, Ordering::Relaxed);
+    let mut lock = TEST_SETUP.lock().await;
+    if lock.is_none() {
+        *lock = Some(TestSetup::new().await);
+    }
+    let setup = lock.as_ref().unwrap();
+
+    let db = Db {
+        // Reconnect to the singleton DB per test because we run into panics
+        // if we share the [`Db`] directly.
+        connection: sqlx::PgPool::connect(setup.db_url.as_str()).await.unwrap(),
+        url: setup.db_url.clone(),
+    };
+
+    let mut tx = db.connection.begin().await.unwrap();
+    clear_db(&mut tx).await;
+    tx.commit().await.unwrap();
+
+    // Catch panics to continue running other tests.
+    let result = AssertUnwindSafe(test(db)).catch_unwind().await;
+
+    if WAITING_TESTS.fetch_sub(1, Ordering::Relaxed) == 1 || result.is_err() {
+        // Last test wanting to use `TEST_SETUP` exited or the test panicked.
+        // In both cases we want to clean up and reset `TEST_SETUP`.
+        lock.take()
+            .expect("test setup initialized")
+            .registry
+            .kill_all()
+            .await;
+    }
+
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }

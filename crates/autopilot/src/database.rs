@@ -28,20 +28,19 @@ impl Postgres {
         let metrics = Metrics::get();
 
         // update table row metrics
-        for &table in database::ALL_TABLES {
-            let mut ex = self.0.acquire().await?;
-            let count = count_rows_in_table(&mut ex, table).await?;
-            metrics.table_rows.with_label_values(&[table]).set(count);
+        let mut ex = self.0.begin().await?;
+        for table in database::all_tables(&mut ex).await? {
+            let count = count_rows_in_table(&mut ex, &table).await?;
+            metrics.table_rows.with_label_values(&[&table]).set(count);
         }
 
         // update unused app data metric
         {
-            let mut ex = self.0.acquire().await?;
             let count = count_unused_app_data(&mut ex).await?;
             metrics.unused_app_data.set(count);
         }
 
-        Ok(())
+        ex.commit().await
     }
 }
 

@@ -19,10 +19,7 @@ pub mod settlements;
 pub mod solver_competition;
 pub mod trades;
 
-use {
-    byte_array::ByteArray,
-    sqlx::{Executor, PgPool},
-};
+use {byte_array::ByteArray, sqlx::PgConnection};
 
 // Design:
 //
@@ -42,64 +39,17 @@ use {
 // in parallel and makes clearing all tables at the beginning of a
 // test obsolete.
 
+/// Returns names of all the tables currently used by the protocol.
+pub async fn all_tables(db: &mut PgConnection) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';",
+    )
+    .fetch_all(db.as_mut())
+    .await
+}
+
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
-
-/// The names of all tables we use in the db.
-pub const ALL_TABLES: &[&str] = &[
-    "orders",
-    "trades",
-    "invalidations",
-    "quotes",
-    "settlements",
-    "presignature_events",
-    "order_quotes",
-    "solver_competitions",
-    "auctions",
-    "onchain_placed_orders",
-    "ethflow_orders",
-    "order_execution",
-    "interactions",
-    "auction_transaction",
-    "ethflow_refunds",
-    "settlement_scores",
-    "settlement_observations",
-    "auction_prices",
-    "auction_participants",
-    "app_data",
-];
-
-/// Delete all data in the database. Only used by tests.
-#[allow(non_snake_case)]
-pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in ALL_TABLES {
-        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
-    }
-    Ok(())
-}
-
-/// Like above but more ergonomic for some tests that use a pool.
-#[allow(non_snake_case)]
-pub async fn clear_DANGER(pool: &PgPool) -> sqlx::Result<()> {
-    let mut transaction = pool.begin().await?;
-    clear_DANGER_(&mut transaction).await?;
-    transaction.commit().await
-}
-
 pub type Address = ByteArray<20>;
 pub type AppId = ByteArray<32>;
 pub type TransactionHash = ByteArray<32>;
 pub type OrderUid = ByteArray<56>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_clear() {
-        docker::db::run_test(|db| async move {
-            let mut con = db.connection().begin().await.unwrap();
-            clear_DANGER_(&mut con).await.unwrap();
-        }).await;
-    }
-}

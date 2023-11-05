@@ -163,7 +163,7 @@ mod tests {
             }
             round_trip_for_error(&mut db, None).await;
             for error in OnchainOrderPlacementError::into_iter() {
-                crate::clear_DANGER_(&mut db).await.unwrap();
+                docker::db::clear_db(&mut db).await;
                 round_trip_for_error(&mut db, Some(error)).await;
             }
         })

@@ -13,7 +13,6 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    sqlx::Connection,
     std::time::Duration,
 };
 
@@ -422,15 +421,6 @@ impl<'a> Services<'a> {
     pub fn api_url(&self) -> Url {
         self.api_url.get().expect("api already initialized").clone()
     }
-}
-
-pub async fn clear_database() {
-    tracing::info!("Clearing database.");
-    const LOCAL_DB_URL: &str = "postgresql://";
-    let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
-    let mut db = db.begin().await.unwrap();
-    database::clear_DANGER_(&mut db).await.unwrap();
-    db.commit().await.unwrap();
 }
 
 pub type DbConnection = sqlx::Pool<sqlx::Postgres>;

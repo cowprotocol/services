@@ -55,12 +55,14 @@ jobs:
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build -p orderbook -p database --tests &
-      - uses: taiki-e/install-action@nextest
-      - uses: yu-ichiro/spin-up-docker-compose-action@v1
-        with:
-          file: docker-compose.yaml
-          up-opts: -d db migrations
-      - run: cargo nextest run postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only
+      # build migrations container to make it available for e2e tests
+      - run: docker build -t migrations:latest -f ./docker/Dockerfile.migration .
+      # These tests spawn a single dockerized DB and reuse it for all tests.
+      # This only works with `cargo test` because `nextest` spawns subprocesses which
+      # does not allow sharing state as easily.
+      # Also we can only reuse the container with some amount of parallelism hence
+      # `--test-threads 2` (although github CI only has 1 actual thread available).
+      - run: cargo test postgres -p orderbook -p database --ignored --test-threads 2
 
   build-e2e-tests:
     name: Build e2e test artifacts
