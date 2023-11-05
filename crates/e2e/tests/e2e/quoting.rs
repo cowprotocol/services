@@ -43,6 +43,7 @@ async fn test(web3: Web3, db: Db) {
     tracing::info!("Starting services.");
 
     let services = Services::new(&onchain, db).await;
+    services.start_autopilot(vec![]);
     services
         .start_api(vec!["--enable-custom-interactions=true".to_string()])
         .await;

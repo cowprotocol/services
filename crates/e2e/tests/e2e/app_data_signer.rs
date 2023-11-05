@@ -64,6 +64,7 @@ async fn order_creation_checks_metadata_signer(web3: Web3, db: Db) {
     };
 
     let services = Services::new(&onchain, db).await;
+    services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
     // Accepted: custom hashes that aren't found in the DB.

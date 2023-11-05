@@ -55,6 +55,7 @@ async fn app_data(web3: Web3, db: Db) {
     };
 
     let services = Services::new(&onchain, db).await;
+    services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
     // Temporarily custom hashes are still accepted.
