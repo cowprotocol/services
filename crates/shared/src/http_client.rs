@@ -42,6 +42,7 @@ impl HttpClientFactory {
     pub fn builder(&self) -> ClientBuilder {
         ClientBuilder::new()
             .timeout(self.timeout)
+            .connection_verbose(true)
             .user_agent(USER_AGENT)
     }
 }
