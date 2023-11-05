@@ -19,14 +19,12 @@ const USER_AGENT: &str = "cowprotocol-services/2.0.0";
 #[derive(Clone, Debug)]
 pub struct HttpClientFactory {
     timeout: Duration,
-    max_idle_connections: usize,
 }
 
 impl HttpClientFactory {
     pub fn new(args: &Arguments) -> Self {
         Self {
             timeout: args.http_timeout,
-            max_idle_connections: args.max_idle_connections,
         }
     }
 
@@ -43,7 +41,6 @@ impl HttpClientFactory {
     /// Returns a `ClientBuilder` with the default settings.
     pub fn builder(&self) -> ClientBuilder {
         ClientBuilder::new()
-            .pool_max_idle_per_host(self.max_idle_connections)
             .timeout(self.timeout)
             .user_agent(USER_AGENT)
     }
@@ -53,7 +50,6 @@ impl Default for HttpClientFactory {
     fn default() -> Self {
         Self {
             timeout: Duration::from_secs(10),
-            max_idle_connections: 0,
         }
     }
 }
@@ -70,12 +66,6 @@ pub struct Arguments {
         value_parser = duration_from_seconds,
     )]
     pub http_timeout: Duration,
-
-    /// How many idle connections will be kept around at most.
-    /// Reducing this might decrease how often you run into errors
-    /// due to race conditions but will also decrease performance over all.
-    #[clap(long, env, default_value = "usize::MAX")]
-    pub max_idle_connections: usize,
 }
 
 impl Display for Arguments {

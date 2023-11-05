@@ -97,7 +97,6 @@ impl Mempool {
             shared::gas_price_estimation::create_priority_estimator(
                 &HttpClientFactory::new(&shared::http_client::Arguments {
                     http_timeout: std::time::Duration::from_secs(10),
-                    max_idle_connections: usize::MAX,
                 }),
                 &boundary::web3(&eth),
                 &[shared::gas_price_estimation::GasEstimatorType::Native],
