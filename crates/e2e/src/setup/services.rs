@@ -58,7 +58,7 @@ impl<'a> Services<'a> {
     }
 
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
-        let node_url = format!("http://localhost:{}", self.onchain.rpc_port());
+        let node_url = format!("http://127.0.0.1:{}", self.onchain.rpc_port());
         [
             "--baseline-sources=None".to_string(),
             "--network-block-interval=1".to_string(),
@@ -146,7 +146,7 @@ impl<'a> Services<'a> {
             "--settle-interval=1".to_string(),
             "--metrics-port=0".to_string(),
             format!(
-                "--transaction-submission-nodes=http://localhost:{}",
+                "--transaction-submission-nodes=http://127.0.0.1:{}",
                 self.onchain.rpc_port()
             ),
             format!(
@@ -176,7 +176,7 @@ impl<'a> Services<'a> {
             format!(
                 "--external-solvers=Custom|{}|{:#x}|false",
                 solver_url
-                    .unwrap_or("http://localhost:8000".parse().unwrap())
+                    .unwrap_or("http://127.0.0.1:8000".parse().unwrap())
                     .as_str(),
                 solver_account
             ),
@@ -184,7 +184,7 @@ impl<'a> Services<'a> {
             format!("--solver-account={:#x}", solver_account),
             "--settle-interval=1".to_string(),
             format!(
-                "--transaction-submission-nodes=http://localhost:{}",
+                "--transaction-submission-nodes=http://127.0.0.1:{}",
                 self.onchain.rpc_port()
             ),
             format!(
