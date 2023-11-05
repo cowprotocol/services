@@ -62,7 +62,7 @@ jobs:
       # does not allow sharing state as easily.
       # Also we can only reuse the container with some amount of parallelism hence
       # `--test-threads 2` (although github CI only has 1 actual thread available).
-      - run: cargo test postgres -p orderbook -p database --ignored --test-threads 2
+      - run: cargo test postgres -p orderbook -p database -- --ignored --test-threads 2
 
   build-e2e-tests:
     name: Build e2e test artifacts
