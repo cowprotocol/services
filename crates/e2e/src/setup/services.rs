@@ -204,7 +204,7 @@ impl<'a> Services<'a> {
         let is_up = || async {
             reqwest::get(format!("{}{AUCTION_ENDPOINT}", self.api_url().as_str()))
                 .await
-                .is_ok()
+                .is_ok_and(|res| res.status().is_success())
         };
 
         tracing::info!("Waiting for API to come up.");
