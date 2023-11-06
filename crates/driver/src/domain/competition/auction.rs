@@ -9,8 +9,6 @@ use {
         infra::{blockchain, observe, Ethereum},
         util,
     },
-    futures::future::join_all,
-    itertools::Itertools,
     std::collections::{HashMap, HashSet},
     thiserror::Error,
 };
@@ -83,7 +81,7 @@ impl Auction {
     ///
     /// Prioritization is skipped during quoting. It's only used during
     /// competition.
-    pub async fn prioritize(mut self, eth: &Ethereum) -> Self {
+    pub async fn prioritize(mut self, eth: &Ethereum, balances: &eth::balances::Cache) -> Self {
         // Sort orders so that most likely to be fulfilled come first.
         self.orders.sort_by_key(|order| {
             // Market orders are preferred over limit orders, as the expectation is that
@@ -102,44 +100,8 @@ impl Auction {
             ))
         });
 
-        // Collect trader/token/source/interaction tuples for fetching available
-        // balances. Note that we are pessimistic here, if a trader is selling
-        // the same token with the same source in two different orders using a
-        // different set of pre-interactions, then we fetch the balance as if no
-        // pre-interactions were specified. This is done to avoid creating
-        // dependencies between orders (i.e. order 1 is required for executing
-        // order 2) which we currently cannot express with the solver interface.
-        let traders = self
-            .orders()
-            .iter()
-            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
-            .into_iter()
-            .map(|((trader, token, source), mut orders)| {
-                let first = orders.next().expect("group contains at least 1 order");
-                let mut others = orders;
-                if others.all(|order| order.pre_interactions == first.pre_interactions) {
-                    (trader, token, source, &first.pre_interactions[..])
-                } else {
-                    (trader, token, source, Default::default())
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let mut balances = join_all(traders.into_iter().map(
-            |(trader, token, source, interactions)| async move {
-                let balance = eth
-                    .erc20(token)
-                    .tradable_balance(trader.into(), source, interactions)
-                    .await;
-                (
-                    (trader, token, source),
-                    balance.map(order::SellAmount::from),
-                )
-            },
-        ))
-        .await
-        .into_iter()
-        .collect::<HashMap<_, _>>();
+        let balances = balances.get_or_fetch(eth, self.orders()).await;
+        let mut balances = (*balances).clone();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -151,13 +113,14 @@ impl Auction {
         // cover the rest of the order.
         let weth = eth.contracts().weth_address();
         self.orders.retain_mut(|order| {
-            let remaining_balance = match balances
-                .get_mut(&(order.trader(), order.sell.token, order.sell_token_balance))
-                .unwrap()
-            {
-                Ok(balance) => balance,
-                Err(err) => {
-                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance(err);
+            let remaining_balance = match balances.get_mut(&(
+                order.trader(),
+                order.sell.token,
+                order.sell_token_balance,
+            )) {
+                Some(balance) => balance,
+                None => {
+                    let reason = observe::OrderExcludedFromAuctionReason::CouldNotFetchBalance;
                     observe::order_excluded_from_auction(order, reason);
                     return false;
                 }
