@@ -157,7 +157,7 @@ impl Inner {
             });
             if let Some(solution) = solution {
                 if sender.send(solution).is_err() {
-                    tracing::trace!("deadline hit, receiver dropped");
+                    tracing::debug!("deadline hit, receiver dropped");
                     break;
                 }
             }
