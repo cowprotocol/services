@@ -333,8 +333,8 @@ fn competition_error(err: &competition::Error) -> &'static str {
 }
 
 #[derive(Debug)]
-pub enum OrderExcludedFromAuctionReason<'a> {
-    CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
+pub enum OrderExcludedFromAuctionReason {
+    CouldNotFetchBalance,
     CouldNotCalculateMaxSell,
     InsufficientBalance,
     OrderWithZeroAmountRemaining,

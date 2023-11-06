@@ -5,6 +5,7 @@ use {
 };
 
 pub mod allowance;
+pub mod balances;
 mod eip712;
 mod gas;
 
