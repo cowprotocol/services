@@ -19,7 +19,7 @@ use {
         infra::config,
     },
     ethereum_types::U256,
-    std::{cmp, collections::HashSet, sync::Arc, time::Duration},
+    std::{cmp, collections::HashSet, sync::Arc},
 };
 
 pub struct Baseline(Arc<Inner>);
@@ -71,31 +71,26 @@ impl Baseline {
         // 100s of ms.
         tracing::trace!("solving {} orders", auction.orders.len());
 
-        let (sender, mut receiver) = tokio::sync::mpsc::channel(auction.orders.len());
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let deadline = auction.deadline.remaining().unwrap_or_default();
 
         let inner = self.0.clone();
         let span = tracing::Span::current();
-        let background_work = tokio::spawn(async move {
+        let background_work = async move {
             let _entered = span.enter();
             inner.solve(auction, sender).await;
-        });
+        };
 
-        // make sure the deadline is respected
-        let deadline = Duration::from_millis(150);
-        let begin = std::time::Instant::now();
+        if tokio::time::timeout(deadline, tokio::spawn(background_work))
+            .await
+            .is_err()
+        {
+            tracing::debug!("reached timeout while solving orders");
+        }
 
         let mut solutions = vec![];
-        while begin.elapsed() < deadline {
-            match receiver.try_recv() {
-                Ok(solution) => solutions.push(solution),
-                Err(_) => {
-                    if background_work.is_finished() {
-                        break;
-                    }
-                    // unblock sync code and wait for channel to populate
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            }
+        while let Ok(solution) = receiver.try_recv() {
+            solutions.push(solution);
         }
         tracing::trace!("solved {} orders", solutions.len());
         solutions
@@ -106,7 +101,7 @@ impl Inner {
     async fn solve(
         &self,
         auction: auction::Auction,
-        sender: tokio::sync::mpsc::Sender<solution::Solution>,
+        sender: tokio::sync::mpsc::UnboundedSender<solution::Solution>,
     ) {
         let boundary_solver =
             boundary::baseline::Solver::new(&self.weth, &self.base_tokens, &auction.liquidity);
@@ -163,13 +158,11 @@ impl Inner {
                     )
                 });
                 if let Some(solution) = solution {
-                    if sender.send(solution).await.is_err() {
+                    if sender.send(solution).is_err() {
                         tracing::trace!("deadline hit, receiver dropped");
                         break;
                     }
                 }
-                // unblock sync code
-                tokio::task::yield_now().await;
             }
         }
     }
