@@ -96,7 +96,7 @@ fn addr2str(addr: H160) -> String {
 
 impl SellOrderQuoteQuery {
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
-        let endpoint = format!("v5.0/{chain_id}/quote");
+        let endpoint = format!("/swap/v5.0/{chain_id}/quote");
         let mut url = crate::url::join(base_url, &endpoint);
 
         url.query_pairs_mut()
@@ -246,7 +246,7 @@ impl Display for Slippage {
 impl SwapQuery {
     /// Encodes the swap query as
     fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
-        let endpoint = format!("v5.0/{chain_id}/swap");
+        let endpoint = format!("/swap/v5.0/{chain_id}/swap");
         let mut url = crate::url::join(base_url, &endpoint);
         url.query_pairs_mut()
             .append_pair("fromTokenAddress", &addr2str(self.quote.from_token_address))
@@ -502,7 +502,7 @@ pub struct OneInchClientImpl {
 }
 
 impl OneInchClientImpl {
-    pub const DEFAULT_URL: &'static str = "https://api.1inch.io/";
+    pub const DEFAULT_URL: &'static str = "https://api.1inch.dev/";
     // 1: mainnet, 100: gnosis chain
     pub const SUPPORTED_CHAINS: &'static [u64] = &[1, 100];
 
@@ -570,13 +570,13 @@ impl OneInchClient for OneInchClientImpl {
     }
 
     async fn get_spender(&self) -> Result<Spender, OneInchError> {
-        let endpoint = format!("v5.0/{}/approve/spender", self.chain_id);
+        let endpoint = format!("/swap/v5.0/{}/approve/spender", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
         logged_query(&self.client, url, None).await
     }
 
     async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
-        let endpoint = format!("v5.0/{}/liquidity-sources", self.chain_id);
+        let endpoint = format!("/swap/v5.0/{}/liquidity-sources", self.chain_id);
         let url = crate::url::join(&self.base_url, &endpoint);
         logged_query(&self.client, url, None).await
     }
@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn swap_query_serialization() {
-        let base_url = Url::parse("https://api.1inch.io/").unwrap();
+        let base_url = Url::parse("https://api.1inch.dev/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::percentage(0.5).unwrap(),
@@ -777,7 +777,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.io/v5.0/1/swap\
+            "https://api.1inch.dev/swap/v5.0/1/swap\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn swap_query_serialization_options_parameters() {
-        let base_url = Url::parse("https://api.1inch.io/").unwrap();
+        let base_url = Url::parse("https://api.1inch.dev/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::percentage(0.5).unwrap(),
@@ -818,7 +818,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.io/v5.0/1/swap\
+            "https://api.1inch.dev/swap/v5.0/1/swap\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
@@ -1055,7 +1055,7 @@ mod tests {
 
     #[test]
     fn sell_order_quote_query_serialization() {
-        let base_url = Url::parse("https://api.1inch.io/").unwrap();
+        let base_url = Url::parse("https://api.1inch.dev/").unwrap();
         let url = SellOrderQuoteQuery {
             from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
             to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
@@ -1074,7 +1074,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.io/v5.0/1/quote\
+            "https://api.1inch.dev/swap/v5.0/1/quote\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000"
@@ -1083,7 +1083,7 @@ mod tests {
 
     #[test]
     fn sell_order_quote_query_serialization_optional_parameters() {
-        let base_url = Url::parse("https://api.1inch.io/").unwrap();
+        let base_url = Url::parse("https://api.1inch.dev/").unwrap();
         let url = SellOrderQuoteQuery {
             from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
             to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
@@ -1105,7 +1105,7 @@ mod tests {
 
         assert_eq!(
             url.as_str(),
-            "https://api.1inch.io/v5.0/1/quote\
+            "https://api.1inch.dev/swap/v5.0/1/quote\
                 ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\

@@ -52,7 +52,7 @@ impl Notification {
                     gas_cost,
                 )) => Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive {
                     quality: quality.0,
-                    gas_cost: gas_cost.0 .0,
+                    gas_cost: gas_cost.get().0,
                 }),
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),

@@ -1,6 +1,8 @@
 use {
     super::{Ether, U256},
-    std::ops,
+    bigdecimal::Zero,
+    num::zero,
+    std::{ops, ops::Add},
 };
 
 /// Gas amount in gas units.
@@ -25,6 +27,24 @@ impl From<u64> for Gas {
 impl From<Gas> for U256 {
     fn from(value: Gas) -> Self {
         value.0
+    }
+}
+
+impl Add for Gas {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Zero for Gas {
+    fn zero() -> Self {
+        Self(U256::zero())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.is_zero()
     }
 }
 
@@ -108,24 +128,7 @@ impl From<EffectiveGasPrice> for U256 {
     }
 }
 
-impl ops::Mul<GasPrice> for Gas {
-    type Output = GasCost;
-
-    fn mul(self, rhs: GasPrice) -> Self::Output {
-        Ether::from(self.0 * rhs.effective().0 .0).into()
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct GasCost(pub Ether);
-
-impl From<Ether> for GasCost {
-    fn from(value: Ether) -> Self {
-        Self(value)
-    }
-}
-
-impl ops::Add for GasCost {
+impl Add for EffectiveGasPrice {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -133,12 +136,56 @@ impl ops::Add for GasCost {
     }
 }
 
-impl num::Zero for GasCost {
+impl Zero for EffectiveGasPrice {
     fn zero() -> Self {
         Self(Ether::zero())
     }
 
     fn is_zero(&self) -> bool {
         self.0.is_zero()
+    }
+}
+
+impl ops::Mul<EffectiveGasPrice> for Gas {
+    type Output = GasCost;
+
+    fn mul(self, rhs: EffectiveGasPrice) -> Self::Output {
+        GasCost::new(self, rhs)
+    }
+}
+
+/// Gas cost in Ether.
+///
+/// The amount of Ether that is paid in transaction fees.
+#[derive(Clone, Copy)]
+pub struct GasCost {
+    gas: Gas,
+    price: EffectiveGasPrice,
+}
+
+impl GasCost {
+    pub fn new(gas: Gas, price: EffectiveGasPrice) -> Self {
+        Self { gas, price }
+    }
+
+    pub fn get(&self) -> Ether {
+        (self.gas.0 * self.price.0 .0).into()
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            gas: zero(),
+            price: zero(),
+        }
+    }
+}
+
+impl std::fmt::Debug for GasCost {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("GasCost")
+            .field("gas", &self.gas.0)
+            .field("price", &self.price.0 .0)
+            .field("gas_cost", &self.get().0)
+            .finish()
     }
 }
