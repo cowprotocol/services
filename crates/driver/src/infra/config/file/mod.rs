@@ -148,7 +148,7 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-fn default_http_time_buffer_miliseconds() -> u64 {
+fn default_http_time_buffer_milliseconds() -> u64 {
     1500
 }
 
@@ -181,7 +181,7 @@ struct SolverConfig {
 
     /// Maximum time allocated to wait for a solver response to propagate to the
     /// driver.
-    #[serde(default = "default_http_time_buffer_miliseconds")]
+    #[serde(default = "default_http_time_buffer_milliseconds")]
     http_time_buffer_miliseconds: u64,
 }
 
