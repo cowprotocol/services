@@ -314,6 +314,12 @@ impl num::Zero for Ether {
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
 
+impl From<u64> for BlockNo {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Interaction {
