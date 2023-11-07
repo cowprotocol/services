@@ -1,6 +1,8 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
+    contracts::{dummy_contract, BalancerV2Vault},
+    futures::TryFutureExt,
 };
 
 /// An ERC-20 token.
@@ -92,6 +94,23 @@ impl Erc20 {
         source: order::SellTokenBalance,
         interactions: &[eth::Interaction],
     ) -> Result<eth::TokenAmount, Error> {
+        if interactions.is_empty() {
+            self.tradable_balance_simple(trader, source).await
+        } else {
+            self.tradable_balance_simulated(trader, source, interactions)
+                .await
+        }
+    }
+
+    /// Uses a custom helper contract to simulate balances while taking
+    /// pre-interactions into account. This is the most accurate method to
+    /// compute tradable balances but is very slow.
+    async fn tradable_balance_simulated(
+        &self,
+        trader: eth::Address,
+        source: order::SellTokenBalance,
+        interactions: &[eth::Interaction],
+    ) -> Result<eth::TokenAmount, Error> {
         let (_, _, effective_balance, can_transfer) = contracts::storage_accessible::simulate(
             contracts::bytecode!(contracts::support::Balances),
             self.balances.balance(
@@ -123,6 +142,59 @@ impl Erc20 {
         } else {
             Ok(eth::TokenAmount(0.into()))
         }
+    }
+
+    /// Faster balance query that does not take pre-interactions into account.
+    async fn tradable_balance_simple(
+        &self,
+        trader: eth::Address,
+        source: order::SellTokenBalance,
+    ) -> Result<eth::TokenAmount, Error> {
+        use order::SellTokenBalance::*;
+
+        let usable_balance = match source {
+            Erc20 => {
+                let balance = self.balance(trader);
+                let allowance = self.allowance(trader, eth::Address(self.vault_relayer.0));
+                let (balance, allowance) = futures::try_join!(balance, allowance)?;
+                std::cmp::min(balance.0, allowance.0.amount)
+            }
+            External => {
+                let vault = dummy_contract!(BalancerV2Vault, self.vault);
+                let balance = self.balance(trader);
+                let approved = vault
+                    .methods()
+                    .has_approved_relayer(trader.0, self.vault_relayer.0)
+                    .call()
+                    .map_err(Error::from);
+                let allowance = self.allowance(trader, eth::Address(self.vault.0));
+                let (balance, approved, allowance) =
+                    futures::try_join!(balance, approved, allowance)?;
+                match approved {
+                    true => std::cmp::min(balance.0, allowance.0.amount),
+                    false => 0.into(),
+                }
+            }
+            Internal => {
+                let vault = dummy_contract!(BalancerV2Vault, self.vault);
+                let balance = vault
+                    .methods()
+                    .get_internal_balance(trader.0, vec![self.token.address()])
+                    .call()
+                    .map_err(Error::from);
+                let approved = vault
+                    .methods()
+                    .has_approved_relayer(trader.0, self.vault_relayer.0)
+                    .call()
+                    .map_err(Error::from);
+                let (balance, approved) = futures::try_join!(balance, approved)?;
+                match approved {
+                    true => balance[0], // internal approvals are always U256::MAX
+                    false => 0.into(),
+                }
+            }
+        };
+        Ok(eth::TokenAmount(usable_balance))
     }
 }
 
