@@ -81,26 +81,31 @@ impl Auction {
     ///
     /// Prioritization is skipped during quoting. It's only used during
     /// competition.
-    pub async fn prioritize(mut self, eth: &Ethereum, balances: &eth::balances::Cache) -> Self {
+    pub async fn prioritize(self, eth: &Ethereum, balances: &eth::balances::Cache) -> Self {
         // Sort orders so that most likely to be fulfilled come first.
-        self.orders.sort_by_key(|order| {
-            // Market orders are preferred over limit orders, as the expectation is that
-            // they should be immediately fulfillable. Liquidity orders come last, as they
-            // are the most niche and rarely used.
-            let class = match order.kind {
-                competition::order::Kind::Market => 2,
-                competition::order::Kind::Limit { .. } => 1,
-                competition::order::Kind::Liquidity => 0,
-            };
-            std::cmp::Reverse((
-                class,
-                // If the orders are of the same kind, then sort by likelihood of fulfillment
-                // based on token prices.
-                order.likelihood(&self.tokens),
-            ))
-        });
+        let mut auction = self;
+        let sort = || {
+            auction.orders.sort_by_cached_key(|order| {
+                // Market orders are preferred over limit orders, as the expectation is that
+                // they should be immediately fulfillable. Liquidity orders come last, as they
+                // are the most niche and rarely used.
+                let class = match order.kind {
+                    competition::order::Kind::Market => 2,
+                    competition::order::Kind::Limit { .. } => 1,
+                    competition::order::Kind::Liquidity => 0,
+                };
+                std::cmp::Reverse((
+                    class,
+                    // If the orders are of the same kind, then sort by likelihood of fulfillment
+                    // based on token prices.
+                    order.likelihood(&auction.tokens),
+                ))
+            });
+            auction
+        };
+        let mut auction = tokio::task::spawn_blocking(sort).await.unwrap();
 
-        let balances = balances.get_or_fetch(eth, self.orders()).await;
+        let balances = balances.get_or_fetch(eth, auction.orders()).await;
         let mut balances = (*balances).clone();
 
         // The auction that we receive from the `autopilot` assumes that there
@@ -112,7 +117,7 @@ impl Auction {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         let weth = eth.contracts().weth_address();
-        self.orders.retain_mut(|order| {
+        auction.orders.retain_mut(|order| {
             let remaining_balance = match balances.get_mut(&(
                 order.trader(),
                 order.sell.token,
@@ -183,7 +188,7 @@ impl Auction {
             true
         });
 
-        self
+        auction
     }
 
     /// The tokens used in the auction.
