@@ -419,7 +419,10 @@ impl Gas {
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
-        const GAS_LIMIT_FACTOR: f64 = 1.2;
+        // Also, some solutions can have significant gas refunds that are refunded at
+        // the end of execution, so we want to increase gas limit enough so
+        // those solutions don't revert with out of gas error.
+        const GAS_LIMIT_FACTOR: f64 = 2.0;
         let limit =
             eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
                 .into();
