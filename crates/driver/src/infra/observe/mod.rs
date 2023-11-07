@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::Mempool,
+    super::{Ethereum, Mempool},
     crate::{
         boundary,
         domain::{
@@ -348,6 +348,7 @@ pub fn order_excluded_from_auction(
 }
 
 /// Observe that a settlement was simulated
-pub fn simulated(tx: &eth::Tx, gas: Gas) {
-    tracing::debug!(gas = ?gas.0, ?tx, "simulated settlement");
+pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: Gas) {
+    let block: eth::BlockNo = eth.current_block().borrow().number.into();
+    tracing::debug!(gas = ?gas.0, block = ?block, ?tx, "simulated settlement");
 }

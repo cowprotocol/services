@@ -243,7 +243,7 @@ impl Settlement {
         // Simulate the settlement using the full access list and get the gas used.
         let gas = simulator.gas(tx.clone()).await?;
 
-        observe::simulated(&tx, gas);
+        observe::simulated(eth, &tx, gas);
         Ok((access_list, gas))
     }
 
