@@ -27,10 +27,13 @@ impl Legacy {
     }
 
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        match self.0.solve(auction).await {
+        match self.0.solve(&auction).await {
             Ok(solution) => vec![solution.with_id(solution::Id(0))],
             Err(err) => {
                 tracing::warn!(?err, "failed to solve auction");
+                if err.is_timeout() {
+                    self.notify_timeout(auction.id)
+                }
                 vec![]
             }
         }
@@ -38,5 +41,27 @@ impl Legacy {
 
     pub fn notify(&self, notification: notification::Notification) {
         self.0.notify(notification);
+    }
+
+    fn notify_timeout(&self, auction_id: auction::Id) {
+        self.notify(notification::Notification {
+            auction_id,
+            solution_id: None,
+            kind: notification::Kind::Timeout,
+        })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("timeout")]
+    Timeout,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl Error {
+    fn is_timeout(&self) -> bool {
+        matches!(self, Self::Timeout)
     }
 }

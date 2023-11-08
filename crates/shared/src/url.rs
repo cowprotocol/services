@@ -1,7 +1,4 @@
-use {
-    anyhow::{Context, Result},
-    url::Url,
-};
+use {anyhow::Result, url::Url};
 
 /// Join a path with a URL, ensuring that there is only one slash between them.
 /// It doesn't matter if the URL ends with a slash or the path starts with one.
@@ -23,16 +20,9 @@ pub fn join(url: &Url, mut path: &str) -> Url {
 /// Path that were split like this can be joined to the original URL using
 /// [`join`].
 pub fn split_at_path(url: &Url) -> Result<(Url, String)> {
-    let base = format!(
-        "{}://{}{}/",
-        url.scheme(),
-        url.host().context("URL should have a host")?,
-        url.port()
-            .map(|port| format!(":{port}"))
-            .unwrap_or_default()
-    )
-    .parse()
-    .expect("stripping off the path is always safe");
+    let base = format!("{}://{}/", url.scheme(), url.authority())
+        .parse()
+        .expect("stripping off the path is always safe");
     let endpoint = format!(
         "{}{}{}",
         url.path(),
@@ -76,5 +66,7 @@ mod tests {
         round_trip("http://my.solver.xyz");
         // base + multiple params + multiple fragments
         round_trip("https://my.solver.xyz?param1=1&param2=2#fragment=1&fragment2=2");
+        // base (with auth) + path
+        round_trip("https://user:pass@my.solver.xyz/solve/1");
     }
 }
