@@ -2,14 +2,19 @@ use {
     super::{order, Score},
     crate::{
         domain::{
-            competition::{self, solution},
+            competition::{self, auction, solution},
             eth,
             liquidity,
         },
-        infra::{blockchain, observe, Ethereum},
+        infra::{self, blockchain, observe, Ethereum},
         util,
     },
-    std::collections::{HashMap, HashSet},
+    futures::future::{join_all, BoxFuture, FutureExt, Shared},
+    itertools::Itertools,
+    std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, Mutex},
+    },
     thiserror::Error,
 };
 
@@ -75,39 +80,124 @@ impl Auction {
         &self.orders
     }
 
-    /// Prioritize the orders such that those which are more likely to be
-    /// fulfilled come before less likely orders. Filter out orders which
-    /// the trader doesn't have enough balance to pay for.
-    ///
-    /// Prioritization is skipped during quoting. It's only used during
-    /// competition.
-    pub async fn prioritize(self, eth: &Ethereum, balances: &eth::balances::Cache) -> Self {
-        // Sort orders so that most likely to be fulfilled come first.
-        let mut auction = self;
-        let sort = || {
-            auction.orders.sort_by_cached_key(|order| {
-                // Market orders are preferred over limit orders, as the expectation is that
-                // they should be immediately fulfillable. Liquidity orders come last, as they
-                // are the most niche and rarely used.
-                let class = match order.kind {
-                    competition::order::Kind::Market => 2,
-                    competition::order::Kind::Limit { .. } => 1,
-                    competition::order::Kind::Liquidity => 0,
-                };
-                std::cmp::Reverse((
-                    class,
-                    // If the orders are of the same kind, then sort by likelihood of fulfillment
-                    // based on token prices.
-                    order.likelihood(&auction.tokens),
-                ))
-            });
-            auction
-        };
-        let mut auction = tokio::task::spawn_blocking(sort).await.unwrap();
+    /// The tokens used in the auction.
+    pub fn tokens(&self) -> &Tokens {
+        &self.tokens
+    }
 
-        let balances = balances.get_or_fetch(eth, auction.orders()).await;
-        let mut balances = (*balances).clone();
+    /// Returns a collection of liquidity token pairs that are relevant to this
+    /// auction.
+    pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
+        self.orders
+            .iter()
+            .filter_map(|order| match order.kind {
+                order::Kind::Market | order::Kind::Limit { .. } => {
+                    liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
+                }
+                order::Kind::Liquidity => None,
+            })
+            .collect()
+    }
 
+    pub fn gas_price(&self) -> eth::GasPrice {
+        self.gas_price
+    }
+
+    pub fn deadline(&self) -> Deadline {
+        self.deadline
+    }
+
+    pub fn score_cap(&self) -> Score {
+        self.score_cap
+    }
+}
+
+#[derive(Clone)]
+pub struct AuctionProcessor(Arc<Mutex<Inner>>);
+
+struct Inner {
+    auction: auction::Id,
+    fut: Shared<BoxFuture<'static, Arc<Auction>>>,
+    eth: Arc<infra::Ethereum>,
+}
+
+type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
+type Balances = HashMap<BalanceGroup, order::SellAmount>;
+
+impl AuctionProcessor {
+    /// Prioritize well priced and filter out unfillable orders from the given
+    /// auction.
+    pub fn prioritize(&self, mut auction: Auction) -> Shared<BoxFuture<'static, Arc<Auction>>> {
+        let new_id = auction
+            .id()
+            .expect("auctions used for quoting do not have to be prioritized");
+
+        let mut lock = self.0.lock().unwrap();
+        let current_id = lock.auction;
+        if new_id.0 < current_id.0 {
+            tracing::error!(?current_id, ?new_id, "received an outdated auction");
+        }
+        if current_id.0 == new_id.0 {
+            tracing::debug!("await running prioritization task");
+            return lock.fut.clone();
+        }
+
+        let eth = lock.eth.clone();
+        let rt = tokio::runtime::Handle::current();
+        // Use spawn_blocking() because a lot of CPU bound computations are happening
+        // and we don't want to block the runtime for too long.
+        let fut = tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            Self::sort(&mut auction);
+            let mut balances =
+                rt.block_on(async { Self::fetch_balances(&eth, &auction.orders).await });
+            Self::filter_orders(&mut balances, &mut auction.orders, &eth);
+            tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
+            Arc::new(auction)
+        })
+        .map(|res| {
+            res.expect(
+                "Either runtime was shut down before spawning the task or no OS threads are \
+                 available; no sense in handling those errors",
+            )
+        })
+        .boxed()
+        .shared();
+
+        tracing::debug!("started new prioritization task");
+        lock.auction = new_id;
+        lock.fut = fut.clone();
+
+        fut
+    }
+
+    /// Sort orders based on their price achievability using the reference
+    /// prices contained in the auction (in the money first).
+    fn sort(auction: &mut Auction) {
+        auction.orders.sort_by_cached_key(|order| {
+            // Market orders are preferred over limit orders, as the expectation is that
+            // they should be immediately fulfillable. Liquidity orders come last, as they
+            // are the most niche and rarely used.
+            let class = match order.kind {
+                order::Kind::Market => 2,
+                order::Kind::Limit { .. } => 1,
+                order::Kind::Liquidity => 0,
+            };
+            std::cmp::Reverse((
+                class,
+                // If the orders are of the same kind, then sort by likelihood of fulfillment
+                // based on token prices.
+                order.likelihood(&auction.tokens),
+            ))
+        });
+    }
+
+    /// Removes orders that cannot be filled due to missing funds of the owner.
+    fn filter_orders(
+        balances: &mut Balances,
+        orders: &mut Vec<order::Order>,
+        eth: &infra::Ethereum,
+    ) {
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
         // not the case** (as the protocol should not chose which limit orders
@@ -117,7 +207,7 @@ impl Auction {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         let weth = eth.contracts().weth_address();
-        auction.orders.retain_mut(|order| {
+        orders.retain_mut(|order| {
             let remaining_balance = match balances.get_mut(&(
                 order.trader(),
                 order.sell.token,
@@ -187,39 +277,58 @@ impl Auction {
             remaining_balance.0 -= allocated_balance.0;
             true
         });
-
-        auction
     }
 
-    /// The tokens used in the auction.
-    pub fn tokens(&self) -> &Tokens {
-        &self.tokens
-    }
-
-    /// Returns a collection of liquidity token pairs that are relevant to this
-    /// auction.
-    pub fn liquidity_pairs(&self) -> HashSet<liquidity::TokenPair> {
-        self.orders
+    /// Fetches the tradable balance for every order owner.
+    async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+        // Collect trader/token/source/interaction tuples for fetching available
+        // balances. Note that we are pessimistic here, if a trader is selling
+        // the same token with the same source in two different orders using a
+        // different set of pre-interactions, then we fetch the balance as if no
+        // pre-interactions were specified. This is done to avoid creating
+        // dependencies between orders (i.e. order 1 is required for executing
+        // order 2) which we currently cannot express with the solver interface.
+        let traders = orders
             .iter()
-            .filter_map(|order| match order.kind {
-                order::Kind::Market | order::Kind::Limit { .. } => {
-                    liquidity::TokenPair::new(order.sell.token, order.buy.token).ok()
+            .group_by(|order| (order.trader(), order.sell.token, order.sell_token_balance))
+            .into_iter()
+            .map(|((trader, token, source), mut orders)| {
+                let first = orders.next().expect("group contains at least 1 order");
+                let mut others = orders;
+                if others.all(|order| order.pre_interactions == first.pre_interactions) {
+                    (trader, token, source, &first.pre_interactions[..])
+                } else {
+                    (trader, token, source, Default::default())
                 }
-                order::Kind::Liquidity => None,
             })
-            .collect()
+            .collect::<Vec<_>>();
+
+        join_all(
+            traders
+                .into_iter()
+                .map(|(trader, token, source, interactions)| async move {
+                    let balance = ethereum
+                        .erc20(token)
+                        .tradable_balance(trader.into(), source, interactions)
+                        .await;
+                    (
+                        (trader, token, source),
+                        balance.map(order::SellAmount::from).ok(),
+                    )
+                }),
+        )
+        .await
+        .into_iter()
+        .filter_map(|(key, value)| Some((key, value?)))
+        .collect()
     }
 
-    pub fn gas_price(&self) -> eth::GasPrice {
-        self.gas_price
-    }
-
-    pub fn deadline(&self) -> Deadline {
-        self.deadline
-    }
-
-    pub fn score_cap(&self) -> Score {
-        self.score_cap
+    pub fn new(eth: Arc<infra::Ethereum>) -> Self {
+        Self(Arc::new(Mutex::new(Inner {
+            auction: Id(0),
+            fut: futures::future::pending().boxed().shared(),
+            eth,
+        })))
     }
 }
 
