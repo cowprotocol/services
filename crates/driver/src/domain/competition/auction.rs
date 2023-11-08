@@ -26,9 +26,9 @@ pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
     /// See the [`Self::orders`] method.
-    pub orders: Vec<competition::Order>,
+    orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
-    pub tokens: Tokens,
+    tokens: Tokens,
     gas_price: eth::GasPrice,
     deadline: Deadline,
     score_cap: Score,
