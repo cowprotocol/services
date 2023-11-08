@@ -41,7 +41,7 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(self.eth.clone());
-        let pre_processor = domain::competition::PreProcessor::new(Arc::new(self.eth.clone()));
+        let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
 
         // Add the metrics endpoint.
         app = routes::metrics(app);
@@ -114,7 +114,7 @@ impl State {
         &self.0.tokens
     }
 
-    fn pre_processor(&self) -> &domain::competition::PreProcessor {
+    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
     }
 }
@@ -125,5 +125,5 @@ struct Inner {
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    pre_processor: domain::competition::PreProcessor,
+    pre_processor: domain::competition::AuctionProcessor,
 }

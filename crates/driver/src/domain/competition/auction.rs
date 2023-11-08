@@ -113,7 +113,7 @@ impl Auction {
 }
 
 #[derive(Clone)]
-pub struct PreProcessor(Arc<Mutex<Inner>>);
+pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 
 struct Inner {
     auction: auction::Id,
@@ -124,7 +124,7 @@ struct Inner {
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
 
-impl PreProcessor {
+impl AuctionProcessor {
     /// Prioritize well priced and filter out unfillable orders from the given
     /// auction.
     pub fn prioritize(&self, mut auction: Auction) -> Shared<BoxFuture<'static, Arc<Auction>>> {
