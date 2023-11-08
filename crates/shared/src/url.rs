@@ -20,7 +20,7 @@ pub fn join(url: &Url, mut path: &str) -> Url {
 /// Path that were split like this can be joined to the original URL using
 /// [`join`].
 pub fn split_at_path(url: &Url) -> Result<(Url, String)> {
-    let base = format!("{}://{}/", url.scheme(), url.authority(),)
+    let base = format!("{}://{}/", url.scheme(), url.authority())
         .parse()
         .expect("stripping off the path is always safe");
     let endpoint = format!(
