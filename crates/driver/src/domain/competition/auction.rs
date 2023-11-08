@@ -127,7 +127,7 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 impl PreProcessor {
     /// Prioritize well priced and filter out unfillable orders from the given
     /// auction.
-    pub fn prioritize(&self, auction: Auction) -> Shared<BoxFuture<'static, Arc<Auction>>> {
+    pub fn prioritize(&self, mut auction: Auction) -> Shared<BoxFuture<'static, Arc<Auction>>> {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
@@ -143,12 +143,24 @@ impl PreProcessor {
         }
 
         let eth = lock.eth.clone();
-        let fut = async move {
-            let mut auction = Self::sort(auction).await;
-            let balances = Self::fetch_balances(&eth, &auction.orders).await;
-            Self::filter_orders(balances, &mut auction.orders, &eth).await;
+        let rt = tokio::runtime::Handle::current();
+        // Use spawn_blocking() because a lot of CPU bound computations are happening
+        // and we don't want to block the runtime for too long.
+        let fut = tokio::task::spawn_blocking(move || {
+            let start = std::time::Instant::now();
+            Self::sort(&mut auction);
+            let mut balances =
+                rt.block_on(async { Self::fetch_balances(&eth, &auction.orders).await });
+            Self::filter_orders(&mut balances, &mut auction.orders, &eth);
+            tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
             Arc::new(auction)
-        }
+        })
+        .map(|res| {
+            res.expect(
+                "Either runtime was shut down before spawning the task or no OS threads are \
+                 available; no sense in handling those errors",
+            )
+        })
         .boxed()
         .shared();
 
@@ -161,32 +173,28 @@ impl PreProcessor {
 
     /// Sort orders based on their price achievability using the reference
     /// prices contained in the auction (in the money first).
-    async fn sort(mut auction: Auction) -> Auction {
-        let sort = move || {
-            auction.orders.sort_by_cached_key(|order| {
-                // Market orders are preferred over limit orders, as the expectation is that
-                // they should be immediately fulfillable. Liquidity orders come last, as they
-                // are the most niche and rarely used.
-                let class = match order.kind {
-                    order::Kind::Market => 2,
-                    order::Kind::Limit { .. } => 1,
-                    order::Kind::Liquidity => 0,
-                };
-                std::cmp::Reverse((
-                    class,
-                    // If the orders are of the same kind, then sort by likelihood of fulfillment
-                    // based on token prices.
-                    order.likelihood(&auction.tokens),
-                ))
-            });
-            auction
-        };
-        tokio::task::spawn_blocking(sort).await.unwrap()
+    fn sort(auction: &mut Auction) {
+        auction.orders.sort_by_cached_key(|order| {
+            // Market orders are preferred over limit orders, as the expectation is that
+            // they should be immediately fulfillable. Liquidity orders come last, as they
+            // are the most niche and rarely used.
+            let class = match order.kind {
+                order::Kind::Market => 2,
+                order::Kind::Limit { .. } => 1,
+                order::Kind::Liquidity => 0,
+            };
+            std::cmp::Reverse((
+                class,
+                // If the orders are of the same kind, then sort by likelihood of fulfillment
+                // based on token prices.
+                order.likelihood(&auction.tokens),
+            ))
+        });
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner.
-    async fn filter_orders(
-        mut balances: Balances,
+    fn filter_orders(
+        balances: &mut Balances,
         orders: &mut Vec<order::Order>,
         eth: &infra::Ethereum,
     ) {
