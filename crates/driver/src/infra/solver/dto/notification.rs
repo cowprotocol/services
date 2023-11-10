@@ -9,7 +9,7 @@ use {
     },
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
     web3::types::AccessList,
 };
 
@@ -62,6 +62,12 @@ impl Notification {
                         required: required.0,
                     }
                 }
+                notify::Kind::AssetFlow(amounts) => Kind::AssetFlow {
+                    amounts: amounts
+                        .into_iter()
+                        .map(|(token, amount)| (token.0 .0, amount.to_string()))
+                        .collect(),
+                },
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
                 notify::Kind::Settled(kind) => Kind::Settled(match kind {
                     notify::Settlement::Success(hash) => Settlement::Success {
@@ -102,6 +108,9 @@ pub enum Kind {
     SolverAccountInsufficientBalance {
         #[serde_as(as = "serialize::U256")]
         required: eth::U256,
+    },
+    AssetFlow {
+        amounts: HashMap<eth::H160, String>,
     },
     Settled(Settlement),
 }

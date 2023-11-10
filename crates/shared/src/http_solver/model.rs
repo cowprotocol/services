@@ -486,6 +486,11 @@ pub enum SolverRejectionReason {
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
 
+    /// For some of the tokens used in the solution, the amount leaving the
+    /// settlement contract is higher than amount entering the settlement
+    /// contract.
+    AssetFlow(HashMap<H160, String>),
+
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId(u64),
 }
