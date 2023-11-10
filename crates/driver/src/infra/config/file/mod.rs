@@ -148,6 +148,10 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
+fn default_http_time_buffer_milliseconds() -> u64 {
+    1500
+}
+
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -174,6 +178,11 @@ struct SolverConfig {
 
     /// The account which should be used to sign settlements for this solver.
     account: Account,
+
+    /// Maximum time allocated to wait for a solver response to propagate to the
+    /// driver.
+    #[serde(default = "default_http_time_buffer_milliseconds")]
+    http_time_buffer_miliseconds: u64,
 }
 
 #[serde_as]

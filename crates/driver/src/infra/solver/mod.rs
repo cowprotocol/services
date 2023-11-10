@@ -85,13 +85,12 @@ pub struct Config {
     pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
+    /// Maximum time allocated to wait for a solver response to propagate to the
+    /// driver.
+    pub http_time_buffer: chrono::Duration,
 }
 
 impl Solver {
-    pub fn http_time_buffer() -> chrono::Duration {
-        chrono::Duration::milliseconds(500)
-    }
-
     pub fn new(config: Config, eth: Ethereum) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
@@ -149,7 +148,7 @@ impl Solver {
             liquidity,
             // Reduce the timeout by a small buffer to account for network latency. Otherwise the
             // HTTP timeout might happen before the solver times out its search algorithm.
-            timeout.reduce(Self::http_time_buffer()),
+            timeout.reduce(self.config.http_time_buffer),
             weth,
         ))
         .unwrap();
@@ -178,7 +177,7 @@ impl Solver {
     pub fn notify(
         &self,
         auction_id: Option<auction::Id>,
-        solution_id: solution::Id,
+        solution_id: Option<solution::Id>,
         kind: notify::Kind,
     ) {
         let body =
@@ -202,8 +201,15 @@ pub enum Error {
     Http(#[from] util::http::Error),
     #[error("JSON deserialization error: {0:?}")]
     Deserialize(#[from] serde_json::Error),
-    #[error("solution id is not unique")]
-    DuplicatedSolutionId,
     #[error("solver dto error: {0}")]
     Dto(#[from] dto::Error),
+}
+
+impl Error {
+    pub fn is_timeout(&self) -> bool {
+        match self {
+            Self::Http(util::http::Error::Response(err)) => err.is_timeout(),
+            _ => false,
+        }
+    }
 }

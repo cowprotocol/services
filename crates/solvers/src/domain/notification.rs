@@ -7,30 +7,32 @@ use {
     std::collections::BTreeSet,
 };
 
+type RequiredEther = Ether;
+type TokensUsed = BTreeSet<TokenAddress>;
+type TransactionHash = eth::H256;
+type Transaction = eth::Tx;
+
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: auction::Id,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
-
-pub type RequiredEther = Ether;
-pub type TokensUsed = BTreeSet<TokenAddress>;
 
 /// All types of notifications solvers can be informed about.
 #[derive(Debug)]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
+    SimulationFailed(Transaction),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),
     Settled(Settlement),
 }
-
-pub type TransactionHash = eth::H256;
 
 /// The result of winning solver trying to settle the transaction onchain.
 #[derive(Debug)]
@@ -44,9 +46,9 @@ pub enum Settlement {
 #[derive(Debug)]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
+    ScoreHigherThanQuality(Score, Quality),
     SuccessProbabilityOutOfRange(SuccessProbability),
-    ScoreHigherThanObjective(Score, ObjectiveValue),
+    ObjectiveValueNonPositive(Quality, GasCost),
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -59,9 +61,18 @@ impl From<eth::U256> for Score {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct ObjectiveValue(pub eth::U256);
+pub struct Quality(pub eth::U256);
 
-impl From<eth::U256> for ObjectiveValue {
+impl From<eth::U256> for Quality {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct GasCost(pub eth::U256);
+
+impl From<eth::U256> for GasCost {
     fn from(value: eth::U256) -> Self {
         Self(value)
     }

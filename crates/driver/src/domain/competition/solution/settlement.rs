@@ -4,15 +4,14 @@ use {
         boundary,
         domain::{
             competition::{self, auction, order, score, solution},
-            eth,
+            eth::{self, GasCost},
             mempools,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::{Signed, Zero},
+    bigdecimal::Signed,
     futures::future::try_join_all,
-    num::zero,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
 
@@ -113,7 +112,7 @@ impl Settlement {
             .map(|asset| asset.token)
             .collect::<BTreeSet<_>>();
         if !untrusted_tokens.is_empty() {
-            return Err(Error::UntrustedInternalization(untrusted_tokens));
+            return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
         // Encode the solution into a settlement.
@@ -242,10 +241,10 @@ impl Settlement {
         let tx = tx.set_access_list(access_list.clone());
 
         // Simulate the settlement using the full access list and get the gas used.
-        let gas = simulator.gas(tx.clone()).await?;
+        let gas = simulator.gas(tx.clone()).await;
 
-        observe::simulated(&tx, gas);
-        Ok((access_list, gas))
+        observe::simulated(eth, &tx, &gas);
+        Ok((access_list, gas?))
     }
 
     /// The calldata for this settlement.
@@ -268,20 +267,21 @@ impl Settlement {
         auction: &competition::Auction,
         revert_protection: &mempools::RevertProtection,
     ) -> Result<competition::Score, score::Error> {
-        let objective_value = self
-            .boundary
-            .objective_value(eth, auction, self.gas.estimate)?;
+        let quality = self.boundary.quality(eth, auction)?;
 
         let score = match self.boundary.score() {
-            competition::SolverScore::Solver(score) => competition::Score(score),
+            competition::SolverScore::Solver(score) => score.try_into()?,
             competition::SolverScore::RiskAdjusted(success_probability) => {
+                let gas_cost = self.gas.estimate * auction.gas_price().effective();
+                let success_probability = success_probability.try_into()?;
+                let objective_value = (quality - gas_cost)?;
                 // The cost in case of a revert can deviate non-deterministically from the cost
                 // in case of success and it is often significantly smaller. Thus, we go with
                 // the full cost as a safe assumption.
-                let failure_cost =
-                    matches!(revert_protection, mempools::RevertProtection::Disabled)
-                        .then(|| self.gas.estimate * auction.gas_price())
-                        .unwrap_or(zero());
+                let failure_cost = match revert_protection {
+                    mempools::RevertProtection::Enabled => GasCost::zero(),
+                    mempools::RevertProtection::Disabled => gas_cost,
+                };
                 competition::Score::new(
                     auction.score_cap(),
                     objective_value,
@@ -291,15 +291,8 @@ impl Settlement {
             }
         };
 
-        if score.is_zero() {
-            return Err(score::Error::ZeroScore);
-        }
-
-        if score > objective_value {
-            return Err(score::Error::ScoreHigherThanObjective(
-                score,
-                objective_value,
-            ));
+        if score > quality {
+            return Err(score::Error::ScoreHigherThanQuality(score, quality));
         }
 
         Ok(score)
@@ -426,7 +419,10 @@ impl Gas {
         // Specify a different gas limit than the estimated gas when executing a
         // settlement transaction. This allows the transaction to be resilient
         // to small variations in actual gas usage.
-        const GAS_LIMIT_FACTOR: f64 = 1.2;
+        // Also, some solutions can have significant gas refunds that are refunded at
+        // the end of execution, so we want to increase gas limit enough so
+        // those solutions don't revert with out of gas error.
+        const GAS_LIMIT_FACTOR: f64 = 2.0;
         let limit =
             eth::U256::from_f64_lossy(eth::U256::to_f64_lossy(estimate.into()) * GAS_LIMIT_FACTOR)
                 .into();

@@ -1649,6 +1649,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number",
  "observe",
  "primitive-types",
  "prometheus",
@@ -4171,6 +4172,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "web3",
 ]
 
 [[package]]
