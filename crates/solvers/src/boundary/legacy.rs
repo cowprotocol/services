@@ -8,6 +8,7 @@ use {
             notification::{self, Kind, ScoreKind, Settlement},
             order,
             solution,
+            solver::legacy::Error,
         },
     },
     anyhow::{Context as _, Result},
@@ -89,18 +90,30 @@ impl Legacy {
         }
     }
 
-    pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
+    pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution, Error> {
         let (mapping, auction_model) =
-            to_boundary_auction(&auction, self.weth, self.solver.network_name.clone());
+            to_boundary_auction(auction, self.weth, self.solver.network_name.clone());
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
-        to_domain_solution(&solution, mapping)
+        to_domain_solution(&solution, mapping).map_err(Into::into)
     }
 
     pub fn notify(&self, notification: notification::Notification) {
         let (auction_id, auction_result) = to_boundary_auction_result(&notification);
         self.solver
             .notify_auction_result(auction_id, auction_result);
+    }
+}
+
+impl From<shared::http_solver::Error> for Error {
+    fn from(value: shared::http_solver::Error) -> Self {
+        match value {
+            shared::http_solver::Error::DeadlineExceeded => Error::Timeout,
+            shared::http_solver::Error::RateLimited => {
+                Error::Other(anyhow::anyhow!("rate limited"))
+            }
+            shared::http_solver::Error::Other(err) => Error::Other(err),
+        }
     }
 }
 

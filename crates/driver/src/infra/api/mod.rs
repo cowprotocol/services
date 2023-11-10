@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{self, eth, Mempools},
+        domain::{self, Mempools},
         infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
     },
     error::Error,
@@ -41,7 +41,7 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(self.eth.clone());
-        let balances = eth::balances::Cache::default();
+        let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
 
         // Add the metrics endpoint.
         app = routes::metrics(app);
@@ -71,7 +71,7 @@ impl Api {
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
-                balances: balances.clone(),
+                pre_processor: pre_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -114,8 +114,8 @@ impl State {
         &self.0.tokens
     }
 
-    fn balances(&self) -> &eth::balances::Cache {
-        &self.0.balances
+    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
+        &self.0.pre_processor
     }
 }
 
@@ -125,5 +125,5 @@ struct Inner {
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
-    balances: eth::balances::Cache,
+    pre_processor: domain::competition::AuctionProcessor,
 }

@@ -26,7 +26,7 @@ pub mod score;
 pub mod solution;
 
 pub use {
-    auction::Auction,
+    auction::{Auction, AuctionProcessor},
     order::Order,
     score::{
         risk::{ObjectiveValue, SuccessProbability},

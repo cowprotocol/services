@@ -1,7 +1,7 @@
 use {
     super::{Error, Ethereum},
     crate::domain::{competition::order, eth},
-    contracts::{dummy_contract, BalancerV2Vault},
+    contracts::BalancerV2Vault,
     futures::TryFutureExt,
 };
 
@@ -151,6 +151,7 @@ impl Erc20 {
         source: order::SellTokenBalance,
     ) -> Result<eth::TokenAmount, Error> {
         use order::SellTokenBalance::*;
+        let web3 = self.token.raw_instance().web3();
 
         let usable_balance = match source {
             Erc20 => {
@@ -160,7 +161,7 @@ impl Erc20 {
                 std::cmp::min(balance.0, allowance.0.amount)
             }
             External => {
-                let vault = dummy_contract!(BalancerV2Vault, self.vault);
+                let vault = BalancerV2Vault::at(&web3, self.vault.0);
                 let balance = self.balance(trader);
                 let approved = vault
                     .methods()
@@ -176,7 +177,7 @@ impl Erc20 {
                 }
             }
             Internal => {
-                let vault = dummy_contract!(BalancerV2Vault, self.vault);
+                let vault = BalancerV2Vault::at(&web3, self.vault.0);
                 let balance = vault
                     .methods()
                     .get_internal_balance(trader.0, vec![self.token.address()])

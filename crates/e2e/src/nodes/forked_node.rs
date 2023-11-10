@@ -1,5 +1,5 @@
 use {
-    ethcontract::H160,
+    ethcontract::{Account, H160, U256},
     reqwest::Url,
     serde_json::json,
     std::fmt::Debug,
@@ -36,11 +36,29 @@ impl<T: Transport> ForkedNodeApi<T> {
         ))
     }
 
-    pub fn impersonate(&self, address: &H160) -> CallFuture<(), T::Out> {
+    pub async fn impersonate(&self, address: &H160) -> Result<Account, web3::Error> {
         let json_address = serde_json::json!(address);
+        self.transport
+            .execute("anvil_impersonateAccount", vec![json_address])
+            .await?;
+
+        Ok(Account::Local(*address, None))
+    }
+
+    pub fn set_chain_id(&self, chain_id: u64) -> CallFuture<(), T::Out> {
+        let json_chain_id = serde_json::json!(chain_id);
         CallFuture::new(
             self.transport
-                .execute("anvil_impersonateAccount", vec![json_address]),
+                .execute("anvil_setChainId", vec![json_chain_id]),
+        )
+    }
+
+    pub fn set_balance(&self, address: &H160, balance: U256) -> CallFuture<(), T::Out> {
+        let json_address = serde_json::json!(address);
+        let json_balance = serde_json::json!(format!("{:#032x}", balance));
+        CallFuture::new(
+            self.transport
+                .execute("anvil_setBalance", vec![json_address, json_balance]),
         )
     }
 }
