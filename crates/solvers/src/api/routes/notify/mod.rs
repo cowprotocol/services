@@ -10,7 +10,7 @@ pub async fn notify(
         let notification = notification.to_domain();
         let auction_id = notification.auction_id;
 
-        tracing::info!(id = %auction_id, "auction");
+        tracing::trace!(?auction_id, ?notification);
         state.notify(notification);
 
         axum::http::StatusCode::OK
