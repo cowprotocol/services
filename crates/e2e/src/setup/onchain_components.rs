@@ -1,5 +1,5 @@
 use {
-    crate::setup::deploy::Contracts,
+    crate::{nodes::forked_node::ForkedNodeApi, setup::deploy::Contracts},
     contracts::{CowProtocolToken, ERC20Mintable},
     ethcontract::{transaction::TransactionBuilder, Account, Bytes, PrivateKey, H160, U256},
     hex_literal::hex,
@@ -37,8 +37,12 @@ macro_rules! tx {
     };
 }
 
+pub fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
+    U256::from(base) * U256::exp10(exp)
+}
+
 pub fn to_wei(base: u32) -> U256 {
-    U256::from(base) * U256::exp10(18)
+    to_wei_with_exp(base, 18)
 }
 
 pub async fn hook_for_transaction<T>(tx: TransactionBuilder<T>) -> Hook
@@ -212,6 +216,16 @@ impl OnchainComponents {
         }
     }
 
+    pub async fn deployed(web3: Web3) -> Self {
+        let contracts = Contracts::deployed(&web3).await;
+
+        Self {
+            web3,
+            contracts,
+            accounts: Default::default(),
+        }
+    }
+
     /// Generate next `N` accounts with the given initial balance.
     pub async fn make_accounts<const N: usize>(&mut self, with_wei: U256) -> [TestAccount; N] {
         let res = self.accounts.borrow_mut().take(N).collect::<Vec<_>>();
@@ -233,6 +247,42 @@ impl OnchainComponents {
             self.contracts
                 .gp_authenticator
                 .add_solver(solver.address())
+                .send()
+                .await
+                .expect("failed to add solver");
+        }
+
+        solvers
+    }
+
+    /// Generate next `N` accounts with the given initial balance and
+    /// authenticate them as solvers on a forked network.
+    pub async fn make_solvers_forked<const N: usize>(
+        &mut self,
+        with_wei: U256,
+    ) -> [TestAccount; N] {
+        let auth_manager = self
+            .contracts
+            .gp_authenticator
+            .manager()
+            .call()
+            .await
+            .unwrap();
+
+        let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
+
+        let auth_manager = forked_node_api
+            .impersonate(&auth_manager)
+            .await
+            .expect("could not impersonate auth_manager");
+
+        let solvers = self.make_accounts::<N>(with_wei).await;
+
+        for solver in &solvers {
+            self.contracts
+                .gp_authenticator
+                .add_solver(solver.address())
+                .from(auth_manager.clone())
                 .send()
                 .await
                 .expect("failed to add solver");
