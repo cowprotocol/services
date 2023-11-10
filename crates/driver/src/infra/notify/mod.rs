@@ -77,7 +77,7 @@ pub fn encoding_failed(
             notification::Kind::SimulationFailed(error.tx.clone())
         }
         solution::Error::Simulation(simulator::Error::Basic(_)) => return,
-        solution::Error::AssetFlow(_) => return,
+        solution::Error::AssetFlow(missmatch) => notification::Kind::AssetFlow(missmatch.clone()),
         solution::Error::Execution(_) => return,
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,

@@ -3,10 +3,11 @@ use {
         domain::{auction, eth, notification},
         util::serialize,
     },
+    bigdecimal::Num,
     ethereum_types::{H160, H256, U256},
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
     web3::types::AccessList,
 };
 
@@ -67,6 +68,18 @@ impl Notification {
                 Kind::SolverAccountInsufficientBalance { required } => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
+                Kind::AssetFlow { amounts } => notification::Kind::AssetFlow(
+                    amounts
+                        .clone()
+                        .into_iter()
+                        .map(|(token, amount)| {
+                            (
+                                token.into(),
+                                num::BigInt::from_str_radix(&amount, 10).unwrap_or_default(),
+                            )
+                        })
+                        .collect(),
+                ),
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     Settlement::Success { transaction } => {
@@ -108,6 +121,9 @@ pub enum Kind {
     SolverAccountInsufficientBalance {
         #[serde_as(as = "serialize::U256")]
         required: U256,
+    },
+    AssetFlow {
+        amounts: HashMap<eth::H160, String>,
     },
     Settled(Settlement),
 }

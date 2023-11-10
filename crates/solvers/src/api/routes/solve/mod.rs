@@ -31,7 +31,7 @@ pub async fn solve(
             .instrument(tracing::info_span!("auction", id = %auction_id))
             .await;
 
-        tracing::trace!(?solutions);
+        tracing::trace!(?auction_id, ?solutions);
 
         let solutions = dto::Solutions::from_domain(&solutions);
         (
