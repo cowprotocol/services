@@ -225,12 +225,7 @@ impl Competition {
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
                         if let Some(id) = settlement.notify_id() {
-                            notify::encoding_failed(
-                                &self.solver,
-                                auction.id(),
-                                id,
-                                &solution::Error::from(err),
-                            );
+                            notify::simulation_failed(&self.solver, auction.id(), id, &err);
                         }
                         return;
                     }
