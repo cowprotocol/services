@@ -73,8 +73,8 @@ pub fn encoding_failed(
         }
         solution::Error::Blockchain(_) => return,
         solution::Error::Boundary(_) => return,
-        solution::Error::Simulation(simulator::Error::WithTx(error)) => {
-            notification::Kind::SimulationFailed(error.tx.clone())
+        solution::Error::Simulation(simulator::Error::Revert(error)) => {
+            notification::Kind::SimulationFailed(error.block, error.tx.clone())
         }
         solution::Error::Simulation(simulator::Error::Basic(_)) => return,
         solution::Error::AssetFlow(missmatch) => notification::Kind::AssetFlow(missmatch.clone()),
