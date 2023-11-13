@@ -92,15 +92,12 @@ pub fn simulation_failed(
     solution_id: solution::Id,
     err: &simulator::Error,
 ) {
-    match err {
-        simulator::Error::Revert(error) => {
-            solver.notify(
-                auction_id,
-                Some(solution_id),
-                notification::Kind::SimulationFailed(error.block, error.tx.clone()),
-            );
-        }
-        _ => (),
+    if let simulator::Error::Revert(error) = err {
+        solver.notify(
+            auction_id,
+            Some(solution_id),
+            notification::Kind::SimulationFailed(error.block, error.tx.clone()),
+        );
     }
 }
 
