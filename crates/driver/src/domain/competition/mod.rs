@@ -13,7 +13,7 @@ use {
         },
         util::Bytes,
     },
-    futures::StreamExt,
+    futures::{future::join_all, StreamExt},
     itertools::Itertools,
     rand::seq::SliceRandom,
     std::{collections::HashSet, sync::Mutex},
@@ -262,32 +262,39 @@ impl Competition {
             Ok(deadline) => deadline,
             Err(_) => {
                 tracing::debug!("deadline exceeded");
-                return Vec::new();
+                return vec![];
             }
         };
 
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let background_work = async move {
-            for solution in solutions {
-                let id = solution.id();
-                observe::encoding(id);
-                let settlement = solution.encode(&auction, &eth, &simulator).await;
-                let _ = sender.send((id, settlement));
-            }
-        };
+        let futures = solutions
+            .into_iter()
+            .map(|solution| {
+                let sender = sender.clone();
+                let auction = auction.clone();
+                let eth = eth.clone();
+                let simulator = simulator.clone();
+                async move {
+                    let id = solution.id();
+                    observe::encoding(id);
+                    let settlement = solution.encode(&auction, &eth, &simulator).await;
+                    let _ = sender.send((id, settlement));
+                }
+            })
+            .collect::<Vec<_>>();
 
-        if tokio::time::timeout(deadline, tokio::spawn(background_work))
+        if tokio::time::timeout(deadline, tokio::spawn(join_all(futures)))
             .await
             .is_err()
         {
             tracing::debug!("reached timeout while encoding");
         }
 
-        let mut solutions = vec![];
+        let mut settlements = vec![];
         while let Ok(solution) = receiver.try_recv() {
-            solutions.push(solution);
+            settlements.push(solution);
         }
-        solutions
+        settlements
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {
