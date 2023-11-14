@@ -13,7 +13,7 @@ use {
         },
         util::Bytes,
     },
-    futures::{future::join_all, StreamExt},
+    futures::StreamExt,
     itertools::Itertools,
     rand::seq::SliceRandom,
     std::{collections::HashSet, sync::Mutex},
@@ -89,25 +89,35 @@ impl Competition {
         });
 
         // Empty solutions aren't useful, so discard them.
-        let solutions = solutions.filter(|solution| {
-            if solution.is_empty() {
-                observe::empty_solution(self.solver.name(), solution.id());
-                notify::empty_solution(&self.solver, auction.id(), solution.id());
-                false
-            } else {
-                true
-            }
-        });
+        let solutions = solutions
+            .filter(|solution| {
+                if solution.is_empty() {
+                    observe::empty_solution(self.solver.name(), solution.id());
+                    notify::empty_solution(&self.solver, auction.id(), solution.id());
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
         // Encode the solutions into settlements.
-        let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(solution.id());
-            (
-                solution.id(),
-                solution.encode(auction, &self.eth, &self.simulator).await,
+        let settlements = self
+            .encode(
+                auction.clone(),
+                self.eth.clone(),
+                self.simulator.clone(),
+                solutions,
             )
-        }))
-        .await;
+            .await;
+        // let settlements = join_all(solutions.map(|solution| async move {
+        //     observe::encoding(solution.id());
+        //     (
+        //         solution.id(),
+        //         solution.encode(auction, &self.eth, &self.simulator).await,
+        //     )
+        // }))
+        // .await;
 
         // Filter out solutions that failed to encode.
         let mut settlements = settlements
@@ -233,6 +243,51 @@ impl Competition {
         }
 
         Ok(score)
+    }
+
+    /// Encode the solutions into settlements.
+    async fn encode(
+        &self,
+        auction: Auction,
+        eth: Ethereum,
+        simulator: Simulator,
+        solutions: Vec<Solution>,
+    ) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
+        let deadline = match auction.deadline().timeout().and_then(|timeout| {
+            timeout
+                .duration()
+                .to_std()
+                .map_err(|_| solution::DeadlineExceeded)
+        }) {
+            Ok(deadline) => deadline,
+            Err(_) => {
+                tracing::debug!("deadline exceeded");
+                return Vec::new();
+            }
+        };
+
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let background_work = async move {
+            for solution in solutions {
+                let id = solution.id();
+                observe::encoding(id);
+                let settlement = solution.encode(&auction, &eth, &simulator).await;
+                let _ = sender.send((id, settlement));
+            }
+        };
+
+        if tokio::time::timeout(deadline, tokio::spawn(background_work))
+            .await
+            .is_err()
+        {
+            tracing::debug!("reached timeout while encoding");
+        }
+
+        let mut solutions = vec![];
+        while let Ok(solution) = receiver.try_recv() {
+            solutions.push(solution);
+        }
+        solutions
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {
