@@ -1187,13 +1187,13 @@ mod tests {
             ),
             (
                 Signature::default_with(SigningScheme::EthSign),
-                "ethsign",
+                "ethSign",
                 None,
                 "0x0000000000000000000000000000000000000000000000000000000000000000\
                    0000000000000000000000000000000000000000000000000000000000000000\
                    00",
             ),
-            (Signature::PreSign, "presign", Some(owner), "0x"),
+            (Signature::PreSign, "preSign", Some(owner), "0x"),
         ] {
             let order = OrderCreation {
                 sell_token: H160([0x11; 20]),

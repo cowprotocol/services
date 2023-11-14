@@ -134,7 +134,7 @@ impl Signature {
             SigningScheme::PreSign => {
                 ensure!(
                     bytes.is_empty() || bytes.len() == 20,
-                    "presign signature bytes should be empty or an address (legacy)",
+                    "preSign signature bytes should be empty or an address (legacy)",
                 );
                 Self::PreSign
             }
@@ -499,7 +499,7 @@ mod tests {
                     v: 3,
                 }),
                 json!({
-                    "signingScheme": "ethsign",
+                    "signingScheme": "ethSign",
                     "signature": "0x\
                         0101010101010101010101010101010101010101010101010101010101010101\
                         0202020202020202020202020202020202020202020202020202020202020202\
@@ -523,7 +523,7 @@ mod tests {
             (
                 Signature::PreSign,
                 json!({
-                    "signingScheme": "presign",
+                    "signingScheme": "preSign",
                     "signature": "0x",
                 }),
             ),
@@ -541,14 +541,14 @@ mod tests {
                 "signature": "0x0102",
             }),
             json!({
-                "signingScheme": "ethsign",
+                "signingScheme": "ethSign",
                 "signature": 1234,
             }),
             json!({
                 "signingScheme": "eip1271",
             }),
             json!({
-                "signingScheme": "presign",
+                "signingScheme": "preSign",
                 "signature": "0x01",
             }),
         ] {
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(
             Signature::PreSign,
             serde_json::from_value(json!({
-                "signingScheme": "presign",
+                "signingScheme": "preSign",
                 "signature": "0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
             }))
             .unwrap(),

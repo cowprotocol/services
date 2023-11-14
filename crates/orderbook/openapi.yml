@@ -1035,11 +1035,11 @@ components:
     SigningScheme:
       description: How was the order signed?
       type: string
-      enum: [eip712, ethsign, presign, eip1271]
+      enum: [eip712, ethSign, preSign, eip1271]
     EcdsaSigningScheme:
       description: How was the order signed?
       type: string
-      enum: [eip712, ethsign]
+      enum: [eip712, ethSign]
     Signature:
       description: A signature.
       oneOf:
@@ -1050,7 +1050,7 @@ components:
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     PreSignature:
-      description: Empty signature bytes. Used for "presign" signatures.
+      description: Empty signature bytes. Used for "preSign" signatures.
       type: string
       example: "0x"
     OrderPostError:

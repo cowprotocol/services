@@ -176,7 +176,7 @@ components:
       description: |
         How was the order signed?
       type: string
-      enum: [eip712, ethsign, presign, eip1271]
+      enum: [eip712, ethSign, preSign, eip1271]
 
     Signature:
       description: |

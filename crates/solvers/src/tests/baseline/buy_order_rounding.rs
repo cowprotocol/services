@@ -101,7 +101,7 @@ async fn uniswap() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -266,7 +266,7 @@ async fn balancer_weighted() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -343,7 +343,7 @@ async fn balancer_weighted_v3plus() {
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892",
-                    "version": "v3plus",
+                    "version": "v3Plus",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -381,7 +381,7 @@ async fn balancer_weighted_v3plus() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -458,7 +458,7 @@ async fn distant_convergence() {
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892",
-                    "version": "v3plus",
+                    "version": "v3Plus",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -496,7 +496,7 @@ async fn distant_convergence() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -646,7 +646,7 @@ async fn same_path() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -785,7 +785,7 @@ async fn balancer_stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "riskAdjusted": 0.5
                     }
                 },
             ]

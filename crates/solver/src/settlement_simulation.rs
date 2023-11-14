@@ -428,7 +428,7 @@ mod tests {
             "kind": "buy",
             "partiallyFillable": false,
             "signature": "0x0701b6c9c5314b4d446229ba2940b6f2ad7600ff6579a77627d50307528c2f2d53fb9c889ba3f566eddb34b42e3ad0a2604b0b497b33af5c24927773912d05601c",
-            "signingScheme": "ethsign",
+            "signingScheme": "ethSign",
             "status": "open",
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
