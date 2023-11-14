@@ -88,12 +88,14 @@ impl<L> BackgroundInitLiquiditySource<L> {
                                     source = inner_label,
                                     "liquidity source already initialized"
                                 );
+                            } else {
+                                tracing::debug!("successfully initialised liquidity source");
+                                Metrics::get()
+                                    .liquidity_enabled
+                                    .with_label_values(&[&inner_label])
+                                    .inc();
                             }
-                            tracing::debug!("successfully initialised liquidity source");
-                            Metrics::get()
-                                .liquidity_enabled
-                                .with_label_values(&[&inner_label])
-                                .inc();
+
                             break;
                         }
                     }
