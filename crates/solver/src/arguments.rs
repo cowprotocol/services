@@ -320,7 +320,7 @@ pub struct Arguments {
     pub risk_params: risk_computation::Arguments,
 
     /// Cap used for CIP20 score calculation. Defaults to 0.01 ETH.
-    #[clap(long, env, default_value = "10000000000000000")]
+    #[clap(long, env, default_value = "0.01", value_parser = shared::arguments::wei_from_ether)]
     pub score_cap: U256,
 
     /// Should we skip settlements with non-positive score for solver

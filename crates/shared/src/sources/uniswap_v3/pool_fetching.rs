@@ -226,13 +226,20 @@ impl PoolsCheckpointHandler {
         tracing::debug!("currently missing pools are {:?}", missing_pools);
 
         let pool_ids = missing_pools.into_iter().collect::<Vec<_>>();
+        let start = std::time::Instant::now();
         let pools = self
             .graph_api
             .get_pools_with_ticks_by_ids(&pool_ids, block_number)
-            .await?;
+            .await;
+        tracing::debug!(
+            requested_pools = pool_ids.len(),
+            time = ?start.elapsed(),
+            request_successful = pools.is_ok(),
+            "fetched pool ticks"
+        );
 
         let mut checkpoint = self.pools_checkpoint.lock().unwrap();
-        for pool in pools {
+        for pool in pools? {
             checkpoint.missing_pools.remove(&pool.id);
             checkpoint.pools.insert(pool.id, pool.try_into()?);
         }

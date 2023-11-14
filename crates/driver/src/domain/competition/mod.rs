@@ -26,9 +26,12 @@ pub mod score;
 pub mod solution;
 
 pub use {
-    auction::Auction,
+    auction::{Auction, AuctionProcessor},
     order::Order,
-    score::{ObjectiveValue, Score, SuccessProbability},
+    score::{
+        risk::{ObjectiveValue, SuccessProbability},
+        Score,
+    },
     solution::{Solution, SolverScore, SolverTimeout},
 };
 
@@ -66,10 +69,27 @@ impl Competition {
         let solutions = self
             .solver
             .solve(auction, &liquidity, auction.deadline().timeout()?)
-            .await?;
+            .await
+            .tap_err(|err| {
+                if err.is_timeout() {
+                    notify::solver_timeout(&self.solver, auction.id());
+                }
+            })?;
+
+        // Discard solutions that don't have unique ID.
+        let mut ids = HashSet::new();
+        let solutions = solutions.into_iter().filter(|solution| {
+            if !ids.insert(solution.id()) {
+                observe::duplicated_solution_id(self.solver.name(), solution.id());
+                notify::duplicated_solution_id(&self.solver, auction.id(), solution.id());
+                false
+            } else {
+                true
+            }
+        });
 
         // Empty solutions aren't useful, so discard them.
-        let solutions = solutions.into_iter().filter(|solution| {
+        let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
                 notify::empty_solution(&self.solver, auction.id(), solution.id());
@@ -332,13 +352,13 @@ pub struct Revealed {
 
 #[derive(Debug)]
 pub struct Settled {
+    /// The transaction hash in which the solution was submitted.
+    pub tx_hash: eth::TxId,
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
     /// can manually enforce certain rules which can not be enforced
     /// automatically.
     pub uninternalized_calldata: Bytes<Vec<u8>>,
-    /// The transaction hash in which the solution was submitted.
-    pub tx_hash: eth::TxId,
 }
 
 #[derive(Debug, thiserror::Error)]

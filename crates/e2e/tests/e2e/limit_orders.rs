@@ -1,6 +1,7 @@
 use {
-    e2e::{setup::*, tx},
-    ethcontract::prelude::U256,
+    contracts::ERC20,
+    e2e::{nodes::forked_node::ForkedNodeApi, setup::*, tx},
+    ethcontract::{prelude::U256, H160},
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -32,6 +33,24 @@ async fn local_node_too_many_limit_orders() {
 #[ignore]
 async fn local_node_mixed_limit_and_market_orders() {
     run_test(mixed_limit_and_market_orders_test).await;
+}
+
+/// The block number from which we will fetch state for the forked tests.
+pub const FORK_BLOCK: u64 = 18477910;
+/// USDC whale address as per [FORK_BLOCK].
+pub const USDC_WHALE: H160 = H160(hex_literal::hex!(
+    "28c6c06298d514db089934071355e5743bf21d60"
+));
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_single_limit_order_mainnet() {
+    run_forked_test_with_block_number(
+        forked_single_limit_order_test,
+        std::env::var("FORK_URL").expect("FORK_URL must be set to run forked tests"),
+        FORK_BLOCK,
+    )
+    .await;
 }
 
 async fn single_limit_order_test(web3: Web3) {
@@ -445,4 +464,102 @@ async fn too_many_limit_orders_test(web3: Web3) {
     let (status, body) = services.create_order(&order).await.unwrap_err();
     assert_eq!(status, 400);
     assert!(body.contains("TooManyLimitOrders"));
+}
+
+async fn forked_single_limit_order_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+
+    let token_usdc = ERC20::at(
+        &web3,
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            .parse()
+            .unwrap(),
+    );
+
+    let token_usdt = ERC20::at(
+        &web3,
+        "0xdac17f958d2ee523a2206206994597c13d831ec7"
+            .parse()
+            .unwrap(),
+    );
+
+    // Give trader some USDC
+    let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
+    tx!(
+        usdc_whale,
+        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
+    );
+
+    // Approve GPv2 for trading
+    tx!(
+        trader.account(),
+        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
+    );
+
+    // Place Orders
+    let services = Services::new(onchain.contracts()).await;
+    services.start_autopilot(vec![]);
+    services.start_api(vec![]).await;
+
+    let order = OrderCreation {
+        sell_token: token_usdc.address(),
+        sell_amount: to_wei_with_exp(1000, 6),
+        buy_token: token_usdt.address(),
+        buy_amount: to_wei_with_exp(500, 6),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(
+        limit_order.metadata.class,
+        OrderClass::Limit(Default::default())
+    );
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    let sell_token_balance_before = token_usdc
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let buy_token_balance_before = token_usdt
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    services.start_old_driver(solver.private_key(), vec![]);
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let sell_token_balance_after = token_usdc
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let buy_token_balance_after = token_usdt
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
+    assert!(sell_token_balance_before > sell_token_balance_after);
+    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6));
 }

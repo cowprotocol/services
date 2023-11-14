@@ -1,3 +1,5 @@
+use {crate::util::bytes::Bytes, web3::types::AccessList};
+
 mod chain;
 
 pub use {
@@ -37,9 +39,41 @@ pub struct Asset {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Ether(pub U256);
 
+impl From<U256> for Ether {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
 /// Gas amount.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Gas(pub U256);
 
 /// A 256-bit rational type.
 pub type Rational = num::rational::Ratio<U256>;
+
+/// An address. Can be an EOA or a smart contract address.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Address(pub H160);
+
+impl From<H160> for Address {
+    fn from(value: H160) -> Self {
+        Self(value)
+    }
+}
+
+impl From<Address> for H160 {
+    fn from(value: Address) -> Self {
+        value.0
+    }
+}
+
+/// An onchain transaction.
+#[derive(Debug, Clone)]
+pub struct Tx {
+    pub from: Address,
+    pub to: Address,
+    pub value: Ether,
+    pub input: Bytes<Vec<u8>>,
+    pub access_list: AccessList,
+}

@@ -3,10 +3,12 @@ use {
         domain::{auction, eth, notification},
         util::serialize,
     },
+    bigdecimal::Num,
     ethereum_types::{H160, H256, U256},
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
+    web3::types::AccessList,
 };
 
 impl Notification {
@@ -17,26 +19,36 @@ impl Notification {
                 Some(id) => auction::Id::Solve(id),
                 None => auction::Id::Quote,
             },
-            solution_id: self.solution_id.into(),
+            solution_id: self.solution_id.map(Into::into),
             kind: match &self.kind {
+                Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive) => {
+                Kind::SimulationFailed(tx) => notification::Kind::SimulationFailed(eth::Tx {
+                    from: tx.from.into(),
+                    to: tx.to.into(),
+                    input: tx.input.clone().into(),
+                    value: tx.value.into(),
+                    access_list: tx.access_list.clone(),
+                }),
+                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
                     notification::Kind::ScoringFailed(
-                        notification::ScoreKind::ObjectiveValueNonPositive,
+                        notification::ScoreKind::ObjectiveValueNonPositive(
+                            (*quality).into(),
+                            (*gas_cost).into(),
+                        ),
                     )
                 }
                 Kind::ScoringFailed(ScoreKind::ZeroScore) => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanObjective {
-                    score,
-                    objective_value,
-                }) => notification::Kind::ScoringFailed(
-                    notification::ScoreKind::ScoreHigherThanObjective(
-                        (*score).into(),
-                        (*objective_value).into(),
-                    ),
-                ),
+                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality { score, quality }) => {
+                    notification::Kind::ScoringFailed(
+                        notification::ScoreKind::ScoreHigherThanQuality(
+                            (*score).into(),
+                            (*quality).into(),
+                        ),
+                    )
+                }
                 Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange { probability }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::SuccessProbabilityOutOfRange(
@@ -56,6 +68,18 @@ impl Notification {
                 Kind::SolverAccountInsufficientBalance { required } => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
+                Kind::AssetFlow { amounts } => notification::Kind::AssetFlow(
+                    amounts
+                        .clone()
+                        .into_iter()
+                        .map(|(token, amount)| {
+                            (
+                                token.into(),
+                                num::BigInt::from_str_radix(&amount, 10).unwrap_or_default(),
+                            )
+                        })
+                        .collect(),
+                ),
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     Settlement::Success { transaction } => {
@@ -78,7 +102,7 @@ impl Notification {
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
-    solution_id: u64,
+    solution_id: Option<u64>,
     kind: Kind,
 }
 
@@ -86,8 +110,10 @@ pub struct Notification {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Kind {
+    Timeout,
     EmptySolution,
     DuplicatedSolutionId,
+    SimulationFailed(Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
@@ -96,7 +122,23 @@ pub enum Kind {
         #[serde_as(as = "serialize::U256")]
         required: U256,
     },
+    AssetFlow {
+        amounts: HashMap<eth::H160, String>,
+    },
     Settled(Settlement),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Tx {
+    from: H160,
+    to: H160,
+    #[serde_as(as = "serialize::Hex")]
+    input: Vec<u8>,
+    #[serde_as(as = "serialize::U256")]
+    value: U256,
+    access_list: AccessList,
 }
 
 #[serde_as]
@@ -104,16 +146,21 @@ pub enum Kind {
 #[serde(rename_all = "camelCase")]
 pub enum ScoreKind {
     ZeroScore,
-    ObjectiveValueNonPositive,
+    ScoreHigherThanQuality {
+        #[serde_as(as = "serialize::U256")]
+        score: U256,
+        #[serde_as(as = "serialize::U256")]
+        quality: U256,
+    },
     SuccessProbabilityOutOfRange {
         probability: f64,
     },
     #[serde(rename_all = "camelCase")]
-    ScoreHigherThanObjective {
+    ObjectiveValueNonPositive {
         #[serde_as(as = "serialize::U256")]
-        score: U256,
+        quality: U256,
         #[serde_as(as = "serialize::U256")]
-        objective_value: U256,
+        gas_cost: U256,
     },
 }
 

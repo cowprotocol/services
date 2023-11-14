@@ -11,7 +11,8 @@ mod gas;
 pub use {
     allowance::Allowance,
     eip712::{DomainFields, DomainSeparator},
-    gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
+    gas::{EffectiveGasPrice, FeePerGas, Gas, GasCost, GasPrice},
+    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
 };
 
@@ -311,6 +312,12 @@ impl num::Zero for Ether {
 /// Block number.
 #[derive(Debug, Clone, Copy)]
 pub struct BlockNo(pub u64);
+
+impl From<u64> for BlockNo {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
 
 /// An onchain transaction which interacts with a smart contract.
 #[derive(Debug, Clone, Eq, PartialEq)]

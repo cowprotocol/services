@@ -129,7 +129,7 @@ impl Auction {
             }),
             self.deadline.into(),
             eth,
-            self.score_cap.into(),
+            self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )
         .await
         .map_err(Into::into)
@@ -146,6 +146,8 @@ pub enum Error {
     InvalidTokens,
     #[error("invalid order amounts in auction")]
     InvalidAmounts,
+    #[error("zero score cap")]
+    ZeroScoreCap,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
 }

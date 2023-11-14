@@ -7,7 +7,7 @@ use {
     std::{collections::HashMap, slice},
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Id(pub u64);
 
 impl From<u64> for Id {

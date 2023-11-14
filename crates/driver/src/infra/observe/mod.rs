@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::Mempool,
+    super::{simulator, Ethereum, Mempool},
     crate::{
         boundary,
         domain::{
@@ -61,8 +61,12 @@ pub fn fetching_liquidity_failed(err: &boundary::Error) {
     tracing::warn!(?err, "failed to fetch liquidity");
 }
 
-pub fn duplicated_solution_id(id: solution::Id) {
-    tracing::warn!(?id, "duplicated solution id");
+pub fn duplicated_solution_id(solver: &solver::Name, id: solution::Id) {
+    tracing::debug!(?id, "discarded solution: duplicated id");
+    metrics::get()
+        .dropped_solutions
+        .with_label_values(&[solver.as_str(), "DuplicateId"])
+        .inc();
 }
 
 /// Observe the solutions returned by the solver.
@@ -90,10 +94,10 @@ pub fn encoding(id: solution::Id) {
 
 /// Observe that settlement encoding failed.
 pub fn encoding_failed(solver: &solver::Name, id: solution::Id, err: &solution::Error) {
-    tracing::info!(?id, ?err, "discarded solution: settlement encoding failed");
+    tracing::info!(?id, ?err, "discarded solution: settlement encoding");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "SettlementEncodingFailed"])
+        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
         .inc();
 }
 
@@ -127,10 +131,10 @@ pub fn scoring(settlement: &Settlement) {
 
 /// Observe that scoring failed.
 pub fn scoring_failed(solver: &solver::Name, err: &score::Error) {
-    tracing::info!(%solver, ?err, "discarded solution: scoring failed");
+    tracing::info!(%solver, ?err, "discarded solution: scoring");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), "ScoringFailed"])
+        .with_label_values(&[solver.as_str(), "Scoring"])
         .inc();
 }
 
@@ -250,9 +254,6 @@ pub fn quoted(solver: &solver::Name, order: &quote::Order, result: &Result<Quote
                         quote::Error::Solver(solver::Error::Deserialize(_)) => {
                             "SolverDeserializeError"
                         }
-                        quote::Error::Solver(solver::Error::DuplicatedSolutionId) => {
-                            "DuplicatedSolutionId"
-                        }
                         quote::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
                         quote::Error::Boundary(_) => "Unknown",
                     },
@@ -326,15 +327,14 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::DeadlineExceeded(_) => "DeadlineExceeded",
         competition::Error::Solver(solver::Error::Http(_)) => "SolverHttpError",
         competition::Error::Solver(solver::Error::Deserialize(_)) => "SolverDeserializeError",
-        competition::Error::Solver(solver::Error::DuplicatedSolutionId) => "DuplicatedSolutionId",
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
     }
 }
 
 #[derive(Debug)]
-pub enum OrderExcludedFromAuctionReason<'a> {
-    CouldNotFetchBalance(&'a crate::infra::blockchain::Error),
+pub enum OrderExcludedFromAuctionReason {
+    CouldNotFetchBalance,
     CouldNotCalculateMaxSell,
     InsufficientBalance,
     OrderWithZeroAmountRemaining,
@@ -348,6 +348,10 @@ pub fn order_excluded_from_auction(
 }
 
 /// Observe that a settlement was simulated
-pub fn simulated(tx: &eth::Tx, gas: Gas) {
-    tracing::debug!(?tx, gas = ?gas.0, "simulated settlement");
+pub fn simulated(eth: &Ethereum, tx: &eth::Tx, gas: &Result<Gas, simulator::Error>) {
+    let block: eth::BlockNo = eth.current_block().borrow().number.into();
+    match gas {
+        Ok(gas) => tracing::debug!(block = ?block, gas = ?gas.0, ?tx, "simulated settlement"),
+        Err(err) => tracing::debug!(block = ?block, ?err, "simulated settlement"),
+    }
 }

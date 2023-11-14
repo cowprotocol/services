@@ -230,14 +230,20 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     }
 
     fn notify_auction_result(&self, auction_id: AuctionId, result: model::AuctionResult) {
-        let mut url = crate::url::join(&self.base, "notify");
+        let mut url = crate::url::join(&self.base, &self.solve_path);
+        // `/notify` should be a sibling of the `/solve` endpoint
+        url.path_segments_mut().unwrap().pop().push("notify");
 
+        let chain_id = self.chain_id;
         let client = self.client.clone();
         let config_api_key = self.config.api_key.clone();
         tracing::debug!(solver_name = self.name, ?result, "notify auction result");
         let future = async move {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
+
+            url.query_pairs_mut()
+                .append_pair("chain_id", chain_id.to_string().as_str());
 
             let mut request = client
                 .post(url)

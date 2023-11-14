@@ -7,7 +7,7 @@ mod services;
 use {
     crate::nodes::{Node, NODE_HOST},
     anyhow::{anyhow, Result},
-    ethcontract::{futures::FutureExt, H160},
+    ethcontract::futures::FutureExt,
     shared::ethrpc::{create_test_transport, Web3},
     std::{
         future::Future,
@@ -107,17 +107,24 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     run(f, extra_filters, None).await
 }
 
-pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
+pub async fn run_forked_test<F, Fut>(f: F, fork_url: String)
 where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), Some((solver_address, fork_url))).await
+    run(f, empty::<&str>(), Some((fork_url, None))).await
+}
+
+pub async fn run_forked_test_with_block_number<F, Fut>(f: F, fork_url: String, block_number: u64)
+where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    run(f, empty::<&str>(), Some((fork_url, Some(block_number)))).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     f: F,
-    solver_address: H160,
     fork_url: String,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
@@ -125,11 +132,27 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, Some((solver_address, fork_url))).await
+    run(f, extra_filters, Some((fork_url, None))).await
 }
 
-async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
-where
+pub async fn run_forked_test_with_extra_filters_and_block_number<F, Fut, T>(
+    f: F,
+    fork_url: String,
+    block_number: u64,
+    extra_filters: impl IntoIterator<Item = T>,
+) where
+    F: FnOnce(Web3) -> Fut,
+    Fut: Future<Output = ()>,
+    T: AsRef<str>,
+{
+    run(f, extra_filters, Some((fork_url, Some(block_number)))).await
+}
+
+async fn run<F, Fut, T>(
+    f: F,
+    filters: impl IntoIterator<Item = T>,
+    fork: Option<(String, Option<u64>)>,
+) where
     F: FnOnce(Web3) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
@@ -144,8 +167,8 @@ where
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    let node = match &fork {
-        Some((_, fork)) => Node::forked(fork).await,
+    let node = match fork {
+        Some((fork, block_number)) => Node::forked(fork, block_number).await,
         None => Node::new().await,
     };
 
@@ -159,12 +182,6 @@ where
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
-    if let Some((solver, _)) = &fork {
-        Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3)
-            .impersonate(solver)
-            .await
-            .unwrap();
-    }
 
     services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`

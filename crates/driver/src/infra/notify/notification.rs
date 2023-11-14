@@ -1,28 +1,35 @@
 use {
     crate::domain::{
-        competition::{auction, solution, ObjectiveValue, Score, SuccessProbability},
-        eth::{self, Ether, TokenAddress},
+        competition::{auction, score::Quality, solution, Score},
+        eth::{self, Ether, GasCost, TokenAddress},
     },
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
 };
+
+type RequiredEther = Ether;
+type TokensUsed = BTreeSet<TokenAddress>;
+type TransactionHash = eth::TxId;
+type Transaction = eth::Tx;
+type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
 
 /// A notification sent to solvers in case of important events in the driver.
 #[derive(Debug)]
 pub struct Notification {
     pub auction_id: Option<auction::Id>,
-    pub solution_id: solution::Id,
+    pub solution_id: Option<solution::Id>,
     pub kind: Kind,
 }
 
-pub type RequiredEther = Ether;
-pub type TokensUsed = BTreeSet<TokenAddress>;
-
 #[derive(Debug)]
 pub enum Kind {
+    /// Solver engine timed out.
+    Timeout,
     /// The solution doesn't contain any user orders.
     EmptySolution,
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId,
+    /// Failed simulation during competition.
+    SimulationFailed(Transaction),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to
@@ -30,6 +37,10 @@ pub enum Kind {
     NonBufferableTokensUsed(TokensUsed),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(RequiredEther),
+    /// For some of the tokens used in the solution, the amount leaving the
+    /// settlement contract is higher than amount entering the settlement
+    /// contract.
+    AssetFlow(Missmatches),
     /// Result of winning solver trying to settle the transaction onchain.
     Settled(Settlement),
 }
@@ -41,21 +52,22 @@ pub enum ScoreKind {
     /// and if only one solution is in competition with zero score, that
     /// solution would receive 0 reward (reward = score - reference score).
     ZeroScore,
-    /// Objective value is defined as surplus + fees - gas costs. Protocol
-    /// doesn't allow solutions that cost more than they bring to the users and
-    /// protocol.
-    ObjectiveValueNonPositive,
+    /// Protocol does not allow solutions that are claimed to be "better" than
+    /// the actual value they bring (quality). It is expected that score
+    /// is always lower than quality, because there is always some
+    /// execution cost that needs to be incorporated into the score and lower
+    /// it.
+    ScoreHigherThanQuality(Score, Quality),
     /// Solution has success probability that is outside of the allowed range
     /// [0, 1]
-    SuccessProbabilityOutOfRange(SuccessProbability),
-    /// Protocol does not allow solutions that are claimed to be "better" than
-    /// the actual value they bring (objective value). It is expected that score
-    /// is always lower than objective value, because there is always some
-    /// revert risk that needs to be incorporated into the score and lower it.
-    ScoreHigherThanObjective(Score, ObjectiveValue),
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
+    SuccessProbabilityOutOfRange(f64),
+    /// Objective value is defined as quality (surplus + fees) - gas costs.
+    /// Protocol doesn't allow solutions that cost more than they bring to
+    /// the users and protocol.
+    /// [ONLY APPLICABLE TO SCORES BASED ON SUCCESS PROBABILITY]
+    ObjectiveValueNonPositive(Quality, GasCost),
 }
-
-type TransactionHash = eth::TxId;
 
 #[derive(Debug)]
 pub enum Settlement {

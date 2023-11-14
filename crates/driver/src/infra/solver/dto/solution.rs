@@ -199,9 +199,7 @@ impl Solutions {
                     match solution.score {
                         Score::Solver(score) => competition::solution::SolverScore::Solver(score),
                         Score::RiskAdjusted(success_probability) => {
-                            competition::solution::SolverScore::RiskAdjusted(
-                                competition::score::SuccessProbability(success_probability),
-                            )
+                            competition::solution::SolverScore::RiskAdjusted(success_probability)
                         }
                     },
                     weth,
