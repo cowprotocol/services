@@ -144,6 +144,7 @@ struct Token {
     trusted: bool,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 enum Liquidity {

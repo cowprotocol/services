@@ -37,7 +37,7 @@ pub enum UniswapV3Event {
 impl ParseLog for UniswapV3Event {
     fn parse_log(log: RawLog) -> Result<Self, ExecutionError> {
         let standard_event: Option<Result<UniswapV3Event, ExecutionError>> =
-            log.topics.get(0).copied().map(|topic| match topic {
+            log.topics.first().copied().map(|topic| match topic {
                 H256(BURN_TOPIC) => Ok(UniswapV3Event::Burn(
                     log.clone().decode(
                         UniswapV3Pool::raw_contract()

@@ -542,10 +542,7 @@ impl Driver {
 
             self.logger.report_on_batch(
                 &(winning_solver, winning_settlement),
-                rated_settlements
-                    .into_iter()
-                    .map(|(solver, settlement)| (solver, settlement))
-                    .collect(),
+                rated_settlements.into_iter().collect(),
             );
         }
         // Happens after settlement submission so that we do not delay it.
