@@ -22,7 +22,7 @@ async fn route(
     let handle_request = async {
         let auction = auction
             .0
-            .into_domain(state.eth(), state.tokens())
+            .into_domain(state.eth(), state.tokens(), state.http_time_buffer())
             .await
             .tap_err(|err| {
                 observe::invalid_dto(err, "auction");

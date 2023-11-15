@@ -117,6 +117,10 @@ impl State {
     fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
     }
+
+    fn http_time_buffer(&self) -> chrono::Duration {
+        chrono::Duration::milliseconds(500)
+    }
 }
 
 struct Inner {

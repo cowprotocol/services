@@ -17,6 +17,7 @@ impl Auction {
         self,
         eth: &Ethereum,
         tokens: &tokens::Fetcher,
+        http_time_buffer: chrono::Duration,
     ) -> Result<competition::Auction, Error> {
         let token_addresses: Vec<_> = self
             .tokens
@@ -127,7 +128,7 @@ impl Auction {
                     trusted: token.trusted,
                 }
             }),
-            self.deadline.into(),
+            (self.deadline - http_time_buffer).into(),
             eth,
             self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )
