@@ -56,7 +56,7 @@ impl ParaswapTradeFinder {
                 disabled_paraswap_dexs,
                 solver,
             },
-            sharing: RequestSharing::labelled("paraswap".into()),
+            sharing: RequestSharing::labelled("paraSwap".into()),
         }
     }
 

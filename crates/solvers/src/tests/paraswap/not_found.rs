@@ -16,7 +16,7 @@ async fn test() {
     }])
     .await;
 
-    let engine = tests::SolverEngine::new("paraswap", paraswap::config(&api.address)).await;
+    let engine = tests::SolverEngine::new("paraSwap", paraswap::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({

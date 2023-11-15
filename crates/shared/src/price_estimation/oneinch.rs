@@ -35,7 +35,7 @@ impl OneInchPriceEstimator {
                 settlement_contract,
             )),
             rate_limiter,
-            "oneinch".into(),
+            "oneInch".into(),
         ))
     }
 

@@ -195,7 +195,7 @@ enable-slippage-protection = true
         ",
         api.address
     ));
-    let engine = tests::SolverEngine::new("zeroex", config).await;
+    let engine = tests::SolverEngine::new("zeroEx", config).await;
 
     let solution = engine
         .solve(json!({

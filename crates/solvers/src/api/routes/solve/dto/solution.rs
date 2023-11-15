@@ -161,7 +161,7 @@ struct Solution {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -223,7 +223,7 @@ enum Kind {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),

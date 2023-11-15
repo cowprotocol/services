@@ -57,7 +57,7 @@ impl OneInchTradeFinder {
                 solver,
                 settlement_contract,
             )),
-            sharing: RequestSharing::labelled("oneinch".into()),
+            sharing: RequestSharing::labelled("oneInch".into()),
         }
     }
 

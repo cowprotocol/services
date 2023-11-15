@@ -59,7 +59,7 @@ async fn test() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("oneinch", super::config(&api.address)).await;
+    let engine = tests::SolverEngine::new("oneInch", super::config(&api.address)).await;
 
     let solution = engine
         .solve(json!({
