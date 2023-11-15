@@ -79,7 +79,7 @@ impl Simulator {
         if self.disable_access_lists {
             return Ok(tx.access_list);
         }
-        let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
+        let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
@@ -107,7 +107,7 @@ impl Simulator {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
-        let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
+        let block = self.eth.current_block().borrow().number.into();
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
