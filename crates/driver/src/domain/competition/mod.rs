@@ -16,7 +16,10 @@ use {
     futures::{future::join_all, StreamExt},
     itertools::Itertools,
     rand::seq::SliceRandom,
-    std::{collections::HashSet, sync::Mutex},
+    std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    },
     tap::TapFallible,
 };
 
@@ -336,6 +339,10 @@ async fn encode_solutions(
     solutions: Vec<Solution>,
 ) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let auction = Arc::new(auction);
+    let eth = Arc::new(eth);
+    let simulator = Arc::new(simulator);
+
     let futures = solutions
         .into_iter()
         .map(|solution| {
