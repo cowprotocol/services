@@ -85,8 +85,8 @@ pub struct Config {
     pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
-    /// Maximum time allocated to wait for a solver response to propagate to the
-    /// driver.
+    /// Maximum time allocated for http request/reponse to propagate through
+    /// network.
     pub http_time_buffer: chrono::Duration,
 }
 
@@ -131,6 +131,12 @@ impl Solver {
     /// The account which should be used to sign settlements for this solver.
     pub fn account(&self) -> ethcontract::Account {
         self.config.account.clone()
+    }
+
+    /// Maximum time allocated for http request/reponse to propagate through
+    /// network.
+    pub fn http_time_buffer(&self) -> chrono::Duration {
+        self.config.http_time_buffer
     }
 
     /// Make a POST request instructing the solver to solve an auction.
