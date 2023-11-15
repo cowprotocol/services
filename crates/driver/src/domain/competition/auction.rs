@@ -411,6 +411,13 @@ impl Deadline {
     pub fn time_buffer() -> chrono::Duration {
         chrono::Duration::seconds(1)
     }
+
+    pub fn remaining(&self) -> Option<std::time::Duration> {
+        self.0
+            .signed_duration_since(chrono::Utc::now())
+            .to_std()
+            .ok()
+    }
 }
 
 impl From<chrono::DateTime<chrono::Utc>> for Deadline {

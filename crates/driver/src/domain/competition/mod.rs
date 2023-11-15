@@ -215,7 +215,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(deadline) = auction.deadline().timeout() {
+        if let Some(timeout) = auction.deadline().remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -229,7 +229,6 @@ impl Competition {
                     }
                 }
             };
-            let timeout = deadline.duration().to_std().unwrap_or_default();
             let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 
@@ -336,19 +335,6 @@ async fn encode_solutions(
     simulator: Simulator,
     solutions: Vec<Solution>,
 ) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
-    let deadline = match auction.deadline().timeout().and_then(|timeout| {
-        timeout
-            .duration()
-            .to_std()
-            .map_err(|_| solution::DeadlineExceeded)
-    }) {
-        Ok(deadline) => deadline,
-        Err(_) => {
-            tracing::warn!("deadline exceeded while encoding solutions");
-            return vec![];
-        }
-    };
-
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     let futures = solutions
         .into_iter()
@@ -359,12 +345,6 @@ async fn encode_solutions(
             let simulator = simulator.clone();
             async move {
                 let id = solution.id();
-                // If there are more solutions than threads available, some of them might be
-                // scheduled to start after the deadline. For those, skip encoding early.
-                if sender.is_closed() {
-                    tracing::debug!(?id, "solution skipped because the deadline was reached");
-                    return;
-                }
                 observe::encoding(id);
                 let settlement = solution.encode(&auction, &eth, &simulator).await;
                 let _ = sender.send((id, settlement));
@@ -372,16 +352,17 @@ async fn encode_solutions(
         })
         .collect::<Vec<_>>();
 
+    let deadline = auction.deadline().remaining().unwrap_or_default();
     if tokio::time::timeout(deadline, tokio::spawn(join_all(futures)))
         .await
         .is_err()
     {
-        tracing::debug!("reached timeout while encoding");
+        tracing::warn!("reached timeout while encoding");
     }
 
     let mut settlements = vec![];
-    while let Ok(solution) = receiver.try_recv() {
-        settlements.push(solution);
+    while let Ok(settlement) = receiver.try_recv() {
+        settlements.push(settlement);
     }
     settlements
 }
