@@ -68,7 +68,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().timeout()?)
+            .solve(auction, &liquidity, auction.deadline().solving()?)
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -214,7 +214,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(deadline) = auction.deadline().timeout() {
+        if let Ok(deadline) = auction.deadline().remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -228,7 +228,7 @@ impl Competition {
                     }
                 }
             };
-            let timeout = deadline.duration().to_std().unwrap_or_default();
+            let timeout = deadline.to_std().unwrap_or_default();
             let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 

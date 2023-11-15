@@ -230,7 +230,9 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": config.deadline - auction::Deadline::time_buffer() - chrono::Duration::milliseconds(1500),
+                        "deadline": config.deadline 
+                         - chrono::Duration::milliseconds(4500) // auction::Deadline::competition()
+                         - chrono::Duration::milliseconds(1500), // solver http time buffer
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

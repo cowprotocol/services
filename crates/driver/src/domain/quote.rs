@@ -82,7 +82,7 @@ impl Order {
             }
             solver::Liquidity::Skip => Default::default(),
         };
-        let timeout = self.deadline.timeout()?;
+        let timeout = self.deadline.solving()?;
         let solutions = solver
             .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
             .await?;
@@ -214,12 +214,14 @@ impl Order {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
-    /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer())
+    /// Timeout for solvers to respond.
+    pub fn solving(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::competition_time())
     }
 
-    pub fn time_buffer() -> chrono::Duration {
+    /// time allocated for driver to process the solutions received from
+    /// solvers.
+    pub fn competition_time() -> chrono::Duration {
         chrono::Duration::seconds(1)
     }
 }

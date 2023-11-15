@@ -103,6 +103,7 @@ impl Auction {
         self.gas_price
     }
 
+    /// The deadline for the driver to start sending solution to autopilot.
     pub fn deadline(&self) -> Deadline {
         self.deadline
     }
@@ -403,13 +404,25 @@ impl From<eth::U256> for Price {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
-    /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer())
+    /// The remaining time left until the deadline, if any.
+    pub fn remaining(&self) -> Result<chrono::Duration, DeadlineExceeded> {
+        let deadline = self.0 - infra::time::now();
+        if deadline < chrono::Duration::zero() {
+            Err(DeadlineExceeded)
+        } else {
+            Ok(deadline)
+        }
     }
 
-    pub fn time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
+    /// Timeout for solvers to respond.
+    pub fn solving(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
+        solution::SolverTimeout::new(self.into(), Self::competition_time())
+    }
+
+    /// time allocated for driver to process the solutions received from
+    /// solvers.
+    fn competition_time() -> chrono::Duration {
+        chrono::Duration::milliseconds(4500)
     }
 }
 
