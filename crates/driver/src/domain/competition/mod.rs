@@ -102,22 +102,13 @@ impl Competition {
             .collect();
 
         // Encode the solutions into settlements.
-        let settlements = self
-            .encode(
-                auction.clone(),
-                self.eth.clone(),
-                self.simulator.clone(),
-                solutions,
-            )
-            .await;
-        // let settlements = join_all(solutions.map(|solution| async move {
-        //     observe::encoding(solution.id());
-        //     (
-        //         solution.id(),
-        //         solution.encode(auction, &self.eth, &self.simulator).await,
-        //     )
-        // }))
-        // .await;
+        let settlements = encode_solutions(
+            auction.clone(),
+            self.eth.clone(),
+            self.simulator.clone(),
+            solutions,
+        )
+        .await;
 
         // Filter out solutions that failed to encode.
         let mut settlements = settlements
@@ -245,58 +236,6 @@ impl Competition {
         Ok(score)
     }
 
-    /// Encode the solutions into settlements.
-    async fn encode(
-        &self,
-        auction: Auction,
-        eth: Ethereum,
-        simulator: Simulator,
-        solutions: Vec<Solution>,
-    ) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
-        let deadline = match auction.deadline().timeout().and_then(|timeout| {
-            timeout
-                .duration()
-                .to_std()
-                .map_err(|_| solution::DeadlineExceeded)
-        }) {
-            Ok(deadline) => deadline,
-            Err(_) => {
-                tracing::debug!("deadline exceeded");
-                return vec![];
-            }
-        };
-
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let futures = solutions
-            .into_iter()
-            .map(|solution| {
-                let sender = sender.clone();
-                let auction = auction.clone();
-                let eth = eth.clone();
-                let simulator = simulator.clone();
-                async move {
-                    let id = solution.id();
-                    observe::encoding(id);
-                    let settlement = solution.encode(&auction, &eth, &simulator).await;
-                    let _ = sender.send((id, settlement));
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if tokio::time::timeout(deadline, tokio::spawn(join_all(futures)))
-            .await
-            .is_err()
-        {
-            tracing::debug!("reached timeout while encoding");
-        }
-
-        let mut settlements = vec![];
-        while let Ok(solution) = receiver.try_recv() {
-            settlements.push(solution);
-        }
-        settlements
-    }
-
     pub async fn reveal(&self) -> Result<Revealed, Error> {
         let settlement = self
             .settlement
@@ -388,6 +327,63 @@ impl Competition {
             .await
             .map(|_| ())
     }
+}
+
+/// Encode the solutions into settlements.
+async fn encode_solutions(
+    auction: Auction,
+    eth: Ethereum,
+    simulator: Simulator,
+    solutions: Vec<Solution>,
+) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
+    let deadline = match auction.deadline().timeout().and_then(|timeout| {
+        timeout
+            .duration()
+            .to_std()
+            .map_err(|_| solution::DeadlineExceeded)
+    }) {
+        Ok(deadline) => deadline,
+        Err(_) => {
+            tracing::warn!("deadline exceeded while encoding solutions");
+            return vec![];
+        }
+    };
+
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let futures = solutions
+        .into_iter()
+        .map(|solution| {
+            let sender = sender.clone();
+            let auction = auction.clone();
+            let eth = eth.clone();
+            let simulator = simulator.clone();
+            async move {
+                let id = solution.id();
+                // If there are more solutions than threads available, some of them might be
+                // scheduled to start after the deadline. For those, skip encoding early.
+                if sender.is_closed() {
+                    tracing::debug!(?id, "solution skipped because the deadline was reached");
+                    return;
+                }
+                observe::encoding(id);
+                let settlement = solution.encode(&auction, &eth, &simulator).await;
+                let _ = sender.send((id, settlement));
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if tokio::time::timeout(deadline, tokio::spawn(join_all(futures)))
+        .await
+        .is_err()
+    {
+        tracing::debug!("reached timeout while encoding");
+    }
+
+    let mut settlements = vec![];
+    while let Ok(solution) = receiver.try_recv() {
+        settlements.push(solution);
+    }
+    settlements
 }
 
 /// Solution information sent to the protocol by the driver before the solution
