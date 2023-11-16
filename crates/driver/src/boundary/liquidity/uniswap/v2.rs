@@ -153,6 +153,7 @@ where
         let pool_fetcher = PoolFetcher {
             pool_reader: reader(web3.clone(), pair_provider),
             web3: web3.clone(),
+            non_existent_pools: Default::default(),
         };
 
         let pool_cache = Arc::new(PoolCache::new(

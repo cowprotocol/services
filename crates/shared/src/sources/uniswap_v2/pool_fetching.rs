@@ -16,6 +16,7 @@ use {
     model::TokenPair,
     num::rational::Ratio,
     std::collections::HashSet,
+    std::sync::RwLock,
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -205,6 +206,7 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
+    pub non_existent_pools: RwLock<HashSet<TokenPair>>,
 }
 
 impl PoolFetcher<DefaultPoolReader> {
@@ -216,6 +218,7 @@ impl PoolFetcher<DefaultPoolReader> {
                 web3: web3.clone(),
             },
             web3,
+            non_existent_pools: Default::default(),
         }
     }
 }
@@ -226,19 +229,33 @@ where
     Reader: PoolReading,
 {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
+        let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
+        {
+            let non_existent_pools = self.non_existent_pools.read().unwrap();
+            token_pairs.retain(|pair| !non_existent_pools.contains(pair));
+        }
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(at_block.into());
         let futures = token_pairs
-            .into_iter()
-            .map(|pair| self.pool_reader.read_state(pair, &mut batch, block))
+            .iter()
+            .map(|pair| self.pool_reader.read_state(*pair, &mut batch, block))
             .collect::<Vec<_>>();
         batch.execute_all(MAX_BATCH_SIZE).await;
 
-        future::join_all(futures)
-            .await
-            .into_iter()
-            .filter_map(|pool| pool.transpose())
-            .collect()
+        let results = future::try_join_all(futures).await?;
+
+        let mut new_missing_pairs = vec![];
+        let mut pools = vec![];
+        for (result, key) in results.into_iter().zip(token_pairs) {
+            match result {
+                Some(pool) => pools.push(pool),
+                None => new_missing_pairs.push(key),
+            }
+        }
+        if !new_missing_pairs.is_empty() {
+            self.non_existent_pools.write().unwrap().extend(new_missing_pairs);
+        }
+        Ok(pools)
     }
 }
 
