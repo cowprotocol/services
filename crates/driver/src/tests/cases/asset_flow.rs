@@ -12,8 +12,6 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn matrix() {
-    let semaphore = tokio::sync::Semaphore::new(1);
-
     for diff in [
         ExecutionDiff::decrease_buy(),
         ExecutionDiff::increase_sell(),
@@ -25,12 +23,6 @@ async fn matrix() {
                     order::Kind::Limit => Some(DEFAULT_SOLVER_FEE.into()),
                     order::Kind::Liquidity => None,
                 };
-                // need to execute sequentially to make sure the Test struct is created
-                // correctly for each test (specifially the deadline, since we don't want to
-                // build deadline for all tests, and then execute tests sequentially, which
-                // would make some deadlines expired before even starting the test)
-                let permit = semaphore.acquire().await.unwrap();
-
                 let test = tests::setup()
                     .name(format!("{side:?} {kind:?}\n{diff:?}"))
                     .pool(ab_pool())
@@ -47,8 +39,6 @@ async fn matrix() {
 
                 // TODO When we add metrics, assert that an invalid asset flow error is traced.
                 test.solve().await.ok().empty();
-
-                drop(permit);
             }
         }
     }
