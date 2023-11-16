@@ -652,15 +652,16 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        let http_delay =
-            chrono::Duration::seconds(default_http_time_buffer_milliseconds().try_into().unwrap());
+        let http_delay = chrono::Duration::milliseconds(
+            default_http_time_buffer_milliseconds().try_into().unwrap(),
+        );
         let competition_time = match self.quote {
-            true => chrono::Duration::seconds(
+            true => chrono::Duration::milliseconds(
                 default_quote_competition_time_buffer_milliseconds()
                     .try_into()
                     .unwrap(),
             ),
-            false => chrono::Duration::seconds(
+            false => chrono::Duration::milliseconds(
                 default_solve_competition_time_buffer_milliseconds()
                     .try_into()
                     .unwrap(),
