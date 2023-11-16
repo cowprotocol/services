@@ -11,20 +11,24 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn matrix() {
+    let rt = tokio::runtime::Handle::current();
+
     for side in [order::Side::Buy, order::Side::Sell] {
         for kind in [order::Kind::Market, order::Kind::Limit] {
-            let test = tests::setup()
-                .name(format!("{side:?} {kind:?}"))
-                .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind))
-                .solution(ab_solution())
-                .quote()
-                .done()
-                .await;
+            rt.block_on(async {
+                let test = tests::setup()
+                    .name(format!("{side:?} {kind:?}"))
+                    .pool(ab_pool())
+                    .order(ab_order().side(side).kind(kind))
+                    .solution(ab_solution())
+                    .quote()
+                    .done()
+                    .await;
 
-            let quote = test.quote().await;
+                let quote = test.quote().await;
 
-            quote.ok().amount().interactions();
+                quote.ok().amount().interactions();
+            });
         }
     }
 }

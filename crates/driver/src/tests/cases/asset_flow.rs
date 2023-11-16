@@ -12,6 +12,8 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn matrix() {
+    let rt = tokio::runtime::Handle::current();
+
     for diff in [
         ExecutionDiff::decrease_buy(),
         ExecutionDiff::increase_sell(),
@@ -23,22 +25,25 @@ async fn matrix() {
                     order::Kind::Limit => Some(DEFAULT_SOLVER_FEE.into()),
                     order::Kind::Liquidity => None,
                 };
-                let test = tests::setup()
-                    .name(format!("{side:?} {kind:?}\n{diff:?}"))
-                    .pool(ab_pool())
-                    .order(
-                        ab_order()
-                            .side(side)
-                            .kind(kind)
-                            .execution_diff(diff)
-                            .solver_fee(solver_fee),
-                    )
-                    .solution(ab_solution())
-                    .done()
-                    .await;
 
-                // TODO When we add metrics, assert that an invalid asset flow error is traced.
-                test.solve().await.ok().empty();
+                rt.block_on(async {
+                    let test = tests::setup()
+                        .name(format!("{side:?} {kind:?}\n{diff:?}"))
+                        .pool(ab_pool())
+                        .order(
+                            ab_order()
+                                .side(side)
+                                .kind(kind)
+                                .execution_diff(diff)
+                                .solver_fee(solver_fee),
+                        )
+                        .solution(ab_solution())
+                        .done()
+                        .await;
+
+                    // TODO When we add metrics, assert that an invalid asset flow error is traced.
+                    test.solve().await.ok().empty();
+                });
             }
         }
     }
