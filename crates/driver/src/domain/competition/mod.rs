@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::Mempools,
+    super::{time, Mempools},
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -75,6 +75,7 @@ impl Competition {
                     .deadline()
                     .reduce(self.competition_time())
                     .remaining()?
+                    .duration()
                     .into(),
             )
             .await
@@ -222,7 +223,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(deadline) = auction.deadline().remaining() {
+        if let Ok(remaining) = auction.deadline().remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -236,7 +237,7 @@ impl Competition {
                     }
                 }
             };
-            let timeout = deadline.to_std().unwrap_or_default();
+            let timeout = remaining.duration().to_std().unwrap_or_default();
             let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 
@@ -384,7 +385,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] solution::DeadlineExceeded),
+    DeadlineExceeded(#[from] time::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]

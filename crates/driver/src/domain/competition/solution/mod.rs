@@ -325,9 +325,5 @@ pub enum Error {
 }
 
 #[derive(Debug, Error)]
-#[error("the solution deadline has been exceeded")]
-pub struct DeadlineExceeded;
-
-#[derive(Debug, Error)]
 #[error("invalid clearing prices")]
 pub struct InvalidClearingPrices;
