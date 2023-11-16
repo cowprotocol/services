@@ -73,9 +73,10 @@ impl Competition {
                 &liquidity,
                 auction
                     .deadline()
+                    // don't give the full deadline to the solver, 
+                    // leave some time for the driver to process the solutions
                     .reduce(self.competition_time())
                     .remaining()?
-                    .duration()
                     .into(),
             )
             .await
@@ -237,7 +238,7 @@ impl Competition {
                     }
                 }
             };
-            let timeout = remaining.duration().to_std().unwrap_or_default();
+            let timeout = remaining.to_std().unwrap_or_default();
             let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 
