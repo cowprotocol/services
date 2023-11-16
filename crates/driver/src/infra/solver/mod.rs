@@ -68,7 +68,7 @@ pub enum Liquidity {
 pub struct Timeouts {
     /// Maximum time allocated for http request/reponse to propagate through
     /// network.
-    pub http_time: chrono::Duration,
+    pub http_delay: chrono::Duration,
     /// Maximum time allocated for processing the solutions received from
     /// solvers, used for /solve endpoint.
     pub solve_competition_time: chrono::Duration,
@@ -165,7 +165,7 @@ impl Solver {
             liquidity,
             // Reduce the timeout by a small buffer to account for network latency. Otherwise the
             // HTTP timeout might happen before the solver times out its search algorithm.
-            timeout.reduce(self.config.timeouts.http_time),
+            timeout.reduce(self.config.timeouts.http_delay),
             weth,
         ))
         .unwrap();

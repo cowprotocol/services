@@ -118,8 +118,8 @@ impl State {
         &self.0.pre_processor
     }
 
-    fn http_time_buffer(&self) -> chrono::Duration {
-        self.0.solver.timeouts().http_time
+    fn http_delay(&self) -> chrono::Duration {
+        self.0.solver.timeouts().http_delay
     }
 }
 

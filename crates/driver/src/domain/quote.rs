@@ -219,6 +219,7 @@ impl Order {
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
+    /// The remaining time left until the deadline, if any.
     pub fn remaining(&self) -> Result<chrono::Duration, solution::DeadlineExceeded> {
         let deadline = self.0 - infra::time::now();
         if deadline < chrono::Duration::zero() {

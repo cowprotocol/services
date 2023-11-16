@@ -67,7 +67,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 },
                 account,
                 timeouts: solver::Timeouts {
-                    http_time: chrono::Duration::milliseconds(
+                    http_delay: chrono::Duration::milliseconds(
                         config.http_time_buffer_milliseconds.try_into().unwrap(),
                     ),
                     solve_competition_time: chrono::Duration::milliseconds(
