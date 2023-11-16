@@ -126,43 +126,14 @@ impl Competition {
             })
             .collect_vec();
 
-        // TODO(#1483): parallelize this
-        // TODO(#1480): more optimal approach for settlement merging
-
-        // Merge the settlements in random order.
-        settlements.shuffle(&mut rand::thread_rng());
-
-        // The merging algorithm works as follows: the [`settlements`] vector keeps the
-        // "most merged" settlements until they can't be merged anymore, at
-        // which point they are moved into the [`results`] vector.
-
-        // The merged settlements in their final form.
-        let mut results = Vec::new();
-        while let Some(settlement) = settlements.pop() {
-            // Has [`settlement`] been merged into another settlement?
-            let mut merged = false;
-            // Try to merge [`settlement`] into some other settlement.
-            for other in settlements.iter_mut() {
-                match other.merge(&settlement, &self.eth, &self.simulator).await {
-                    Ok(m) => {
-                        *other = m;
-                        merged = true;
-                        observe::merged(&settlement, other);
-                        break;
-                    }
-                    Err(err) => {
-                        observe::not_merged(&settlement, other, err);
-                    }
-                }
-            }
-            // If [`settlement`] can't be merged into any other settlement, this is its
-            // final, most optimal form. Push it to the results.
-            if !merged {
-                results.push(settlement);
-            }
-        }
-
-        let settlements = results;
+        // Merge settlements
+        merge_settlements(
+            &mut settlements,
+            &self.eth,
+            &self.simulator,
+            auction.deadline(),
+        )
+        .await;
 
         // Score the settlements.
         let scores = settlements
@@ -372,6 +343,81 @@ async fn encode_solutions(
         settlements.push(settlement);
     }
     settlements
+}
+
+/// Try to merge the settlements into a single settlement.
+/// If the
+async fn merge_settlements(
+    settlements: &mut Vec<Settlement>,
+    eth: &Ethereum,
+    simulator: &Simulator,
+    deadline: auction::Deadline,
+) {
+    if settlements.len() <= 1 {
+        // Nothing to merge.
+        return;
+    }
+
+    // TODO(#1483): parallelize this
+    // TODO(#1480): more optimal approach for settlement merging
+
+    // Merge the settlements in random order.
+    settlements.shuffle(&mut rand::thread_rng());
+
+    // The merging algorithm works as follows: the [`inner_settlements`] vector
+    // keeps the "most merged" settlements until they can't be merged anymore,
+    // at which point they are moved into the [`settlements`] vector.
+
+    let task = async {
+        // work on the copy to make sure the timeout doesn't leave original in an
+        // inconsistent state
+        let mut inner_settlements = settlements.clone();
+
+        while let Some(settlement) = inner_settlements.pop() {
+            // Has [`settlement`] been merged into another settlement?
+            let mut merged = false;
+
+            // Try to merge [`settlement`] into some other settlement.
+            for other in inner_settlements.iter_mut() {
+                match other.merge(&settlement, eth, simulator).await {
+                    Ok(m) => {
+                        *other = m;
+                        merged = true;
+                        observe::merged(&settlement, other);
+                        break;
+                    }
+                    Err(err) => {
+                        observe::not_merged(&settlement, other, err);
+                    }
+                }
+            }
+
+            // If [`settlement`] can't be merged into any other settlement, this is its
+            // final, most optimal form.
+            if !merged {
+                // remove all settlements from the `settlements` vector that are substituted
+                // with the [`settlement`]
+                settlements.retain(|other| {
+                    other
+                        .solutions()
+                        .iter()
+                        // it's enough to check for one solution id, since either all ids are contained in [`settlement`] or none
+                        .next()
+                        .map(|s| !settlement.solutions().contains(s))
+                        .unwrap_or(true)
+                });
+                // now add [`settlement`]
+                settlements.push(settlement);
+            }
+        }
+    };
+
+    if tokio::time::timeout(deadline.remaining().unwrap_or_default(), task)
+        .await
+        .is_err()
+    {
+        tracing::warn!("reached timeout while merging");
+    }
 }
 
 /// Solution information sent to the protocol by the driver before the solution
