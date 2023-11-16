@@ -6,7 +6,7 @@ use {
             eth,
             liquidity,
         },
-        infra::{self, blockchain, observe, Ethereum},
+        infra::{self, blockchain, observe, time, Ethereum},
         util,
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},
@@ -413,10 +413,7 @@ impl Deadline {
     }
 
     pub fn remaining(&self) -> Option<std::time::Duration> {
-        self.0
-            .signed_duration_since(chrono::Utc::now())
-            .to_std()
-            .ok()
+        self.0.signed_duration_since(time::now()).to_std().ok()
     }
 }
 

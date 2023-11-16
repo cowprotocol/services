@@ -23,7 +23,7 @@ async fn matrix() {
                 .await;
 
             let quote = test.quote().await;
-            
+
             quote.ok().amount().interactions();
         }
     }
