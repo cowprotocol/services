@@ -645,7 +645,8 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        time::now() + chrono::Duration::seconds(2)
+        // 0.5s http_delay + 4.5s solve_competition_time + 1s solving time
+        time::now() + chrono::Duration::seconds(6)
     }
 }
 
