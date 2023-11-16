@@ -12,8 +12,6 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn matrix() {
-    let rt = tokio::runtime::Handle::current();
-
     for diff in [
         ExecutionDiff::decrease_buy(),
         ExecutionDiff::increase_sell(),
@@ -25,8 +23,11 @@ async fn matrix() {
                     order::Kind::Limit => Some(DEFAULT_SOLVER_FEE.into()),
                     order::Kind::Liquidity => None,
                 };
-
-                rt.block_on(async {
+                // need to execute sequentially to make sure the Test struct is created
+                // correctly for each test (specifially the deadline, since we don't want to
+                // build deadline for all tests, and then execute tests sequentially, which
+                // would make some deadlines expired before even starting the test)
+                futures::executor::block_on(async {
                     let test = tests::setup()
                         .name(format!("{side:?} {kind:?}\n{diff:?}"))
                         .pool(ab_pool())

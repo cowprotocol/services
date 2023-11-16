@@ -12,8 +12,6 @@ use crate::{
 #[tokio::test]
 #[ignore]
 async fn matrix() {
-    let rt = tokio::runtime::Handle::current();
-
     for side in [order::Side::Buy, order::Side::Sell] {
         for kind in [order::Kind::Market, order::Kind::Limit] {
             let solver_fee = match kind {
@@ -25,7 +23,7 @@ async fn matrix() {
             // correctly for each test (specifially the deadline, since we don't want to
             // build deadline for all tests, and then execute tests sequentially, which
             // would make some deadlines expired before even starting the test)
-            rt.block_on(async {
+            futures::executor::block_on(async {
                 let test = tests::setup()
                     .name(format!("{side:?} {kind:?}"))
                     .pool(ab_pool())
