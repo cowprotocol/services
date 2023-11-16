@@ -345,8 +345,11 @@ async fn encode_solutions(
     settlements
 }
 
-/// Try to merge the settlements into a single settlement.
-/// If the
+/// Tries to merge multiple settlements into a single settlement.
+/// If merged, the merged settlement is added to the `settlements` vector and
+/// the contained settlements are removed from `settlements` vector.
+/// If the deadline is reached, current state of `settlements` vector is
+/// returned.
 async fn merge_settlements(
     settlements: &mut Vec<Settlement>,
     eth: &Ethereum,
