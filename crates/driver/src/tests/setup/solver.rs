@@ -238,8 +238,12 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
+                        // subtract competition time and twice the http delay buffer 
+                        // (twice because http is reduced once when request is received from autopilot 
+                        // and second time when request is sent to solver, both times done within driver)
                         "deadline": config.deadline 
                          - chrono::Duration::milliseconds(default_solve_competition_time_buffer_milliseconds().try_into().unwrap())
+                         - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap())
                          - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap()),
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
