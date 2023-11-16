@@ -66,9 +66,23 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     solver::Liquidity::Fetch
                 },
                 account,
-                http_time_buffer: chrono::Duration::milliseconds(
-                    config.http_time_buffer_miliseconds.try_into().unwrap(),
-                ),
+                timeouts: solver::Timeouts {
+                    http_time: chrono::Duration::milliseconds(
+                        config.http_time_buffer_milliseconds.try_into().unwrap(),
+                    ),
+                    solve_competition_time: chrono::Duration::milliseconds(
+                        config
+                            .solve_competition_time_buffer_milliseconds
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    quote_competition_time: chrono::Duration::milliseconds(
+                        config
+                            .quote_competition_time_buffer_milliseconds
+                            .try_into()
+                            .unwrap(),
+                    ),
+                },
             }
         }))
         .await,

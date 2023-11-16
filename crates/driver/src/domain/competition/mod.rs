@@ -68,7 +68,15 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().solving()?)
+            .solve(
+                auction,
+                &liquidity,
+                auction
+                    .deadline()
+                    .reduce(self.competition_time())
+                    .remaining()?
+                    .into(),
+            )
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -325,6 +333,13 @@ impl Competition {
             })
             .await
             .map(|_| ())
+    }
+
+    /// The time allocated for driver to process all the solutions received from
+    /// solvers. Processing includes validating, simulating, merging, scoring,
+    /// and ranking the solutions.
+    fn competition_time(&self) -> chrono::Duration {
+        self.solver.timeouts().solve_competition_time
     }
 }
 

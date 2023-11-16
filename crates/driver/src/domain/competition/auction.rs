@@ -405,24 +405,18 @@ pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
     /// The remaining time left until the deadline, if any.
-    pub fn remaining(&self) -> Result<chrono::Duration, DeadlineExceeded> {
+    pub fn remaining(&self) -> Result<chrono::Duration, solution::DeadlineExceeded> {
         let deadline = self.0 - infra::time::now();
         if deadline < chrono::Duration::zero() {
-            Err(DeadlineExceeded)
+            Err(solution::DeadlineExceeded)
         } else {
             Ok(deadline)
         }
     }
 
-    /// Timeout for solvers to respond.
-    pub fn solving(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::competition_time())
-    }
-
-    /// time allocated for driver to process the solutions received from
-    /// solvers.
-    fn competition_time() -> chrono::Duration {
-        chrono::Duration::milliseconds(4500)
+    #[must_use]
+    pub fn reduce(self, duration: chrono::Duration) -> Self {
+        Self(self.0 - duration)
     }
 }
 
@@ -465,9 +459,9 @@ impl std::fmt::Display for Id {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("the solution deadline has been exceeded")]
-pub struct DeadlineExceeded;
+// #[derive(Debug, Error)]
+// #[error("the solution deadline has been exceeded")]
+// pub struct DeadlineExceeded;
 
 #[derive(Debug, Error)]
 #[error("invalid auction id")]

@@ -119,7 +119,7 @@ impl State {
     }
 
     fn http_time_buffer(&self) -> chrono::Duration {
-        self.0.solver.http_time_buffer()
+        self.0.solver.timeouts().http_time
     }
 }
 

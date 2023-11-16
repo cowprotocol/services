@@ -252,23 +252,6 @@ impl std::fmt::Debug for Solution {
 pub struct SolverTimeout(chrono::Duration);
 
 impl SolverTimeout {
-    /// Solvers are given a time limit that's `buffer` less than the specified
-    /// deadline. The reason for this is to allow the solver sufficient time to
-    /// search for the most optimal solution, but still ensure there is time
-    /// left for the driver to do some other necessary work and forward the
-    /// results back to the protocol.
-    pub fn new(
-        deadline: chrono::DateTime<chrono::Utc>,
-        buffer: chrono::Duration,
-    ) -> Result<Self, DeadlineExceeded> {
-        let deadline = deadline - time::now() - buffer;
-        if deadline < chrono::Duration::zero() {
-            Err(DeadlineExceeded)
-        } else {
-            Ok(Self(deadline))
-        }
-    }
-
     pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
         time::now() + self.0
     }
@@ -280,6 +263,12 @@ impl SolverTimeout {
     #[must_use]
     pub fn reduce(self, duration: chrono::Duration) -> Self {
         Self(self.0 - duration)
+    }
+}
+
+impl From<chrono::Duration> for SolverTimeout {
+    fn from(duration: chrono::Duration) -> Self {
+        Self(duration)
     }
 }
 
