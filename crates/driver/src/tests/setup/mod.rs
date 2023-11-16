@@ -4,7 +4,14 @@ use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
     crate::{
         domain::{competition::order, eth},
-        infra::time,
+        infra::{
+            config::file::{
+                default_http_time_buffer_milliseconds,
+                default_quote_competition_time_buffer_milliseconds,
+                default_solve_competition_time_buffer_milliseconds,
+            },
+            time,
+        },
         tests::{
             cases::{
                 AB_ORDER_AMOUNT,
@@ -645,8 +652,32 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        // 0.5s http_delay + 4.5s solve_competition_time + 1s solving time
-        time::now() + chrono::Duration::seconds(6)
+        let http_delay =
+            chrono::Duration::seconds(default_http_time_buffer_milliseconds().try_into().unwrap());
+        let competition_time = match self.quote {
+            true => chrono::Duration::seconds(
+                default_quote_competition_time_buffer_milliseconds()
+                    .try_into()
+                    .unwrap(),
+            ),
+            false => chrono::Duration::seconds(
+                default_solve_competition_time_buffer_milliseconds()
+                    .try_into()
+                    .unwrap(),
+            ),
+        };
+        // - driver receives auction with deadline X
+        // - driver reduces X by http_delay to accomodate for autopilot/driver
+        //   communication delay
+        // - driver reduces X by competition_time to accomodate for processing solutions
+        // - driver reduces X by another http_delay to accomodate for driver/solver
+        //   communication delay
+        // - what's left is solving time
+        time::now()
+            + http_delay
+            + competition_time
+            + http_delay
+            + chrono::Duration::milliseconds(500)
     }
 }
 
