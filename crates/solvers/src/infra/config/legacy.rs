@@ -25,6 +25,9 @@ struct Config {
 
     /// The URL of the endpoint that responds to solve requests.
     endpoint: String,
+
+    /// Enabled requests compression
+    gzip_requests: bool,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -44,5 +47,6 @@ pub async fn load(path: &Path) -> legacy::Config {
         solver_name: config.solver_name,
         chain_id: config.chain_id,
         endpoint: Url::parse(&config.endpoint).unwrap(),
+        gzip_requests: config.gzip_requests,
     }
 }
