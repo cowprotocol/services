@@ -156,7 +156,7 @@ pub fn default_solve_competition_time_buffer_milliseconds() -> u64 {
     4500
 }
 
-fn default_quote_competition_time_buffer_milliseconds() -> u64 {
+pub fn default_quote_competition_time_buffer_milliseconds() -> u64 {
     1000
 }
 

@@ -7,6 +7,7 @@ use {
             blockchain::contracts::Addresses,
             config::file::{
                 default_http_time_buffer_milliseconds,
+                default_quote_competition_time_buffer_milliseconds,
                 default_solve_competition_time_buffer_milliseconds,
             },
             Ethereum,
@@ -232,6 +233,10 @@ impl Solver {
                         .0
                         .0
                         .to_string();
+                    let competition_time = match config.quote {
+                        true => default_quote_competition_time_buffer_milliseconds(),
+                        false => default_solve_competition_time_buffer_milliseconds(),
+                    };
                     let expected = json!({
                         "id": if config.quote { None } else { Some("1") },
                         "tokens": tokens_json,
@@ -242,7 +247,7 @@ impl Solver {
                         // (twice because http is reduced once when request is received from autopilot 
                         // and second time when request is sent to solver, both times done within driver)
                         "deadline": config.deadline 
-                         - chrono::Duration::milliseconds(default_solve_competition_time_buffer_milliseconds().try_into().unwrap())
+                         - chrono::Duration::milliseconds(competition_time.try_into().unwrap())
                          - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap())
                          - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap()),
                     });
