@@ -588,8 +588,6 @@ fn to_domain_solution(
     })
 }
 
-const UNKNOWN_BLOCK_NUMBER: u64 = 0;
-
 fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
     let auction_id = match notification.auction_id {
         auction::Id::Solve(id) => id,
@@ -601,7 +599,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::SimulationFailed(tx) => AuctionResult::Rejected(
+        Kind::SimulationFailed(block_number, tx) => AuctionResult::Rejected(
             SolverRejectionReason::SimulationFailure(TransactionWithError {
                 error: "".to_string(),
                 transaction: SimulatedTransaction {
@@ -609,7 +607,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                     to: tx.to.into(),
                     data: tx.input.clone().into(),
                     internalization: InternalizationStrategy::Unknown,
-                    block_number: UNKNOWN_BLOCK_NUMBER, // todo #2018
+                    block_number: *block_number,
                     tx_index: Default::default(),
                     access_list: Default::default(),
                     max_fee_per_gas: Default::default(),
