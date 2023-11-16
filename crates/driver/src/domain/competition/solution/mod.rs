@@ -4,12 +4,13 @@ use {
         domain::{
             competition::{self, order},
             eth::{self, TokenAddress},
+            time,
         },
         infra::{
+            self,
             blockchain::{self, Ethereum},
             simulator,
             solver::Solver,
-            time,
             Simulator,
         },
     },
@@ -253,7 +254,7 @@ pub struct SolverTimeout(chrono::Duration);
 
 impl SolverTimeout {
     pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
-        time::now() + self.0
+        infra::time::now() + self.0
     }
 
     pub fn duration(self) -> chrono::Duration {
@@ -266,9 +267,11 @@ impl SolverTimeout {
     }
 }
 
-impl From<chrono::Duration> for SolverTimeout {
-    fn from(duration: chrono::Duration) -> Self {
-        Self(duration)
+impl TryFrom<time::Deadline> for SolverTimeout {
+    type Error = time::DeadlineExceeded;
+
+    fn try_from(value: time::Deadline) -> Result<Self, Self::Error> {
+        Ok(Self(value.remaining()?))
     }
 }
 

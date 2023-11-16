@@ -89,8 +89,7 @@ impl Order {
             // don't give the full deadline to the solver, 
             // leave some time for the driver to process the solutions
             .reduce(solver.timeouts().quote_competition_time)
-            .remaining()?
-            .into();
+            .try_into()?;
         let solutions = solver
             .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
             .await?;

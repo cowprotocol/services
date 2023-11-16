@@ -76,8 +76,7 @@ impl Competition {
                     // don't give the full deadline to the solver, 
                     // leave some time for the driver to process the solutions
                     .reduce(self.competition_time())
-                    .remaining()?
-                    .into(),
+                    .try_into()?,
             )
             .await
             .tap_err(|err| {
