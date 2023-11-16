@@ -148,11 +148,11 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-fn default_http_time_buffer_milliseconds() -> u64 {
+pub fn default_http_time_buffer_milliseconds() -> u64 {
     1500
 }
 
-fn default_solve_competition_time_buffer_milliseconds() -> u64 {
+pub fn default_solve_competition_time_buffer_milliseconds() -> u64 {
     4500
 }
 

@@ -145,8 +145,7 @@ impl Solver {
         self.config.account.clone()
     }
 
-    /// Maximum time allocated for http request/reponse to propagate through
-    /// network.
+    /// Timeout configuration for this solver.
     pub fn timeouts(&self) -> Timeouts {
         self.config.timeouts
     }

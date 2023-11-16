@@ -1,8 +1,16 @@
 use {
     super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
-        domain::competition::{auction, order},
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        domain::competition::order,
+        infra::{
+            self,
+            blockchain::contracts::Addresses,
+            config::file::{
+                default_http_time_buffer_milliseconds,
+                default_solve_competition_time_buffer_milliseconds,
+            },
+            Ethereum,
+        },
         tests::hex_address,
     },
     itertools::Itertools,
@@ -231,8 +239,8 @@ impl Solver {
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
                         "deadline": config.deadline 
-                         - chrono::Duration::milliseconds(4500) // auction::Deadline::competition()
-                         - chrono::Duration::milliseconds(1500), // solver http time buffer
+                         - chrono::Duration::milliseconds(default_solve_competition_time_buffer_milliseconds().try_into().unwrap())
+                         - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap()),
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

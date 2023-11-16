@@ -459,10 +459,6 @@ impl std::fmt::Display for Id {
     }
 }
 
-// #[derive(Debug, Error)]
-// #[error("the solution deadline has been exceeded")]
-// pub struct DeadlineExceeded;
-
 #[derive(Debug, Error)]
 #[error("invalid auction id")]
 pub struct InvalidId;
