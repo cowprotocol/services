@@ -133,7 +133,7 @@ struct Metrics {
 impl<K, V, F> RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
-    V: Clone,
+    V: Clone + Send + Sync + 'static,
     F: CacheFetching<K, V>,
 {
     /// number_of_blocks_to_cache: Previous blocks stay cached until the block
