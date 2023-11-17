@@ -339,7 +339,8 @@ impl Competition {
     /// The time allocated for driver to process all the solutions received from
     /// solvers. Processing includes validating, simulating, merging, scoring,
     /// and ranking the solutions.
-    fn competition_time(&self) -> chrono::Duration {
+    /// Expressed in percentage of the total auction deadline.
+    fn competition_time(&self) -> crate::util::Percent {
         self.solver.timeouts().solve_competition_time
     }
 }

@@ -1,10 +1,17 @@
-use {crate::infra, thiserror::Error};
+use {
+    crate::{
+        infra::{self},
+        util,
+    },
+    thiserror::Error,
+};
 
 /// A datetime representing a deadline until something needs to be done.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Deadline(chrono::DateTime<chrono::Utc>);
 
 impl Deadline {
+    /// Remaining time until the deadline is reached.
     pub fn remaining(self) -> Result<chrono::Duration, DeadlineExceeded> {
         let deadline = self.0 - infra::time::now();
         if deadline < chrono::Duration::zero() {
@@ -14,8 +21,11 @@ impl Deadline {
         }
     }
 
-    pub fn reduce(self, duration: chrono::Duration) -> Self {
-        Self(self.0 - duration)
+    /// Returns a new deadline that is reduced by the given percentage.
+    pub fn reduce(self, percentage: util::Percent) -> Self {
+        let duration = self.0 - infra::time::now();
+        let leftover = 100.0 - percentage.get();
+        Self(infra::time::now() + duration * leftover.round() as i32 / 100)
     }
 }
 

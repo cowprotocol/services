@@ -1,19 +1,20 @@
 use {
     super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
-        domain::competition::order,
+        domain::{competition::order, time},
         infra::{
             self,
             blockchain::contracts::Addresses,
             config::file::{
                 default_http_time_buffer_milliseconds,
-                default_quote_competition_time_buffer_milliseconds,
-                default_solve_competition_time_buffer_milliseconds,
+                default_quote_competition_time_buffer_percent,
+                default_solve_competition_time_buffer_percent,
             },
             Ethereum,
         },
         tests::hex_address,
     },
+    bigdecimal::ToPrimitive,
     itertools::Itertools,
     serde_json::json,
     std::{
@@ -218,6 +219,31 @@ impl Solver {
             gas,
         )
         .await;
+        let deadline = time::Deadline::from(
+            config.deadline
+                // reduce by http delay to acoomodate for autopilot / driver communication
+                - chrono::Duration::milliseconds(
+                    default_http_time_buffer_milliseconds().try_into().unwrap(),
+                ),
+        );
+        let competition_time = match config.quote {
+            true => default_quote_competition_time_buffer_percent()
+                .to_f64()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+            false => default_solve_competition_time_buffer_percent()
+                .to_f64()
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        };
+        let solver_duration = deadline.reduce(competition_time).remaining().unwrap();
+        let solver_duration = solver_duration
+            // reduce by http delay to acoomodate for driver / solvers communication
+            - chrono::Duration::milliseconds(
+                default_http_time_buffer_milliseconds().try_into().unwrap(),
+            );
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
@@ -233,23 +259,13 @@ impl Solver {
                         .0
                         .0
                         .to_string();
-                    let competition_time = match config.quote {
-                        true => default_quote_competition_time_buffer_milliseconds(),
-                        false => default_solve_competition_time_buffer_milliseconds(),
-                    };
                     let expected = json!({
                         "id": if config.quote { None } else { Some("1") },
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        // subtract competition time and twice the http delay buffer 
-                        // (twice because http is reduced once when request is received from autopilot 
-                        // and second time when request is sent to solver, both times done within driver)
-                        "deadline": config.deadline 
-                         - chrono::Duration::milliseconds(competition_time.try_into().unwrap())
-                         - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap())
-                         - chrono::Duration::milliseconds(default_http_time_buffer_milliseconds().try_into().unwrap()),
+                        "deadline": infra::time::now() + solver_duration,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

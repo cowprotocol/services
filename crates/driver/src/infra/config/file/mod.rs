@@ -152,12 +152,12 @@ pub fn default_http_time_buffer_milliseconds() -> u64 {
     500
 }
 
-pub fn default_solve_competition_time_buffer_milliseconds() -> u64 {
-    4500
+pub fn default_solve_competition_time_buffer_percent() -> u64 {
+    20
 }
 
-pub fn default_quote_competition_time_buffer_milliseconds() -> u64 {
-    1000
+pub fn default_quote_competition_time_buffer_percent() -> u64 {
+    20
 }
 
 #[serde_as]
@@ -193,14 +193,16 @@ struct SolverConfig {
     http_time_buffer_milliseconds: u64,
 
     /// Maximum time allocated for processing the solutions received from
-    /// solvers, used for /solve endpoint.
-    #[serde(default = "default_solve_competition_time_buffer_milliseconds")]
-    solve_competition_time_buffer_milliseconds: u64,
+    /// solvers, in percentage of total driver deadline, used for /solve
+    /// endpoint.
+    #[serde(default = "default_solve_competition_time_buffer_percent")]
+    solve_competition_time_buffer_percent: u64,
 
     /// Maximum time allocated for processing the solutions received from
-    /// solvers, used for /quote endpoint
-    #[serde(default = "default_quote_competition_time_buffer_milliseconds")]
-    quote_competition_time_buffer_milliseconds: u64,
+    /// solvers, in percentage of total driver deadline, used for /quote
+    /// endpoint.
+    #[serde(default = "default_quote_competition_time_buffer_percent")]
+    quote_competition_time_buffer_percent: u64,
 }
 
 #[serde_as]

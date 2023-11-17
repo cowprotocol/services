@@ -3,6 +3,7 @@ use {
         domain::eth,
         infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
+    bigdecimal::ToPrimitive,
     futures::future::join_all,
     std::path::Path,
     tokio::fs,
@@ -70,18 +71,18 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     http_delay: chrono::Duration::milliseconds(
                         config.http_time_buffer_milliseconds.try_into().unwrap(),
                     ),
-                    solve_competition_time: chrono::Duration::milliseconds(
-                        config
-                            .solve_competition_time_buffer_milliseconds
-                            .try_into()
-                            .unwrap(),
-                    ),
-                    quote_competition_time: chrono::Duration::milliseconds(
-                        config
-                            .quote_competition_time_buffer_milliseconds
-                            .try_into()
-                            .unwrap(),
-                    ),
+                    solve_competition_time: config
+                        .solve_competition_time_buffer_percent
+                        .to_f64()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
+                    quote_competition_time: config
+                        .quote_competition_time_buffer_percent
+                        .to_f64()
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
                 },
             }
         }))

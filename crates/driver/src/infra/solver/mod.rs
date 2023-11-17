@@ -70,11 +70,13 @@ pub struct Timeouts {
     /// network.
     pub http_delay: chrono::Duration,
     /// Maximum time allocated for processing the solutions received from
-    /// solvers, used for /solve endpoint.
-    pub solve_competition_time: chrono::Duration,
+    /// solvers, in percentage of total driver deadline, used for /solve
+    /// endpoint.
+    pub solve_competition_time: util::Percent,
     /// Maximum time allocated for processing the solutions received from
-    /// solvers, used for /quote endpoint
-    pub quote_competition_time: chrono::Duration,
+    /// solvers, in percentage of total driver deadline, used for /quote
+    /// endpoint.
+    pub quote_competition_time: util::Percent,
 }
 
 /// Solvers are controlled by the driver. Their job is to search for solutions
