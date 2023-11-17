@@ -3,7 +3,7 @@ use {
     crate::{
         baseline_solver::BaselineSolvable,
         ethcontract_error::EthcontractErrorType,
-        ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
+        ethrpc::Web3,
         recent_block_cache::Block,
     },
     anyhow::Result,
@@ -37,30 +37,12 @@ pub trait PoolFetching: Send + Sync {
 /// Trait for abstracting the on-chain reading logic for pool state.
 pub trait PoolReading: Send + Sync {
     /// Read the pool state for the specified token pair.
-    ///
-    /// The caller specifies a Web3 call back to queue RPC requests into as well
-    /// as a block number to fetch the data on.
-    ///
-    /// This method intentionally **does not** use `async_trait` because
-    /// implementations are expected to queue up Ethereum RPC calls into the
-    /// specified batch when the method is called and not when the resulting
-    /// future is first polled.
-    fn read_state(
-        &self,
-        pair: TokenPair,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'_, Result<Option<Pool>>>;
+    fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>>;
 }
 
 impl PoolReading for Box<dyn PoolReading> {
-    fn read_state(
-        &self,
-        pair: TokenPair,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'_, Result<Option<Pool>>> {
-        (**self).read_state(pair, batch, block)
+    fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
+        (**self).read_state(pair, block)
     }
 }
 
@@ -230,13 +212,11 @@ where
             let non_existent_pools = self.non_existent_pools.read().unwrap();
             token_pairs.retain(|pair| !non_existent_pools.contains_key(pair));
         }
-        let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(at_block.into());
         let futures = token_pairs
             .iter()
-            .map(|pair| self.pool_reader.read_state(*pair, &mut batch, block))
+            .map(|pair| self.pool_reader.read_state(*pair, block))
             .collect::<Vec<_>>();
-        batch.execute_all(MAX_BATCH_SIZE).await;
 
         let results = future::try_join_all(futures).await?;
 
@@ -268,12 +248,7 @@ pub struct DefaultPoolReader {
 }
 
 impl PoolReading for DefaultPoolReader {
-    fn read_state(
-        &self,
-        pair: TokenPair,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'_, Result<Option<Pool>>> {
+    fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
         let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
 
@@ -281,23 +256,19 @@ impl PoolReading for DefaultPoolReader {
         let token0 = ERC20::at(&self.web3, pair.get().0);
         let token1 = ERC20::at(&self.web3, pair.get().1);
 
-        let reserves = pair_contract.get_reserves().block(block).batch_call(batch);
-        let token0_balance = token0
-            .balance_of(pair_address)
-            .block(block)
-            .batch_call(batch);
-        let token1_balance = token1
-            .balance_of(pair_address)
-            .block(block)
-            .batch_call(batch);
+        let fetch_reserves = pair_contract.get_reserves().block(block).call();
+        let fetch_token0_balance = token0.balance_of(pair_address).block(block).call();
+        let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();
 
         async move {
+            let (reserves, token0_balance, token1_balance) =
+                futures::join!(fetch_reserves, fetch_token0_balance, fetch_token1_balance);
             handle_results(
                 FetchedPool {
                     pair,
-                    reserves: reserves.await,
-                    token0_balance: token0_balance.await,
-                    token1_balance: token1_balance.await,
+                    reserves,
+                    token0_balance,
+                    token1_balance,
                 },
                 pair_address,
             )
