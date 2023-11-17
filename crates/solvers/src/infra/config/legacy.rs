@@ -27,6 +27,7 @@ struct Config {
     endpoint: String,
 
     /// Enabled requests compression
+    #[serde(default)]
     gzip_requests: bool,
 }
 
