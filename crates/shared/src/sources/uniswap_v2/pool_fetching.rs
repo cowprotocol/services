@@ -15,8 +15,7 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::collections::HashSet,
-    std::sync::RwLock,
+    std::{collections::HashSet, sync::RwLock},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -253,7 +252,10 @@ where
             }
         }
         if !new_missing_pairs.is_empty() {
-            self.non_existent_pools.write().unwrap().extend(new_missing_pairs);
+            self.non_existent_pools
+                .write()
+                .unwrap()
+                .extend(new_missing_pairs);
         }
         Ok(pools)
     }

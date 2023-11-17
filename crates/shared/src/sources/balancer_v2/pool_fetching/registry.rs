@@ -12,10 +12,10 @@ use {
             common::PoolInfoFetching,
             FactoryIndexing,
             Pool,
+            PoolIndexing,
             PoolStatus,
         },
     },
-    crate::sources::balancer_v2::pools::PoolIndexing,
     anyhow::Result,
     contracts::{balancer_v2_base_pool_factory, BalancerV2BasePoolFactory},
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
@@ -26,13 +26,14 @@ use {
         Web3Transport,
         MAX_BATCH_SIZE,
     },
-    futures::future,
+    futures::{future, FutureExt},
     hex_literal::hex,
     model::TokenPair,
-    std::{collections::HashSet, sync::Arc},
+    std::{
+        collections::HashSet,
+        sync::{Arc, RwLock},
+    },
     tokio::sync::Mutex,
-    std::sync::RwLock,
-    futures::FutureExt,
 };
 
 pub struct BasePoolFactoryContract(BalancerV2BasePoolFactory);
@@ -124,7 +125,9 @@ where
             .into_iter()
             .map(|pool_info| {
                 let id = pool_info.common().id;
-                self.fetcher.fetch_pool(&pool_info, &mut batch, block).map(move |result| (id, result))
+                self.fetcher
+                    .fetch_pool(&pool_info, &mut batch, block)
+                    .map(move |result| (id, result))
             })
             .collect::<Vec<_>>();
 
@@ -161,15 +164,18 @@ fn base_pool_factory(contract_instance: &Instance<Web3Transport>) -> BalancerV2B
     )
 }
 
-/// Returns the list of found pools and a list of pool ids that could not be found.
-fn collect_pool_results(results: Vec<(H256, Result<PoolStatus>)>) -> Result<(Vec<Pool>, Vec<H256>)> {
+/// Returns the list of found pools and a list of pool ids that could not be
+/// found.
+fn collect_pool_results(
+    results: Vec<(H256, Result<PoolStatus>)>,
+) -> Result<(Vec<Pool>, Vec<H256>)> {
     let mut fetched_pools = Vec::with_capacity(results.len());
     let mut missing_ids = vec![];
     for (id, result) in results {
         match result {
             Ok(PoolStatus::Active(pool)) => fetched_pools.push(pool),
             Ok(PoolStatus::Disabled) => missing_ids.push(id),
-            Ok( PoolStatus::Paused) => {},
+            Ok(PoolStatus::Paused) => {}
             Err(err) if is_contract_error(&err) => missing_ids.push(id),
             Err(err) => return Err(err),
         }
@@ -196,32 +202,44 @@ mod tests {
                 swap::fixed_point::Bfp,
             },
         },
+        std::str::FromStr,
     };
 
     #[tokio::test]
     async fn collecting_results_filters_paused_pools_and_contract_errors() {
+        let bad_pool =
+            H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
+                .unwrap();
         let results = vec![
-            (Default::default(), Ok(PoolStatus::Active(Pool {
-                id: Default::default(),
-                kind: PoolKind::Weighted(weighted::PoolState {
-                    tokens: Default::default(),
-                    swap_fee: Bfp::zero(),
-                    version: Default::default(),
-                }),
-            }))),
+            (
+                Default::default(),
+                Ok(PoolStatus::Active(Pool {
+                    id: Default::default(),
+                    kind: PoolKind::Weighted(weighted::PoolState {
+                        tokens: Default::default(),
+                        swap_fee: Bfp::zero(),
+                        version: Default::default(),
+                    }),
+                })),
+            ),
             (Default::default(), Ok(PoolStatus::Paused)),
-            (Default::default(), Err(ethcontract_error::testing_contract_error().into()))
+            (
+                bad_pool,
+                Err(ethcontract_error::testing_contract_error().into()),
+            ),
         ];
         let (fetched, missing) = collect_pool_results(results).unwrap();
         assert_eq!(fetched.len(), 1);
-        assert!(missing.is_empty());
+        assert_eq!(missing, vec![bad_pool]);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = (Default::default(), Err(ethcontract_error::testing_node_error().into()));
-        let (fetched, missing) = collect_pool_results(vec![node_err]).unwrap();
-        assert!(fetched.is_empty());
-        assert_eq!(missing, vec![Default::default()]);
+        let node_err = (
+            Default::default(),
+            Err(ethcontract_error::testing_node_error().into()),
+        );
+        let result = collect_pool_results(vec![node_err]);
+        assert!(result.is_err());
     }
 }
