@@ -43,8 +43,9 @@ impl Api {
         let tokens = tokens::Fetcher::new(self.eth.clone());
         let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
 
-        // Add the metrics endpoint.
+        // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
+        app = routes::healthz(app);
 
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
