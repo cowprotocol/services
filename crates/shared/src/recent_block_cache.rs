@@ -25,29 +25,31 @@
 //! could simplify this module if it was only used by by the former.
 
 use {
-    anyhow::Result,
+    crate::request_sharing::BoxRequestSharing,
+    anyhow::{Context, Result},
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
     ethrpc::current_block::CurrentBlockStream,
+    futures::FutureExt,
     prometheus::IntCounterVec,
     std::{
         cmp,
         collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::Duration,
     },
 };
 
 /// A trait used to define `RecentBlockCache` updating behaviour.
 #[async_trait::async_trait]
-pub trait CacheFetching<K, V> {
+pub trait CacheFetching<K, V>: Send + Sync + 'static {
     async fn fetch_values(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>>;
 }
 
 /// A trait used for `RecentBlockCache` keys.
-pub trait CacheKey<V>: Clone + Eq + Hash + Ord {
+pub trait CacheKey<V>: Clone + Eq + Hash + Ord + Send + Sync + 'static {
     /// Returns the smallest possible value for this type's `std::cmp::Ord`
     /// implementation.
     fn first_ord() -> Self;
@@ -87,12 +89,13 @@ where
 {
     mutexed: Mutex<Mutexed<K, V>>,
     number_of_blocks_to_cache: NonZeroU64,
-    fetcher: F,
+    fetcher: Arc<F>,
     block_stream: CurrentBlockStream,
     maximum_retries: u32,
     delay_between_retries: Duration,
     metrics: &'static Metrics,
     metrics_label: &'static str,
+    requests: BoxRequestSharing<(HashSet<K>, Block), Option<Vec<V>>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -158,12 +161,13 @@ where
                 config.maximum_recent_block_age,
             )),
             number_of_blocks_to_cache: config.number_of_blocks_to_cache,
-            fetcher,
+            fetcher: Arc::new(fetcher),
             block_stream,
             maximum_retries: config.max_retries,
             delay_between_retries: config.delay_between_retries,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
+            requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
         })
     }
 
@@ -198,15 +202,24 @@ where
     // hasn't seen the block yet. As a workaround we repeat the request up to N
     // times while sleeping in between.
     async fn fetch_inner(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
-        let fetch = || self.fetcher.fetch_values(keys.clone(), block);
-        for _ in 0..self.maximum_retries {
-            match fetch().await {
-                Ok(values) => return Ok(values),
-                Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+        let retries = self.maximum_retries;
+        let delay = self.delay_between_retries;
+        let fetcher = self.fetcher.clone();
+        let fut = self.requests.shared_or_else((keys, block), |entry| {
+            let (keys, block) = entry.clone();
+            async move {
+                for _ in 0..=retries {
+                    match fetcher.fetch_values(keys.clone(), block).await {
+                        Ok(values) => return Some(values),
+                        Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+                    }
+                    tokio::time::sleep(delay).await;
+                }
+                None
             }
-            tokio::time::sleep(self.delay_between_retries).await;
-        }
-        fetch().await
+            .boxed()
+        });
+        fut.await.context("could not fetch liquidity")
     }
 
     pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
