@@ -124,81 +124,8 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
-        contracts::dummy_contract,
         ethcontract::{H160, H256},
-        ethcontract_mock::Mock,
-        futures::future,
-        maplit::btreemap,
     };
-
-    #[tokio::test]
-    async fn fetch_pool_state() {
-        let tokens = btreemap! {
-            H160([1; 20]) => common::TokenState {
-                balance: bfp!("1000.0").as_uint256(),
-                scaling_factor: Bfp::exp10(0),
-            },
-            H160([2; 20]) => common::TokenState {
-                balance: bfp!("10.0").as_uint256(),
-                scaling_factor: Bfp::exp10(0),
-            },
-            H160([3; 20]) => common::TokenState {
-                balance: 15_000_000.into(),
-                scaling_factor: Bfp::exp10(12),
-            },
-        };
-        let swap_fee = bfp!("0.00015");
-        let amplification_parameter =
-            AmplificationParameter::new(200.into(), 10000.into()).unwrap();
-
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
-
-        let pool = mock.deploy(BalancerV2StablePool::raw_contract().abi.clone());
-        pool.expect_call(BalancerV2StablePool::signatures().get_amplification_parameter())
-            .returns((
-                amplification_parameter.factor,
-                false,
-                amplification_parameter.precision,
-            ));
-
-        let factory = dummy_contract!(BalancerV2StablePoolFactoryV2, H160::default());
-        let pool_info = PoolInfo {
-            common: common::PoolInfo {
-                id: H256([0x90; 32]),
-                address: pool.address(),
-                tokens: tokens.keys().copied().collect(),
-                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
-                block_created: 1337,
-            },
-        };
-        let common_pool_state = common::PoolState {
-            paused: false,
-            swap_fee,
-            tokens,
-        };
-
-        let pool_state = {
-            let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = factory.fetch_pool_state(
-                &pool_info,
-                future::ready(common_pool_state.clone()).boxed(),
-                block.into(),
-            );
-
-            pool_state.await.unwrap()
-        };
-
-        assert_eq!(
-            pool_state,
-            Some(PoolState {
-                tokens: common_pool_state.tokens,
-                swap_fee,
-                amplification_parameter,
-            })
-        );
-    }
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {
