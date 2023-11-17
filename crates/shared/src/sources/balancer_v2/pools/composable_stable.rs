@@ -2,12 +2,9 @@
 
 use {
     super::{common, FactoryIndexing, PoolIndexing},
-    crate::{
-        ethrpc::Web3CallBatch,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
     anyhow::Result,
     contracts::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
@@ -47,7 +44,6 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract = BalancerV2ComposableStablePool::at(
@@ -55,20 +51,21 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
             pool_info.common.address,
         );
 
-        let scaling_factors = pool_contract
-            .get_scaling_factors()
-            .block(block)
-            .batch_call(batch);
-        let amplification_parameter = pool_contract
+        let fetch_common = common_pool_state.map(Result::Ok);
+        let fetch_scaling_factors = pool_contract.get_scaling_factors().block(block).call();
+        let fetch_amplification_parameter = pool_contract
             .get_amplification_parameter()
             .block(block)
-            .batch_call(batch);
+            .call();
 
         async move {
-            let common = common_pool_state.await;
-            let scaling_factors = scaling_factors.await?;
+            let (common, scaling_factors, amplification_parameter) = futures::try_join!(
+                fetch_common,
+                fetch_scaling_factors,
+                fetch_amplification_parameter
+            )?;
             let amplification_parameter = {
-                let (factor, _, precision) = amplification_parameter.await?;
+                let (factor, _, precision) = amplification_parameter;
                 AmplificationParameter::new(factor, precision)?
             };
 
@@ -164,17 +161,14 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
                 block.into(),
             );
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 

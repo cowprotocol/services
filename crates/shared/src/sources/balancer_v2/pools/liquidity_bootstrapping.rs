@@ -2,12 +2,9 @@
 
 use {
     super::{common, FactoryIndexing, PoolIndexing},
-    crate::{
-        ethrpc::Web3CallBatch,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
     anyhow::Result,
     contracts::{
@@ -54,7 +51,6 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract = BalancerV2LiquidityBootstrappingPool::at(
@@ -62,24 +58,19 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
             pool_info.common.address,
         );
 
+        let fetch_common = common_pool_state.map(Result::Ok);
         // Liquidity bootstrapping pools use dynamic weights, meaning that we
         // need to fetch them every time.
-        let weights = pool_contract
-            .get_normalized_weights()
-            .block(block)
-            .batch_call(batch);
-        let swap_enabled = pool_contract
-            .get_swap_enabled()
-            .block(block)
-            .batch_call(batch);
+        let fetch_weights = pool_contract.get_normalized_weights().block(block).call();
+        let fetch_swap_enabled = pool_contract.get_swap_enabled().block(block).call();
 
         async move {
-            if !swap_enabled.await? {
+            let (common, weights, swap_enabled) =
+                futures::try_join!(fetch_common, fetch_weights, fetch_swap_enabled)?;
+            if !swap_enabled {
                 return Ok(None);
             }
 
-            let common = common_pool_state.await;
-            let weights = weights.await?;
             let tokens = common
                 .tokens
                 .into_iter()
@@ -188,17 +179,14 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
                 block.into(),
             );
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 
@@ -255,17 +243,14 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
                 block.into(),
             );
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 
