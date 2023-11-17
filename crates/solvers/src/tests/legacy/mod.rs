@@ -12,6 +12,7 @@ pub fn config(solver_addr: &SocketAddr) -> tests::Config {
 solver-name = 'legacy_solver'
 endpoint = 'http://{solver_addr}/solve'
 chain-id = '1'
+gzip-requests = false
         ",
     ))
 }
