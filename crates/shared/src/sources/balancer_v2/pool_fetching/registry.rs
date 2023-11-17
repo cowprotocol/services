@@ -21,10 +21,7 @@ use {
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     ethrpc::{
         current_block::{BlockNumberHash, BlockRetrieving},
-        Web3,
-        Web3CallBatch,
         Web3Transport,
-        MAX_BATCH_SIZE,
     },
     futures::{future, FutureExt},
     hex_literal::hex,
@@ -65,7 +62,6 @@ pub struct Registry<Factory>
 where
     Factory: FactoryIndexing,
 {
-    web3: Web3,
     fetcher: Arc<dyn PoolInfoFetching<Factory>>,
     updater: PoolUpdater<Factory>,
     non_existent_pools: RwLock<HashSet<H256>>,
@@ -83,7 +79,6 @@ where
         initial_pools: Vec<Factory::PoolInfo>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
-        let web3 = factory_instance.web3();
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
             BasePoolFactoryContract(base_pool_factory(factory_instance)),
@@ -91,7 +86,6 @@ where
             start_sync_at_block,
         ));
         Self {
-            web3,
             fetcher,
             updater,
             non_existent_pools: Default::default(),
@@ -117,7 +111,6 @@ where
             let non_existent_pools = self.non_existent_pools.read().unwrap();
             pool_ids.retain(|id| !non_existent_pools.contains(id));
         }
-        let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(block.into());
 
         let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
@@ -126,12 +119,10 @@ where
             .map(|pool_info| {
                 let id = pool_info.common().id;
                 self.fetcher
-                    .fetch_pool(&pool_info, &mut batch, block)
+                    .fetch_pool(&pool_info, block)
                     .map(move |result| (id, result))
             })
             .collect::<Vec<_>>();
-
-        batch.execute_all(MAX_BATCH_SIZE).await;
 
         let results = future::join_all(pool_futures).await;
         let (pools, missing_ids) = collect_pool_results(results)?;

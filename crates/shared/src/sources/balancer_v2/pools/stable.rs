@@ -4,7 +4,6 @@ use {
     super::{common, FactoryIndexing, PoolIndexing},
     crate::{
         conversions::U256Ext as _,
-        ethrpc::Web3CallBatch,
         sources::balancer_v2::{
             graph_api::{PoolData, PoolType},
             swap::fixed_point::Bfp,
@@ -91,21 +90,22 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract =
             BalancerV2StablePool::at(&self.raw_instance().web3(), pool_info.common.address);
 
-        let amplification_parameter = pool_contract
+        let fetch_common = common_pool_state.map(Result::Ok);
+        let fetch_amplification_parameter = pool_contract
             .get_amplification_parameter()
             .block(block)
-            .batch_call(batch);
+            .call();
 
         async move {
-            let common = common_pool_state.await;
+            let (common, amplification_parameter) =
+                futures::try_join!(fetch_common, fetch_amplification_parameter)?;
             let amplification_parameter = {
-                let (factor, _, precision) = amplification_parameter.await?;
+                let (factor, _, precision) = amplification_parameter;
                 AmplificationParameter::new(factor, precision)?
             };
 
@@ -179,17 +179,14 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
                 block.into(),
             );
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 
