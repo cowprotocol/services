@@ -16,25 +16,35 @@ const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
 
 impl Node {
     /// Spawns a new node that is forked from the given URL.
-    pub async fn forked(fork: impl IntoUrl, registry: &ContainerRegistry) -> Self {
-        Self::spawn_container(
-            vec![
-                "--port",
-                "8545",
-                "--host",
-                "0.0.0.0",
-                "--fork-url",
-                fork.as_str(),
-            ],
-            registry,
-        )
-        .await
+    pub async fn forked(
+        fork: impl IntoUrl,
+        registry: &ContainerRegistry,
+        block: Option<u64>,
+    ) -> Self {
+        let mut args: Vec<_> = [
+            "--port",
+            "8545",
+            "--host",
+            "0.0.0.0",
+            "--fork-url",
+            fork.as_str(),
+        ]
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect();
+
+        if let Some(block) = block {
+            args.push("--fork-block-number".into());
+            args.push(block.to_string());
+        }
+
+        Self::spawn_container(args, registry).await
     }
 
     /// Spawns a new local test net with some default parameters.
     pub async fn new(registry: &ContainerRegistry) -> Self {
         Self::spawn_container(
-            vec![
+            [
                 "--port",
                 "8545",
                 "--host",
@@ -51,17 +61,22 @@ impl Node {
                 "1",
                 "--timestamp",
                 "1577836800",
-            ],
+            ]
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect(),
             registry,
         )
         .await
     }
 
     /// Spawn a new node instance using the list of given arguments.
-    async fn spawn_container(args: Vec<&str>, registry: &ContainerRegistry) -> Self {
+    async fn spawn_container(args: Vec<String>, registry: &ContainerRegistry) -> Self {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
         registry.pull_image(FOUNDRY_IMAGE).await;
+
+        let args = args.iter().map(AsRef::as_ref).collect();
 
         let container = docker
             .create_container::<&str, _>(

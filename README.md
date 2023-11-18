@@ -68,7 +68,8 @@ Be aware that some tests might not terminate docker containers correctly when th
 static analysis: `cargo clippy --all-features --all-targets -- -D warnings`  
 formatting: `cargo +nightly fmt --all`  
 unit tests: `cargo test`  
-e2e tests: `cargo test -p e2e -- --ignored`  
+e2e tests local node: `cargo test -p e2e -- --ignored local_node`  
+e2e tests forked node: `FORK_URL=<mainnet archive node RPC URL>cargo test -p e2e -- --ignored forked_node`  
 driver tests: `cargo nextest run -p driver --nocapture --run-ignored ignored-only`
 database tests: `cargo test postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only`  
 

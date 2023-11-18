@@ -26,7 +26,7 @@ pub mod score;
 pub mod solution;
 
 pub use {
-    auction::Auction,
+    auction::{Auction, AuctionProcessor},
     order::Order,
     score::{
         risk::{ObjectiveValue, SuccessProbability},
@@ -224,6 +224,9 @@ impl Competition {
                         tracing::warn!(block = block.number, ?err, "solution reverts on new block");
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
+                        if let Some(id) = settlement.notify_id() {
+                            notify::simulation_failed(&self.solver, auction.id(), id, &err);
+                        }
                         return;
                     }
                 }

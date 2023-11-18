@@ -9,7 +9,7 @@ use {
     },
     serde::Serialize,
     serde_with::serde_as,
-    std::collections::BTreeSet,
+    std::collections::{BTreeSet, HashMap},
     web3::types::AccessList,
 };
 
@@ -25,13 +25,16 @@ impl Notification {
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::SimulationFailed(tx) => Kind::SimulationFailed(Tx {
-                    from: tx.from.into(),
-                    to: tx.to.into(),
-                    input: tx.input.into(),
-                    value: tx.value.into(),
-                    access_list: tx.access_list.into(),
-                }),
+                notify::Kind::SimulationFailed(block, tx) => Kind::SimulationFailed(
+                    block.0,
+                    Tx {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        input: tx.input.into(),
+                        value: tx.value.into(),
+                        access_list: tx.access_list.into(),
+                    },
+                ),
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
                 }
@@ -62,6 +65,12 @@ impl Notification {
                         required: required.0,
                     }
                 }
+                notify::Kind::AssetFlow(amounts) => Kind::AssetFlow {
+                    amounts: amounts
+                        .into_iter()
+                        .map(|(token, amount)| (token.0 .0, amount.to_string()))
+                        .collect(),
+                },
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
                 notify::Kind::Settled(kind) => Kind::Settled(match kind {
                     notify::Settlement::Success(hash) => Settlement::Success {
@@ -94,7 +103,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(Tx),
+    SimulationFailed(BlockNo, Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
@@ -103,8 +112,13 @@ pub enum Kind {
         #[serde_as(as = "serialize::U256")]
         required: eth::U256,
     },
+    AssetFlow {
+        amounts: HashMap<eth::H160, String>,
+    },
     Settled(Settlement),
 }
+
+type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Serialize)]

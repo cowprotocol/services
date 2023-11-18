@@ -8,6 +8,7 @@ use {
             notification::{self, Kind, ScoreKind, Settlement},
             order,
             solution,
+            solver::legacy::Error,
         },
     },
     anyhow::{Context as _, Result},
@@ -72,7 +73,7 @@ impl Legacy {
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
-                gzip_requests: false,
+                gzip_requests: config.gzip_requests,
                 solve_path,
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
@@ -89,18 +90,30 @@ impl Legacy {
         }
     }
 
-    pub async fn solve(&self, auction: auction::Auction) -> Result<solution::Solution> {
+    pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution, Error> {
         let (mapping, auction_model) =
-            to_boundary_auction(&auction, self.weth, self.solver.network_name.clone());
+            to_boundary_auction(auction, self.weth, self.solver.network_name.clone());
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
-        to_domain_solution(&solution, mapping)
+        to_domain_solution(&solution, mapping).map_err(Into::into)
     }
 
     pub fn notify(&self, notification: notification::Notification) {
         let (auction_id, auction_result) = to_boundary_auction_result(&notification);
         self.solver
             .notify_auction_result(auction_id, auction_result);
+    }
+}
+
+impl From<shared::http_solver::Error> for Error {
+    fn from(value: shared::http_solver::Error) -> Self {
+        match value {
+            shared::http_solver::Error::DeadlineExceeded => Error::Timeout,
+            shared::http_solver::Error::RateLimited => {
+                Error::Other(anyhow::anyhow!("rate limited"))
+            }
+            shared::http_solver::Error::Other(err) => Error::Other(err),
+        }
     }
 }
 
@@ -575,8 +588,6 @@ fn to_domain_solution(
     })
 }
 
-const UNKNOWN_BLOCK_NUMBER: u64 = 0;
-
 fn to_boundary_auction_result(notification: &notification::Notification) -> (i64, AuctionResult) {
     let auction_id = match notification.auction_id {
         auction::Id::Solve(id) => id,
@@ -588,7 +599,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::SimulationFailed(tx) => AuctionResult::Rejected(
+        Kind::SimulationFailed(block_number, tx) => AuctionResult::Rejected(
             SolverRejectionReason::SimulationFailure(TransactionWithError {
                 error: "".to_string(),
                 transaction: SimulatedTransaction {
@@ -596,7 +607,7 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                     to: tx.to.into(),
                     data: tx.input.clone().into(),
                     internalization: InternalizationStrategy::Unknown,
-                    block_number: UNKNOWN_BLOCK_NUMBER, // todo #2018
+                    block_number: *block_number,
                     tx_index: Default::default(),
                     access_list: Default::default(),
                     max_fee_per_gas: Default::default(),
@@ -630,6 +641,12 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
+        Kind::AssetFlow(amounts) => AuctionResult::Rejected(SolverRejectionReason::AssetFlow(
+            amounts
+                .iter()
+                .map(|(token, amount)| (token.0, amount.to_string()))
+                .collect(),
+        )),
         Kind::DuplicatedSolutionId => {
             AuctionResult::Rejected(SolverRejectionReason::DuplicatedSolutionId(
                 notification

@@ -41,9 +41,12 @@ use {
 /// Computes a gas limit from a gas estimate that accounts for some buffer in
 /// case racing state changes result in slightly more heavy computation at
 /// execution time.
+/// Also, some solutions can have significant gas refunds that are refunded at
+/// the end of execution, so we want to increase gas limit enough so those
+/// solutions don't revert with out of gas error.
 pub fn gas_limit_for_estimate(gas_estimate: U256) -> U256 {
-    const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
-    U256::from_f64_lossy(gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR)
+    const GAS_LIMIT_FACTOR: f64 = 2.0;
+    U256::from_f64_lossy(gas_estimate.to_f64_lossy() * GAS_LIMIT_FACTOR)
 }
 
 #[derive(Debug)]

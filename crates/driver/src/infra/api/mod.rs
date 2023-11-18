@@ -1,7 +1,6 @@
 use {
     crate::{
-        domain,
-        domain::Mempools,
+        domain::{self, Mempools},
         infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
     },
     error::Error,
@@ -42,9 +41,11 @@ impl Api {
         );
 
         let tokens = tokens::Fetcher::new(self.eth.clone());
+        let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
 
-        // Add the metrics endpoint.
+        // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
+        app = routes::healthz(app);
 
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
@@ -71,6 +72,7 @@ impl Api {
                 },
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
+                pre_processor: pre_processor.clone(),
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
@@ -112,6 +114,10 @@ impl State {
     fn tokens(&self) -> &tokens::Fetcher {
         &self.0.tokens
     }
+
+    fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
+        &self.0.pre_processor
+    }
 }
 
 struct Inner {
@@ -120,4 +126,5 @@ struct Inner {
     competition: domain::Competition,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+    pre_processor: domain::competition::AuctionProcessor,
 }

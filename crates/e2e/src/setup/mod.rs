@@ -7,7 +7,6 @@ mod services;
 use {
     anyhow::{anyhow, Result},
     docker::{ContainerRegistry, Node},
-    ethcontract::H160,
     ethrpc::Web3Transport,
     futures::FutureExt,
     std::{
@@ -117,17 +116,24 @@ pub async fn run_test_with_extra_filters<F, Fut, T>(
     run(f, extra_filters, None).await
 }
 
-pub async fn run_forked_test<F, Fut>(f: F, solver_address: H160, fork_url: String)
+pub async fn run_forked_test<F, Fut>(f: F, fork_url: String)
 where
     F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
 {
-    run(f, empty::<&str>(), Some((solver_address, fork_url))).await
+    run(f, empty::<&str>(), Some((fork_url, None))).await
+}
+
+pub async fn run_forked_test_with_block_number<F, Fut>(f: F, fork_url: String, block_number: u64)
+where
+    F: FnOnce(Web3, Db) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    run(f, empty::<&str>(), Some((fork_url, Some(block_number)))).await
 }
 
 pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     f: F,
-    solver_address: H160,
     fork_url: String,
     extra_filters: impl IntoIterator<Item = T>,
 ) where
@@ -135,11 +141,27 @@ pub async fn run_forked_test_with_extra_filters<F, Fut, T>(
     Fut: Future<Output = ()>,
     T: AsRef<str>,
 {
-    run(f, extra_filters, Some((solver_address, fork_url))).await
+    run(f, extra_filters, Some((fork_url, None))).await
 }
 
-async fn run<F, Fut, T>(f: F, filters: impl IntoIterator<Item = T>, fork: Option<(H160, String)>)
-where
+pub async fn run_forked_test_with_extra_filters_and_block_number<F, Fut, T>(
+    f: F,
+    fork_url: String,
+    block_number: u64,
+    extra_filters: impl IntoIterator<Item = T>,
+) where
+    F: FnOnce(Web3, Db) -> Fut,
+    Fut: Future<Output = ()>,
+    T: AsRef<str>,
+{
+    run(f, extra_filters, Some((fork_url, Some(block_number)))).await
+}
+
+async fn run<F, Fut, T>(
+    f: F,
+    filters: impl IntoIterator<Item = T>,
+    fork: Option<(String, Option<u64>)>,
+) where
     F: FnOnce(Web3, Db) -> Fut,
     Fut: Future<Output = ()>,
     T: AsRef<str>,
@@ -152,8 +174,8 @@ where
 
     let set_up_and_run = async {
         let start_db = Db::new(&registry);
-        let start_node = match &fork {
-            Some((_, fork)) => Node::forked(fork, &registry).boxed(),
+        let start_node = match fork {
+            Some((fork, block_number)) => Node::forked(fork, &registry, block_number).boxed(),
             None => Node::new(&registry).boxed(),
         };
         let (db, node) = futures::join!(start_db, start_node);
@@ -168,13 +190,6 @@ where
             client: ethrpc::Web3::new(transport),
             port: node.port,
         };
-
-        if let Some((solver, _)) = &fork {
-            ethrpc::Web3::api::<crate::nodes::forked_node::ForkedNodeApi<_>>(&web3.client)
-                .impersonate(solver)
-                .await
-                .unwrap();
-        }
 
         tracing::info!("test environment ready; begin test");
 
