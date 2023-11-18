@@ -153,7 +153,7 @@ pub fn default_http_time_buffer_milliseconds() -> u64 {
 }
 
 pub fn default_solving_share_of_deadline() -> f64 {
-    0.2
+    0.8
 }
 
 #[serde_as]
@@ -184,6 +184,7 @@ struct SolverConfig {
     account: Account,
 
     /// Timeout configuration for the solver.
+    #[serde(default)]
     timeouts: Timeouts,
 }
 
@@ -203,7 +204,7 @@ enum Account {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Timeouts {
     /// Maximum time allocated for http request/reponse to propagate through
