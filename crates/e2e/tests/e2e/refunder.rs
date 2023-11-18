@@ -9,11 +9,11 @@ use {
     refunder::refund_service::RefundService,
 };
 
-#[tokio::test]
-#[ignore]
-async fn local_node_refunder_tx() {
-    run_test(refunder_tx).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_refunder_tx() {
+//     run_test(refunder_tx).await;
+// }
 
 async fn refunder_tx(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;

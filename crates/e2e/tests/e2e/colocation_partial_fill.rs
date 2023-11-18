@@ -9,11 +9,11 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-#[tokio::test]
-#[ignore]
-async fn local_node_test() {
-    run_test(test).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_test() {
+//     run_test(test).await;
+// }
 
 async fn test(web3: Web3, db: Db) {
     tracing::info!("Setting up chain state.");

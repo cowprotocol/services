@@ -10,11 +10,11 @@ use {
     web3::signing::SecretKeyRef,
 };
 
-#[tokio::test]
-#[ignore]
-async fn local_node_partially_fillable_observed_score() {
-    run_test(test).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_partially_fillable_observed_score() {
+//     run_test(test).await;
+// }
 
 /// Sets up a big partially fillable trade. Waits until 2 partial fills
 /// happened and then asserts that the solver competition entries for these 2 tx

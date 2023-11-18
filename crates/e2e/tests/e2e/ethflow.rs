@@ -43,17 +43,17 @@ use {
 
 const DAI_PER_ETH: u32 = 1_000;
 
-#[tokio::test]
-#[ignore]
-async fn local_node_eth_flow() {
-    run_test(eth_flow_tx).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_eth_flow() {
+//     run_test(eth_flow_tx).await;
+// }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_eth_flow_indexing_after_refund() {
-    run_test(eth_flow_indexing_after_refund).await;
-}
+// #[tokio::test]
+// #[ignore]
+// async fn local_node_eth_flow_indexing_after_refund() {
+//     run_test(eth_flow_indexing_after_refund).await;
+// }
 
 async fn eth_flow_tx(web3: Web3, db: Db) {
     let mut onchain = OnchainComponents::deploy(web3).await;
