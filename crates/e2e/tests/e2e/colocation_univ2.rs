@@ -45,7 +45,7 @@ async fn test(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        &format!("http://localhost:{}", onchain.rpc_port()),
+        &format!("http://127.0.0.1:{}", onchain.rpc_port()),
     )
     .await;
 

@@ -16,7 +16,7 @@ servers:
   - description: Gnosis Chain (Staging)
     url: https://barn.api.cow.fi/xdai
   - description: Local
-    url: http://localhost:8080
+    url: http://127.0.0.1:8080
 paths:
   /api/v1/orders:
     post:
@@ -477,7 +477,7 @@ components:
         format of the JSON expected in the `appData` field is defined
         [here](https://github.com/cowprotocol/app-data).
       type: string
-      example: "{\"version\":\"0.9.0\",\"metadata\":{}}"
+      example: '{"version":"0.9.0","metadata":{}}'
     AppDataHash:
       description: |
         32 bytes encoded as hex with `0x` prefix.
@@ -754,10 +754,10 @@ components:
             - $ref: "#/components/schemas/AppDataHash"
         appDataHash:
           description: |
-           May be set for debugging purposes. If set, this field is compared to what the backend
-           internally calculates as the app data hash based on the contents of `appData`. If the
-           hash does not match, an error is returned. If this field is set, then `appData` **MUST** be
-           a string encoding of a JSON object.
+            May be set for debugging purposes. If set, this field is compared to what the backend
+            internally calculates as the app data hash based on the contents of `appData`. If the
+            hash does not match, an error is returned. If this field is set, then `appData` **MUST** be
+            a string encoding of a JSON object.
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
@@ -1058,8 +1058,7 @@ components:
       properties:
         errorType:
           type: string
-          enum:
-            [
+          enum: [
               DuplicatedOrder,
               QuoteNotFound,
               InvalidQuote,
@@ -1154,12 +1153,7 @@ components:
       properties:
         errorType:
           type: string
-          enum:
-            [
-              "UnsupportedToken",
-              "ZeroAmount",
-              "UnsupportedOrderType"
-            ]
+          enum: ["UnsupportedToken", "ZeroAmount", "UnsupportedOrderType"]
         description:
           type: string
       required:

@@ -182,7 +182,7 @@ async fn test() {
 
     let config = tests::Config::String(format!(
         r"
-node-url = 'http://localhost:8545'
+node-url = 'http://127.0.0.1:8545'
 relative-slippage = '0.1'
 risk-parameters = [0,0,0,0]
 [dex]
