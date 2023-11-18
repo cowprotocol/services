@@ -1,3 +1,5 @@
+use ethrpc::create_test_transport;
+
 pub mod colocation;
 mod deploy;
 #[macro_use]
@@ -76,8 +78,8 @@ const DEFAULT_FILTERS: &[&str] = &[
     "solver=debug",
     "solvers=debug",
     "orderbook::api::request_summary=off",
-    "hyper=trace",
-    "reqwest=trace",
+    // "hyper=trace",
+    // "reqwest=trace",
 ];
 
 fn with_default_filters<T>(custom_filters: impl IntoIterator<Item = T>) -> Vec<String>
@@ -158,11 +160,12 @@ where
         };
         let (db, node) = futures::join!(start_db, start_node);
 
-        let transport = Web3Transport::new(
-            web3::transports::WebSocket::new(&format!("ws://127.0.0.1:{}", node.port))
-                .await
-                .unwrap(),
-        );
+        let transport = create_test_transport(&format!("http://127.0.0.1:{}", node.port));
+        // let transport = Web3Transport::new(
+        //     web3::transports::WebSocket::new(&format!("ws://127.0.0.1:{}", node.ws_port))
+        //         .await
+        //         .unwrap(),
+        // );
 
         let web3 = Web3 {
             client: ethrpc::Web3::new(transport),
@@ -190,9 +193,10 @@ where
 
     tokio::select! {
         result = &mut set_up_and_run => {
-            registry.kill_all().await;
             if let Err(err) = result {
                 panic::resume_unwind(err);
+            } else {
+                registry.kill_all().await;
             }
         },
         _ = shutdown_signal() => {

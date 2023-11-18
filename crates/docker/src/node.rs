@@ -10,9 +10,10 @@ use {
 /// A dockerized blockchain node for testing purposes.
 pub struct Node {
     pub port: u16,
+    pub ws_port: u16,
 }
 
-const FOUNDRY_IMAGE: &str = "ghcr.io/foundry-rs/foundry:latest";
+const FOUNDRY_IMAGE: &str = "ethereum/client-go:latest";
 
 impl Node {
     /// Spawns a new node that is forked from the given URL.
@@ -35,22 +36,34 @@ impl Node {
     pub async fn new(registry: &ContainerRegistry) -> Self {
         Self::spawn_container(
             vec![
-                "--port",
-                "8545",
-                "--host",
+                "--dev",
+                "--ws",
+                "--ws.origins",
+                "*",
+                "--http",
+                "--http.addr",
                 "0.0.0.0",
-                "--gas-price",
-                "1",
-                "--gas-limit",
-                "10000000",
-                "--base-fee",
-                "0",
-                "--balance",
-                "1000000",
-                "--chain-id",
-                "1",
-                "--timestamp",
-                "1577836800",
+                "--http.api",
+                "web3,eth,net,debug",
+                "--http.port",
+                "8545"
+
+                // "--port",
+                // "8545",
+                // "--host",
+                // "0.0.0.0",
+                // "--gas-price",
+                // "1",
+                // "--gas-limit",
+                // "10000000",
+                // "--base-fee",
+                // "0",
+                // "--balance",
+                // "1000000",
+                // "--chain-id",
+                // "1",
+                // "--timestamp",
+                // "1577836800",
             ],
             registry,
         )
@@ -61,19 +74,21 @@ impl Node {
     async fn spawn_container(args: Vec<&str>, registry: &ContainerRegistry) -> Self {
         let docker = bollard::Docker::connect_with_socket_defaults().unwrap();
 
+        tracing::error!("pull image");
         registry.pull_image(FOUNDRY_IMAGE).await;
 
+        tracing::error!("prepare container");
         let container = docker
             .create_container::<&str, _>(
                 None,
                 Config {
                     image: Some(FOUNDRY_IMAGE),
-                    entrypoint: Some(vec!["anvil"]),
+                    // entrypoint: Some(vec!["anvil"]),
                     cmd: Some(args),
                     // Expose anvil's default listening port so `publish_all_ports` will actually
                     // cause the dynamically allocated host port to show up when listing the
                     // container.
-                    exposed_ports: Some([("8545/tcp", Default::default())].into()),
+                    exposed_ports: Some([("8545/tcp", Default::default()),("8546/tcp", Default::default())].into()),
                     host_config: Some(HostConfig {
                         auto_remove: Some(true),
                         publish_all_ports: Some(true),
@@ -85,8 +100,10 @@ impl Node {
             .await
             .unwrap();
 
+        tracing::error!("start container");
         registry.start(container.id.clone()).await;
 
+        tracing::error!("fetch container");
         let summary = docker
             .list_containers(Some(ListContainersOptions {
                 filters: [("id".into(), vec![container.id.clone()])].into(),
@@ -95,16 +112,31 @@ impl Node {
             .await
             .unwrap();
 
-        let rpc_port = summary[0].ports.as_ref().unwrap()[0].public_port.unwrap();
+        tracing::error!("{summary:#?}");
+        let mut http_port = 8545;
+        let mut ws_port = 8545;
+        for port in summary[0].ports.as_ref().unwrap() {
+            if port.private_port == 8545 {
+                http_port = port.public_port.unwrap();
+            }
+            if port.private_port == 8546 {
+                ws_port = port.public_port.unwrap();
+            }
+        }
+
+        tracing::error!("start to send requests, http: {http_port}, ws: {ws_port}");
 
         tokio::time::timeout(
             tokio::time::Duration::from_millis(10_000),
-            Self::wait_until_node_ready(rpc_port),
+            Self::wait_until_node_ready(http_port),
         )
         .await
         .expect("timed out waiting for the node to get ready");
 
-        Self { port: rpc_port }
+        tracing::error!("ready to go");
+
+
+        Self { port: http_port, ws_port }
     }
 
     /// The node might not be able to handle requests right after being spawned.
