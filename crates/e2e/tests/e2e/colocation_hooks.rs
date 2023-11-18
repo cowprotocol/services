@@ -2,7 +2,8 @@ use {
     contracts::GnosisSafe,
     e2e::{
         setup::{safe::Safe, *},
-        tx, tx_value,
+        tx,
+        tx_value,
     },
     ethcontract::{Bytes, H160, U256},
     model::{

@@ -7,7 +7,8 @@ use {
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
         sources::{
-            balancer_v2::BalancerFactoryKind, uniswap_v2::UniV2BaselineSourceParameters,
+            balancer_v2::BalancerFactoryKind,
+            uniswap_v2::UniV2BaselineSourceParameters,
             BaselineSource,
         },
         tenderly_api,
