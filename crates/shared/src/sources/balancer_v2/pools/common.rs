@@ -13,7 +13,11 @@ use {
     contracts::{BalancerV2BasePool, BalancerV2Vault},
     ethcontract::{BlockId, Bytes, H160, H256, U256},
     futures::{future::BoxFuture, FutureExt as _, TryFutureExt},
-    std::{collections::BTreeMap, future::Future, sync::Arc},
+    std::{
+        collections::{BTreeMap, HashMap},
+        future::Future,
+        sync::{Arc, RwLock},
+    },
     tokio::sync::oneshot,
 };
 
@@ -45,6 +49,10 @@ pub struct PoolInfoFetcher<Factory> {
     token_infos: Arc<dyn TokenInfoFetching>,
 }
 
+lazy_static::lazy_static! {
+    static ref POOLS: RwLock<HashMap<H160, Arc<BalancerV2BasePool>>> = RwLock::new(Default::default());
+}
+
 impl<Factory> PoolInfoFetcher<Factory> {
     pub fn new(
         vault: BalancerV2Vault,
@@ -59,9 +67,9 @@ impl<Factory> PoolInfoFetcher<Factory> {
     }
 
     /// Returns a Balancer base pool contract instance at the specified address.
-    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
+    fn base_pool_at(&self, pool_address: &H160) -> Arc<BalancerV2BasePool> {
         let web3 = self.vault.raw_instance().web3();
-        BalancerV2BasePool::at(&web3, pool_address)
+        crate::get_or_init!(BalancerV2BasePool, POOLS, pool_address, &web3)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -85,7 +93,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool_address: H160,
         block_created: u64,
     ) -> Result<PoolInfo> {
-        let pool = self.base_pool_at(pool_address);
+        let pool = self.base_pool_at(&pool_address);
 
         let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
         let (tokens, _, _) = self
@@ -110,7 +118,7 @@ impl<Factory> PoolInfoFetcher<Factory> {
         pool: &PoolInfo,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
-        let pool_contract = self.base_pool_at(pool.address);
+        let pool_contract = self.base_pool_at(&pool.address);
         let fetch_paused = pool_contract
             .get_paused_state()
             .block(block)
