@@ -2,8 +2,7 @@ use {
     contracts::GnosisSafe,
     e2e::{
         setup::{safe::Safe, *},
-        tx,
-        tx_value,
+        tx, tx_value,
     },
     ethcontract::{Bytes, H160, U256},
     model::{
@@ -73,7 +72,7 @@ async fn allowance(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        &format!("http://localhost:{}", onchain.rpc_port()),
+        &format!("http://127.0.0.1:{}", onchain.rpc_port()),
     )
     .await;
 
@@ -257,7 +256,7 @@ async fn signature(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        &format!("http://localhost:{}", onchain.rpc_port()),
+        &format!("http://127.0.0.1:{}", onchain.rpc_port()),
     )
     .await;
 
@@ -380,7 +379,7 @@ async fn partial_fills(web3: Web3, db: Db) {
         onchain.contracts(),
         &solver_endpoint,
         &solver,
-        &format!("http://localhost:{}", onchain.rpc_port()),
+        &format!("http://127.0.0.1:{}", onchain.rpc_port()),
     )
     .await;
 

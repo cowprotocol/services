@@ -26,7 +26,7 @@ pub use {deploy::*, docker::db::Db, onchain_components::*, services::*};
 pub struct Web3 {
     /// The client that's used to actually communicate with the node.
     pub client: ethrpc::Web3,
-    /// We only expose the port because the host is always localhost and the
+    /// We only expose the port because the host is always 127.0.0.1 and the
     /// caller might want to use different schemes like http or websockets.
     pub port: u16,
 }

@@ -4,9 +4,7 @@ use {
     anyhow::{anyhow, Context},
     reqwest::{
         header::{self, HeaderValue},
-        Client,
-        StatusCode,
-        Url,
+        Client, StatusCode, Url,
     },
     serde_json::json,
     std::time::Duration,
@@ -336,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn supports_gzip_response() {
-        let listener = TcpListener::bind("localhost:0").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
         let listen = async move {
@@ -389,7 +387,7 @@ mod tests {
             name: Default::default(),
             network_name: Default::default(),
             chain_id: Default::default(),
-            base: format!("http://localhost:{port}").parse().unwrap(),
+            base: format!("http://127.0.0.1:{port}").parse().unwrap(),
             solve_path: "solve".to_owned(),
             client: Default::default(),
             gzip_requests: false,

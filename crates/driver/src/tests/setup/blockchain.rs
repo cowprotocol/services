@@ -157,7 +157,7 @@ impl Blockchain {
         // later
 
         let web3 = Web3::new(DynTransport::new(
-            web3::transports::WebSocket::new(&format!("ws://localhost:{}", rpc_port))
+            web3::transports::WebSocket::new(&format!("ws://127.0.0.1:{}", rpc_port))
                 .await
                 .expect("valid URL"),
         ));

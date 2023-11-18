@@ -7,8 +7,7 @@ use {
         price_estimation::PriceEstimators,
         rate_limiter::RateLimitingStrategy,
         sources::{
-            balancer_v2::BalancerFactoryKind,
-            uniswap_v2::UniV2BaselineSourceParameters,
+            balancer_v2::BalancerFactoryKind, uniswap_v2::UniV2BaselineSourceParameters,
             BaselineSource,
         },
         tenderly_api,
@@ -159,7 +158,7 @@ pub struct Arguments {
     pub logging: LoggingArguments,
 
     /// The Ethereum node URL to connect to.
-    #[clap(long, env, default_value = "http://localhost:8545")]
+    #[clap(long, env, default_value = "http://127.0.0.1:8545")]
     pub node_url: Url,
 
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
@@ -594,11 +593,11 @@ mod test {
 
     #[test]
     fn parse_driver() {
-        let argument = "name1|http://localhost:8080";
+        let argument = "name1|http://127.0.0.1:8080";
         let driver = ExternalSolver::from_str(argument).unwrap();
         let expected = ExternalSolver {
             name: "name1".into(),
-            url: Url::parse("http://localhost:8080").unwrap(),
+            url: Url::parse("http://127.0.0.1:8080").unwrap(),
         };
         assert_eq!(driver, expected);
     }
@@ -614,7 +613,7 @@ mod test {
 
         // too many arguments
         assert!(
-            ExternalSolver::from_str("name1|http://localhost:8080|additional_argument").is_err()
+            ExternalSolver::from_str("name1|http://127.0.0.1:8080|additional_argument").is_err()
         );
     }
 
@@ -622,34 +621,34 @@ mod test {
     fn parse_legacy_solver_price_estimators() {
         // ok
         assert_eq!(
-            LegacySolver::from_str("name|http://localhost:8080").unwrap(),
+            LegacySolver::from_str("name|http://127.0.0.1:8080").unwrap(),
             LegacySolver {
                 name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
+                url: "http://127.0.0.1:8080".parse().unwrap(),
                 address: H160::zero(),
                 use_liquidity: false,
             }
         );
         assert_eq!(
             LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101"
+                "name|http://127.0.0.1:8080|0x0101010101010101010101010101010101010101"
             )
             .unwrap(),
             LegacySolver {
                 name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
+                url: "http://127.0.0.1:8080".parse().unwrap(),
                 address: H160([1; 20]),
                 use_liquidity: false,
             }
         );
         assert_eq!(
             LegacySolver::from_str(
-                "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true"
+                "name|http://127.0.0.1:8080|0x0101010101010101010101010101010101010101|true"
             )
             .unwrap(),
             LegacySolver {
                 name: "name".to_string(),
-                url: "http://localhost:8080".parse().unwrap(),
+                url: "http://127.0.0.1:8080".parse().unwrap(),
                 address: H160([1; 20]),
                 use_liquidity: true,
             }
@@ -664,7 +663,7 @@ mod test {
 
         // too many arguments
         assert!(LegacySolver::from_str(
-            "name|http://localhost:8080|0x0101010101010101010101010101010101010101|true|1"
+            "name|http://127.0.0.1:8080|0x0101010101010101010101010101010101010101|true|1"
         )
         .is_err());
     }

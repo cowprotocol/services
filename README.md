@@ -102,7 +102,7 @@ initdb data # Arbitrary directory that stores the database
 # Run postgres
 postgres -D data
 # In another terminal, only for first time setup
-createdb -h localhost $USER
+createdb -h 127.0.0.1 $USER
 ```
 
 <br>
@@ -110,7 +110,7 @@ createdb -h localhost $USER
 At this point the database should be running and reachable. You can test connecting to it with
 
 ```sh
-psql postgresql://localhost/
+psql postgresql://127.0.0.1/
 ```
 
 ### DB Migration/Initialization
@@ -121,13 +121,13 @@ Finally, we need to apply the schema (set up in the `database` folder). Again, t
 
 ```sh
 docker build --tag services-migration -f docker/Dockerfile.migration .
-# If you are running postgres in locally, your URL is `localhost` instead of `host.docker.internal`
+# If you are running postgres in locally, your URL is `127.0.0.1` instead of `host.docker.internal`
 docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql services-migration migrate
 ```
 
 In case you run into `java.net.UnknownHostException: host.docker.internal` add `--add-host=host.docker.internal:host-gateway` right after `docker run`.
 
-If you're combining a local postgres installation with docker flyway you have to add to the above `--network host` and change `host.docker.internal` to `localhost`.
+If you're combining a local postgres installation with docker flyway you have to add to the above `--network host` and change `host.docker.internal` to `127.0.0.1`.
 
 - Local [flyway installation](https://flywaydb.org/documentation/usage/commandline/#download-and-installation)
 
@@ -186,7 +186,7 @@ cargo run --bin autopilot -- \
 
 To see all supported command line arguments run `cargo run --bin orderbook -- --help`.
 
-Run an `orderbook` on `localhost:8080` with:
+Run an `orderbook` on `127.0.0.1:8080` with:
 
 ```sh
 cargo run --bin orderbook -- \
@@ -202,7 +202,7 @@ Note: Current version of the code does not compile under Windows OS. Context and
 
 To see all supported command line arguments run `cargo run --bin solver -- --help`.
 
-Run a solver which is connected to an `orderbook` at `localhost:8080` with:
+Run a solver which is connected to an `orderbook` at `127.0.0.1:8080` with:
 
 ```sh
 cargo run -p solver -- \

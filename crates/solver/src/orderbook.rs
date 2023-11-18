@@ -63,7 +63,7 @@ pub mod test_util {
     #[ignore]
     async fn local_orderbook() {
         let api = OrderBookApi::new(
-            Url::parse("http://localhost:8080").unwrap(),
+            Url::parse("http://127.0.0.1:8080").unwrap(),
             Client::new(),
             None,
         );

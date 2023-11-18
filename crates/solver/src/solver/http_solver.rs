@@ -5,8 +5,7 @@ pub mod settlement;
 
 use {
     self::{
-        instance_cache::SharedInstanceCreator,
-        instance_creation::Instances,
+        instance_cache::SharedInstanceCreator, instance_creation::Instances,
         settlement::ConversionError,
     },
     super::{Auction, AuctionResult, Solver},
@@ -22,13 +21,9 @@ use {
     shared::{
         http_solver::{
             model::{
-                BatchAuctionModel,
-                InteractionData,
-                SettledBatchAuctionModel,
-                SolverRejectionReason,
+                BatchAuctionModel, InteractionData, SettledBatchAuctionModel, SolverRejectionReason,
             },
-            DefaultHttpSolverApi,
-            HttpSolverApi,
+            DefaultHttpSolverApi, HttpSolverApi,
         },
         token_list::AutoUpdatingTokenList,
     },
@@ -231,8 +226,7 @@ mod tests {
             interactions::allowances::MockAllowanceManaging,
             liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, Liquidity},
             solver::http_solver::{
-                buffers::MockBufferRetrieving,
-                instance_creation::InstanceCreator,
+                buffers::MockBufferRetrieving, instance_creation::InstanceCreator,
             },
         },
         ::model::TokenPair,
@@ -254,7 +248,7 @@ mod tests {
     };
 
     // cargo test real_solver -- --ignored --nocapture
-    // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer
+    // set the env variable GP_V2_OPTIMIZER_URL to use a non 127.0.0.1 optimizer
     #[tokio::test]
     #[ignore]
     async fn real_solver() {
@@ -262,7 +256,7 @@ mod tests {
             .with_env_filter("solver=trace")
             .init();
         let url = std::env::var("GP_V2_OPTIMIZER_URL")
-            .unwrap_or_else(|_| "http://localhost:8000".to_string());
+            .unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
 
         let buy_token = H160::from_low_u64_be(1337);
         let sell_token = H160::from_low_u64_be(43110);

@@ -7,7 +7,7 @@ account = "0x0000000000000000000000000000000000000000000000000000000000000001" #
 
 # [[solver]] # And so on, specify as many solvers as needed
 # name = "othersolver"
-# endpoint = "http://localhost:1235"
+# endpoint = "http://127.0.0.1:1235"
 # relative-slippage = "0.1"
 # account = "0x0000000000000000000000000000000000000000000000000000000000000002"
 

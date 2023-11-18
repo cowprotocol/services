@@ -4,11 +4,7 @@ use {
         s3_instance_upload_arguments::S3UploadArguments,
         settlement_access_list::AccessListEstimatorType,
         solver::{
-            risk_computation,
-            single_order_solver,
-            ExternalSolverArg,
-            SolverAccountArg,
-            SolverType,
+            risk_computation, single_order_solver, ExternalSolverArg, SolverAccountArg, SolverType,
         },
     },
     ethcontract::U256,
@@ -36,15 +32,15 @@ pub struct Arguments {
     pub order_prioritization: single_order_solver::Arguments,
 
     /// The API endpoint to fetch the orderbook
-    #[clap(long, env, default_value = "http://localhost:8080")]
+    #[clap(long, env, default_value = "http://127.0.0.1:8080")]
     pub orderbook_url: Url,
 
     /// The API endpoint to call the Quasimodo solver
-    #[clap(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://127.0.0.1:8000")]
     pub quasimodo_solver_url: Url,
 
     /// The API endpoint for the Balancer SOR API for solving.
-    #[clap(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://127.0.0.1:8000")]
     pub balancer_sor_url: Url,
 
     /// The account used by the driver to sign transactions. This can be either
