@@ -1,11 +1,11 @@
 use {
     crate::{
         domain::{
-            competition,
-            competition::{auction, order},
+            competition::{self, auction, order},
             eth,
+            time,
         },
-        infra::{tokens, Ethereum},
+        infra::{solver::Timeouts, tokens, Ethereum},
         util::serialize,
     },
     serde::Deserialize,
@@ -17,7 +17,7 @@ impl Auction {
         self,
         eth: &Ethereum,
         tokens: &tokens::Fetcher,
-        http_delay: chrono::Duration,
+        timeouts: Timeouts,
     ) -> Result<competition::Auction, Error> {
         let token_addresses: Vec<_> = self
             .tokens
@@ -128,7 +128,7 @@ impl Auction {
                     trusted: token.trusted,
                 }
             }),
-            (self.deadline - http_delay).into(),
+            time::Deadline::new(self.deadline, timeouts),
             eth,
             self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )

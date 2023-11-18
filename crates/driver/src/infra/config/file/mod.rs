@@ -152,12 +152,8 @@ pub fn default_http_time_buffer_milliseconds() -> u64 {
     500
 }
 
-pub fn default_solve_competition_time_buffer_percent() -> u64 {
-    20
-}
-
-pub fn default_quote_competition_time_buffer_percent() -> u64 {
-    20
+pub fn default_solving_share_of_deadline() -> f64 {
+    0.2
 }
 
 #[serde_as]
@@ -187,22 +183,8 @@ struct SolverConfig {
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 
-    /// Maximum time allocated for http request/reponse to propagate through
-    /// network.
-    #[serde(default = "default_http_time_buffer_milliseconds")]
-    http_time_buffer_milliseconds: u64,
-
-    /// Maximum time allocated for processing the solutions received from
-    /// solvers, in percentage of total driver deadline, used for /solve
-    /// endpoint.
-    #[serde(default = "default_solve_competition_time_buffer_percent")]
-    solve_competition_time_buffer_percent: u64,
-
-    /// Maximum time allocated for processing the solutions received from
-    /// solvers, in percentage of total driver deadline, used for /quote
-    /// endpoint.
-    #[serde(default = "default_quote_competition_time_buffer_percent")]
-    quote_competition_time_buffer_percent: u64,
+    /// Timeout configuration for the solver.
+    timeouts: Timeouts,
 }
 
 #[serde_as]
@@ -218,6 +200,22 @@ enum Account {
     /// connected node's account management features. This can also be used to
     /// start the driver in a dry-run mode.
     Address(eth::H160),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Timeouts {
+    /// Maximum time allocated for http request/reponse to propagate through
+    /// network.
+    #[serde(default = "default_http_time_buffer_milliseconds")]
+    http_time_buffer_milliseconds: u64,
+
+    /// Maximum time allocated for solver engines to return the solutions back
+    /// to the driver, in percentage of total driver deadline.
+    /// Expected value [0, 1]
+    #[serde(default = "default_solving_share_of_deadline")]
+    solving_share_of_deadline: f64,
 }
 
 #[derive(Debug, Default, Deserialize)]

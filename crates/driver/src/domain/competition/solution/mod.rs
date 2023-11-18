@@ -270,8 +270,8 @@ impl SolverTimeout {
 impl TryFrom<time::Deadline> for SolverTimeout {
     type Error = time::DeadlineExceeded;
 
-    fn try_from(value: time::Deadline) -> Result<Self, Self::Error> {
-        Ok(Self(value.remaining()?))
+    fn try_from(deadline: time::Deadline) -> Result<Self, Self::Error> {
+        Ok(Self(deadline.remaining_for_solvers()?))
     }
 }
 

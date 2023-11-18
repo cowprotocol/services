@@ -1,7 +1,14 @@
 use {
     crate::{
         domain::{self, Mempools},
-        infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
+        infra::{
+            self,
+            liquidity,
+            solver::{Solver, Timeouts},
+            tokens,
+            Ethereum,
+            Simulator,
+        },
     },
     error::Error,
     futures::Future,
@@ -118,8 +125,8 @@ impl State {
         &self.0.pre_processor
     }
 
-    fn http_delay(&self) -> chrono::Duration {
-        self.0.solver.timeouts().http_delay
+    fn timeouts(&self) -> Timeouts {
+        self.0.solver.timeouts()
     }
 }
 

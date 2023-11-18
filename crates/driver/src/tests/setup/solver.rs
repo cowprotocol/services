@@ -7,14 +7,12 @@ use {
             blockchain::contracts::Addresses,
             config::file::{
                 default_http_time_buffer_milliseconds,
-                default_quote_competition_time_buffer_percent,
-                default_solve_competition_time_buffer_percent,
+                default_solving_share_of_deadline,
             },
             Ethereum,
         },
         tests::hex_address,
     },
-    bigdecimal::ToPrimitive,
     itertools::Itertools,
     serde_json::json,
     std::{
@@ -219,31 +217,14 @@ impl Solver {
             gas,
         )
         .await;
-        let deadline = time::Deadline::from(
-            config.deadline
-                // reduce by http delay to acoomodate for autopilot / driver communication
-                - chrono::Duration::milliseconds(
-                    default_http_time_buffer_milliseconds().try_into().unwrap(),
-                ),
+        let http_delay = chrono::Duration::milliseconds(
+            default_http_time_buffer_milliseconds().try_into().unwrap(),
         );
-        let competition_time = match config.quote {
-            true => default_quote_competition_time_buffer_percent()
-                .to_f64()
-                .unwrap()
-                .try_into()
-                .unwrap(),
-            false => default_solve_competition_time_buffer_percent()
-                .to_f64()
-                .unwrap()
-                .try_into()
-                .unwrap(),
+        let timeouts = infra::solver::Timeouts {
+            http_delay,
+            solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         };
-        let solver_duration = deadline.reduce(competition_time).remaining().unwrap();
-        let solver_duration = solver_duration
-            // reduce by http delay to acoomodate for driver / solvers communication
-            - chrono::Duration::milliseconds(
-                default_http_time_buffer_milliseconds().try_into().unwrap(),
-            );
+        let deadline = time::Deadline::new(config.deadline, timeouts);
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
@@ -265,7 +246,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": infra::time::now() + solver_duration,
+                        "deadline": infra::time::now() + deadline.remaining_for_solvers().unwrap() - http_delay,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

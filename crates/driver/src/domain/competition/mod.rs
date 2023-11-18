@@ -68,16 +68,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(
-                auction,
-                &liquidity,
-                auction
-                    .deadline()
-                    // don't give the full deadline to the solver, 
-                    // leave some time for the driver to process the solutions
-                    .reduce(self.competition_time())
-                    .try_into()?,
-            )
+            .solve(auction, &liquidity, auction.deadline().try_into()?)
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -223,7 +214,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().remaining() {
+        if let Ok(remaining) = auction.deadline().remaining_for_driver() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -334,14 +325,6 @@ impl Competition {
             })
             .await
             .map(|_| ())
-    }
-
-    /// The time allocated for driver to process all the solutions received from
-    /// solvers. Processing includes validating, simulating, merging, scoring,
-    /// and ranking the solutions.
-    /// Expressed in percentage of the total auction deadline.
-    fn competition_time(&self) -> crate::util::Percent {
-        self.solver.timeouts().solve_competition_time
     }
 }
 

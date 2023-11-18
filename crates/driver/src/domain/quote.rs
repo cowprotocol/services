@@ -84,14 +84,12 @@ impl Order {
             solver::Liquidity::Skip => Default::default(),
         };
 
-        let timeout = self
-            .deadline
-            // don't give the full deadline to the solver, 
-            // leave some time for the driver to process the solutions
-            .reduce(solver.timeouts().quote_competition_time)
-            .try_into()?;
         let solutions = solver
-            .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
+            .solve(
+                &self.fake_auction(eth, tokens).await?,
+                &liquidity,
+                self.deadline.try_into()?,
+            )
             .await?;
         Quote::new(
             eth,
