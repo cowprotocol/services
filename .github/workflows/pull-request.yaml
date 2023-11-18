@@ -89,8 +89,8 @@ jobs:
     needs: build-e2e-tests
     strategy:
       matrix:
-        ci_node_total: [4]
         ci_node_index: [1, 2, 3, 4]
+        ci_node_total: [4]
     env:
       CARGO_TERM_COLOR: always
     steps:
@@ -104,7 +104,7 @@ jobs:
         with:
           name: nextest-archive
       # run with profile ci to retry slow and flaky tests
-      - run: cargo nextest run --archive-file nextest-archive.tar.zst --failure-output final -j 1 --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" --run-ignored ignored-only
+      - run: cargo nextest run --archive-file nextest-archive.tar.zst --failure-output final -j 1 --partition "count:${{matrix.ci_node_index}}/${{matrix.ci_node_total}}" --run-ignored ignored-only local_node
 
   test-forked-node:
     timeout-minutes: 60
