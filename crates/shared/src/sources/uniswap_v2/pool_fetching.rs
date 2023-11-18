@@ -15,7 +15,10 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, RwLock},
+    },
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -250,16 +253,37 @@ pub struct DefaultPoolReader {
     pub web3: Web3,
 }
 
+lazy_static::lazy_static! {
+    static ref AMMS: RwLock<HashMap<H160, Arc<IUniswapLikePair>>> = RwLock::new(Default::default());
+    static ref TOKENS: RwLock<HashMap<H160, Arc<ERC20>>> = RwLock::new(Default::default());
+}
+
+macro_rules! get_or_init {
+    ($contract:ident, $cache:expr, $address:expr, $web3:expr) => {{
+        let contract = $cache.read().unwrap().get($address).cloned();
+        match contract {
+            Some(contract) => contract,
+            None => {
+                let mut cache = $cache.write().unwrap();
+                let entry = cache
+                    .entry($address.clone())
+                    .or_insert_with(|| Arc::new($contract::at($web3, $address.clone())));
+                Arc::clone(entry)
+            }
+        }
+    }};
+}
+
 impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
-        let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
+
+        let pair_contract = get_or_init!(IUniswapLikePair, AMMS, &pair_address, &self.web3);
+        let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = ERC20::at(&self.web3, pair.get().0);
-        let token1 = ERC20::at(&self.web3, pair.get().1);
-
-        let fetch_reserves = pair_contract.get_reserves().block(block).call();
+        let token0 = get_or_init!(ERC20, TOKENS, &pair.get().0, &self.web3);
+        let token1 = get_or_init!(ERC20, TOKENS, &pair.get().1, &self.web3);
         let fetch_token0_balance = token0.balance_of(pair_address).block(block).call();
         let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();
 
