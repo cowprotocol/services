@@ -908,7 +908,7 @@ mod tests {
             }
         };
 
-        // "preSign" order with no signature events has pending status.
+        // "presign" order with no signature events has pending status.
         assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
         // Inserting a presignature event changes the order status.

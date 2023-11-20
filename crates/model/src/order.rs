@@ -885,7 +885,7 @@ impl<'de> Deserialize<'de> for OrderUid {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
 #[strum(ascii_case_insensitive)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     #[default]
     Buy,
@@ -1187,13 +1187,13 @@ mod tests {
             ),
             (
                 Signature::default_with(SigningScheme::EthSign),
-                "ethSign",
+                "ethsign",
                 None,
                 "0x0000000000000000000000000000000000000000000000000000000000000000\
                    0000000000000000000000000000000000000000000000000000000000000000\
                    00",
             ),
-            (Signature::PreSign, "preSign", Some(owner), "0x"),
+            (Signature::PreSign, "presign", Some(owner), "0x"),
         ] {
             let order = OrderCreation {
                 sell_token: H160([0x11; 20]),

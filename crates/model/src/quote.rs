@@ -366,7 +366,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "signingScheme": "ethSign",
+                "signingScheme": "ethsign",
                 "onchainOrder": false,
             }),
             json!({
@@ -402,7 +402,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "signingScheme": "preSign",
+                "signingScheme": "presign",
                 "onchainOrder": true,
             }),
             json!({
@@ -411,7 +411,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "signingScheme":  "preSign",
+                "signingScheme":  "presign",
             }),
             json!({
                 "from": "0x0000000000000000000000000000000000000000",
@@ -521,7 +521,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000002",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
-                "signingScheme": "ethSign",
+                "signingScheme": "ethsign",
                 "onchainOrder": true,
             }),
             // `appDataHash` cannot be specified without a `appData` pre-image.

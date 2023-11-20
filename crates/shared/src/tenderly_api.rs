@@ -169,7 +169,7 @@ pub struct SimulationRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum SimulationKind {
     Full,
     Quick,

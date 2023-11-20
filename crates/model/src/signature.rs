@@ -15,7 +15,7 @@ use {
 
 /// See [`Signature`].
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     #[default]
     Eip712,
@@ -134,7 +134,7 @@ impl Signature {
             SigningScheme::PreSign => {
                 ensure!(
                     bytes.is_empty() || bytes.len() == 20,
-                    "preSign signature bytes should be empty or an address (legacy)",
+                    "presign signature bytes should be empty or an address (legacy)",
                 );
                 Self::PreSign
             }
@@ -206,7 +206,7 @@ impl TryFrom<JsonSignature> for Signature {
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum EcdsaSigningScheme {
     Eip712,
     EthSign,
@@ -499,7 +499,7 @@ mod tests {
                     v: 3,
                 }),
                 json!({
-                    "signingScheme": "ethSign",
+                    "signingScheme": "ethsign",
                     "signature": "0x\
                         0101010101010101010101010101010101010101010101010101010101010101\
                         0202020202020202020202020202020202020202020202020202020202020202\
@@ -523,7 +523,7 @@ mod tests {
             (
                 Signature::PreSign,
                 json!({
-                    "signingScheme": "preSign",
+                    "signingScheme": "presign",
                     "signature": "0x",
                 }),
             ),
@@ -541,14 +541,14 @@ mod tests {
                 "signature": "0x0102",
             }),
             json!({
-                "signingScheme": "ethSign",
+                "signingScheme": "ethsign",
                 "signature": 1234,
             }),
             json!({
                 "signingScheme": "eip1271",
             }),
             json!({
-                "signingScheme": "preSign",
+                "signingScheme": "presign",
                 "signature": "0x01",
             }),
         ] {
@@ -566,7 +566,7 @@ mod tests {
         assert_eq!(
             Signature::PreSign,
             serde_json::from_value(json!({
-                "signingScheme": "preSign",
+                "signingScheme": "presign",
                 "signature": "0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
             }))
             .unwrap(),

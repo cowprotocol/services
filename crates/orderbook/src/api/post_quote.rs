@@ -115,7 +115,7 @@ mod tests {
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "buyTokenBalance": "internal",
-                "signingScheme": "preSign",
+                "signingScheme": "presign",
                 "priceQuality": "optimal"
             }))
             .unwrap(),
