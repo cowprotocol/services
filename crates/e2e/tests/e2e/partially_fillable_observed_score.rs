@@ -74,7 +74,13 @@ async fn test(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    let solver_endpoint =
+        colocation::start_solver(onchain.contracts().uniswap_v2_router.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    services.start_autopilot(vec![
+        "--enable-colocation=true".to_string(),
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services
         .start_api(vec![
             "--allow-placing-partially-fillable-limit-orders=true".to_string()
@@ -108,8 +114,6 @@ async fn test(web3: Web3) {
     assert!(matches!(order.metadata.class, OrderClass::Limit(_)));
     assert_eq!(order.metadata.full_fee_amount, 0.into());
     assert_eq!(order.metadata.solver_fee, 0.into());
-
-    services.start_old_driver(solver.private_key(), vec!["--solvers=Baseline".to_owned()]);
 
     tracing::info!("Waiting for trade.");
     let trade_happened =
