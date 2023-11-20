@@ -47,7 +47,7 @@ async fn uniswap() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
                             "balance": "30493445841295"
@@ -169,7 +169,7 @@ async fn balancer_weighted() {
             "liquidity": [
                 // A xCOW -> xGNO -> wxDAI path with a good price.
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
                             "balance": "9661963829146095661"
@@ -184,7 +184,7 @@ async fn balancer_weighted() {
                     "gasEstimate": "90171"
                 },
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1963528800698237927834721",
@@ -205,7 +205,7 @@ async fn balancer_weighted() {
                 },
                 // A fake xCOW -> wxDAI path with a BAD price.
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1000000000000000000000000000"
@@ -326,7 +326,7 @@ async fn balancer_weighted_v3plus() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "18764168403990393422000071",
@@ -441,7 +441,7 @@ async fn distant_convergence() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "5089632258314443812936111",
@@ -556,7 +556,7 @@ async fn same_path() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1963528800698237927834721",
@@ -576,7 +576,7 @@ async fn same_path() {
                     "version": "v0",
                 },
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1000000000000000000000000000"

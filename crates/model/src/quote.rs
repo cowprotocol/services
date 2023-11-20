@@ -27,7 +27,7 @@ pub enum PriceQuality {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(
-    rename_all = "camelCase",
+    rename_all = "lowercase",
     tag = "signingScheme",
     try_from = "QuoteSigningDeserializationData"
 )]
@@ -143,7 +143,7 @@ pub struct OrderQuoteRequest {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum OrderQuoteSide {
     #[serde(rename_all = "camelCase")]
     Sell {

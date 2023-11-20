@@ -907,7 +907,7 @@ pub enum OrderKind {
     EnumVariantNames,
 )]
 #[strum(ascii_case_insensitive)]
-#[serde(tag = "class", rename_all = "camelCase")]
+#[serde(tag = "class", rename_all = "lowercase")]
 pub enum OrderClass {
     /// The most common type of order which can be placed by any user. Expected
     /// to be fulfilled immediately (in the next block).

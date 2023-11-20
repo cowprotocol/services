@@ -153,7 +153,7 @@ pub enum ScoreKind {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum Settlement {
     Success { transaction: eth::H256 },
     Revert { transaction: eth::H256 },

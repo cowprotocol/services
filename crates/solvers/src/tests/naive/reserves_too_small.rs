@@ -45,7 +45,7 @@ async fn test() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "25000075"

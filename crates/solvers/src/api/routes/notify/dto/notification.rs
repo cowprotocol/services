@@ -166,7 +166,7 @@ pub enum ScoreKind {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum Settlement {
     Success { transaction: H256 },
     Revert { transaction: H256 },

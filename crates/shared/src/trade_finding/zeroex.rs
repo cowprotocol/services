@@ -40,7 +40,7 @@ impl ZeroExTradeFinder {
                 buy_only,
                 solver,
             },
-            sharing: RequestSharing::labelled("zeroEx".into()),
+            sharing: RequestSharing::labelled("zeroex".into()),
         }
     }
 

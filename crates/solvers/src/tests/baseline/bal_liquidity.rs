@@ -62,7 +62,7 @@ async fn weighted() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x6810e776880c02933d47db1b9fc05908e5386b96": {
                             "balance": "11260752191375725565253",
@@ -177,7 +177,7 @@ async fn weighted_v3plus() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedProduct",
+                    "kind": "weightedproduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "5089632258314443812936111",

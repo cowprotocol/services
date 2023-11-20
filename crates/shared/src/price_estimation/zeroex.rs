@@ -32,7 +32,7 @@ impl ZeroExPriceEstimator {
                 solver,
             )),
             rate_limiter,
-            "zeroEx".into(),
+            "zeroex".into(),
         ))
     }
 

@@ -593,7 +593,7 @@ mod tests {
                 "partnerFee": 0,
                 "srcUSD": "32.7332000000",
                 "destUSD": "32.5799000303",
-                "partner": "paraSwap",
+                "partner": "paraswap",
                 "maxImpactReached": false,
                 "hmac": "cf2ac4b20f83b6656eb9dd28e26414658430e1d5"
               }
