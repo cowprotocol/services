@@ -25,13 +25,16 @@ impl Notification {
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::SimulationFailed(tx) => Kind::SimulationFailed(Tx {
-                    from: tx.from.into(),
-                    to: tx.to.into(),
-                    input: tx.input.into(),
-                    value: tx.value.into(),
-                    access_list: tx.access_list.into(),
-                }),
+                notify::Kind::SimulationFailed(block, tx) => Kind::SimulationFailed(
+                    block.0,
+                    Tx {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        input: tx.input.into(),
+                        value: tx.value.into(),
+                        access_list: tx.access_list.into(),
+                    },
+                ),
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
                 }
@@ -100,7 +103,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(Tx),
+    SimulationFailed(BlockNo, Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
@@ -114,6 +117,8 @@ pub enum Kind {
     },
     Settled(Settlement),
 }
+
+type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Serialize)]

@@ -23,13 +23,16 @@ impl Notification {
             kind: match &self.kind {
                 Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::SimulationFailed(tx) => notification::Kind::SimulationFailed(eth::Tx {
-                    from: tx.from.into(),
-                    to: tx.to.into(),
-                    input: tx.input.clone().into(),
-                    value: tx.value.into(),
-                    access_list: tx.access_list.clone(),
-                }),
+                Kind::SimulationFailed(block, tx) => notification::Kind::SimulationFailed(
+                    *block,
+                    eth::Tx {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        input: tx.input.clone().into(),
+                        value: tx.value.into(),
+                        access_list: tx.access_list.clone(),
+                    },
+                ),
                 Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive(
@@ -113,7 +116,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(Tx),
+    SimulationFailed(BlockNo, Tx),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
@@ -127,6 +130,8 @@ pub enum Kind {
     },
     Settled(Settlement),
 }
+
+type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
