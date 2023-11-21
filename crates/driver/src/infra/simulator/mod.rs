@@ -14,6 +14,7 @@ pub mod tenderly;
 #[derive(Debug, Clone)]
 pub struct Simulator {
     inner: Inner,
+    eth: Ethereum,
     disable_access_lists: bool,
     /// If this is [`Some`], every gas estimate will return this fixed
     /// gas value.
@@ -29,9 +30,10 @@ pub enum Config {
 
 impl Simulator {
     /// Simulate transactions on [Tenderly](https://tenderly.co/).
-    pub fn tenderly(config: tenderly::Config, network_id: eth::NetworkId) -> Self {
+    pub fn tenderly(config: tenderly::Config, network_id: eth::NetworkId, eth: Ethereum) -> Self {
         Self {
             inner: Inner::Tenderly(tenderly::Tenderly::new(config, network_id)),
+            eth,
             disable_access_lists: false,
             disable_gas: None,
         }
@@ -40,7 +42,8 @@ impl Simulator {
     /// Simulate transactions using the Ethereum RPC API.
     pub fn ethereum(eth: Ethereum) -> Self {
         Self {
-            inner: Inner::Ethereum(eth),
+            inner: Inner::Ethereum,
+            eth,
             disable_access_lists: false,
             disable_gas: None,
         }
@@ -50,7 +53,8 @@ impl Simulator {
     /// Uses Ethereum RPC API to generate access lists.
     pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
         Self {
-            inner: Inner::Enso(enso::Enso::new(config, eth.network().chain), eth),
+            inner: Inner::Enso(enso::Enso::new(config, eth.network().chain)),
+            eth,
             disable_access_lists: false,
             disable_gas: None,
         }
@@ -75,22 +79,25 @@ impl Simulator {
         if self.disable_access_lists {
             return Ok(tx.access_list);
         }
+        let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx.clone(), tenderly::GenerateAccessList::Yes)
                     .await
-                    .map_err(with_tx(tx.clone()))?
+                    .map_err(with(tx.clone(), block))?
                     .access_list
             }
-            Inner::Ethereum(ethereum) => ethereum
+            Inner::Ethereum => self
+                .eth
                 .create_access_list(tx.clone())
                 .await
-                .map_err(with_tx(tx.clone()))?,
-            Inner::Enso(_, ethereum) => ethereum
+                .map_err(with(tx.clone(), block))?,
+            Inner::Enso(_) => self
+                .eth
                 .create_access_list(tx.clone())
                 .await
-                .map_err(with_tx(tx.clone()))?,
+                .map_err(with(tx.clone(), block))?,
         };
         Ok(tx.access_list.merge(access_list))
     }
@@ -100,24 +107,26 @@ impl Simulator {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
+        let block = self.eth.current_block().borrow().number.into();
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
                     .simulate(tx.clone(), tenderly::GenerateAccessList::No)
                     .measure("tenderly_simulate_gas")
                     .await
-                    .map_err(with_tx(tx))?
+                    .map_err(with(tx, block))?
                     .gas
             }
-            Inner::Ethereum(ethereum) => ethereum
+            Inner::Ethereum => self
+                .eth
                 .estimate_gas(tx.clone())
                 .await
-                .map_err(with_tx(tx))?,
-            Inner::Enso(enso, _) => enso
+                .map_err(with(tx, block))?,
+            Inner::Enso(enso) => enso
                 .simulate(tx.clone())
                 .measure("enso_simulate_gas")
                 .await
-                .map_err(with_tx(tx))?,
+                .map_err(with(tx, block))?,
         })
     }
 }
@@ -125,8 +134,8 @@ impl Simulator {
 #[derive(Debug, Clone)]
 enum Inner {
     Tenderly(tenderly::Tenderly),
-    Ethereum(Ethereum),
-    Enso(enso::Enso, Ethereum),
+    Ethereum,
+    Enso(enso::Enso),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -140,10 +149,11 @@ pub enum SimulatorError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("err: {err:?}, tx: {tx:?}")]
-pub struct WithTxError {
+#[error("block: {block:?},  err: {err:?}, tx: {tx:?}")]
+pub struct RevertError {
     pub err: SimulatorError,
     pub tx: eth::Tx,
+    pub block: eth::BlockNo,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -153,10 +163,10 @@ pub enum Error {
     /// If a transaction reverted, forward that transaction together with the
     /// error.
     #[error(transparent)]
-    WithTx(#[from] WithTxError),
+    Revert(#[from] RevertError),
 }
 
-fn with_tx<E>(tx: eth::Tx) -> impl FnOnce(E) -> Error
+fn with<E>(tx: eth::Tx, block: eth::BlockNo) -> impl FnOnce(E) -> Error
 where
     E: Into<SimulatorError>,
 {
@@ -185,7 +195,7 @@ where
             SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
         };
         match tx {
-            Some(tx) => Error::WithTx(WithTxError { err, tx }),
+            Some(tx) => Error::Revert(RevertError { err, tx, block }),
             None => Error::Basic(err),
         }
     }

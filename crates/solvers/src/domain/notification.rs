@@ -11,6 +11,7 @@ type RequiredEther = Ether;
 type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::H256;
 type Transaction = eth::Tx;
+type BlockNo = u64;
 type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
 
 /// The notification about important events happened in driver, that solvers
@@ -28,7 +29,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(Transaction),
+    SimulationFailed(BlockNo, Transaction),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),
