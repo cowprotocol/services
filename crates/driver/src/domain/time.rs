@@ -33,13 +33,13 @@ impl Deadline {
 
     /// Remaining time until the deadline for driver to return solution to
     /// autopilot is reached.
-    pub fn remaining_for_driver(self) -> Result<chrono::Duration, DeadlineExceeded> {
+    pub fn driver(self) -> Result<chrono::Duration, DeadlineExceeded> {
         Self::remaining(self.driver)
     }
 
     /// Remaining time until the deadline for solvers to return solution to
     /// driver is reached.
-    pub fn remaining_for_solvers(self) -> Result<chrono::Duration, DeadlineExceeded> {
+    pub fn solvers(self) -> Result<chrono::Duration, DeadlineExceeded> {
         Self::remaining(self.solvers)
     }
 
@@ -47,7 +47,7 @@ impl Deadline {
         deadline: chrono::DateTime<chrono::Utc>,
     ) -> Result<chrono::Duration, DeadlineExceeded> {
         let deadline = deadline - infra::time::now();
-        if deadline < chrono::Duration::zero() {
+        if deadline <= chrono::Duration::zero() {
             Err(DeadlineExceeded)
         } else {
             Ok(deadline)

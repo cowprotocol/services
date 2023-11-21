@@ -645,7 +645,7 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        time::now() + chrono::Duration::milliseconds(5500)
+        time::now() + chrono::Duration::seconds(2)
     }
 }
 

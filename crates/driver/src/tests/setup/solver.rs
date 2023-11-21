@@ -246,7 +246,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": infra::time::now() + deadline.remaining_for_solvers().unwrap() - http_delay,
+                        "deadline": infra::time::now() + deadline.solvers().unwrap() - http_delay,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

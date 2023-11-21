@@ -4,7 +4,6 @@ use {
         domain::{
             competition::{self, order},
             eth::{self, TokenAddress},
-            time,
         },
         infra::{
             self,
@@ -267,11 +266,9 @@ impl SolverTimeout {
     }
 }
 
-impl TryFrom<time::Deadline> for SolverTimeout {
-    type Error = time::DeadlineExceeded;
-
-    fn try_from(deadline: time::Deadline) -> Result<Self, Self::Error> {
-        Ok(Self(deadline.remaining_for_solvers()?))
+impl From<chrono::Duration> for SolverTimeout {
+    fn from(duration: chrono::Duration) -> Self {
+        Self(duration)
     }
 }
 

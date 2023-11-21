@@ -88,7 +88,7 @@ impl Order {
             .solve(
                 &self.fake_auction(eth, tokens).await?,
                 &liquidity,
-                self.deadline.try_into()?,
+                self.deadline.solvers()?.into(),
             )
             .await?;
         Quote::new(

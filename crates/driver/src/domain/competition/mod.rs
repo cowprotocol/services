@@ -68,7 +68,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().try_into()?)
+            .solve(auction, &liquidity, auction.deadline().solvers()?.into())
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -214,7 +214,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().remaining_for_driver() {
+        if let Ok(remaining) = auction.deadline().driver() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
