@@ -73,7 +73,7 @@ impl Legacy {
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
-                gzip_requests: false,
+                gzip_requests: config.gzip_requests,
                 solve_path,
                 config: SolverConfig {
                     // Note that we unconditionally set this to "true". This is
