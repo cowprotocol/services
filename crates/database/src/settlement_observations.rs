@@ -10,10 +10,12 @@ pub struct Observation {
     pub log_index: i64,
 }
 
-pub async fn insert(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
+pub async fn upsert(ex: &mut PgConnection, observation: Observation) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO settlement_observations (gas_used, effective_gas_price, surplus, fee, block_number, log_index)
 VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (block_number, log_index) DO UPDATE 
+SET gas_used = $1, effective_gas_price = $2, surplus = $3, fee = $4
     ;"#;
     sqlx::query(QUERY)
         .bind(observation.gas_used)
@@ -78,7 +80,7 @@ mod tests {
             log_index: 1,
         };
 
-        insert(&mut db, input.clone()).await.unwrap();
+        upsert(&mut db, input.clone()).await.unwrap();
         let output = fetch(
             &mut db,
             &EventIndex {
@@ -90,5 +92,26 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(input, output);
+
+        let new_input = Observation {
+            gas_used: 5.into(),
+            effective_gas_price: 6.into(),
+            surplus: 7.into(),
+            fee: 8.into(),
+            block_number: 1,
+            log_index: 1,
+        };
+        upsert(&mut db, new_input.clone()).await.unwrap();
+        let output = fetch(
+            &mut db,
+            &EventIndex {
+                block_number: 1,
+                log_index: 1,
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(new_input, output);
     }
 }

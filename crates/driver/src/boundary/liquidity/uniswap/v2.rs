@@ -150,10 +150,11 @@ where
             init_code_digest: config.pool_code.into(),
         };
 
-        let pool_fetcher = PoolFetcher {
-            pool_reader: reader(web3.clone(), pair_provider),
-            web3: web3.clone(),
-        };
+        let pool_fetcher = PoolFetcher::new(
+            reader(web3.clone(), pair_provider),
+            web3.clone(),
+            config.missing_pool_cache_time,
+        );
 
         let pool_cache = Arc::new(PoolCache::new(
             boundary::liquidity::cache_config(),

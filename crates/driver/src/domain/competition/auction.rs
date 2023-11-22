@@ -2,9 +2,10 @@ use {
     super::{order, Score},
     crate::{
         domain::{
-            competition::{self, auction, solution},
+            competition::{self, auction},
             eth,
             liquidity,
+            time,
         },
         infra::{self, blockchain, observe, Ethereum},
         util,
@@ -30,7 +31,7 @@ pub struct Auction {
     /// The tokens that are used in the orders of this auction.
     tokens: Tokens,
     gas_price: eth::GasPrice,
-    deadline: Deadline,
+    deadline: time::Deadline,
     score_cap: Score,
 }
 
@@ -39,7 +40,7 @@ impl Auction {
         id: Option<Id>,
         orders: Vec<competition::Order>,
         tokens: impl Iterator<Item = Token>,
-        deadline: Deadline,
+        deadline: time::Deadline,
         eth: &Ethereum,
         score_cap: Score,
     ) -> Result<Self, Error> {
@@ -103,7 +104,8 @@ impl Auction {
         self.gas_price
     }
 
-    pub fn deadline(&self) -> Deadline {
+    /// The deadline for the driver to start sending solution to autopilot.
+    pub fn deadline(&self) -> time::Deadline {
         self.deadline
     }
 
@@ -397,34 +399,6 @@ impl From<eth::U256> for Price {
     }
 }
 
-/// Each auction has a deadline, limiting the maximum time that can be allocated
-/// to solving the auction.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Deadline(chrono::DateTime<chrono::Utc>);
-
-impl Deadline {
-    /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer())
-    }
-
-    pub fn time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
-    }
-}
-
-impl From<chrono::DateTime<chrono::Utc>> for Deadline {
-    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Deadline> for chrono::DateTime<chrono::Utc> {
-    fn from(value: Deadline) -> Self {
-        value.0
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Id(pub i64);
 
@@ -451,10 +425,6 @@ impl std::fmt::Display for Id {
         write!(f, "{}", self.0)
     }
 }
-
-#[derive(Debug, Error)]
-#[error("the solution deadline has been exceeded")]
-pub struct DeadlineExceeded;
 
 #[derive(Debug, Error)]
 #[error("invalid auction id")]

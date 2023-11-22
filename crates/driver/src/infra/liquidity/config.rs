@@ -1,7 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
     hex_literal::hex,
-    std::collections::HashSet,
+    std::{collections::HashSet, time::Duration},
 };
 
 /// Configuration options for liquidity fetching.
@@ -36,6 +36,9 @@ pub struct UniswapV2 {
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
     pub pool_code: eth::CodeDigest,
+    /// How long liquidity should not be fetched for a token pair that didn't
+    /// return useful liquidity before allowing to fetch it again.
+    pub missing_pool_cache_time: Duration,
 }
 
 impl UniswapV2 {
@@ -46,6 +49,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::UniswapV2Router02::raw_contract(), network)?,
             pool_code: hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -55,6 +59,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::SushiSwapRouter::raw_contract(), network)?,
             pool_code: hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -64,6 +69,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::HoneyswapRouter::raw_contract(), network)?,
             pool_code: hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -73,6 +79,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::BaoswapRouter::raw_contract(), network)?,
             pool_code: hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -82,6 +89,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::PancakeRouter::raw_contract(), network)?,
             pool_code: hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 }
@@ -94,6 +102,9 @@ pub struct Swapr {
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
     pub pool_code: eth::CodeDigest,
+    /// How long liquidity should not be fetched for a token pair that didn't
+    /// return useful liquidity before allowing to fetch it again.
+    pub missing_pool_cache_time: Duration,
 }
 
 impl Swapr {
@@ -104,6 +115,7 @@ impl Swapr {
             router: deployment_address(contracts::SwaprRouter::raw_contract(), network)?,
             pool_code: hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 }

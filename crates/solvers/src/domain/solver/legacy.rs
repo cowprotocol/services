@@ -17,6 +17,7 @@ pub struct Config {
     pub solver_name: String,
     pub chain_id: eth::ChainId,
     pub endpoint: Url,
+    pub gzip_requests: bool,
 }
 
 pub struct Legacy(boundary::legacy::Legacy);
