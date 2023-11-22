@@ -59,7 +59,7 @@ where
 
     fn spawn_gc(cache: Cache<Request, Fut>) {
         Handle::current().spawn_blocking(move || {
-            Handle::current().block_on(tokio::time::sleep(Duration::from_millis(500).into()));
+            Handle::current().block_on(tokio::time::sleep(Duration::from_millis(500)));
             Self::collect_garbage(&cache);
         });
     }

@@ -572,7 +572,6 @@ mod tests {
             .unwrap();
         values.lock().unwrap().clear();
 
-        eprintln!("fetch updated cache");
         let result = cache
             .fetch(test_keys(0..2), Block::Recent)
             .now_or_never()
