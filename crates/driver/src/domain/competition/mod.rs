@@ -75,7 +75,7 @@ impl Competition {
                 }
             })?;
 
-        observe::postprocessing(&solutions, auction.deadline());
+        observe::postprocessing(&solutions, auction.deadline().driver().unwrap_or_default());
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -122,7 +122,7 @@ impl Competition {
         // timeout is reached.
         let mut settlements = Vec::new();
         if tokio::time::timeout(
-            auction.deadline().driver(),
+            auction.deadline().driver().unwrap_or_default(),
             merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
         )
         .await
@@ -202,8 +202,7 @@ impl Competition {
                     }
                 }
             };
-            let timeout = remaining.to_std().unwrap_or_default();
-            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
+            let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
         Ok(score)

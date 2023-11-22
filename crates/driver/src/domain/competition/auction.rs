@@ -7,7 +7,7 @@ use {
             liquidity,
             time,
         },
-        infra::{self, blockchain, observe, time, Ethereum},
+        infra::{self, blockchain, observe, Ethereum},
         util,
     },
     futures::future::{join_all, BoxFuture, FutureExt, Shared},

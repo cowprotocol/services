@@ -10,7 +10,6 @@ use {
         domain::{
             competition::{
                 self,
-                auction,
                 score,
                 solution::{self, Settlement},
                 Auction,
@@ -91,10 +90,10 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
 
 // Observe that postprocessing (encoding & merging) of solutions is about to
 // start.
-pub fn postprocessing(solutions: &[Solution], deadline: auction::Deadline) {
+pub fn postprocessing(solutions: &[Solution], deadline: std::time::Duration) {
     tracing::debug!(
         solutions = ?solutions.len(),
-        remaining = ?deadline.remaining(),
+        remaining = ?deadline,
         "postprocessing solutions"
     );
 }
