@@ -54,6 +54,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"
 url = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
+delay_map = "0.3.0"
 
 [dev-dependencies]
 regex = { workspace = true }

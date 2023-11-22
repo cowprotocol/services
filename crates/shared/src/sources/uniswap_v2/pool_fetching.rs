@@ -8,6 +8,7 @@ use {
     },
     anyhow::Result,
     contracts::{IUniswapLikePair, ERC20},
+    delay_map::HashSetDelay,
     ethcontract::{errors::MethodError, BlockId, H160, U256},
     futures::{
         future::{self, BoxFuture},
@@ -205,21 +206,7 @@ impl BaselineSolvable for Pool {
 pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
-    pub non_existent_pools: RwLock<HashSet<TokenPair>>,
-}
-
-impl PoolFetcher<DefaultPoolReader> {
-    /// Creates a pool fetcher instance for Uniswap V2 (or an exact clone).
-    pub fn uniswap(pair_provider: PairProvider, web3: Web3) -> Self {
-        Self {
-            pool_reader: DefaultPoolReader {
-                pair_provider,
-                web3: web3.clone(),
-            },
-            web3,
-            non_existent_pools: Default::default(),
-        }
-    }
+    pub non_existent_pools: RwLock<HashSetDelay<TokenPair>>,
 }
 
 #[async_trait::async_trait]
@@ -231,7 +218,7 @@ where
         let mut token_pairs: Vec<_> = token_pairs.into_iter().collect();
         {
             let non_existent_pools = self.non_existent_pools.read().unwrap();
-            token_pairs.retain(|pair| !non_existent_pools.contains(pair));
+            token_pairs.retain(|pair| !non_existent_pools.contains_key(pair));
         }
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(at_block.into());
@@ -252,10 +239,10 @@ where
             }
         }
         if !new_missing_pairs.is_empty() {
-            self.non_existent_pools
-                .write()
-                .unwrap()
-                .extend(new_missing_pairs);
+            let mut non_existent_pools = self.non_existent_pools.write().unwrap();
+            for pair in new_missing_pairs {
+                non_existent_pools.insert(pair);
+            }
         }
         Ok(pools)
     }
