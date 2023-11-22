@@ -20,7 +20,7 @@ pub struct RateLimitingStrategy {
     max_retries: usize,
 }
 
-const DEFAULT_MAX_RETIRES: usize = 2;
+const DEFAULT_MAX_RETIRES: usize = 1;
 
 impl Default for RateLimitingStrategy {
     fn default() -> Self {
@@ -129,7 +129,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_retries() {
-        let strategy = RateLimitingStrategy::default();
+        let strategy = RateLimitingStrategy {
+            inner: SharedRateLimitingStrategy::default(),
+            max_retries: 2,
+        };
         let rate_limiter = RateLimiter::new(strategy, "test".to_string());
         let call_count = AtomicUsize::new(0);
 
@@ -157,7 +160,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_retries_exceeds() {
-        let strategy = RateLimitingStrategy::default();
+        let strategy = RateLimitingStrategy {
+            inner: SharedRateLimitingStrategy::default(),
+            max_retries: 2,
+        };
         let rate_limiter = RateLimiter::new(strategy, "test".to_string());
         let call_count = AtomicUsize::new(0);
 
