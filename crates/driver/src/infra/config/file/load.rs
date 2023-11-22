@@ -4,7 +4,7 @@ use {
         infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
     futures::future::join_all,
-    std::path::Path,
+    std::{path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -115,12 +115,17 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         }
                     }
                     .expect("no Uniswap V2 preset for current network"),
-                    file::UniswapV2Config::Manual { router, pool_code } => {
-                        liquidity::config::UniswapV2 {
-                            router: router.into(),
-                            pool_code: pool_code.into(),
-                        }
-                    }
+                    file::UniswapV2Config::Manual {
+                        router,
+                        pool_code,
+                        missing_pool_cache_time_seconds,
+                    } => liquidity::config::UniswapV2 {
+                        router: router.into(),
+                        pool_code: pool_code.into(),
+                        missing_pool_cache_time: Duration::from_secs(
+                            missing_pool_cache_time_seconds,
+                        ),
+                    },
                 })
                 .collect(),
             swapr: config
@@ -133,9 +138,16 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         file::SwaprPreset::Swapr => liquidity::config::Swapr::swapr(&network.id),
                     }
                     .expect("no Swapr preset for current network"),
-                    file::SwaprConfig::Manual { router, pool_code } => liquidity::config::Swapr {
+                    file::SwaprConfig::Manual {
+                        router,
+                        pool_code,
+                        missing_pool_cache_time_seconds,
+                    } => liquidity::config::Swapr {
                         router: router.into(),
                         pool_code: pool_code.into(),
+                        missing_pool_cache_time: Duration::from_secs(
+                            missing_pool_cache_time_seconds,
+                        ),
                     },
                 })
                 .collect(),

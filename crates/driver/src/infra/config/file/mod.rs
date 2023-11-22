@@ -304,6 +304,11 @@ enum UniswapV2Config {
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
+
+        /// How long liquidity should not be fetched for a token pair that
+        /// didn't return useful liquidity before allowing to fetch it
+        /// again.
+        missing_pool_cache_time_seconds: u64,
     },
 }
 
@@ -330,6 +335,11 @@ enum SwaprConfig {
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
+
+        /// How long liquidity should not be fetched for a token pair that
+        /// didn't return useful liquidity before allowing to fetch it
+        /// again.
+        missing_pool_cache_time_seconds: u64,
     },
 }
 

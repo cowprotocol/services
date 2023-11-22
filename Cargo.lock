@@ -1541,6 +1541,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "delay_map"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4355c25cbf99edcb6b4a0e906f6bdc6956eda149e84455bea49696429b2f8e8"
+dependencies = [
+ "futures",
+ "tokio-util 0.7.8",
+]
+
+[[package]]
 name = "der"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3983,6 +3993,7 @@ dependencies = [
  "clap",
  "contracts",
  "database",
+ "delay_map",
  "derivative",
  "ethcontract",
  "ethcontract-mock",
@@ -4710,6 +4721,7 @@ dependencies = [
  "futures-io",
  "futures-sink",
  "pin-project-lite",
+ "slab",
  "tokio",
  "tracing",
 ]
