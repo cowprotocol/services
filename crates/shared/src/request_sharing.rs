@@ -9,7 +9,9 @@ use {
         future::Future,
         hash::Hash,
         sync::{Arc, Mutex},
+        time::Duration,
     },
+    tokio::runtime::Handle,
 };
 
 // The design of this module is intentionally simple. Every time a shared future
@@ -50,14 +52,15 @@ where
         }
     }
 
+    fn collect_garbage(cache: &Cache<Request, Fut>) {
+        let mut cache = cache.lock().unwrap();
+        cache.retain(|_request, weak| weak.upgrade().is_some());
+    }
+
     fn spawn_gc(cache: Cache<Request, Fut>) {
-        let rt = tokio::runtime::Handle::current();
-        tokio::task::spawn_blocking(move || {
-            {
-                let mut cache = cache.lock().unwrap();
-                cache.retain(|_request, weak| weak.upgrade().is_some());
-            }
-            rt.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(500)))
+        Handle::current().spawn_blocking(move || {
+            Handle::current().block_on(tokio::time::sleep(Duration::from_millis(500).into()));
+            Self::collect_garbage(&cache);
         });
     }
 }
@@ -144,9 +147,16 @@ impl Metrics {
 mod tests {
     use super::*;
 
-    #[test]
-    fn shares_request() {
-        let sharing = RequestSharing::labelled("test".into());
+    #[tokio::test]
+    async fn shares_request() {
+        // Manually create [`RequestSharing`] so we can have fine grained control
+        // over the garbage collection.
+        let cache: Cache<u64, BoxFuture<u64>> = Default::default();
+        let sharing = RequestSharing {
+            in_flight: cache,
+            request_label: Default::default(),
+        };
+
         let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
         let shared1 = sharing.shared(0, async { panic!() }.boxed());
         // Would use Arc::ptr_eq but Shared doesn't implement it.
@@ -157,13 +167,18 @@ mod tests {
         assert_eq!(shared0.now_or_never().unwrap(), 0);
         assert_eq!(shared1.strong_count().unwrap(), 1);
         assert_eq!(shared1.weak_count().unwrap(), 1);
-        // garbage collect completed future, same request gets assigned new future
-        let shared3 = sharing.shared(0, futures::future::ready(1).boxed());
-        assert_eq!(shared3.now_or_never().unwrap(), 1);
-        // previous future still works
-        assert_eq!(shared1.strong_count().unwrap(), 1);
-        assert_eq!(shared1.weak_count().unwrap(), 0);
+
+        // GC does not delete any keys because some tasks still use the future
+        RequestSharing::collect_garbage(&sharing.in_flight);
+        assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
+        assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
+
         // complete second shared
         assert_eq!(shared1.now_or_never().unwrap(), 0);
+
+        RequestSharing::collect_garbage(&sharing.in_flight);
+
+        // GC deleted all now unused futures
+        assert!(sharing.in_flight.lock().unwrap().is_empty());
     }
 }
