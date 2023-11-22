@@ -12,7 +12,6 @@ use {
             common::PoolInfoFetching,
             FactoryIndexing,
             Pool,
-            PoolIndexing,
             PoolStatus,
         },
     },
@@ -26,13 +25,10 @@ use {
         Web3Transport,
         MAX_BATCH_SIZE,
     },
-    futures::{future, FutureExt},
+    futures::future,
     hex_literal::hex,
     model::TokenPair,
-    std::{
-        collections::HashSet,
-        sync::{Arc, RwLock},
-    },
+    std::{collections::HashSet, sync::Arc},
     tokio::sync::Mutex,
 };
 
@@ -68,7 +64,6 @@ where
     web3: Web3,
     fetcher: Arc<dyn PoolInfoFetching<Factory>>,
     updater: PoolUpdater<Factory>,
-    non_existent_pools: RwLock<HashSet<H256>>,
 }
 
 impl<Factory> Registry<Factory>
@@ -94,7 +89,6 @@ where
             web3,
             fetcher,
             updater,
-            non_existent_pools: Default::default(),
         }
     }
 }
@@ -112,33 +106,20 @@ where
             .pool_ids_for_token_pairs(&token_pairs)
     }
 
-    async fn pools_by_id(&self, mut pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
-        {
-            let non_existent_pools = self.non_existent_pools.read().unwrap();
-            pool_ids.retain(|id| !non_existent_pools.contains(id));
-        }
+    async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
         let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(block.into());
 
         let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
         let pool_futures = pool_infos
             .into_iter()
-            .map(|pool_info| {
-                let id = pool_info.common().id;
-                self.fetcher
-                    .fetch_pool(&pool_info, &mut batch, block)
-                    .map(move |result| (id, result))
-            })
+            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, &mut batch, block))
             .collect::<Vec<_>>();
 
         batch.execute_all(MAX_BATCH_SIZE).await;
 
-        let results = future::join_all(pool_futures).await;
-        let (pools, missing_ids) = collect_pool_results(results)?;
-        if !missing_ids.is_empty() {
-            self.non_existent_pools.write().unwrap().extend(missing_ids);
-        }
-        Ok(pools)
+        let pools = future::join_all(pool_futures).await;
+        collect_pool_results(pools)
     }
 }
 
@@ -164,23 +145,15 @@ fn base_pool_factory(contract_instance: &Instance<Web3Transport>) -> BalancerV2B
     )
 }
 
-/// Returns the list of found pools and a list of pool ids that could not be
-/// found.
-fn collect_pool_results(
-    results: Vec<(H256, Result<PoolStatus>)>,
-) -> Result<(Vec<Pool>, Vec<H256>)> {
-    let mut fetched_pools = Vec::with_capacity(results.len());
-    let mut missing_ids = vec![];
-    for (id, result) in results {
-        match result {
-            Ok(PoolStatus::Active(pool)) => fetched_pools.push(pool),
-            Ok(PoolStatus::Disabled) => missing_ids.push(id),
-            Ok(PoolStatus::Paused) => {}
-            Err(err) if is_contract_error(&err) => missing_ids.push(id),
-            Err(err) => return Err(err),
-        }
-    }
-    Ok((fetched_pools, missing_ids))
+fn collect_pool_results(pools: Vec<Result<PoolStatus>>) -> Result<Vec<Pool>> {
+    pools
+        .into_iter()
+        .filter_map(|pool| match pool {
+            Ok(pool) => Some(Ok(pool.active()?)),
+            Err(err) if is_contract_error(&err) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect()
 }
 
 fn is_contract_error(err: &anyhow::Error) -> bool {
@@ -202,44 +175,28 @@ mod tests {
                 swap::fixed_point::Bfp,
             },
         },
-        std::str::FromStr,
     };
 
     #[tokio::test]
     async fn collecting_results_filters_paused_pools_and_contract_errors() {
-        let bad_pool =
-            H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
-                .unwrap();
         let results = vec![
-            (
-                Default::default(),
-                Ok(PoolStatus::Active(Pool {
-                    id: Default::default(),
-                    kind: PoolKind::Weighted(weighted::PoolState {
-                        tokens: Default::default(),
-                        swap_fee: Bfp::zero(),
-                        version: Default::default(),
-                    }),
-                })),
-            ),
-            (Default::default(), Ok(PoolStatus::Paused)),
-            (
-                bad_pool,
-                Err(ethcontract_error::testing_contract_error().into()),
-            ),
+            Ok(PoolStatus::Active(Pool {
+                id: Default::default(),
+                kind: PoolKind::Weighted(weighted::PoolState {
+                    tokens: Default::default(),
+                    swap_fee: Bfp::zero(),
+                    version: Default::default(),
+                }),
+            })),
+            Ok(PoolStatus::Paused),
+            Err(ethcontract_error::testing_contract_error().into()),
         ];
-        let (fetched, missing) = collect_pool_results(results).unwrap();
-        assert_eq!(fetched.len(), 1);
-        assert_eq!(missing, vec![bad_pool]);
+        assert_eq!(collect_pool_results(results).unwrap().len(), 1);
     }
 
     #[tokio::test]
     async fn collecting_results_forwards_node_error() {
-        let node_err = (
-            Default::default(),
-            Err(ethcontract_error::testing_node_error().into()),
-        );
-        let result = collect_pool_results(vec![node_err]);
-        assert!(result.is_err());
+        let node_err = Err(ethcontract_error::testing_node_error().into());
+        assert!(collect_pool_results(vec![node_err]).is_err());
     }
 }
