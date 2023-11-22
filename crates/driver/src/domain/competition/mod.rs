@@ -105,7 +105,7 @@ impl Competition {
             .map(|solution| async move {
                 let id = solution.id();
                 observe::encoding(id);
-                let settlement = solution.encode(&auction, &self.eth, &self.simulator).await;
+                let settlement = solution.encode(auction, &self.eth, &self.simulator).await;
                 (id, settlement)
             })
             .collect::<FuturesUnordered<_>>()
