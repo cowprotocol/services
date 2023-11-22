@@ -227,9 +227,7 @@ where
         let retries = self.maximum_retries;
         let delay = self.delay_between_retries;
         let fetcher = self.fetcher.clone();
-        let mut created = false;
         let fut = self.requests.shared_or_else((key, block), |entry| {
-            created = true;
             let (key, block) = entry.clone();
             async move {
                 for _ in 0..=retries {
