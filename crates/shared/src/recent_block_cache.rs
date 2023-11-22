@@ -43,6 +43,9 @@ use {
     },
 };
 
+/// How many liqudity sources should at most be fetched in a single chunk.
+const REQUEST_BATCH_SIZE: usize = 200;
+
 /// A trait used to define `RecentBlockCache` updating behaviour.
 #[async_trait::async_trait]
 pub trait CacheFetching<K, V>: Send + Sync + 'static {
@@ -281,7 +284,7 @@ where
         let cache_misses: Vec<_> = cache_misses.into_iter().collect();
         // Splits fetches into chunks because we can get over 1400 requests when the
         // cache is empty which tend to time out if we don't chunk them.
-        for chunk in cache_misses.chunks(200) {
+        for chunk in cache_misses.chunks(REQUEST_BATCH_SIZE) {
             let keys = chunk.iter().cloned().collect();
             let fetched = self
                 .fetch_inner_many(keys, Block::Number(cache_miss_block))
