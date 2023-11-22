@@ -95,8 +95,9 @@ impl super::Postgres {
             .await
             .context("failed to insert auction_transaction")?;
 
-            // It's always fine to store a settlement observation.
-            database::settlement_observations::insert(
+            // in case of deep reindexing we might already have the observation, so just
+            // overwrite it
+            database::settlement_observations::upsert(
                 ex,
                 Observation {
                     block_number: settlement_update.block_number,
