@@ -3,12 +3,19 @@
 
 use {
     crate::{
-        domain,
-        domain::{auction, dex::slippage, order, solution, solver::dex::fills::Fills},
+        boundary::rate_limiter::RateLimiter,
+        domain::{
+            self,
+            auction,
+            dex::{self, slippage},
+            order::{self, Order},
+            solution,
+            solver::dex::fills::Fills,
+        },
         infra,
     },
     futures::{future, stream, FutureExt, StreamExt},
-    std::num::NonZeroUsize,
+    std::{future::Future, num::NonZeroUsize, sync::Arc},
     tracing::Instrument,
 };
 
@@ -33,10 +40,17 @@ pub struct Dex {
 
     /// Parameters used to calculate the revert risk of a solution.
     risk: domain::Risk,
+
+    /// Handles 429 Too Many Requests error with a retry mechanism
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl Dex {
-    pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
+    pub fn new(
+        dex: infra::dex::Dex,
+        config: infra::config::dex::Config,
+        rate_limiter: RateLimiter,
+    ) -> Self {
         Self {
             dex,
             simulator: infra::dex::Simulator::new(
@@ -48,6 +62,7 @@ impl Dex {
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
             risk: config.risk,
+            rate_limiter: Arc::new(rate_limiter),
         }
     }
 
@@ -78,12 +93,52 @@ impl Dex {
             .enumerate()
             .map(|(i, order)| {
                 let span = tracing::info_span!("solve", order = %order.get().uid);
-                self.solve_order(order, &auction.tokens, auction.gas_price)
-                    .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
-                    .instrument(span)
+                self.solve_order(
+                    order,
+                    &auction.tokens,
+                    auction.gas_price,
+                    self.rate_limiter.clone(),
+                )
+                .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
+                .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())
             .filter_map(future::ready)
+    }
+
+    async fn try_solve(
+        &self,
+        order: &Order,
+        dex_order: &dex::Order,
+        tokens: &auction::Tokens,
+        gas_price: auction::GasPrice,
+    ) -> Result<dex::Swap, infra::dex::Error> {
+        let slippage = self.slippage.relative(&dex_order.amount(), tokens);
+        self.dex
+            .swap(dex_order, &slippage, tokens, gas_price)
+            .await
+            .map_err(|err| {
+                match &err {
+                    err @ infra::dex::Error::NotFound => {
+                        if order.partially_fillable {
+                            // Only adjust the amount to try next if we are sure the API worked
+                            // correctly yet still wasn't able to provide a
+                            // swap.
+                            self.fills.reduce_next_try(order.uid);
+                        } else {
+                            tracing::debug!(?err, "skipping order");
+                        }
+                    }
+                    err @ infra::dex::Error::OrderNotSupported => {
+                        tracing::debug!(?err, "skipping order")
+                    }
+                    infra::dex::Error::Other(err) => tracing::warn!(?err, "failed to get swap"),
+                    err @ infra::dex::Error::RateLimited => {
+                        tracing::debug!(?err, "encountered rate limit, retrying")
+                    }
+                }
+                err
+            })
     }
 
     async fn solve_order(
@@ -91,35 +146,22 @@ impl Dex {
         order: order::UserOrder<'_>,
         tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Option<solution::Solution> {
         let order = order.get();
-        let swap = {
-            let order = self.fills.dex_order(order, tokens)?;
-            let slippage = self.slippage.relative(&order.amount(), tokens);
-            self.dex.swap(&order, &slippage, tokens, gas_price).await
-        };
-
-        let swap = match swap {
-            Ok(swap) => swap,
-            Err(err @ infra::dex::Error::NotFound) => {
-                if order.partially_fillable {
-                    // Only adjust the amount to try next if we are sure the API worked correctly
-                    // yet still wasn't able to provide a swap.
-                    self.fills.reduce_next_try(order.uid);
-                } else {
-                    tracing::debug!(?err, "skipping order");
-                }
-                return None;
-            }
-            Err(err @ infra::dex::Error::OrderNotSupported) => {
-                tracing::debug!(?err, "skipping order");
-                return None;
-            }
-            Err(infra::dex::Error::Other(err)) => {
-                tracing::warn!(?err, "failed to get swap");
-                return None;
-            }
-        };
+        let dex_order = self.fills.dex_order(order, tokens)?;
+        let swap = rate_limiter
+            .execute(
+                self.try_solve(order, &dex_order, tokens, gas_price),
+                |result| matches!(result, Err(infra::dex::Error::RateLimited)),
+            )
+            .await
+            .map_err(|_| {
+                tracing::debug!("rate limit retries exceeded, unable to complete operation");
+                infra::dex::Error::RateLimited
+            })
+            .and_then(|result| result)
+            .ok()?;
 
         let uid = order.uid;
         let sell = tokens.reference_price(&order.sell.token);

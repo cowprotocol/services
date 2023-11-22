@@ -2,6 +2,7 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
+        boundary::rate_limiter::RateLimiter,
         domain::solver::{self, Solver},
         infra::{cli, config, dex},
     },
@@ -28,47 +29,63 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
     observe::tracing::initialize_reentrant(&args.log);
     tracing::info!("running solver engine with {args:#?}");
 
-    let solver = match args.command {
+    let solver = match &args.command {
         cli::Command::Baseline { config } => {
-            let config = config::baseline::file::load(&config).await;
+            let config = config::baseline::file::load(config).await;
             Solver::Baseline(solver::Baseline::new(config))
         }
         cli::Command::Naive { config } => {
-            let config = config::naive::file::load(&config).await;
+            let config = config::naive::file::load(config).await;
             Solver::Naive(solver::Naive::new(config))
         }
         cli::Command::Legacy { config } => {
-            let config = config::legacy::load(&config).await;
+            let config = config::legacy::load(config).await;
             Solver::Legacy(solver::Legacy::new(config))
         }
         cli::Command::ZeroEx { config } => {
-            let config = config::dex::zeroex::file::load(&config).await;
+            let config = config::dex::zeroex::file::load(config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::ZeroEx(
                     dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
                 ),
                 config.base,
+                RateLimiter::new(
+                    args.single_order_solver_rate_limiter.unwrap_or_default(),
+                    args.command.to_lowercase(),
+                ),
             ))
         }
         cli::Command::Balancer { config } => {
-            let config = config::dex::balancer::file::load(&config).await;
+            let config = config::dex::balancer::file::load(config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
                 config.base,
+                RateLimiter::new(
+                    args.single_order_solver_rate_limiter.unwrap_or_default(),
+                    args.command.to_lowercase(),
+                ),
             ))
         }
         cli::Command::OneInch { config } => {
-            let config = config::dex::oneinch::file::load(&config).await;
+            let config = config::dex::oneinch::file::load(config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::OneInch(dex::oneinch::OneInch::new(config.oneinch).await.unwrap()),
                 config.base,
+                RateLimiter::new(
+                    args.single_order_solver_rate_limiter.unwrap_or_default(),
+                    args.command.to_lowercase(),
+                ),
             ))
         }
         cli::Command::ParaSwap { config } => {
-            let config = config::dex::paraswap::file::load(&config).await;
+            let config = config::dex::paraswap::file::load(config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::ParaSwap(dex::paraswap::ParaSwap::new(config.paraswap)),
                 config.base,
+                RateLimiter::new(
+                    args.single_order_solver_rate_limiter.unwrap_or_default(),
+                    args.command.to_lowercase(),
+                ),
             ))
         }
     };
