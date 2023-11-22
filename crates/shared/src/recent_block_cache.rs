@@ -31,6 +31,7 @@ use {
     ethcontract::BlockNumber,
     ethrpc::current_block::CurrentBlockStream,
     futures::FutureExt,
+    itertools::Itertools,
     prometheus::IntCounterVec,
     std::{
         cmp,
@@ -184,7 +185,7 @@ where
             .keys_of_recently_used_entries()
             .collect::<HashSet<_>>();
         tracing::debug!("automatically updating {} entries", keys.len());
-        let (found_values, _) = self
+        let found_values = self
             .fetch_inner_many(keys.clone(), Block::Number(new_block))
             .await?;
 
@@ -197,26 +198,16 @@ where
         Ok(())
     }
 
-    async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<(Vec<V>, Vec<K>)> {
+    async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
         let fetched =
             futures::future::join_all(keys.iter().map(|key| self.fetch_inner(key.clone(), block)))
                 .await;
-        let found_keys: Vec<_> = fetched
-            .iter()
-            .zip(keys.iter())
-            .filter_map(|(results, key)| {
-                results
-                    .as_ref()
-                    .is_ok_and(|res| !res.is_empty())
-                    .then_some(key.clone())
-            })
-            .collect();
         let fetched: Vec<_> = fetched
             .into_iter()
             .filter_map(|res| res.ok())
             .flatten()
             .collect();
-        Ok((fetched, found_keys))
+        Ok(fetched)
     }
 
     // Sometimes nodes requests error when we try to get state from what we think is
@@ -292,9 +283,10 @@ where
         // cache is empty which tend to time out if we don't chunk them.
         for chunk in cache_misses.chunks(200) {
             let keys = chunk.iter().cloned().collect();
-            let (fetched, found_keys) = self
+            let fetched = self
                 .fetch_inner_many(keys, Block::Number(cache_miss_block))
                 .await?;
+            let found_keys = fetched.iter().map(K::for_value).unique().collect_vec();
             cache_hits.extend_from_slice(&fetched);
 
             let mut mutexed = self.mutexed.lock().unwrap();
