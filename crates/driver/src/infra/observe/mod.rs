@@ -91,7 +91,7 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
 
 // Observe that postprocessing (encoding & merging) of solutions is about to
 // start.
-pub fn postprocessing(solver: &solver::Name, solutions: &[Solution], deadline: auction::Deadline) {
+pub fn postprocessing(solutions: &[Solution], deadline: auction::Deadline) {
     tracing::debug!(
         solutions = ?solutions.len(),
         remaining = ?deadline.remaining(),
@@ -100,7 +100,7 @@ pub fn postprocessing(solver: &solver::Name, solutions: &[Solution], deadline: a
 }
 
 // Observe that postprocessing didn't complete before the timeout.
-pub fn postprocessing_timed_out(solver: &solver::Name, completed: &[Settlement]) {
+pub fn postprocessing_timed_out(completed: &[Settlement]) {
     tracing::debug!(
         completed = ?completed.len(),
         "postprocessing solutions timed out"

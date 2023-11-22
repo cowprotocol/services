@@ -75,7 +75,7 @@ impl Competition {
                 }
             })?;
 
-        observe::postprocessing(self.solver.name(), &solutions, auction.deadline());
+        observe::postprocessing(&solutions, auction.deadline());
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -118,7 +118,8 @@ impl Competition {
                     .ok()
             });
 
-        // Merge settlements as they arrive until completed or timed out.
+        // Merge settlements as they arrive until there are no more new settlements or
+        // timeout is reached.
         let mut settlements = Vec::new();
         if tokio::time::timeout(
             auction.deadline().remaining(),
@@ -127,7 +128,7 @@ impl Competition {
         .await
         .is_err()
         {
-            observe::postprocessing_timed_out(self.solver.name(), &settlements)
+            observe::postprocessing_timed_out(&settlements)
         }
 
         // Score the settlements.

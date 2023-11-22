@@ -21,7 +21,7 @@ use {
 /// An auction is a set of orders that can be solved. The solvers calculate
 /// [`super::solution::Solution`]s by picking subsets of these orders and
 /// solving them.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Auction {
     /// See the [`Self::id`] method.
     id: Option<Id>,
@@ -333,7 +333,7 @@ impl AuctionProcessor {
 }
 
 /// The tokens that are used in an auction.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Tokens(HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
