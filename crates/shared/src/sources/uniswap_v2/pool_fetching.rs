@@ -249,11 +249,19 @@ where
 pub struct DefaultPoolReader {
     pub pair_provider: PairProvider,
     pub web3: Web3,
+    pub amms: RwLock<HashMap<H160, Arc<IUniswapLikePair>>>,
+    pub tokens: RwLock<HashMap<H160, Arc<ERC20>>>,
 }
 
-lazy_static::lazy_static! {
-    static ref AMMS: RwLock<HashMap<H160, Arc<IUniswapLikePair>>> = RwLock::new(Default::default());
-    static ref TOKENS: RwLock<HashMap<H160, Arc<ERC20>>> = RwLock::new(Default::default());
+impl DefaultPoolReader {
+    pub fn new(web3: Web3, pair_provider: PairProvider) -> Self {
+        Self {
+            pair_provider,
+            web3,
+            amms: Default::default(),
+            tokens: Default::default(),
+        }
+    }
 }
 
 macro_rules! get_or_init {
@@ -282,12 +290,12 @@ impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
 
-        let pair_contract = get_or_init!(IUniswapLikePair, AMMS, &pair_address, &self.web3);
+        let pair_contract = get_or_init!(IUniswapLikePair, &self.amms, &pair_address, &self.web3);
         let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = get_or_init!(ERC20, TOKENS, &pair.get().0, &self.web3);
-        let token1 = get_or_init!(ERC20, TOKENS, &pair.get().1, &self.web3);
+        let token0 = get_or_init!(ERC20, &self.tokens, &pair.get().0, &self.web3);
+        let token1 = get_or_init!(ERC20, &self.tokens, &pair.get().1, &self.web3);
 
         let fetch_token0_balance = token0.balance_of(pair_address).block(block).call();
         let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();

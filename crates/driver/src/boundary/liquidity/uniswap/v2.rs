@@ -121,13 +121,7 @@ pub async fn collector(
     blocks: &CurrentBlockStream,
     config: &infra::liquidity::config::UniswapV2,
 ) -> Result<Box<dyn LiquidityCollecting>> {
-    collector_with_reader(eth, blocks, config, |web3, pair_provider| {
-        DefaultPoolReader {
-            web3,
-            pair_provider,
-        }
-    })
-    .await
+    collector_with_reader(eth, blocks, config, DefaultPoolReader::new).await
 }
 
 pub(in crate::boundary::liquidity) async fn collector_with_reader<R, F>(
