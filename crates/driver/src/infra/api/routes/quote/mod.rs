@@ -20,7 +20,7 @@ async fn route(
     order: axum::extract::Query<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (hyper::StatusCode, axum::Json<Error>)> {
     let handle_request = async {
-        let order = order.0.into_domain().tap_err(|err| {
+        let order = order.0.into_domain(state.timeouts()).tap_err(|err| {
             observe::invalid_dto(err, "order");
         })?;
         observe::quoting(&order);

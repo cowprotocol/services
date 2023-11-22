@@ -1,8 +1,16 @@
 use {
     super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
-        domain::competition::{auction, order},
-        infra::{self, blockchain::contracts::Addresses, Ethereum},
+        domain::{competition::order, time},
+        infra::{
+            self,
+            blockchain::contracts::Addresses,
+            config::file::{
+                default_http_time_buffer_milliseconds,
+                default_solving_share_of_deadline,
+            },
+            Ethereum,
+        },
         tests::hex_address,
     },
     itertools::Itertools,
@@ -209,6 +217,14 @@ impl Solver {
             gas,
         )
         .await;
+        let http_delay = chrono::Duration::milliseconds(
+            default_http_time_buffer_milliseconds().try_into().unwrap(),
+        );
+        let timeouts = infra::solver::Timeouts {
+            http_delay,
+            solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
+        };
+        let deadline = time::Deadline::new(config.deadline, timeouts);
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
@@ -230,7 +246,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": config.deadline - auction::Deadline::time_buffer() - chrono::Duration::milliseconds(1500),
+                        "deadline": infra::time::now() + deadline.solvers().unwrap() - http_delay,
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
