@@ -266,9 +266,9 @@ impl SolverTimeout {
     }
 }
 
-impl From<chrono::Duration> for SolverTimeout {
-    fn from(duration: chrono::Duration) -> Self {
-        Self(duration)
+impl From<std::time::Duration> for SolverTimeout {
+    fn from(duration: std::time::Duration) -> Self {
+        Self(chrono::Duration::from_std(duration).unwrap_or(chrono::Duration::max_value()))
     }
 }
 
