@@ -446,8 +446,26 @@ mod tests {
 
     #[async_trait::async_trait]
     impl CacheFetching<TestKey, TestValue> for FakeCacheFetcher {
-        async fn fetch_values(&self, _: HashSet<TestKey>, _: Block) -> Result<Vec<TestValue>> {
-            Ok(self.0.lock().unwrap().clone())
+        async fn fetch_values(
+            &self,
+            requested: HashSet<TestKey>,
+            _: Block,
+        ) -> Result<Vec<TestValue>> {
+            let fetched = self
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|value| requested.contains(&TestKey(value.key)))
+                .cloned()
+                .collect();
+            Ok(fetched)
+        }
+    }
+
+    impl FakeCacheFetcher {
+        pub fn new(values: Vec<TestValue>) -> Self {
+            Self(Arc::new(Mutex::new(values)))
         }
     }
 
@@ -455,9 +473,13 @@ mod tests {
         keys.into_iter().map(TestKey)
     }
 
-    #[test]
-    fn marks_recently_used() {
-        let fetcher = FakeCacheFetcher::default();
+    #[tokio::test]
+    async fn marks_recently_used() {
+        let fetcher = FakeCacheFetcher::new(vec![
+            TestValue::new(0, "a"),
+            TestValue::new(1, "b"),
+            TestValue::new(2, "c"),
+        ]);
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
             number: block_number,
@@ -492,7 +514,11 @@ mod tests {
             .collect::<HashSet<_>>();
         assert_eq!(keys, test_keys(0..2).collect());
 
-        // 1 is already cached, 3 isn't.
+        // 1 is already cached, 2 isn't.
+        // Additionally 3 will never yield any data. We don't consider these
+        // keys as recently used. That's because we update data for recently used keys
+        // in the background. If we would consider keys without data to be recently used
+        // we'd issue a lot of useless update reqeusts.
         cache
             .fetch(test_keys(1..3), Block::Recent)
             .now_or_never()
@@ -507,8 +533,8 @@ mod tests {
         assert_eq!(keys, test_keys(1..3).collect());
     }
 
-    #[test]
-    fn auto_updates_recently_used() {
+    #[tokio::test]
+    async fn auto_updates_recently_used() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -527,14 +553,17 @@ mod tests {
         )
         .unwrap();
 
+        let initial_values = vec![TestValue::new(0, "hello"), TestValue::new(1, "ether")];
+        *values.lock().unwrap() = initial_values.clone();
+
         let result = cache
             .fetch(test_keys(0..2), Block::Recent)
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result.len(), 2);
 
-        let updated_values = vec![TestValue::new(0, "hello"), TestValue::new(1, "ether")];
+        let updated_values = vec![TestValue::new(0, "hello_1"), TestValue::new(1, "ether_1")];
         *values.lock().unwrap() = updated_values.clone();
         cache
             .update_cache_at_block(block_number)
@@ -543,6 +572,7 @@ mod tests {
             .unwrap();
         values.lock().unwrap().clear();
 
+        eprintln!("fetch updated cache");
         let result = cache
             .fetch(test_keys(0..2), Block::Recent)
             .now_or_never()
@@ -554,8 +584,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cache_hit_and_miss() {
+    #[tokio::test]
+    async fn cache_hit_and_miss() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -610,8 +640,8 @@ mod tests {
         assert!(result.contains(&value2));
     }
 
-    #[test]
-    fn uses_most_recent_cached_for_latest_block() {
+    #[tokio::test]
+    async fn uses_most_recent_cached_for_latest_block() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -677,9 +707,10 @@ mod tests {
         assert_eq!(result, vec![TestValue::new(0, "bar")]);
     }
 
-    #[test]
-    fn evicts_old_blocks_from_cache() {
-        let fetcher = FakeCacheFetcher::default();
+    #[tokio::test]
+    async fn evicts_old_blocks_from_cache() {
+        let values = (0..10).map(|key| TestValue::new(key, "")).collect();
+        let fetcher = FakeCacheFetcher::new(values);
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
             number: block_number,
@@ -717,8 +748,8 @@ mod tests {
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
     }
 
-    #[test]
-    fn respects_max_age_limit_for_recent() {
+    #[tokio::test]
+    async fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
