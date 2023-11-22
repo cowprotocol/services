@@ -15,7 +15,7 @@ use {
         infra,
     },
     futures::{future, stream, FutureExt, StreamExt},
-    std::{future::Future, num::NonZeroUsize, sync::Arc},
+    std::{num::NonZeroUsize, sync::Arc},
     tracing::Instrument,
 };
 
@@ -151,8 +151,8 @@ impl Dex {
         let order = order.get();
         let dex_order = self.fills.dex_order(order, tokens)?;
         let swap = rate_limiter
-            .execute(
-                self.try_solve(order, &dex_order, tokens, gas_price),
+            .execute_with_retries(
+                || self.try_solve(order, &dex_order, tokens, gas_price),
                 |result| matches!(result, Err(infra::dex::Error::RateLimited)),
             )
             .await

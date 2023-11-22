@@ -92,7 +92,7 @@ impl RateLimitingStrategy {
     }
 
     /// Calculates back off based on how often we got rate limited in a row.
-    fn get_current_back_off(&self) -> Duration {
+    pub fn get_current_back_off(&self) -> Duration {
         let factor = self
             .back_off_growth_factor
             .powf(self.times_rate_limited as f64);
