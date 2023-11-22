@@ -1,7 +1,14 @@
 use {
     crate::{
         domain::{self, Mempools},
-        infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
+        infra::{
+            self,
+            liquidity,
+            solver::{Solver, Timeouts},
+            tokens,
+            Ethereum,
+            Simulator,
+        },
     },
     error::Error,
     futures::Future,
@@ -117,6 +124,10 @@ impl State {
 
     fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
+    }
+
+    fn timeouts(&self) -> Timeouts {
+        self.0.solver.timeouts()
     }
 }
 

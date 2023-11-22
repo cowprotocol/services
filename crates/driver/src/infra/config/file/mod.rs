@@ -148,8 +148,12 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-fn default_http_time_buffer_milliseconds() -> u64 {
-    1500
+pub fn default_http_time_buffer_milliseconds() -> u64 {
+    500
+}
+
+pub fn default_solving_share_of_deadline() -> f64 {
+    0.8
 }
 
 #[serde_as]
@@ -179,10 +183,9 @@ struct SolverConfig {
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 
-    /// Maximum time allocated to wait for a solver response to propagate to the
-    /// driver.
-    #[serde(default = "default_http_time_buffer_milliseconds")]
-    http_time_buffer_miliseconds: u64,
+    /// Timeout configuration for the solver.
+    #[serde(default)]
+    timeouts: Timeouts,
 }
 
 #[serde_as]
@@ -198,6 +201,29 @@ enum Account {
     /// connected node's account management features. This can also be used to
     /// start the driver in a dry-run mode.
     Address(eth::H160),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Timeouts {
+    /// Maximum time allocated for http request/reponse to propagate through
+    /// network.
+    http_time_buffer_milliseconds: u64,
+
+    /// Maximum time allocated for solver engines to return the solutions back
+    /// to the driver, in percentage of total driver deadline.
+    /// Expected value [0, 1]
+    solving_share_of_deadline: f64,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            http_time_buffer_milliseconds: default_http_time_buffer_milliseconds(),
+            solving_share_of_deadline: default_solving_share_of_deadline(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
