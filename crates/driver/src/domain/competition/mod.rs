@@ -13,13 +13,9 @@ use {
         },
         util::Bytes,
     },
-    futures::{future::join_all, StreamExt},
+    futures::{stream::FuturesUnordered, Stream, StreamExt},
     itertools::Itertools,
-    rand::seq::SliceRandom,
-    std::{
-        collections::HashSet,
-        sync::{Arc, Mutex},
-    },
+    std::{collections::HashSet, sync::Mutex},
     tap::TapFallible,
 };
 
@@ -79,6 +75,8 @@ impl Competition {
                 }
             })?;
 
+        observe::postprocessing(self.solver.name(), &solutions, auction.deadline());
+
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
         let solutions = solutions.into_iter().filter(|solution| {
@@ -91,49 +89,46 @@ impl Competition {
             }
         });
 
-        // Empty solutions aren't useful, so discard them.
-        let solutions = solutions
-            .filter(|solution| {
-                if solution.is_empty() {
-                    observe::empty_solution(self.solver.name(), solution.id());
-                    notify::empty_solution(&self.solver, auction.id(), solution.id());
-                    false
-                } else {
-                    true
-                }
+        // Discard empty solutions.
+        let solutions = solutions.filter(|solution| {
+            if solution.is_empty() {
+                observe::empty_solution(self.solver.name(), solution.id());
+                notify::empty_solution(&self.solver, auction.id(), solution.id());
+                false
+            } else {
+                true
+            }
+        });
+
+        // Encode solutions into settlements (streamed).
+        let encoded = solutions
+            .map(|solution| async move {
+                let id = solution.id();
+                observe::encoding(id);
+                let settlement = solution.encode(&auction, &self.eth, &self.simulator).await;
+                (id, settlement)
             })
-            .collect();
-
-        // Encode the solutions into settlements.
-        let settlements = encode_solutions(
-            auction.clone(),
-            self.eth.clone(),
-            self.simulator.clone(),
-            solutions,
-        )
-        .await;
-
-        // Filter out solutions that failed to encode.
-        let mut settlements = settlements
-            .into_iter()
-            .filter_map(|(id, result)| {
+            .collect::<FuturesUnordered<_>>()
+            .filter_map(|(id, result)| async move {
                 result
                     .tap_err(|err| {
                         observe::encoding_failed(self.solver.name(), id, err);
                         notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
-            })
-            .collect_vec();
+            });
 
-        // Merge settlements
-        merge_settlements(
-            &mut settlements,
-            &self.eth,
-            &self.simulator,
-            auction.deadline(),
+        // Merge settlements as they arrive until completed or timed out.
+        let mut settlements = Vec::new();
+        if tokio::time::timeout(
+            auction.deadline().remaining(),
+            merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
         )
-        .await;
+        .await
+        .is_err()
+        {
+            observe::postprocessing_timed_out(self.solver.name(), &settlements)
+        }
 
         // Score the settlements.
         let scores = settlements
@@ -188,22 +183,23 @@ impl Competition {
 
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
-        // gets picked by the procotol.
-        if let Some(timeout) = auction.deadline().remaining() {
+        // gets picked by the protocol.
+        if !auction.deadline().remaining().is_zero() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::current_block::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
                     if let Err(err) = self.simulate_settlement(&settlement).await {
-                        tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+                        observe::winner_voided(block, &err);
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
                         return;
                     }
                 }
             };
-            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
+            let _ =
+                tokio::time::timeout(auction.deadline().remaining(), simulate_on_new_blocks).await;
         }
 
         Ok(score)
@@ -302,124 +298,32 @@ impl Competition {
     }
 }
 
-/// Encode the solutions into settlements.
-async fn encode_solutions(
-    auction: Auction,
-    eth: Ethereum,
-    simulator: Simulator,
-    solutions: Vec<Solution>,
-) -> Vec<(solution::Id, Result<Settlement, solution::Error>)> {
-    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-    let auction = Arc::new(auction);
-    let eth = Arc::new(eth);
-    let simulator = Arc::new(simulator);
-
-    let futures = solutions
-        .into_iter()
-        .map(|solution| {
-            let sender = sender.clone();
-            let auction = auction.clone();
-            let eth = eth.clone();
-            let simulator = simulator.clone();
-            async move {
-                let id = solution.id();
-                observe::encoding(id);
-                let settlement = solution.encode(&auction, &eth, &simulator).await;
-                let _ = sender.send((id, settlement));
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let deadline = auction.deadline().remaining().unwrap_or_default();
-    if tokio::time::timeout(deadline, tokio::spawn(join_all(futures)))
-        .await
-        .is_err()
-    {
-        tracing::warn!("reached timeout while encoding");
-    }
-
-    let mut settlements = vec![];
-    while let Ok(settlement) = receiver.try_recv() {
-        settlements.push(settlement);
-    }
-    settlements
-}
-
-/// Tries to merge multiple settlements into a single settlement.
-/// If merged, the merged settlement is added to the `settlements` vector and
-/// the contained settlements are removed from `settlements` vector.
-/// If the deadline is reached, current state of `settlements` vector is
-/// returned.
+/// Tries to merge the incoming stream of new settlements into existing ones.
+/// Always adds the new settlement by itself.
 async fn merge_settlements(
-    settlements: &mut Vec<Settlement>,
+    merged: &mut Vec<Settlement>,
+    new: impl Stream<Item = Settlement>,
     eth: &Ethereum,
     simulator: &Simulator,
-    deadline: auction::Deadline,
 ) {
-    if settlements.len() <= 1 {
-        // Nothing to merge.
-        return;
-    }
-
-    // TODO(#1483): parallelize this
-    // TODO(#1480): more optimal approach for settlement merging
-
-    // Merge the settlements in random order.
-    settlements.shuffle(&mut rand::thread_rng());
-
-    // The merging algorithm works as follows: the [`inner_settlements`] vector
-    // keeps the "most merged" settlements until they can't be merged anymore,
-    // at which point they are moved into the [`settlements`] vector.
-
-    let task = async {
-        // work on the copy to make sure the timeout doesn't leave original in an
-        // inconsistent state
-        let mut inner_settlements = settlements.clone();
-
-        while let Some(settlement) = inner_settlements.pop() {
-            // Has [`settlement`] been merged into another settlement?
-            let mut merged = false;
-
-            // Try to merge [`settlement`] into some other settlement.
-            for other in inner_settlements.iter_mut() {
-                match other.merge(&settlement, eth, simulator).await {
-                    Ok(m) => {
-                        *other = m;
-                        merged = true;
-                        observe::merged(&settlement, other);
-                        break;
-                    }
-                    Err(err) => {
-                        observe::not_merged(&settlement, other, err);
-                    }
+    let mut new = std::pin::pin!(new);
+    while let Some(settlement) = new.next().await {
+        // Try to merge [`settlement`] into some settlements.
+        for other in merged.iter_mut() {
+            match other.merge(&settlement, eth, simulator).await {
+                Ok(m) => {
+                    *other = m;
+                    observe::merged(&settlement, other);
+                    // could possibly break here if we want to avoid merging
+                    // into multiple settlements
+                }
+                Err(err) => {
+                    observe::not_merged(&settlement, other, err);
                 }
             }
-
-            // If [`settlement`] can't be merged into any other settlement, this is its
-            // final, most optimal form.
-            if !merged {
-                // remove all settlements from the `settlements` vector that are substituted
-                // with the [`settlement`]
-                settlements.retain(|other| {
-                    other
-                        .solutions()
-                        .iter()
-                        // it's enough to check for one solution id, since either all ids are contained in [`settlement`] or none
-                        .next()
-                        .map(|s| !settlement.solutions().contains(s))
-                        .unwrap_or(true)
-                });
-                // now add [`settlement`]
-                settlements.push(settlement);
-            }
         }
-    };
-
-    if tokio::time::timeout(deadline.remaining().unwrap_or_default(), task)
-        .await
-        .is_err()
-    {
-        tracing::warn!("reached timeout while merging");
+        // add [`settlement`] by itself
+        merged.push(settlement);
     }
 }
 

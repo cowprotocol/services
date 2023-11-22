@@ -412,8 +412,11 @@ impl Deadline {
         chrono::Duration::seconds(1)
     }
 
-    pub fn remaining(&self) -> Option<std::time::Duration> {
-        self.0.signed_duration_since(time::now()).to_std().ok()
+    pub fn remaining(&self) -> std::time::Duration {
+        self.0
+            .signed_duration_since(time::now())
+            .to_std()
+            .unwrap_or_default()
     }
 }
 
