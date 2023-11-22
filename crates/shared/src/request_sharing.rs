@@ -11,7 +11,6 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
-    tokio::runtime::Handle,
 };
 
 // The design of this module is intentionally simple. Every time a shared future
@@ -58,9 +57,9 @@ where
     }
 
     fn spawn_gc(cache: Cache<Request, Fut>) {
-        Handle::current().spawn_blocking(move || {
-            Handle::current().block_on(tokio::time::sleep(Duration::from_millis(500)));
+        tokio::task::spawn(async move {
             Self::collect_garbage(&cache);
+            tokio::time::sleep(Duration::from_millis(500)).await;
         });
     }
 }
