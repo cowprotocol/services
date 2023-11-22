@@ -58,8 +58,10 @@ where
 
     fn spawn_gc(cache: Cache<Request, Fut>) {
         tokio::task::spawn(async move {
-            Self::collect_garbage(&cache);
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            loop {
+                Self::collect_garbage(&cache);
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
         });
     }
 }
