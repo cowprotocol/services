@@ -16,7 +16,7 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{collections::HashSet, sync::RwLock},
+    std::{collections::HashSet, sync::RwLock, time::Duration},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -207,6 +207,16 @@ pub struct PoolFetcher<Reader> {
     pub pool_reader: Reader,
     pub web3: Web3,
     pub non_existent_pools: RwLock<HashSetDelay<TokenPair>>,
+}
+
+impl<Reader> PoolFetcher<Reader> {
+    pub fn new(reader: Reader, web3: Web3, cache_time: Duration) -> Self {
+        Self {
+            pool_reader: reader,
+            web3,
+            non_existent_pools: RwLock::new(HashSetDelay::new(cache_time)),
+        }
+    }
 }
 
 #[async_trait::async_trait]

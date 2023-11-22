@@ -19,6 +19,7 @@ chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
+delay_map = "0.3"
 derivative = { workspace = true }
 ethcontract = { workspace = true }
 ethcontract-mock = { workspace = true }
@@ -54,7 +55,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"
 url = { workspace = true }
 warp = { workspace = true }
 web3 = { workspace = true }
-delay_map = "0.3.0"
 
 [dev-dependencies]
 regex = { workspace = true }
