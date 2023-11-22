@@ -33,9 +33,9 @@ pub struct RateLimitingStrategy {
     drop_requests_until: Instant,
     /// How many requests got rate limited in a row.
     times_rate_limited: u64,
-    back_off_growth_factor: f64,
-    min_back_off: Duration,
-    max_back_off: Duration,
+    pub back_off_growth_factor: f64,
+    pub min_back_off: Duration,
+    pub max_back_off: Duration,
 }
 
 impl Default for RateLimitingStrategy {
