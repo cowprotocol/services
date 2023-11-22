@@ -106,6 +106,7 @@ impl UniV2BaselineSourceParameters {
         let fetcher = pool_fetching::PoolFetcher {
             pool_reader,
             web3: web3.clone(),
+            non_existent_pools: Default::default(),
         };
         Ok(UniV2BaselineSource {
             router,

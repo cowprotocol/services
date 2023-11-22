@@ -2,12 +2,9 @@
 
 use {
     super::{common, FactoryIndexing, PoolIndexing},
-    crate::{
-        ethrpc::Web3CallBatch,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
     anyhow::{anyhow, Result},
     contracts::{
@@ -93,7 +90,6 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        _: &mut Web3CallBatch,
         _: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         pool_state(Version::V0, pool_info.clone(), common_pool_state)
@@ -114,7 +110,6 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactoryV3 {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        _: &mut Web3CallBatch,
         _: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         pool_state(Version::V3Plus, pool_info.clone(), common_pool_state)
@@ -284,17 +279,14 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
             let pool_state = factory.fetch_pool_state(
                 &pool_info,
                 future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
                 block.into(),
             );
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 

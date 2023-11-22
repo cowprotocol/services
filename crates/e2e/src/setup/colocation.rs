@@ -55,6 +55,7 @@ base-tokens = []
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
+missing-pool-cache-time-seconds = 3600
 
 [submission]
 gas-price-cap = 1000000000000

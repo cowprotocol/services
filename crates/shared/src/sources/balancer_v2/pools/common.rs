@@ -3,7 +3,6 @@
 use {
     super::{FactoryIndexing, Pool, PoolIndexing as _, PoolStatus},
     crate::{
-        ethrpc::Web3CallBatch,
         sources::balancer_v2::{
             graph_api::{PoolData, PoolType},
             swap::fixed_point::Bfp,
@@ -13,7 +12,7 @@ use {
     anyhow::{anyhow, ensure, Context, Result},
     contracts::{BalancerV2BasePool, BalancerV2Vault},
     ethcontract::{BlockId, Bytes, H160, H256, U256},
-    futures::{future::BoxFuture, FutureExt as _},
+    futures::{future::BoxFuture, FutureExt as _, TryFutureExt},
     std::{collections::BTreeMap, future::Future, sync::Arc},
     tokio::sync::oneshot,
 };
@@ -34,7 +33,6 @@ where
     fn fetch_pool(
         &self,
         pool: &Factory::PoolInfo,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolStatus>>;
 }
@@ -110,23 +108,20 @@ impl<Factory> PoolInfoFetcher<Factory> {
     fn fetch_common_pool_state(
         &self,
         pool: &PoolInfo,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolState>> {
         let pool_contract = self.base_pool_at(pool.address);
-        let paused = pool_contract
+        let fetch_paused = pool_contract
             .get_paused_state()
             .block(block)
-            .batch_call(batch);
-        let swap_fee = pool_contract
-            .get_swap_fee_percentage()
-            .block(block)
-            .batch_call(batch);
-        let balances = self
+            .call()
+            .map_ok(|result| result.0);
+        let fetch_swap_fee = pool_contract.get_swap_fee_percentage().block(block).call();
+        let fetch_balances = self
             .vault
             .get_pool_tokens(Bytes(pool.id.0))
             .block(block)
-            .batch_call(batch);
+            .call();
 
         // Because of a `mockall` limitation, we **need** the future returned
         // here to be `'static`. This requires us to clone and move `pool` into
@@ -134,10 +129,11 @@ impl<Factory> PoolInfoFetcher<Factory> {
         // `pool`, i.e. `'_`.
         let pool = pool.clone();
         async move {
-            let (paused, _, _) = paused.await?;
-            let swap_fee = Bfp::from_wei(swap_fee.await?);
+            let (paused, swap_fee, balances) =
+                futures::try_join!(fetch_paused, fetch_swap_fee, fetch_balances)?;
+            let swap_fee = Bfp::from_wei(swap_fee);
 
-            let (token_addresses, balances, _) = balances.await?;
+            let (token_addresses, balances, _) = balances;
             ensure!(pool.tokens == token_addresses, "pool token mismatch");
             let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_factors)
                 .map(|(&address, balance, &scaling_factor)| {
@@ -180,15 +176,14 @@ where
     fn fetch_pool(
         &self,
         pool_info: &Factory::PoolInfo,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<PoolStatus>> {
         let pool_id = pool_info.common().id;
         let (common_pool_state, common_pool_state_ok) =
-            share_common_pool_state(self.fetch_common_pool_state(pool_info.common(), batch, block));
+            share_common_pool_state(self.fetch_common_pool_state(pool_info.common(), block));
         let pool_state =
             self.factory
-                .fetch_pool_state(pool_info, common_pool_state_ok.boxed(), batch, block);
+                .fetch_pool_state(pool_info, common_pool_state_ok.boxed(), block);
 
         async move {
             let common_pool_state = common_pool_state.await?;
@@ -449,13 +444,10 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
-            let pool_state =
-                pool_info_fetcher.fetch_common_pool_state(&pool_info, &mut batch, block.into());
+            let pool_state = pool_info_fetcher.fetch_common_pool_state(&pool_info, block.into());
 
-            batch.execute_all(100).await;
             pool_state.await.unwrap()
         };
 
@@ -521,13 +513,10 @@ mod tests {
         };
 
         let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
 
-            let pool_state =
-                pool_info_fetcher.fetch_common_pool_state(&pool_info, &mut batch, block.into());
+            let pool_state = pool_info_fetcher.fetch_common_pool_state(&pool_info, block.into());
 
-            batch.execute_all(100).await;
             pool_state.await
         };
 
@@ -607,12 +596,11 @@ mod tests {
             .with(
                 predicate::eq(pool_info.clone()),
                 predicate::always(),
-                predicate::always(),
                 predicate::eq(BlockId::from(block)),
             )
             .returning({
                 let pool_state = pool_state.clone();
-                move |_, _, _, _| future::ready(Ok(Some(pool_state.clone()))).boxed()
+                move |_, _, _| future::ready(Ok(Some(pool_state.clone()))).boxed()
             });
 
         let pool_info_fetcher = PoolInfoFetcher {
@@ -621,13 +609,10 @@ mod tests {
             token_infos: Arc::new(MockTokenInfoFetching::new()),
         };
 
-        let pool_status = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
-            let pool_state = pool_info_fetcher.fetch_pool(&pool_info, &mut batch, block.into());
-
-            batch.execute_all(100).await;
-            pool_state.await.unwrap()
-        };
+        let pool_status = pool_info_fetcher
+            .fetch_pool(&pool_info, block.into())
+            .await
+            .unwrap();
 
         assert_eq!(
             pool_status,
@@ -661,9 +646,8 @@ mod tests {
                 predicate::always(),
                 predicate::always(),
                 predicate::always(),
-                predicate::always(),
             )
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _| {
                 future::ready(Ok(Some(weighted::PoolState {
                     swap_fee: Bfp::zero(),
                     tokens: Default::default(),
@@ -689,13 +673,11 @@ mod tests {
         };
 
         let pool_status = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = pool_info_fetcher.fetch_pool(&pool_info, &mut batch, block.into());
-
-            batch.execute_all(100).await;
-            pool_state.await.unwrap()
+            pool_info_fetcher
+                .fetch_pool(&pool_info, block.into())
+                .await
+                .unwrap()
         };
 
         assert_eq!(pool_status, PoolStatus::Paused);
@@ -724,9 +706,8 @@ mod tests {
                 predicate::always(),
                 predicate::always(),
                 predicate::always(),
-                predicate::always(),
             )
-            .returning(|_, _, _, _| future::ready(Ok(None)).boxed());
+            .returning(|_, _, _| future::ready(Ok(None)).boxed());
 
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::at(&web3, vault.address()),
@@ -745,13 +726,11 @@ mod tests {
         };
 
         let pool_status = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
             let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = pool_info_fetcher.fetch_pool(&pool_info, &mut batch, block.into());
-
-            batch.execute_all(100).await;
-            pool_state.await.unwrap()
+            pool_info_fetcher
+                .fetch_pool(&pool_info, block.into())
+                .await
+                .unwrap()
         };
 
         assert_eq!(pool_status, PoolStatus::Disabled);

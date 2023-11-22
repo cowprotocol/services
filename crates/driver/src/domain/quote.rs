@@ -3,9 +3,10 @@ use {
     crate::{
         boundary,
         domain::{
-            competition::{self, order, solution},
+            competition::{self, order},
             eth,
             liquidity,
+            time,
         },
         infra::{
             self,
@@ -59,7 +60,7 @@ pub struct Order {
     pub tokens: Tokens,
     pub amount: order::TargetAmount,
     pub side: order::Side,
-    pub deadline: Deadline,
+    pub deadline: time::Deadline,
 }
 
 impl Order {
@@ -82,9 +83,13 @@ impl Order {
             }
             solver::Liquidity::Skip => Default::default(),
         };
-        let timeout = self.deadline.timeout()?;
+
         let solutions = solver
-            .solve(&self.fake_auction(eth, tokens).await?, &liquidity, timeout)
+            .solve(
+                &self.fake_auction(eth, tokens).await?,
+                &liquidity,
+                self.deadline.solvers()?.into(),
+            )
             .await?;
         Quote::new(
             eth,
@@ -209,33 +214,6 @@ impl Order {
     }
 }
 
-/// The deadline for computing a quote for an order.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Deadline(chrono::DateTime<chrono::Utc>);
-
-impl Deadline {
-    /// Computes the timeout for solving an auction.
-    pub fn timeout(self) -> Result<solution::SolverTimeout, solution::DeadlineExceeded> {
-        solution::SolverTimeout::new(self.into(), Self::time_buffer())
-    }
-
-    pub fn time_buffer() -> chrono::Duration {
-        chrono::Duration::seconds(1)
-    }
-}
-
-impl From<chrono::DateTime<chrono::Utc>> for Deadline {
-    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
-        Self(value)
-    }
-}
-
-impl From<Deadline> for chrono::DateTime<chrono::Utc> {
-    fn from(value: Deadline) -> Self {
-        value.0
-    }
-}
-
 /// The sell and buy tokens to quote for. This type maintains the invariant that
 /// the sell and buy tokens are distinct.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -270,7 +248,7 @@ pub enum Error {
     #[error(transparent)]
     QuotingFailed(#[from] QuotingFailed),
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] solution::DeadlineExceeded),
+    DeadlineExceeded(#[from] time::DeadlineExceeded),
     /// Encountered an unexpected error reading blockchain data.
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),

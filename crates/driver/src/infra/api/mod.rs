@@ -1,7 +1,14 @@
 use {
     crate::{
         domain::{self, Mempools},
-        infra::{self, liquidity, solver::Solver, tokens, Ethereum, Simulator},
+        infra::{
+            self,
+            liquidity,
+            solver::{Solver, Timeouts},
+            tokens,
+            Ethereum,
+            Simulator,
+        },
     },
     error::Error,
     futures::Future,
@@ -43,8 +50,9 @@ impl Api {
         let tokens = tokens::Fetcher::new(self.eth.clone());
         let pre_processor = domain::competition::AuctionProcessor::new(Arc::new(self.eth.clone()));
 
-        // Add the metrics endpoint.
+        // Add the metrics and healthz endpoints.
         app = routes::metrics(app);
+        app = routes::healthz(app);
 
         // Multiplex each solver as part of the API. Multiple solvers are multiplexed
         // on the same driver so only one liquidity collector collects the liquidity
@@ -116,6 +124,10 @@ impl State {
 
     fn pre_processor(&self) -> &domain::competition::AuctionProcessor {
         &self.0.pre_processor
+    }
+
+    fn timeouts(&self) -> Timeouts {
+        self.0.solver.timeouts()
     }
 }
 

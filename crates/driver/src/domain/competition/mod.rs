@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::Mempools,
+    super::{time, Mempools},
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -67,7 +67,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().timeout()?)
+            .solve(auction, &liquidity, auction.deadline().solvers()?.into())
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -122,7 +122,7 @@ impl Competition {
         // timeout is reached.
         let mut settlements = Vec::new();
         if tokio::time::timeout(
-            auction.deadline().remaining(),
+            auction.deadline().driver(),
             merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
         )
         .await
@@ -184,8 +184,8 @@ impl Competition {
 
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
-        // gets picked by the protocol.
-        if !auction.deadline().remaining().is_zero() {
+        // gets picked by the procotol.
+        if let Ok(remaining) = auction.deadline().driver() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
@@ -195,12 +195,15 @@ impl Competition {
                         observe::winner_voided(block, &err);
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
+                        if let Some(id) = settlement.notify_id() {
+                            notify::simulation_failed(&self.solver, auction.id(), id, &err);
+                        }
                         return;
                     }
                 }
             };
-            let _ =
-                tokio::time::timeout(auction.deadline().remaining(), simulate_on_new_blocks).await;
+            let timeout = remaining.to_std().unwrap_or_default();
+            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
         }
 
         Ok(score)
@@ -369,7 +372,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] solution::DeadlineExceeded),
+    DeadlineExceeded(#[from] time::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]

@@ -1,10 +1,7 @@
 //! A pool state reading implementation specific to Swapr.
 
 use {
-    crate::{
-        ethrpc::Web3CallBatch,
-        sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
-    },
+    crate::sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
     anyhow::Result,
     contracts::ISwaprPair,
     ethcontract::{errors::MethodError, BlockId},
@@ -23,19 +20,18 @@ pub struct SwaprPoolReader(pub DefaultPoolReader);
 const FEE_BASE: u32 = 10_000;
 
 impl PoolReading for SwaprPoolReader {
-    fn read_state(
-        &self,
-        pair: TokenPair,
-        batch: &mut Web3CallBatch,
-        block: BlockId,
-    ) -> BoxFuture<'_, Result<Option<Pool>>> {
+    fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.0.pair_provider.pair_address(&pair);
         let pair_contract = ISwaprPair::at(&self.0.web3, pair_address);
 
-        let pool = self.0.read_state(pair, batch, block);
-        let fee = pair_contract.swap_fee().block(block).batch_call(batch);
+        let fetch_pool = self.0.read_state(pair, block);
+        let fetch_fee = pair_contract.swap_fee().block(block).call();
 
-        async move { handle_results(pool.await, fee.await) }.boxed()
+        async move {
+            let (pool, fee) = futures::join!(fetch_pool, fetch_fee);
+            handle_results(pool, fee)
+        }
+        .boxed()
     }
 }
 
