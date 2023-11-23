@@ -20,12 +20,13 @@ use {
             },
             setup::blockchain::Blockchain,
         },
-        util,
+        util::{self, serialize},
     },
     ethcontract::BlockId,
     hyper::StatusCode,
     itertools::Itertools,
     secp256k1::SecretKey,
+    serde::Serialize,
     serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
@@ -87,7 +88,7 @@ impl ExecutionDiff {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
     Solver {
