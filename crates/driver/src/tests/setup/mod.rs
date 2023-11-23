@@ -31,6 +31,7 @@ use {
         path::PathBuf,
         str::FromStr,
     },
+    serde_with::serde_as,
     web3::types::TransactionId,
 };
 
@@ -85,10 +86,14 @@ impl ExecutionDiff {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
-    Solver(eth::U256),
+    Solver {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+    },
     RiskAdjusted(f64),
 }
 
