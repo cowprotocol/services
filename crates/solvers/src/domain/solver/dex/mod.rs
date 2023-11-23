@@ -15,7 +15,7 @@ use {
         infra,
     },
     futures::{future, stream, FutureExt, StreamExt},
-    std::{num::NonZeroUsize, sync::Arc},
+    std::num::NonZeroUsize,
     tracing::Instrument,
 };
 
@@ -42,7 +42,7 @@ pub struct Dex {
     risk: domain::Risk,
 
     /// Handles 429 Too Many Requests error with a retry mechanism
-    rate_limiter: Arc<RateLimiter>,
+    rate_limiter: RateLimiter,
 }
 
 impl Dex {
@@ -62,7 +62,7 @@ impl Dex {
             concurrent_requests: config.concurrent_requests,
             fills: Fills::new(config.smallest_partial_fill),
             risk: config.risk,
-            rate_limiter: Arc::new(rate_limiter),
+            rate_limiter,
         }
     }
 
@@ -146,7 +146,6 @@ impl Dex {
         let dex_order = self.fills.dex_order(order, tokens)?;
         let swap = self
             .rate_limiter
-            .clone()
             .execute_with_back_off(
                 self.try_solve(order, &dex_order, tokens, gas_price),
                 |result| matches!(result, Err(infra::dex::Error::RateLimited)),
