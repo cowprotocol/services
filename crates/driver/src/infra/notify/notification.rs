@@ -28,8 +28,9 @@ pub enum Kind {
     EmptySolution,
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId,
-    /// Failed simulation during competition.
-    SimulationFailed(eth::BlockNo, Transaction),
+    /// Failed simulation during competition. Last parameter is true 
+    /// if has simulated at least once.
+    SimulationFailed(eth::BlockNo, Transaction, bool),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to

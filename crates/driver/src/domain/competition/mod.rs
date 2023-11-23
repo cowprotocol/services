@@ -190,15 +190,19 @@ impl Competition {
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::current_block::into_stream(self.eth.current_block().clone());
+                let mut simulated_once = false;
                 while let Some(block) = stream.next().await {
                     if let Err(err) = self.simulate_settlement(&settlement).await {
                         observe::winner_voided(block, &err);
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
                         if let Some(id) = settlement.notify_id() {
-                            notify::simulation_failed(&self.solver, auction.id(), id, &err);
+                            notify::simulation_failed(&self.solver, auction.id(), id, &err, simulated_once);
                         }
                         return;
+                    }
+                    else {
+                        simulated_once = true;
                     }
                 }
             };

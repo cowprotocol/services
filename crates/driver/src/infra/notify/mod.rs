@@ -74,7 +74,7 @@ pub fn encoding_failed(
         solution::Error::Blockchain(_) => return,
         solution::Error::Boundary(_) => return,
         solution::Error::Simulation(error) => {
-            simulation_failed(solver, auction_id, solution_id, error);
+            simulation_failed(solver, auction_id, solution_id, error, false);
             return;
         }
         solution::Error::AssetFlow(missmatch) => notification::Kind::AssetFlow(missmatch.clone()),
@@ -91,12 +91,13 @@ pub fn simulation_failed(
     auction_id: Option<auction::Id>,
     solution_id: solution::Id,
     err: &simulator::Error,
+    simulated_once: bool,
 ) {
     if let simulator::Error::Revert(error) = err {
         solver.notify(
             auction_id,
             Some(solution_id),
-            notification::Kind::SimulationFailed(error.block, error.tx.clone()),
+            notification::Kind::SimulationFailed(error.block, error.tx.clone(), simulated_once),
         );
     }
 }
