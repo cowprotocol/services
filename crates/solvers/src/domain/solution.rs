@@ -114,7 +114,7 @@ impl Solution {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.trades.is_empty()
+        self.prices.0.is_empty() && self.trades.is_empty() && self.interactions.is_empty()
     }
 }
 
