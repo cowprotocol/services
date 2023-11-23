@@ -1,7 +1,6 @@
 //! CLI arguments for the `solvers` binary.
 
 use {
-    crate::boundary::rate_limiter::RateLimitingStrategy,
     clap::{Parser, Subcommand},
     std::{net::SocketAddr, path::PathBuf},
 };
@@ -24,12 +23,6 @@ pub struct Args {
 
     #[command(subcommand)]
     pub command: Command,
-
-    /// Configures the back off strategy for single order solvers. Requests
-    /// issued while back off is active get dropped entirely. Expects
-    /// "<factor >= 1.0>,<min: seconds>,<max: seconds>".
-    #[clap(long, env)]
-    pub single_order_solver_rate_limiter: Option<RateLimitingStrategy>,
 }
 
 /// The solver engine to run. The config field is a path to the solver
@@ -72,18 +65,4 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-}
-
-impl Command {
-    pub fn to_lowercase(&self) -> String {
-        match self {
-            Command::Baseline { .. } => "baseline".to_string(),
-            Command::Naive { .. } => "naive".to_string(),
-            Command::Legacy { .. } => "legacy".to_string(),
-            Command::Balancer { .. } => "balancer".to_string(),
-            Command::ZeroEx { .. } => "zeroex".to_string(),
-            Command::OneInch { .. } => "oneinch".to_string(),
-            Command::ParaSwap { .. } => "paraswap".to_string(),
-        }
-    }
 }

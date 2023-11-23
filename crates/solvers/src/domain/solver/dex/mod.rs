@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        boundary::rate_limiter::RateLimiter,
+        boundary::rate_limiter::{RateLimiter, RateLimiterError},
         domain::{
             self,
             auction,
@@ -93,14 +93,9 @@ impl Dex {
             .enumerate()
             .map(|(i, order)| {
                 let span = tracing::info_span!("solve", order = %order.get().uid);
-                self.solve_order(
-                    order,
-                    &auction.tokens,
-                    auction.gas_price,
-                    self.rate_limiter.clone(),
-                )
-                .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
-                .instrument(span)
+                self.solve_order(order, &auction.tokens, auction.gas_price)
+                    .map(move |solution| solution.map(|s| s.with_id(solution::Id(i as u64))))
+                    .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())
             .filter_map(future::ready)
@@ -132,10 +127,10 @@ impl Dex {
                     err @ infra::dex::Error::OrderNotSupported => {
                         tracing::debug!(?err, "skipping order")
                     }
-                    infra::dex::Error::Other(err) => tracing::warn!(?err, "failed to get swap"),
                     err @ infra::dex::Error::RateLimited => {
-                        tracing::debug!(?err, "encountered rate limit, retrying")
+                        tracing::debug!(?err, "encountered rate limit")
                     }
+                    infra::dex::Error::Other(err) => tracing::warn!(?err, "failed to get swap"),
                 }
                 err
             })
@@ -146,19 +141,19 @@ impl Dex {
         order: order::UserOrder<'_>,
         tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
-        rate_limiter: Arc<RateLimiter>,
     ) -> Option<solution::Solution> {
         let order = order.get();
         let dex_order = self.fills.dex_order(order, tokens)?;
-        let swap = rate_limiter
-            .execute_with_retries(
-                || self.try_solve(order, &dex_order, tokens, gas_price),
+        let swap = self
+            .rate_limiter
+            .clone()
+            .execute_with_back_off(
+                self.try_solve(order, &dex_order, tokens, gas_price),
                 |result| matches!(result, Err(infra::dex::Error::RateLimited)),
             )
             .await
-            .map_err(|_| {
-                tracing::debug!("rate limit retries exceeded, unable to complete operation");
-                infra::dex::Error::RateLimited
+            .map_err(|err| match err {
+                RateLimiterError::RateLimited => infra::dex::Error::RateLimited,
             })
             .and_then(|result| result)
             .ok()?;
