@@ -659,23 +659,23 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-        let quote = if class == OrderClass::Market {
-            let quote = get_quote_and_check_fee(
-                &*self.quoter,
-                &quote_parameters,
-                order.quote_id,
-                data.fee_amount,
-            )
-            .await?;
-            Some(quote)
-        } else {
-            // We don't try to get quotes for liquidity and limit orders
-            // for two reasons:
-            // 1. They don't pay fees, meaning we don't need to know what the min fee amount
-            //    is.
-            // 2. We don't really care about the equivalent quote since they aren't expected
-            //    to follow regular order creation flow.
-            None
+        let fee_amount = match class {
+            OrderClass::Market => Some(data.fee_amount),
+            OrderClass::Limit(_) => None,
+            OrderClass::Liquidity => None,
+        };
+        let quote = match class {
+            OrderClass::Market | OrderClass::Limit(_) => {
+                let quote = get_quote_and_check_fee(
+                    &*self.quoter,
+                    &quote_parameters,
+                    order.quote_id,
+                    fee_amount,
+                )
+                .await?;
+                Some(quote)
+            }
+            OrderClass::Liquidity => None,
         };
 
         let full_fee_amount = quote
@@ -892,6 +892,8 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
 ///
+/// The fee is checked only if `fee_amount` is specified.
+///
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found and a quote ID was not
 /// specified.
@@ -899,7 +901,7 @@ pub async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
-    fee_amount: U256,
+    fee_amount: Option<U256>,
 ) -> Result<Quote, ValidationError> {
     let quote = match quoter
         .find_quote(quote_id, quote_search_parameters.clone())
@@ -948,8 +950,10 @@ pub async fn get_quote_and_check_fee(
         Err(err) => return Err(err.into()),
     };
 
-    if fee_amount < quote.fee_amount {
-        return Err(ValidationError::InsufficientFee);
+    if let Some(fee_amount) = fee_amount {
+        if fee_amount < quote.fee_amount {
+            return Err(ValidationError::InsufficientFee);
+        }
     }
 
     Ok(quote)
