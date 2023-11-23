@@ -336,7 +336,7 @@ impl AuctionProcessor {
 
 /// The tokens that are used in an auction.
 #[derive(Debug, Default)]
-pub struct Tokens(HashMap<eth::TokenAddress, Token>);
+pub struct Tokens(pub HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
     pub fn get(&self, address: eth::TokenAddress) -> Token {

@@ -219,9 +219,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                buy.0
+                sell.0
                     .to_big_rational()
-                    .checked_div(&sell.0.to_big_rational())
+                    .checked_div(&buy.0.to_big_rational())
                     .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),
@@ -410,7 +410,10 @@ impl Jit {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        crate::domain::competition::auction::{Price, Token, Tokens},
+    };
 
     #[test]
     fn order_scaling() {
@@ -500,5 +503,113 @@ mod tests {
         assert_eq!(order(1, 1000, Some(buy(500))).available(weth).buy, buy(500));
 
         assert_eq!(order(0, 0, Some(sell(0))).available(weth).sell, sell(0));
+    }
+
+    #[test]
+    fn order_likelihood() {
+        let sell = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0x5e11).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let buy = |amount: u64| eth::Asset {
+            token: eth::H160::from_low_u64_be(0xbbbb).into(),
+            amount: eth::U256::from(amount).into(),
+        };
+        let order = |buy_amount, sell_amount| Order {
+            uid: Default::default(),
+            receiver: Default::default(),
+            valid_to: util::Timestamp(u32::MAX),
+            buy: buy(buy_amount),
+            sell: sell(sell_amount),
+            side: Side::Sell,
+            fee: Default::default(),
+            kind: Kind::Limit,
+            app_data: Default::default(),
+            partial: Partial::No,
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: signature::Scheme::PreSign,
+                data: Default::default(),
+                signer: Default::default(),
+            },
+        };
+
+        let tokens = Tokens(maplit::hashmap! {
+            sell(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Sell".into()),
+                address: sell(0).token,
+                price: Some(Price::new(10_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+            buy(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Buy".into()),
+                address: buy(0).token,
+                price: Some(Price::new(10_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+        });
+
+        // Equal orders have equal likelihood
+        assert_eq!(
+            order(10, 10).likelihood(&tokens),
+            order(10, 10).likelihood(&tokens)
+        );
+
+        // Buying 1 with 10 is more likely to fill than buying 10 with 10
+        assert!(order(1, 10).likelihood(&tokens) > order(10, 10).likelihood(&tokens));
+
+        // Buying 10 with 1 is less likely to fill than buying 10 with 10
+        assert!(order(10, 1).likelihood(&tokens) < order(10, 10).likelihood(&tokens));
+
+        // Buying something worth 10 is more likely to fill than buying the same amount
+        // worth 11
+        let alternative_tokens = Tokens(maplit::hashmap! {
+            sell(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Sell".into()),
+                address: sell(0).token,
+                price: Some(Price::new(10_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+            buy(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Buy".into()),
+                address: buy(0).token,
+                price: Some(Price::new(11_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+        });
+        assert!(order(5, 5).likelihood(&tokens) > order(5, 5).likelihood(&alternative_tokens));
+
+        // Selling something worth 10 is more likely to fill than selling
+        // the same amount worth 9
+        let alternative_tokens = Tokens(maplit::hashmap! {
+            sell(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Sell".into()),
+                address: sell(0).token,
+                price: Some(Price::new(9_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+            buy(0).token => Token {
+                decimals: Some(18),
+                symbol: Some("Buy".into()),
+                address: buy(0).token,
+                price: Some(Price::new(10_000_000.into()).unwrap()),
+                available_balance: eth::U256::zero(),
+                trusted: false,
+            },
+        });
+        assert!(order(5, 5).likelihood(&tokens) > order(5, 5).likelihood(&alternative_tokens));
     }
 }
