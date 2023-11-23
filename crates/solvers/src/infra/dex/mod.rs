@@ -46,7 +46,7 @@ pub enum Error {
     OrderNotSupported,
     #[error("no valid swap interaction could be found")]
     NotFound,
-    #[error("rate limit exceeded")]
+    #[error("rate limited")]
     RateLimited,
     #[error(transparent)]
     Other(Box<dyn std::error::Error + Send + Sync>),

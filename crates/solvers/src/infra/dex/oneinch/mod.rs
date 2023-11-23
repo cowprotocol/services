@@ -165,7 +165,7 @@ pub enum Error {
     OrderNotSupported,
     #[error("no valid swap could be found")]
     NotFound,
-    #[error("rate limit exceeded")]
+    #[error("rate limited")]
     RateLimited,
     #[error("api error {code}: {description}")]
     Api { code: i32, description: String },

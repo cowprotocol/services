@@ -150,7 +150,7 @@ pub enum Error {
     NotFound,
     #[error("quote does not specify an approval spender")]
     MissingSpender,
-    #[error("rate limit exceeded")]
+    #[error("rate limited")]
     RateLimited,
     #[error("api error code {code}: {reason}")]
     Api { code: i64, reason: String },
