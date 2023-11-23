@@ -26,12 +26,12 @@ use {
     hyper::StatusCode,
     itertools::Itertools,
     secp256k1::SecretKey,
+    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
         str::FromStr,
     },
-    serde_with::serde_as,
     web3::types::TransactionId,
 };
 
