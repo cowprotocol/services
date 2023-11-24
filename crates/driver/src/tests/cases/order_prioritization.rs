@@ -10,19 +10,15 @@ async fn sorting() {
     let test = setup()
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(
-            ab_order()
-                .reduce_amount(1000000000000000u128.into()),
-        )
-        .order(ab_order().rename("second order"))
+        .order(ab_order())
+        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("second order"))
         // Limit orders come after market orders.
         .order(
             ab_order()
                 .rename("third order")
                 .limit()
-                .reduce_amount(1000000000000000u128.into()),
         )
-        .order(ab_order().rename("fourth order").limit())
+        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("fourth order").limit())
         .solution(ab_solution())
         .done()
         .await;
@@ -40,11 +36,8 @@ async fn filtering() {
     let test = setup()
         .pool(ab_pool())
         // Orders with better price ratios come first.
-        .order(
-            ab_order()
-                .reduce_amount(1000000000000000u128.into()),
-        )
-        .order(ab_order().rename("second order"))
+        .order(ab_order())
+        .order(ab_order().reduce_amount(1000000000000000u128.into()).rename("second order"))
         // Filter out the next order, because the trader doesn't have enough balance to cover it.
         .order(
             ab_order()
@@ -56,7 +49,7 @@ async fn filtering() {
         // fulfill the previous orders.
         .order(
             Order {
-                sell_amount: 4999899999900002000000000000000u128.into(),
+                sell_amount: 4999999999900002000000000000000u128.into(),
                 surplus_factor: 1.into(),
                 ..ab_order()
             }
