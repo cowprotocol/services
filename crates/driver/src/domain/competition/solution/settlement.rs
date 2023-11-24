@@ -96,6 +96,8 @@ impl Settlement {
                 eth::U256::from(buy.amount).to_big_int();
         }
 
+        // TODO: enable this check once we make sure all solvers are respecting the rule
+        // in production.
         // if flow.values().any(|v| v.is_negative()) {
         //     return Err(Error::AssetFlow(flow));
         // }
