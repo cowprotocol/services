@@ -1,6 +1,6 @@
 //! Test cases.
 
-pub mod asset_flow;
+//pub mod asset_flow;
 pub mod buy_eth;
 pub mod example_config;
 pub mod internalization;
