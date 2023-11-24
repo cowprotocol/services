@@ -1,5 +1,5 @@
 use {
-    super::{trade, Error, Solution},
+    super::{Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -8,7 +8,6 @@ use {
             mempools,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
-        util::conv::u256::U256Ext,
     },
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
@@ -61,46 +60,6 @@ impl Settlement {
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
-
-        // Asset flow rule: check that the sum of tokens entering the settlement is not
-        // less than the sum of tokens exiting the settlement.
-        let mut flow: HashMap<eth::TokenAddress, num::BigInt> = Default::default();
-
-        // Interaction inputs represent flow out of the contract, i.e. negative flow.
-        for input in solution
-            .interactions
-            .iter()
-            .flat_map(|interaction| interaction.inputs())
-        {
-            *flow.entry(input.token).or_default() -= eth::U256::from(input.amount).to_big_int();
-        }
-
-        // Interaction outputs represent flow into the contract, i.e. positive flow.
-        for output in solution
-            .interactions
-            .iter()
-            .flat_map(|interaction| interaction.outputs())
-        {
-            *flow.entry(output.token).or_default() += eth::U256::from(output.amount).to_big_int();
-        }
-
-        // For trades, the sold amounts are always entering the contract (positive
-        // flow), whereas the bought amounts are always exiting the contract
-        // (negative flow).
-        for trade in solution.trades.iter() {
-            let trade::Execution { sell, buy } = trade.execution(&solution)?;
-            *flow.entry(sell.token).or_default() += eth::U256::from(sell.amount).to_big_int();
-            // Within the settlement contract, the orders which buy ETH are wrapped into
-            // WETH, and hence contribute to WETH flow.
-            *flow.entry(buy.token.wrap(solution.weth)).or_default() -=
-                eth::U256::from(buy.amount).to_big_int();
-        }
-
-        // TODO: enable this check once we make sure all solvers are respecting the rule
-        // in production.
-        // if flow.values().any(|v| v.is_negative()) {
-        //     return Err(Error::AssetFlow(flow));
-        // }
 
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.

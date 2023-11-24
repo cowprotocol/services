@@ -44,6 +44,7 @@ pub struct Asset {
     amount: eth::U256,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Partial {
     #[default]
@@ -67,22 +68,6 @@ pub struct ExecutionDiff {
     pub increase_buy: eth::U256,
     /// Decrease the buy amount executed by the solver by the specified amount.
     pub decrease_buy: eth::U256,
-}
-
-impl ExecutionDiff {
-    pub fn increase_sell() -> Self {
-        Self {
-            increase_sell: 300.into(),
-            ..Default::default()
-        }
-    }
-
-    pub fn decrease_buy() -> Self {
-        Self {
-            decrease_buy: 300.into(),
-            ..Default::default()
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -193,25 +178,6 @@ impl Order {
     pub fn limit(self) -> Self {
         Self {
             kind: order::Kind::Limit,
-            ..self
-        }
-    }
-
-    /// Make the amounts executed by the solver less than the amounts placed as
-    /// part of the order.
-    pub fn execution_diff(self, diff: ExecutionDiff) -> Self {
-        Self {
-            execution_diff: diff,
-            ..self
-        }
-    }
-
-    /// Increase the order valid_to value by one. This is useful for changing
-    /// the order UID during testing without changing any of the order
-    /// semantics.
-    pub fn increase_valid_to(self) -> Self {
-        Self {
-            valid_for: (self.valid_for.0 + 1).into(),
             ..self
         }
     }
@@ -518,14 +484,6 @@ impl Setup {
     /// Don't fund the solver account with any ETH.
     pub fn defund_solver(mut self) -> Self {
         self.fund_solver = false;
-        self
-    }
-
-    /// Disable simulating solutions during solving. Used to make testing easier
-    /// when checking the asset flow and similar rules that don't depend on
-    /// the blockchain.
-    pub fn disable_simulation(mut self) -> Self {
-        self.enable_simulation = false;
         self
     }
 
