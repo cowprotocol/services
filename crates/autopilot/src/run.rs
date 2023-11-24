@@ -672,7 +672,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let _ = shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
+    shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
 
     let shadow = shadow::RunLoop::new(
         orderbook,
