@@ -27,9 +27,6 @@ use {
 /// - Simulation: the settlement has been simulated without reverting, including
 ///   the case where no interactions were internalized. Additionally the solver
 ///   account is known to have sufficient Ether to execute the transaction.
-/// - Asset flow: the sum of tokens into and out of the settlement are
-///   non-negative, meaning that the solver doesn't take any tokens out of the
-///   settlement contract.
 /// - Internalization: internalized interactions only use trusted tokens.
 ///
 /// Publishing a settlement which violates these rules would result in slashing

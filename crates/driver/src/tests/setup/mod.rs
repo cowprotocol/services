@@ -54,22 +54,6 @@ pub enum Partial {
     },
 }
 
-/// Set up a difference between the placed order amounts and the amounts
-/// executed by the solver. This is useful for testing e.g. asset flow
-/// verification. See [`crate::domain::competition::solution::Settlement`].
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct ExecutionDiff {
-    // TODO I think only increase_sell and decrease_buy make sense
-    /// Increase the sell amount executed by the solver by the specified amount.
-    pub increase_sell: eth::U256,
-    /// Decrease the sell amount executed by the solver by the specified amount.
-    pub decrease_sell: eth::U256,
-    /// Increase the buy amount executed by the solver by the specified amount.
-    pub increase_buy: eth::U256,
-    /// Decrease the buy amount executed by the solver by the specified amount.
-    pub decrease_buy: eth::U256,
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
@@ -108,7 +92,6 @@ pub struct Order {
     /// buy amount is divided depends on the order side. This is necessary to
     /// keep the solution scores positive.
     pub surplus_factor: eth::U256,
-    pub execution_diff: ExecutionDiff,
     /// Override the executed amount of the order. Useful for testing liquidity
     /// orders. Otherwise [`execution_diff`] is probably more suitable.
     pub executed: Option<eth::U256>,
@@ -223,7 +206,6 @@ impl Default for Order {
             solver_fee: Default::default(),
             name: Default::default(),
             surplus_factor: DEFAULT_SURPLUS_FACTOR.into(),
-            execution_diff: Default::default(),
             executed: Default::default(),
             filtered: Default::default(),
             funded: true,
