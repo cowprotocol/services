@@ -658,16 +658,11 @@ impl Blockchain {
                         inputs: vec![eth::Asset {
                             token: sell_token.address().into(),
                             // Surplus fees stay in the contract.
-                            amount: (quote.sell - quote.order.surplus_fee()
-                                + quote.order.execution_diff.increase_sell
-                                - quote.order.execution_diff.decrease_sell)
-                                .into(),
+                            amount: (quote.sell - quote.order.surplus_fee()).into(),
                         }],
                         outputs: vec![eth::Asset {
                             token: buy_token.address().into(),
-                            amount: (quote.buy + quote.order.execution_diff.increase_buy
-                                - quote.order.execution_diff.decrease_buy)
-                                .into(),
+                            amount: quote.buy.into(),
                         }],
                         internalize: order.internalize,
                     },
