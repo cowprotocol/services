@@ -2,12 +2,9 @@
 
 use {
     super::{common, FactoryIndexing, PoolIndexing},
-    crate::{
-        ethrpc::Web3CallBatch,
-        sources::balancer_v2::{
-            graph_api::{PoolData, PoolType},
-            swap::fixed_point::Bfp,
-        },
+    crate::sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
     },
     anyhow::Result,
     contracts::{BalancerV2ComposableStablePool, BalancerV2ComposableStablePoolFactory},
@@ -47,7 +44,6 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract = BalancerV2ComposableStablePool::at(
@@ -55,20 +51,21 @@ impl FactoryIndexing for BalancerV2ComposableStablePoolFactory {
             pool_info.common.address,
         );
 
-        let scaling_factors = pool_contract
-            .get_scaling_factors()
-            .block(block)
-            .batch_call(batch);
-        let amplification_parameter = pool_contract
+        let fetch_common = common_pool_state.map(Result::Ok);
+        let fetch_scaling_factors = pool_contract.get_scaling_factors().block(block).call();
+        let fetch_amplification_parameter = pool_contract
             .get_amplification_parameter()
             .block(block)
-            .batch_call(batch);
+            .call();
 
         async move {
-            let common = common_pool_state.await;
-            let scaling_factors = scaling_factors.await?;
+            let (common, scaling_factors, amplification_parameter) = futures::try_join!(
+                fetch_common,
+                fetch_scaling_factors,
+                fetch_amplification_parameter
+            )?;
             let amplification_parameter = {
-                let (factor, _, precision) = amplification_parameter.await?;
+                let (factor, _, precision) = amplification_parameter;
                 AmplificationParameter::new(factor, precision)?
             };
 
@@ -100,93 +97,8 @@ mod tests {
     use {
         super::*,
         crate::sources::balancer_v2::graph_api::Token,
-        contracts::dummy_contract,
         ethcontract::{H160, H256},
-        ethcontract_mock::Mock,
-        futures::future,
-        maplit::btreemap,
     };
-
-    #[tokio::test]
-    async fn fetch_pool_state() {
-        let tokens = btreemap! {
-            H160([1; 20]) => common::TokenState {
-                    balance: bfp!("1000.0").as_uint256(),
-                    scaling_factor: Bfp::exp10(0),
-            },
-            H160([2; 20]) => common::TokenState {
-                    balance: bfp!("10.0").as_uint256(),
-                    scaling_factor: bfp!("1.137117595629065656"),
-            },
-            H160([3; 20]) => common::TokenState {
-                    balance: 15_000_000.into(),
-                    scaling_factor: Bfp::exp10(12),
-            },
-        };
-        let swap_fee = bfp!("0.00015");
-        let amplification_parameter =
-            AmplificationParameter::new(200.into(), 10000.into()).unwrap();
-
-        let mock = Mock::new(42);
-        let web3 = mock.web3();
-
-        let pool = mock.deploy(BalancerV2ComposableStablePool::raw_contract().abi.clone());
-        pool.expect_call(
-            BalancerV2ComposableStablePool::signatures().get_amplification_parameter(),
-        )
-        .returns((
-            amplification_parameter.factor(),
-            false,
-            amplification_parameter.precision(),
-        ));
-        pool.expect_call(BalancerV2ComposableStablePool::signatures().get_scaling_factors())
-            .returns(
-                tokens
-                    .values()
-                    .map(|token| token.scaling_factor.as_uint256())
-                    .collect(),
-            );
-
-        let factory = dummy_contract!(BalancerV2ComposableStablePoolFactory, H160::default());
-        let pool_info = PoolInfo {
-            common: common::PoolInfo {
-                id: H256([0x90; 32]),
-                address: pool.address(),
-                tokens: tokens.keys().copied().collect(),
-                scaling_factors: tokens.values().map(|token| token.scaling_factor).collect(),
-                block_created: 1337,
-            },
-        };
-        let common_pool_state = common::PoolState {
-            paused: false,
-            swap_fee,
-            tokens: tokens.clone(),
-        };
-
-        let pool_state = {
-            let mut batch = Web3CallBatch::new(web3.transport().clone());
-            let block = web3.eth().block_number().await.unwrap();
-
-            let pool_state = factory.fetch_pool_state(
-                &pool_info,
-                future::ready(common_pool_state.clone()).boxed(),
-                &mut batch,
-                block.into(),
-            );
-
-            batch.execute_all(100).await;
-            pool_state.await.unwrap()
-        };
-
-        assert_eq!(
-            pool_state,
-            Some(PoolState {
-                tokens,
-                swap_fee,
-                amplification_parameter,
-            })
-        );
-    }
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {

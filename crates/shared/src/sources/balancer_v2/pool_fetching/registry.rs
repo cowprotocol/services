@@ -20,10 +20,7 @@ use {
     ethcontract::{dyns::DynAllEventsBuilder, errors::MethodError, BlockId, Instance, H256},
     ethrpc::{
         current_block::{BlockNumberHash, BlockRetrieving},
-        Web3,
-        Web3CallBatch,
         Web3Transport,
-        MAX_BATCH_SIZE,
     },
     futures::future,
     hex_literal::hex,
@@ -61,7 +58,6 @@ pub struct Registry<Factory>
 where
     Factory: FactoryIndexing,
 {
-    web3: Web3,
     fetcher: Arc<dyn PoolInfoFetching<Factory>>,
     updater: PoolUpdater<Factory>,
 }
@@ -78,18 +74,13 @@ where
         initial_pools: Vec<Factory::PoolInfo>,
         start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
-        let web3 = factory_instance.web3();
         let updater = Mutex::new(EventHandler::new(
             block_retreiver,
             BasePoolFactoryContract(base_pool_factory(factory_instance)),
             PoolStorage::new(initial_pools, fetcher.clone()),
             start_sync_at_block,
         ));
-        Self {
-            web3,
-            fetcher,
-            updater,
-        }
+        Self { fetcher, updater }
     }
 }
 
@@ -107,16 +98,13 @@ where
     }
 
     async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
-        let mut batch = Web3CallBatch::new(self.web3.transport().clone());
         let block = BlockId::Number(block.into());
 
         let pool_infos = self.updater.lock().await.store().pools_by_id(&pool_ids);
         let pool_futures = pool_infos
             .into_iter()
-            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, &mut batch, block))
+            .map(|pool_info| self.fetcher.fetch_pool(&pool_info, block))
             .collect::<Vec<_>>();
-
-        batch.execute_all(MAX_BATCH_SIZE).await;
 
         let pools = future::join_all(pool_futures).await;
         collect_pool_results(pools)
