@@ -422,6 +422,8 @@ pub enum AuctionResult {
     SubmittedOnchain(SubmissionResult),
 }
 
+type SimulationSucceededAtLeastOnce = bool;
+
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -450,7 +452,7 @@ pub enum SolverRejectionReason {
 
     /// The solution didn't pass simulation. Includes all data needed to
     /// re-create simulation locally
-    SimulationFailure(TransactionWithError),
+    SimulationFailure(TransactionWithError, SimulationSucceededAtLeastOnce),
 
     /// The solution doesn't have a positive score. Currently this can happen
     /// only if the objective value is negative.

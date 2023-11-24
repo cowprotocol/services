@@ -11,6 +11,7 @@ type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::TxId;
 type Transaction = eth::Tx;
 type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
+pub type SimulationSucceededAtLeastOnce = bool;
 
 /// A notification sent to solvers in case of important events in the driver.
 #[derive(Debug)]
@@ -30,7 +31,7 @@ pub enum Kind {
     DuplicatedSolutionId,
     /// Failed simulation during competition. Last parameter is true 
     /// if has simulated at least once.
-    SimulationFailed(eth::BlockNo, Transaction, bool),
+    SimulationFailed(eth::BlockNo, Transaction, SimulationSucceededAtLeastOnce),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to

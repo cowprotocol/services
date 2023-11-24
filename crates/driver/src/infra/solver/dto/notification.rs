@@ -1,3 +1,5 @@
+use crate::infra::notify::SimulationSucceededAtLeastOnce;
+
 use {
     crate::{
         domain::{
@@ -104,7 +106,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx, bool),
+    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,

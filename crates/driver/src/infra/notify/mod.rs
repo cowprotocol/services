@@ -5,7 +5,7 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification, ScoreKind, Settlement};
+pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
 use {
     super::simulator,
     crate::domain::{competition::score, eth, mempools::Error},
@@ -91,13 +91,13 @@ pub fn simulation_failed(
     auction_id: Option<auction::Id>,
     solution_id: solution::Id,
     err: &simulator::Error,
-    simulated_once: bool,
+    succeeded_at_least_once: SimulationSucceededAtLeastOnce,
 ) {
     if let simulator::Error::Revert(error) = err {
         solver.notify(
             auction_id,
             Some(solution_id),
-            notification::Kind::SimulationFailed(error.block, error.tx.clone(), simulated_once),
+            notification::Kind::SimulationFailed(error.block, error.tx.clone(), succeeded_at_least_once),
         );
     }
 }
