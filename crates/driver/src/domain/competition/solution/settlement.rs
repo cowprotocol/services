@@ -10,7 +10,6 @@ use {
         infra::{blockchain::Ethereum, observe, Simulator},
         util::conv::u256::U256Ext,
     },
-    bigdecimal::Signed,
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
