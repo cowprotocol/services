@@ -97,9 +97,9 @@ impl Settlement {
                 eth::U256::from(buy.amount).to_big_int();
         }
 
-        if flow.values().any(|v| v.is_negative()) {
-            return Err(Error::AssetFlow(flow));
-        }
+        // if flow.values().any(|v| v.is_negative()) {
+        //     return Err(Error::AssetFlow(flow));
+        // }
 
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.
