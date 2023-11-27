@@ -133,7 +133,7 @@ impl Solutions {
                         })
                         .collect(),
                     score: match solution.score.clone() {
-                        solution::Score::Solver(score) => Score::Solver(score),
+                        solution::Score::Solver(score) => Score::Solver { score },
                         solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score.0),
                     },
                 })
@@ -319,9 +319,13 @@ enum SigningScheme {
 }
 
 /// A score for a solution. The score is used to rank solutions.
+#[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
-    Solver(U256),
+    Solver {
+        #[serde_as(as = "serialize::U256")]
+        score: U256,
+    },
     RiskAdjusted(f64),
 }
