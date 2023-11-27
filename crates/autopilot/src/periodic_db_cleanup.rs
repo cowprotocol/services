@@ -56,7 +56,7 @@ impl OrderEventsCleaner {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Timestamp of the last successful `order_events` table cleanup.
-    #[metric(name = "periodic_db_cleanup", labels("type"))]
+    #[metric(name = "periodic_db_cleanup")]
     last_order_events_cleanup_run: prometheus::IntGauge,
 }
 
