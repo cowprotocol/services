@@ -283,6 +283,7 @@ impl AuctionProcessor {
 
     /// Fetches the tradable balance for every order owner.
     async fn fetch_balances(ethereum: &infra::Ethereum, orders: &[order::Order]) -> Balances {
+        let mut tokens: HashMap<_, _> = Default::default();
         // Collect trader/token/source/interaction tuples for fetching available
         // balances. Note that we are pessimistic here, if a trader is selling
         // the same token with the same source in two different orders using a
@@ -297,6 +298,7 @@ impl AuctionProcessor {
             .map(|((trader, token, source), mut orders)| {
                 let first = orders.next().expect("group contains at least 1 order");
                 let mut others = orders;
+                tokens.entry(token).or_insert_with(|| ethereum.erc20(token));
                 if others.all(|order| order.pre_interactions == first.pre_interactions) {
                     (trader, token, source, &first.pre_interactions[..])
                 } else {
@@ -308,15 +310,19 @@ impl AuctionProcessor {
         join_all(
             traders
                 .into_iter()
-                .map(|(trader, token, source, interactions)| async move {
-                    let balance = ethereum
-                        .erc20(token)
-                        .tradable_balance(trader.into(), source, interactions)
-                        .await;
-                    (
-                        (trader, token, source),
-                        balance.map(order::SellAmount::from).ok(),
-                    )
+                .map(|(trader, token, source, interactions)| {
+                    let token_contract = tokens.get(&token);
+                    let token_contract = token_contract.expect("all tokens were created earlier");
+                    let fetch_balance =
+                        token_contract.tradable_balance(trader.into(), source, interactions);
+
+                    async move {
+                        let balance = fetch_balance.await;
+                        (
+                            (trader, token, source),
+                            balance.map(order::SellAmount::from).ok(),
+                        )
+                    }
                 }),
         )
         .await
