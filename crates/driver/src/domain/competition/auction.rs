@@ -10,7 +10,10 @@ use {
         infra::{self, blockchain, observe, Ethereum},
         util,
     },
-    futures::future::{join_all, BoxFuture, FutureExt, Shared},
+    futures::{
+        future::{BoxFuture, FutureExt, Shared},
+        StreamExt,
+    },
     itertools::Itertools,
     std::{
         collections::{HashMap, HashSet},
@@ -307,7 +310,7 @@ impl AuctionProcessor {
             })
             .collect::<Vec<_>>();
 
-        join_all(
+        futures::stream::iter(
             traders
                 .into_iter()
                 .map(|(trader, token, source, interactions)| {
@@ -325,10 +328,10 @@ impl AuctionProcessor {
                     }
                 }),
         )
-        .await
-        .into_iter()
-        .filter_map(|(key, value)| Some((key, value?)))
+        .buffered(100)
+        .filter_map(|(key, value)| async move { value.map(|value| (key, value)) })
         .collect()
+        .await
     }
 
     pub fn new(eth: Arc<infra::Ethereum>) -> Self {
