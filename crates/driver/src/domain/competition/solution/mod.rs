@@ -266,9 +266,9 @@ impl SolverTimeout {
     }
 }
 
-impl From<chrono::Duration> for SolverTimeout {
-    fn from(duration: chrono::Duration) -> Self {
-        Self(duration)
+impl From<std::time::Duration> for SolverTimeout {
+    fn from(duration: std::time::Duration) -> Self {
+        Self(chrono::Duration::from_std(duration).unwrap_or(chrono::Duration::max_value()))
     }
 }
 
@@ -305,11 +305,6 @@ pub enum Error {
     Boundary(#[from] boundary::Error),
     #[error("simulation error: {0:?}")]
     Simulation(#[from] simulator::Error),
-    #[error(
-        "invalid asset flow: token amounts entering the settlement do not equal token amounts \
-         exiting the settlement"
-    )]
-    AssetFlow(HashMap<eth::TokenAddress, num::BigInt>),
     #[error(transparent)]
     Execution(#[from] trade::ExecutionError),
     #[error(

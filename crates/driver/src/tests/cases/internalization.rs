@@ -1,6 +1,3 @@
-//! Test that the asset flow verification behaves correctly. See
-//! [`crate::domain::competition::solution::Settlement`].
-
 use crate::tests::{
     setup,
     setup::{ab_order, ab_pool, ab_solution},
