@@ -1496,7 +1496,7 @@ mod tests {
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert_eq!(quote, None);
+        assert!(quote.is_some());
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
@@ -1510,7 +1510,7 @@ mod tests {
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert_eq!(quote, None);
+        assert!(quote.is_some());
         assert!(order.metadata.class.is_limit());
     }
 
@@ -2253,10 +2253,14 @@ mod tests {
                 })
             });
 
-        let quote =
-            get_quote_and_check_fee(&order_quoter, &quote_search_parameters, None, Some(fee_amount))
-                .await
-                .unwrap();
+        let quote = get_quote_and_check_fee(
+            &order_quoter,
+            &quote_search_parameters,
+            None,
+            Some(fee_amount),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             quote,
