@@ -4,7 +4,12 @@ use {
         FutureExt,
     },
     prometheus::IntCounterVec,
-    std::{future::Future, sync::Mutex},
+    std::{
+        collections::HashMap,
+        future::Future,
+        hash::Hash,
+        sync::{Arc, Mutex},
+    },
 };
 
 // The design of this module is intentionally simple. Every time a shared future
@@ -19,7 +24,7 @@ use {
 /// Share an expensive to compute response with multiple requests that occur
 /// while one of them is already in flight.
 pub struct RequestSharing<Request, Fut: Future> {
-    in_flight: Mutex<Vec<(Request, WeakShared<Fut>)>>,
+    in_flight: Arc<Mutex<HashMap<Request, WeakShared<Fut>>>>,
     request_label: String,
 }
 
@@ -30,12 +35,30 @@ pub type BoxRequestSharing<Request, Response> =
 /// A boxed shared future.
 pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
-impl<Request, Fut: Future> RequestSharing<Request, Fut> {
+type Cache<Request, Response> = Arc<Mutex<HashMap<Request, WeakShared<Response>>>>;
+
+impl<Request: Send + 'static, Fut: Future + Send + 'static> RequestSharing<Request, Fut>
+where
+    Fut::Output: Send + Sync,
+{
     pub fn labelled(request_label: String) -> Self {
+        let cache: Cache<Request, Fut> = Default::default();
+        Self::spawn_gc(cache.clone());
         Self {
-            in_flight: Default::default(),
+            in_flight: cache,
             request_label,
         }
+    }
+
+    fn spawn_gc(cache: Cache<Request, Fut>) {
+        let rt = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            {
+                let mut cache = cache.lock().unwrap();
+                cache.retain(|_request, weak| weak.upgrade().is_some());
+            }
+            rt.block_on(tokio::time::sleep(tokio::time::Duration::from_millis(500)))
+        });
     }
 }
 
@@ -51,7 +74,7 @@ impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
 
 impl<Request, Fut> RequestSharing<Request, Fut>
 where
-    Request: Eq,
+    Request: Eq + Hash,
     Fut: Future,
     Fut::Output: Clone,
 {
@@ -81,22 +104,7 @@ where
         let mut in_flight = self.in_flight.lock().unwrap();
 
         // collect garbage and find copy of existing request
-        let mut existing = None;
-        in_flight.retain(|(request_, weak)| match weak.upgrade() {
-            // NOTE: Technically it's possible under very specific circumstances that the
-            // `active_request` is sitting in the cache for a long time without making progress.
-            // If somebody else picks it up and polls it to completion a timeout error will most
-            // likely be the result. See https://github.com/gnosis/gp-v2-services/pull/1677#discussion_r813673692
-            // for more details.
-            Some(shared) if shared.peek().is_none() => {
-                if *request_ == request {
-                    debug_assert!(existing.is_none());
-                    existing = Some(shared);
-                }
-                true
-            }
-            _ => false,
-        });
+        let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
 
         if let Some(existing) = existing {
             Metrics::get()
@@ -114,7 +122,7 @@ where
         let shared = future(&request).shared();
         // unwrap because downgrade only returns None if the Shared has already
         // completed which cannot be the case because we haven't polled it yet.
-        in_flight.push((request, shared.downgrade().unwrap()));
+        in_flight.insert(request, shared.downgrade().unwrap());
         shared
     }
 }
