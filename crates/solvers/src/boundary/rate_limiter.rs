@@ -29,7 +29,7 @@ impl RateLimitingStrategy {
     }
 }
 
-#[derive(Error, Debug, Clone, Default, PartialEq)]
+#[derive(Error, Debug, Clone, Default)]
 pub enum RateLimiterError {
     #[default]
     #[error("rate limited")]

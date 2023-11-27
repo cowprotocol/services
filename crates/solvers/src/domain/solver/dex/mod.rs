@@ -107,33 +107,48 @@ impl Dex {
         dex_order: &dex::Order,
         tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
-    ) -> Result<dex::Swap, infra::dex::Error> {
-        let slippage = self.slippage.relative(&dex_order.amount(), tokens);
-        self.dex
-            .swap(dex_order, &slippage, tokens, gas_price)
+    ) -> Option<dex::Swap> {
+        self.rate_limiter
+            .execute_with_back_off(
+                async {
+                    let slippage = self.slippage.relative(&dex_order.amount(), tokens);
+                    self.dex
+                        .swap(dex_order, &slippage, tokens, gas_price)
+                        .await
+                        .map_err(|err| {
+                            match &err {
+                                err @ infra::dex::Error::NotFound => {
+                                    if order.partially_fillable {
+                                        // Only adjust the amount to try next if we are sure the API
+                                        // worked
+                                        // correctly yet still wasn't able to provide a
+                                        // swap.
+                                        self.fills.reduce_next_try(order.uid);
+                                    } else {
+                                        tracing::debug!(?err, "skipping order");
+                                    }
+                                }
+                                err @ infra::dex::Error::OrderNotSupported => {
+                                    tracing::debug!(?err, "skipping order")
+                                }
+                                err @ infra::dex::Error::RateLimited => {
+                                    tracing::debug!(?err, "encountered rate limit")
+                                }
+                                infra::dex::Error::Other(err) => {
+                                    tracing::warn!(?err, "failed to get swap")
+                                }
+                            }
+                            err
+                        })
+                },
+                |result| matches!(result, Err(infra::dex::Error::RateLimited)),
+            )
             .await
-            .map_err(|err| {
-                match &err {
-                    err @ infra::dex::Error::NotFound => {
-                        if order.partially_fillable {
-                            // Only adjust the amount to try next if we are sure the API worked
-                            // correctly yet still wasn't able to provide a
-                            // swap.
-                            self.fills.reduce_next_try(order.uid);
-                        } else {
-                            tracing::debug!(?err, "skipping order");
-                        }
-                    }
-                    err @ infra::dex::Error::OrderNotSupported => {
-                        tracing::debug!(?err, "skipping order")
-                    }
-                    err @ infra::dex::Error::RateLimited => {
-                        tracing::debug!(?err, "encountered rate limit")
-                    }
-                    infra::dex::Error::Other(err) => tracing::warn!(?err, "failed to get swap"),
-                }
-                err
+            .map_err(|err| match err {
+                RateLimiterError::RateLimited => infra::dex::Error::RateLimited,
             })
+            .and_then(|result| result)
+            .ok()
     }
 
     async fn solve_order(
@@ -144,20 +159,7 @@ impl Dex {
     ) -> Option<solution::Solution> {
         let order = order.get();
         let dex_order = self.fills.dex_order(order, tokens)?;
-        let swap = self
-            .rate_limiter
-            .execute_with_back_off(
-                self.try_solve(order, &dex_order, tokens, gas_price),
-                |result| matches!(result, Err(infra::dex::Error::RateLimited)),
-            )
-            .await
-            .map_err(|err| match err {
-                RateLimiterError::RateLimited => infra::dex::Error::RateLimited,
-            })
-            .and_then(|result| result)
-            .ok()?;
-
-        let uid = order.uid;
+        let swap = self.try_solve(order, &dex_order, tokens, gas_price).await?;
         let sell = tokens.reference_price(&order.sell.token);
         let Some(solution) = swap
             .into_solution(order.clone(), gas_price, sell, &self.risk, &self.simulator)
@@ -169,7 +171,7 @@ impl Dex {
 
         tracing::debug!("solved");
         // Maybe some liquidity appeared that enables a bigger fill.
-        self.fills.increase_next_try(uid);
+        self.fills.increase_next_try(order.uid);
 
         Some(solution.with_buffers_internalizations(tokens))
     }
