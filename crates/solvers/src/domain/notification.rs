@@ -4,7 +4,7 @@ use {
         eth::{self, Ether, TokenAddress},
         solution::{self, SuccessProbability},
     },
-    std::collections::{BTreeSet, HashMap},
+    std::collections::BTreeSet,
 };
 
 type RequiredEther = Ether;
@@ -12,7 +12,6 @@ type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::H256;
 type Transaction = eth::Tx;
 type BlockNo = u64;
-type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
 
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
@@ -33,7 +32,6 @@ pub enum Kind {
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),
-    AssetFlow(Missmatches),
     Settled(Settlement),
 }
 
