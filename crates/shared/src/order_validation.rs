@@ -893,15 +893,32 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 /// fee is sufficient.
 ///
 /// The fee is checked only if `fee_amount` is specified.
-///
-/// This works by first trying to find an existing quote, and then falling back
-/// to calculating a brand new one if none can be found and a quote ID was not
-/// specified.
 pub async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
     fee_amount: Option<U256>,
+) -> Result<Quote, ValidationError> {
+    let quote = get_quote(quoter, quote_search_parameters, quote_id).await?;
+
+    if let Some(fee_amount) = fee_amount {
+        if fee_amount < quote.fee_amount {
+            return Err(ValidationError::InsufficientFee);
+        }
+    }
+
+    Ok(quote)
+}
+
+/// Retrieves the quote for an order that is being created
+///
+/// This works by first trying to find an existing quote, and then falling back
+/// to calculating a brand new one if none can be found and a quote ID was not
+/// specified.
+async fn get_quote(
+    quoter: &dyn OrderQuoting,
+    quote_search_parameters: &QuoteSearchParameters,
+    quote_id: Option<i64>,
 ) -> Result<Quote, ValidationError> {
     let quote = match quoter
         .find_quote(quote_id, quote_search_parameters.clone())
@@ -949,12 +966,6 @@ pub async fn get_quote_and_check_fee(
         }
         Err(err) => return Err(err.into()),
     };
-
-    if let Some(fee_amount) = fee_amount {
-        if fee_amount < quote.fee_amount {
-            return Err(ValidationError::InsufficientFee);
-        }
-    }
 
     Ok(quote)
 }
@@ -2175,7 +2186,7 @@ mod tests {
             &order_quoter,
             &quote_search_parameters,
             quote_id,
-            fee_amount,
+            Some(fee_amount),
         )
         .await
         .unwrap();
@@ -2243,7 +2254,7 @@ mod tests {
             });
 
         let quote =
-            get_quote_and_check_fee(&order_quoter, &quote_search_parameters, None, fee_amount)
+            get_quote_and_check_fee(&order_quoter, &quote_search_parameters, None, Some(fee_amount))
                 .await
                 .unwrap();
 
@@ -2272,7 +2283,7 @@ mod tests {
             &order_quoter,
             &quote_search_parameters,
             Some(0),
-            U256::zero(),
+            Some(U256::zero()),
         )
         .await
         .unwrap_err();
@@ -2294,7 +2305,7 @@ mod tests {
             &order_quoter,
             &Default::default(),
             Default::default(),
-            U256::one(),
+            Some(U256::one()),
         )
         .await
         .unwrap_err();
@@ -2354,7 +2365,7 @@ mod tests {
                         ..Default::default()
                     },
                     Default::default(),
-                    U256::zero(),
+                    Some(U256::zero()),
                 )
                 .await
                 .unwrap_err();
