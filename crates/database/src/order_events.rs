@@ -51,13 +51,13 @@ pub async fn insert_order_event(
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_events (
-    order_uid,
-    timestamp,
-    label
-)
-VALUES ($1, $2, $3)
-"#;
+        INSERT INTO order_events (
+            order_uid,
+            timestamp,
+            label
+        )
+        VALUES ($1, $2, $3)
+    "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(event.timestamp)
@@ -73,9 +73,9 @@ pub async fn delete_order_events_before(
     timestamp: DateTime<Utc>,
 ) -> Result<u64, sqlx::Error> {
     const QUERY: &str = r#"
-DELETE FROM order_events
-WHERE timestamp < $1
-"#;
+        DELETE FROM order_events
+        WHERE timestamp < $1
+    "#;
     sqlx::query(QUERY)
         .bind(timestamp)
         .execute(pool)
