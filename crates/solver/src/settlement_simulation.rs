@@ -699,7 +699,7 @@ mod tests {
         .await
         .map(|settlement| vec![settlement])
         .unwrap();
-        let settlement = settlements.get(0).unwrap();
+        let settlement = settlements.first().unwrap();
         let settlement_encoded = settlement
             .clone()
             .encode(InternalizationStrategy::SkipInternalizableInteraction);
