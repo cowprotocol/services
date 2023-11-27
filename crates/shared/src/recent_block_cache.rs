@@ -35,7 +35,7 @@ use {
     prometheus::IntCounterVec,
     std::{
         cmp,
-        collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
+        collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
         sync::{Arc, Mutex},
@@ -247,9 +247,7 @@ where
 
         let mut cache_hit_count = 0usize;
         let mut cache_hits = Vec::new();
-        // Use BTreeSet to ensure deterministic iteration order later which enables
-        // request sharing.
-        let mut cache_misses = BTreeSet::new();
+        let mut cache_misses = HashSet::new();
         let last_update_block;
         {
             let mut mutexed = self.mutexed.lock().unwrap();
