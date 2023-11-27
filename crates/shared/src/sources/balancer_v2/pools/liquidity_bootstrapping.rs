@@ -11,12 +11,8 @@ use {
         BalancerV2LiquidityBootstrappingPool,
         BalancerV2LiquidityBootstrappingPoolFactory,
     },
-    ethcontract::{BlockId, H160},
+    ethcontract::BlockId,
     futures::{future::BoxFuture, FutureExt as _},
-    std::{
-        collections::HashMap,
-        sync::{Arc, RwLock},
-    },
 };
 
 pub use super::weighted::{PoolState, TokenState, Version};
@@ -42,10 +38,6 @@ impl PoolIndexing for PoolInfo {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref POOLS: RwLock<HashMap<H160, Arc<BalancerV2LiquidityBootstrappingPool>>> = RwLock::new(Default::default());
-}
-
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
     type PoolInfo = PoolInfo;
@@ -61,11 +53,9 @@ impl FactoryIndexing for BalancerV2LiquidityBootstrappingPoolFactory {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract = crate::get_or_init!(
-            BalancerV2LiquidityBootstrappingPool,
-            POOLS,
-            &pool_info.common.address,
-            &self.raw_instance().web3()
+        let pool_contract = BalancerV2LiquidityBootstrappingPool::at(
+            &self.raw_instance().web3(),
+            pool_info.common.address,
         );
 
         let fetch_common = common_pool_state.map(Result::Ok);

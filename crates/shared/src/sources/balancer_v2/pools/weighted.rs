@@ -14,10 +14,7 @@ use {
     },
     ethcontract::{BlockId, H160},
     futures::{future::BoxFuture, FutureExt as _},
-    std::{
-        collections::{BTreeMap, HashMap},
-        sync::{Arc, RwLock},
-    },
+    std::collections::BTreeMap,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -67,22 +64,13 @@ impl PoolIndexing for PoolInfo {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref POOLS: RwLock<HashMap<H160, Arc<BalancerV2WeightedPool>>> = RwLock::new(Default::default());
-}
-
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2WeightedPoolFactory {
     type PoolInfo = PoolInfo;
     type PoolState = PoolState;
 
     async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
-        let pool_contract = crate::get_or_init!(
-            BalancerV2WeightedPool,
-            POOLS,
-            &pool.address,
-            &self.raw_instance().web3()
-        );
+        let pool_contract = BalancerV2WeightedPool::at(&self.raw_instance().web3(), pool.address);
         let weights = pool_contract
             .methods()
             .get_normalized_weights()

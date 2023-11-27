@@ -129,26 +129,3 @@ pub trait PoolIndexing: Clone + Send + Sync + 'static {
     /// Gets the common pool data.
     fn common(&self) -> &common::PoolInfo;
 }
-
-#[macro_export]
-macro_rules! get_or_init {
-    ($contract:ident, $cache:expr, $address:expr, $web3:expr) => {{
-        if cfg!(test) {
-            // Mocking the behavior of some code is not possible if we share
-            // contract instances across tests.
-            Arc::new($contract::at($web3, $address.clone()))
-        } else {
-            let contract = $cache.read().unwrap().get($address).cloned();
-            match contract {
-                Some(contract) => contract,
-                None => {
-                    let mut cache = $cache.write().unwrap();
-                    let entry = cache
-                        .entry($address.clone())
-                        .or_insert_with(|| Arc::new($contract::at($web3, $address.clone())));
-                    Arc::clone(entry)
-                }
-            }
-        }
-    }};
-}

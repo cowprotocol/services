@@ -14,10 +14,7 @@ use {
     ethcontract::{BlockId, H160, U256},
     futures::{future::BoxFuture, FutureExt as _},
     num::BigRational,
-    std::{
-        collections::{BTreeMap, HashMap},
-        sync::{Arc, RwLock},
-    },
+    std::collections::BTreeMap,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -80,10 +77,6 @@ impl AmplificationParameter {
     }
 }
 
-lazy_static::lazy_static! {
-    static ref POOLS: RwLock<HashMap<H160, Arc<BalancerV2StablePool>>> = RwLock::new(Default::default());
-}
-
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
     type PoolInfo = PoolInfo;
@@ -99,12 +92,8 @@ impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
-        let pool_contract = crate::get_or_init!(
-            BalancerV2StablePool,
-            POOLS,
-            &pool_info.common.address,
-            &self.raw_instance().web3()
-        );
+        let pool_contract =
+            BalancerV2StablePool::at(&self.raw_instance().web3(), pool_info.common.address);
 
         let fetch_common = common_pool_state.map(Result::Ok);
         let fetch_amplification_parameter = pool_contract

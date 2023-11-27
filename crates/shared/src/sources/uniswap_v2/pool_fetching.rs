@@ -16,11 +16,7 @@ use {
     },
     model::TokenPair,
     num::rational::Ratio,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::{Arc, RwLock},
-        time::Duration,
-    },
+    std::{collections::HashSet, sync::RwLock, time::Duration},
 };
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -249,8 +245,6 @@ where
 pub struct DefaultPoolReader {
     pub pair_provider: PairProvider,
     pub web3: Web3,
-    pub amms: RwLock<HashMap<H160, Arc<IUniswapLikePair>>>,
-    pub tokens: RwLock<HashMap<H160, Arc<ERC20>>>,
 }
 
 impl DefaultPoolReader {
@@ -258,44 +252,20 @@ impl DefaultPoolReader {
         Self {
             pair_provider,
             web3,
-            amms: Default::default(),
-            tokens: Default::default(),
         }
     }
-}
-
-macro_rules! get_or_init {
-    ($contract:ident, $cache:expr, $address:expr, $web3:expr) => {{
-        if cfg!(test) {
-            // Mocking the behavior of some code is not possible if we share
-            // contract instances across tests.
-            Arc::new($contract::at($web3, $address.clone()))
-        } else {
-            let contract = $cache.read().unwrap().get($address).cloned();
-            match contract {
-                Some(contract) => contract,
-                None => {
-                    let mut cache = $cache.write().unwrap();
-                    let entry = cache
-                        .entry($address.clone())
-                        .or_insert_with(|| Arc::new($contract::at($web3, $address.clone())));
-                    Arc::clone(entry)
-                }
-            }
-        }
-    }};
 }
 
 impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
 
-        let pair_contract = get_or_init!(IUniswapLikePair, &self.amms, &pair_address, &self.web3);
+        let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
         let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
-        let token0 = get_or_init!(ERC20, &self.tokens, &pair.get().0, &self.web3);
-        let token1 = get_or_init!(ERC20, &self.tokens, &pair.get().1, &self.web3);
+        let token0 = ERC20::at(&self.web3, pair.get().0);
+        let token1 = ERC20::at(&self.web3, pair.get().1);
 
         let fetch_token0_balance = token0.balance_of(pair_address).block(block).call();
         let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();
