@@ -65,3 +65,70 @@ impl Metrics {
         Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        database::{
+            byte_array::ByteArray,
+            order_events::{OrderEvent, OrderEventLabel},
+        },
+        sqlx::PgConnection,
+    };
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_count_rows_in_table_() {
+        let db = Postgres::new("postgresql://").await.unwrap();
+        let mut ex = db.0.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+
+        let event_a = OrderEvent {
+            order_uid: ByteArray([1; 56]),
+            timestamp: Utc::now() - chrono::Duration::days(31),
+            label: OrderEventLabel::Created,
+        };
+        let latest_timestamp = Utc::now() - chrono::Duration::days(29);
+        let event_b = OrderEvent {
+            order_uid: ByteArray([2; 56]),
+            timestamp: latest_timestamp,
+            label: OrderEventLabel::Created,
+        };
+
+        database::order_events::insert_order_event(&mut ex, &event_a)
+            .await
+            .unwrap();
+        database::order_events::insert_order_event(&mut ex, &event_b)
+            .await
+            .unwrap();
+
+        let count = order_events_before_timestamp_count(
+            &mut ex,
+            latest_timestamp + chrono::Duration::days(1),
+        )
+        .await;
+        assert_eq!(count, 2u64);
+
+        let count = order_events_before_timestamp_count(&mut ex, latest_timestamp).await;
+        assert_eq!(count, 1u64);
+
+        async fn order_events_before_timestamp_count(
+            ex: &mut PgConnection,
+            timestamp: DateTime<Utc>,
+        ) -> u64 {
+            const QUERY: &str = r#"
+                SELECT COUNT(1)
+                FROM order_events
+                WHERE timestamp < $1
+                "#;
+            let count: i64 = sqlx::query_scalar(QUERY)
+                .bind(timestamp)
+                .fetch_one(ex)
+                .await
+                .unwrap();
+
+            count as u64
+        }
+    }
+}
