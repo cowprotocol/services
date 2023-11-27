@@ -1810,9 +1810,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d08846ff0ee806115900c1936bc8499a9276b4ae27fe75492417765bd539322"
+checksum = "c28ee036fde35000df46c82ec67f2e9f5a6ebc53093e0af2a9b045cce9818acf"
 dependencies = [
  "arrayvec",
  "aws-config 0.55.3",
@@ -1837,9 +1837,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-common"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "742bc83515d431a92e6c5978d95e02076e494cfe05949717bc7f8340812823f4"
+checksum = "422d0b0977f0855eaeab796ff5502302f5ac33ae96209c0ea81b0aa164dd370e"
 dependencies = [
  "ethabi",
  "hex",
@@ -1853,9 +1853,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-derive"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb46cfc07d197ef11a37254eadac65f334d076ac07e468ba16f5866a2e96ce1f"
+checksum = "2e68257cfdf589ae3f9d2edd348072e2bf105fa87288fc0a7f5e090e20a2acd4"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -1867,9 +1867,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-generate"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d030b773b4837eec117c11c4aab4f56412d4c342c12300648ba73fb6b1f8ab20"
+checksum = "8c013062a68f3e5d6fa2db391134cfc5fb0ee64d8d15d6205d79ec7cf7e8ffa4"
 dependencies = [
  "Inflector",
  "anyhow",
