@@ -4,7 +4,7 @@
 use {
     crate::OrderUid,
     chrono::Utc,
-    sqlx::{types::chrono::DateTime, PgConnection},
+    sqlx::{types::chrono::DateTime, PgConnection, PgPool},
 };
 
 /// Describes what kind of event was registered for an order.
@@ -65,4 +65,20 @@ VALUES ($1, $2, $3)
         .execute(ex)
         .await
         .map(|_| ())
+}
+
+/// Deletes rows before the provided timestamp from the `order_events` table.
+pub async fn delete_order_events_before(
+    pool: &PgPool,
+    timestamp: DateTime<Utc>,
+) -> Result<u64, sqlx::Error> {
+    const QUERY: &str = r#"
+DELETE FROM order_events
+WHERE timestamp < $1
+"#;
+    sqlx::query(QUERY)
+        .bind(timestamp)
+        .execute(pool)
+        .await
+        .map(|result| result.rows_affected())
 }

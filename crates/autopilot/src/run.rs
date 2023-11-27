@@ -591,6 +591,21 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
+    let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
+        args.order_events_cleanup_interval,
+        args.order_events_cleanup_threshold,
+    );
+    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
+        order_events_cleaner_config,
+        db.clone(),
+    );
+
+    tokio::task::spawn(
+        order_events_cleaner
+            .run_forever()
+            .instrument(tracing::info_span!("order_events_cleaner")),
+    );
+
     if args.enable_colocation {
         if args.drivers.is_empty() {
             panic!("colocation is enabled but no drivers are configured");

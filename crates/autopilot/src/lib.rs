@@ -5,6 +5,7 @@ pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;
 pub mod on_settlement_event_updater;
+pub mod periodic_db_cleanup;
 pub mod protocol;
 pub mod run;
 pub mod run_loop;
