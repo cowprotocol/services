@@ -219,9 +219,9 @@ impl Order {
             (Some(buy_price), Some(sell_price)) => {
                 let buy = buy_price.apply(self.buy.amount);
                 let sell = sell_price.apply(self.sell.amount);
-                buy.0
+                sell.0
                     .to_big_rational()
-                    .checked_div(&sell.0.to_big_rational())
+                    .checked_div(&buy.0.to_big_rational())
                     .unwrap_or_else(num::BigRational::zero)
             }
             _ => num::BigRational::zero(),

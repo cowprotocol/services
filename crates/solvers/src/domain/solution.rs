@@ -112,6 +112,10 @@ impl Solution {
 
         self
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.prices.0.is_empty() && self.trades.is_empty() && self.interactions.is_empty()
+    }
 }
 
 /// A solution for a settling a single order.
