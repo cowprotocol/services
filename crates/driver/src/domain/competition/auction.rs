@@ -312,7 +312,7 @@ impl AuctionProcessor {
                 .into_iter()
                 .map(|(trader, token, source, interactions)| {
                     let token_contract = tokens.get(&token);
-                    let token_contract = token_contract.expect("all tokens where created earlier");
+                    let token_contract = token_contract.expect("all tokens were created earlier");
                     let fetch_balance =
                         token_contract.tradable_balance(trader.into(), source, interactions);
 
