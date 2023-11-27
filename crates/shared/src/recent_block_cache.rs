@@ -30,8 +30,7 @@ use {
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
     ethrpc::current_block::CurrentBlockStream,
-    futures::FutureExt,
-    itertools::Itertools,
+    futures::{pin_mut, FutureExt, StreamExt},
     prometheus::IntCounterVec,
     std::{
         cmp,
@@ -188,12 +187,14 @@ where
             .keys_of_recently_used_entries()
             .collect::<HashSet<_>>();
         tracing::debug!("automatically updating {} entries", keys.len());
-        let found_values = self
-            .fetch_inner_many(keys.clone(), Block::Number(new_block))
-            .await?;
+        let fetched: Vec<_> = self
+            .fetch_inner_many(keys, Block::Number(new_block))
+            .collect()
+            .await;
 
+        let keys: HashSet<_> = fetched.iter().map(K::for_value).collect();
         let mut mutexed = self.mutexed.lock().unwrap();
-        mutexed.insert(new_block, keys.into_iter(), found_values);
+        mutexed.insert(new_block, keys, fetched);
         let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
         mutexed.remove_cached_blocks_older_than(oldest_to_keep);
         mutexed.last_update_block = new_block;
@@ -201,16 +202,18 @@ where
         Ok(())
     }
 
-    async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
-        let fetched =
-            futures::future::join_all(keys.iter().map(|key| self.fetch_inner(key.clone(), block)))
-                .await;
-        let fetched: Vec<_> = fetched
-            .into_iter()
-            .filter_map(|res| res.ok())
-            .flatten()
-            .collect();
-        Ok(fetched)
+    fn fetch_inner_many(
+        &self,
+        keys: HashSet<K>,
+        block: Block,
+    ) -> impl futures::Stream<Item = V> + '_ {
+        futures::stream::iter(
+            keys.into_iter()
+                .map(move |key| self.fetch_inner(key.clone(), block)),
+        )
+        .buffered(REQUEST_BATCH_SIZE)
+        .filter_map(|res| async move { res.ok() })
+        .flat_map(futures::stream::iter)
     }
 
     // Sometimes nodes requests error when we try to get state from what we think is
@@ -279,22 +282,28 @@ where
         }
 
         let cache_miss_block = block.unwrap_or(last_update_block);
-        let cache_misses: Vec<_> = cache_misses.into_iter().collect();
-        // Splits fetches into chunks because we can get over 1400 requests when the
-        // cache is empty which tend to time out if we don't chunk them.
-        for chunk in cache_misses.chunks(REQUEST_BATCH_SIZE) {
-            let keys = chunk.iter().cloned().collect();
-            let fetched = self
-                .fetch_inner_many(keys, Block::Number(cache_miss_block))
-                .await?;
-            let found_keys = fetched.iter().map(K::for_value).unique().collect_vec();
-            cache_hits.extend_from_slice(&fetched);
+        let stream = self
+            .fetch_inner_many(cache_misses, Block::Number(cache_miss_block))
+            .chunks(REQUEST_BATCH_SIZE);
+        pin_mut!(stream);
+
+        // When we restart the system we might have to fetch **A LOT** of liquidity at
+        // once. If fetching all that liquidity exceeds the solver deadline this
+        // future might be cancelled. In order to save some of the progress we
+        // store the liquidity every couple of items (not after every item to avoid
+        // contention on the lock). If we then exceed the deadline we still at least
+        // know which keys we requested and have to fetch in the background.
+        // That way fetching liquidity will be way faster next time which might allow
+        // us to fit inside the solver deadline.
+        while let Some(chunk) = stream.next().await {
+            let found_keys: Vec<_> = chunk.iter().map(K::for_value).collect();
+            cache_hits.extend_from_slice(&chunk);
 
             let mut mutexed = self.mutexed.lock().unwrap();
-            mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
-            for key in found_keys {
-                mutexed.recently_used.cache_set(key, ());
+            for key in &found_keys {
+                mutexed.recently_used.cache_set(key.clone(), ());
             }
+            mutexed.insert(cache_miss_block, found_keys, chunk);
         }
 
         Ok(cache_hits)
@@ -368,7 +377,7 @@ where
                 }
             }
             // Make sure entries without any values are cached.
-            self.entries.insert((block, key), Vec::new());
+            self.entries.entry((block, key)).or_default();
         }
         for value in values {
             // Unwrap because previous loop guarantees all keys have an entry.
@@ -740,7 +749,8 @@ mod tests {
 
     #[tokio::test]
     async fn respects_max_age_limit_for_recent() {
-        let fetcher = FakeCacheFetcher::default();
+        let key = TestKey(0);
+        let fetcher = FakeCacheFetcher::new(vec![TestValue::new(key.0, "test")]);
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
             number: block_number,
@@ -757,7 +767,6 @@ mod tests {
             "",
         )
         .unwrap();
-        let key = TestKey(0);
 
         // cache at block 7, most recent block is 10.
         cache
