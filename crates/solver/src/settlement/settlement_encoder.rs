@@ -340,6 +340,9 @@ impl SettlementEncoder {
             .get(&order.data.sell_token)
             .context("sell token price is missing")?;
 
+        let protocol_fee_factor = 0.5; //50%
+        let protocol_fee_cap = 0.06; //6% of volume
+
         let (sell_amount, buy_amount) = match order.data.kind {
             // This means sell as much `sell_token` as needed to buy exactly the expected
             // `buy_amount`. Therefore we need to solve for `sell_amount`.
@@ -350,10 +353,21 @@ impl SettlementEncoder {
                     .checked_div(uniform_sell_price)
                     .context("sell_amount computation failed")?;
                 // We have to sell slightly more `sell_token` to capture the `surplus_fee`
-                let sell_amount_adjusted_for_fees = sell_amount
+                let sell_amount = sell_amount
                     .checked_add(fee)
                     .context("sell_amount computation failed")?;
-                (sell_amount_adjusted_for_fees, executed_amount)
+
+                // Increase the `sell_amount` by protocol fee
+                let surplus = order
+                    .data
+                    .sell_amount
+                    .checked_sub(sell_amount)
+                    .unwrap_or(0.into());
+                let protocol_fee = surplus / (U256::from_f64_lossy(1. / protocol_fee_factor));
+                let protocol_fee_cap = surplus / (U256::from_f64_lossy(1. / protocol_fee_cap));
+                let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
+                let sell_amount = sell_amount + protocol_fee;
+                (sell_amount, executed_amount)
             }
             // This means sell ALL the `sell_token` and get as much `buy_token` as possible.
             // Therefore we need to solve for `buy_amount`.
@@ -367,6 +381,15 @@ impl SettlementEncoder {
                     .context("buy_amount computation failed")?
                     .checked_div(uniform_buy_price)
                     .context("buy_amount computation failed")?;
+
+                // Reduce the `buy_amount` by protocol fee
+                let surplus = buy_amount
+                    .checked_sub(order.data.buy_amount)
+                    .unwrap_or(0.into());
+                let protocol_fee = surplus / (U256::from_f64_lossy(1. / protocol_fee_factor));
+                let protocol_fee_cap = surplus / (U256::from_f64_lossy(1. / protocol_fee_cap));
+                let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
+                let buy_amount = buy_amount - protocol_fee;
                 (executed_amount, buy_amount)
             }
         };
