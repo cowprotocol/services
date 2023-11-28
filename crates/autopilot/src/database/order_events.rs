@@ -22,7 +22,7 @@ impl super::Postgres {
     }
 
     /// Deletes events before the provided timestamp.
-    pub async fn delete_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
+    pub async fn delete_order_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
         order_events::delete_order_events_before(&self.0, timestamp).await
     }
 }
