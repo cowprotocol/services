@@ -367,7 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_back_off() {
-        let timeout = Duration::from_millis(100);
+        let timeout = Duration::from_millis(50);
         let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
         let original_drop_until = strategy.drop_requests_until;
         let rate_limiter = RateLimiter::from_strategy(strategy, "test_back_off".to_string());
