@@ -95,10 +95,7 @@ impl UniV2BaselineSourceParameters {
             factory,
             init_code_digest: self.init_code_digest.0,
         };
-        let pool_reader = DefaultPoolReader {
-            pair_provider,
-            web3: web3.clone(),
-        };
+        let pool_reader = DefaultPoolReader::new(web3.clone(), pair_provider);
         let pool_reader: Box<dyn PoolReading> = match self.pool_reading {
             PoolReadingStyle::Default => Box::new(pool_reader),
             PoolReadingStyle::Swapr => Box::new(SwaprPoolReader(pool_reader)),
