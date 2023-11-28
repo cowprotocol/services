@@ -31,24 +31,19 @@ impl OrderEventsCleaner {
 
     pub async fn run_forever(self) -> ! {
         let mut interval = time::interval(self.config.cleanup_interval);
-        println!("starting");
         interval.tick().await; // Initial tick to start the interval
 
         loop {
             let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
-            println!("removing before {}", timestamp);
             match self.db.delete_order_events_before(timestamp).await {
                 Ok(affected_rows_count) => {
-                    tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "deleted order events");
-                    println!("removed {}", affected_rows_count);
+                    tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
                     Metrics::get().order_events_cleanup_total.inc()
                 }
                 Err(err) => {
-                    println!("failed to remove {}", err);
                     tracing::warn!(?err, "failed to delete order events before {}", timestamp)
                 }
             }
-            println!("loop done");
             interval.tick().await;
         }
     }
@@ -76,7 +71,7 @@ mod tests {
             order_events::{OrderEvent, OrderEventLabel},
         },
         itertools::Itertools,
-        sqlx::{PgConnection, Row},
+        sqlx::{PgPool, Row},
     };
 
     #[tokio::test]
@@ -89,12 +84,12 @@ mod tests {
         let now = Utc::now();
         let event_a = OrderEvent {
             order_uid: ByteArray([1; 56]),
-            timestamp: now - chrono::Duration::minutes(2),
+            timestamp: now - chrono::Duration::milliseconds(3000),
             label: OrderEventLabel::Created,
         };
         let event_b = OrderEvent {
             order_uid: ByteArray([2; 56]),
-            timestamp: now - chrono::Duration::minutes(1),
+            timestamp: now - chrono::Duration::milliseconds(1000),
             label: OrderEventLabel::Created,
         };
         let event_c = OrderEvent {
@@ -113,69 +108,61 @@ mod tests {
             .await
             .unwrap();
 
-        let ids = order_event_ids_before(&mut ex, Utc::now()).await;
+        ex.commit().await.unwrap();
+
+        let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 3);
         assert!(ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
         let config =
-            OrderEventsCleanerConfig::new(Duration::from_secs(15), Duration::from_secs(90));
-        let cleaner = OrderEventsCleaner::new(config, db);
+            OrderEventsCleanerConfig::new(Duration::from_millis(500), Duration::from_millis(2000));
+        let cleaner = OrderEventsCleaner::new(config, db.clone());
 
-        time::pause();
         tokio::task::spawn(cleaner.run_forever());
 
-        // deleted `order_a` only right after the initialization
-        time::advance(Duration::from_secs(1)).await;
-        let ids = order_event_ids_before(&mut ex, Utc::now()).await;
+        // delete `order_a` after the initialization
+        time::sleep(Duration::from_millis(200)).await;
+        let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
         // nothing deleted after the first interval
-        time::advance(Duration::from_secs(15)).await;
-        let ids = order_event_ids_before(&mut ex, Utc::now()).await;
+        time::sleep(Duration::from_millis(500)).await;
+        let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
-        // deleted `event_b` only
-        time::advance(Duration::from_secs(15)).await;
-        let ids = order_event_ids_before(&mut ex, Utc::now()).await;
+        // delete `event_b` only
+        time::sleep(Duration::from_millis(1000)).await;
+        let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
-        // deleted `event_c` only
-        time::advance(Duration::from_secs(60)).await;
-        let ids = order_event_ids_before(&mut ex, Utc::now()).await;
-        assert_eq!(ids.len(), 1);
-        assert!(!ids.contains(&event_b.order_uid));
-        assert!(ids.contains(&event_c.order_uid));
+        // delete `event_c`
+        time::sleep(Duration::from_millis(2000)).await;
+        let ids = order_event_ids_before(&db.0).await;
+        assert!(ids.is_empty());
     }
 
-    async fn order_event_ids_before(
-        ex: &mut PgConnection,
-        timestamp: DateTime<Utc>,
-    ) -> Vec<ByteArray<56>> {
+    async fn order_event_ids_before(pool: &PgPool) -> Vec<ByteArray<56>> {
         const QUERY: &str = r#"
-                SELECT order_uid, timestamp
+                SELECT order_uid
                 FROM order_events
-                WHERE timestamp < $1
             "#;
         sqlx::query(QUERY)
-            .bind(timestamp)
-            .fetch_all(ex)
+            .fetch_all(pool)
             .await
             .unwrap()
             .iter()
             .map(|row| {
-                let timestamp: DateTime<Utc> = row.try_get(1).unwrap();
                 let order_uid: ByteArray<56> = row.try_get(0).unwrap();
-                println!("timestamp={}, order_uid={:?}", timestamp, order_uid);
                 order_uid
             })
             .collect_vec()
