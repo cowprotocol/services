@@ -659,20 +659,18 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-        let fee_amount = match class {
-            OrderClass::Market => Some(data.fee_amount),
-            OrderClass::Limit(_) => None,
-            OrderClass::Liquidity => None,
-        };
         let quote = match class {
-            OrderClass::Market | OrderClass::Limit(_) => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    fee_amount,
-                )
-                .await?;
+            OrderClass::Market => {
+                let fee = Some(data.fee_amount);
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, fee)
+                        .await?;
+                Some(quote)
+            }
+            OrderClass::Limit(_) => {
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
+                        .await?;
                 Some(quote)
             }
             OrderClass::Liquidity => None,
@@ -899,12 +897,10 @@ pub async fn get_quote_and_check_fee(
     quote_id: Option<i64>,
     fee_amount: Option<U256>,
 ) -> Result<Quote, ValidationError> {
-    let quote = get_quote(quoter, quote_search_parameters, quote_id).await?;
+    let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
 
-    if let Some(fee_amount) = fee_amount {
-        if fee_amount < quote.fee_amount {
-            return Err(ValidationError::InsufficientFee);
-        }
+    if fee_amount.is_some_and(|fee| fee < quote.fee_amount) {
+        return Err(ValidationError::InsufficientFee);
     }
 
     Ok(quote)
@@ -915,7 +911,7 @@ pub async fn get_quote_and_check_fee(
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found and a quote ID was not
 /// specified.
-async fn get_quote(
+async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
