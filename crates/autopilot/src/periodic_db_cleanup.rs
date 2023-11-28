@@ -84,12 +84,12 @@ mod tests {
         let now = Utc::now();
         let event_a = OrderEvent {
             order_uid: ByteArray([1; 56]),
-            timestamp: now - chrono::Duration::milliseconds(3000),
+            timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
         };
         let event_b = OrderEvent {
             order_uid: ByteArray([2; 56]),
-            timestamp: now - chrono::Duration::milliseconds(1000),
+            timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Created,
         };
         let event_c = OrderEvent {
@@ -117,13 +117,13 @@ mod tests {
         assert!(ids.contains(&event_c.order_uid));
 
         let config =
-            OrderEventsCleanerConfig::new(Duration::from_millis(500), Duration::from_millis(2000));
+            OrderEventsCleanerConfig::new(Duration::from_millis(50), Duration::from_millis(200));
         let cleaner = OrderEventsCleaner::new(config, db.clone());
 
         tokio::task::spawn(cleaner.run_forever());
 
         // delete `order_a` after the initialization
-        time::sleep(Duration::from_millis(200)).await;
+        time::sleep(Duration::from_millis(20)).await;
         let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
@@ -131,7 +131,7 @@ mod tests {
         assert!(ids.contains(&event_c.order_uid));
 
         // nothing deleted after the first interval
-        time::sleep(Duration::from_millis(500)).await;
+        time::sleep(Duration::from_millis(50)).await;
         let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
@@ -139,14 +139,14 @@ mod tests {
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_b` only
-        time::sleep(Duration::from_millis(1000)).await;
+        time::sleep(Duration::from_millis(100)).await;
         let ids = order_event_ids_before(&db.0).await;
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_c`
-        time::sleep(Duration::from_millis(2000)).await;
+        time::sleep(Duration::from_millis(200)).await;
         let ids = order_event_ids_before(&db.0).await;
         assert!(ids.is_empty());
     }
