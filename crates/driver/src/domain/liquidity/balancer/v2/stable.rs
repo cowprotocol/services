@@ -53,7 +53,9 @@ pub struct Reserves(Vec<Reserve>);
 impl Reserves {
     /// Creates new Balancer V2 token reserves, returns `Err` if the specified
     /// token reserves are invalid, specifically, if there are duplicate tokens.
-    pub fn new(reserves: Vec<Reserve>) -> Result<Self, InvalidReserves> {
+    pub fn new(mut reserves: Vec<Reserve>) -> Result<Self, InvalidReserves> {
+        // Shrink allocation to safe memory.
+        reserves.shrink_to_fit();
         if !reserves.iter().map(|r| r.asset.token).all_unique() {
             return Err(InvalidReserves);
         }
