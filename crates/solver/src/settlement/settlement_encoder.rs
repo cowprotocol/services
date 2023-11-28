@@ -358,13 +358,16 @@ impl SettlementEncoder {
                     .context("sell_amount computation failed")?;
 
                 // Increase the `sell_amount` by protocol fee
-                let surplus = order
-                    .data
-                    .sell_amount
+
+                // Limit price is `order.data.sell_amount`` for FoK orders, but for partially
+                // fillable it needs to be scaled down.
+                let limit_sell_amount = order.data.sell_amount * executed_amount / order.data.buy_amount;
+                let surplus = limit_sell_amount
                     .checked_sub(sell_amount)
                     .unwrap_or(0.into());
                 let protocol_fee = surplus * U256::from_f64_lossy(protocol_fee_factor * 100.) / 100;
-                let protocol_fee_cap = sell_amount * U256::from_f64_lossy(protocol_fee_cap * 100.) / 100;
+                let protocol_fee_cap =
+                    sell_amount * U256::from_f64_lossy(protocol_fee_cap * 100.) / 100;
                 let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
                 let sell_amount = sell_amount + protocol_fee;
                 (sell_amount, executed_amount)
@@ -383,11 +386,15 @@ impl SettlementEncoder {
                     .context("buy_amount computation failed")?;
 
                 // Reduce the `buy_amount` by protocol fee
-                let surplus = buy_amount
-                    .checked_sub(order.data.buy_amount)
-                    .unwrap_or(0.into());
+
+                // Limit price is `order.data.buy_amount`` for FoK orders, but for partially
+                // fillable it needs to be scaled down.
+                let limit_buy_amount = order.data.buy_amount * executed_amount / order.data.sell_amount;
+                println!("limit_buy_amount: {}", limit_buy_amount);
+                let surplus = buy_amount.checked_sub(limit_buy_amount).unwrap_or(0.into());
                 let protocol_fee = surplus * U256::from_f64_lossy(protocol_fee_factor * 100.) / 100;
-                let protocol_fee_cap = buy_amount * U256::from_f64_lossy(protocol_fee_cap * 100.) / 100;
+                let protocol_fee_cap =
+                    buy_amount * U256::from_f64_lossy(protocol_fee_cap * 100.) / 100;
                 let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
                 let buy_amount = buy_amount - protocol_fee;
                 (executed_amount, buy_amount)
