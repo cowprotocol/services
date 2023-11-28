@@ -364,7 +364,7 @@ impl SettlementEncoder {
                     .checked_sub(sell_amount)
                     .unwrap_or(0.into());
                 let protocol_fee = surplus / (U256::from_f64_lossy(1. / protocol_fee_factor));
-                let protocol_fee_cap = surplus / (U256::from_f64_lossy(1. / protocol_fee_cap));
+                let protocol_fee_cap = sell_amount / (U256::from_f64_lossy(1. / protocol_fee_cap));
                 let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
                 let sell_amount = sell_amount + protocol_fee;
                 (sell_amount, executed_amount)
@@ -387,7 +387,7 @@ impl SettlementEncoder {
                     .checked_sub(order.data.buy_amount)
                     .unwrap_or(0.into());
                 let protocol_fee = surplus / (U256::from_f64_lossy(1. / protocol_fee_factor));
-                let protocol_fee_cap = surplus / (U256::from_f64_lossy(1. / protocol_fee_cap));
+                let protocol_fee_cap = buy_amount / (U256::from_f64_lossy(1. / protocol_fee_cap));
                 let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
                 let buy_amount = buy_amount - protocol_fee;
                 (executed_amount, buy_amount)

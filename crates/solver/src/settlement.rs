@@ -1596,7 +1596,7 @@ pub mod tests {
 
             assert_eq!(
                 some_surplus.total_surplus(&external_prices).to_integer(),
-                BigInt::from(1000_u128),
+                BigInt::from(500_u128),
             );
         }
     }
