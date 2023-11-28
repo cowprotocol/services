@@ -480,6 +480,8 @@ pub fn solve_request(
                 let protocol_fee = match order.metadata.class {
                     OrderClass::Market => Default::default(),
                     OrderClass::Liquidity => Default::default(),
+                    // todo https://github.com/cowprotocol/services/issues/2092
+                    // skip protocol fee for limit orders with in-market price
                     OrderClass::Limit(_) => protocol_fee_params,
                 };
                 solve::Order {
