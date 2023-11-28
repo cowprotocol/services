@@ -361,7 +361,8 @@ impl SettlementEncoder {
 
                 // Limit price is `order.data.sell_amount`` for FoK orders, but for partially
                 // fillable it needs to be scaled down.
-                let limit_sell_amount = order.data.sell_amount * executed_amount / order.data.buy_amount;
+                let limit_sell_amount =
+                    order.data.sell_amount * executed_amount / order.data.buy_amount;
                 let surplus = limit_sell_amount
                     .checked_sub(sell_amount)
                     .unwrap_or(0.into());
@@ -389,7 +390,8 @@ impl SettlementEncoder {
 
                 // Limit price is `order.data.buy_amount`` for FoK orders, but for partially
                 // fillable it needs to be scaled down.
-                let limit_buy_amount = order.data.buy_amount * executed_amount / order.data.sell_amount;
+                let limit_buy_amount =
+                    order.data.buy_amount * executed_amount / order.data.sell_amount;
                 println!("limit_buy_amount: {}", limit_buy_amount);
                 let surplus = buy_amount.checked_sub(limit_buy_amount).unwrap_or(0.into());
                 let protocol_fee = surplus * U256::from_f64_lossy(protocol_fee_factor * 100.) / 100;
