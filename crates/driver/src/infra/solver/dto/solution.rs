@@ -197,7 +197,9 @@ impl Solutions {
                         .try_collect()?,
                     solver.clone(),
                     match solution.score {
-                        Score::Solver(score) => competition::solution::SolverScore::Solver(score),
+                        Score::Solver { score } => {
+                            competition::solution::SolverScore::Solver(score)
+                        }
                         Score::RiskAdjusted(success_probability) => {
                             competition::solution::SolverScore::RiskAdjusted(success_probability)
                         }
@@ -373,9 +375,13 @@ enum SigningScheme {
     Eip1271,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Score {
-    Solver(eth::U256),
+    Solver {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+    },
     RiskAdjusted(f64),
 }
