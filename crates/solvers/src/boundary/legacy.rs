@@ -641,12 +641,6 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::SolverAccountInsufficientBalance(required) => AuctionResult::Rejected(
             SolverRejectionReason::SolverAccountInsufficientBalance(required.0),
         ),
-        Kind::AssetFlow(amounts) => AuctionResult::Rejected(SolverRejectionReason::AssetFlow(
-            amounts
-                .iter()
-                .map(|(token, amount)| (token.0, amount.to_string()))
-                .collect(),
-        )),
         Kind::DuplicatedSolutionId => {
             AuctionResult::Rejected(SolverRejectionReason::DuplicatedSolutionId(
                 notification

@@ -77,7 +77,6 @@ pub fn encoding_failed(
             simulation_failed(solver, auction_id, solution_id, error);
             return;
         }
-        solution::Error::AssetFlow(missmatch) => notification::Kind::AssetFlow(missmatch.clone()),
         solution::Error::Execution(_) => return,
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,

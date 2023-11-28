@@ -305,11 +305,6 @@ pub enum Error {
     Boundary(#[from] boundary::Error),
     #[error("simulation error: {0:?}")]
     Simulation(#[from] simulator::Error),
-    #[error(
-        "invalid asset flow: token amounts entering the settlement do not equal token amounts \
-         exiting the settlement"
-    )]
-    AssetFlow(HashMap<eth::TokenAddress, num::BigInt>),
     #[error(transparent)]
     Execution(#[from] trade::ExecutionError),
     #[error(
