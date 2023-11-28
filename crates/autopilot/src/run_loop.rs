@@ -8,7 +8,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class},
+            solve::{self, Class, ProtocolFee},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -54,6 +54,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
+    pub protocol_fee_params: ProtocolFee,
 }
 
 impl RunLoop {
@@ -302,6 +303,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
+            self.protocol_fee_params,
         );
         let request = &request;
 
@@ -449,6 +451,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
+    protocol_fee_params: ProtocolFee,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -474,6 +477,11 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
+                let protocol_fee = match order.metadata.class {
+                    OrderClass::Market => Default::default(),
+                    OrderClass::Liquidity => Default::default(),
+                    OrderClass::Limit(_) => protocol_fee_params,
+                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -499,6 +507,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
+                    protocol_fee,
                 }
             })
             .collect(),

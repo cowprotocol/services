@@ -115,6 +115,7 @@ pub mod solve {
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
+        pub protocol_fee: ProtocolFee,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -148,6 +149,16 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+    }
+
+    #[serde_as]
+    #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ProtocolFee {
+        /// Percentage of the order's surplus should be taken as a protocol fee.
+        pub factor: f64,
+        /// Cap protocol fee with a percentage of the order's volume.
+        pub volume_cap_factor: f64,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]

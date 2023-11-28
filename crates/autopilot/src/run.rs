@@ -11,6 +11,7 @@ use {
             Postgres,
         },
         driver_api::Driver,
+        driver_model::solve::ProtocolFee,
         event_updater::{EventUpdater, GPv2SettlementContract},
         protocol,
         run_loop::RunLoop,
@@ -619,6 +620,10 @@ pub async fn run(args: Arguments) {
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
+            protocol_fee_params: ProtocolFee {
+                factor: args.protocol_fee_factor,
+                volume_cap_factor: args.protofol_fee_volume_cap_factor,
+            },
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -680,6 +685,10 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        ProtocolFee {
+            factor: args.protocol_fee_factor,
+            volume_cap_factor: args.protofol_fee_volume_cap_factor,
+        },
     );
     shadow.run_forever().await;
 
