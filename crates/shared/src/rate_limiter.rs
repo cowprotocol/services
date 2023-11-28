@@ -351,7 +351,8 @@ mod tests {
 
         let result = rate_limiter
             .execute_with_back_off(async { 1 }, |_| false)
-            .await
+            .now_or_never()
+            .unwrap()
             .unwrap();
 
         assert_eq!(result, 1);
@@ -366,11 +367,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_with_back_off() {
-        let timeout = Duration::from_secs(3);
+        let timeout = Duration::from_millis(100);
         let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
         let original_drop_until = strategy.drop_requests_until;
         let rate_limiter = RateLimiter::from_strategy(strategy, "test_back_off".to_string());
 
+        // start the back off
         let result = rate_limiter
             .execute_with_back_off(async { 1 }, |_| true)
             .await
@@ -384,6 +386,7 @@ mod tests {
             drop_until
         };
 
+        // back off is not over, expecting a RateLimiterError
         let result = rate_limiter.execute(async { 1 }, |_| false).await;
         assert_eq!(result, Err(RateLimiterError::RateLimited));
         {
@@ -391,6 +394,7 @@ mod tests {
             assert_eq!(current_strategy.drop_requests_until, drop_until);
         }
 
+        // back off is over
         let result = rate_limiter
             .execute_with_back_off(async { 1 }, |_| false)
             .await

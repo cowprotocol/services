@@ -46,11 +46,8 @@ pub struct Dex {
 }
 
 impl Dex {
-    pub fn new(
-        dex: infra::dex::Dex,
-        config: infra::config::dex::Config,
-        rate_limiter: RateLimiter,
-    ) -> Self {
+    pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
+        let rate_limiter = RateLimiter::new(config.rate_limiting_strategy, "dex_api".to_string());
         Self {
             dex,
             simulator: infra::dex::Simulator::new(
@@ -108,41 +105,42 @@ impl Dex {
         tokens: &auction::Tokens,
         gas_price: auction::GasPrice,
     ) -> Option<dex::Swap> {
+        let dex_err_handler = |err: infra::dex::Error| {
+            match &err {
+                err @ infra::dex::Error::NotFound => {
+                    if order.partially_fillable {
+                        // Only adjust the amount to try next if we are sure the API
+                        // worked
+                        // correctly yet still wasn't able to provide a
+                        // swap.
+                        self.fills.reduce_next_try(order.uid);
+                    } else {
+                        tracing::debug!(?err, "skipping order");
+                    }
+                }
+                err @ infra::dex::Error::OrderNotSupported => {
+                    tracing::debug!(?err, "skipping order")
+                }
+                err @ infra::dex::Error::RateLimited => {
+                    tracing::debug!(?err, "encountered rate limit")
+                }
+                infra::dex::Error::Other(err) => {
+                    tracing::warn!(?err, "failed to get swap")
+                }
+            }
+            err
+        };
+        let swap = async {
+            let slippage = self.slippage.relative(&dex_order.amount(), tokens);
+            self.dex
+                .swap(dex_order, &slippage, tokens, gas_price)
+                .await
+                .map_err(dex_err_handler)
+        };
         self.rate_limiter
-            .execute_with_back_off(
-                async {
-                    let slippage = self.slippage.relative(&dex_order.amount(), tokens);
-                    self.dex
-                        .swap(dex_order, &slippage, tokens, gas_price)
-                        .await
-                        .map_err(|err| {
-                            match &err {
-                                err @ infra::dex::Error::NotFound => {
-                                    if order.partially_fillable {
-                                        // Only adjust the amount to try next if we are sure the API
-                                        // worked
-                                        // correctly yet still wasn't able to provide a
-                                        // swap.
-                                        self.fills.reduce_next_try(order.uid);
-                                    } else {
-                                        tracing::debug!(?err, "skipping order");
-                                    }
-                                }
-                                err @ infra::dex::Error::OrderNotSupported => {
-                                    tracing::debug!(?err, "skipping order")
-                                }
-                                err @ infra::dex::Error::RateLimited => {
-                                    tracing::debug!(?err, "encountered rate limit")
-                                }
-                                infra::dex::Error::Other(err) => {
-                                    tracing::warn!(?err, "failed to get swap")
-                                }
-                            }
-                            err
-                        })
-                },
-                |result| matches!(result, Err(infra::dex::Error::RateLimited)),
-            )
+            .execute_with_back_off(swap, |result| {
+                matches!(result, Err(infra::dex::Error::RateLimited))
+            })
             .await
             .map_err(|err| match err {
                 RateLimiterError::RateLimited => infra::dex::Error::RateLimited,

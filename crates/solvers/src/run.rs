@@ -2,7 +2,6 @@
 use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
-        boundary::rate_limiter::RateLimiter,
         domain::solver::{self, Solver},
         infra::{cli, config, dex},
     },
@@ -49,7 +48,6 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
                     dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
                 ),
                 config.base.clone(),
-                RateLimiter::new(config.base.rate_limiting_strategy, "dex_api".to_string()),
             ))
         }
         cli::Command::Balancer { config } => {
@@ -57,7 +55,6 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
             Solver::Dex(solver::Dex::new(
                 dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
                 config.base.clone(),
-                RateLimiter::new(config.base.rate_limiting_strategy, "dex_api".to_string()),
             ))
         }
         cli::Command::OneInch { config } => {
@@ -65,7 +62,6 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
             Solver::Dex(solver::Dex::new(
                 dex::Dex::OneInch(dex::oneinch::OneInch::new(config.oneinch).await.unwrap()),
                 config.base.clone(),
-                RateLimiter::new(config.base.rate_limiting_strategy, "dex_api".to_string()),
             ))
         }
         cli::Command::ParaSwap { config } => {
@@ -73,7 +69,6 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
             Solver::Dex(solver::Dex::new(
                 dex::Dex::ParaSwap(dex::paraswap::ParaSwap::new(config.paraswap)),
                 config.base.clone(),
-                RateLimiter::new(config.base.rate_limiting_strategy, "dex_api".to_string()),
             ))
         }
     };
