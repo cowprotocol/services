@@ -34,7 +34,7 @@ use {
     prometheus::IntCounterVec,
     std::{
         cmp,
-        collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
+        collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
         sync::{Arc, Mutex},
@@ -185,26 +185,28 @@ where
             .lock()
             .unwrap()
             .keys_of_recently_used_entries()
-            .collect::<HashSet<_>>();
+            .collect::<BTreeSet<_>>();
         tracing::debug!("automatically updating {} entries", keys.len());
-        let fetched: Vec<_> = self
+        let fetched = self
             .fetch_inner_many(keys, Block::Number(new_block))
-            .collect()
-            .await;
+            .chunks(REQUEST_BATCH_SIZE);
+        futures::pin_mut!(fetched);
 
-        let keys: HashSet<_> = fetched.iter().map(K::for_value).collect();
-        let mut mutexed = self.mutexed.lock().unwrap();
-        mutexed.insert(new_block, keys, fetched);
-        let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
-        mutexed.remove_cached_blocks_older_than(oldest_to_keep);
-        mutexed.last_update_block = new_block;
+        while let Some(chunk) = fetched.next().await {
+            let keys: HashSet<_> = chunk.iter().map(K::for_value).collect();
+            let mut mutexed = self.mutexed.lock().unwrap();
+            mutexed.insert(new_block, keys, chunk);
+            let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
+            mutexed.remove_cached_blocks_older_than(oldest_to_keep);
+            mutexed.last_update_block = new_block;
+        }
 
         Ok(())
     }
 
     fn fetch_inner_many(
         &self,
-        keys: HashSet<K>,
+        keys: BTreeSet<K>,
         block: Block,
     ) -> impl futures::Stream<Item = V> + '_ {
         futures::stream::iter(
@@ -250,7 +252,9 @@ where
 
         let mut cache_hit_count = 0usize;
         let mut cache_hits = Vec::new();
-        let mut cache_misses = HashSet::new();
+        // Use BTreeSet to have a stable sorting order which improves the cache
+        // utilization.
+        let mut cache_misses = BTreeSet::new();
         let last_update_block;
         {
             let mut mutexed = self.mutexed.lock().unwrap();
