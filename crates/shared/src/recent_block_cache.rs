@@ -292,8 +292,14 @@ where
 
             let mut mutexed = self.mutexed.lock().unwrap();
             mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
-            for key in found_keys {
-                mutexed.recently_used.cache_set(key, ());
+            if block.is_some() {
+                // Only if a block number was specified the caller actually cared about the most
+                // accurate data for these keys. Only in that case we want to be nice and
+                // remember the key for future background updates of the cached
+                // liquidity.
+                for key in found_keys {
+                    mutexed.recently_used.cache_set(key, ());
+                }
             }
         }
 
