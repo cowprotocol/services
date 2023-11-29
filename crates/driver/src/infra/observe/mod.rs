@@ -24,6 +24,7 @@ use {
         infra::solver,
         util::http,
     },
+    ethrpc::current_block::BlockInfo,
     std::collections::HashMap,
     url::Url,
 };
@@ -87,6 +88,24 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
         .inc();
 }
 
+// Observe that postprocessing (encoding & merging) of solutions is about to
+// start.
+pub fn postprocessing(solutions: &[Solution], deadline: std::time::Duration) {
+    tracing::debug!(
+        solutions = ?solutions.len(),
+        remaining = ?deadline,
+        "postprocessing solutions"
+    );
+}
+
+// Observe that postprocessing didn't complete before the timeout.
+pub fn postprocessing_timed_out(completed: &[Settlement]) {
+    tracing::debug!(
+        completed = ?completed.len(),
+        "postprocessing solutions timed out"
+    );
+}
+
 /// Observe that a solution is about to be encoded into a settlement.
 pub fn encoding(id: solution::Id) {
     tracing::trace!(?id, "encoding settlement");
@@ -145,6 +164,12 @@ pub fn score(settlement: &Settlement, score: &competition::Score) {
         score = ?score,
         "scored settlement"
     );
+}
+
+// Observe that the winning settlement started failing upon arrival of a new
+// block
+pub fn winner_voided(block: BlockInfo, err: &simulator::Error) {
+    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
 }
 
 pub fn revealing() {

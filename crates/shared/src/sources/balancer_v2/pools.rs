@@ -15,7 +15,6 @@ pub mod weighted;
 
 use {
     super::graph_api::PoolData,
-    crate::ethrpc::Web3CallBatch,
     anyhow::Result,
     ethcontract::{BlockId, H256},
     futures::future::BoxFuture,
@@ -116,7 +115,6 @@ pub trait FactoryIndexing: Send + Sync + 'static {
         // where we can't use other lifetimes here.
         // <https://github.com/asomers/mockall/issues/299>
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut Web3CallBatch,
         block: BlockId,
     ) -> BoxFuture<'static, Result<Option<Self::PoolState>>>;
 }

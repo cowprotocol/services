@@ -24,7 +24,6 @@ use {
     },
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        iter::FromIterator,
         sync::{Arc, Mutex, Weak},
         time::Duration,
     },
@@ -86,7 +85,6 @@ type Balances = HashMap<Query, U256>;
 struct Inner {
     auction: Option<Auction>,
     orders: SolvableOrders,
-    balances: Balances,
 }
 
 #[derive(Clone, Debug)]
@@ -128,7 +126,6 @@ impl SolvableOrdersCache {
                     latest_settlement_block: 0,
                     block: 0,
                 },
-                balances: Default::default(),
             }),
             native_price_estimator,
             signature_validator,
@@ -176,21 +173,13 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("invalid_signature", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
-        // If we update due to an explicit notification we can reuse existing balances
-        // as they cannot have changed.
-        let old_balances = {
-            let inner = self.cache.lock().unwrap();
-            if inner.orders.block == block {
-                inner.balances.clone()
-            } else {
-                HashMap::new()
-            }
-        };
-        let (mut new_balances, missing_queries) = new_balances(&old_balances, &orders);
+        let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
         let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
-        for (query, balance) in missing_queries.into_iter().zip(fetched_balances) {
-            let balance = match balance {
-                Ok(balance) => balance,
+        let balances = missing_queries
+            .into_iter()
+            .zip(fetched_balances)
+            .filter_map(|(query, balance)| match balance {
+                Ok(balance) => Some((query, balance)),
                 Err(err) => {
                     tracing::warn!(
                         owner = ?query.owner,
@@ -199,17 +188,16 @@ impl SolvableOrdersCache {
                         error = ?err,
                         "failed to get balance"
                     );
-                    continue;
+                    None
                 }
-            };
-            new_balances.insert(query, balance);
-        }
+            })
+            .collect::<HashMap<_, _>>();
 
-        let orders = orders_with_balance(orders, &new_balances, self.ethflow_contract_address);
+        let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("insufficient_balance", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
 
-        let orders = filter_dust_orders(orders, &new_balances, self.ethflow_contract_address);
+        let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
@@ -257,7 +245,6 @@ impl SolvableOrdersCache {
                 latest_settlement_block: db_solvable_orders.latest_settlement_block,
                 block,
             },
-            balances: new_balances,
         };
 
         tracing::debug!(%block, ?id, "updated current auction cache");
@@ -358,25 +345,6 @@ async fn filter_invalid_signature_orders(
             true
         })
         .collect()
-}
-
-/// Returns existing balances and Vec of queries that need to be performed.
-fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U256>, Vec<Query>) {
-    let mut new_balances = HashMap::new();
-    let mut missing_queries = HashSet::new();
-    for order in orders {
-        let query = Query::from_order(order);
-        match old_balances.get(&query) {
-            Some(balance) => {
-                new_balances.insert(query, *balance);
-            }
-            None => {
-                missing_queries.insert(query);
-            }
-        }
-    }
-    let missing_queries = Vec::from_iter(missing_queries);
-    (new_balances, missing_queries)
 }
 
 /// Removes orders that can't possibly be settled because there isn't enough

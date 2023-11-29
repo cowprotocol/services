@@ -121,13 +121,7 @@ pub async fn collector(
     blocks: &CurrentBlockStream,
     config: &infra::liquidity::config::UniswapV2,
 ) -> Result<Box<dyn LiquidityCollecting>> {
-    collector_with_reader(eth, blocks, config, |web3, pair_provider| {
-        DefaultPoolReader {
-            web3,
-            pair_provider,
-        }
-    })
-    .await
+    collector_with_reader(eth, blocks, config, DefaultPoolReader::new).await
 }
 
 pub(in crate::boundary::liquidity) async fn collector_with_reader<R, F>(
@@ -150,10 +144,11 @@ where
             init_code_digest: config.pool_code.into(),
         };
 
-        let pool_fetcher = PoolFetcher {
-            pool_reader: reader(web3.clone(), pair_provider),
-            web3: web3.clone(),
-        };
+        let pool_fetcher = PoolFetcher::new(
+            reader(web3.clone(), pair_provider),
+            web3.clone(),
+            config.missing_pool_cache_time,
+        );
 
         let pool_cache = Arc::new(PoolCache::new(
             boundary::liquidity::cache_config(),

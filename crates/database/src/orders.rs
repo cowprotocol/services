@@ -971,7 +971,7 @@ mod tests {
         let post_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Post)
             .await
             .unwrap();
-        assert_eq!(*post_interactions.get(0).unwrap(), post_interaction_0);
+        assert_eq!(*post_interactions.first().unwrap(), post_interaction_0);
         assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
 
         let post_interaction_overwrite_0 = Interaction {
@@ -992,7 +992,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            *post_interactions.get(0).unwrap(),
+            *post_interactions.first().unwrap(),
             post_interaction_overwrite_0
         );
         assert_eq!(*post_interactions.get(1).unwrap(), post_interaction_1);
@@ -1061,7 +1061,7 @@ mod tests {
         let pre_interactions = read_order_interactions(&mut db, &order.uid, ExecutionTime::Pre)
             .await
             .unwrap();
-        assert_eq!(*pre_interactions.get(0).unwrap(), pre_interaction_0);
+        assert_eq!(*pre_interactions.first().unwrap(), pre_interaction_0);
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);
 
         let pre_interaction_overwrite_0 = Interaction {
@@ -1082,7 +1082,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            *pre_interactions.get(0).unwrap(),
+            *pre_interactions.first().unwrap(),
             pre_interaction_overwrite_0
         );
         assert_eq!(*pre_interactions.get(1).unwrap(), pre_interaction_1);

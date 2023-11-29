@@ -64,6 +64,16 @@ pub enum Liquidity {
     Skip,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Timeouts {
+    /// Maximum time allocated for http request/reponse to propagate through
+    /// network.
+    pub http_delay: chrono::Duration,
+    /// Maximum time allocated for solver engines to return the solutions back
+    /// to the driver, in percentage of total driver deadline.
+    pub solving_share_of_deadline: util::Percent,
+}
+
 /// Solvers are controlled by the driver. Their job is to search for solutions
 /// to auctions. They do this in various ways, often by analyzing different AMMs
 /// on the Ethereum blockchain.
@@ -85,9 +95,8 @@ pub struct Config {
     pub liquidity: Liquidity,
     /// The private key of this solver, used for settlement submission.
     pub account: ethcontract::Account,
-    /// Maximum time allocated to wait for a solver response to propagate to the
-    /// driver.
-    pub http_time_buffer: chrono::Duration,
+    /// How much time to spend for each step of the solving and competition.
+    pub timeouts: Timeouts,
 }
 
 impl Solver {
@@ -133,6 +142,11 @@ impl Solver {
         self.config.account.clone()
     }
 
+    /// Timeout configuration for this solver.
+    pub fn timeouts(&self) -> Timeouts {
+        self.config.timeouts
+    }
+
     /// Make a POST request instructing the solver to solve an auction.
     /// Allocates at most `timeout` time for the solving.
     pub async fn solve(
@@ -148,7 +162,7 @@ impl Solver {
             liquidity,
             // Reduce the timeout by a small buffer to account for network latency. Otherwise the
             // HTTP timeout might happen before the solver times out its search algorithm.
-            timeout.reduce(self.config.http_time_buffer),
+            timeout.reduce(self.config.timeouts.http_delay),
             weth,
         ))
         .unwrap();

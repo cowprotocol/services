@@ -48,7 +48,7 @@ struct ApiMetrics {
 impl ApiMetrics {
     // Status codes we care about in our application. Populated with:
     // `rg -oIN 'StatusCode::[A-Z_]+' | sort | uniq`.
-    const INITIAL_STATUSES: &[StatusCode] = &[
+    const INITIAL_STATUSES: &'static [StatusCode] = &[
         StatusCode::OK,
         StatusCode::CREATED,
         StatusCode::BAD_REQUEST,
