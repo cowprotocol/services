@@ -1168,7 +1168,7 @@ mod tests {
                 sell_token,
                 buy_token,
                 sell_amount: 52.into(), // 2 solver fee
-                buy_amount: 57.into(), // 3 protocol fee
+                buy_amount: 57.into(),  // 3 protocol fee
                 fee_amount: 0.into(),
             }
         );
