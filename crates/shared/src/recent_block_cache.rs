@@ -388,6 +388,18 @@ where
     fn remove_cached_blocks_older_than(&mut self, oldest_to_keep: u64) {
         tracing::debug!("dropping blocks older than {} from cache", oldest_to_keep);
         self.entries = self.entries.split_off(&(oldest_to_keep, K::first_ord()));
+
+        // Iterate from newest block to oldest block and only keep the most recent
+        // liquidity around to reduce memory consumption.
+        let mut cached_keys = HashSet::new();
+        for ((_block, key), values) in self.entries.iter_mut().rev() {
+            if !cached_keys.insert(key) {
+                *values = vec![];
+            }
+        }
+        // Afterwards drop all entries that are now empty.
+        self.entries.retain(|_, values| !values.is_empty());
+
         self.cached_most_recently_at_block
             .retain(|_, block| *block >= oldest_to_keep);
         tracing::debug!(
