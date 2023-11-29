@@ -1147,7 +1147,7 @@ mod tests {
             TradeExecution {
                 sell_token,
                 buy_token,
-                sell_amount: 42.into(),
+                sell_amount: 44.into(), // 2 solver fee and 2 protocol fee
                 buy_amount: 50.into(),
                 fee_amount: 0.into(),
             }
@@ -1157,7 +1157,7 @@ mod tests {
             TradeExecution {
                 sell_token,
                 buy_token,
-                sell_amount: 92.into(),
+                sell_amount: 96.into(), // 2 solver fee and 4 protocol fee
                 buy_amount: 100.into(),
                 fee_amount: 0.into(),
             }
@@ -1167,8 +1167,8 @@ mod tests {
             TradeExecution {
                 sell_token,
                 buy_token,
-                sell_amount: 52.into(),
-                buy_amount: 60.into(),
+                sell_amount: 52.into(), // 2 solver fee
+                buy_amount: 57.into(), // 3 protocol fee
                 fee_amount: 0.into(),
             }
         );
@@ -1181,7 +1181,7 @@ mod tests {
                 sell_token,
                 buy_token,
                 sell_amount: 100.into(),
-                buy_amount: 109.into(),
+                buy_amount: 105.into(), // 2 solver fee and 4 protocol fee
                 fee_amount: 0.into(),
             }
         );
@@ -1191,7 +1191,7 @@ mod tests {
                 sell_token,
                 buy_token,
                 sell_amount: 100.into(),
-                buy_amount: 108.into(),
+                buy_amount: 104.into(), // 2 solver fee and 4 protocol fee
                 fee_amount: 0.into(),
             }
         );
