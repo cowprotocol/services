@@ -1,5 +1,5 @@
 use {
-    super::competition::{auction, order::ProtocolFee},
+    super::competition::auction,
     crate::{
         boundary,
         domain::{
@@ -135,10 +135,7 @@ impl Order {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                protocol_fee: ProtocolFee {
-                    factor: 0.,
-                    volume_cap_factor: 0.,
-                },
+                fee_policies: Default::default(),
             }],
             [
                 auction::Token {

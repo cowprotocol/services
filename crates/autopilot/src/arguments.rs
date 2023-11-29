@@ -204,23 +204,8 @@ pub struct Arguments {
     )]
     pub solve_deadline: Duration,
 
-    /// How much of the order's surplus should be taken as a protocol fee.
-    #[clap(
-        long,
-        env,
-        default_value = "0",
-        value_parser = shared::arguments::parse_percentage_factor
-    )]
-    pub protocol_fee_factor: f64,
-
-    /// Cap protocol fee with a percentage of the order's volume.
-    #[clap(
-        long,
-        env,
-        default_value = "0",
-        value_parser = shared::arguments::parse_percentage_factor
-    )]
-    pub protofol_fee_volume_cap_factor: f64,
+    #[clap(flatten)]
+    pub quote_deviation_policy: QuoteDeviationPolicy,
 }
 
 impl std::fmt::Display for Arguments {
@@ -288,11 +273,39 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
+        write!(f, "{}", self.quote_deviation_policy)?;
+        Ok(())
+    }
+}
+
+#[derive(clap::Parser, Clone)]
+pub struct QuoteDeviationPolicy {
+    /// How much of the order's surplus should be taken as a protocol fee.
+    #[clap(
+        long,
+        env,
+        default_value = "0",
+        value_parser = shared::arguments::parse_percentage_factor
+    )]
+    pub protocol_fee_factor: f64,
+
+    /// Cap protocol fee with a percentage of the order's volume.
+    #[clap(
+        long,
+        env,
+        default_value = "0",
+        value_parser = shared::arguments::parse_percentage_factor
+    )]
+    pub protocol_fee_volume_cap_factor: f64,
+}
+
+impl std::fmt::Display for QuoteDeviationPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "protocol_fee_factor: {}", self.protocol_fee_factor)?;
         writeln!(
             f,
-            "protofol_fee_volume_cap_factor: {}",
-            self.protofol_fee_volume_cap_factor
+            "protocol_fee_volume_cap_factor: {}",
+            self.protocol_fee_volume_cap_factor
         )?;
         Ok(())
     }

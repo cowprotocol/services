@@ -115,7 +115,10 @@ pub mod solve {
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
-        pub protocol_fee: ProtocolFee,
+        /// The types of fees that should be collected by the protocol.
+        /// The driver is expected to apply the fees in the order they are
+        /// listed.
+        pub fee_policies: Vec<FeePolicy>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -151,14 +154,28 @@ pub mod solve {
         pub submission_address: H160,
     }
 
-    #[serde_as]
-    #[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
-    pub struct ProtocolFee {
-        /// Percentage of the order's surplus should be taken as a protocol fee.
-        pub factor: f64,
-        /// Cap protocol fee with a percentage of the order's volume.
-        pub volume_cap_factor: f64,
+    pub enum FeePolicy {
+        /// Applies to limit orders only.
+        /// This fee should be taken if the solver provided good enough solution
+        /// that even after the surplus fee is taken, there is still more
+        /// surplus left above whatever that the user expects [order limit price
+        /// or best quote, whichever is better for the user].
+        QuoteDeviation {
+            /// Percentage of the order's `available surplus` should be taken as
+            /// a protocol fee.
+            ///
+            /// `Available surplus` is the difference between the executed_price
+            /// (adjusted by surplus_fee) and the closer of the two: order
+            /// limit_price or best_quote. For out-of-market limit orders,
+            /// order limit price is closer to the executed price. For
+            /// in-market limit orders, best quote is closer to the executed
+            /// price.
+            factor: f64,
+            /// Cap protocol fee with a percentage of the order's volume.
+            volume_cap_factor: f64,
+        },
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]

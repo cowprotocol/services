@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments::QuoteDeviationPolicy,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -8,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, ProtocolFee},
+            solve::{self, Class, FeePolicy},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -54,7 +55,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub protocol_fee_params: ProtocolFee,
+    pub quote_deviation_policy: QuoteDeviationPolicy,
 }
 
 impl RunLoop {
@@ -303,7 +304,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.protocol_fee_params,
+            self.quote_deviation_policy.clone(),
         );
         let request = &request;
 
@@ -451,7 +452,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    protocol_fee_params: ProtocolFee,
+    quote_deviation_policy: QuoteDeviationPolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -477,12 +478,15 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-                let protocol_fee = match order.metadata.class {
-                    OrderClass::Market => Default::default(),
-                    OrderClass::Liquidity => Default::default(),
+                let fee_policies = match order.metadata.class {
+                    OrderClass::Market => vec![],
+                    OrderClass::Liquidity => vec![],
                     // todo https://github.com/cowprotocol/services/issues/2092
                     // skip protocol fee for limit orders with in-market price
-                    OrderClass::Limit(_) => protocol_fee_params,
+                    OrderClass::Limit(_) => vec![FeePolicy::QuoteDeviation {
+                        factor: quote_deviation_policy.protocol_fee_factor,
+                        volume_cap_factor: quote_deviation_policy.protocol_fee_volume_cap_factor,
+                    }],
                 };
                 solve::Order {
                     uid: order.metadata.uid,
@@ -509,7 +513,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    protocol_fee,
+                    fee_policies,
                 }
             })
             .collect(),

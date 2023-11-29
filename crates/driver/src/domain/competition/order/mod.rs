@@ -1,4 +1,3 @@
-pub use signature::Signature;
 use {
     super::auction,
     crate::{
@@ -9,7 +8,9 @@ use {
     bigdecimal::Zero,
     num::CheckedDiv,
 };
+pub use {fees::FeePolicy, signature::Signature};
 
+pub mod fees;
 pub mod signature;
 
 /// An order in the auction.
@@ -39,7 +40,9 @@ pub struct Order {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
-    pub protocol_fee: ProtocolFee,
+    /// The types of fees that should be collected by the protocol.
+    /// The driver is expected to apply the fees in the order they are listed.
+    pub fee_policies: Vec<FeePolicy>,
 }
 
 /// An amount denominated in the sell token of an [`Order`].
@@ -376,14 +379,6 @@ impl From<Trader> for eth::Address {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ProtocolFee {
-    /// Percentage of the order's surplus should be taken as a protocol fee.
-    pub factor: f64,
-    /// Cap protocol fee with a percentage of the order's volume.
-    pub volume_cap_factor: f64,
-}
-
 /// A just-in-time order. JIT orders are added at solving time by the solver to
 /// generate a more optimal solution for the auction. Very similar to a regular
 /// [`Order`].
@@ -462,10 +457,7 @@ mod tests {
                 data: Default::default(),
                 signer: Default::default(),
             },
-            protocol_fee: ProtocolFee {
-                factor: 0.,
-                volume_cap_factor: 0.,
-            },
+            fee_policies: Default::default(),
         };
 
         assert_eq!(
