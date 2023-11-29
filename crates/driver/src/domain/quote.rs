@@ -1,5 +1,5 @@
 use {
-    super::competition::auction,
+    super::competition::{auction, order::ProtocolFee},
     crate::{
         boundary,
         domain::{
@@ -134,6 +134,10 @@ impl Order {
                     scheme: competition::order::signature::Scheme::Eip1271,
                     data: Default::default(),
                     signer: Default::default(),
+                },
+                protocol_fee: ProtocolFee {
+                    factor: 0.,
+                    volume_cap_factor: 0.,
                 },
             }],
             [

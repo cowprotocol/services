@@ -115,6 +115,10 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
+                    protocol_fee: competition::order::ProtocolFee {
+                        factor: order.protocol_fee.factor,
+                        volume_cap_factor: order.protocol_fee.volume_cap_factor,
+                    },
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -234,6 +238,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    protocol_fee: ProtocolFee,
 }
 
 #[derive(Debug, Deserialize)]
@@ -286,4 +291,11 @@ enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProtocolFee {
+    pub factor: f64,
+    pub volume_cap_factor: f64,
 }
