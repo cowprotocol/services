@@ -3,7 +3,7 @@ pub enum FeePolicy {
     /// Applies to limit orders only.
     /// This fee should be taken if the solver provided good enough solution
     /// that even after the surplus fee is taken, there is still more
-    /// surplus left above whatever that the user expects [order limit price
+    /// surplus left above whatever the user expects [order limit price
     /// vs best quote].
     QuoteDeviation {
         /// Percentage of the order's `available surplus` should be taken as a
