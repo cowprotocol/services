@@ -392,7 +392,6 @@ impl SettlementEncoder {
                 // fillable it needs to be scaled down.
                 let limit_buy_amount =
                     order.data.buy_amount * executed_amount / order.data.sell_amount;
-                println!("limit_buy_amount: {}", limit_buy_amount);
                 let surplus = buy_amount.checked_sub(limit_buy_amount).unwrap_or(0.into());
                 let protocol_fee = surplus * U256::from_f64_lossy(protocol_fee_factor * 100.) / 100;
                 let protocol_fee_cap =
