@@ -31,9 +31,9 @@ impl OrderEventsCleaner {
 
     pub async fn run_forever(self) -> ! {
         let mut interval = time::interval(self.config.cleanup_interval);
-        interval.tick().await; // Initial tick to start the interval
-
         loop {
+            interval.tick().await;
+
             let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
             match self.db.delete_order_events_before(timestamp).await {
                 Ok(affected_rows_count) => {
@@ -44,7 +44,6 @@ impl OrderEventsCleaner {
                     tracing::warn!(?err, "failed to delete order events before {}", timestamp)
                 }
             }
-            interval.tick().await;
         }
     }
 }
