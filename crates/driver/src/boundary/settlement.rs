@@ -5,9 +5,12 @@ use {
             competition::{
                 self,
                 auction,
-                order,
+                order::{self, Uid},
                 score,
-                solution::settlement::{self, Internalization},
+                solution::{
+                    self,
+                    settlement::{self, Internalization},
+                },
             },
             eth,
             liquidity,
@@ -50,7 +53,7 @@ use {
         },
         settlement_simulation::settle_method_builder,
     },
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 #[derive(Debug, Clone)]
@@ -244,6 +247,115 @@ impl Settlement {
             inner,
             solver: self.solver,
         })
+    }
+
+    pub fn with_protocol_fees(&mut self, solution: &competition::Solution) {
+        struct PricedTrade {
+            sell_price: eth::U256,
+            buy_price: eth::U256,
+        }
+
+        let boundary_trades = self
+            .inner
+            .encoder
+            .user_trades()
+            .map(|trade| {
+                (
+                    trade.data.order.metadata.uid.0.into(),
+                    PricedTrade {
+                        sell_price: trade.sell_token_price,
+                        buy_price: trade.buy_token_price,
+                    },
+                )
+            })
+            .collect::<HashMap<Uid, PricedTrade>>();
+
+        let new_boundary_trades = solution
+            .trades()
+            .iter()
+            .filter_map(|trade| {
+                match trade {
+                    solution::Trade::Jit(_) => return None,
+                    solution::Trade::Fulfillment(fulfillment) => {
+                        let protocol_fee_factor = 0.5;
+                        let protocol_fee_cap = 0.05;
+
+                        let order = fulfillment.order();
+
+                        // Only apply fees to limit orders.
+                        if !matches!(order.kind, order::Kind::Limit) {
+                            return None;
+                        }
+
+                        let PricedTrade {
+                            sell_price,
+                            buy_price,
+                        } = boundary_trades.get(&order.uid).unwrap().clone();
+                        let sell_amount = buy_price.clone();
+                        let buy_amount = sell_price.clone();
+
+                        let executed_amount = match order.side {
+                            order::Side::Sell => fulfillment
+                                .executed()
+                                .0
+                                .checked_add(fulfillment.solver_fee().0)
+                                .unwrap(),
+                            order::Side::Buy => fulfillment.executed().0,
+                        };
+
+                        let (buy_price, sell_price) = match order.side {
+                            order::Side::Sell => {
+                                // Reduce the `buy_amount` by protocol fee
+
+                                // Limit price is `order.data.buy_amount`` for FoK orders, but for
+                                // partially fillable it needs to be scaled
+                                // down.
+                                let limit_buy_amount =
+                                    order.buy.amount.0 * executed_amount / order.sell.amount.0;
+                                let surplus =
+                                    buy_amount.checked_sub(limit_buy_amount).unwrap_or(0.into());
+                                let protocol_fee = surplus
+                                    * eth::U256::from_f64_lossy(protocol_fee_factor * 100.)
+                                    / 100;
+                                let protocol_fee_cap = buy_amount
+                                    * eth::U256::from_f64_lossy(protocol_fee_cap * 100.)
+                                    / 100;
+                                let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
+                                let buy_amount = buy_amount - protocol_fee;
+                                (executed_amount, buy_amount)
+                            }
+                            order::Side::Buy => {
+                                // Limit price is `order.data.sell_amount`` for FoK orders, but for
+                                // partially fillable it needs to be scaled
+                                // down.
+                                let limit_sell_amount =
+                                    order.sell.amount.0 * executed_amount / order.buy.amount.0;
+                                let surplus = limit_sell_amount
+                                    .checked_sub(sell_amount)
+                                    .unwrap_or(0.into());
+                                let protocol_fee = surplus
+                                    * eth::U256::from_f64_lossy(protocol_fee_factor * 100.)
+                                    / 100;
+                                let protocol_fee_cap = sell_amount
+                                    * eth::U256::from_f64_lossy(protocol_fee_cap * 100.)
+                                    / 100;
+                                let protocol_fee = std::cmp::min(protocol_fee, protocol_fee_cap);
+                                let sell_amount = sell_amount + protocol_fee;
+                                (sell_amount, executed_amount)
+                            }
+                        };
+
+                        Some((order.uid.0 .0, (sell_price, buy_price)))
+                    }
+                }
+            })
+            .collect::<HashMap<_, _>>();
+
+        self.inner
+            .encoder
+            .update_trades(new_boundary_trades.into_iter());
+
+        // todo: readjust unwrap for ethflow order
     }
 }
 

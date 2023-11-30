@@ -436,6 +436,38 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
+    pub fn update_trades(&mut self, trades: impl Iterator<Item = ([u8; 56], (U256, U256))>) {
+        for trade in trades {
+            let uid = trade.0;
+            let sell_token_price = trade.1 .0;
+            let buy_token_price = trade.1 .1;
+
+            let trade = self
+                .trades
+                .iter_mut()
+                .find(|trade| trade.data.order.metadata.uid.0 == uid)
+                .expect("missing trade for order");
+
+            match trade.tokens {
+                TokenReference::Indexed {
+                    sell_token_index,
+                    buy_token_index,
+                } => {
+                    self.clearing_prices
+                        .insert(self.tokens[sell_token_index], sell_token_price);
+                    self.clearing_prices
+                        .insert(self.tokens[buy_token_index], buy_token_price);
+                }
+                TokenReference::CustomPrice { .. } => {
+                    trade.tokens = TokenReference::CustomPrice {
+                        sell_token_price,
+                        buy_token_price,
+                    };
+                }
+            }
+        }
+    }
+
     pub fn append_to_execution_plan(&mut self, interaction: Arc<dyn Interaction>) {
         self.append_to_execution_plan_internalizable(interaction, false)
     }

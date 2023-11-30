@@ -73,7 +73,11 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
-        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+        let mut boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+
+        // Apply the protocol fees to the settlement.
+        boundary.with_protocol_fees(&solution);
+
         Self::new(
             auction.id().unwrap(),
             [(solution.id, solution)].into(),
