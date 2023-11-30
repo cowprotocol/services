@@ -1,21 +1,16 @@
 use {
     anyhow::Result,
-    shared::rate_limiter::{
-        RateLimiter as SharedRateLimiter,
-        RateLimiterError as SharedRateLimiterError,
-        RateLimitingStrategy as SharedRateLimitingStrategy,
-    },
     std::{future::Future, time::Duration},
     thiserror::Error,
 };
 
 pub struct RateLimiter {
-    inner: SharedRateLimiter,
+    inner: shared::RateLimiter,
 }
 
 #[derive(Debug, Clone)]
 pub struct RateLimitingStrategy {
-    inner: SharedRateLimitingStrategy,
+    inner: shared::RateLimitingStrategy,
 }
 
 impl RateLimitingStrategy {
@@ -24,7 +19,7 @@ impl RateLimitingStrategy {
         min_back_off: Duration,
         max_back_off: Duration,
     ) -> Result<Self> {
-        SharedRateLimitingStrategy::try_new(back_off_growth_factor, min_back_off, max_back_off)
+        shared::RateLimitingStrategy::try_new(back_off_growth_factor, min_back_off, max_back_off)
             .map(|shared| Self { inner: shared })
     }
 }
@@ -39,7 +34,7 @@ pub enum RateLimiterError {
 impl RateLimiter {
     pub fn new(strategy: RateLimitingStrategy, name: String) -> Self {
         Self {
-            inner: SharedRateLimiter::from_strategy(strategy.inner, name),
+            inner: shared::RateLimiter::from_strategy(strategy.inner, name),
         }
     }
 
@@ -52,7 +47,7 @@ impl RateLimiter {
             .execute_with_back_off(task, requires_back_off)
             .await
             .map_err(|err| match err {
-                SharedRateLimiterError::RateLimited => RateLimiterError::RateLimited,
+                shared::RateLimiterError::RateLimited => RateLimiterError::RateLimited,
             })
     }
 }
