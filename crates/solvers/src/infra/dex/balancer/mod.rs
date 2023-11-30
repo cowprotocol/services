@@ -163,12 +163,21 @@ impl Sor {
 pub enum Error {
     #[error("no valid swap interaction could be found")]
     NotFound,
+    #[error("rate limited")]
+    RateLimited,
     #[error(transparent)]
     Http(util::http::Error),
 }
 
 impl From<util::http::RoundtripError<util::serialize::Never>> for Error {
     fn from(err: util::http::RoundtripError<util::serialize::Never>) -> Self {
-        Self::Http(err.into())
+        match err {
+            util::http::RoundtripError::Http(util::http::Error::Status(status_code, _))
+                if status_code.as_u16() == 429 =>
+            {
+                Self::RateLimited
+            }
+            other_err => Self::Http(other_err.into()),
+        }
     }
 }

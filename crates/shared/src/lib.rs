@@ -55,6 +55,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy};
+
 /// Run a future and callback with the time the future took. The call back can
 /// for example log the time.
 pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce(Duration)) -> T {
