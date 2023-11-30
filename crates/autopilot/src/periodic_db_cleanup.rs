@@ -73,6 +73,14 @@ mod tests {
         sqlx::{PgPool, Row},
     };
 
+    // Note: `tokio::time::advance` was not used in these tests. While it is a
+    // useful tool for controlling time flow in asynchronous tests, it causes
+    // complications when used with `sqlx::PgPool`. Specifically, pausing or
+    // advancing time with `tokio::time::advance` can interfere with the pool's
+    // ability to acquire database connections, leading to panics and unpredictable
+    // behavior in tests. Given these issues, tests were designed without
+    // manipulating the timer, to maintain stability and reliability in the
+    // database connection handling.
     #[tokio::test]
     #[ignore]
     async fn order_events_cleaner_flow() {
