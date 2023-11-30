@@ -113,15 +113,12 @@ impl super::Postgres {
 
             if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
                 // update order executions for orders with solver computed fees (limit orders)
-                // for limit orders, fee is called surplus_fee and is determined by the solver
-                // therefore, when transaction is settled onchain we calculate the fee and save
-                // it to DB
-                for order_execution in auction_data.order_executions {
-                    database::order_execution::update_surplus_fee(
+                for (order_uid, executed_fee) in auction_data.order_executions {
+                    database::order_execution::update_executed_fee(
                         ex,
-                        &ByteArray(order_execution.0 .0), // order uid
+                        &ByteArray(order_uid.0),
                         auction_data.auction_id.assume_verified(),
-                        &u256_to_big_decimal(&order_execution.1), // order fee
+                        &u256_to_big_decimal(&executed_fee),
                     )
                     .await
                     .context("insert_missing_order_executions")?;

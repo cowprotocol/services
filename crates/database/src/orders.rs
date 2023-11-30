@@ -455,8 +455,7 @@ pub struct FullOrder {
     pub ethflow_data: Option<(Option<TransactionHash>, i64)>,
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
-    pub executed_surplus_fee: BigDecimal,
-    pub executed_solver_fee: BigDecimal,
+    pub executed_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -519,8 +518,7 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
     where eth_o.uid = o.uid limit 1) as ethflow_data,
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
-COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
-COALESCE((SELECT SUM(solver_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_solver_fee,
+COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -586,8 +584,8 @@ WHERE
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
     pub order_uid: OrderUid,
-    /// The `solver_fee` that got executed for this specific fill.
-    pub executed_solver_fee: Option<BigDecimal>,
+    // Uknown for limit orders before the setlement is finalized.
+    pub executed_fee: Option<BigDecimal>,
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
@@ -613,7 +611,7 @@ pub fn order_executions_in_tx<'a>(
 {SETTLEMENT_LOG_INDICES}
 SELECT
     oe.order_uid AS order_uid,
-    oe.solver_fee AS executed_solver_fee,
+    oe.executed_fee AS executed_fee,
     o.sell_token,
     o.buy_token,
     o.sell_amount,
@@ -1822,11 +1820,11 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, 0.into());
+        assert_eq!(order.executed_fee, 0.into());
 
         let fee: BigDecimal = 1.into();
         let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
+        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee))
             .await
             .unwrap();
 
@@ -1834,8 +1832,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.executed_surplus_fee, fee);
-        assert_eq!(order.executed_solver_fee, solver_fee);
+        assert_eq!(order.executed_fee, solver_fee);
     }
 
     #[tokio::test]
@@ -1873,15 +1870,9 @@ mod tests {
         .unwrap();
 
         let auction_id = 6124819;
-        crate::order_execution::save(
-            &mut db,
-            &order_uid,
-            auction_id,
-            None,
-            Some(&bigdecimal(463182886014406361088)),
-        )
-        .await
-        .unwrap();
+        crate::order_execution::save(&mut db, &order_uid, auction_id, None)
+            .await
+            .unwrap();
 
         crate::events::insert_trade(
             &mut db,
@@ -1924,7 +1915,7 @@ mod tests {
             executions,
             vec![OrderExecution {
                 order_uid,
-                executed_solver_fee: Some(bigdecimal(463182886014406361088)),
+                executed_fee: Some(bigdecimal(463182886014406361088)),
                 sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
                 kind: OrderKind::Sell,
@@ -1958,10 +1949,10 @@ mod tests {
 
         insert_order(&mut db, &order).await.unwrap();
 
-        crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
+        crate::order_execution::save(&mut db, &order.uid, 1, None)
             .await
             .unwrap();
-        crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
+        crate::order_execution::save(&mut db, &order.uid, 42, None)
             .await
             .unwrap();
 
@@ -2003,7 +1994,6 @@ mod tests {
         assert_eq!(
             executions,
             vec![OrderExecution {
-                executed_solver_fee: Some(bigdecimal(42)),
                 kind: OrderKind::Sell,
                 class: OrderClass::Limit,
                 sell_amount: bigdecimal(1),

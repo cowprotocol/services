@@ -420,8 +420,10 @@ impl Driver {
                 .user_trades()
                 .map(|trade| {
                     let execution = Execution {
-                        surplus_fee: trade.surplus_fee(),
-                        solver_fee: trade.solver_fee,
+                        executed_fee: match trade.order.solver_determines_fee() {
+                            true => None,
+                            false => Some(trade.solver_fee),
+                        },
                     };
                     (trade.order.metadata.uid, execution)
                 })

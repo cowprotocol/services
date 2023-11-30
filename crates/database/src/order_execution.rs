@@ -9,39 +9,37 @@ pub async fn save(
     ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
-    surplus_fee: Option<&BigDecimal>,
-    solver_fee: Option<&BigDecimal>,
+    executed_fee: Option<&BigDecimal>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
+INSERT INTO order_execution (order_uid, auction_id, reward, executed_fee)
 VALUES ($1, $2, $3, $4, $5)
     ;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(surplus_fee)
-        .bind(solver_fee)
+        .bind(executed_fee)
         .execute(ex)
         .await?;
     Ok(())
 }
 
-// update already existing order_execution record with surplus_fee for partial
+// update already existing order_execution record with executed_fee for partial
 // limit orders
-pub async fn update_surplus_fee(
+pub async fn update_executed_fee(
     mut ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
-    surplus_fee: &BigDecimal,
+    executed_fee: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE order_execution
-SET surplus_fee = $1
+SET executed_fee = $1
 WHERE order_uid = $2 AND auction_id = $3
     ;"#;
     sqlx::query(QUERY)
-        .bind(surplus_fee)
+        .bind(executed_fee)
         .bind(order)
         .bind(auction)
         .execute(ex.deref_mut())
@@ -60,18 +58,10 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        save(&mut db, &Default::default(), 0, None, Default::default())
+        save(&mut db, &Default::default(), 0, None).await.unwrap();
+
+        save(&mut db, &Default::default(), 1, Some(&Default::default()))
             .await
             .unwrap();
-
-        save(
-            &mut db,
-            &Default::default(),
-            1,
-            Some(&Default::default()),
-            Default::default(),
-        )
-        .await
-        .unwrap();
     }
 }

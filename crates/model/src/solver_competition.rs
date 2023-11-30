@@ -45,9 +45,7 @@ pub struct Transaction {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Execution {
     #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub surplus_fee: Option<U256>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub solver_fee: U256,
+    pub executed_fee: Option<U256>,
 }
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the

@@ -68,6 +68,13 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // subsidized one which we don't want.
         OrderClass::Limit(_) | OrderClass::Market => full_fee_amount,
     };
+    // Executed fees should be read from the order_execution table, but for
+    // backwards compatibility, for non-limit orders we use the sum of fees from
+    // the order table.
+    let executed_fee_amount = match class.is_limit() {
+        true => &order.executed_fee,
+        false => &order.sum_fee,
+    };
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
@@ -85,7 +92,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context(
             "executed sell amount before fees does not fit in a u256",
         )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
+        executed_fee_amount: big_decimal_to_u256(executed_fee_amount)
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,
@@ -208,7 +215,7 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
         DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee).expect(
+            executed_surplus_fee: big_decimal_to_u256(&order.executed_fee).expect(
                 "executed fees can't exceed sell_token amount which definitely fits into U256",
             ),
         }),

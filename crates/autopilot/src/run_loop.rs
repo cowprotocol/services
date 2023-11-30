@@ -182,10 +182,10 @@ impl RunLoop {
                 match auction_order {
                     Some(auction_order) => {
                         let executed_fee = match auction_order.solver_determines_fee() {
-                            // we don't know the surplus fee in advance. will be populated
+                            // we don't know the executed fee in advance. will be populated
                             // after the transaction containing the order is mined
-                            true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                            true => ExecutedFee::SolverDetermined,
+                            false => ExecutedFee::UserFee(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
                             order_id: *order_id,

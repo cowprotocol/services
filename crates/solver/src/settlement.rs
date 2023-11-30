@@ -24,6 +24,8 @@ pub struct Trade {
     pub order: Order,
     pub executed_amount: U256,
     /// The fee amount used for objective value computations.
+    /// Taken either from the order as user_fee or from the solver as
+    /// solver_fee.
     pub solver_fee: U256,
 }
 
