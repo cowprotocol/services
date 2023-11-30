@@ -2,7 +2,7 @@ use {
     e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
-        order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
+        order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -104,11 +104,8 @@ async fn test(web3: Web3) {
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        if let OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee,
-        }) = order.metadata.class
-        {
-            executed_surplus_fee > U256::zero()
+        if order.metadata.class == OrderClass::Limit {
+            order.metadata.executed_fee_amount > U256::zero()
         } else {
             panic!("order is not a limit order");
         }

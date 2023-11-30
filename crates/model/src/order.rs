@@ -122,13 +122,13 @@ impl Order {
 
     pub fn is_user_order(&self) -> bool {
         match self.metadata.class {
-            OrderClass::Market | OrderClass::Limit(_) => true,
+            OrderClass::Market | OrderClass::Limit => true,
             OrderClass::Liquidity => false,
         }
     }
 
     pub fn is_limit_order(&self) -> bool {
-        matches!(self.metadata.class, OrderClass::Limit(_))
+        matches!(self.metadata.class, OrderClass::Limit)
     }
 
     /// For some orders the protocol doesn't precompute a fee. Instead solvers
@@ -925,21 +925,13 @@ pub enum OrderClass {
     /// zero, because it's impossible to predict fees that far in the
     /// future. Instead, the fee is taken from the order surplus once the
     /// order becomes fulfillable and the surplus is high enough.
-    Limit(LimitOrderClass),
+    Limit,
 }
 
 impl OrderClass {
     pub fn is_limit(&self) -> bool {
-        matches!(self, Self::Limit(_))
+        matches!(self, Self::Limit)
     }
-}
-
-#[serde_as]
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LimitOrderClass {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_surplus_fee: U256,
 }
 
 impl OrderKind {
@@ -1096,7 +1088,6 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "executedSurplusFee": "1",
             "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "solverFee": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
@@ -1119,9 +1110,7 @@ mod tests {
         let expected = Order {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
-                class: OrderClass::Limit(LimitOrderClass {
-                    executed_surplus_fee: 1.into(),
-                }),
+                class: OrderClass::Limit,
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,

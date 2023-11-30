@@ -303,7 +303,7 @@ impl PreOrderData {
             signing_scheme,
             class: match (liquidity_owner, order.fee_amount.is_zero()) {
                 (false, false) => OrderClass::Market,
-                (false, true) => OrderClass::Limit(Default::default()),
+                (false, true) => OrderClass::Limit,
                 (true, _) => OrderClass::Liquidity,
             },
         }
@@ -449,7 +449,7 @@ impl OrderValidating for OrderValidator {
                     return Err(PartialValidationError::UnsupportedOrderType);
                 }
             }
-            OrderClass::Limit(_) => {
+            OrderClass::Limit => {
                 if order.partially_fillable && !self.enable_partially_fillable_limit_orders {
                     return Err(PartialValidationError::UnsupportedOrderType);
                 }
@@ -818,7 +818,7 @@ impl OrderValidPeriodConfiguration {
 
         match order.class {
             OrderClass::Market => self.max_market,
-            OrderClass::Limit(_) => self.max_limit,
+            OrderClass::Limit => self.max_limit,
             OrderClass::Liquidity => Duration::MAX,
         }
     }
@@ -1178,7 +1178,7 @@ mod tests {
                         valid_to: legit_valid_to
                             + validity_configuration.max_limit.as_secs() as u32
                             + 1,
-                        class: OrderClass::Limit(Default::default()),
+                        class: OrderClass::Limit,
                         ..Default::default()
                     })
                     .await,
@@ -1279,7 +1279,7 @@ mod tests {
             .is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
-                class: OrderClass::Limit(Default::default()),
+                class: OrderClass::Limit,
                 owner: liquidity_order_owner,
                 valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32

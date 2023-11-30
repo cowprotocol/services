@@ -56,7 +56,7 @@ fn order_class_label(class: &OrderClass) -> &'static str {
     match class {
         OrderClass::Market => "user",
         OrderClass::Liquidity => "liquidity",
-        OrderClass::Limit(_) => "limit",
+        OrderClass::Limit => "limit",
     }
 }
 
@@ -77,11 +77,7 @@ impl Metrics {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
             let op = operation_label(op);
-            for class in &[
-                OrderClass::Market,
-                OrderClass::Liquidity,
-                OrderClass::Limit(Default::default()),
-            ] {
+            for class in &[OrderClass::Market, OrderClass::Liquidity, OrderClass::Limit] {
                 let class = order_class_label(class);
                 metrics.orders.with_label_values(&[class, op]).reset();
             }

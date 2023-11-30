@@ -279,7 +279,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
-                competition::order::Kind::Limit => OrderClass::Limit(Default::default()),
+                competition::order::Kind::Limit => OrderClass::Limit,
             },
             creation_date: Default::default(),
             owner: order.signature.signer.into(),

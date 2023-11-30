@@ -1549,7 +1549,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(Default::default()),
+                            class: OrderClass::Limit,
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1580,7 +1580,7 @@ pub mod tests {
                             ..Default::default()
                         },
                         metadata: OrderMetadata {
-                            class: OrderClass::Limit(Default::default()),
+                            class: OrderClass::Limit,
                             ..Default::default()
                         },
                         ..Default::default()
@@ -1622,7 +1622,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
-                        class: OrderClass::Limit(Default::default()),
+                        class: OrderClass::Limit,
                         ..Default::default()
                     },
                     ..Default::default()
