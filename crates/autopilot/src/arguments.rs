@@ -6,7 +6,11 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::{NonZeroUsize, ParseFloatError},
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -203,6 +207,16 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub solve_deadline: Duration,
+
+    /// Time interval in days between each cleanup operation of the
+    /// `order_events` database table.
+    #[clap(long, env, default_value = "1", value_parser = duration_from_days)]
+    pub order_events_cleanup_interval: Duration,
+
+    /// Age threshold in days for order events to be eligible for cleanup in the
+    /// `order_events` database table.
+    #[clap(long, env, default_value = "30", value_parser = duration_from_days)]
+    pub order_events_cleanup_threshold: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -270,6 +284,21 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
+        writeln!(
+            f,
+            "order_events_cleanup_interval: {:?}",
+            self.order_events_cleanup_interval
+        )?;
+        writeln!(
+            f,
+            "order_events_cleanup_threshold: {:?}",
+            self.order_events_cleanup_threshold
+        )?;
         Ok(())
     }
+}
+
+fn duration_from_days(s: &str) -> Result<Duration, ParseFloatError> {
+    let days = s.parse::<f64>()?;
+    Ok(Duration::from_secs_f64(days * 86_400.0))
 }
