@@ -20,12 +20,13 @@ use {
             },
             setup::blockchain::Blockchain,
         },
-        util,
+        util::{self, serialize},
     },
     ethcontract::BlockId,
     hyper::StatusCode,
     itertools::Itertools,
     secp256k1::SecretKey,
+    serde_with::serde_as,
     std::{
         collections::{HashMap, HashSet},
         path::PathBuf,
@@ -54,10 +55,14 @@ pub enum Partial {
     },
 }
 
+#[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Score {
-    Solver(eth::U256),
+    Solver {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+    },
     RiskAdjusted(f64),
 }
 

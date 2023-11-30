@@ -21,10 +21,19 @@ use {
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    shared::token_list::AutoUpdatingTokenList,
+    shared::{metrics::LivenessChecking, token_list::AutoUpdatingTokenList},
     std::{cmp, time::Duration},
     tracing::Instrument,
 };
+
+pub struct Liveness;
+#[async_trait::async_trait]
+impl LivenessChecking for Liveness {
+    async fn is_alive(&self) -> bool {
+        // can we somehow check that we keep processing auctions?
+        true
+    }
+}
 
 pub struct RunLoop {
     orderbook: protocol::Orderbook,
@@ -108,6 +117,7 @@ impl RunLoop {
     async fn single_run(&self, id: AuctionId, auction: Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
+        Metrics::get().orders.set(auction.orders.len() as _);
 
         let mut participants = self.competition(id, &auction).await;
 
@@ -140,6 +150,7 @@ impl RunLoop {
                 .performance_rewards
                 .with_label_values(&[&driver.name])
                 .inc_by(reward.to_f64_lossy());
+            Metrics::get().wins.with_label_values(&[&driver.name]).inc();
         }
 
         let hex = |bytes: &[u8]| format!("0x{}", hex::encode(bytes));
@@ -292,6 +303,9 @@ struct Metrics {
     /// Tracks the last seen auction.
     auction: prometheus::IntGauge,
 
+    /// Tracks the number of orders in the auction.
+    orders: prometheus::IntGauge,
+
     /// Tracks the result of every driver.
     #[metric(labels("driver", "result"))]
     results: prometheus::IntCounterVec,
@@ -299,6 +313,10 @@ struct Metrics {
     /// Tracks the approximate performance rewards per driver
     #[metric(labels("driver"))]
     performance_rewards: prometheus::CounterVec,
+
+    /// Tracks the winner of every auction.
+    #[metric(labels("driver"))]
+    wins: prometheus::CounterVec,
 }
 
 impl Metrics {
