@@ -9,14 +9,9 @@ use {
     },
     async_trait::async_trait,
     contracts::{GPv2Settlement, IUniswapLikeRouter},
-    ethrpc::{
-        current_block::{self, CurrentBlockStream},
-        Web3,
-    },
-    futures::StreamExt,
+    ethrpc::{current_block::CurrentBlockStream, Web3},
     shared::{
         http_solver::model::TokenAmount,
-        maintenance::Maintaining,
         sources::uniswap_v2::{
             pair_provider::PairProvider,
             pool_cache::PoolCache,
@@ -30,9 +25,8 @@ use {
     },
     std::{
         collections::HashSet,
-        sync::{self, Arc, Mutex},
+        sync::{Arc, Mutex},
     },
-    tracing::Instrument,
 };
 
 /// Median gas used per UniswapInteraction (v2).
@@ -150,18 +144,11 @@ where
             config.missing_pool_cache_time,
         );
 
-        let pool_cache = Arc::new(PoolCache::new(
+        Arc::new(PoolCache::new(
             boundary::liquidity::cache_config(),
             Arc::new(pool_fetcher),
             blocks.clone(),
-        )?);
-
-        tokio::task::spawn(
-            cache_update(blocks.clone(), Arc::downgrade(&pool_cache))
-                .instrument(tracing::info_span!("uniswap_v2_cache")),
-        );
-
-        pool_cache
+        )?)
     };
 
     Ok(Box::new(UniswapLikeLiquidity::with_allowances(
@@ -170,33 +157,6 @@ where
         Box::new(NoAllowanceManaging),
         pool_fetcher,
     )))
-}
-
-async fn cache_update(blocks: CurrentBlockStream, pool_cache: sync::Weak<PoolCache>) {
-    let mut blocks = current_block::into_stream(blocks);
-    loop {
-        let block = blocks
-            .next()
-            .await
-            .expect("block stream unexpectedly ended")
-            .number;
-
-        let pool_cache = match pool_cache.upgrade() {
-            Some(value) => value,
-            None => {
-                tracing::debug!("pool cache dropped; stopping update task");
-                break;
-            }
-        };
-
-        tracing::info_span!("maintenance", block)
-            .in_scope(|| async move {
-                if let Err(err) = pool_cache.run_maintenance().await {
-                    tracing::warn!(?err, "error updating pool cache");
-                }
-            })
-            .await;
-    }
 }
 
 /// An allowance manager that always reports no allowances.

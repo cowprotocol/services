@@ -30,7 +30,7 @@ use {
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
     ethrpc::current_block::CurrentBlockStream,
-    futures::FutureExt,
+    futures::{FutureExt, StreamExt},
     itertools::Itertools,
     prometheus::IntCounterVec,
     std::{
@@ -41,6 +41,7 @@ use {
         sync::{Arc, Mutex},
         time::Duration,
     },
+    tracing::Instrument,
 };
 
 /// How many liqudity sources should at most be fetched in a single chunk.
@@ -91,10 +92,17 @@ where
     K: CacheKey<V>,
     F: CacheFetching<K, V>,
 {
+    inner: Arc<Inner<K, V, F>>,
+}
+
+pub struct Inner<K, V, F>
+where
+    K: CacheKey<V>,
+    F: CacheFetching<K, V>,
+{
     mutexed: Mutex<Mutexed<K, V>>,
     number_of_blocks_to_cache: NonZeroU64,
     fetcher: Arc<F>,
-    block_stream: CurrentBlockStream,
     maximum_retries: u32,
     delay_between_retries: Duration,
     metrics: &'static Metrics,
@@ -133,7 +141,6 @@ struct Metrics {
     #[metric(labels("cache_type"))]
     recent_block_cache_misses: IntCounterVec,
 }
-
 impl<K, V, F> RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
@@ -158,7 +165,7 @@ where
         metrics_label: &'static str,
     ) -> Result<Self> {
         let block = block_stream.borrow().number;
-        Ok(Self {
+        let inner = Arc::new(Inner {
             mutexed: Mutex::new(Mutexed::new(
                 config.number_of_entries_to_auto_update,
                 block,
@@ -166,20 +173,43 @@ where
             )),
             number_of_blocks_to_cache: config.number_of_blocks_to_cache,
             fetcher: Arc::new(fetcher),
-            block_stream,
             maximum_retries: config.max_retries,
             delay_between_retries: config.delay_between_retries,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
             requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
-        })
+        });
+
+        let inner_cloned = inner.clone();
+        tokio::task::spawn(
+            async move {
+                let mut stream = ethrpc::current_block::into_stream(block_stream);
+                while let Some(block) = stream.next().await {
+                    if let Err(err) = inner_cloned.update_cache_at_block(block.number).await {
+                        tracing::warn!(?err, "filed to update cache");
+                    }
+                }
+            }
+            .instrument(tracing::info_span!(
+                "cache_maintenance",
+                cache = metrics_label
+            )),
+        );
+
+        Ok(Self { inner })
     }
 
-    pub async fn update_cache(&self) -> Result<()> {
-        let new_block = self.block_stream.borrow().number;
-        self.update_cache_at_block(new_block).await
+    pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
+        self.inner.fetch(keys, block).await
     }
+}
 
+impl<K, V, F> Inner<K, V, F>
+where
+    K: CacheKey<V>,
+    V: Clone + Send + Sync + 'static,
+    F: CacheFetching<K, V>,
+{
     async fn update_cache_at_block(&self, new_block: u64) -> Result<()> {
         let keys = self
             .mutexed
@@ -239,7 +269,7 @@ where
         fut.await.context("could not fetch liquidity")
     }
 
-    pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
+    async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         let block = match block {
             Block::Recent => None,
             Block::Number(number) => Some(number),
@@ -509,7 +539,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         let assert_keys_recently_used = |expected_keys: &[usize]| {
             let cached_keys = cache
@@ -565,7 +596,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         // Initial state on the block chain.
         let initial_values = vec![
@@ -626,7 +658,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         let value0 = TestValue::new(0, "0");
         let value1 = TestValue::new(1, "1");
@@ -683,7 +716,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         // cache at block 5
         *values.lock().unwrap() = vec![TestValue::new(0, "foo")];
@@ -750,7 +784,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         // Fetch 10 keys on block 10; but we only have capacity to update 2 of those in
         // the background.
@@ -798,7 +833,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
         let key = TestKey(0);
 
         // cache at block 7, most recent block is 10.
