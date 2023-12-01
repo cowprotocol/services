@@ -558,7 +558,7 @@ mod tests {
         });
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(4).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -567,34 +567,45 @@ mod tests {
         )
         .unwrap();
 
-        let initial_values = vec![TestValue::new(0, "hello"), TestValue::new(1, "ether")];
+        // Initial state on the block chain.
+        let initial_values = vec![
+            TestValue::new(0, "1"),
+            TestValue::new(1, "1"),
+            TestValue::new(2, "1"),
+            TestValue::new(3, "1"),
+        ];
         *values.lock().unwrap() = initial_values.clone();
 
         let result = cache
-            .fetch(test_keys(0..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
+            .fetch(test_keys(0..2), Block::Number(block_number))
+            .await
             .unwrap();
         assert_eq!(result.len(), 2);
 
-        let updated_values = vec![TestValue::new(0, "hello_1"), TestValue::new(1, "ether_1")];
+        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        // We can fetch data for keys with `Recent` but we don't schedule them for auto
+        // updates.
+        assert_eq!(result.len(), 4);
+
+        // New state on the block chain on the next block.
+        let updated_values = vec![
+            TestValue::new(0, "2"),
+            TestValue::new(1, "2"),
+            TestValue::new(2, "2"),
+            TestValue::new(3, "2"),
+        ];
         *values.lock().unwrap() = updated_values.clone();
-        cache
-            .update_cache_at_block(block_number)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
+        cache.update_cache_at_block(block_number).await.unwrap();
         values.lock().unwrap().clear();
 
-        let result = cache
-            .fetch(test_keys(0..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        assert_eq!(result.len(), 2);
-        for value in updated_values {
-            assert!(result.contains(&value));
-        }
+        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        assert_eq!(result.len(), 4);
+        // These keys were scheduled for background updates and show the new value.
+        assert!(result.contains(&updated_values[0]));
+        assert!(result.contains(&updated_values[1]));
+        // These keys were NOT scheduled for background updates and show the old value.
+        assert!(result.contains(&initial_values[2]));
+        assert!(result.contains(&initial_values[3]));
     }
 
     #[tokio::test]
