@@ -48,6 +48,8 @@ impl Fetcher {
     }
 }
 
+/// Runs a single cache update cycle whenever a new block arrives until the
+/// fetcher is dropped.
 async fn update_task(blocks: CurrentBlockStream, inner: std::sync::Weak<Inner>) {
     let mut stream = current_block::into_stream(blocks);
     while stream.next().await.is_some() {
@@ -56,13 +58,14 @@ async fn update_task(blocks: CurrentBlockStream, inner: std::sync::Weak<Inner>) 
             // Fetcher was dropped, stop update task.
             None => break,
         };
-        if let Err(err) = update_cache(inner).await {
+        if let Err(err) = update_balances(inner).await {
             tracing::warn!(?err, "error updating token cache");
         }
     }
 }
 
-async fn update_cache(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
+/// Updates the settlement contract's balance for every cached token.
+async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = inner.eth.contracts().settlement().address().into();
     let futures = {
         let cache = inner.cache.read().unwrap();
@@ -82,9 +85,9 @@ async fn update_cache(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
         })
     };
 
-    // Don't hold on to the lock while fetching balances. This may lead to new
-    // entries arriving in the meantime, however their balances should be
-    // up-to-date.
+    // Don't hold on to the lock while fetching balances to allow concurrent
+    // updates. This may lead to new entries arriving in the meantime, however
+    // their balances should already be up-to-date.
     let balances = futures::future::join_all(futures)
         .await
         .into_iter()
