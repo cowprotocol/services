@@ -492,7 +492,8 @@ mod tests {
         let fetcher = FakeCacheFetcher::new(vec![
             TestValue::new(0, "a"),
             TestValue::new(1, "b"),
-            TestValue::new(2, "c"),
+            // no liquidity for key 2 on-chain
+            TestValue::new(3, "c"),
         ]);
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
@@ -501,7 +502,7 @@ mod tests {
         });
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
                 ..Default::default()
             },
             fetcher,
@@ -510,41 +511,40 @@ mod tests {
         )
         .unwrap();
 
-        cache
-            .fetch(test_keys(0..1), Block::Recent)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        cache
-            .fetch(test_keys(1..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        let keys = cache
-            .mutexed
-            .lock()
-            .unwrap()
-            .keys_of_recently_used_entries()
-            .collect::<HashSet<_>>();
-        assert_eq!(keys, test_keys(0..2).collect());
+        let assert_keys_recently_used = |expected_keys: &[usize]| {
+            let cached_keys = cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .keys_of_recently_used_entries()
+                .collect::<Vec<_>>();
+            let expected_keys: Vec<_> = expected_keys.iter().copied().map(TestKey).collect();
+            assert_eq!(cached_keys, expected_keys);
+        };
 
-        // 1 is already cached, 2 isn't.
-        // Additionally 3 will never yield any data. We don't consider these
-        // keys as recently used. That's because we update data for recently used keys
-        // in the background. If we would consider keys without data to be recently used
-        // we'd issue a lot of useless update reqeusts.
         cache
-            .fetch(test_keys(1..3), Block::Recent)
-            .now_or_never()
-            .unwrap()
+            .fetch(test_keys(0..1), Block::Number(block_number))
+            .await
             .unwrap();
-        let keys = cache
-            .mutexed
-            .lock()
-            .unwrap()
-            .keys_of_recently_used_entries()
-            .collect::<HashSet<_>>();
-        assert_eq!(keys, test_keys(1..3).collect());
+        assert_keys_recently_used(&[0]);
+
+        // Don't cache this because we didn't request the liquidity on a specific block.
+        cache.fetch(test_keys(1..2), Block::Recent).await.unwrap();
+        assert_keys_recently_used(&[0]);
+
+        // Don't cache this because there is no liquidity for this block on-chain.
+        cache
+            .fetch(test_keys(2..3), Block::Number(block_number))
+            .await
+            .unwrap();
+        assert_keys_recently_used(&[0]);
+
+        // Cache the new key but evict the other key because we have a limited capacity.
+        cache
+            .fetch(test_keys(3..4), Block::Number(block_number))
+            .await
+            .unwrap();
+        assert_keys_recently_used(&[3]);
     }
 
     #[tokio::test]
