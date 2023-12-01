@@ -193,8 +193,10 @@ where
             .await?;
 
         let mut mutexed = self.mutexed.lock().unwrap();
+        println!("found_values: {}", found_values.len());
         mutexed.insert(new_block, keys.into_iter(), found_values);
         let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
+        eprintln!("oldest to keep: {oldest_to_keep}");
         mutexed.remove_cached_blocks_older_than(oldest_to_keep);
         mutexed.last_update_block = new_block;
 
@@ -722,16 +724,16 @@ mod tests {
 
     #[tokio::test]
     async fn evicts_old_blocks_from_cache() {
-        let values = (0..10).map(|key| TestValue::new(key, "")).collect();
+        let values = (0..=12).map(|key| TestValue::new(key, "")).collect();
         let fetcher = FakeCacheFetcher::new(values);
-        let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
-            number: block_number,
+        let block = |number| BlockInfo {
+            number,
             ..Default::default()
-        });
+        };
+        let (block_sender, block_stream) = tokio::sync::watch::channel(block(10));
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
+                number_of_blocks_to_cache: NonZeroU64::new(2).unwrap(),
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
@@ -741,24 +743,32 @@ mod tests {
         )
         .unwrap();
 
+        // Fetch 10 keys on block 10; but we only have capacity to update 2 of those in
+        // the background.
         cache
             .fetch(test_keys(0..10), Block::Number(10))
-            .now_or_never()
-            .unwrap()
+            .await
             .unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 10);
-        cache
-            .update_cache_at_block(14)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
+
+        block_sender.send(block(11)).unwrap();
+        // Fetch updated liquidity for 2 of the initial 10 keys
+        cache.update_cache_at_block(11).await.unwrap();
+        // Fetch 2 new keys which are NOT scheduled for background updates
+        cache.fetch(test_keys(10..12), Block::Recent).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 12);
-        cache
-            .update_cache_at_block(15)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
+
+        block_sender.send(block(12)).unwrap();
+        // Fetch updated liquidity for 2 of the initial 10 keys
+        cache.update_cache_at_block(12).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
+
+        block_sender.send(block(13)).unwrap();
+        // Update 2 blocks in background but now it's time to evict the 2 additional
+        // keys we fetched with `Block::Recent` because we are only allowed to
+        // keep state that is up to 2 blocks old.
+        cache.update_cache_at_block(13).await.unwrap();
+        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 2);
     }
 
     #[tokio::test]
