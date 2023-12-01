@@ -342,6 +342,7 @@ where
     }
 
     fn get(&mut self, key: K, block: Option<u64>) -> Option<&[V]> {
+        let remember_key_for_updates = block.is_some();
         let block = block.or_else(|| {
             self.cached_most_recently_at_block
                 .get(&key)
@@ -351,7 +352,7 @@ where
                 })
         })?;
         let result = self.entries.get(&(block, key.clone())).map(Vec::as_slice);
-        if result.is_some_and(|values| !values.is_empty()) {
+        if remember_key_for_updates && result.is_some_and(|values| !values.is_empty()) {
             self.recently_used.cache_set(key, ());
         }
         result
