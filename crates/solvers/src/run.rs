@@ -47,28 +47,28 @@ async fn run_with(args: cli::Args, bind: Option<oneshot::Sender<SocketAddr>>) {
                 dex::Dex::ZeroEx(
                     dex::zeroex::ZeroEx::new(config.zeroex).expect("invalid 0x configuration"),
                 ),
-                config.base,
+                config.base.clone(),
             ))
         }
         cli::Command::Balancer { config } => {
             let config = config::dex::balancer::file::load(&config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::Balancer(dex::balancer::Sor::new(config.sor)),
-                config.base,
+                config.base.clone(),
             ))
         }
         cli::Command::OneInch { config } => {
             let config = config::dex::oneinch::file::load(&config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::OneInch(dex::oneinch::OneInch::new(config.oneinch).await.unwrap()),
-                config.base,
+                config.base.clone(),
             ))
         }
         cli::Command::ParaSwap { config } => {
             let config = config::dex::paraswap::file::load(&config).await;
             Solver::Dex(solver::Dex::new(
                 dex::Dex::ParaSwap(dex::paraswap::ParaSwap::new(config.paraswap)),
-                config.base,
+                config.base.clone(),
             ))
         }
     };
