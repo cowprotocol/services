@@ -15,6 +15,7 @@ use {
         order::{
             EthflowData,
             Interactions,
+            LimitOrderClass,
             OnchainOrderData,
             Order,
             OrderClass,
@@ -429,6 +430,13 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
+    let executed_fee_amount = match &class {
+        OrderClass::Limit(LimitOrderClass {
+            executed_surplus_fee,
+        }) => *executed_surplus_fee,
+        OrderClass::Market | OrderClass::Liquidity => big_decimal_to_u256(&order.sum_fee)
+            .context("executed fee amount is not a valid u256")?,
+    };
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -445,8 +453,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context(
             "executed sell amount before fees does not fit in a u256",
         )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
+        executed_fee_amount,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
