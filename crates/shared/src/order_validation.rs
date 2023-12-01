@@ -659,31 +659,32 @@ impl OrderValidating for OrderValidator {
             additional_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
         };
-        let quote = if class == OrderClass::Market {
-            let quote = get_quote_and_check_fee(
-                &*self.quoter,
-                &quote_parameters,
-                order.quote_id,
-                data.fee_amount,
-            )
-            .await?;
-            Some(quote)
-        } else {
-            // We don't try to get quotes for liquidity and limit orders
-            // for two reasons:
-            // 1. They don't pay fees, meaning we don't need to know what the min fee amount
-            //    is.
-            // 2. We don't really care about the equivalent quote since they aren't expected
-            //    to follow regular order creation flow.
-            None
+        let quote = match class {
+            OrderClass::Market => {
+                let fee = Some(data.fee_amount);
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, fee)
+                        .await?;
+                Some(quote)
+            }
+            OrderClass::Limit(_) => {
+                let quote =
+                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
+                        .await?;
+                Some(quote)
+            }
+            OrderClass::Liquidity => None,
         };
 
-        let full_fee_amount = quote
-            .as_ref()
-            .map(|quote| quote.full_fee_amount)
-            // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
-            // subsidies). This only makes a difference for liquidity orders.
-            .unwrap_or(data.fee_amount);
+        let full_fee_amount = match class {
+            OrderClass::Market | OrderClass::Liquidity => quote
+                .as_ref()
+                .map(|quote| quote.full_fee_amount)
+                // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
+                // subsidies). This only makes a difference for liquidity orders.
+                .unwrap_or(data.fee_amount),
+            OrderClass::Limit(_) => 0.into(), // limit orders have a solver determined fee
+        };
 
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
 
@@ -733,11 +734,11 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        // Check if we need to re-classify the order if it is outside the market
+        // Check if we need to re-classify the market order if it is outside the market
         // price. We consider out-of-price orders as liquidity orders. See
         // <https://github.com/cowprotocol/services/pull/301>.
-        let class = match &quote {
-            Some(quote)
+        let class = match (class, &quote) {
+            (OrderClass::Market, Some(quote))
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
                     &quote_parameters.buy_amount,
@@ -747,7 +748,7 @@ impl OrderValidating for OrderValidator {
                 tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
                 OrderClass::Liquidity
             }
-            _ => class,
+            (_, _) => class,
         };
 
         self.check_max_limit_orders(owner, &class).await?;
@@ -892,14 +893,31 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 /// Retrieves the quote for an order that is being created and verify that its
 /// fee is sufficient.
 ///
-/// This works by first trying to find an existing quote, and then falling back
-/// to calculating a brand new one if none can be found and a quote ID was not
-/// specified.
+/// The fee is checked only if `fee_amount` is specified.
 pub async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
-    fee_amount: U256,
+    fee_amount: Option<U256>,
+) -> Result<Quote, ValidationError> {
+    let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
+
+    if fee_amount.is_some_and(|fee| fee < quote.fee_amount) {
+        return Err(ValidationError::InsufficientFee);
+    }
+
+    Ok(quote)
+}
+
+/// Retrieves the quote for an order that is being created
+///
+/// This works by first trying to find an existing quote, and then falling back
+/// to calculating a brand new one if none can be found and a quote ID was not
+/// specified.
+async fn get_or_create_quote(
+    quoter: &dyn OrderQuoting,
+    quote_search_parameters: &QuoteSearchParameters,
+    quote_id: Option<i64>,
 ) -> Result<Quote, ValidationError> {
     let quote = match quoter
         .find_quote(quote_id, quote_search_parameters.clone())
@@ -947,10 +965,6 @@ pub async fn get_quote_and_check_fee(
         }
         Err(err) => return Err(err.into()),
     };
-
-    if fee_amount < quote.fee_amount {
-        return Err(ValidationError::InsufficientFee);
-    }
 
     Ok(quote)
 }
@@ -1481,7 +1495,7 @@ mod tests {
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert_eq!(quote, None);
+        assert!(quote.is_some());
         assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
@@ -1495,7 +1509,7 @@ mod tests {
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
             .unwrap();
-        assert_eq!(quote, None);
+        assert!(quote.is_some());
         assert!(order.metadata.class.is_limit());
     }
 
@@ -2171,7 +2185,7 @@ mod tests {
             &order_quoter,
             &quote_search_parameters,
             quote_id,
-            fee_amount,
+            Some(fee_amount),
         )
         .await
         .unwrap();
@@ -2238,10 +2252,14 @@ mod tests {
                 })
             });
 
-        let quote =
-            get_quote_and_check_fee(&order_quoter, &quote_search_parameters, None, fee_amount)
-                .await
-                .unwrap();
+        let quote = get_quote_and_check_fee(
+            &order_quoter,
+            &quote_search_parameters,
+            None,
+            Some(fee_amount),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(
             quote,
@@ -2268,7 +2286,7 @@ mod tests {
             &order_quoter,
             &quote_search_parameters,
             Some(0),
-            U256::zero(),
+            Some(U256::zero()),
         )
         .await
         .unwrap_err();
@@ -2290,7 +2308,7 @@ mod tests {
             &order_quoter,
             &Default::default(),
             Default::default(),
-            U256::one(),
+            Some(U256::one()),
         )
         .await
         .unwrap_err();
@@ -2350,7 +2368,7 @@ mod tests {
                         ..Default::default()
                     },
                     Default::default(),
-                    U256::zero(),
+                    Some(U256::zero()),
                 )
                 .await
                 .unwrap_err();
