@@ -69,7 +69,7 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = inner.eth.contracts().settlement().address().into();
     let futures = {
         let cache = inner.cache.read().unwrap();
-        let tokens = cache.keys().cloned().collect::<HashSet<_>>();
+        let tokens = cache.keys().cloned().collect::<Vec<_>>();
         tracing::debug!(
             tokens = tokens.len(),
             "updating settlement contract balances"
@@ -88,18 +88,15 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     // Don't hold on to the lock while fetching balances to allow concurrent
     // updates. This may lead to new entries arriving in the meantime, however
     // their balances should already be up-to-date.
-    let balances = futures::future::join_all(futures)
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
+    let mut balances = futures::future::try_join_all(futures)
+        .await?
         .into_iter()
         .collect::<HashMap<_, _>>();
 
-    let mut cache: std::sync::RwLockWriteGuard<'_, HashMap<eth::TokenAddress, Metadata>> =
-        inner.cache.write().unwrap();
+    let mut cache = inner.cache.write().unwrap();
     for (key, entry) in cache.iter_mut() {
-        if let Some(balance) = balances.get(key) {
-            entry.balance = balance.clone();
+        if let Some(balance) = balances.remove(key) {
+            entry.balance = balance;
         } else {
             tracing::info!(?key, "key without balance update");
         }
