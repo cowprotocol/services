@@ -564,16 +564,11 @@ fn generate_contract_with_config(
 
     println!("cargo:rerun-if-changed={}", path.display());
 
-    config(
-        ContractBuilder::new()
-            // for some reason formatting the generate code is broken on nightly
-            .rustfmt(false)
-            .visibility_modifier("pub"),
-    )
-    .generate(&contract)
-    .unwrap()
-    .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
-    .unwrap();
+    config(ContractBuilder::new().visibility_modifier("pub"))
+        .generate(&contract)
+        .unwrap()
+        .write_to_file(Path::new(&dest).join(format!("{name}.rs")))
+        .unwrap();
 }
 
 fn addr(s: &str) -> Address {
