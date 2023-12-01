@@ -180,12 +180,16 @@ where
             requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
         });
 
-        let inner_cloned = inner.clone();
+        let inner_cloned = Arc::downgrade(&inner);
         tokio::task::spawn(
             async move {
                 let mut stream = ethrpc::current_block::into_stream(block_stream);
                 while let Some(block) = stream.next().await {
-                    if let Err(err) = inner_cloned.update_cache_at_block(block.number).await {
+                    let Some(inner) = inner_cloned.upgrade() else {
+                        tracing::debug!("cache no longer in use; terminate GC task");
+                        break;
+                    };
+                    if let Err(err) = inner.update_cache_at_block(block.number).await {
                         tracing::warn!(?err, "filed to update cache");
                     }
                 }

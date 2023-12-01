@@ -545,8 +545,6 @@ mod tests {
         )
         .await
         .unwrap();
-        // TODO is this needed?
-        // pool_fetcher.run_maintenance().await.unwrap();
         let pair = TokenPair::new(
             addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             addr!("C011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F"),
@@ -592,10 +590,6 @@ mod tests {
             ),
             pool_id_deny_list: Default::default(),
         };
-
-        // index all the pools.
-        // TODO: Is this needed?
-        // pool_fetcher.run_maintenance().await.unwrap();
 
         // see what the subgraph says.
         let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
