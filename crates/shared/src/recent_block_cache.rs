@@ -180,24 +180,10 @@ where
             requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
         });
 
-        let inner_cloned = Arc::downgrade(&inner);
-        tokio::task::spawn(
-            async move {
-                let mut stream = ethrpc::current_block::into_stream(block_stream);
-                while let Some(block) = stream.next().await {
-                    let Some(inner) = inner_cloned.upgrade() else {
-                        tracing::debug!("cache no longer in use; terminate GC task");
-                        break;
-                    };
-                    if let Err(err) = inner.update_cache_at_block(block.number).await {
-                        tracing::warn!(?err, "filed to update cache");
-                    }
-                }
-            }
-            .instrument(tracing::info_span!(
-                "cache_maintenance",
-                cache = metrics_label
-            )),
+        Self::spawn_gc_task(
+            Arc::downgrade(&inner),
+            block_stream,
+            metrics_label.to_string(),
         );
 
         Ok(Self { inner })
@@ -205,6 +191,28 @@ where
 
     pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         self.inner.fetch(keys, block).await
+    }
+
+    fn spawn_gc_task(
+        inner: std::sync::Weak<Inner<K, V, F>>,
+        block_stream: CurrentBlockStream,
+        label: String,
+    ) {
+        tokio::task::spawn(
+            async move {
+                let mut stream = ethrpc::current_block::into_stream(block_stream);
+                while let Some(block) = stream.next().await {
+                    let Some(inner) = inner.upgrade() else {
+                        tracing::debug!("cache no longer in use; terminate GC task");
+                        break;
+                    };
+                    if let Err(err) = inner.update_cache_at_block(block.number).await {
+                        tracing::warn!(?err, "failed to update cache");
+                    }
+                }
+            }
+            .instrument(tracing::info_span!("cache_maintenance", cache = label)),
+        );
     }
 }
 
