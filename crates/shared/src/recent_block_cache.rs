@@ -392,9 +392,12 @@ where
         // Iterate from newest block to oldest block and only keep the most recent
         // liquidity around to reduce memory consumption.
         let mut cached_keys = HashSet::new();
+        let mut items = 0;
         for ((_block, key), values) in self.entries.iter_mut().rev() {
             if !cached_keys.insert(key) {
                 *values = vec![];
+            } else {
+                items += values.len();
             }
         }
         // Afterwards drop all entries that are now empty.
@@ -403,8 +406,9 @@ where
         self.cached_most_recently_at_block
             .retain(|_, block| *block >= oldest_to_keep);
         tracing::debug!(
-            "the cache now contains entries for {} block-key combinations",
-            self.entries.len()
+            entries = self.entries.len(),
+            items,
+            "cache was updated and now contains",
         );
     }
 
