@@ -247,16 +247,26 @@ pub struct DefaultPoolReader {
     pub web3: Web3,
 }
 
+impl DefaultPoolReader {
+    pub fn new(web3: Web3, pair_provider: PairProvider) -> Self {
+        Self {
+            pair_provider,
+            web3,
+        }
+    }
+}
+
 impl PoolReading for DefaultPoolReader {
     fn read_state(&self, pair: TokenPair, block: BlockId) -> BoxFuture<'_, Result<Option<Pool>>> {
         let pair_address = self.pair_provider.pair_address(&pair);
+
         let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
+        let fetch_reserves = pair_contract.get_reserves().block(block).call();
 
         // Fetch ERC20 token balances of the pools to sanity check with reserves
         let token0 = ERC20::at(&self.web3, pair.get().0);
         let token1 = ERC20::at(&self.web3, pair.get().1);
 
-        let fetch_reserves = pair_contract.get_reserves().block(block).call();
         let fetch_token0_balance = token0.balance_of(pair_address).block(block).call();
         let fetch_token1_balance = token1.balance_of(pair_address).block(block).call();
 

@@ -174,7 +174,7 @@ impl RateLimiter {
     }
 }
 
-#[derive(Error, Debug, Clone, Default)]
+#[derive(Error, Debug, Clone, Default, PartialEq)]
 pub enum RateLimiterError {
     #[default]
     #[error("rate limited")]
@@ -221,6 +221,30 @@ impl RateLimiter {
 
         Ok(result)
     }
+
+    pub async fn execute_with_back_off<T>(
+        &self,
+        task: impl Future<Output = T>,
+        requires_back_off: impl Fn(&T) -> bool,
+    ) -> Result<T, RateLimiterError> {
+        if let Some(back_off_duration) = self.get_back_off_duration_if_limited() {
+            tokio::time::sleep(back_off_duration).await;
+        }
+
+        self.execute(task, requires_back_off).await
+    }
+
+    fn get_back_off_duration_if_limited(&self) -> Option<Duration> {
+        let strategy = self.strategy.lock().unwrap();
+        let now = Instant::now();
+
+        if strategy.drop_requests_until > now {
+            let back_off_duration = strategy.drop_requests_until - now;
+            Some(back_off_duration)
+        } else {
+            None
+        }
+    }
 }
 
 /// Shared module with common back-off checks.
@@ -236,7 +260,7 @@ pub mod back_off {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, futures::FutureExt, tokio::time::sleep};
+    use {super::*, futures::FutureExt, std::ops::Add, tokio::time::sleep};
 
     #[test]
     fn current_back_off_does_not_panic() {
@@ -316,5 +340,65 @@ mod tests {
             Duration::from_millis(50),
             rate_limiter.strategy().get_current_back_off()
         );
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_no_back_off() {
+        let timeout = Duration::from_secs(30);
+        let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
+        let original_drop_until = strategy.drop_requests_until;
+        let rate_limiter = RateLimiter::from_strategy(strategy, "test_no_back_off".to_string());
+
+        let result = rate_limiter
+            .execute_with_back_off(async { 1 }, |_| false)
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(result, 1);
+        {
+            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            assert!(current_strategy.drop_requests_until < original_drop_until.add(timeout));
+        }
+
+        let result = rate_limiter.execute(async { 1 }, |_| false).await.unwrap();
+        assert_eq!(result, 1);
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_back_off() {
+        let timeout = Duration::from_millis(50);
+        let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
+        let original_drop_until = strategy.drop_requests_until;
+        let rate_limiter = RateLimiter::from_strategy(strategy, "test_back_off".to_string());
+
+        // start the back off
+        let result = rate_limiter
+            .execute_with_back_off(async { 1 }, |_| true)
+            .await
+            .unwrap();
+
+        assert_eq!(result, 1);
+        let drop_until = {
+            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            let drop_until = current_strategy.drop_requests_until;
+            assert!(drop_until >= original_drop_until.add(timeout));
+            drop_until
+        };
+
+        // back off is not over, expecting a RateLimiterError
+        let result = rate_limiter.execute(async { 1 }, |_| false).await;
+        assert_eq!(result, Err(RateLimiterError::RateLimited));
+        {
+            let current_strategy = rate_limiter.strategy.lock().unwrap();
+            assert_eq!(current_strategy.drop_requests_until, drop_until);
+        }
+
+        // back off is over
+        let result = rate_limiter
+            .execute_with_back_off(async { 1 }, |_| false)
+            .await
+            .unwrap();
+        assert_eq!(result, 1);
     }
 }
