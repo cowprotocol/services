@@ -305,6 +305,7 @@ impl RunLoop {
         );
         let request = &request;
 
+        let start = Instant::now();
         self.database
             .store_order_events(
                 &auction
@@ -314,6 +315,7 @@ impl RunLoop {
                     .collect_vec(),
             )
             .await;
+        tracing::debug!(elapsed=?start.elapsed(), aution_id=%id, "storing order events took");
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {

@@ -6,6 +6,7 @@ use {
         api::{Error, State},
         observe,
     },
+    std::time::Instant,
     tap::TapFallible,
     tracing::Instrument,
 };
@@ -20,6 +21,7 @@ async fn route(
 ) -> Result<axum::Json<dto::Solved>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = auction.id();
     let handle_request = async {
+        let start = Instant::now();
         let auction = auction
             .0
             .into_domain(state.eth(), state.tokens(), state.timeouts())
@@ -27,6 +29,7 @@ async fn route(
             .tap_err(|err| {
                 observe::invalid_dto(err, "auction");
             })?;
+        tracing::debug!(elapsed=?start.elapsed(), auction_id=%auction_id, "auction task execution time");
         let auction = state.pre_processor().prioritize(auction).await;
         observe::auction(&auction);
         let competition = state.competition();
