@@ -40,7 +40,7 @@ pub fn init(log: &str) {
 
 /// Observe a received auction.
 pub fn auction(auction: &Auction) {
-    tracing::debug!(?auction, "received auction");
+    tracing::debug!(id=?auction.id(), "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
