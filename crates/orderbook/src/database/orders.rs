@@ -429,6 +429,10 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
+    let executed_fee_amount = match class {
+        OrderClass::Limit => &order.executed_surplus_fee,
+        _ => &order.sum_fee,
+    };
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
@@ -445,7 +449,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
             .context(
             "executed sell amount before fees does not fit in a u256",
         )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
+        executed_fee_amount: big_decimal_to_u256(executed_fee_amount)
             .context("executed fee amount is not a valid u256")?,
         invalidated: order.invalidated,
         status,

@@ -67,9 +67,9 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // subsidized one which we don't want.
         OrderClass::Limit | OrderClass::Market => full_fee_amount,
     };
-    let executed_fee_amount = match &class {
+    let executed_fee_amount = match class {
         OrderClass::Limit => &order.executed_surplus_fee,
-        OrderClass::Market | OrderClass::Liquidity => &order.sum_fee,
+        _ => &order.sum_fee,
     };
 
     let metadata = OrderMetadata {
