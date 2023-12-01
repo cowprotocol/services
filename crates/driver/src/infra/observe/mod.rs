@@ -12,7 +12,6 @@ use {
                 self,
                 score,
                 solution::{self, Settlement},
-                Auction,
                 Solution,
                 Solved,
             },
@@ -21,7 +20,7 @@ use {
             quote::{self, Quote},
             Liquidity,
         },
-        infra::solver,
+        infra::{api::routes::solve::dto, solver},
         util::http,
     },
     ethrpc::current_block::BlockInfo,
@@ -39,7 +38,7 @@ pub fn init(log: &str) {
 }
 
 /// Observe a received auction.
-pub fn auction(auction: &Auction) {
+pub fn auction(auction: &dto::Auction) {
     tracing::debug!(?auction, "received auction");
 }
 
