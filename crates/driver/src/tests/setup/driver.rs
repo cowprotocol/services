@@ -100,7 +100,12 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
-            "feePolicies": [],
+            "feePolicies": [{
+                "quoteDeviation": {
+                    "factor": 0.5,
+                    "volume_cap_factor": 0.06,
+                }
+            }],
         }));
     }
     for fulfillment in test.fulfillments.iter() {
