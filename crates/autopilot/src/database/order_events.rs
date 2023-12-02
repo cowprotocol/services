@@ -7,6 +7,7 @@ use {
         order_events::{self, OrderEvent},
     },
     model::order::OrderUid,
+    sqlx::Error,
 };
 
 impl super::Postgres {
@@ -18,6 +19,11 @@ impl super::Postgres {
         if let Err(err) = store_order_events(self, events, Utc::now()).await {
             tracing::warn!(?err, "failed to insert order events");
         }
+    }
+
+    /// Deletes events before the provided timestamp.
+    pub async fn delete_order_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
+        order_events::delete_order_events_before(&self.0, timestamp).await
     }
 }
 

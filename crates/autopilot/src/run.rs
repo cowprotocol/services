@@ -443,8 +443,7 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -538,9 +537,6 @@ pub async fn run(args: Arguments) {
         );
         maintainers.push(broadcaster_event_updater);
     }
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
         maintainers.push(uniswap_v3);
     }
@@ -589,6 +585,21 @@ pub async fn run(args: Arguments) {
         on_settlement_event_updater
             .run_forever(current_block_stream.clone())
             .instrument(tracing::info_span!("on_settlement_event_updater")),
+    );
+
+    let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
+        args.order_events_cleanup_interval,
+        args.order_events_cleanup_threshold,
+    );
+    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
+        order_events_cleaner_config,
+        db.clone(),
+    );
+
+    tokio::task::spawn(
+        order_events_cleaner
+            .run_forever()
+            .instrument(tracing::info_span!("order_events_cleaner")),
     );
 
     if args.enable_colocation {

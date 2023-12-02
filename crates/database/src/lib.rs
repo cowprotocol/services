@@ -47,6 +47,7 @@ pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 /// The names of all tables we use in the db.
 pub const ALL_TABLES: &[&str] = &[
     "orders",
+    "order_events",
     "trades",
     "invalidations",
     "quotes",
