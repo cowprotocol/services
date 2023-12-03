@@ -33,42 +33,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     token_a.mint(solver.address(), to_wei(1000)).await;
     token_b.mint(solver.address(), to_wei(1000)).await;
 
-    // Create and fund Uniswap pool
-    tx!(
-        solver.account(),
-        onchain
-            .contracts()
-            .uniswap_v2_factory
-            .create_pair(token_a.address(), token_b.address())
-    );
-    tx!(
-        solver.account(),
-        token_a.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        token_b.approve(
-            onchain.contracts().uniswap_v2_router.address(),
-            to_wei(1000)
-        )
-    );
-    tx!(
-        solver.account(),
-        onchain.contracts().uniswap_v2_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
-            to_wei(1000),
-            to_wei(1000),
-            0_u64.into(),
-            0_u64.into(),
-            solver.address(),
-            U256::max_value(),
-        )
-    );
-
     // Approve GPv2 for trading
     tx!(
         trader.account(),
@@ -83,7 +47,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     services.start_autopilot(vec![
         "--enable-colocation=true".to_string(),
         format!(
-            "--trusted-tokens={token_a:#x},{token_b:#x}",
+            "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
+            weth = onchain.contracts().weth.address(),
             token_a = token_a.address(),
             token_b = token_b.address()
         ),
