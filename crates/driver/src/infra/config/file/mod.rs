@@ -202,14 +202,15 @@ enum Account {
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Timeouts {
-    /// Maximum time allocated for http request/response to propagate through
-    /// network.
+    /// Absolute time allocated from the total auction deadline for
+    /// request/response roundtrip between autopilot and driver.
     #[serde(default = "default_http_time_buffer_milliseconds")]
     http_time_buffer_milliseconds: u64,
 
     /// Maximum time allocated for solver engines to return the solutions back
-    /// to the driver, in percentage of total driver deadline.
-    /// Expected value [0, 1]
+    /// to the driver, in percentage of total driver deadline (after network
+    /// buffer). Remaining time is spent on encoding and postprocessing the
+    /// returned solutions. Expected value [0, 1]
     #[serde(default = "default_solving_share_of_deadline")]
     solving_share_of_deadline: f64,
 }
