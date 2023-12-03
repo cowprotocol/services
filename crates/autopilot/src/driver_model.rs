@@ -140,11 +140,13 @@ pub mod solve {
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct OrderAmounts {
+    pub struct TradedAmounts {
+        /// The effective amount that left the user's wallet including all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        pub in_amount: U256,
+        pub sell_amount: U256,
+        /// The effective amount the user received after all fees.
         #[serde_as(as = "HexOrDecimalU256")]
-        pub out_amount: U256,
+        pub buy_amount: U256,
     }
 
     #[serde_as]
@@ -159,7 +161,7 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
-        pub orders: HashMap<OrderUid, OrderAmounts>,
+        pub orders: HashMap<OrderUid, TradedAmounts>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]

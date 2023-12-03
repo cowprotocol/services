@@ -8,7 +8,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, OrderAmounts},
+            solve::{self, Class, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -240,7 +240,8 @@ impl RunLoop {
                                 .iter()
                                 .map(|(id, order)| Order {
                                     id: *id,
-                                    executed_amount: order.out_amount,
+                                    sell_amount: order.buy_amount,
+                                    buy_amount: order.buy_amount,
                                 })
                                 .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
@@ -421,7 +422,7 @@ impl RunLoop {
         let events = solved
             .orders
             .iter()
-            .map(|(uid, amounts)| (*uid, OrderEventLabel::Traded))
+            .map(|(uid, _)| (*uid, OrderEventLabel::Traded))
             .collect_vec();
         self.database.store_order_events(&events).await;
         tracing::debug!(?tx_hash, "solution settled");
@@ -523,7 +524,7 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
-    orders: HashMap<OrderUid, OrderAmounts>,
+    orders: HashMap<OrderUid, TradedAmounts>,
 }
 
 impl Solution {
@@ -531,7 +532,7 @@ impl Solution {
         self.orders.keys()
     }
 
-    pub fn orders(&self) -> &HashMap<OrderUid, OrderAmounts> {
+    pub fn orders(&self) -> &HashMap<OrderUid, TradedAmounts> {
         &self.orders
     }
 }

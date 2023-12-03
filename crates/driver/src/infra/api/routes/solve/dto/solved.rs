@@ -33,14 +33,14 @@ impl Solution {
             score: solved.score.0.get(),
             submission_address: solver.address().into(),
             orders: solved
-                .orders
+                .trades
                 .into_iter()
                 .map(|(order_id, amounts)| {
                     (
                         order_id.into(),
-                        OrderAmounts {
-                            in_amount: amounts.in_amount.into(),
-                            out_amount: amounts.out_amount.into(),
+                        TradedAmounts {
+                            sell_amount: amounts.sell.into(),
+                            buy_amount: amounts.buy.into(),
                         },
                     )
                 })
@@ -52,11 +52,13 @@ impl Solution {
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderAmounts {
+pub struct TradedAmounts {
+    /// The effective amount that left the user's wallet including all fees.
     #[serde_as(as = "serialize::U256")]
-    pub in_amount: eth::U256,
+    pub sell_amount: eth::U256,
+    /// The effective amount the user received after all fees.
     #[serde_as(as = "serialize::U256")]
-    pub out_amount: eth::U256,
+    pub buy_amount: eth::U256,
 }
 
 type OrderId = [u8; order::UID_LEN];
@@ -73,5 +75,5 @@ pub struct Solution {
     score: eth::U256,
     submission_address: eth::H160,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
-    orders: HashMap<OrderId, OrderAmounts>,
+    orders: HashMap<OrderId, TradedAmounts>,
 }

@@ -304,14 +304,14 @@ impl Settlement {
     }
 
     /// The settled user orders with their in/out amounts.
-    pub fn orders(&self) -> HashMap<order::Uid, competition::OrderAmounts> {
+    pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         self.solutions
             .values()
             .fold(Default::default(), |mut acc, solution| {
                 for trade in solution.user_trades() {
                     let order = acc.entry(trade.order().uid).or_default();
-                    order.in_amount = trade.order().target().into();
-                    order.out_amount.0 += trade.executed().0;
+                    order.sell = trade.sell_amount(&solution.prices).unwrap_or_default();
+                    order.buy = trade.buy_amount(&solution.prices).unwrap_or_default();
                 }
                 acc
             })

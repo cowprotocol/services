@@ -63,6 +63,28 @@ impl From<SellAmount> for eth::U256 {
     }
 }
 
+/// An amount denominated in the buy token of an [`Order`].
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct BuyAmount(pub eth::U256);
+
+impl From<eth::U256> for BuyAmount {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+impl From<eth::TokenAmount> for BuyAmount {
+    fn from(value: eth::TokenAmount) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<BuyAmount> for eth::U256 {
+    fn from(sell_amount: BuyAmount) -> Self {
+        sell_amount.0
+    }
+}
+
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

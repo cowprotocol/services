@@ -178,7 +178,7 @@ impl Competition {
                 (
                     Solved {
                         score,
-                        orders: settlement.orders(),
+                        trades: settlement.orders(),
                     },
                     settlement,
                 )
@@ -345,13 +345,13 @@ async fn merge_settlements(
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
-    pub orders: HashMap<order::Uid, OrderAmounts>,
+    pub trades: HashMap<order::Uid, Amounts>,
 }
 
 #[derive(Debug, Default)]
-pub struct OrderAmounts {
-    pub in_amount: eth::TokenAmount,
-    pub out_amount: eth::TokenAmount,
+pub struct Amounts {
+    pub sell: order::SellAmount,
+    pub buy: order::BuyAmount,
 }
 
 /// Winning solution information revealed to the protocol by the driver before
