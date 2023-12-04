@@ -67,6 +67,34 @@ pub async fn insert_order_event(
         .map(|_| ())
 }
 
+/// Insert a row into the `order_events` table if a previous event for the order
+/// `uid` exists.
+pub async fn insert_order_event_if_exists(
+    ex: &mut PgConnection,
+    event: &OrderEvent,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+        INSERT INTO order_events (
+            order_uid,
+            timestamp,
+            label
+        )
+        SELECT $1, $2, $3
+        WHERE EXISTS (
+            SELECT 1
+            FROM order_events
+            WHERE uid = $1
+        )
+    "#;
+    sqlx::query(QUERY)
+        .bind(event.order_uid)
+        .bind(event.timestamp)
+        .bind(event.label)
+        .execute(ex)
+        .await
+        .map(|_| ())
+}
+
 /// Deletes rows before the provided timestamp from the `order_events` table.
 pub async fn delete_order_events_before(
     pool: &PgPool,

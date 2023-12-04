@@ -5,7 +5,12 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
+        order_events::{
+            insert_order_event,
+            insert_order_event_if_exists,
+            OrderEvent,
+            OrderEventLabel,
+        },
         orders::{FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
@@ -102,7 +107,7 @@ async fn cancel_order(
     now: DateTime<Utc>,
 ) -> Result<()> {
     let uid = ByteArray(order_uid.0);
-    insert_order_event(
+    insert_order_event_if_exists(
         ex,
         &OrderEvent {
             order_uid: uid,
@@ -116,15 +121,17 @@ async fn cancel_order(
 }
 
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
-    insert_order_event(
-        ex,
-        &OrderEvent {
-            order_uid: ByteArray(order.metadata.uid.0),
-            timestamp: Utc::now(),
-            label: OrderEventLabel::Created,
-        },
-    )
-    .await?;
+    if order.metadata.class == OrderClass::Market {
+        insert_order_event(
+            ex,
+            &OrderEvent {
+                order_uid: ByteArray(order.metadata.uid.0),
+                timestamp: Utc::now(),
+                label: OrderEventLabel::Created,
+            },
+        )
+        .await?
+    }
     let interactions = std::iter::empty()
         .chain(
             order

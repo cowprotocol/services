@@ -40,7 +40,7 @@ async fn store_order_events(
             label: *label,
         };
 
-        order_events::insert_order_event(&mut ex, &event).await?
+        order_events::insert_order_event_if_exists(&mut ex, &event).await?
     }
     ex.commit().await?;
     Ok(())
