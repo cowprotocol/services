@@ -11,7 +11,7 @@ pub async fn start_solver(weth: H160) -> Url {
         r#"
 weth = "{weth:?}"
 base-tokens = []
-max-hops = 0
+max-hops = 1
 max-partial-attempts = 5
 risk-parameters = [0,0,0,0]
         "#,
