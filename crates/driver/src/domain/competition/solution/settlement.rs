@@ -317,6 +317,11 @@ impl Settlement {
             })
     }
 
+    /// The uniform price vector this settlement proposes
+    pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
+        self.boundary.clearing_prices()
+    }
+
     /// Settlements have valid notify ID only if they are originated from a
     /// single solution. Otherwise, for merged settlements, no notifications
     /// are sent, therefore, notify id is None.
