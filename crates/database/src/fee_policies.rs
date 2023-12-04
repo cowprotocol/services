@@ -18,8 +18,6 @@ pub async fn insert(ex: &mut PgTransaction<'_>, fee_policy: FeePolicy) -> Result
     const QUERY: &str = r#"
         INSERT INTO fee_policies (auction_id, order_uid, quote_deviation_factor, volume_factor, absolute_fee)
         VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (auction_id, order_uid)
-        DO UPDATE SET quote_deviation_factor = $3, volume_factor = $4, absolute_fee = $5
     "#;
     sqlx::query(QUERY)
         .bind(fee_policy.auction_id)
