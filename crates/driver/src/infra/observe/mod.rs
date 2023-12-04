@@ -12,7 +12,6 @@ use {
                 self,
                 score,
                 solution::{self, Settlement},
-                Auction,
                 Solution,
                 Solved,
             },
@@ -39,8 +38,8 @@ pub fn init(log: &str) {
 }
 
 /// Observe a received auction.
-pub fn auction(auction: &Auction) {
-    tracing::debug!(id=?auction.id(), "received auction");
+pub fn auction(auction_id: i64) {
+    tracing::debug!(id=?auction_id, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
