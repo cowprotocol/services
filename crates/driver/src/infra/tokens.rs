@@ -3,10 +3,13 @@ use {
         domain::eth,
         infra::{blockchain, Ethereum},
     },
+    ethrpc::current_block::{self, CurrentBlockStream},
+    futures::StreamExt,
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, RwLock},
     },
+    tracing::Instrument,
 };
 
 #[derive(Clone, Debug)]
@@ -22,10 +25,16 @@ pub struct Fetcher(Arc<Inner>);
 
 impl Fetcher {
     pub fn new(eth: Ethereum) -> Self {
-        Self(Arc::new(Inner {
+        let block_stream = eth.current_block().clone();
+        let inner = Arc::new(Inner {
             eth,
             cache: RwLock::new(HashMap::new()),
-        }))
+        });
+        tokio::task::spawn(
+            update_task(block_stream, Arc::downgrade(&inner))
+                .instrument(tracing::info_span!("token_fetcher")),
+        );
+        Self(inner)
     }
 
     /// Returns the `Metadata` for the given tokens. Note that the result will
@@ -37,6 +46,62 @@ impl Fetcher {
     ) -> HashMap<eth::TokenAddress, Metadata> {
         self.0.get(addresses).await
     }
+}
+
+/// Runs a single cache update cycle whenever a new block arrives until the
+/// fetcher is dropped.
+async fn update_task(blocks: CurrentBlockStream, inner: std::sync::Weak<Inner>) {
+    let mut stream = current_block::into_stream(blocks);
+    while stream.next().await.is_some() {
+        let inner = match inner.upgrade() {
+            Some(inner) => inner,
+            // Fetcher was dropped, stop update task.
+            None => break,
+        };
+        if let Err(err) = update_balances(inner).await {
+            tracing::warn!(?err, "error updating token cache");
+        }
+    }
+}
+
+/// Updates the settlement contract's balance for every cached token.
+async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
+    let settlement = inner.eth.contracts().settlement().address().into();
+    let futures = {
+        let cache = inner.cache.read().unwrap();
+        let tokens = cache.keys().cloned().collect::<Vec<_>>();
+        tracing::debug!(
+            tokens = tokens.len(),
+            "updating settlement contract balances"
+        );
+        tokens.into_iter().map(|token| {
+            let erc20 = inner.eth.erc20(token);
+            async move {
+                Ok::<(eth::TokenAddress, eth::TokenAmount), blockchain::Error>((
+                    token,
+                    erc20.balance(settlement).await?,
+                ))
+            }
+        })
+    };
+
+    // Don't hold on to the lock while fetching balances to allow concurrent
+    // updates. This may lead to new entries arriving in the meantime, however
+    // their balances should already be up-to-date.
+    let mut balances = futures::future::try_join_all(futures)
+        .await?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
+    let mut cache = inner.cache.write().unwrap();
+    for (key, entry) in cache.iter_mut() {
+        if let Some(balance) = balances.remove(key) {
+            entry.balance = balance;
+        } else {
+            tracing::info!(?key, "key without balance update");
+        }
+    }
+    Ok(())
 }
 
 /// Provides metadata of tokens.
