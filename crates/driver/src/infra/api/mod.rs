@@ -17,7 +17,7 @@ use {
 };
 
 mod error;
-pub(crate) mod routes;
+mod routes;
 
 const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 

@@ -20,7 +20,7 @@ use {
             quote::{self, Quote},
             Liquidity,
         },
-        infra::{api::routes::solve::dto, solver},
+        infra::solver,
         util::http,
     },
     ethrpc::current_block::BlockInfo,
@@ -38,8 +38,8 @@ pub fn init(log: &str) {
 }
 
 /// Observe a received auction.
-pub fn auction(auction: &dto::Auction) {
-    tracing::debug!(id=?auction.id(), "received auction");
+pub fn auction(auction_id: i64) {
+    tracing::debug!(id=?auction_id, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.

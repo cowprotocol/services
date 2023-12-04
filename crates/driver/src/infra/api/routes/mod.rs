@@ -4,7 +4,7 @@ mod metrics;
 mod quote;
 mod reveal;
 mod settle;
-pub(crate) mod solve;
+mod solve;
 
 pub(super) use {
     healthz::healthz,

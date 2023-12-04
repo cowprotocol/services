@@ -55,7 +55,7 @@ impl Driver {
         Response: serde::de::DeserializeOwned,
     {
         let url = shared::url::join(&self.url, path);
-        tracing::debug!(
+        tracing::trace!(
             path=&url.path(),
             body=%serde_json::to_string_pretty(request).unwrap(),
             "request",

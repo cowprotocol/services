@@ -1,4 +1,4 @@
-pub(crate) mod dto;
+mod dto;
 
 pub use dto::AuctionError;
 use {
@@ -21,7 +21,7 @@ async fn route(
 ) -> Result<axum::Json<dto::Solved>, (hyper::StatusCode, axum::Json<Error>)> {
     let auction_id = auction.id();
     let handle_request = async {
-        observe::auction(&auction.0);
+        observe::auction(auction_id);
         let start = Instant::now();
         let auction = auction
             .0
