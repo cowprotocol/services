@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::QuoteDeviationPolicy,
+        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -55,7 +55,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub quote_deviation_policy: QuoteDeviationPolicy,
+    pub fee_policies: Vec<arguments::FeePolicy>,
 }
 
 impl RunLoop {
@@ -304,7 +304,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.quote_deviation_policy.clone(),
+            self.fee_policies.clone(),
         );
         let request = &request;
 
@@ -452,7 +452,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    quote_deviation_policy: QuoteDeviationPolicy,
+    fee_policies: Vec<arguments::FeePolicy>,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -478,16 +478,39 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-                let fee_policies = match order.metadata.class {
-                    OrderClass::Market => vec![],
-                    OrderClass::Liquidity => vec![],
-                    // todo https://github.com/cowprotocol/services/issues/2092
-                    // skip protocol fee for limit orders with in-market price
-                    OrderClass::Limit(_) => vec![FeePolicy::QuoteDeviation {
-                        factor: quote_deviation_policy.protocol_fee_factor,
-                        volume_cap_factor: quote_deviation_policy.protocol_fee_volume_cap_factor,
-                    }],
-                };
+                let fee_policies = fee_policies
+                    .iter()
+                    .filter_map(|policy| match policy {
+                        arguments::FeePolicy::LimitOrderInMarket(params) => {
+                            tracing::warn!("LimitOrderInMarket fee policy not yet supported");
+                            None
+                        }
+                        arguments::FeePolicy::LimitOrderOutOfMarket(params) => {
+                            match params.price_improvement_factor {
+                                Some(price_improvement_factor) => {
+                                    // todo
+                                    None
+                                }
+                                None => {
+                                    tracing::warn!("not supported yet");
+                                    None
+                                }
+                            }
+                        }
+                    })
+                    .collect();
+
+                // let fee_policies = match order.metadata.class {
+                //     OrderClass::Market => vec![],
+                //     OrderClass::Liquidity => vec![],
+                //     // todo https://github.com/cowprotocol/services/issues/2092
+                //     // skip protocol fee for limit orders with in-market price
+                //     // OrderClass::Limit(_) => vec![FeePolicy::QuoteDeviation {
+                //     //     factor: quote_deviation_policy.protocol_fee_factor,
+                //     //     volume_cap_factor:
+                // quote_deviation_policy.protocol_fee_volume_cap_factor,     //
+                // }],     OrderClass::Limit(_) => vec![],
+                // };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,

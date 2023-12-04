@@ -9,6 +9,7 @@ use {
     std::{
         net::SocketAddr,
         num::{NonZeroUsize, ParseFloatError},
+        str::FromStr,
         time::Duration,
     },
     url::Url,
@@ -208,8 +209,10 @@ pub struct Arguments {
     )]
     pub solve_deadline: Duration,
 
-    #[clap(flatten)]
-    pub quote_deviation_policy: QuoteDeviationPolicy,
+    /// A list of fee policies in the following format: `[LimitOrderOutOfMarket:0.1:0.2,LimitOrderInMarket::2.5]`
+    /// 
+    #[clap(long, env, use_value_delimiter = true)]
+    pub fee_policies: Vec<FeePolicy>,
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.
@@ -287,7 +290,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
-        write!(f, "{}", self.quote_deviation_policy)?;
+        display_list(f, "fee_policies", self.fee_policies.iter())?;
         writeln!(
             f,
             "order_events_cleanup_interval: {:?}",
@@ -303,33 +306,69 @@ impl std::fmt::Display for Arguments {
 }
 
 #[derive(clap::Parser, Clone)]
-pub struct QuoteDeviationPolicy {
-    /// How much of the order's surplus should be taken as a protocol fee.
-    #[clap(
-        long,
-        env,
-        default_value = "0",
-        value_parser = shared::arguments::parse_percentage_factor
-    )]
-    pub protocol_fee_factor: f64,
-
-    /// Cap protocol fee with a percentage of the order's volume.
-    #[clap(
-        long,
-        env,
-        default_value = "0",
-        value_parser = shared::arguments::parse_percentage_factor
-    )]
-    pub protocol_fee_volume_cap_factor: f64,
+pub enum FeePolicy {
+    LimitOrderOutOfMarket(FeePolicyParams),
+    LimitOrderInMarket(FeePolicyParams),
 }
 
-impl std::fmt::Display for QuoteDeviationPolicy {
+impl FromStr for FeePolicy {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let policy = parts.next().unwrap();
+        let params = FeePolicyParams {
+            price_improvement_factor: parts.next().unwrap().parse().ok(),
+            volume_factor: parts.next().unwrap().parse().ok(),
+        };
+        match policy {
+            "LimitOrderOutOfMarket" => Ok(FeePolicy::LimitOrderOutOfMarket(params)),
+            "LimitOrderInMarket" => Ok(FeePolicy::LimitOrderInMarket(params)),
+            _ => Err(anyhow::anyhow!("Unknown fee policy: {}", policy)),
+        }
+    }
+}
+
+impl std::fmt::Display for FeePolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "protocol_fee_factor: {}", self.protocol_fee_factor)?;
+        match self {
+            FeePolicy::LimitOrderOutOfMarket(params) => {
+                write!(f, "LimitOrderOutOfMarket {{ {} }}", params)
+            }
+            FeePolicy::LimitOrderInMarket(params) => {
+                write!(f, "LimitOrderInMarket {{ {} }}", params)
+            }
+        }
+    }
+}
+
+#[derive(clap::Parser, Clone)]
+pub struct FeePolicyParams {
+    /// How much of the order's price improvement over max(limit price,
+    /// best_bid) should be taken as a protocol fee.
+    #[clap(
+        long,
+        env,
+        default_value = None,
+        value_parser = shared::arguments::parse_percentage_factor
+    )]
+    pub price_improvement_factor: Option<f64>,
+    /// How much of the order's volume should be taken as a protocol fee.
+    #[clap(
+        long,
+        env,
+        default_value = None,
+        value_parser = shared::arguments::parse_percentage_factor
+    )]
+    pub volume_factor: Option<f64>,
+}
+
+impl std::fmt::Display for FeePolicyParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "protocol_fee_volume_cap_factor: {}",
-            self.protocol_fee_volume_cap_factor
+            "price_improvement_factor: {:?}, volume_factor: {:?}",
+            self.price_improvement_factor, self.volume_factor
         )?;
         Ok(())
     }
