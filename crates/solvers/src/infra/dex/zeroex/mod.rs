@@ -150,6 +150,8 @@ pub enum Error {
     NotFound,
     #[error("quote does not specify an approval spender")]
     MissingSpender,
+    #[error("rate limited")]
+    RateLimited,
     #[error("api error code {code}: {reason}")]
     Api { code: i64, reason: String },
     #[error(transparent)]
@@ -166,6 +168,7 @@ impl From<util::http::RoundtripError<dto::Error>> for Error {
                 // past.
                 match err.code {
                     100 => Self::NotFound,
+                    429 => Self::RateLimited,
                     _ => Self::Api {
                         code: err.code,
                         reason: err.reason,

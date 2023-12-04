@@ -98,7 +98,7 @@ impl Order {
             // first solution
             solutions
                 .into_iter()
-                .next()
+                .find(|solution| !solution.is_empty())
                 .ok_or(QuotingFailed::NoSolutions)?,
         )
     }

@@ -35,7 +35,7 @@ struct Inner {
     settlement_contract: H160,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 struct InternalQuery {
     data: Query,
     allowed_protocols: Option<Vec<String>>,

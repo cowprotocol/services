@@ -25,29 +25,36 @@
 //! could simplify this module if it was only used by by the former.
 
 use {
-    anyhow::Result,
+    crate::request_sharing::BoxRequestSharing,
+    anyhow::{Context, Result},
     cached::{Cached, SizedCache},
     ethcontract::BlockNumber,
     ethrpc::current_block::CurrentBlockStream,
+    futures::{FutureExt, StreamExt},
+    itertools::Itertools,
     prometheus::IntCounterVec,
     std::{
         cmp,
         collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
         hash::Hash,
         num::{NonZeroU64, NonZeroUsize},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::Duration,
     },
+    tracing::Instrument,
 };
+
+/// How many liqudity sources should at most be fetched in a single chunk.
+const REQUEST_BATCH_SIZE: usize = 200;
 
 /// A trait used to define `RecentBlockCache` updating behaviour.
 #[async_trait::async_trait]
-pub trait CacheFetching<K, V> {
+pub trait CacheFetching<K, V>: Send + Sync + 'static {
     async fn fetch_values(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>>;
 }
 
 /// A trait used for `RecentBlockCache` keys.
-pub trait CacheKey<V>: Clone + Eq + Hash + Ord {
+pub trait CacheKey<V>: Clone + Eq + Hash + Ord + Send + Sync + 'static {
     /// Returns the smallest possible value for this type's `std::cmp::Ord`
     /// implementation.
     fn first_ord() -> Self;
@@ -85,14 +92,22 @@ where
     K: CacheKey<V>,
     F: CacheFetching<K, V>,
 {
+    inner: Arc<Inner<K, V, F>>,
+}
+
+pub struct Inner<K, V, F>
+where
+    K: CacheKey<V>,
+    F: CacheFetching<K, V>,
+{
     mutexed: Mutex<Mutexed<K, V>>,
     number_of_blocks_to_cache: NonZeroU64,
-    fetcher: F,
-    block_stream: CurrentBlockStream,
+    fetcher: Arc<F>,
     maximum_retries: u32,
     delay_between_retries: Duration,
     metrics: &'static Metrics,
     metrics_label: &'static str,
+    requests: BoxRequestSharing<(K, Block), Option<Vec<V>>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -126,11 +141,10 @@ struct Metrics {
     #[metric(labels("cache_type"))]
     recent_block_cache_misses: IntCounterVec,
 }
-
 impl<K, V, F> RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
-    V: Clone,
+    V: Clone + Send + Sync + 'static,
     F: CacheFetching<K, V>,
 {
     /// number_of_blocks_to_cache: Previous blocks stay cached until the block
@@ -151,27 +165,63 @@ where
         metrics_label: &'static str,
     ) -> Result<Self> {
         let block = block_stream.borrow().number;
-        Ok(Self {
+        let inner = Arc::new(Inner {
             mutexed: Mutex::new(Mutexed::new(
                 config.number_of_entries_to_auto_update,
                 block,
                 config.maximum_recent_block_age,
             )),
             number_of_blocks_to_cache: config.number_of_blocks_to_cache,
-            fetcher,
-            block_stream,
+            fetcher: Arc::new(fetcher),
             maximum_retries: config.max_retries,
             delay_between_retries: config.delay_between_retries,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
-        })
+            requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
+        });
+
+        Self::spawn_gc_task(
+            Arc::downgrade(&inner),
+            block_stream,
+            metrics_label.to_string(),
+        );
+
+        Ok(Self { inner })
     }
 
-    pub async fn update_cache(&self) -> Result<()> {
-        let new_block = self.block_stream.borrow().number;
-        self.update_cache_at_block(new_block).await
+    pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
+        self.inner.fetch(keys, block).await
     }
 
+    fn spawn_gc_task(
+        inner: std::sync::Weak<Inner<K, V, F>>,
+        block_stream: CurrentBlockStream,
+        label: String,
+    ) {
+        tokio::task::spawn(
+            async move {
+                let mut stream = ethrpc::current_block::into_stream(block_stream);
+                while let Some(block) = stream.next().await {
+                    let Some(inner) = inner.upgrade() else {
+                        tracing::debug!("cache no longer in use; terminate GC task");
+                        break;
+                    };
+                    if let Err(err) = inner.update_cache_at_block(block.number).await {
+                        tracing::warn!(?err, "failed to update cache");
+                    }
+                }
+            }
+            .instrument(tracing::info_span!("cache_maintenance", cache = label)),
+        );
+    }
+}
+
+impl<K, V, F> Inner<K, V, F>
+where
+    K: CacheKey<V>,
+    V: Clone + Send + Sync + 'static,
+    F: CacheFetching<K, V>,
+{
     async fn update_cache_at_block(&self, new_block: u64) -> Result<()> {
         let keys = self
             .mutexed
@@ -180,36 +230,58 @@ where
             .keys_of_recently_used_entries()
             .collect::<HashSet<_>>();
         tracing::debug!("automatically updating {} entries", keys.len());
-        let entries = self
-            .fetch_inner(keys.clone(), Block::Number(new_block))
+        let found_values = self
+            .fetch_inner_many(keys.clone(), Block::Number(new_block))
             .await?;
-        {
-            let mut mutexed = self.mutexed.lock().unwrap();
-            mutexed.insert(new_block, keys.into_iter(), entries);
-            let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
-            mutexed.remove_cached_blocks_older_than(oldest_to_keep);
-            mutexed.last_update_block = new_block;
-        }
+
+        let mut mutexed = self.mutexed.lock().unwrap();
+        mutexed.insert(new_block, keys.into_iter(), found_values);
+        let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
+        mutexed.remove_cached_blocks_older_than(oldest_to_keep);
+        mutexed.last_update_block = new_block;
+
         Ok(())
+    }
+
+    async fn fetch_inner_many(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
+        let fetched =
+            futures::future::join_all(keys.iter().map(|key| self.fetch_inner(key.clone(), block)))
+                .await;
+        let fetched: Vec<_> = fetched
+            .into_iter()
+            .filter_map(|res| res.ok())
+            .flatten()
+            .collect();
+        Ok(fetched)
     }
 
     // Sometimes nodes requests error when we try to get state from what we think is
     // the current block when the node has been load balanced out to one that
     // hasn't seen the block yet. As a workaround we repeat the request up to N
     // times while sleeping in between.
-    async fn fetch_inner(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>> {
-        let fetch = || self.fetcher.fetch_values(keys.clone(), block);
-        for _ in 0..self.maximum_retries {
-            match fetch().await {
-                Ok(values) => return Ok(values),
-                Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+    async fn fetch_inner(&self, key: K, block: Block) -> Result<Vec<V>> {
+        let retries = self.maximum_retries;
+        let delay = self.delay_between_retries;
+        let fetcher = self.fetcher.clone();
+        let fut = self.requests.shared_or_else((key, block), |entry| {
+            let (key, block) = entry.clone();
+            async move {
+                for _ in 0..=retries {
+                    let keys = [key.clone()].into();
+                    match fetcher.fetch_values(keys, block).await {
+                        Ok(values) => return Some(values),
+                        Err(err) => tracing::warn!("retrying fetch because error: {:?}", err),
+                    }
+                    tokio::time::sleep(delay).await;
+                }
+                None
             }
-            tokio::time::sleep(self.delay_between_retries).await;
-        }
-        fetch().await
+            .boxed()
+        });
+        fut.await.context("could not fetch liquidity")
     }
 
-    pub async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
+    async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         let block = match block {
             Block::Recent => None,
             Block::Number(number) => Some(number),
@@ -249,15 +321,28 @@ where
         }
 
         let cache_miss_block = block.unwrap_or(last_update_block);
-        let uncached_values = self
-            .fetch_inner(cache_misses.clone(), Block::Number(cache_miss_block))
-            .await?;
+        let cache_misses: Vec<_> = cache_misses.into_iter().collect();
+        // Splits fetches into chunks because we can get over 1400 requests when the
+        // cache is empty which tend to time out if we don't chunk them.
+        for chunk in cache_misses.chunks(REQUEST_BATCH_SIZE) {
+            let keys = chunk.iter().cloned().collect();
+            let fetched = self
+                .fetch_inner_many(keys, Block::Number(cache_miss_block))
+                .await?;
+            let found_keys = fetched.iter().map(K::for_value).unique().collect_vec();
+            cache_hits.extend_from_slice(&fetched);
 
-        cache_hits.extend_from_slice(&uncached_values);
-
-        {
             let mut mutexed = self.mutexed.lock().unwrap();
-            mutexed.insert(cache_miss_block, cache_misses.into_iter(), uncached_values);
+            mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
+            if block.is_some() {
+                // Only if a block number was specified the caller actually cared about the most
+                // accurate data for these keys. Only in that case we want to be nice and
+                // remember the key for future background updates of the cached
+                // liquidity.
+                for key in found_keys {
+                    mutexed.recently_used.cache_set(key, ());
+                }
+            }
         }
 
         Ok(cache_hits)
@@ -299,7 +384,7 @@ where
     }
 
     fn get(&mut self, key: K, block: Option<u64>) -> Option<&[V]> {
-        self.recently_used.cache_set(key.clone(), ());
+        let allow_background_udpates = block.is_some();
         let block = block.or_else(|| {
             self.cached_most_recently_at_block
                 .get(&key)
@@ -308,7 +393,11 @@ where
                     self.last_update_block.saturating_sub(block) <= self.maximum_recent_block_age
                 })
         })?;
-        self.entries.get(&(block, key)).map(Vec::as_slice)
+        let result = self.entries.get(&(block, key.clone())).map(Vec::as_slice);
+        if allow_background_udpates && result.is_some_and(|values| !values.is_empty()) {
+            self.recently_used.cache_set(key, ());
+        }
+        result
     }
 
     fn insert(
@@ -342,11 +431,27 @@ where
     fn remove_cached_blocks_older_than(&mut self, oldest_to_keep: u64) {
         tracing::debug!("dropping blocks older than {} from cache", oldest_to_keep);
         self.entries = self.entries.split_off(&(oldest_to_keep, K::first_ord()));
+
+        // Iterate from newest block to oldest block and only keep the most recent
+        // liquidity around to reduce memory consumption.
+        let mut cached_keys = HashSet::new();
+        let mut items = 0;
+        for ((_block, key), values) in self.entries.iter_mut().rev() {
+            if !cached_keys.insert(key) {
+                *values = vec![];
+            } else {
+                items += values.len();
+            }
+        }
+        // Afterwards drop all entries that are now empty.
+        self.entries.retain(|_, values| !values.is_empty());
+
         self.cached_most_recently_at_block
             .retain(|_, block| *block >= oldest_to_keep);
         tracing::debug!(
-            "the cache now contains entries for {} block-key combinations",
-            self.entries.len()
+            entries = self.entries.len(),
+            items,
+            "cache was updated and now contains",
         );
     }
 
@@ -397,8 +502,26 @@ mod tests {
 
     #[async_trait::async_trait]
     impl CacheFetching<TestKey, TestValue> for FakeCacheFetcher {
-        async fn fetch_values(&self, _: HashSet<TestKey>, _: Block) -> Result<Vec<TestValue>> {
-            Ok(self.0.lock().unwrap().clone())
+        async fn fetch_values(
+            &self,
+            requested: HashSet<TestKey>,
+            _: Block,
+        ) -> Result<Vec<TestValue>> {
+            let fetched = self
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|value| requested.contains(&TestKey(value.key)))
+                .cloned()
+                .collect();
+            Ok(fetched)
+        }
+    }
+
+    impl FakeCacheFetcher {
+        pub fn new(values: Vec<TestValue>) -> Self {
+            Self(Arc::new(Mutex::new(values)))
         }
     }
 
@@ -406,9 +529,14 @@ mod tests {
         keys.into_iter().map(TestKey)
     }
 
-    #[test]
-    fn marks_recently_used() {
-        let fetcher = FakeCacheFetcher::default();
+    #[tokio::test]
+    async fn marks_recently_used() {
+        let fetcher = FakeCacheFetcher::new(vec![
+            TestValue::new(0, "a"),
+            TestValue::new(1, "b"),
+            // no liquidity for key 2 on-chain
+            TestValue::new(3, "c"),
+        ]);
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
             number: block_number,
@@ -416,50 +544,54 @@ mod tests {
         });
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
                 ..Default::default()
             },
             fetcher,
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
+
+        let assert_keys_recently_used = |expected_keys: &[usize]| {
+            let cached_keys = cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .keys_of_recently_used_entries()
+                .collect::<Vec<_>>();
+            let expected_keys: Vec<_> = expected_keys.iter().copied().map(TestKey).collect();
+            assert_eq!(cached_keys, expected_keys);
+        };
 
         cache
-            .fetch(test_keys(0..1), Block::Recent)
-            .now_or_never()
-            .unwrap()
+            .fetch(test_keys(0..1), Block::Number(block_number))
+            .await
             .unwrap();
-        cache
-            .fetch(test_keys(1..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        let keys = cache
-            .mutexed
-            .lock()
-            .unwrap()
-            .keys_of_recently_used_entries()
-            .collect::<HashSet<_>>();
-        assert_eq!(keys, test_keys(0..2).collect());
+        assert_keys_recently_used(&[0]);
 
-        // 1 is already cached, 3 isn't.
+        // Don't cache this because we didn't request the liquidity on a specific block.
+        cache.fetch(test_keys(1..2), Block::Recent).await.unwrap();
+        assert_keys_recently_used(&[0]);
+
+        // Don't cache this because there is no liquidity for this block on-chain.
         cache
-            .fetch(test_keys(1..3), Block::Recent)
-            .now_or_never()
-            .unwrap()
+            .fetch(test_keys(2..3), Block::Number(block_number))
+            .await
             .unwrap();
-        let keys = cache
-            .mutexed
-            .lock()
-            .unwrap()
-            .keys_of_recently_used_entries()
-            .collect::<HashSet<_>>();
-        assert_eq!(keys, test_keys(1..3).collect());
+        assert_keys_recently_used(&[0]);
+
+        // Cache the new key but evict the other key because we have a limited capacity.
+        cache
+            .fetch(test_keys(3..4), Block::Number(block_number))
+            .await
+            .unwrap();
+        assert_keys_recently_used(&[3]);
     }
 
-    #[test]
-    fn auto_updates_recently_used() {
+    #[tokio::test]
+    async fn auto_updates_recently_used() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -469,44 +601,59 @@ mod tests {
         });
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(4).unwrap(),
                 ..Default::default()
             },
             fetcher,
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
+
+        // Initial state on the block chain.
+        let initial_values = vec![
+            TestValue::new(0, "1"),
+            TestValue::new(1, "1"),
+            TestValue::new(2, "1"),
+            TestValue::new(3, "1"),
+        ];
+        *values.lock().unwrap() = initial_values.clone();
 
         let result = cache
-            .fetch(test_keys(0..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        assert!(result.is_empty());
-
-        let updated_values = vec![TestValue::new(0, "hello"), TestValue::new(1, "ether")];
-        *values.lock().unwrap() = updated_values.clone();
-        cache
-            .update_cache_at_block(block_number)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        values.lock().unwrap().clear();
-
-        let result = cache
-            .fetch(test_keys(0..2), Block::Recent)
-            .now_or_never()
-            .unwrap()
+            .fetch(test_keys(0..2), Block::Number(block_number))
+            .await
             .unwrap();
         assert_eq!(result.len(), 2);
-        for value in updated_values {
-            assert!(result.contains(&value));
-        }
+
+        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        // We can fetch data for keys with `Recent` but we don't schedule them for auto
+        // updates.
+        assert_eq!(result.len(), 4);
+
+        // New state on the block chain on the next block.
+        let updated_values = vec![
+            TestValue::new(0, "2"),
+            TestValue::new(1, "2"),
+            TestValue::new(2, "2"),
+            TestValue::new(3, "2"),
+        ];
+        *values.lock().unwrap() = updated_values.clone();
+        cache.update_cache_at_block(block_number).await.unwrap();
+        values.lock().unwrap().clear();
+
+        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        assert_eq!(result.len(), 4);
+        // These keys were scheduled for background updates and show the new value.
+        assert!(result.contains(&updated_values[0]));
+        assert!(result.contains(&updated_values[1]));
+        // These keys were NOT scheduled for background updates and show the old value.
+        assert!(result.contains(&initial_values[2]));
+        assert!(result.contains(&initial_values[3]));
     }
 
-    #[test]
-    fn cache_hit_and_miss() {
+    #[tokio::test]
+    async fn cache_hit_and_miss() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -523,7 +670,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         let value0 = TestValue::new(0, "0");
         let value1 = TestValue::new(1, "1");
@@ -561,8 +709,8 @@ mod tests {
         assert!(result.contains(&value2));
     }
 
-    #[test]
-    fn uses_most_recent_cached_for_latest_block() {
+    #[tokio::test]
+    async fn uses_most_recent_cached_for_latest_block() {
         let fetcher = FakeCacheFetcher::default();
         let values = fetcher.0.clone();
         let block_number = 10u64;
@@ -580,7 +728,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
         // cache at block 5
         *values.lock().unwrap() = vec![TestValue::new(0, "foo")];
@@ -628,17 +777,18 @@ mod tests {
         assert_eq!(result, vec![TestValue::new(0, "bar")]);
     }
 
-    #[test]
-    fn evicts_old_blocks_from_cache() {
-        let fetcher = FakeCacheFetcher::default();
-        let block_number = 10u64;
-        let block_stream = mock_single_block(BlockInfo {
-            number: block_number,
+    #[tokio::test]
+    async fn evicts_old_blocks_from_cache() {
+        let values = (0..=12).map(|key| TestValue::new(key, "")).collect();
+        let fetcher = FakeCacheFetcher::new(values);
+        let block = |number| BlockInfo {
+            number,
             ..Default::default()
-        });
+        };
+        let (block_sender, block_stream) = tokio::sync::watch::channel(block(10));
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
+                number_of_blocks_to_cache: NonZeroU64::new(2).unwrap(),
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
@@ -646,30 +796,39 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
 
+        // Fetch 10 keys on block 10; but we only have capacity to update 2 of those in
+        // the background.
         cache
             .fetch(test_keys(0..10), Block::Number(10))
-            .now_or_never()
-            .unwrap()
+            .await
             .unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 10);
-        cache
-            .update_cache_at_block(14)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
+
+        block_sender.send(block(11)).unwrap();
+        // Fetch updated liquidity for 2 of the initial 10 keys
+        cache.update_cache_at_block(11).await.unwrap();
+        // Fetch 2 new keys which are NOT scheduled for background updates
+        cache.fetch(test_keys(10..12), Block::Recent).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 12);
-        cache
-            .update_cache_at_block(15)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
+
+        block_sender.send(block(12)).unwrap();
+        // Fetch updated liquidity for 2 of the initial 10 keys
+        cache.update_cache_at_block(12).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 4);
+
+        block_sender.send(block(13)).unwrap();
+        // Update 2 blocks in background but now it's time to evict the 2 additional
+        // keys we fetched with `Block::Recent` because we are only allowed to
+        // keep state that is up to 2 blocks old.
+        cache.update_cache_at_block(13).await.unwrap();
+        assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 2);
     }
 
-    #[test]
-    fn respects_max_age_limit_for_recent() {
+    #[tokio::test]
+    async fn respects_max_age_limit_for_recent() {
         let fetcher = FakeCacheFetcher::default();
         let block_number = 10u64;
         let block_stream = mock_single_block(BlockInfo {
@@ -686,7 +845,8 @@ mod tests {
             block_stream,
             "",
         )
-        .unwrap();
+        .unwrap()
+        .inner;
         let key = TestKey(0);
 
         // cache at block 7, most recent block is 10.

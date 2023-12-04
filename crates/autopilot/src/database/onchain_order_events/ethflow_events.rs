@@ -143,6 +143,30 @@ fn convert_to_quote_id_and_user_valid_to(
     Ok((quote_id, user_valid_to))
 }
 
+/// The block from which to start indexing eth-flow events. Note that this
+/// function is expected to be used at the start of the services and will panic
+/// if it cannot retrieve the information it needs.
+pub async fn determine_ethflow_indexing_start(
+    skip_event_sync_start: &Option<BlockNumberHash>,
+    ethflow_indexing_start: Option<u64>,
+    web3: &Web3,
+    chain_id: u64,
+) -> BlockNumberHash {
+    if let Some(block_number_hash) = skip_event_sync_start {
+        return *block_number_hash;
+    }
+    if let Some(block_number) = ethflow_indexing_start {
+        return block_number_to_block_number_hash(web3, block_number.into())
+            .await
+            .expect("Should be able to find block at specified indexing start");
+    }
+    settlement_deployment_block_number_hash(web3, chain_id)
+        .await
+        .unwrap_or_else(|err| {
+            panic!("Should be able to find settlement deployment block. Error: {err}")
+        })
+}
+
 #[cfg(test)]
 mod test {
     use {
@@ -228,28 +252,4 @@ mod test {
             .unwrap();
         assert_eq!(result.len(), 0);
     }
-}
-
-/// The block from which to start indexing eth-flow events. Note that this
-/// function is expected to be used at the start of the services and will panic
-/// if it cannot retrieve the information it needs.
-pub async fn determine_ethflow_indexing_start(
-    skip_event_sync_start: &Option<BlockNumberHash>,
-    ethflow_indexing_start: Option<u64>,
-    web3: &Web3,
-    chain_id: u64,
-) -> BlockNumberHash {
-    if let Some(block_number_hash) = skip_event_sync_start {
-        return *block_number_hash;
-    }
-    if let Some(block_number) = ethflow_indexing_start {
-        return block_number_to_block_number_hash(web3, block_number.into())
-            .await
-            .expect("Should be able to find block at specified indexing start");
-    }
-    settlement_deployment_block_number_hash(web3, chain_id)
-        .await
-        .unwrap_or_else(|err| {
-            panic!("Should be able to find settlement deployment block. Error: {err}")
-        })
 }

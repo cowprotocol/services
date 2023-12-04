@@ -2,6 +2,7 @@
 
 use {
     crate::{
+        boundary::rate_limiter::RateLimitingStrategy,
         domain::{dex::slippage, eth, Risk},
         infra::{blockchain, config::unwrap_or_log, contracts},
         util::serialize,
@@ -9,7 +10,7 @@ use {
     bigdecimal::BigDecimal,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
-    std::{fmt::Debug, num::NonZeroUsize, path::Path},
+    std::{fmt::Debug, num::NonZeroUsize, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -48,6 +49,18 @@ struct Config {
     /// (gas_amount_factor, gas_price_factor, nmb_orders_factor, intercept)
     risk_parameters: (f64, f64, f64, f64),
 
+    /// Back-off growth factor for rate limiting.
+    #[serde(default = "default_back_off_growth_factor")]
+    back_off_growth_factor: f64,
+
+    /// Minimum back-off time in seconds for rate limiting.
+    #[serde(default = "default_min_back_off")]
+    min_back_off: u64,
+
+    /// Maximum back-off time in seconds for rate limiting.
+    #[serde(default = "default_max_back_off")]
+    max_back_off: u64,
+
     /// Settings specific to the wrapped dex API.
     dex: toml::Value,
 }
@@ -62,6 +75,18 @@ fn default_concurrent_requests() -> NonZeroUsize {
 
 fn default_smallest_partial_fill() -> eth::U256 {
     eth::U256::exp10(16) // 0.01 ETH
+}
+
+fn default_back_off_growth_factor() -> f64 {
+    1.0
+}
+
+fn default_min_back_off() -> u64 {
+    Default::default()
+}
+
+fn default_max_back_off() -> u64 {
+    Default::default()
 }
 
 /// Loads the base solver configuration from a TOML file.
@@ -117,6 +142,12 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             nmb_orders_factor: config.risk_parameters.2,
             intercept: config.risk_parameters.3,
         },
+        rate_limiting_strategy: RateLimitingStrategy::try_new(
+            config.back_off_growth_factor,
+            Duration::from_secs(config.min_back_off),
+            Duration::from_secs(config.max_back_off),
+        )
+        .unwrap(),
     };
     (config, dex)
 }

@@ -27,7 +27,6 @@ use {
     },
     crate::{
         ethrpc::{Web3, Web3Transport},
-        maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig},
         token_info::TokenInfoFetching,
     },
@@ -357,17 +356,6 @@ impl BalancerPoolFetching for BalancerPoolFetcher {
     }
 }
 
-#[async_trait::async_trait]
-impl Maintaining for BalancerPoolFetcher {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.fetcher.run_maintenance().await
-    }
-
-    fn name(&self) -> &str {
-        "BalancerPoolFetcher"
-    }
-}
-
 /// Creates an aggregate fetcher for all supported pool factories.
 async fn create_aggregate_pool_fetcher(
     web3: Web3,
@@ -557,7 +545,6 @@ mod tests {
         )
         .await
         .unwrap();
-        pool_fetcher.run_maintenance().await.unwrap();
         let pair = TokenPair::new(
             addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             addr!("C011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F"),
@@ -603,9 +590,6 @@ mod tests {
             ),
             pool_id_deny_list: Default::default(),
         };
-
-        // index all the pools.
-        pool_fetcher.run_maintenance().await.unwrap();
 
         // see what the subgraph says.
         let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
