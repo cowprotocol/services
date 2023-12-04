@@ -1,6 +1,5 @@
 use {
     crate::{
-        maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     },
@@ -49,16 +48,5 @@ impl PoolCache {
 impl PoolFetching for PoolCache {
     async fn fetch(&self, pairs: HashSet<TokenPair>, block: Block) -> Result<Vec<Pool>> {
         self.0.fetch(pairs, block).await
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for PoolCache {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.0.update_cache().await
-    }
-
-    fn name(&self) -> &str {
-        "UniswapV2PoolFetcher"
     }
 }

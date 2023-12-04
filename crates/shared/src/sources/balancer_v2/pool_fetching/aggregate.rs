@@ -3,11 +3,7 @@
 
 use {
     super::internal::InternalPoolFetching,
-    crate::{
-        maintenance::Maintaining,
-        recent_block_cache::Block,
-        sources::balancer_v2::pools::Pool,
-    },
+    crate::{recent_block_cache::Block, sources::balancer_v2::pools::Pool},
     anyhow::Result,
     ethcontract::H256,
     futures::future,
@@ -51,23 +47,5 @@ impl InternalPoolFetching for Aggregate {
         .into_iter()
         .flatten()
         .collect())
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for Aggregate {
-    async fn run_maintenance(&self) -> Result<()> {
-        future::try_join_all(
-            self.fetchers
-                .iter()
-                .map(|fetcher| fetcher.run_maintenance()),
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    fn name(&self) -> &str {
-        "BalancerPoolFetcher"
     }
 }

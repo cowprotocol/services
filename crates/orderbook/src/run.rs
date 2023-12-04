@@ -28,7 +28,7 @@ use {
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
         gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
-        maintenance::{Maintaining, ServiceMaintenance},
+        maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
         oneinch_api::OneInchClientImpl,
@@ -518,12 +518,9 @@ pub async fn run(args: Arguments) {
         ipfs,
     ));
 
-    let mut maintainers = vec![pool_fetcher as Arc<dyn Maintaining>];
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
-        maintainers.push(uniswap_v3);
+        let service_maintainer = ServiceMaintenance::new(vec![uniswap_v3]);
+        task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
     }
 
     check_database_connection(orderbook.as_ref()).await;
@@ -547,9 +544,6 @@ pub async fn run(args: Arguments) {
         args.shared.solver_competition_auth,
         native_price_estimator,
     );
-
-    let service_maintainer = ServiceMaintenance::new(maintainers);
-    task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
