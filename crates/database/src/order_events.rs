@@ -83,7 +83,7 @@ pub async fn insert_order_event_if_exists(
         WHERE EXISTS (
             SELECT 1
             FROM order_events
-            WHERE uid = $1
+            WHERE order_uid = $1
         )
     "#;
     sqlx::query(QUERY)

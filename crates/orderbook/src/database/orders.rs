@@ -537,7 +537,11 @@ mod tests {
             order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
             signature::{Signature, SigningScheme},
         },
-        std::sync::atomic::{AtomicI64, Ordering},
+        sqlx::{PgPool, Row},
+        std::{
+            collections::HashMap,
+            sync::atomic::{AtomicI64, Ordering},
+        },
     };
 
     #[test]
@@ -818,6 +822,93 @@ mod tests {
             old_order_cancellation.unwrap().timestamp_millis(),
             new_order.metadata.creation_date.timestamp_millis(),
         );
+
+        let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
+        assert_eq!(order_event_labels_by_id.len(), 2);
+        let old_order_event_labels = order_event_labels_by_id
+            .get(&old_order.metadata.uid)
+            .unwrap();
+        assert_eq!(old_order_event_labels.len(), 1);
+        let old_order_event_label = old_order_event_labels.first().unwrap();
+        assert_eq!(*old_order_event_label, OrderEventLabel::Created);
+        let new_order_event_labels = order_event_labels_by_id
+            .get(&new_order.metadata.uid)
+            .unwrap();
+        assert_eq!(new_order_event_labels.len(), 1);
+        let new_order_event_label = new_order_event_labels.first().unwrap();
+        assert_eq!(*new_order_event_label, OrderEventLabel::Created);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_replace_non_market_order() {
+        let owner = H160([0x77; 20]);
+
+        let db = Postgres::new("postgresql://").unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let old_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([1; 56]),
+                class: OrderClass::Liquidity,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&old_order, None).await.unwrap();
+
+        let new_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([2; 56]),
+                creation_date: Utc::now(),
+                class: OrderClass::Liquidity,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.replace_order(&old_order.metadata.uid, &new_order, None)
+            .await
+            .unwrap();
+
+        let order_statuses = db
+            .user_orders(&owner, 0, None)
+            .await
+            .unwrap()
+            .iter()
+            .map(|order| (order.metadata.uid, order.metadata.status))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order_statuses,
+            vec![
+                (new_order.metadata.uid, OrderStatus::Open),
+                (old_order.metadata.uid, OrderStatus::Cancelled),
+            ]
+        );
+
+        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                .bind(old_order.metadata.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            old_order_cancellation.unwrap().timestamp_millis(),
+            new_order.metadata.creation_date.timestamp_millis(),
+        );
+
+        // Non-market order events should not be stored.
+        let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
+        assert!(order_event_labels_by_id.is_empty());
     }
 
     #[tokio::test]
@@ -947,13 +1038,14 @@ mod tests {
 
         // Define some helper closures to make the test easier to read.
         let uid = |byte: u8| OrderUid([byte; 56]);
-        let order = |byte: u8| Order {
+        let order = |byte: u8, class: Option<OrderClass>| Order {
             data: OrderData {
                 valid_to: u32::MAX,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid: uid(byte),
+                class: class.unwrap_or_default(),
                 ..Default::default()
             },
             ..Default::default()
@@ -971,9 +1063,12 @@ mod tests {
             }
         };
 
-        db.insert_order(&order(1), None).await.unwrap();
-        db.insert_order(&order(2), None).await.unwrap();
-        db.insert_order(&order(3), None).await.unwrap();
+        let order_a = order(1, None);
+        let order_b = order(2, Some(OrderClass::Liquidity));
+        let order_c = order(3, None);
+        db.insert_order(&order_a, None).await.unwrap();
+        db.insert_order(&order_b, None).await.unwrap();
+        db.insert_order(&order_c, None).await.unwrap();
 
         assert_eq!(order_status(1).await, OrderStatus::Open);
         assert_eq!(order_status(2).await, OrderStatus::Open);
@@ -986,6 +1081,22 @@ mod tests {
         assert_eq!(order_status(1).await, OrderStatus::Cancelled);
         assert_eq!(order_status(2).await, OrderStatus::Cancelled);
         assert_eq!(order_status(3).await, OrderStatus::Open);
+
+        // Create order events for Market orders.
+        let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
+        let order_a_labels = order_event_labels_by_id.get(&order_a.metadata.uid).unwrap();
+        assert_eq!(order_a_labels.len(), 2);
+        assert!(order_a_labels.contains(&OrderEventLabel::Created));
+        assert!(order_a_labels.contains(&OrderEventLabel::Cancelled));
+
+        // Do not create order events for Non-market orders.
+        let order_b_labels = order_event_labels_by_id.get(&order_b.metadata.uid);
+        assert!(order_b_labels.is_none());
+
+        // Make sure `Cancelled` order event wasn't created.
+        let order_c_labels = order_event_labels_by_id.get(&order_c.metadata.uid).unwrap();
+        assert_eq!(order_c_labels.len(), 1);
+        assert!(order_c_labels.contains(&OrderEventLabel::Created));
     }
 
     #[tokio::test]
@@ -1021,5 +1132,25 @@ mod tests {
 
         let interactions = db.single_order(&uid).await.unwrap().unwrap().interactions;
         assert_eq!(interactions, order.interactions);
+    }
+
+    async fn order_event_labels_by_id(pool: &PgPool) -> HashMap<OrderUid, Vec<OrderEventLabel>> {
+        const QUERY: &str = r#"
+                SELECT order_uid, label
+                FROM order_events
+            "#;
+        sqlx::query(QUERY)
+            .fetch_all(pool)
+            .await
+            .unwrap()
+            .iter()
+            .fold(HashMap::new(), |mut acc, row| {
+                let order_uid_arr: ByteArray<56> = row.try_get(0).unwrap();
+                let order_event_label: OrderEventLabel = row.try_get(1).unwrap();
+                acc.entry(OrderUid(order_uid_arr.0))
+                    .or_default()
+                    .push(order_event_label);
+                acc
+            })
     }
 }
