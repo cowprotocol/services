@@ -8,11 +8,11 @@ CREATE TABLE fee_policies (
   order_uid bytea NOT NULL
 
   -- The fee should be taken as a percentage of the quote deviation. The value is between 0 and 1.
-  quote_deviation_percentage NUMERIC(3, 2) CHECK (quote_deviation_percentage >= 0 AND quote_deviation_percentage <= 1)
+  quote_deviation_percentage NUMERIC(3, 2)[]
   -- The fee should be taken as a percentage of the order volume. The value is between 0 and 1.
-  volume_percentage_factor NUMERIC(3, 2) CHECK (volume_percentage_factor >= 0 AND volume_percentage_factor <= 1)
+  volume_percentage_factor NUMERIC(3, 2)[]
   -- The fee should be taken as an absolute value.
-  absolute_fee NUMERIC(78, 0)
+  absolute_fee NUMERIC(78, 0)[]
 
   PRIMARY KEY (auction_id, order_uid)
 );

@@ -6,25 +6,25 @@ use {
 };
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
-pub struct FeePolicy {
+pub struct FeePolicies {
     pub auction_id: AuctionId,
     pub order_uid: OrderUid,
-    pub quote_deviation_factor: Option<f64>,
-    pub volume_factor: Option<f64>,
-    pub absolute_fee: Option<BigDecimal>, 
+    pub quote_deviation_factor: Vec<f64>,
+    pub volume_factor: Vec<f64>,
+    pub absolute_fee: Vec<BigDecimal>, 
 }
 
-pub async fn insert(ex: &mut PgTransaction<'_>, fee_policy: FeePolicy) -> Result<(), sqlx::Error> {
+pub async fn insert(ex: &mut PgTransaction<'_>, fee_policies: FeePolicies) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
         INSERT INTO fee_policies (auction_id, order_uid, quote_deviation_factor, volume_factor, absolute_fee)
         VALUES ($1, $2, $3, $4, $5)
     "#;
     sqlx::query(QUERY)
-        .bind(fee_policy.auction_id)
-        .bind(fee_policy.order_uid)
-        .bind(fee_policy.quote_deviation_factor)
-        .bind(fee_policy.volume_factor)
-        .bind(fee_policy.absolute_fee)
+        .bind(fee_policies.auction_id)
+        .bind(fee_policies.order_uid)
+        .bind(fee_policies.quote_deviation_factor)
+        .bind(fee_policies.volume_factor)
+        .bind(fee_policies.absolute_fee)
         .execute(ex.deref_mut())
         .await?;
     Ok(())
