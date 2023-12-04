@@ -825,18 +825,16 @@ mod tests {
 
         let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
         assert_eq!(order_event_labels_by_id.len(), 2);
-        let old_order_event_labels = order_event_labels_by_id
-            .get(&old_order.metadata.uid)
-            .unwrap();
-        assert_eq!(old_order_event_labels.len(), 1);
-        let old_order_event_label = old_order_event_labels.first().unwrap();
-        assert_eq!(*old_order_event_label, OrderEventLabel::Created);
-        let new_order_event_labels = order_event_labels_by_id
-            .get(&new_order.metadata.uid)
-            .unwrap();
-        assert_eq!(new_order_event_labels.len(), 1);
-        let new_order_event_label = new_order_event_labels.first().unwrap();
-        assert_eq!(*new_order_event_label, OrderEventLabel::Created);
+        let old_order_event_labels = order_event_labels_by_id.get(&old_order.metadata.uid);
+        assert_eq!(
+            old_order_event_labels,
+            Some(&vec![OrderEventLabel::Created])
+        );
+        let new_order_event_labels = order_event_labels_by_id.get(&new_order.metadata.uid);
+        assert_eq!(
+            new_order_event_labels,
+            Some(&vec![OrderEventLabel::Created])
+        );
     }
 
     #[tokio::test]
@@ -1086,8 +1084,10 @@ mod tests {
         let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
         let order_a_labels = order_event_labels_by_id.get(&order_a.metadata.uid).unwrap();
         assert_eq!(order_a_labels.len(), 2);
-        assert!(order_a_labels.contains(&OrderEventLabel::Created));
-        assert!(order_a_labels.contains(&OrderEventLabel::Cancelled));
+        assert_eq!(
+            *order_a_labels,
+            vec![OrderEventLabel::Created, OrderEventLabel::Cancelled]
+        );
 
         // Do not create order events for Non-market orders.
         let order_b_labels = order_event_labels_by_id.get(&order_b.metadata.uid);
@@ -1096,7 +1096,7 @@ mod tests {
         // Make sure `Cancelled` order event wasn't created.
         let order_c_labels = order_event_labels_by_id.get(&order_c.metadata.uid).unwrap();
         assert_eq!(order_c_labels.len(), 1);
-        assert!(order_c_labels.contains(&OrderEventLabel::Created));
+        assert_eq!(*order_c_labels, vec![OrderEventLabel::Created]);
     }
 
     #[tokio::test]
@@ -1138,6 +1138,7 @@ mod tests {
         const QUERY: &str = r#"
                 SELECT order_uid, label
                 FROM order_events
+                ORDER BY timestamp
             "#;
         sqlx::query(QUERY)
             .fetch_all(pool)
