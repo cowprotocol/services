@@ -62,3 +62,4 @@ jobs:
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}
+          timeout: 600000 # 10 minutes
