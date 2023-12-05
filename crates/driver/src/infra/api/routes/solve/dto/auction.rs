@@ -126,6 +126,9 @@ impl Auction {
                                 factor,
                                 volume_cap_factor,
                             },
+                            FeePolicy::Volume { factor } => {
+                                competition::order::FeePolicy::Volume { factor }
+                            }
                         })
                         .collect(),
                 })
@@ -306,4 +309,5 @@ enum Class {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum FeePolicy {
     QuoteDeviation { factor: f64, volume_cap_factor: f64 },
+    Volume { factor: f64 },
 }

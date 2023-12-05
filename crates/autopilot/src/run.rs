@@ -630,7 +630,7 @@ pub async fn run(args: Arguments) {
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
-            fee_policies: args.fee_policies,
+            fee_policy: args.fee_policy,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -692,7 +692,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
-        args.fee_policies,
+        args.fee_policy,
     );
     shadow.run_forever().await;
 

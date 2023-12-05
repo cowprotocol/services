@@ -55,7 +55,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub fee_policies: Vec<arguments::FeePolicy>,
+    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -304,7 +304,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policies.clone(),
+            self.fee_policy.clone(),
         );
         let request = &request;
 
@@ -452,7 +452,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policies: Vec<arguments::FeePolicy>,
+    fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -478,39 +478,28 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-                let fee_policies = fee_policies
-                    .iter()
-                    .filter_map(|policy| match policy {
-                        arguments::FeePolicy::LimitOrderInMarket(params) => {
-                            tracing::warn!("LimitOrderInMarket fee policy not yet supported");
-                            None
-                        }
-                        arguments::FeePolicy::LimitOrderOutOfMarket(params) => {
-                            match params.price_improvement_factor {
-                                Some(price_improvement_factor) => {
-                                    // todo
-                                    None
-                                }
-                                None => {
-                                    tracing::warn!("not supported yet");
-                                    None
-                                }
-                            }
-                        }
-                    })
-                    .collect();
+                let fee_policy = match (
+                    fee_policy.price_improvement_factor,
+                    fee_policy.volume_factor,
+                ) {
+                    (Some(factor), volume_cap_factor) => Some(FeePolicy::QuoteDeviation {
+                        factor,
+                        volume_cap_factor,
+                    }),
+                    (None, Some(factor)) => Some(FeePolicy::Volume { factor }),
+                    (_, _) => None,
+                };
 
-                // let fee_policies = match order.metadata.class {
-                //     OrderClass::Market => vec![],
-                //     OrderClass::Liquidity => vec![],
-                //     // todo https://github.com/cowprotocol/services/issues/2092
-                //     // skip protocol fee for limit orders with in-market price
-                //     // OrderClass::Limit(_) => vec![FeePolicy::QuoteDeviation {
-                //     //     factor: quote_deviation_policy.protocol_fee_factor,
-                //     //     volume_cap_factor:
-                // quote_deviation_policy.protocol_fee_volume_cap_factor,     //
-                // }],     OrderClass::Limit(_) => vec![],
-                // };
+                let fee_policies = match order.metadata.class {
+                    OrderClass::Market => vec![],
+                    OrderClass::Liquidity => vec![],
+                    // todo https://github.com/cowprotocol/services/issues/2092
+                    // skip protocol fee for limit orders with in-market price
+
+                    // todo https://github.com/cowprotocol/services/issues/2115
+                    // skip protocol fee for TWAP limit orders
+                    OrderClass::Limit(_) => fee_policy.map(|policy| vec![policy]).unwrap_or(vec![]),
+                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
