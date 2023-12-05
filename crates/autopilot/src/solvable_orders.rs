@@ -647,9 +647,9 @@ impl OrderFilterCounter {
             tracing::debug!(%order, ?class, %reason, "filtered order")
         }
         filtered_orders
-            .iter()
+            .into_iter()
             .filter_map(|(order_uid, class)| match class {
-                OrderClass::Market => Some(*order_uid),
+                OrderClass::Market => Some(order_uid),
                 _ => None,
             })
             .collect()

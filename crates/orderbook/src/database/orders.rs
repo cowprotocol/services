@@ -62,7 +62,7 @@ pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order, quote: Option<Quote>)
         -> Result<(), InsertionError>;
     async fn cancel_orders(&self, order_uids: Vec<OrderUid>, now: DateTime<Utc>) -> Result<()>;
-    async fn cancel_order(&self, order_uid: &Order, now: DateTime<Utc>) -> Result<()>;
+    async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn replace_order(
         &self,
         old_order: &OrderUid,
@@ -124,19 +124,21 @@ async fn cancel_order_by_uid(
 
 /// Applies the needed DB modification to cancel a single market order.
 /// Inserts a `Cancelled` order event for the market order only.
-async fn cancel_order(ex: &mut PgConnection, order: &Order, now: DateTime<Utc>) -> Result<()> {
-    let uid = ByteArray(order.metadata.uid.0);
-    if order.metadata.class == OrderClass::Market {
-        insert_order_event(
-            ex,
-            &OrderEvent {
-                order_uid: uid,
-                timestamp: now,
-                label: OrderEventLabel::Cancelled,
-            },
-        )
-        .await?
-    }
+async fn cancel_order(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let uid = ByteArray(order_uid.0);
+    insert_market_order_event(
+        ex,
+        &OrderEvent {
+            order_uid: uid,
+            timestamp: now,
+            label: OrderEventLabel::Cancelled,
+        },
+    )
+    .await?;
     database::orders::cancel_order(ex, &uid, now).await?;
     Ok(())
 }
@@ -294,14 +296,14 @@ impl OrderStoring for Postgres {
             .context("commit cancel multiple orders")
     }
 
-    async fn cancel_order(&self, order: &Order, now: DateTime<Utc>) -> Result<()> {
+    async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["cancel_order"])
             .start_timer();
 
         let mut ex = self.pool.begin().await?;
-        cancel_order(&mut ex, order, now).await?;
+        cancel_order(&mut ex, order_uid, now).await?;
         ex.commit().await.context("commit cancel single order")
     }
 
@@ -1104,7 +1106,6 @@ mod tests {
         // Create order events for Market orders.
         let order_event_labels_by_id = order_event_labels_by_id(&db.pool).await;
         let order_a_labels = order_event_labels_by_id.get(&order_a.metadata.uid).unwrap();
-        assert_eq!(order_a_labels.len(), 2);
         assert_eq!(
             *order_a_labels,
             vec![OrderEventLabel::Created, OrderEventLabel::Cancelled]
@@ -1116,7 +1117,6 @@ mod tests {
 
         // Make sure `Cancelled` order event wasn't created.
         let order_c_labels = order_event_labels_by_id.get(&order_c.metadata.uid).unwrap();
-        assert_eq!(order_c_labels.len(), 1);
         assert_eq!(*order_c_labels, vec![OrderEventLabel::Created]);
     }
 

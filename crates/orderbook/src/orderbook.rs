@@ -336,7 +336,9 @@ impl Orderbook {
 
         // order is already known to exist in DB at this point, and signer is
         // known to be correct!
-        self.database.cancel_order(&order, Utc::now()).await?;
+        self.database
+            .cancel_order(&order.metadata.uid, Utc::now())
+            .await?;
 
         tracing::debug!(order_uid =% order.metadata.uid, "order cancelled");
         Metrics::on_order_operation(&order, OrderOperation::Cancelled);
