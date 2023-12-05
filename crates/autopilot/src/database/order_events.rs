@@ -22,6 +22,8 @@ impl super::Postgres {
         }
     }
 
+    /// Inserts the given events with the current timestamp into the DB for the
+    /// market orders only.
     pub async fn store_market_order_events(&self, events: &[(OrderUid, OrderEventLabel)]) {
         if let Err(err) = store_market_order_events(self, events, Utc::now()).await {
             tracing::warn!(?err, "failed to insert market order events");
