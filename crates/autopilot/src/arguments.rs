@@ -326,11 +326,11 @@ pub struct FeePolicy {
 
     /// Should protocol fees be collected or skipped for limit orders with
     /// in-market price at the time of order creation.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub skip_in_market_orders: bool,
 
     /// Should protocol fees be collected or skipped for TWAP limit orders.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub skip_twap_orders: bool,
 }
 
