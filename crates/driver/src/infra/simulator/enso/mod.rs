@@ -37,6 +37,11 @@ impl Enso {
                 value: tx.value.into(),
                 gas_limit: GAS_LIMIT,
                 block_number: None,
+                access_list: if tx.access_list.is_empty() {
+                    None
+                } else {
+                    Some(tx.access_list.into())
+                },
             })
             .send()
             .await?

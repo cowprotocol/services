@@ -19,6 +19,34 @@ pub struct Request {
     pub gas_limit: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_number: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_list: Option<AccessList>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub struct AccessList(Vec<AccessListItem>);
+
+impl From<eth::AccessList> for AccessList {
+    fn from(value: eth::AccessList) -> Self {
+        Self(
+            web3::types::AccessList::from(value)
+                .into_iter()
+                .map(|item| AccessListItem {
+                    address: item.address,
+                    storage_keys: item.storage_keys,
+                })
+                .collect(),
+        )
+    }
+}
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessListItem {
+    pub address: eth::H160,
+    pub storage_keys: Vec<eth::H256>,
 }
 
 #[serde_as]
