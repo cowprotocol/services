@@ -115,9 +115,8 @@ pub mod solve {
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
-        /// The types of fees that should be collected by the protocol.
-        /// The driver is expected to apply the fees in the order they are
-        /// listed.
+        /// The types of fees that will be collected by the protocol.
+        /// Multiple fees are applied in the order they are listed
         pub fee_policies: Vec<FeePolicy>,
     }
 
@@ -157,23 +156,19 @@ pub mod solve {
     #[derive(Clone, Debug, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub enum FeePolicy {
-        /// Applies to limit orders only.
-        /// This fee should be taken if the solver provided good enough solution
-        /// that even after the surplus fee is taken, there is still more
-        /// surplus left above whatever the user expects [order limit price
-        /// or best quote, whichever is better for the user].
-        /// The fee is taken in `sell` token for `buy` orders and in `buy`
-        /// token for `sell` orders.
+        /// If the order receives more than expected (positive deviation from
+        /// quoted amounts) pay the protocol a factor of the achieved
+        /// improvement. The fee is taken in `sell` token for `buy`
+        /// orders and in `buy` token for `sell` orders.
         QuoteDeviation {
-            /// Percentage of the order's `available surplus` should be taken as
-            /// a protocol fee.
+            /// Factor of price improvement the protocol charges as a fee.
+            /// Price improvement is the difference between executed price and
+            /// limit price or quoted price (whichever is better)
             ///
-            /// `Available surplus` is the difference between the executed_price
-            /// (adjusted by surplus_fee) and the closer of the two: order
-            /// limit_price or best_quote. For out-of-market limit orders,
-            /// order limit price is closer to the executed price. For
-            /// in-market limit orders, best quote is closer to the executed
-            /// price.
+            /// E.g. if a user received 2000USDC for 1ETH while having been
+            /// quoted 1990USDC, their price improvement is 10USDC.
+            /// A factor of 0.5 requires the solver to pay 5USDC to
+            /// the protocol for settling this order.
             factor: f64,
             /// Cap protocol fee with a percentage of the order's volume.
             volume_cap_factor: Option<f64>,
