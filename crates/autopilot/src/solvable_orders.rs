@@ -632,6 +632,7 @@ impl OrderFilterCounter {
     }
 
     /// Creates a new checkpoint from the current remaining orders.
+    /// Returns market order uids only.
     fn checkpoint(&mut self, reason: Reason, orders: &[Order]) -> Vec<OrderUid> {
         let filtered_orders = orders
             .iter()
@@ -645,7 +646,13 @@ impl OrderFilterCounter {
             self.orders.remove(order).unwrap();
             tracing::debug!(%order, ?class, %reason, "filtered order")
         }
-        filtered_orders.into_keys().collect()
+        filtered_orders
+            .iter()
+            .filter_map(|(order_uid, class)| match class {
+                OrderClass::Market => Some(*order_uid),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Records the filter counter to metrics.

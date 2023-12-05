@@ -68,6 +68,7 @@ mod tests {
         database::{
             byte_array::ByteArray,
             order_events::{OrderEvent, OrderEventLabel},
+            OrderUid,
         },
         itertools::Itertools,
         sqlx::{PgPool, Row},
@@ -117,7 +118,7 @@ mod tests {
 
         ex.commit().await.unwrap();
 
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids(&db.0).await;
         assert_eq!(ids.len(), 3);
         assert!(ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -131,7 +132,7 @@ mod tests {
 
         // delete `order_a` after the initialization
         time::sleep(Duration::from_millis(20)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -139,7 +140,7 @@ mod tests {
 
         // nothing deleted after the first interval
         time::sleep(Duration::from_millis(50)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids(&db.0).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -147,18 +148,18 @@ mod tests {
 
         // delete `event_b` only
         time::sleep(Duration::from_millis(100)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids(&db.0).await;
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_c`
         time::sleep(Duration::from_millis(200)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids(&db.0).await;
         assert!(ids.is_empty());
     }
 
-    async fn order_event_ids_before(pool: &PgPool) -> Vec<ByteArray<56>> {
+    async fn order_event_ids(pool: &PgPool) -> Vec<OrderUid> {
         const QUERY: &str = r#"
                 SELECT order_uid
                 FROM order_events
@@ -169,7 +170,7 @@ mod tests {
             .unwrap()
             .iter()
             .map(|row| {
-                let order_uid: ByteArray<56> = row.try_get(0).unwrap();
+                let order_uid: OrderUid = row.try_get(0).unwrap();
                 order_uid
             })
             .collect_vec()

@@ -150,7 +150,7 @@ impl RunLoop {
                 .iter()
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
-            self.database.store_order_events(&events).await;
+            self.database.store_market_order_events(&events).await;
 
             let winner = solution.account;
             let winning_score = solution.score.get();
@@ -311,7 +311,10 @@ impl RunLoop {
                 &auction
                     .orders
                     .iter()
-                    .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+                    .filter_map(|o| match o.metadata.class {
+                        OrderClass::Market => Some((o.metadata.uid, OrderEventLabel::Ready)),
+                        _ => None,
+                    })
                     .collect_vec(),
             )
             .await;
@@ -416,7 +419,7 @@ impl RunLoop {
             .iter()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.database.store_market_order_events(&events).await;
 
         let request = settle::Request {
             solution_id: solved.id,
@@ -433,7 +436,7 @@ impl RunLoop {
             .iter()
             .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.database.store_market_order_events(&events).await;
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())

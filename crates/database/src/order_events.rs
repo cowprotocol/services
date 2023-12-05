@@ -67,6 +67,34 @@ pub async fn insert_order_event(
         .map(|_| ())
 }
 
+/// Insert a row into the `order_events` table if a corresponding market order
+/// exists in the `orders` table.
+pub async fn insert_market_order_event(
+    ex: &mut PgConnection,
+    event: &OrderEvent,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+        INSERT INTO order_events (
+            order_uid,
+            timestamp,
+            label
+        )
+        SELECT $1, $2, $3
+        WHERE EXISTS (
+            SELECT 1
+            FROM orders
+            WHERE uid = $1 AND class = 'market'
+        )
+    "#;
+    sqlx::query(QUERY)
+        .bind(event.order_uid)
+        .bind(event.timestamp)
+        .bind(event.label)
+        .execute(ex)
+        .await
+        .map(|_| ())
+}
+
 /// Deletes rows before the provided timestamp from the `order_events` table.
 pub async fn delete_order_events_before(
     pool: &PgPool,
