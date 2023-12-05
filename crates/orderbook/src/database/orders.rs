@@ -103,27 +103,6 @@ impl From<sqlx::Error> for InsertionError {
 /// Applies the needed DB modification to cancel a single order.
 /// Inserts a `Cancelled` event if a corresponding market order exists in the
 /// `orders` table.
-async fn cancel_order_by_uid(
-    ex: &mut PgConnection,
-    order_uid: &OrderUid,
-    now: DateTime<Utc>,
-) -> Result<()> {
-    let uid = ByteArray(order_uid.0);
-    insert_market_order_event(
-        ex,
-        &OrderEvent {
-            order_uid: uid,
-            timestamp: now,
-            label: OrderEventLabel::Cancelled,
-        },
-    )
-    .await?;
-    database::orders::cancel_order(ex, &uid, now).await?;
-    Ok(())
-}
-
-/// Applies the needed DB modification to cancel a single market order.
-/// Inserts a `Cancelled` order event for the market order only.
 async fn cancel_order(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -288,7 +267,7 @@ impl OrderStoring for Postgres {
 
         let mut connection = self.pool.begin().await?;
         for order_uid in order_uids {
-            cancel_order_by_uid(&mut connection, &order_uid, now).await?;
+            cancel_order(&mut connection, &order_uid, now).await?;
         }
         connection
             .commit()
