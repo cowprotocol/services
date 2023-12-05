@@ -336,12 +336,15 @@ pub struct FeePolicy {
 
 impl std::fmt::Display for FeePolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(
+        write!(
             f,
-            "price_improvement_factor: {:?}, volume_factor: {:?}",
-            self.price_improvement_factor, self.volume_factor
-        )?;
-        Ok(())
+            "price_improvement_factor: {:?}, volume_factor: {:?}, skip_in_market_orders: {}, \
+             skip_twap_orders: {}",
+            self.price_improvement_factor,
+            self.volume_factor,
+            self.skip_in_market_orders,
+            self.skip_twap_orders
+        )
     }
 }
 
