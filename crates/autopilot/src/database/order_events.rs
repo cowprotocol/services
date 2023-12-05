@@ -71,7 +71,7 @@ impl OrderEventPersister for MarketOrderEventPersister {
     }
 }
 
-async fn store_order_events_generic(
+async fn store_order_events(
     db: &super::Postgres,
     events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
@@ -96,7 +96,7 @@ async fn store_all_order_events(
     events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
-    store_order_events_generic(db, events, timestamp, &RegularOrderEventPersister).await
+    store_order_events(db, events, timestamp, &RegularOrderEventPersister).await
 }
 
 async fn store_market_order_events(
@@ -104,5 +104,5 @@ async fn store_market_order_events(
     events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
-    store_order_events_generic(db, events, timestamp, &MarketOrderEventPersister).await
+    store_order_events(db, events, timestamp, &MarketOrderEventPersister).await
 }
