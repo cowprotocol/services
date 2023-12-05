@@ -1,6 +1,6 @@
 use {
     crate::{
-        arguments::QuoteDeviationPolicy,
+        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -21,7 +21,7 @@ use {
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
         interaction::InteractionData,
-        order::OrderClass,
+        order::{OrderClass, OrderUid},
         solver_competition::{
             CompetitionAuction,
             Order,
@@ -31,15 +31,16 @@ use {
         },
     },
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, U256},
+    primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashSet},
-        sync::Arc,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     tracing::Instrument,
+    web3::types::TransactionReceipt,
 };
 
 pub struct RunLoop {
@@ -55,7 +56,8 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub quote_deviation_policy: QuoteDeviationPolicy,
+    pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -69,7 +71,7 @@ impl RunLoop {
                 if last_auction_id.replace(id) != Some(id)
                     || last_block.replace(current_block) != Some(current_block)
                 {
-                    self.single_run(id, &auction)
+                    self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -114,11 +116,13 @@ impl RunLoop {
         Some(AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
+    async fn single_run(&self, auction_id: AuctionId, auction: Auction) {
         tracing::info!(?auction, "solving");
 
+        let auction = self.remove_in_flight_orders(auction).await;
+
         let solutions = {
-            let mut solutions = self.competition(auction_id, auction).await;
+            let mut solutions = self.competition(auction_id, &auction).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
                 return;
@@ -304,10 +308,11 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.quote_deviation_policy.clone(),
+            self.fee_policy.clone(),
         );
         let request = &request;
 
+        let start = Instant::now();
         self.database
             .store_order_events(
                 &auction
@@ -317,6 +322,7 @@ impl RunLoop {
                     .collect_vec(),
             )
             .await;
+        tracing::debug!(elapsed=?start.elapsed(), aution_id=%id, "storing order events took");
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -429,6 +435,11 @@ impl RunLoop {
             .map_err(SettleError::Failure)?
             .tx_hash;
 
+        *self.in_flight_orders.lock().unwrap() = InFlightOrders {
+            tx_hash,
+            orders: revealed.orders.iter().cloned().collect(),
+        };
+
         let events = revealed
             .orders
             .iter()
@@ -444,6 +455,34 @@ impl RunLoop {
     async fn save_competition(&self, competition: &Competition) -> Result<()> {
         self.database.save_competition(competition).await
     }
+
+    /// Removes orders that are currently being settled to avoid solvers trying
+    /// to fill an order a second time.
+    async fn remove_in_flight_orders(&self, mut auction: Auction) -> Auction {
+        let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
+        let tx_receipt = self.web3.eth().transaction_receipt(prev_settlement).await;
+
+        let prev_settlement_block = match tx_receipt {
+            Ok(Some(TransactionReceipt {
+                block_number: Some(number),
+                ..
+            })) => number.0[0],
+            // Could not find the block of the previous settlement, let's be
+            // conservative and assume all orders are still in-flight.
+            _ => u64::MAX,
+        };
+
+        if auction.latest_settlement_block < prev_settlement_block {
+            // Auction was built before the in-flight orders were processed.
+            let in_flight_orders = self.in_flight_orders.lock().unwrap();
+            auction
+                .orders
+                .retain(|o| !in_flight_orders.orders.contains(&o.metadata.uid));
+            tracing::debug!(orders = ?in_flight_orders.orders, "filtered out in-flight orders");
+        }
+
+        auction
+    }
 }
 
 pub fn solve_request(
@@ -452,7 +491,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    quote_deviation_policy: QuoteDeviationPolicy,
+    fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -478,15 +517,27 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
+                let fee_policy = match (
+                    fee_policy.price_improvement_factor,
+                    fee_policy.volume_factor,
+                ) {
+                    (Some(factor), volume_cap_factor) => Some(FeePolicy::QuoteDeviation {
+                        factor,
+                        volume_cap_factor,
+                    }),
+                    (None, Some(factor)) => Some(FeePolicy::Volume { factor }),
+                    (_, _) => None,
+                };
+
                 let fee_policies = match order.metadata.class {
                     OrderClass::Market => vec![],
                     OrderClass::Liquidity => vec![],
                     // todo https://github.com/cowprotocol/services/issues/2092
                     // skip protocol fee for limit orders with in-market price
-                    OrderClass::Limit(_) => vec![FeePolicy::QuoteDeviation {
-                        factor: quote_deviation_policy.protocol_fee_factor,
-                        volume_cap_factor: quote_deviation_policy.protocol_fee_volume_cap_factor,
-                    }],
+
+                    // todo https://github.com/cowprotocol/services/issues/2115
+                    // skip protocol fee for TWAP limit orders
+                    OrderClass::Limit(_) => fee_policy.map(|policy| vec![policy]).unwrap_or(vec![]),
                 };
                 solve::Order {
                     uid: order.metadata.uid,
@@ -535,6 +586,14 @@ pub fn solve_request(
         deadline: Utc::now() + chrono::Duration::from_std(time_limit).unwrap(),
         score_cap,
     }
+}
+
+/// Orders settled in the previous auction that might still be in-flight.
+#[derive(Default)]
+pub struct InFlightOrders {
+    /// The transaction that these orders where settled in.
+    tx_hash: H256,
+    orders: HashSet<OrderUid>,
 }
 
 struct Participant<'a> {

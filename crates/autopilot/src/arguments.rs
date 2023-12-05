@@ -208,8 +208,9 @@ pub struct Arguments {
     )]
     pub solve_deadline: Duration,
 
+    /// Describes how the protocol fee should be calculated.
     #[clap(flatten)]
-    pub quote_deviation_policy: QuoteDeviationPolicy,
+    pub fee_policy: FeePolicy,
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.
@@ -287,7 +288,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
-        write!(f, "{}", self.quote_deviation_policy)?;
+        writeln!(f, "fee_policy: {}", self.fee_policy)?;
         writeln!(
             f,
             "order_events_cleanup_interval: {:?}",
@@ -303,35 +304,47 @@ impl std::fmt::Display for Arguments {
 }
 
 #[derive(clap::Parser, Clone)]
-pub struct QuoteDeviationPolicy {
-    /// How much of the order's surplus should be taken as a protocol fee.
+pub struct FeePolicy {
+    /// How much of the order's price improvement over max(limit price,
+    /// best_bid) should be taken as a protocol fee.
     #[clap(
         long,
         env,
-        default_value = "0",
+        default_value = None,
         value_parser = shared::arguments::parse_percentage_factor
     )]
-    pub protocol_fee_factor: f64,
+    pub price_improvement_factor: Option<f64>,
 
-    /// Cap protocol fee with a percentage of the order's volume.
+    /// How much of the order's volume should be taken as a protocol fee.
     #[clap(
         long,
         env,
-        default_value = "0",
+        default_value = None,
         value_parser = shared::arguments::parse_percentage_factor
     )]
-    pub protocol_fee_volume_cap_factor: f64,
+    pub volume_factor: Option<f64>,
+
+    /// Should protocol fees be collected or skipped for limit orders with
+    /// in-market price at the time of order creation.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub skip_in_market_orders: bool,
+
+    /// Should protocol fees be collected or skipped for TWAP limit orders.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub skip_twap_orders: bool,
 }
 
-impl std::fmt::Display for QuoteDeviationPolicy {
+impl std::fmt::Display for FeePolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "protocol_fee_factor: {}", self.protocol_fee_factor)?;
-        writeln!(
+        write!(
             f,
-            "protocol_fee_volume_cap_factor: {}",
-            self.protocol_fee_volume_cap_factor
-        )?;
-        Ok(())
+            "price_improvement_factor: {:?}, volume_factor: {:?}, skip_in_market_orders: {}, \
+             skip_twap_orders: {}",
+            self.price_improvement_factor,
+            self.volume_factor,
+            self.skip_in_market_orders,
+            self.skip_twap_orders
+        )
     }
 }
 
