@@ -55,7 +55,7 @@ jobs:
           tags: ${{ steps.meta_migration.outputs.tags }}
           labels: ${{ steps.meta_migration.outputs.labels }}
 
-      - uses: cowprotocol/autodeploy-action@v1
+      - uses: cowprotocol/autodeploy-action@v2
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
           images: ghcr.io/cowprotocol/services:main
