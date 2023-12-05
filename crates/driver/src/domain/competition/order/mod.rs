@@ -40,8 +40,9 @@ pub struct Order {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
-    /// The types of fees that will be collected by the protocol.
-    /// Multiple fees are applied in the order they are listed
+    /// The types of fees the protocol collects from the winning solver.
+    /// Unless otherwise configured, the driver modifies solutions to take
+    /// sufficient fee in the form of positive slippage.
     pub fee_policies: Vec<FeePolicy>,
 }
 
