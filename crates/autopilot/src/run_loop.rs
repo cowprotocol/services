@@ -517,16 +517,18 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-                let fee_policy = match (
-                    fee_policy.price_improvement_factor,
-                    fee_policy.volume_factor,
-                ) {
-                    (Some(factor), volume_cap_factor) => Some(FeePolicy::QuoteDeviation {
-                        factor,
-                        volume_cap_factor,
-                    }),
-                    (None, Some(factor)) => Some(FeePolicy::Volume { factor }),
-                    (_, _) => None,
+
+                let fee_policy = match fee_policy.fee_policy_kind {
+                    arguments::FeePolicyKind::PriceImprovement {
+                        price_improvement_factor,
+                        max_volume_factor,
+                    } => FeePolicy::PriceImprovement {
+                        factor: price_improvement_factor,
+                        volume_cap_factor: max_volume_factor,
+                    },
+                    arguments::FeePolicyKind::Volume { volume_factor } => FeePolicy::Volume {
+                        factor: volume_factor,
+                    },
                 };
 
                 let fee_policies = match order.metadata.class {
@@ -537,7 +539,7 @@ pub fn solve_request(
 
                     // todo https://github.com/cowprotocol/services/issues/2115
                     // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => fee_policy.map(|policy| vec![policy]).unwrap_or(vec![]),
+                    OrderClass::Limit(_) => vec![fee_policy],
                 };
                 solve::Order {
                     uid: order.metadata.uid,

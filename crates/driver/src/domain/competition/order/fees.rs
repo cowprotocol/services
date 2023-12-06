@@ -4,7 +4,7 @@ pub enum FeePolicy {
     /// amounts) pay the protocol a factor of the achieved improvement.
     /// The fee is taken in `sell` token for `buy` orders and in `buy`
     /// token for `sell` orders.
-    QuoteDeviation {
+    PriceImprovement {
         /// Factor of price improvement the protocol charges as a fee.
         /// Price improvement is the difference between executed price and
         /// limit price or quoted price (whichever is better)

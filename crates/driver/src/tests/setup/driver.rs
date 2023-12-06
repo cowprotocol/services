@@ -101,7 +101,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "signingScheme": "eip712",
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
             "feePolicies": [{
-                "quoteDeviation": {
+                "priceImprovement": {
                     "factor": 0.5,
                     "volume_cap_factor": 0.06,
                 }
