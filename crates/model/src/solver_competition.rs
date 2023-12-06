@@ -156,9 +156,9 @@ impl Score {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
 #[serde(untagged)]
 pub enum Order {
+    #[serde(rename_all = "camelCase")]
     Colocated {
         id: OrderUid,
         /// The effective amount that left the user's wallet including all fees.
@@ -168,6 +168,7 @@ pub enum Order {
         #[serde_as(as = "HexOrDecimalU256")]
         buy_amount: U256,
     },
+    #[serde(rename_all = "camelCase")]
     Legacy {
         id: OrderUid,
         #[serde_as(as = "HexOrDecimalU256")]
@@ -227,7 +228,12 @@ mod tests {
                             "id": "0x3333333333333333333333333333333333333333333333333333333333333333\
                                      3333333333333333333333333333333333333333\
                                      33333333",
-                            "executedAmount": "12",
+                            "sellAmount": "12",
+                            "buyAmount": "13",
+                        },
+                        {
+                            "id": "0x4444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444",
+                            "executedAmount": "14",
                         }
                     ],
                     "callData": "0x13",
@@ -271,11 +277,17 @@ mod tests {
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),
                     },
-                    orders: vec![Order::Colocated {
-                        id: OrderUid([0x33; 56]),
-                        sell_amount: 12.into(),
-                        buy_amount: 13.into(),
-                    }],
+                    orders: vec![
+                        Order::Colocated {
+                            id: OrderUid([0x33; 56]),
+                            sell_amount: 12.into(),
+                            buy_amount: 13.into(),
+                        },
+                        Order::Legacy {
+                            id: OrderUid([0x44; 56]),
+                            executed_amount: 14.into(),
+                        },
+                    ],
                     call_data: vec![0x13],
                     uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
