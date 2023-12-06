@@ -34,13 +34,8 @@ use {
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
-<<<<<<< HEAD
         collections::{BTreeMap, HashMap, HashSet},
-        sync::Arc,
-=======
-        collections::{BTreeMap, HashSet},
         sync::{Arc, Mutex},
->>>>>>> origin/main
         time::{Duration, Instant},
     },
     tracing::Instrument,
@@ -432,13 +427,13 @@ impl RunLoop {
 
         *self.in_flight_orders.lock().unwrap() = InFlightOrders {
             tx_hash,
-            orders: revealed.orders.iter().cloned().collect(),
+            orders: solved.orders.keys().copied().collect(),
         };
 
         let events = solved
             .orders
-            .iter()
-            .map(|(uid, _)| (*uid, OrderEventLabel::Traded))
+            .keys()
+            .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
         self.database.store_order_events(&events).await;
         tracing::debug!(?tx_hash, "solution settled");

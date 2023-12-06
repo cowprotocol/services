@@ -5,6 +5,7 @@ use {
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
+        solver_competition,
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -164,10 +165,11 @@ async fn test(web3: Web3) {
     assert!(solution_1.objective.fees > 0.);
     assert_ne!(solution_0.objective.fees, solution_1.objective.fees);
 
-    assert!(solution_0.orders[0].executed_amount > 0.into());
-    assert!(solution_1.orders[0].executed_amount > 0.into());
-    assert_ne!(
-        solution_0.orders[0].executed_amount,
-        solution_1.orders[0].executed_amount
+    assert!(
+        matches!(solution_0.orders[0], solver_competition::Order::Legacy{ executed_amount, ..} if executed_amount > 0.into())
     );
+    assert!(
+        matches!(solution_1.orders[0], solver_competition::Order::Legacy{ executed_amount, ..} if executed_amount > 0.into())
+    );
+    assert_ne!(solution_0.orders[0], solution_1.orders[0]);
 }
