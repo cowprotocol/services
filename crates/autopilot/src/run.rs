@@ -630,6 +630,7 @@ pub async fn run(args: Arguments) {
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
+            in_flight_orders: Default::default(),
         };
         run.run_forever().await;
         unreachable!("run loop exited");
