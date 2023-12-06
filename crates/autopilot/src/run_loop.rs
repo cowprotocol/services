@@ -315,54 +315,50 @@ impl RunLoop {
             .iter()
             .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
             .collect_vec();
-        let store_order_events_f = tokio::spawn(async move {
-            let start = Instant::now();
-            db.store_order_events(&events).await;
-            tracing::debug!(elapsed=?start.elapsed(), aution_id=%id, "storing order events took");
-        });
+        tokio::spawn(
+            async move {
+                let start = Instant::now();
+                db.store_order_events(&events).await;
+                tracing::debug!(elapsed=?start.elapsed(), "stored order events");
+            }
+            .instrument(tracing::Span::current()),
+        );
 
         let start = Instant::now();
-        let solve_results =
-            futures::future::join_all(self.drivers.iter().map(|driver| async move {
-                let result = self.solve(driver, request).await;
-                let solutions = match result {
-                    Ok(solutions) => {
-                        Metrics::solve_ok(driver, start.elapsed());
-                        solutions
+        futures::future::join_all(self.drivers.iter().map(|driver| async move {
+            let result = self.solve(driver, request).await;
+            let solutions = match result {
+                Ok(solutions) => {
+                    Metrics::solve_ok(driver, start.elapsed());
+                    solutions
+                }
+                Err(err) => {
+                    Metrics::solve_err(driver, start.elapsed(), &err);
+                    if matches!(err, SolveError::NoSolutions) {
+                        tracing::debug!(driver = %driver.name, "solver found no solution");
+                    } else {
+                        tracing::warn!(?err, driver = %driver.name, "solve error");
                     }
-                    Err(err) => {
-                        Metrics::solve_err(driver, start.elapsed(), &err);
-                        if matches!(err, SolveError::NoSolutions) {
-                            tracing::debug!(driver = %driver.name, "solver found no solution");
-                        } else {
-                            tracing::warn!(?err, driver = %driver.name, "solve error");
-                        }
-                        vec![]
-                    }
-                };
+                    vec![]
+                }
+            };
 
-                solutions.into_iter().filter_map(|solution| match solution {
-                    Ok(solution) => {
-                        Metrics::solution_ok(driver);
-                        Some(Participant { driver, solution })
-                    }
-                    Err(err) => {
-                        Metrics::solution_err(driver, &err);
-                        tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
-                        None
-                    }
-                })
-            }))
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
-
-        if let Err(err) = store_order_events_f.await {
-            tracing::warn!(auction_id=%id, ?err, "failed to store order events")
-        }
-
-        solve_results
+            solutions.into_iter().filter_map(|solution| match solution {
+                Ok(solution) => {
+                    Metrics::solution_ok(driver);
+                    Some(Participant { driver, solution })
+                }
+                Err(err) => {
+                    Metrics::solution_err(driver, &err);
+                    tracing::debug!(?err, driver = %driver.name, "invalid proposed solution");
+                    None
+                }
+            })
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
     }
 
     /// Computes a driver's solutions for the solver competition.
