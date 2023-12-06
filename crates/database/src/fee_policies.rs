@@ -20,7 +20,7 @@ pub enum FeePolicyKind {
         max_absolute_fee: Option<BigDecimal>,
     },
     Volume {
-        volume_factor: f64,
+        factor: f64,
     },
 }
 
@@ -83,10 +83,10 @@ impl From<FeePolicyRow> for Option<FeePolicy> {
                     max_absolute_fee: row.absolute_fee,
                 },
             }),
-            (None, Some(volume_factor)) => Some(FeePolicy {
+            (None, Some(factor)) => Some(FeePolicy {
                 auction_id: row.auction_id,
                 order_uid: row.order_uid,
-                kind: FeePolicyKind::Volume { volume_factor },
+                kind: FeePolicyKind::Volume { factor },
             }),
             _ => None,
         }
@@ -107,11 +107,11 @@ impl From<FeePolicy> for FeePolicyRow {
                 volume_factor: max_volume_factor,
                 absolute_fee: max_absolute_fee,
             },
-            FeePolicyKind::Volume { volume_factor } => FeePolicyRow {
+            FeePolicyKind::Volume { factor } => FeePolicyRow {
                 auction_id: fee_policy.auction_id,
                 order_uid: fee_policy.order_uid,
                 price_improvement_factor: None,
-                volume_factor: Some(volume_factor),
+                volume_factor: Some(factor),
                 absolute_fee: None,
             },
         }
@@ -160,9 +160,7 @@ mod tests {
         let fee_policy_3 = FeePolicy {
             auction_id,
             order_uid,
-            kind: FeePolicyKind::Volume {
-                volume_factor: 0.06,
-            },
+            kind: FeePolicyKind::Volume { factor: 0.06 },
         };
         insert(&mut db, fee_policy_3.clone()).await.unwrap();
 
