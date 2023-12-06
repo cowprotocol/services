@@ -132,7 +132,7 @@ mod tests {
         // same primary key for all fee policies
         let (auction_id, order_uid) = (1, ByteArray([1; 56]));
 
-        // quote deviation fee policy without caps
+        // price improvement fee policy without caps
         let fee_policy_1 = FeePolicy {
             auction_id,
             order_uid,
@@ -144,7 +144,7 @@ mod tests {
         };
         insert(&mut db, fee_policy_1.clone()).await.unwrap();
 
-        // quote deviation fee policy with caps
+        // price improvement fee policy with caps
         let fee_policy_2 = FeePolicy {
             auction_id,
             order_uid,
