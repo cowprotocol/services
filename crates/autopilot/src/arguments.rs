@@ -316,6 +316,7 @@ pub struct FeePolicy {
     ///
     /// - Volume based:
     /// volume:0.1
+    #[clap(long, env, default_value = "price_improvement:0.0:1.0")]
     pub fee_policy_kind: FeePolicyKind,
 
     /// Should protocol fees be collected or skipped for orders whose
