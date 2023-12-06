@@ -96,7 +96,11 @@ pub fn simulation_failed(
         solver.notify(
             auction_id,
             Some(solution_id),
-            notification::Kind::SimulationFailed(error.block, error.tx.clone(), succeeded_at_least_once),
+            notification::Kind::SimulationFailed(
+                error.block,
+                error.tx.clone(),
+                succeeded_at_least_once,
+            ),
         );
     }
 }

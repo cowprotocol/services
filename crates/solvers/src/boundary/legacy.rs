@@ -599,8 +599,8 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::SimulationFailed(block_number, tx, succeeded_at_least_once) => AuctionResult::Rejected(
-            SolverRejectionReason::SimulationFailure(
+        Kind::SimulationFailed(block_number, tx, succeeded_at_least_once) => {
+            AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
                 TransactionWithError {
                     error: "".to_string(),
                     transaction: SimulatedTransaction {
@@ -616,8 +616,8 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
                     },
                 },
                 *succeeded_at_least_once,
-            ),
-        ),
+            ))
+        }
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(quality, gas_cost)) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
                 quality: quality.0,
