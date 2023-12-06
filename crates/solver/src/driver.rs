@@ -386,11 +386,9 @@ impl Driver {
                     orders: rated_settlement
                         .settlement
                         .trades()
-                        .map(|trade| solver_competition::Order {
+                        .map(|trade| solver_competition::Order::Legacy {
                             id: trade.order.metadata.uid,
-                            // Not worth populating these for the legacy system.
-                            sell_amount: 0.into(),
-                            buy_amount: 0.into(),
+                            executed_amount: trade.executed_amount,
                         })
                         .collect(),
                     call_data: settlement_simulation::call_data(

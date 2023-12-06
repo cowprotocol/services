@@ -155,16 +155,24 @@ impl Score {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Order {
-    pub id: OrderUid,
-    /// The effective amount that left the user's wallet including all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    /// The effective amount the user received after all fees.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
+#[serde(untagged)]
+pub enum Order {
+    Colocated {
+        id: OrderUid,
+        /// The effective amount that left the user's wallet including all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        sell_amount: U256,
+        /// The effective amount the user received after all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        buy_amount: U256,
+    },
+    Legacy {
+        id: OrderUid,
+        #[serde_as(as = "HexOrDecimalU256")]
+        executed_amount: U256,
+    },
 }
 
 #[cfg(test)]
@@ -263,7 +271,7 @@ mod tests {
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),
                     },
-                    orders: vec![Order {
+                    orders: vec![Order::Colocated {
                         id: OrderUid([0x33; 56]),
                         sell_amount: 12.into(),
                         buy_amount: 13.into(),

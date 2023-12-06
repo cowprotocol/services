@@ -238,7 +238,7 @@ impl RunLoop {
                                 .solution
                                 .orders()
                                 .iter()
-                                .map(|(id, order)| Order {
+                                .map(|(id, order)| Order::Colocated {
                                     id: *id,
                                     sell_amount: order.buy_amount,
                                     buy_amount: order.buy_amount,
