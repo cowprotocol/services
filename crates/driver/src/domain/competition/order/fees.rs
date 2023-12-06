@@ -15,7 +15,7 @@ pub enum FeePolicy {
         /// settling this order.
         factor: f64,
         /// Cap protocol fee with a percentage of the order's volume.
-        volume_cap_factor: f64,
+        max_volume_factor: f64,
     },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`

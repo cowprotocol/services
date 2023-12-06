@@ -9,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, FeePolicy},
+            solve::{self, fee_policy_to_domain, Class},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -518,19 +518,6 @@ pub fn solve_request(
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
 
-                let fee_policy = match fee_policy.fee_policy_kind {
-                    arguments::FeePolicyKind::PriceImprovement {
-                        price_improvement_factor,
-                        max_volume_factor,
-                    } => FeePolicy::PriceImprovement {
-                        factor: price_improvement_factor,
-                        volume_cap_factor: max_volume_factor,
-                    },
-                    arguments::FeePolicyKind::Volume { volume_factor } => FeePolicy::Volume {
-                        factor: volume_factor,
-                    },
-                };
-
                 let fee_policies = match order.metadata.class {
                     OrderClass::Market => vec![],
                     OrderClass::Liquidity => vec![],
@@ -539,7 +526,7 @@ pub fn solve_request(
 
                     // todo https://github.com/cowprotocol/services/issues/2115
                     // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => vec![fee_policy],
+                    OrderClass::Limit(_) => vec![fee_policy_to_domain(&fee_policy)],
                 };
                 solve::Order {
                     uid: order.metadata.uid,

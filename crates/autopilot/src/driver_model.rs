@@ -49,6 +49,7 @@ pub mod quote {
 
 pub mod solve {
     use {
+        crate::arguments,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
@@ -171,7 +172,7 @@ pub mod solve {
             /// the protocol for settling this order.
             factor: f64,
             /// Cap protocol fee with a percentage of the order's volume.
-            volume_cap_factor: f64,
+            max_volume_factor: f64,
         },
         /// How much of the order's volume should be taken as a protocol fee.
         /// The fee is taken in `sell` token for `sell` orders and in `buy`
@@ -187,6 +188,19 @@ pub mod solve {
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
         pub solutions: Vec<Solution>,
+    }
+
+    pub fn fee_policy_to_domain(fee_policy: &arguments::FeePolicy) -> FeePolicy {
+        match fee_policy.fee_policy_kind {
+            arguments::FeePolicyKind::PriceImprovement {
+                factor: price_improvement_factor,
+                max_volume_factor,
+            } => FeePolicy::PriceImprovement {
+                factor: price_improvement_factor,
+                max_volume_factor,
+            },
+            arguments::FeePolicyKind::Volume { factor } => FeePolicy::Volume { factor },
+        }
     }
 }
 

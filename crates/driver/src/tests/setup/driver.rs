@@ -103,7 +103,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "feePolicies": [{
                 "priceImprovement": {
                     "factor": 0.5,
-                    "volume_cap_factor": 0.06,
+                    "max_volume_factor": 0.06,
                 }
             },
             {

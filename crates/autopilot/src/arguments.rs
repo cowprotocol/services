@@ -209,9 +209,7 @@ pub struct Arguments {
     )]
     pub solve_deadline: Duration,
 
-    /// Describes how the protocol fee should be calculated. Examples:
-    /// price_improvement:<price_improvement_factor>:<max_volume_factor>
-    /// volume:<volume_factor>
+    /// Describes how the protocol fee should be calculated.
     #[clap(flatten)]
     pub fee_policy: FeePolicy,
 
@@ -309,10 +307,20 @@ impl std::fmt::Display for Arguments {
 #[derive(clap::Parser, Debug, Clone)]
 pub struct FeePolicy {
     /// Type of fee policy to use.
+    /// Examples:
+    /// - Price improvement without cap
+    /// price_improvement:0.5:1.0
+    ///
+    /// - Price improvement with cap:
+    /// price_improvement:0.5:0.06
+    ///
+    /// - Volume based:
+    /// volume:0.1
     pub fee_policy_kind: FeePolicyKind,
 
-    /// Should protocol fees be collected or skipped for limit orders with
-    /// in-market price at the time of order creation.
+    /// Should protocol fees be collected or skipped for orders whose
+    /// limit price at order creation time suggests they can be immediately
+    /// filled.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub fee_policy_skip_market_orders: bool,
 }
@@ -321,12 +329,9 @@ pub struct FeePolicy {
 pub enum FeePolicyKind {
     /// How much of the order's price improvement over max(limit price,
     /// best_bid) should be taken as a protocol fee.
-    PriceImprovement {
-        price_improvement_factor: f64,
-        max_volume_factor: f64,
-    },
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
-    Volume { volume_factor: f64 },
+    Volume { factor: f64 },
 }
 
 impl FromStr for FeePolicyKind {
@@ -337,7 +342,7 @@ impl FromStr for FeePolicyKind {
         let kind = parts.next().ok_or("missing fee policy kind")?;
         match kind {
             "price_improvement" => {
-                let price_improvement_factor = parts
+                let factor = parts
                     .next()
                     .ok_or("missing price improvement factor")?
                     .parse::<f64>()
@@ -348,17 +353,17 @@ impl FromStr for FeePolicyKind {
                     .parse::<f64>()
                     .map_err(|e| format!("invalid max volume factor: {}", e))?;
                 Ok(Self::PriceImprovement {
-                    price_improvement_factor,
+                    factor,
                     max_volume_factor,
                 })
             }
             "volume" => {
-                let volume_factor = parts
+                let factor = parts
                     .next()
                     .ok_or("missing volume factor")?
                     .parse::<f64>()
                     .map_err(|e| format!("invalid volume factor: {}", e))?;
-                Ok(Self::Volume { volume_factor })
+                Ok(Self::Volume { factor })
             }
             _ => Err(format!("invalid fee policy kind: {}", kind)),
         }
