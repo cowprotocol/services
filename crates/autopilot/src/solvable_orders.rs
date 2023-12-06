@@ -158,20 +158,21 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut order_events = vec![];
+        let mut invalid_order_uids = HashSet::new();
+        let mut filtered_order_events = vec![];
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let removed = counter.checkpoint("unsupported_token", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
         let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
@@ -195,11 +196,11 @@ impl SolvableOrdersCache {
 
         let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("insufficient_balance", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -208,15 +209,15 @@ impl SolvableOrdersCache {
             self.metrics,
         );
         let removed = counter.checkpoint("missing_price", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         let removed = counter.checkpoint("out_of_market", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
         let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         let auction = Auction {
             block,
@@ -225,9 +226,14 @@ impl SolvableOrdersCache {
             prices,
         };
         let removed = counter.record(&auction.orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
-        self.database.store_order_events(&order_events).await;
+        self.database
+            .store_invalid_order_events(&invalid_order_uids)
+            .await;
+        self.database
+            .store_order_events(&filtered_order_events)
+            .await;
 
         let id = if self.store_in_db {
             let id = self.database.replace_current_auction(&auction).await?;
