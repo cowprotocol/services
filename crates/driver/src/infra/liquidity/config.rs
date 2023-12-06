@@ -1,6 +1,7 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
     hex_literal::hex,
+    reqwest::Url,
     std::{collections::HashSet, time::Duration},
 };
 
@@ -121,22 +122,26 @@ impl Swapr {
 }
 
 /// Uniswap V3 liquidity fetching options.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UniswapV3 {
     /// The address of the Uniswap V3 compatible router contract.
     pub router: eth::ContractAddress,
 
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
+    pub fn uniswap_v3(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
             max_pools_to_initialize: 100,
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
 }
@@ -168,12 +173,15 @@ pub struct BalancerV2 {
     /// pools to get "bricked". This configuration allows those pools to be
     /// ignored.
     pub pool_deny_list: Vec<eth::H256>,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn balancer_v2(network: &eth::NetworkId) -> Option<Self> {
+    pub fn balancer_v2(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         let factory_addresses =
             |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
                 contracts
@@ -205,6 +213,7 @@ impl BalancerV2 {
                 contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
 }
