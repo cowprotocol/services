@@ -306,8 +306,8 @@ impl std::fmt::Display for Arguments {
 
 #[derive(clap::Parser, Debug, Clone)]
 pub struct FeePolicy {
-    /// Type of fee policy to use.
-    /// Examples:
+    /// Type of fee policy to use. Examples:
+    ///
     /// - Price improvement without cap
     /// price_improvement:0.5:1.0
     ///
