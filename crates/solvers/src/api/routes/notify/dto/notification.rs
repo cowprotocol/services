@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{auction, eth, notification},
+        domain::{
+            auction,
+            eth,
+            notification::{self, SimulationSucceededAtLeastOnce},
+        },
         util::serialize,
     },
     ethereum_types::{H160, H256, U256},
@@ -22,16 +26,19 @@ impl Notification {
             kind: match &self.kind {
                 Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::SimulationFailed(block, tx) => notification::Kind::SimulationFailed(
-                    *block,
-                    eth::Tx {
-                        from: tx.from.into(),
-                        to: tx.to.into(),
-                        input: tx.input.clone().into(),
-                        value: tx.value.into(),
-                        access_list: tx.access_list.clone(),
-                    },
-                ),
+                Kind::SimulationFailed(block, tx, succeeded_at_least_once) => {
+                    notification::Kind::SimulationFailed(
+                        *block,
+                        eth::Tx {
+                            from: tx.from.into(),
+                            to: tx.to.into(),
+                            input: tx.input.clone().into(),
+                            value: tx.value.into(),
+                            access_list: tx.access_list.clone(),
+                        },
+                        *succeeded_at_least_once,
+                    )
+                }
                 Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive(
@@ -103,7 +110,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx),
+    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,

@@ -12,6 +12,7 @@ type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::H256;
 type Transaction = eth::Tx;
 type BlockNo = u64;
+pub type SimulationSucceededAtLeastOnce = bool;
 
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
@@ -28,7 +29,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Transaction),
+    SimulationFailed(BlockNo, Transaction, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),

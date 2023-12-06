@@ -354,6 +354,7 @@ impl std::fmt::Debug for Tx {
             .field("to", &self.to)
             .field("value", &self.value)
             .field("input", &self.input)
+            .field("access_list", &self.access_list)
             .finish()
     }
 }

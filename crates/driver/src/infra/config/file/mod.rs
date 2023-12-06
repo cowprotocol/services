@@ -168,13 +168,8 @@ struct SolverConfig {
     /// running behind a single driver.
     name: String,
 
-    /// The relative slippage factor allowed by the solver.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    relative_slippage: bigdecimal::BigDecimal,
-
-    /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serialize::U256>")]
-    absolute_slippage: Option<eth::U256>,
+    #[serde(flatten)]
+    slippage: Slippage,
 
     /// Whether or not to skip fetching liquidity for this solver.
     #[serde(default)]
@@ -184,7 +179,7 @@ struct SolverConfig {
     account: Account,
 
     /// Timeout configuration for the solver.
-    #[serde(default)]
+    #[serde(default, flatten)]
     timeouts: Timeouts,
 }
 
@@ -204,26 +199,35 @@ enum Account {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Timeouts {
-    /// Maximum time allocated for http request/reponse to propagate through
-    /// network.
+    /// Absolute time allocated from the total auction deadline for
+    /// request/response roundtrip between autopilot and driver.
+    #[serde(default = "default_http_time_buffer_milliseconds")]
     http_time_buffer_milliseconds: u64,
 
     /// Maximum time allocated for solver engines to return the solutions back
-    /// to the driver, in percentage of total driver deadline.
-    /// Expected value [0, 1]
+    /// to the driver, in percentage of total driver deadline (after network
+    /// buffer). Remaining time is spent on encoding and postprocessing the
+    /// returned solutions. Expected value [0, 1]
+    #[serde(default = "default_solving_share_of_deadline")]
     solving_share_of_deadline: f64,
 }
 
-impl Default for Timeouts {
-    fn default() -> Self {
-        Self {
-            http_time_buffer_milliseconds: default_http_time_buffer_milliseconds(),
-            solving_share_of_deadline: default_solving_share_of_deadline(),
-        }
-    }
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Slippage {
+    /// The relative slippage factor allowed by the solver.
+    #[serde(rename = "relative-slippage")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    relative: bigdecimal::BigDecimal,
+
+    /// The absolute slippage allowed by the solver.
+    #[serde(rename = "absolute-slippage")]
+    #[serde_as(as = "Option<serialize::U256>")]
+    absolute: Option<eth::U256>,
 }
 
 #[derive(Debug, Default, Deserialize)]
