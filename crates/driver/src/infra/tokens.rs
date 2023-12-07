@@ -6,10 +6,10 @@ use {
     ethrpc::current_block::{self, CurrentBlockStream},
     futures::StreamExt,
     itertools::Itertools,
+    model::order::BUY_ETH_ADDRESS,
     std::{collections::HashMap, sync::Arc},
     tokio::sync::RwLock,
     tracing::Instrument,
-    model::order::BUY_ETH_ADDRESS,
 };
 
 #[derive(Clone, Debug)]
@@ -157,8 +157,8 @@ impl Inner {
             return;
         }
 
-        // Take exclusive lock because everybody will call this function for the same tokens
-        // so this a simple way to avoid sending duplicate requests.
+        // Take exclusive lock because everybody will call this function for the same
+        // tokens so this a simple way to avoid sending duplicate requests.
         let mut cache = self.cache.write().await;
         if tokens.iter().all(|address| cache.contains_key(address)) {
             // Somebody else might have already cached all the data in the meantime.
