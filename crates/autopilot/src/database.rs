@@ -104,7 +104,7 @@ pub async fn database_metrics(db: Postgres) -> ! {
         if let Err(err) = db.update_database_metrics().await {
             tracing::error!(?err, "failed to update table rows metric");
         }
-        tokio::time::sleep(Duration::from_secs(60)).await;
+        tokio::time::sleep(Duration::from_secs(60 * 5)).await;
     }
 }
 
