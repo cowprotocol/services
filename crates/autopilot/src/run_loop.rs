@@ -319,7 +319,7 @@ impl RunLoop {
             async move {
                 let start = Instant::now();
                 db.store_order_events(&events).await;
-                tracing::debug!(elapsed=?start.elapsed(), "stored order events");
+                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
             }
             .instrument(tracing::Span::current()),
         );
