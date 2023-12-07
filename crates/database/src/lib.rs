@@ -71,11 +71,8 @@ pub const TABLES: &[&str] = &[
 /// The names of potentially big volume tables we use in the db.
 pub const LARGE_TABLES: &[&str] = &["order_events"];
 
-pub fn all_tables() -> Vec<&'static str> {
-    let mut combined = Vec::with_capacity(TABLES.len() + LARGE_TABLES.len());
-    combined.extend_from_slice(TABLES);
-    combined.extend_from_slice(LARGE_TABLES);
-    combined
+pub fn all_tables() -> impl Iterator<Item = &'static str> {
+    TABLES.iter().copied().chain(LARGE_TABLES.iter().copied())
 }
 
 /// Delete all data in the database. Only used by tests.
