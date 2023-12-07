@@ -5,10 +5,9 @@ use {
     },
     ethrpc::current_block::{self, CurrentBlockStream},
     futures::StreamExt,
-    std::{
-        collections::{HashMap, HashSet},
-        sync::{Arc, RwLock},
-    },
+    itertools::Itertools,
+    std::{collections::HashMap, sync::Arc},
+    tokio::sync::RwLock,
     tracing::Instrument,
 };
 
@@ -68,12 +67,8 @@ async fn update_task(blocks: CurrentBlockStream, inner: std::sync::Weak<Inner>) 
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = inner.eth.contracts().settlement().address().into();
     let futures = {
-        let cache = inner.cache.read().unwrap();
+        let cache = inner.cache.read().await;
         let tokens = cache.keys().cloned().collect::<Vec<_>>();
-        tracing::debug!(
-            tokens = tokens.len(),
-            "updating settlement contract balances"
-        );
         tokens.into_iter().map(|token| {
             let erc20 = inner.eth.erc20(token);
             async move {
@@ -85,6 +80,11 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
         })
     };
 
+    tracing::debug!(
+        tokens = futures.len(),
+        "updating settlement contract balances"
+    );
+
     // Don't hold on to the lock while fetching balances to allow concurrent
     // updates. This may lead to new entries arriving in the meantime, however
     // their balances should already be up-to-date.
@@ -93,14 +93,22 @@ async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
         .into_iter()
         .collect::<HashMap<_, _>>();
 
-    let mut cache = inner.cache.write().unwrap();
-    for (key, entry) in cache.iter_mut() {
-        if let Some(balance) = balances.remove(key) {
-            entry.balance = balance;
-        } else {
-            tracing::info!(?key, "key without balance update");
+    let mut keys_without_balances = vec![];
+    {
+        let mut cache = inner.cache.write().await;
+        for (key, entry) in cache.iter_mut() {
+            if let Some(balance) = balances.remove(key) {
+                entry.balance = balance;
+            } else {
+                // Avoid logging while holding the exclusive lock.
+                keys_without_balances.push(*key);
+            }
         }
     }
+    if !keys_without_balances.is_empty() {
+        tracing::info!(keys = ?keys_without_balances, "updated keys without balance");
+    }
+
     Ok(())
 }
 
@@ -114,7 +122,7 @@ impl Inner {
     /// Fetches `Metadata` of the requested tokens from a node.
     async fn fetch_token_infos(
         &self,
-        tokens: HashSet<eth::TokenAddress>,
+        tokens: Vec<eth::TokenAddress>,
     ) -> Vec<Result<(eth::TokenAddress, Metadata), blockchain::Error>> {
         let settlement = self.eth.contracts().settlement().address().into();
         let futures = tokens.into_iter().map(|token| async move {
@@ -140,30 +148,39 @@ impl Inner {
         futures::future::join_all(futures).await
     }
 
+    /// Ensures that all the missing tokens are in the cache afterwards while
+    /// taking into account that the function might be called multiple times
+    /// for the same tokens.
+    async fn cache_missing_tokens(&self, tokens: Vec<eth::TokenAddress>) {
+        if tokens.is_empty() {
+            return;
+        }
+
+        let mut cache = self.cache.write().await;
+        if tokens.iter().all(|address| cache.contains_key(address)) {
+            // Somebody else might have already cached all the data in the meantime.
+            return;
+        }
+        let fetched = self.fetch_token_infos(tokens).await;
+        cache.extend(fetched.into_iter().flatten());
+    }
+
     async fn get(&self, addresses: &[eth::TokenAddress]) -> HashMap<eth::TokenAddress, Metadata> {
-        let to_fetch: HashSet<_> = {
-            let cache = self.cache.read().unwrap();
+        let to_fetch: Vec<_> = {
+            let cache = self.cache.read().await;
 
             // Compute set of requested addresses that are not in cache.
             addresses
                 .iter()
                 .filter(|address| !cache.contains_key(*address))
                 .cloned()
+                .unique()
                 .collect()
         };
 
-        // Fetch token infos not yet in cache.
-        if !to_fetch.is_empty() {
-            let fetched = self.fetch_token_infos(to_fetch).await;
+        self.cache_missing_tokens(to_fetch).await;
 
-            // Add valid token infos to cache.
-            self.cache
-                .write()
-                .unwrap()
-                .extend(fetched.into_iter().flatten());
-        };
-
-        let cache = self.cache.read().unwrap();
+        let cache = self.cache.read().await;
         // Return token infos from the cache.
         addresses
             .iter()
