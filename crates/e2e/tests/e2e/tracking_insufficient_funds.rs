@@ -22,7 +22,7 @@ async fn test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
-    let [trader_a, trader_b] = onchain.make_accounts::<2>(to_wei(10)).await;
+    let [trader_a, trader_b] = onchain.make_accounts(to_wei(10)).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1_000))
         .await;
