@@ -122,7 +122,7 @@ pub async fn run(args: Arguments) {
         .version()
         .await
         .expect("Failed to retrieve network version ID");
-    let network_name = network_name(&network, chain_id);
+    let network_name = &network_name(&network, chain_id);
 
     let signature_validator = signature_validator::validator(
         &web3,

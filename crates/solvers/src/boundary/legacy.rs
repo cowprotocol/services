@@ -68,8 +68,7 @@ impl Legacy {
                 network_name: network_name(
                     config.chain_id.network_id(),
                     config.chain_id.value().as_u64(),
-                )
-                .into(),
+                ),
                 chain_id: config.chain_id.value().as_u64(),
                 base,
                 client: reqwest::Client::new(),
