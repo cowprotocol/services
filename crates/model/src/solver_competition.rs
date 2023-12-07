@@ -55,9 +55,7 @@ pub struct Execution {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverCompetitionDB {
-    pub gas_price: f64,
     pub auction_start_block: u64,
-    pub liquidity_collected_block: u64,
     pub competition_simulation_block: u64,
     pub auction: CompetitionAuction,
     pub solutions: Vec<SolverSettlement>,
@@ -89,7 +87,6 @@ pub struct SolverSettlement {
     pub solver: String,
     #[serde(default)]
     pub solver_address: H160,
-    pub objective: Objective,
     #[serde(flatten)]
     pub score: Option<Score>, // auction based score
     // auction based ranking
@@ -99,8 +96,9 @@ pub struct SolverSettlement {
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
-    #[serde(with = "crate::bytes_hex")]
-    pub call_data: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<BytesHex>")]
+    pub call_data: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
     pub uninternalized_call_data: Option<Vec<u8>>,
@@ -246,9 +244,7 @@ mod tests {
             auction_id: 0,
             transaction_hash: Some(H256([0x11; 32])),
             common: SolverCompetitionDB {
-                gas_price: 1.,
                 auction_start_block: 13,
-                liquidity_collected_block: 14,
                 competition_simulation_block: 15,
                 auction: CompetitionAuction {
                     orders: vec![
@@ -265,13 +261,6 @@ mod tests {
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
                     solver_address: H160([0x22; 20]),
-                    objective: Objective {
-                        total: 3.,
-                        surplus: 4.,
-                        fees: 5.,
-                        cost: 6.,
-                        gas: 7,
-                    },
                     score: Some(Score::Solver(1.into())),
                     ranking: Some(1),
                     clearing_prices: btreemap! {
