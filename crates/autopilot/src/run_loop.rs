@@ -315,6 +315,8 @@ impl RunLoop {
             .iter()
             .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
             .collect_vec();
+        // insert into `order_events` table operations takes a while and the result is
+        // ignored, so we run it in the background
         tokio::spawn(
             async move {
                 let start = Instant::now();
