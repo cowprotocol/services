@@ -173,7 +173,7 @@ pub async fn run(args: Arguments) {
         .version()
         .await
         .expect("Failed to retrieve network version ID");
-    let network_name = &shared::network::network_name(&network, chain_id);
+    let network_name = shared::network::network_name(&network, chain_id);
     let network_time_between_blocks = args
         .shared
         .network_block_interval

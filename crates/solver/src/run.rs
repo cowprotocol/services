@@ -110,7 +110,7 @@ pub async fn run(args: Arguments) {
         .version()
         .await
         .expect("failed to get network id");
-    let network_name = &network_name(&network_id, chain_id);
+    let network_name = network_name(&network_id, chain_id);
     let settlement_contract = match args.shared.settlement_contract_address {
         Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
         None => contracts::GPv2Settlement::deployed(&web3)
