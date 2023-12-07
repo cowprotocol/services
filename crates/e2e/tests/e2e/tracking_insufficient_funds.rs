@@ -159,13 +159,10 @@ async fn test(web3: Web3) {
 }
 
 fn check_non_consecutive_invalid_events(events: &[OrderEvent]) -> bool {
-    events
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, e)| match e.label {
-            OrderEventLabel::Invalid => Some(idx),
-            _ => None,
-        })
+    !events
+        .windows(2)
+        .map(|w| (w[0].label, w[1].label))
+        .any(|window| window == (OrderEventLabel::Invalid, OrderEventLabel::Invalid))
         .collect::<Vec<usize>>()
         .windows(2)
         .all(|w| w[1] - w[0] > 1)
