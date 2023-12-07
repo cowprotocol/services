@@ -37,7 +37,7 @@ impl Postgres {
         // update table row metrics
         for &table in database::LARGE_TABLES {
             let mut ex = self.0.acquire().await?;
-            let count = count_rough_rows_in_table(&mut ex, table).await?;
+            let count = estimate_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
@@ -57,7 +57,7 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 
-async fn count_rough_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
+async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
     let query = format!("SELECT reltuples FROM pg_class WHERE relname='{table}';");
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
