@@ -58,7 +58,7 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
 }
 
 async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
-    let query = format!("SELECT reltuples FROM pg_class WHERE relname='{table}';");
+    let query = format!("SELECT reltuples::bigint FROM pg_class WHERE relname='{table}';");
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 
