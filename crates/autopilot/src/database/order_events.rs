@@ -6,7 +6,6 @@ use {
         byte_array::ByteArray,
         order_events::{self, OrderEvent},
     },
-    itertools::Itertools,
     model::order::OrderUid,
     sqlx::Error,
 };
@@ -39,16 +38,13 @@ async fn store_order_events(
 ) -> Result<()> {
     let mut ex = db.0.begin().await.context("begin transaction")?;
     for w in events.chunks(DEFAULT_BATCH_SIZE) {
-        let batch = w
-            .iter()
-            .map(|(uid, label)| OrderEvent {
-                order_uid: ByteArray(uid.0),
-                timestamp,
-                label: *label,
-            })
-            .collect_vec();
+        let batch = w.iter().map(|(uid, label)| OrderEvent {
+            order_uid: ByteArray(uid.0),
+            timestamp,
+            label: *label,
+        });
 
-        order_events::insert_order_events_batch(&mut ex, &batch).await?
+        order_events::insert_order_events_batch(&mut ex, batch).await?
     }
     ex.commit().await?;
     Ok(())

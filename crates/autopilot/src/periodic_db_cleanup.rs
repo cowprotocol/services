@@ -105,7 +105,7 @@ mod tests {
             label: OrderEventLabel::Created,
         };
 
-        database::order_events::insert_order_events_batch(&mut ex, &[event_a, event_b, event_c])
+        database::order_events::insert_order_events_batch(&mut ex, [event_a, event_b, event_c])
             .await
             .unwrap();
 
