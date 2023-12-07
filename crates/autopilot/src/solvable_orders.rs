@@ -228,6 +228,8 @@ impl SolvableOrdersCache {
         let removed = counter.record(&auction.orders);
         filtered_order_events.extend(removed);
 
+        // spawning a background task since `order_events` table insert operation takes
+        // a while and the result is ignored.
         let db = self.database.clone();
         tokio::spawn(async move {
             db.store_invalid_order_events(&invalid_order_uids).await;
