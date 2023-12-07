@@ -65,7 +65,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Postgres,
+    database: Arc<Postgres>,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -114,7 +114,7 @@ impl SolvableOrdersCache {
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
-            database,
+            database: Arc::new(database),
             banned_users,
             balance_fetcher,
             bad_token_detector,
@@ -200,7 +200,7 @@ impl SolvableOrdersCache {
 
         let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
-        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         // create auction
         let (orders, prices) = get_orders_with_native_prices(
@@ -209,15 +209,15 @@ impl SolvableOrdersCache {
             self.metrics,
         );
         let removed = counter.checkpoint("missing_price", &orders);
-        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         let removed = counter.checkpoint("out_of_market", &orders);
-        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
         let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let auction = Auction {
             block,
@@ -226,14 +226,19 @@ impl SolvableOrdersCache {
             prices,
         };
         let removed = counter.record(&auction.orders);
-        filtered_order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
-        self.database
-            .store_invalid_order_events(&invalid_order_uids)
+        let db = self.database.clone();
+        tokio::spawn(async move {
+            db.store_invalid_order_events(&invalid_order_uids).await;
+            db.store_order_events(
+                &filtered_order_events
+                    .into_iter()
+                    .map(|o| (o, OrderEventLabel::Filtered))
+                    .collect_vec(),
+            )
             .await;
-        self.database
-            .store_order_events(&filtered_order_events)
-            .await;
+        });
 
         let id = if self.store_in_db {
             let id = self.database.replace_current_auction(&auction).await?;
