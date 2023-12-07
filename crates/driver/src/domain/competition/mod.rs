@@ -350,8 +350,8 @@ pub struct Solved {
 
 #[derive(Debug, Default)]
 pub struct Amounts {
-    pub sell: order::SellAmount,
-    pub buy: order::BuyAmount,
+    pub sell: eth::TokenAmount,
+    pub buy: eth::TokenAmount,
 }
 
 /// Winning solution information revealed to the protocol by the driver before

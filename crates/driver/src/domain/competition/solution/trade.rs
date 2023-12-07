@@ -92,7 +92,7 @@ impl Fulfillment {
     pub fn sell_amount(
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
-    ) -> Option<order::SellAmount> {
+    ) -> Option<eth::TokenAmount> {
         let before_fee = match self.order.side {
             order::Side::Sell => self.executed.0,
             order::Side::Buy => self
@@ -101,7 +101,7 @@ impl Fulfillment {
                 .checked_mul(*prices.get(&self.order.buy.token)?)?
                 .checked_div(*prices.get(&self.order.sell.token)?)?,
         };
-        Some(order::SellAmount(
+        Some(eth::TokenAmount(
             before_fee.checked_add(self.solver_fee().0)?,
         ))
     }
@@ -110,7 +110,7 @@ impl Fulfillment {
     pub fn buy_amount(
         &self,
         prices: &HashMap<eth::TokenAddress, eth::U256>,
-    ) -> Option<order::BuyAmount> {
+    ) -> Option<eth::TokenAmount> {
         let amount = match self.order.side {
             order::Side::Buy => self.executed.0,
             order::Side::Sell => self
@@ -119,7 +119,7 @@ impl Fulfillment {
                 .checked_mul(*prices.get(&self.order.sell.token)?)?
                 .checked_div(*prices.get(&self.order.buy.token)?)?,
         };
-        Some(order::BuyAmount(amount))
+        Some(eth::TokenAmount(amount))
     }
 }
 
