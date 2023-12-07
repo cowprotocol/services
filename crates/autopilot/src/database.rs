@@ -28,9 +28,16 @@ impl Postgres {
         let metrics = Metrics::get();
 
         // update table row metrics
-        for &table in database::ALL_TABLES {
+        for &table in database::TABLES {
             let mut ex = self.0.acquire().await?;
             let count = count_rows_in_table(&mut ex, table).await?;
+            metrics.table_rows.with_label_values(&[table]).set(count);
+        }
+
+        // update table row metrics
+        for &table in database::LARGE_TABLES {
+            let mut ex = self.0.acquire().await?;
+            let count = estimate_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
@@ -47,6 +54,11 @@ impl Postgres {
 
 async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
     let query = format!("SELECT COUNT(*) FROM {table};");
+    sqlx::query_scalar(&query).fetch_one(ex).await
+}
+
+async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
+    let query = format!("SELECT reltuples FROM pg_class WHERE relname='{table}';");
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 
