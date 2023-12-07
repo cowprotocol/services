@@ -4,7 +4,7 @@
 use {
     crate::{
         event_handling::MAX_REORG_BLOCK_COUNT,
-        subgraph::{ContainsId, SubgraphClient},
+        subgraph::{ContainsId, GraphUrl, StandardGraphUrlParams, SubgraphClient},
     },
     anyhow::{bail, Result},
     ethcontract::{H160, U256},
@@ -112,7 +112,13 @@ impl UniV3SubgraphClient {
             1 => "uniswap-v3",
             _ => bail!("unsupported chain {}", chain_id),
         };
-        Ok(Self(SubgraphClient::new("uniswap", subgraph_name, client)?))
+        Ok(Self(SubgraphClient::new(
+            GraphUrl::Standard(StandardGraphUrlParams {
+                org: "uniswap".into(),
+                name: subgraph_name.into(),
+            }),
+            client,
+        )))
     }
 
     async fn get_pools(&self, query: &str, variables: Map<String, Value>) -> Result<Vec<PoolData>> {

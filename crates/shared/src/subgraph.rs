@@ -3,7 +3,7 @@
 use {
     anyhow::{bail, Result},
     lazy_static::lazy_static,
-    reqwest::{Client, IntoUrl, Url},
+    reqwest::{Client, Url},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
     serde_json::{json, Map, Value},
     thiserror::Error,
@@ -22,6 +22,38 @@ lazy_static! {
     pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
         Url::parse("https://api.thegraph.com/subgraphs/name/")
             .expect("invalid default Graph API base URL");
+    pub static ref DEFAULT_GRAPH_STUDIO_API_BASE_URL: Url =
+        Url::parse("https://api.studio.thegraph.com/query/")
+            .expect("invalid default Graph API base URL");
+}
+
+pub struct StandardGraphUrlParams {
+    pub org: String,
+    pub name: String,
+}
+pub struct StudioGraphUrlParams {
+    pub query_id: u64,
+    pub name: String,
+    pub version: String,
+}
+pub enum GraphUrl {
+    Standard(StandardGraphUrlParams),
+    Studio(StudioGraphUrlParams),
+}
+impl GraphUrl {
+    fn get_url(&self) -> Url {
+        match self {
+            GraphUrl::Standard(param) => crate::url::join(
+                &DEFAULT_GRAPH_API_BASE_URL.clone(),
+                &format!("{}/{}", param.org, param.name),
+            ),
+            // https://thegraph.com/docs/en/querying/querying-from-an-application/
+            GraphUrl::Studio(param) => crate::url::join(
+                &DEFAULT_GRAPH_STUDIO_API_BASE_URL.clone(),
+                &format!("{}/{}/{}", param.query_id, param.name, param.version),
+            ),
+        }
+    }
 }
 
 pub trait ContainsId {
@@ -35,26 +67,12 @@ pub struct Data<T> {
 }
 
 impl SubgraphClient {
-    /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(org: impl AsRef<str>, name: impl AsRef<str>, client: Client) -> Result<Self> {
-        Self::with_base_url(DEFAULT_GRAPH_API_BASE_URL.clone(), org, name, client)
-    }
-
-    /// Creates a new subgraph client with the specified base URL.
-    pub fn with_base_url(
-        base_url: impl IntoUrl,
-        org: impl AsRef<str>,
-        name: impl AsRef<str>,
-        client: Client,
-    ) -> Result<Self> {
-        let subgraph_url = crate::url::join(
-            &base_url.into_url()?,
-            &format!("{}/{}", org.as_ref(), name.as_ref()),
-        );
-        Ok(Self {
+    /// Creates a new subgraph client from the specified parameters.
+    pub fn new(subgraph_url: GraphUrl, client: Client) -> Self {
+        Self {
             client,
-            subgraph_url,
-        })
+            subgraph_url: subgraph_url.get_url(),
+        }
     }
 
     /// Performs the specified GraphQL query on the current subgraph.

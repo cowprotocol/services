@@ -10,7 +10,10 @@
 
 use {
     super::swap::fixed_point::Bfp,
-    crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient},
+    crate::{
+        event_handling::MAX_REORG_BLOCK_COUNT,
+        subgraph::{GraphUrl, StandardGraphUrlParams, StudioGraphUrlParams, SubgraphClient},
+    },
     anyhow::{bail, Result},
     ethcontract::{H160, H256},
     reqwest::Client,
@@ -35,17 +38,15 @@ pub struct BalancerSubgraphClient(SubgraphClient);
 impl BalancerSubgraphClient {
     /// Creates a new Balancer subgraph client for the specified chain ID.
     pub fn for_chain(chain_id: u64, client: Client) -> Result<Self> {
-        let subgraph_name = match chain_id {
-            1 => "balancer-v2",
-            5 => "balancer-goerli-v2",
-            100 => "balancer-gnosis-chain-v2",
+        // https://docs.balancer.fi/reference/subgraph/#subgraphs
+        let subgraph_url = match chain_id {
+            1 => balancer_standard_subgraph("balancer-v2"),
+            5 => balancer_standard_subgraph("balancer-goerli-v2"),
+            100 => balancer_standard_subgraph("balancer-gnosis-chain-v2"),
+            11155111 => balancer_studio_subgraph("balancer-sepolia-v2"),
             _ => bail!("unsupported chain {}", chain_id),
         };
-        Ok(Self(SubgraphClient::new(
-            "balancer-labs",
-            subgraph_name,
-            client,
-        )?))
+        Ok(Self(SubgraphClient::new(subgraph_url, client)))
     }
 
     /// Retrieves the list of registered pools from the subgraph.
@@ -107,6 +108,20 @@ impl BalancerSubgraphClient {
             .number
             .saturating_sub(MAX_REORG_BLOCK_COUNT))
     }
+}
+
+fn balancer_standard_subgraph(name: &str) -> GraphUrl {
+    GraphUrl::Standard(StandardGraphUrlParams {
+        org: "balancer-labs".into(),
+        name: name.into(),
+    })
+}
+fn balancer_studio_subgraph(name: &str) -> GraphUrl {
+    GraphUrl::Studio(StudioGraphUrlParams {
+        query_id: 24660,
+        name: name.into(),
+        version: "version/latest".into(),
+    })
 }
 
 /// Result of the registered stable pool query.
@@ -483,7 +498,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_subgraph_query() {
-        for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5)] {
+        for (network_name, chain_id) in [("Mainnet", 1), ("Goerli", 5), ("Sepolia", 11155111)] {
             println!("### {network_name}");
 
             let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
