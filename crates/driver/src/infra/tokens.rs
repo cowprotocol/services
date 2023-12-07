@@ -9,6 +9,7 @@ use {
     std::{collections::HashMap, sync::Arc},
     tokio::sync::RwLock,
     tracing::Instrument,
+    model::order::BUY_ETH_ADDRESS,
 };
 
 #[derive(Clone, Debug)]
@@ -172,7 +173,9 @@ impl Inner {
             // Compute set of requested addresses that are not in cache.
             addresses
                 .iter()
-                .filter(|address| !cache.contains_key(*address))
+                // BUY_ETH_ADDRESS is just a marker and not a real address. We'll never be able to
+                // fetch data for it so ignore it to avoid taking exclusive locks all the time.
+                .filter(|address| !cache.contains_key(*address) && address.0.0 != BUY_ETH_ADDRESS)
                 .cloned()
                 .unique()
                 .collect()
