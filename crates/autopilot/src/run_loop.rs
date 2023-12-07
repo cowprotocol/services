@@ -44,7 +44,7 @@ use {
 
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub database: Postgres,
+    pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
     pub current_block: CurrentBlockStream,
     pub web3: Web3,
@@ -309,17 +309,22 @@ impl RunLoop {
         );
         let request = &request;
 
-        let start = Instant::now();
-        self.database
-            .store_order_events(
-                &auction
-                    .orders
-                    .iter()
-                    .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
-                    .collect_vec(),
-            )
-            .await;
-        tracing::debug!(elapsed=?start.elapsed(), aution_id=%id, "storing order events took");
+        let db = self.database.clone();
+        let events = auction
+            .orders
+            .iter()
+            .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+            .collect_vec();
+        // insert into `order_events` table operations takes a while and the result is
+        // ignored, so we run it in the background
+        tokio::spawn(
+            async move {
+                let start = Instant::now();
+                db.store_order_events(&events).await;
+                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
+            }
+            .instrument(tracing::Span::current()),
+        );
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
