@@ -1,3 +1,8 @@
+use {
+    crate::domain::{auction, solution},
+    chrono::Utc,
+};
+
 /// Metrics for the solver engine.
 #[derive(Debug, Clone, prometheus_metric_storage::MetricStorage)]
 pub struct Metrics {
@@ -22,8 +27,29 @@ pub fn init() {
     observe::metrics::setup_registry_reentrant(Some("solver-engine".to_owned()), None);
 }
 
+pub fn solve(auction: &auction::Auction) {
+    get().time_limit.observe(remaining_time(&auction.deadline));
+}
+
+pub fn solved(deadline: &auction::Deadline, solutions: &[solution::Solution]) {
+    get().remaining_time.observe(remaining_time(deadline));
+    get().solutions.inc_by(solutions.len() as u64);
+}
+
+pub fn solve_error(reason: &str) {
+    get().solve_errors.with_label_values(&[reason]).inc();
+}
+
 /// Get the metrics instance.
-pub fn get() -> &'static Metrics {
+fn get() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry())
         .expect("unexpected error getting metrics instance")
+}
+
+fn remaining_time(deadline: &auction::Deadline) -> f64 {
+    deadline
+        .0
+        .signed_duration_since(Utc::now())
+        .num_milliseconds() as f64
+        / 1000.0
 }

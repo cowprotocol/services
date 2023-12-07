@@ -1,4 +1,4 @@
-use {once_cell::sync::OnceCell, std::collections::HashMap};
+use {once_cell::sync::OnceCell, prometheus::Encoder, std::collections::HashMap};
 
 /// Global metrics registry used by all components.
 static REGISTRY: OnceCell<prometheus_metric_storage::StorageRegistry> = OnceCell::new();
@@ -50,4 +50,11 @@ pub fn get_registry() -> &'static prometheus::Registry {
 /// to say the least.
 pub fn get_storage_registry() -> &'static prometheus_metric_storage::StorageRegistry {
     REGISTRY.get_or_init(prometheus_metric_storage::StorageRegistry::default)
+}
+
+pub fn encode(registry: &prometheus::Registry) -> String {
+    let encoder = prometheus::TextEncoder::new();
+    let mut buffer = Vec::new();
+    encoder.encode(&registry.gather(), &mut buffer).unwrap();
+    String::from_utf8(buffer).unwrap()
 }

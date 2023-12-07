@@ -1,6 +1,6 @@
 use crate::{
     domain::{auction, notification, solution},
-    infra::observe,
+    infra::metrics,
 };
 
 pub mod baseline;
@@ -22,7 +22,7 @@ impl Solver {
     /// returning multiple solutions to later merge multiple non-overlapping
     /// solutions to get one big more gas efficient solution.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        observe::solve(&auction);
+        metrics::solve(&auction);
         let deadline = auction.deadline.clone();
         let solutions = match self {
             Solver::Baseline(solver) => solver.solve(auction).await,
@@ -30,7 +30,7 @@ impl Solver {
             Solver::Legacy(solver) => solver.solve(auction).await,
             Solver::Dex(solver) => solver.solve(auction).await,
         };
-        observe::solved(&deadline, &solutions);
+        metrics::solved(&deadline, &solutions);
         solutions
     }
 
