@@ -182,9 +182,7 @@ mod tests {
     fn serialize() {
         let correct = serde_json::json!({
             "auctionId": 0,
-            "gasPrice": 1.0f64,
             "auctionStartBlock": 13u64,
-            "liquidityCollectedBlock": 14u64,
             "competitionSimulationBlock": 15u64,
             "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
             "auction": {
@@ -209,13 +207,6 @@ mod tests {
                 {
                     "solver": "2",
                     "solverAddress": "0x2222222222222222222222222222222222222222",
-                    "objective": {
-                        "total": 3.0f64,
-                        "surplus": 4.0f64,
-                        "fees": 5.0f64,
-                        "cost": 6.0f64,
-                        "gas": 7u64,
-                    },
                     "score": "1",
                     "ranking": 1,
                     "clearingPrices": {
@@ -277,7 +268,7 @@ mod tests {
                             executed_amount: 14.into(),
                         },
                     ],
-                    call_data: vec![0x13],
+                    call_data: Some(vec![0x13]),
                     uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
             },

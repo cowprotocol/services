@@ -161,10 +161,6 @@ async fn test(web3: Web3) {
     let solution_0 = &competition_0.common.solutions[0];
     let solution_1 = &competition_1.common.solutions[0];
 
-    assert!(solution_0.objective.fees > 0.);
-    assert!(solution_1.objective.fees > 0.);
-    assert_ne!(solution_0.objective.fees, solution_1.objective.fees);
-
     assert!(
         matches!(solution_0.orders[0], solver_competition::Order::Legacy{ executed_amount, ..} if executed_amount > 0.into())
     );
