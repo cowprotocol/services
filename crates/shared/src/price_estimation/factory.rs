@@ -31,7 +31,7 @@ use {
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
         oneinch_api::OneInchClient,
         paraswap_api::DefaultParaswapApi,
-        price_estimation::native::NativePriceEstimating,
+        price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
         rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
@@ -337,9 +337,13 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         sources: &[PriceEstimatorSource],
         native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(vec![estimators], native);
+        let competition_estimator = CompetitionEstimator::new(
+            vec![estimators],
+            PriceRanking::BestBangForBuck { native, gas },
+        );
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -348,13 +352,14 @@ impl<'a> PriceEstimatorFactory<'a> {
         sources: &[PriceEstimatorSource],
         fast_price_estimation_results_required: NonZeroUsize,
         native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
         Ok(Arc::new(self.sanitized(Arc::new(
             RacingCompetitionEstimator::new(
                 vec![estimators],
                 fast_price_estimation_results_required,
-                native,
+                PriceRanking::BestBangForBuck { native, gas },
             ),
         ))))
     }
@@ -380,12 +385,11 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect::<Result<Vec<Vec<_>>>>()?;
 
-        // Hack: we made the `RacingCompetitionEstimator` generic to reuse it for
-        // regular quotes and native quotes but only the regular quotes actually
-        // need the native price estimator component (otherwise we'd have a
-        // circular dependency). That's why we use the `NoopEstimator` here.
-        let competition_estimator =
-            RacingCompetitionEstimator::new(estimators, results_required, ());
+        let competition_estimator = RacingCompetitionEstimator::new(
+            estimators,
+            results_required,
+            PriceRanking::MaxOutAmount,
+        );
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
             self.args.native_price_cache_max_age_secs,

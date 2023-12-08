@@ -412,6 +412,7 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
     let fast_price_estimator = price_estimator_factory
@@ -423,6 +424,7 @@ pub async fn run(args: Arguments) {
             ),
             args.fast_price_estimation_results_required,
             native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 

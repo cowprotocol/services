@@ -11,8 +11,9 @@ use {
         stream::{FuturesUnordered, StreamExt},
         FutureExt as _,
     },
+    gas_estimation::{GasPrice1559, GasPriceEstimating},
     model::order::OrderKind,
-    primitive_types::H160,
+    primitive_types::{H160, U256},
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
 };
 
@@ -50,23 +51,23 @@ type PriceEstimationStage<T> = Vec<(String, T)>;
 /// stage Returns a price estimation early if there is a configurable number of
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
-pub struct RacingCompetitionEstimator<T, N> {
+pub struct RacingCompetitionEstimator<T> {
     inner: Vec<PriceEstimationStage<T>>,
     successful_results_for_early_return: NonZeroUsize,
-    native: N,
+    ranking: PriceRanking,
 }
 
-impl<T: Send + Sync + 'static, N: Send + Sync + 'static> RacingCompetitionEstimator<T, N> {
+impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
     pub fn new(
         inner: Vec<PriceEstimationStage<T>>,
         successful_results_for_early_return: NonZeroUsize,
-        native: N,
+        ranking: PriceRanking,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
             inner,
             successful_results_for_early_return,
-            native,
+            ranking,
         }
     }
 
@@ -74,6 +75,7 @@ impl<T: Send + Sync + 'static, N: Send + Sync + 'static> RacingCompetitionEstima
         Q: Clone + Debug + Send + 'static,
         R: Clone + Debug + Send,
         E: Clone + Debug + Send,
+        C,
     >(
         &self,
         query: Q,
@@ -81,7 +83,10 @@ impl<T: Send + Sync + 'static, N: Send + Sync + 'static> RacingCompetitionEstima
         get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
             + Send
             + 'static,
-        compare_results: impl Fn(&Result<R, E>, &Result<R, E>) -> Ordering + Send + 'static,
+        compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
+        provide_additional_context: impl futures::future::FusedFuture<Output = Result<C, E>>
+            + Send
+            + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
         async move {
@@ -140,11 +145,13 @@ impl<T: Send + Sync + 'static, N: Send + Sync + 'static> RacingCompetitionEstima
                 }
             }
 
+            let context = provide_additional_context.await?;
+
             let best_index = results
                 .iter()
                 .map(|(_, result)| result)
                 .enumerate()
-                .max_by(|a, b| compare_results(a.1, b.1))
+                .max_by(|a, b| compare_results(a.1, b.1, &context))
                 .map(|(index, _)| index)
                 .unwrap();
             let (estimator_index, result) = &results[best_index];
@@ -185,27 +192,26 @@ fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
     results.iter().filter(|(_, result)| result.is_ok()).count()
 }
 
-impl PriceEstimating
-    for RacingCompetitionEstimator<Arc<dyn PriceEstimating>, Arc<dyn NativePriceEstimating>>
-{
+impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         async {
             let out_token = match query.kind {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
-            let native_price = self.native.estimate_native_price(out_token).await?;
+            let context = self.ranking.provide_context(out_token);
             self.estimate_generic(
                 query.clone(),
                 query.kind,
                 |estimator, query| estimator.estimate(query),
-                move |a, b| {
-                    if is_second_quote_result_preferred(query.as_ref(), a, b, native_price) {
+                move |a, b, context| {
+                    if is_second_quote_result_preferred(query.as_ref(), a, b, context) {
                         Ordering::Less
                     } else {
                         Ordering::Greater
                     }
                 },
+                context,
             )
             .await
         }
@@ -213,48 +219,46 @@ impl PriceEstimating
     }
 }
 
-impl<N: Send + Sync + 'static> NativePriceEstimating
-    for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>, N>
-{
+impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>> {
     fn estimate_native_price(
         &self,
         token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
+        let context = futures::future::ready(Ok(())).fuse();
         self.estimate_generic(
             token,
             OrderKind::Buy,
             |estimator, token| estimator.estimate_native_price(token),
-            move |a, b| {
+            move |a, b, _context| {
                 if is_second_native_result_preferred(a, b) {
                     Ordering::Less
                 } else {
                     Ordering::Greater
                 }
             },
+            context,
         )
     }
 }
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
-pub struct CompetitionEstimator<T, N> {
-    inner: RacingCompetitionEstimator<T, N>,
+pub struct CompetitionEstimator<T> {
+    inner: RacingCompetitionEstimator<T>,
 }
 
-impl<T: Send + Sync + 'static, N: Send + Sync + 'static> CompetitionEstimator<T, N> {
-    pub fn new(inner: Vec<Vec<(String, T)>>, native: N) -> Self {
+impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
+    pub fn new(inner: Vec<Vec<(String, T)>>, ranking: PriceRanking) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.iter().fold(0, |sum, stage| sum + stage.len()))
                 .expect("Vec of estimators should not be empty.");
         Self {
-            inner: RacingCompetitionEstimator::new(inner, number_of_estimators, native),
+            inner: RacingCompetitionEstimator::new(inner, number_of_estimators, ranking),
         }
     }
 }
 
-impl PriceEstimating
-    for CompetitionEstimator<Arc<dyn PriceEstimating>, Arc<dyn NativePriceEstimating>>
-{
+impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.inner.estimate(query)
     }
@@ -264,10 +268,10 @@ fn is_second_quote_result_preferred(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
-    native_price: f64,
+    context: &RankingContext,
 ) -> bool {
     match (a, b) {
-        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, native_price),
+        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, context),
         (Ok(_), Err(_)) => false,
         (Err(_), Ok(_)) => true,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
@@ -290,12 +294,13 @@ fn is_second_estimate_preferred(
     query: &Query,
     a: &Estimate,
     b: &Estimate,
-    native_price: f64,
+    context: &RankingContext,
 ) -> bool {
-    let amount_out = |estimate: &Estimate| estimate.out_amount_in_eth(native_price);
+    let a = context.effective_eth_out(a);
+    let b = context.effective_eth_out(b);
     match query.kind {
-        OrderKind::Buy => amount_out(b) < amount_out(a),
-        OrderKind::Sell => amount_out(a) < amount_out(b),
+        OrderKind::Buy => b < a,
+        OrderKind::Sell => a < b,
     }
 }
 
@@ -342,11 +347,80 @@ fn metrics() -> &'static Metrics {
         .expect("unexpected error getting metrics instance")
 }
 
+/// The metric which decides the winning price estimate.
+pub enum PriceRanking {
+    /// The highest quoted `out_amount` gets picked regardless of trade
+    /// complexity.
+    MaxOutAmount,
+    /// Returns the estimate where `out_amount - fees` is highest.
+    BestBangForBuck {
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
+    },
+}
+
+impl PriceRanking {
+    fn provide_context(
+        &self,
+        token: H160,
+    ) -> impl futures::future::FusedFuture<Output = Result<RankingContext, PriceEstimationError>>
+    {
+        match self {
+            PriceRanking::MaxOutAmount => async {
+                Ok(RankingContext {
+                    native_price: 1.0,
+                    gas_price: GasPrice1559 {
+                        base_fee_per_gas: 0.,
+                        max_fee_per_gas: 0.,
+                        max_priority_fee_per_gas: 0.,
+                    },
+                })
+            }
+            .boxed()
+            .fuse(),
+            PriceRanking::BestBangForBuck { native, gas } => {
+                let gas = gas.clone();
+                let native = native.clone();
+                async move {
+                    let (native, gas) =
+                        futures::join!(native.estimate_native_price(token), gas.estimate());
+                    Ok(RankingContext {
+                        native_price: native.unwrap(),
+                        gas_price: gas.unwrap(),
+                    })
+                }
+                .boxed()
+                .fuse()
+            }
+        }
+    }
+}
+
+struct RankingContext {
+    native_price: f64,
+    gas_price: GasPrice1559,
+}
+
+impl RankingContext {
+    /// Computes the actual received value from this estimate that takes `gas`
+    /// into account. If an extremely complex trade route would only result
+    /// in slightly more `out_amount` than a simple trade route the simple
+    /// trade route wourd report a higher `out_amount_in_eth`. This is also
+    /// referred to as "bang-for-buck" and what matters most to traders.
+    fn effective_eth_out(&self, estimate: &Estimate) -> U256 {
+        let eth_out = estimate.out_amount.to_f64_lossy() * self.native_price;
+        let fees = estimate.gas as f64 * self.gas_price.effective_gas_price();
+        let effective_eth_out = eth_out - fees;
+        // converts `NaN` and `(-∞, 0]` to `0`
+        U256::from_f64_lossy(effective_eth_out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+        crate::price_estimation::MockPriceEstimating,
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
@@ -355,16 +429,6 @@ mod tests {
         std::time::Duration,
         tokio::time::sleep,
     };
-
-    /// Builds native price estimator that returns the same native price for any
-    /// token.
-    fn mock_native_estimator() -> Arc<dyn NativePriceEstimating> {
-        let mut estimator = MockNativePriceEstimating::new();
-        estimator
-            .expect_estimate_native_price()
-            .returning(|_token| async { Ok(1.) }.boxed());
-        Arc::new(estimator)
-    }
 
     #[tokio::test]
     async fn works() {
@@ -453,12 +517,12 @@ mod tests {
             }),
         ]);
 
-        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>, _> = CompetitionEstimator::new(
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
             vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
             ]],
-            mock_native_estimator(),
+            PriceRanking::MaxOutAmount,
         );
 
         let result = priority.estimate(queries[0].clone()).await;
@@ -534,7 +598,7 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>, _> =
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator::new(
                 vec![vec![
                     ("first".to_owned(), Arc::new(first)),
@@ -542,7 +606,7 @@ mod tests {
                     ("third".to_owned(), Arc::new(third)),
                 ]],
                 NonZeroUsize::new(1).unwrap(),
-                mock_native_estimator(),
+                PriceRanking::MaxOutAmount,
             );
 
         let result = racing.estimate(query).await;
@@ -605,7 +669,7 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>, _> =
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
             RacingCompetitionEstimator::new(
                 vec![
                     vec![
@@ -618,7 +682,7 @@ mod tests {
                     ],
                 ],
                 NonZeroUsize::new(2).unwrap(),
-                mock_native_estimator(),
+                PriceRanking::MaxOutAmount,
             );
 
         let result = racing.estimate(query).await;
@@ -677,19 +741,17 @@ mod tests {
         let mut fourth = MockPriceEstimating::new();
         fourth.expect_estimate().never();
 
-        let racing: RacingCompetitionEstimator<
-            Arc<dyn PriceEstimating>,
-            Arc<dyn NativePriceEstimating>,
-        > = RacingCompetitionEstimator {
-            inner: vec![
-                vec![("first".to_owned(), Arc::new(first))],
-                vec![("second".to_owned(), Arc::new(second))],
-                vec![("third".to_owned(), Arc::new(third))],
-                vec![("fourth".to_owned(), Arc::new(fourth))],
-            ],
-            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            native: mock_native_estimator(),
-        };
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+            RacingCompetitionEstimator {
+                inner: vec![
+                    vec![("first".to_owned(), Arc::new(first))],
+                    vec![("second".to_owned(), Arc::new(second))],
+                    vec![("third".to_owned(), Arc::new(third))],
+                    vec![("fourth".to_owned(), Arc::new(fourth))],
+                ],
+                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+                ranking: PriceRanking::MaxOutAmount,
+            };
 
         racing.estimate(query).await.unwrap();
     }
