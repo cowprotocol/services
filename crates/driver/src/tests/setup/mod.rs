@@ -844,15 +844,11 @@ impl<'a> SolveOk<'a> {
             let trade = trades
                 .get(&uid.to_string())
                 .expect("Didn't find expected trade in solution");
-            assert!(
-                eth::U256::from_dec_str(trade.get("buyAmount").unwrap().as_str().unwrap()).unwrap()
-                    == expected.quoted_order.buy
-            );
-            assert!(
-                eth::U256::from_dec_str(trade.get("sellAmount").unwrap().as_str().unwrap())
-                    .unwrap()
-                    == expected.quoted_order.sell
-            );
+            let u256 = |value: serde_json::Value| {
+                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+            };
+            assert!(u256(trade.get("buyAmount")) == expected.quoted_order.buy);
+            assert!(u256(trade.get("sellAmount")) == expected.quoted_order.sell);
         }
         self
     }
