@@ -44,10 +44,9 @@ use {
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
-/// The names of all tables we use in the db.
-pub const ALL_TABLES: &[&str] = &[
+/// The names of tables we use in the db.
+pub const TABLES: &[&str] = &[
     "orders",
-    "order_events",
     "trades",
     "invalidations",
     "quotes",
@@ -69,10 +68,17 @@ pub const ALL_TABLES: &[&str] = &[
     "app_data",
 ];
 
+/// The names of potentially big volume tables we use in the db.
+pub const LARGE_TABLES: &[&str] = &["order_events"];
+
+pub fn all_tables() -> impl Iterator<Item = &'static str> {
+    TABLES.iter().copied().chain(LARGE_TABLES.iter().copied())
+}
+
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
-    for table in ALL_TABLES {
+    for table in all_tables() {
         ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
