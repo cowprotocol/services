@@ -8,7 +8,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class},
+            solve::{self, Class, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -34,7 +34,7 @@ use {
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
@@ -149,9 +149,8 @@ impl RunLoop {
                 }
             };
 
-            let events = revealed
-                .orders
-                .iter()
+            let events = solution
+                .order_ids()
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
             self.database.store_order_events(&events).await;
@@ -178,7 +177,7 @@ impl RunLoop {
             // Save order executions for all orders in the solution. Surplus fees for
             // limit orders will be saved after settling the order onchain.
             let mut order_executions = vec![];
-            for order_id in &revealed.orders {
+            for order_id in solution.order_ids() {
                 let auction_order = auction
                     .orders
                     .iter()
@@ -239,22 +238,21 @@ impl RunLoop {
                             solver_address: participant.solution.account,
                             score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
+                            orders: participant
+                                .solution
+                                .orders()
+                                .iter()
+                                .map(|(id, order)| Order::Colocated {
+                                    id: *id,
+                                    sell_amount: order.sell_amount,
+                                    buy_amount: order.buy_amount,
+                                })
+                                .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
                         };
                         if is_winner {
-                            settlement.orders = revealed
-                                .orders
-                                .iter()
-                                .map(|o| Order {
-                                    id: *o,
-                                    // TODO: revisit once colocation is enabled (remove not
-                                    // populated fields) Not all
-                                    // fields can be populated in the colocated world
-                                    ..Default::default()
-                                })
-                                .collect();
                             settlement.call_data = revealed.calldata.internalized.clone();
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
@@ -288,7 +286,7 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
-            match self.settle(driver, solution, &revealed).await {
+            match self.settle(driver, solution).await {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
@@ -385,6 +383,7 @@ impl RunLoop {
                     id: solution.solution_id,
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
+                    orders: solution.orders,
                 })
             })
             .collect())
@@ -414,15 +413,9 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn settle(
-        &self,
-        driver: &Driver,
-        solved: &Solution,
-        revealed: &reveal::Response,
-    ) -> Result<(), SettleError> {
-        let events = revealed
-            .orders
-            .iter()
+    async fn settle(&self, driver: &Driver, solved: &Solution) -> Result<(), SettleError> {
+        let events = solved
+            .order_ids()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
         self.database.store_order_events(&events).await;
@@ -439,12 +432,12 @@ impl RunLoop {
 
         *self.in_flight_orders.lock().unwrap() = InFlightOrders {
             tx_hash,
-            orders: revealed.orders.iter().cloned().collect(),
+            orders: solved.orders.keys().copied().collect(),
         };
 
-        let events = revealed
+        let events = solved
             .orders
-            .iter()
+            .keys()
             .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
         self.database.store_order_events(&events).await;
@@ -583,6 +576,17 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
+    orders: HashMap<OrderUid, TradedAmounts>,
+}
+
+impl Solution {
+    pub fn order_ids(&self) -> impl Iterator<Item = &OrderUid> {
+        self.orders.keys()
+    }
+
+    pub fn orders(&self) -> &HashMap<OrderUid, TradedAmounts> {
+        &self.orders
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
