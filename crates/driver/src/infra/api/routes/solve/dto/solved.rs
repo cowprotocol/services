@@ -1,11 +1,12 @@
 use {
     crate::{
-        domain::{competition, eth},
+        domain::{competition, competition::order, eth},
         infra::Solver,
         util::serialize,
     },
     serde::Serialize,
     serde_with::serde_as,
+    std::collections::HashMap,
 };
 
 impl Solved {
@@ -31,9 +32,36 @@ impl Solution {
             solution_id,
             score: solved.score.0.get(),
             submission_address: solver.address().into(),
+            orders: solved
+                .trades
+                .into_iter()
+                .map(|(order_id, amounts)| {
+                    (
+                        order_id.into(),
+                        TradedAmounts {
+                            sell_amount: amounts.sell.into(),
+                            buy_amount: amounts.buy.into(),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
+
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradedAmounts {
+    /// The effective amount that left the user's wallet including all fees.
+    #[serde_as(as = "serialize::U256")]
+    pub sell_amount: eth::U256,
+    /// The effective amount the user received after all fees.
+    #[serde_as(as = "serialize::U256")]
+    pub buy_amount: eth::U256,
+}
+
+type OrderId = [u8; order::UID_LEN];
 
 #[serde_as]
 #[derive(Debug, Serialize)]
@@ -46,4 +74,6 @@ pub struct Solution {
     #[serde_as(as = "serialize::U256")]
     score: eth::U256,
     submission_address: eth::H160,
+    #[serde_as(as = "HashMap<serialize::Hex, _>")]
+    orders: HashMap<OrderId, TradedAmounts>,
 }

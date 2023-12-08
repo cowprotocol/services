@@ -619,7 +619,7 @@ pub async fn run(args: Arguments) {
                 .await;
         let run = RunLoop {
             solvable_orders_cache,
-            database: db,
+            database: Arc::new(db),
             drivers: args.drivers.into_iter().map(Driver::new).collect(),
             current_block: current_block_stream,
             web3,

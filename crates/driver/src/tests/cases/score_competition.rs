@@ -16,11 +16,10 @@ async fn solver_score_winner() {
         .done()
         .await;
 
-    assert_eq!(
-        test.solve().await.ok().score(),
-        2902421280589416499u128.into()
-    );
-    test.reveal().await.ok().orders(&[ab_order().name]);
+    let solve = test.solve().await.ok();
+    assert_eq!(solve.score(), 2902421280589416499u128.into());
+    solve.orders(&[ab_order().name]);
+    test.reveal().await.ok().calldata();
 }
 
 #[tokio::test]
@@ -36,6 +35,8 @@ async fn risk_adjusted_score_winner() {
         .done()
         .await;
 
-    assert!(test.solve().await.ok().score() != DEFAULT_SCORE_MIN.into());
-    test.reveal().await.ok().orders(&[ab_order().name]);
+    let solve = test.solve().await.ok();
+    assert!(solve.score() != DEFAULT_SCORE_MIN.into());
+    solve.orders(&[ab_order().name]);
+    test.reveal().await.ok().calldata();
 }
