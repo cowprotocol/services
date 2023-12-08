@@ -14,6 +14,7 @@ pub mod recent_settlements;
 use {
     sqlx::{Executor, PgConnection, PgPool},
     std::time::Duration,
+    tracing::Instrument,
 };
 
 #[derive(Debug, Clone)]
@@ -113,10 +114,16 @@ impl Metrics {
     }
 }
 
-pub async fn database_metrics(db: Postgres) -> ! {
-    // runs large table statistic updates in parallel to guarantee `pg_class` table
-    // updates
-    tokio::spawn(update_large_tables_stats(db.clone()));
+pub fn run_database_metrics_work(db: Postgres) {
+    let span = tracing::info_span!("database_metrics");
+    // Spawn the task for updating large table statistics
+    tokio::spawn(update_large_tables_stats(db.clone()).instrument(span.clone()));
+
+    // Spawn the task for database metrics
+    tokio::task::spawn(database_metrics(db).instrument(span));
+}
+
+async fn database_metrics(db: Postgres) -> ! {
     loop {
         if let Err(err) = db.update_database_metrics().await {
             tracing::error!(?err, "failed to update table rows metric");
