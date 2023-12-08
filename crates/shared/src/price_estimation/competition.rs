@@ -189,18 +189,27 @@ impl PriceEstimating
     for RacingCompetitionEstimator<Arc<dyn PriceEstimating>, Arc<dyn NativePriceEstimating>>
 {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        self.estimate_generic(
-            query.clone(),
-            query.kind,
-            |estimator, query| estimator.estimate(query),
-            move |a, b| {
-                if is_second_quote_result_preferred(query.as_ref(), a, b) {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            },
-        )
+        async {
+            let out_token = match query.kind {
+                OrderKind::Buy => query.sell_token,
+                OrderKind::Sell => query.buy_token,
+            };
+            let native_price = self.native.estimate_native_price(out_token).await?;
+            self.estimate_generic(
+                query.clone(),
+                query.kind,
+                |estimator, query| estimator.estimate(query),
+                move |a, b| {
+                    if is_second_quote_result_preferred(query.as_ref(), a, b, native_price) {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                },
+            )
+            .await
+        }
+        .boxed()
     }
 }
 
@@ -255,9 +264,10 @@ fn is_second_quote_result_preferred(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
+    native_price: f64,
 ) -> bool {
     match (a, b) {
-        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b),
+        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, native_price),
         (Ok(_), Err(_)) => false,
         (Err(_), Ok(_)) => true,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
@@ -276,7 +286,12 @@ fn is_second_native_result_preferred(
     }
 }
 
-fn is_second_estimate_preferred(query: &Query, a: &Estimate, b: &Estimate) -> bool {
+fn is_second_estimate_preferred(
+    query: &Query,
+    a: &Estimate,
+    b: &Estimate,
+    native_price: f64,
+) -> bool {
     match query.kind {
         OrderKind::Buy => b.out_amount < a.out_amount,
         OrderKind::Sell => a.out_amount < b.out_amount,
