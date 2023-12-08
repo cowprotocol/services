@@ -249,7 +249,7 @@ impl Settlement {
     pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
         self.inner
             .clearing_prices()
-            .into_iter()
+            .iter()
             .map(|(&token, &amount)| (token.into(), amount.into()))
             .collect()
     }
