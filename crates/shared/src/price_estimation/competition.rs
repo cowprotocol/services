@@ -8,6 +8,7 @@ use {
         Query,
     },
     futures::{
+        future::FusedFuture,
         stream::{FuturesUnordered, StreamExt},
         FutureExt as _,
     },
@@ -84,9 +85,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             + Send
             + 'static,
         compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
-        provide_additional_context: impl futures::future::FusedFuture<Output = Result<C, E>>
-            + Send
-            + 'static,
+        provide_additional_context: impl FusedFuture<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
         async move {
@@ -360,12 +359,14 @@ pub enum PriceRanking {
 }
 
 impl PriceRanking {
+    /// Spawns a task in the background that fetches the needed context for
+    /// picking the best estimate without delaying the actual price fetch
+    /// requests.
     fn provide_context(
         &self,
         token: H160,
-    ) -> impl futures::future::FusedFuture<Output = Result<RankingContext, PriceEstimationError>>
-    {
-        match self {
+    ) -> impl FusedFuture<Output = Result<RankingContext, PriceEstimationError>> {
+        let fut = match self {
             PriceRanking::MaxOutAmount => async {
                 Ok(RankingContext {
                     native_price: 1.0,
@@ -376,8 +377,7 @@ impl PriceRanking {
                     },
                 })
             }
-            .boxed()
-            .fuse(),
+            .boxed(),
             PriceRanking::BestBangForBuck { native, gas } => {
                 let gas = gas.clone();
                 let native = native.clone();
@@ -390,9 +390,9 @@ impl PriceRanking {
                     })
                 }
                 .boxed()
-                .fuse()
             }
-        }
+        };
+        tokio::task::spawn(fut).map(Result::unwrap).fuse()
     }
 }
 
