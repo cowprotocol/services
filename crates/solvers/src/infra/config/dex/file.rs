@@ -78,15 +78,15 @@ fn default_smallest_partial_fill() -> eth::U256 {
 }
 
 fn default_back_off_growth_factor() -> f64 {
-    1.0
+    2.0
 }
 
 fn default_min_back_off() -> u64 {
-    Default::default()
+    1
 }
 
 fn default_max_back_off() -> u64 {
-    Default::default()
+    8
 }
 
 /// Loads the base solver configuration from a TOML file.

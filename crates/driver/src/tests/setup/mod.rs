@@ -24,7 +24,6 @@ use {
     },
     ethcontract::BlockId,
     hyper::StatusCode,
-    itertools::Itertools,
     secp256k1::SecretKey,
     serde_with::serde_as,
     std::{
@@ -823,35 +822,34 @@ impl<'a> SolveOk<'a> {
 
     /// Check that the solution contains the expected orders.
     pub fn orders(self, order_names: &[&str]) -> Self {
-        let expected_order_uids = order_names
-            .iter()
-            .map(|name| {
-                self.fulfillments
-                    .iter()
-                    .find(|f| f.quoted_order.order.name == *name)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "unexpected orders {order_names:?}: fulfillment not found in {:?}",
-                            self.fulfillments,
-                        )
-                    })
-                    .quoted_order
-                    .order_uid(self.blockchain)
-                    .to_string()
-            })
-            .sorted()
-            .collect_vec();
         let solution = self.solution();
         assert!(solution.get("orders").is_some());
-        let order_uids = serde_json::from_value::<HashMap<String, serde_json::Value>>(
+        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
             solution.get("orders").unwrap().clone(),
         )
-        .unwrap()
-        .keys()
-        .cloned()
-        .sorted()
-        .collect_vec();
-        assert_eq!(order_uids, expected_order_uids);
+        .unwrap();
+
+        for expected in order_names.iter().map(|name| {
+            self.fulfillments
+                .iter()
+                .find(|f| f.quoted_order.order.name == *name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unexpected orders {order_names:?}: fulfillment not found in {:?}",
+                        self.fulfillments,
+                    )
+                })
+        }) {
+            let uid = expected.quoted_order.order_uid(self.blockchain);
+            let trade = trades
+                .get(&uid.to_string())
+                .expect("Didn't find expected trade in solution");
+            let u256 = |value: &serde_json::Value| {
+                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+            };
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
+            assert!(u256(trade.get("sellAmount").unwrap()) == expected.quoted_order.sell);
+        }
         self
     }
 }

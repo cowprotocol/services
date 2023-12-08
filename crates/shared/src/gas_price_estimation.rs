@@ -8,7 +8,6 @@ use {
         GasNowGasStation,
         GasPrice1559,
         GasPriceEstimating,
-        GnosisSafeGasStation,
         PriorityGasPriceEstimating,
         Transport,
     },
@@ -22,7 +21,6 @@ use {
 pub enum GasEstimatorType {
     EthGasStation,
     GasNow,
-    GnosisSafe,
     Web3,
     BlockNative,
     Native,
@@ -92,9 +90,6 @@ pub async fn create_priority_estimator(
                 ensure!(is_mainnet(&network_id), "GasNow only supports mainnet");
                 estimators.push(Box::new(GasNowGasStation::new(client())))
             }
-            GasEstimatorType::GnosisSafe => estimators.push(Box::new(
-                GnosisSafeGasStation::with_network_id(&network_id, client())?,
-            )),
             GasEstimatorType::Web3 => estimators.push(Box::new(web3.clone())),
             GasEstimatorType::Native => {
                 match NativeGasEstimator::new(web3.transport().clone(), None).await {

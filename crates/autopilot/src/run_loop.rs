@@ -44,7 +44,7 @@ use {
 
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub database: Postgres,
+    pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
     pub current_block: CurrentBlockStream,
     pub web3: Web3,
@@ -299,6 +299,12 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
+            let unsettled_orders: Vec<_> = solutions
+                .iter()
+                .flat_map(|p| p.solution.orders.keys())
+                .filter(|uid| !solution.orders.contains_key(uid))
+                .collect();
+            Metrics::matched_unsettled(driver, unsettled_orders.as_slice());
         }
     }
 
@@ -313,17 +319,22 @@ impl RunLoop {
         );
         let request = &request;
 
-        let start = Instant::now();
-        self.database
-            .store_order_events(
-                &auction
-                    .orders
-                    .iter()
-                    .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
-                    .collect_vec(),
-            )
-            .await;
-        tracing::debug!(elapsed=?start.elapsed(), aution_id=%id, "storing order events took");
+        let db = self.database.clone();
+        let events = auction
+            .orders
+            .iter()
+            .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+            .collect_vec();
+        // insert into `order_events` table operations takes a while and the result is
+        // ignored, so we run it in the background
+        tokio::spawn(
+            async move {
+                let start = Instant::now();
+                db.store_order_events(&events).await;
+                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
+            }
+            .instrument(tracing::Span::current()),
+        );
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -641,6 +652,11 @@ struct Metrics {
     /// Tracks the result of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
     settle: prometheus::IntCounterVec,
+
+    /// Tracks the number of orders that were part of some but not the winning
+    /// solution together with the winning driver that did't include it.
+    #[metric(labels("ignored_by"))]
+    matched_unsettled: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -718,5 +734,15 @@ impl Metrics {
             .settle
             .with_label_values(&[&driver.name, label])
             .inc();
+    }
+
+    fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {
+        if !unsettled.is_empty() {
+            tracing::debug!(?unsettled, "some orders were matched but not settled");
+        }
+        Self::get()
+            .matched_unsettled
+            .with_label_values(&[&winning.name])
+            .inc_by(unsettled.len() as u64);
     }
 }
