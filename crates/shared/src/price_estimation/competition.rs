@@ -50,20 +50,23 @@ type PriceEstimationStage<T> = Vec<(String, T)>;
 /// stage Returns a price estimation early if there is a configurable number of
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
-pub struct RacingCompetitionEstimator<T> {
+pub struct RacingCompetitionEstimator<T, N> {
     inner: Vec<PriceEstimationStage<T>>,
     successful_results_for_early_return: NonZeroUsize,
+    native: N,
 }
 
-impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
+impl<T: Send + Sync + 'static, N: Send + Sync + 'static> RacingCompetitionEstimator<T, N> {
     pub fn new(
         inner: Vec<PriceEstimationStage<T>>,
         successful_results_for_early_return: NonZeroUsize,
+        native: N,
     ) -> Self {
         assert!(!inner.is_empty());
         Self {
             inner,
             successful_results_for_early_return,
+            native,
         }
     }
 
@@ -182,7 +185,9 @@ fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
     results.iter().filter(|(_, result)| result.is_ok()).count()
 }
 
-impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
+impl PriceEstimating
+    for RacingCompetitionEstimator<Arc<dyn PriceEstimating>, Arc<dyn NativePriceEstimating>>
+{
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.estimate_generic(
             query.clone(),
@@ -199,7 +204,9 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
     }
 }
 
-impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>> {
+impl<N: Send + Sync + 'static> NativePriceEstimating
+    for RacingCompetitionEstimator<Arc<dyn NativePriceEstimating>, N>
+{
     fn estimate_native_price(
         &self,
         token: H160,
@@ -221,22 +228,24 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
-pub struct CompetitionEstimator<T> {
-    inner: RacingCompetitionEstimator<T>,
+pub struct CompetitionEstimator<T, N> {
+    inner: RacingCompetitionEstimator<T, N>,
 }
 
-impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(inner: Vec<Vec<(String, T)>>) -> Self {
+impl<T: Send + Sync + 'static, N: Send + Sync + 'static> CompetitionEstimator<T, N> {
+    pub fn new(inner: Vec<Vec<(String, T)>>, native: N) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.iter().fold(0, |sum, stage| sum + stage.len()))
                 .expect("Vec of estimators should not be empty.");
         Self {
-            inner: RacingCompetitionEstimator::new(inner, number_of_estimators),
+            inner: RacingCompetitionEstimator::new(inner, number_of_estimators, native),
         }
     }
 }
 
-impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+impl PriceEstimating
+    for CompetitionEstimator<Arc<dyn PriceEstimating>, Arc<dyn NativePriceEstimating>>
+{
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
         self.inner.estimate(query)
     }
@@ -321,7 +330,7 @@ fn metrics() -> &'static Metrics {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::MockPriceEstimating,
+        crate::price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
@@ -330,6 +339,16 @@ mod tests {
         std::time::Duration,
         tokio::time::sleep,
     };
+
+    /// Builds native price estimator that returns the same native price for any
+    /// token.
+    fn mock_native_estimator() -> Arc<dyn NativePriceEstimating> {
+        let mut estimator = MockNativePriceEstimating::new();
+        estimator
+            .expect_estimate_native_price()
+            .returning(|_token| async { Ok(1.) }.boxed());
+        Arc::new(estimator)
+    }
 
     #[tokio::test]
     async fn works() {
@@ -418,11 +437,13 @@ mod tests {
             }),
         ]);
 
-        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-            CompetitionEstimator::new(vec![vec![
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>, _> = CompetitionEstimator::new(
+            vec![vec![
                 ("first".to_owned(), Arc::new(first)),
                 ("second".to_owned(), Arc::new(second)),
-            ]]);
+            ]],
+            mock_native_estimator(),
+        );
 
         let result = priority.estimate(queries[0].clone()).await;
         assert_eq!(result.as_ref().unwrap(), &estimates[0]);
@@ -497,7 +518,7 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>, _> =
             RacingCompetitionEstimator::new(
                 vec![vec![
                     ("first".to_owned(), Arc::new(first)),
@@ -505,6 +526,7 @@ mod tests {
                     ("third".to_owned(), Arc::new(third)),
                 ]],
                 NonZeroUsize::new(1).unwrap(),
+                mock_native_estimator(),
             );
 
         let result = racing.estimate(query).await;
@@ -567,7 +589,7 @@ mod tests {
             .boxed()
         });
 
-        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
+        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>, _> =
             RacingCompetitionEstimator::new(
                 vec![
                     vec![
@@ -580,6 +602,7 @@ mod tests {
                     ],
                 ],
                 NonZeroUsize::new(2).unwrap(),
+                mock_native_estimator(),
             );
 
         let result = racing.estimate(query).await;
@@ -638,16 +661,19 @@ mod tests {
         let mut fourth = MockPriceEstimating::new();
         fourth.expect_estimate().never();
 
-        let racing: RacingCompetitionEstimator<Arc<dyn PriceEstimating>> =
-            RacingCompetitionEstimator {
-                inner: vec![
-                    vec![("first".to_owned(), Arc::new(first))],
-                    vec![("second".to_owned(), Arc::new(second))],
-                    vec![("third".to_owned(), Arc::new(third))],
-                    vec![("fourth".to_owned(), Arc::new(fourth))],
-                ],
-                successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
-            };
+        let racing: RacingCompetitionEstimator<
+            Arc<dyn PriceEstimating>,
+            Arc<dyn NativePriceEstimating>,
+        > = RacingCompetitionEstimator {
+            inner: vec![
+                vec![("first".to_owned(), Arc::new(first))],
+                vec![("second".to_owned(), Arc::new(second))],
+                vec![("third".to_owned(), Arc::new(third))],
+                vec![("fourth".to_owned(), Arc::new(fourth))],
+            ],
+            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            native: mock_native_estimator(),
+        };
 
         racing.estimate(query).await.unwrap();
     }

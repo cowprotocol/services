@@ -336,9 +336,10 @@ impl<'a> PriceEstimatorFactory<'a> {
     pub fn price_estimator(
         &mut self,
         sources: &[PriceEstimatorSource],
+        native: Arc<dyn NativePriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(vec![estimators]);
+        let competition_estimator = CompetitionEstimator::new(vec![estimators], native);
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -346,12 +347,14 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         sources: &[PriceEstimatorSource],
         fast_price_estimation_results_required: NonZeroUsize,
+        native: Arc<dyn NativePriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
         Ok(Arc::new(self.sanitized(Arc::new(
             RacingCompetitionEstimator::new(
                 vec![estimators],
                 fast_price_estimation_results_required,
+                native,
             ),
         ))))
     }
@@ -377,7 +380,12 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect::<Result<Vec<Vec<_>>>>()?;
 
-        let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
+        // Hack: we made the `RacingCompetitionEstimator` generic to reuse it for
+        // regular quotes and native quotes but only the regular quotes actually
+        // need the native price estimator component (otherwise we'd have a
+        // circular dependency). That's why we use the `NoopEstimator` here.
+        let competition_estimator =
+            RacingCompetitionEstimator::new(estimators, results_required, ());
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
             self.args.native_price_cache_max_age_secs,
