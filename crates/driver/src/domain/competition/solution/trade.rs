@@ -1,6 +1,9 @@
-use crate::domain::{
-    competition::{self, order},
-    eth,
+use {
+    crate::domain::{
+        competition::{self, order},
+        eth,
+    },
+    std::collections::HashMap,
 };
 
 /// A trade which executes an order as part of this solution.
@@ -83,6 +86,40 @@ impl Fulfillment {
             Fee::Static => self.order.fee.solver,
             Fee::Dynamic(fee) => fee,
         }
+    }
+
+    /// The effective amount that left the user's wallet including all fees.
+    pub fn sell_amount(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+    ) -> Option<eth::TokenAmount> {
+        let before_fee = match self.order.side {
+            order::Side::Sell => self.executed.0,
+            order::Side::Buy => self
+                .executed
+                .0
+                .checked_mul(*prices.get(&self.order.buy.token)?)?
+                .checked_div(*prices.get(&self.order.sell.token)?)?,
+        };
+        Some(eth::TokenAmount(
+            before_fee.checked_add(self.solver_fee().0)?,
+        ))
+    }
+
+    /// The effective amount the user received after all fees.
+    pub fn buy_amount(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+    ) -> Option<eth::TokenAmount> {
+        let amount = match self.order.side {
+            order::Side::Buy => self.executed.0,
+            order::Side::Sell => self
+                .executed
+                .0
+                .checked_mul(*prices.get(&self.order.sell.token)?)?
+                .checked_div(*prices.get(&self.order.buy.token)?)?,
+        };
+        Some(eth::TokenAmount(amount))
     }
 }
 
