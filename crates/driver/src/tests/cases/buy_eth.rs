@@ -14,6 +14,6 @@ async fn test() {
         .done()
         .await;
 
-    test.solve().await.ok();
+    test.solve().await.ok().orders(&[eth_order().name]);
     test.settle().await.ok().await.eth_order_executed().await;
 }
