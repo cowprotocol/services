@@ -8,7 +8,7 @@ use {
         Query,
     },
     futures::{
-        future::FusedFuture,
+        future::Future,
         stream::{FuturesUnordered, StreamExt},
         FutureExt as _,
         TryFutureExt,
@@ -86,7 +86,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             + Send
             + 'static,
         compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
-        provide_additional_context: impl FusedFuture<Output = Result<C, E>> + Send + 'static,
+        provide_additional_context: impl Future<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
         async move {
@@ -220,7 +220,7 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
         &self,
         token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        let context = futures::future::ready(Ok(())).fuse();
+        let context = futures::future::ready(Ok(()));
         self.estimate_generic(
             token,
             OrderKind::Buy,
@@ -362,7 +362,7 @@ impl PriceRanking {
     fn provide_context(
         &self,
         token: H160,
-    ) -> impl FusedFuture<Output = Result<RankingContext, PriceEstimationError>> {
+    ) -> impl Future<Output = Result<RankingContext, PriceEstimationError>> {
         let fut = match self {
             PriceRanking::MaxOutAmount => async {
                 Ok(RankingContext {
@@ -390,7 +390,7 @@ impl PriceRanking {
                 .boxed()
             }
         };
-        tokio::task::spawn(fut).map(Result::unwrap).fuse()
+        tokio::task::spawn(fut).map(Result::unwrap)
     }
 }
 
