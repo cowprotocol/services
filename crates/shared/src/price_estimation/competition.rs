@@ -13,7 +13,7 @@ use {
         FutureExt as _,
         TryFutureExt,
     },
-    gas_estimation::{GasPrice1559, GasPriceEstimating},
+    gas_estimation::GasPriceEstimating,
     model::order::OrderKind,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
@@ -371,11 +371,7 @@ impl PriceRanking {
             PriceRanking::MaxOutAmount => async {
                 Ok(RankingContext {
                     native_price: 1.0,
-                    gas_price: GasPrice1559 {
-                        base_fee_per_gas: 0.,
-                        max_fee_per_gas: 0.,
-                        max_priority_fee_per_gas: 0.,
-                    },
+                    gas_price: 0.,
                 })
             }
             .boxed(),
@@ -385,6 +381,7 @@ impl PriceRanking {
                 async move {
                     let gas = gas
                         .estimate()
+                        .map_ok(|gas| gas.effective_gas_price())
                         .map_err(PriceEstimationError::ProtocolInternal);
                     let (native_price, gas_price) =
                         futures::try_join!(native.estimate_native_price(token), gas)?;
@@ -403,7 +400,7 @@ impl PriceRanking {
 
 struct RankingContext {
     native_price: f64,
-    gas_price: GasPrice1559,
+    gas_price: f64,
 }
 
 impl RankingContext {
@@ -414,7 +411,7 @@ impl RankingContext {
     /// referred to as "bang-for-buck" and what matters most to traders.
     fn effective_eth_out(&self, estimate: &Estimate) -> U256 {
         let eth_out = estimate.out_amount.to_f64_lossy() * self.native_price;
-        let fees = estimate.gas as f64 * self.gas_price.effective_gas_price();
+        let fees = estimate.gas as f64 * self.gas_price;
         let effective_eth_out = eth_out - fees;
         // converts `NaN` and `(-∞, 0]` to `0`
         U256::from_f64_lossy(effective_eth_out)
