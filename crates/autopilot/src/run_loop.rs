@@ -646,8 +646,8 @@ struct Metrics {
     settle: prometheus::IntCounterVec,
 
     /// Tracks the number of orders that were part of some but not the winning
-    /// solution.
-    #[metric(labels("winner"))]
+    /// solution together with the winning driver that did't include it.
+    #[metric(labels("ignored_by"))]
     matched_unsettled: prometheus::IntCounterVec,
 }
 
