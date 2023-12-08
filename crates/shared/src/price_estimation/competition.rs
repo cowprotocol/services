@@ -194,28 +194,24 @@ fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
 
 impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
     fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        async {
-            let out_token = match query.kind {
-                OrderKind::Buy => query.sell_token,
-                OrderKind::Sell => query.buy_token,
-            };
-            let context = self.ranking.provide_context(out_token);
-            self.estimate_generic(
-                query.clone(),
-                query.kind,
-                |estimator, query| estimator.estimate(query),
-                move |a, b, context| {
-                    if is_second_quote_result_preferred(query.as_ref(), a, b, context) {
-                        Ordering::Less
-                    } else {
-                        Ordering::Greater
-                    }
-                },
-                context,
-            )
-            .await
-        }
-        .boxed()
+        let out_token = match query.kind {
+            OrderKind::Buy => query.sell_token,
+            OrderKind::Sell => query.buy_token,
+        };
+        let context = self.ranking.provide_context(out_token);
+        self.estimate_generic(
+            query.clone(),
+            query.kind,
+            |estimator, query| estimator.estimate(query),
+            move |a, b, context| {
+                if is_second_quote_result_preferred(query.as_ref(), a, b, context) {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            },
+            context,
+        )
     }
 }
 
