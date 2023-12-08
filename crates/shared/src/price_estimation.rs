@@ -490,6 +490,17 @@ impl Estimate {
         let (sell_amount, buy_amount) = self.amounts(query);
         buy_amount.to_f64_lossy() / sell_amount.to_f64_lossy()
     }
+
+    /// Computes the actual received value from this estimate that takes `gas`
+    /// into account. If an extremely complex trade route would only result
+    /// in slightly more `out_amount` than a simple trade route the simple
+    /// trade route wourd report a higher `out_amount_in_eth`. This is also
+    /// referred to as "bang-for-buck" and what matters most to traders.
+    pub fn out_amount_in_eth(&self, native_out_token_price: f64) -> U256 {
+        let eth_value = self.out_amount.to_f64_lossy() * native_out_token_price;
+        let eth_value = U256::from_f64_lossy(eth_value);
+        eth_value.saturating_sub(self.gas.into())
+    }
 }
 
 pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;

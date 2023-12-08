@@ -292,9 +292,10 @@ fn is_second_estimate_preferred(
     b: &Estimate,
     native_price: f64,
 ) -> bool {
+    let amount_out = |estimate: &Estimate| estimate.out_amount_in_eth(native_price);
     match query.kind {
-        OrderKind::Buy => b.out_amount < a.out_amount,
-        OrderKind::Sell => a.out_amount < b.out_amount,
+        OrderKind::Buy => amount_out(b) < amount_out(a),
+        OrderKind::Sell => amount_out(a) < amount_out(b),
     }
 }
 
