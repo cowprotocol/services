@@ -310,13 +310,13 @@ impl Settlement {
             .fold(Default::default(), |mut acc, solution| {
                 for trade in solution.user_trades() {
                     let order = acc.entry(trade.order().uid).or_default();
-                    order.sell = trade.sell_amount(&solution.prices).unwrap_or_else(|| {
+                    order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
                         tracing::error!(uid = ?trade.order().uid, "could not compute sell_amount");
                         0.into()
                     });
-                    order.buy = trade.buy_amount(&solution.prices).unwrap_or_else(|| {
+                    order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
                         tracing::error!(uid = ?trade.order().uid, "could not compute buy_amount");
