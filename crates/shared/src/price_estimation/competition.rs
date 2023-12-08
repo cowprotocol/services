@@ -11,6 +11,7 @@ use {
         future::FusedFuture,
         stream::{FuturesUnordered, StreamExt},
         FutureExt as _,
+        TryFutureExt,
     },
     gas_estimation::{GasPrice1559, GasPriceEstimating},
     model::order::OrderKind,
@@ -382,11 +383,15 @@ impl PriceRanking {
                 let gas = gas.clone();
                 let native = native.clone();
                 async move {
-                    let (native, gas) =
-                        futures::join!(native.estimate_native_price(token), gas.estimate());
+                    let gas = gas
+                        .estimate()
+                        .map_err(PriceEstimationError::ProtocolInternal);
+                    let (native_price, gas_price) =
+                        futures::try_join!(native.estimate_native_price(token), gas)?;
+
                     Ok(RankingContext {
-                        native_price: native.unwrap(),
-                        gas_price: gas.unwrap(),
+                        native_price,
+                        gas_price,
                     })
                 }
                 .boxed()
