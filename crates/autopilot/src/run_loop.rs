@@ -238,8 +238,8 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Some(Score::Solver(participant.solution.score.get())),
-                            ranking: Some(solutions.len() - index),
+                            score: Score::Solver(participant.solution.score.get()),
+                            ranking: solutions.len() - index,
                             orders: participant
                                 .solution
                                 .orders()

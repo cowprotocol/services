@@ -11,6 +11,7 @@ mod colocation_ethflow;
 mod colocation_hooks;
 mod colocation_partial_fill;
 mod colocation_quoting;
+mod colocation_solver_competition;
 mod colocation_univ2;
 mod database;
 mod eth_integration;

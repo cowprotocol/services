@@ -179,7 +179,7 @@ mod tests {
                     solver: "asdf".to_string(),
                     solver_address: H160([1; 20]),
                     score: Default::default(),
-                    ranking: Some(1),
+                    ranking: 1,
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![],
                     call_data: Some(vec![1, 2]),
