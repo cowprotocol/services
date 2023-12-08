@@ -293,6 +293,12 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
+            let unsettled_orders: Vec<_> = solutions
+                .iter()
+                .flat_map(|p| p.solution.orders.keys())
+                .filter(|uid| !solution.orders.contains_key(uid))
+                .collect();
+            Metrics::matched_unsettled(driver, unsettled_orders.as_slice());
         }
     }
 
@@ -638,6 +644,11 @@ struct Metrics {
     /// Tracks the result of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
     settle: prometheus::IntCounterVec,
+
+    /// Tracks the number of orders that were part of some but not the winning
+    /// solution together with the winning driver that did't include it.
+    #[metric(labels("ignored_by"))]
+    matched_unsettled: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -715,5 +726,15 @@ impl Metrics {
             .settle
             .with_label_values(&[&driver.name, label])
             .inc();
+    }
+
+    fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {
+        if !unsettled.is_empty() {
+            tracing::debug!(?unsettled, "some orders were matched but not settled");
+        }
+        Self::get()
+            .matched_unsettled
+            .with_label_values(&[&winning.name])
+            .inc_by(unsettled.len() as u64);
     }
 }
