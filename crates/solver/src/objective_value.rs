@@ -25,7 +25,7 @@ impl Inputs {
 
         Self {
             surplus_given: settlement.total_surplus(prices),
-            solver_fees: settlement.total_solver_fees(prices),
+            solver_fees: settlement.total_scoring_fees(prices),
             gas_price,
             gas_amount,
         }
