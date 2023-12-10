@@ -52,6 +52,18 @@ pub enum Error {
     Other(Box<dyn std::error::Error + Send + Sync>),
 }
 
+impl Error {
+    /// for instrumentization purposes
+    pub fn format_variant(&self) -> &'static str {
+        match self {
+            Self::OrderNotSupported => "OrderNotSupported",
+            Self::NotFound => "NotFound",
+            Self::RateLimited => "RateLimited",
+            Self::Other(_) => "Other",
+        }
+    }
+}
+
 impl From<balancer::Error> for Error {
     fn from(err: balancer::Error) -> Self {
         match err {
