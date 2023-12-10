@@ -785,16 +785,16 @@ mod tests {
             ..Default::default()
         };
 
-        // Set up native price and gas price such that `out_token` is equal to `ETH` to
-        // make tests easier to understand.
+        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
+        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
         let mut native = MockNativePriceEstimating::new();
         native
             .expect_estimate_native_price()
-            .returning(move |_| async { Ok(1.0) }.boxed());
+            .returning(move |_| async { Ok(0.5) }.boxed());
         let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 1.0,
-            max_fee_per_gas: 1.0,
-            max_priority_fee_per_gas: 1.0,
+            base_fee_per_gas: 2.0,
+            max_fee_per_gas: 2.0,
+            max_priority_fee_per_gas: 2.0,
         }));
         let ranking = PriceRanking::BestBangForBuck {
             native: Arc::new(native),
@@ -805,17 +805,17 @@ mod tests {
         let tests = [
             (
                 OrderKind::Sell,
-                // User effectively receives `100_000` `sell_token`.
-                estimate(101_000, 1_000),
-                // User effectively receives `99_999` `sell_token`.
-                estimate(102_000, 2_001),
+                // User effectively receives `100_000` `buy_token`.
+                estimate(104_000, 1_000),
+                // User effectively receives `99_999` `buy_token`.
+                estimate(107_999, 2_000),
             ),
             (
                 OrderKind::Buy,
-                // User would effectively pay `100_000` `buy_token`.
-                estimate(99_000, 1_000),
-                // User would effectively pay `100_001` `buy_token`.
-                estimate(98_000, 2_001),
+                // User effectively pays `100_000` `sell_token`.
+                estimate(96_000, 1_000),
+                // User effectively pays `100_001` `sell_token`.
+                estimate(92_001, 2_000),
             ),
         ];
 
