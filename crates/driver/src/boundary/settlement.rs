@@ -98,7 +98,7 @@ impl Settlement {
                         to_boundary_order(trade.order()),
                         LimitOrderExecution {
                             filled: trade.executed().into(),
-                            scoring_fee: trade.scoring_fee().into(),
+                            solver_fee: trade.scoring_fee().into(),
                         },
                     )
                 }

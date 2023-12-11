@@ -773,7 +773,7 @@ impl<'a> Solve<'a> {
         }
     }
 
-    pub fn not_ok(self, code: hyper::StatusCode) {
+    pub fn status(self, code: hyper::StatusCode) {
         assert_eq!(self.status, code);
     }
 }

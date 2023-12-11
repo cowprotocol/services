@@ -10,7 +10,7 @@ use crate::{
 #[ignore]
 async fn rejects_unwarranted_solver_fee() {
     let test = tests::setup()
-        .name(format!("Solver fee on market order"))
+        .name("Solver fee on market order".to_string())
         .pool(ab_pool())
         .order(
             // A solver reporting a fee on a swap order
@@ -22,7 +22,7 @@ async fn rejects_unwarranted_solver_fee() {
         .done()
         .await;
 
-    test.solve().await.not_ok(hyper::StatusCode::BAD_REQUEST);
+    test.solve().await.status(hyper::StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

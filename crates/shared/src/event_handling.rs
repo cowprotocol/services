@@ -387,7 +387,7 @@ where
                 match result {
                     Ok(e) => {
                         blocks_filtered.push(blocks[i]);
-                        events.extend(e.into_iter());
+                        events.extend(e);
                     }
                     Err(_) => return (blocks_filtered, events),
                 }
