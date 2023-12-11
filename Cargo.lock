@@ -4170,6 +4170,8 @@ dependencies = [
  "model",
  "num",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "reqwest",
  "serde",
  "serde_json",
