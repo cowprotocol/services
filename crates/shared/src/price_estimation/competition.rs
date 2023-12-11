@@ -198,7 +198,7 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             OrderKind::Buy => query.sell_token,
             OrderKind::Sell => query.buy_token,
         };
-        let context = self.ranking.provide_context(out_token);
+        let context_future = self.ranking.provide_context(out_token);
         self.estimate_generic(
             query.clone(),
             query.kind,
@@ -210,7 +210,7 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
                     Ordering::Greater
                 }
             },
-            context,
+            context_future,
         )
     }
 }
@@ -220,7 +220,7 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
         &self,
         token: H160,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        let context = futures::future::ready(Ok(()));
+        let context_future = futures::future::ready(Ok(()));
         self.estimate_generic(
             token,
             OrderKind::Buy,
@@ -232,7 +232,7 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
                     Ordering::Greater
                 }
             },
-            context,
+            context_future,
         )
     }
 }
