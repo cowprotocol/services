@@ -2,7 +2,6 @@
 
 use {
     anyhow::{bail, Result},
-    lazy_static::lazy_static,
     reqwest::{Client, IntoUrl, Url},
     serde::{de::DeserializeOwned, Deserialize, Serialize},
     serde_json::{json, Map, Value},
@@ -18,12 +17,6 @@ pub struct SubgraphClient {
     subgraph_url: Url,
 }
 
-lazy_static! {
-    pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
-        Url::parse("https://api.thegraph.com/subgraphs/name/")
-            .expect("invalid default Graph API base URL");
-}
-
 pub trait ContainsId {
     fn get_id(&self) -> String;
 }
@@ -36,8 +29,13 @@ pub struct Data<T> {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(org: impl AsRef<str>, name: impl AsRef<str>, client: Client) -> Result<Self> {
-        Self::with_base_url(DEFAULT_GRAPH_API_BASE_URL.clone(), org, name, client)
+    pub fn new(
+        base_url: &Url,
+        org: impl AsRef<str>,
+        name: impl AsRef<str>,
+        client: Client,
+    ) -> Result<Self> {
+        Self::with_base_url(base_url.clone(), org, name, client)
     }
 
     /// Creates a new subgraph client with the specified base URL.
