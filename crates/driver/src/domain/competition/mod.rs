@@ -15,7 +15,10 @@ use {
     },
     futures::{stream::FuturesUnordered, Stream, StreamExt},
     itertools::Itertools,
-    std::{collections::HashSet, sync::Mutex},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Mutex,
+    },
     tap::TapFallible,
 };
 
@@ -171,7 +174,15 @@ impl Competition {
         let (mut score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
-            .map(|(score, settlement)| (Solved { score }, settlement))
+            .map(|(score, settlement)| {
+                (
+                    Solved {
+                        score,
+                        trades: settlement.orders(),
+                    },
+                    settlement,
+                )
+            })
             .unzip();
 
         *self.settlement.lock().unwrap() = settlement.clone();
@@ -217,7 +228,6 @@ impl Competition {
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
-            orders: settlement.orders(),
             internalized_calldata: settlement
                 .calldata(
                     self.eth.contracts().settlement(),
@@ -335,6 +345,13 @@ async fn merge_settlements(
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
+    pub trades: HashMap<order::Uid, Amounts>,
+}
+
+#[derive(Debug, Default)]
+pub struct Amounts {
+    pub sell: eth::TokenAmount,
+    pub buy: eth::TokenAmount,
 }
 
 /// Winning solution information revealed to the protocol by the driver before
@@ -342,8 +359,6 @@ pub struct Solved {
 /// point.
 #[derive(Debug)]
 pub struct Revealed {
-    /// The orders solved by this solution.
-    pub orders: HashSet<order::Uid>,
     /// The internalized calldata is the final calldata that appears onchain.
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team

@@ -1,8 +1,5 @@
 use {
-    crate::{
-        domain::{competition, competition::order},
-        util::serialize,
-    },
+    crate::{domain::competition, util::serialize},
     serde::Serialize,
     serde_with::serde_as,
 };
@@ -10,7 +7,6 @@ use {
 impl Revealed {
     pub fn new(reveal: competition::Revealed) -> Self {
         Self {
-            orders: reveal.orders.into_iter().map(Into::into).collect(),
             calldata: Calldata {
                 internalized: reveal.internalized_calldata.into(),
                 uninternalized: reveal.uninternalized_calldata.into(),
@@ -23,8 +19,6 @@ impl Revealed {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Revealed {
-    #[serde_as(as = "Vec<serialize::Hex>")]
-    orders: Vec<[u8; order::UID_LEN]>,
     calldata: Calldata,
 }
 

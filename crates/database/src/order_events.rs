@@ -4,7 +4,7 @@
 use {
     crate::OrderUid,
     chrono::Utc,
-    sqlx::{types::chrono::DateTime, PgConnection, PgPool},
+    sqlx::{types::chrono::DateTime, PgConnection, PgPool, QueryBuilder},
 };
 
 /// Describes what kind of event was registered for an order.
@@ -65,6 +65,24 @@ pub async fn insert_order_event(
         .execute(ex)
         .await
         .map(|_| ())
+}
+
+/// Inserts rows into the `order_events` table as a single batch.
+pub async fn insert_order_events_batch(
+    ex: &mut PgConnection,
+    events: impl IntoIterator<Item = OrderEvent>,
+) -> Result<(), sqlx::Error> {
+    let mut query_builder =
+        QueryBuilder::new("INSERT INTO order_events (order_uid, timestamp, label) ");
+
+    query_builder.push_values(events, |mut b, event| {
+        b.push_bind(event.order_uid)
+            .push_bind(event.timestamp)
+            .push_bind(event.label);
+    });
+
+    let query = query_builder.build();
+    query.execute(ex).await.map(|_| ())
 }
 
 /// Deletes rows before the provided timestamp from the `order_events` table.
