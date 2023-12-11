@@ -12,8 +12,9 @@ mod quotes;
 pub mod recent_settlements;
 
 use {
-    sqlx::{PgConnection, PgPool},
+    sqlx::{Executor, PgConnection, PgPool},
     std::time::Duration,
+    tracing::Instrument,
 };
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,15 @@ impl Postgres {
 
         Ok(())
     }
+
+    pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
+        for &table in database::LARGE_TABLES {
+            let mut ex = self.0.acquire().await?;
+            analyze_table(&mut ex, table).await?;
+        }
+
+        Ok(())
+    }
 }
 
 async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
@@ -60,6 +70,11 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
 async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
     let query = format!("SELECT reltuples::bigint FROM pg_class WHERE relname='{table}';");
     sqlx::query_scalar(&query).fetch_one(ex).await
+}
+
+async fn analyze_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<()> {
+    let query = format!("ANALYZE {table};");
+    ex.execute(sqlx::query(&query)).await.map(|_| ())
 }
 
 async fn count_unused_app_data(ex: &mut PgConnection) -> sqlx::Result<i64> {
@@ -99,12 +114,30 @@ impl Metrics {
     }
 }
 
-pub async fn database_metrics(db: Postgres) -> ! {
+pub fn run_database_metrics_work(db: Postgres) {
+    let span = tracing::info_span!("database_metrics");
+    // Spawn the task for updating large table statistics
+    tokio::spawn(update_large_tables_stats(db.clone()).instrument(span.clone()));
+
+    // Spawn the task for database metrics
+    tokio::task::spawn(database_metrics(db).instrument(span));
+}
+
+async fn database_metrics(db: Postgres) -> ! {
     loop {
         if let Err(err) = db.update_database_metrics().await {
             tracing::error!(?err, "failed to update table rows metric");
         }
         tokio::time::sleep(Duration::from_secs(60)).await;
+    }
+}
+
+async fn update_large_tables_stats(db: Postgres) -> ! {
+    loop {
+        if let Err(err) = db.update_large_tables_stats().await {
+            tracing::error!(?err, "failed to update large tables stats");
+        }
+        tokio::time::sleep(Duration::from_secs(60 * 60)).await;
     }
 }
 
