@@ -51,6 +51,7 @@ account = "0x{}"
 
 [liquidity]
 base-tokens = []
+graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [[liquidity.uniswap-v2]]
 router = "{:?}"

@@ -765,8 +765,10 @@ mod tests {
             current_block_stream(Arc::new(web3.clone()), Duration::from_secs(10))
                 .await
                 .unwrap();
+        let base_url = Url::parse("https://api.thegraph.com/subgraphs/name/").expect("invalid url");
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
+                &base_url,
                 chain_id,
                 block_retriever.clone(),
                 token_info.clone(),
@@ -782,6 +784,7 @@ mod tests {
         );
         let uniswap_v3_pool_fetcher = Arc::new(
             UniswapV3PoolFetcher::new(
+                &base_url,
                 chain_id,
                 web3.clone(),
                 client.clone(),
