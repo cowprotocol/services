@@ -251,8 +251,8 @@ impl RunLoop {
                             clearing_prices: participant
                                 .solution
                                 .clearing_prices
-                                .clone()
-                                .into_iter()
+                                .iter()
+                                .cloned()
                                 .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
