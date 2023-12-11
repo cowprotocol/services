@@ -106,6 +106,7 @@ impl Dex {
         gas_price: auction::GasPrice,
     ) -> Option<dex::Swap> {
         let dex_err_handler = |err: infra::dex::Error| {
+            infra::metrics::solve_error(err.format_variant());
             match &err {
                 err @ infra::dex::Error::NotFound => {
                     if order.partially_fillable {

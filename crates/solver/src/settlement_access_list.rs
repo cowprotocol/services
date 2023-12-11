@@ -115,7 +115,7 @@ pub async fn estimate_settlement_access_list(
             partial_access_list
                 .entry(item.address)
                 .or_default()
-                .extend(item.storage_keys.into_iter());
+                .extend(item.storage_keys);
         }
     }
     let partial_access_list = partial_access_list
