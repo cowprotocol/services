@@ -22,7 +22,7 @@ async fn rejects_unwarranted_solver_fee() {
         .done()
         .await;
 
-    test.solve().await.not_ok(hyper::StatusCode::BAD_REQUEST);
+    test.solve().await.status(hyper::StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
