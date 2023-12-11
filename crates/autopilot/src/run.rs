@@ -97,10 +97,7 @@ pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    tokio::task::spawn(
-        crate::database::database_metrics(db.clone())
-            .instrument(tracing::info_span!("database_metrics")),
-    );
+    crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
