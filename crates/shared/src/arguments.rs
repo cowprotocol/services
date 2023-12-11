@@ -162,6 +162,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
+    /// The base URL used to connect to subgraph clients.
+    #[clap(long, env, default_value = "https://api.thegraph.com/subgraphs/name/")]
+    pub graph_api_base_url: Url,
+
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
     #[clap(long, env)]
@@ -414,6 +418,7 @@ impl Display for Arguments {
             self.logging.log_stderr_threshold
         )?;
         writeln!(f, "node_url: {}", self.node_url)?;
+        writeln!(f, "graph_api_base_url: {}", self.graph_api_base_url)?;
         display_option(f, "chain_id", &self.chain_id)?;
         display_option(f, "simulation_node_url", &self.simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;

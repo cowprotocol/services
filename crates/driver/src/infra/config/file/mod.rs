@@ -293,6 +293,9 @@ struct LiquidityConfig {
     /// Liquidity provided by a Balancer V2 compatible contract.
     #[serde(default)]
     balancer_v2: Vec<BalancerV2Config>,
+
+    /// The base URL used to connect to subgraph clients.
+    graph_api_base_url: Option<Url>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

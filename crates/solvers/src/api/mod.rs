@@ -20,6 +20,7 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
         let app = axum::Router::new()
+            .route("/metrics", axum::routing::get(routes::metrics))
             .route("/healthz", axum::routing::get(routes::healthz))
             .route("/solve", axum::routing::post(routes::solve))
             .route("/notify", axum::routing::post(routes::notify))

@@ -25,7 +25,7 @@ risk-parameters = [0,0,0,0]
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
     tokio::task::spawn(async move {
         let _config_file = config_file;
-        solvers::run(args.into_iter(), Some(bind)).await;
+        solvers::run(args, Some(bind)).await;
     });
 
     let solver_addr = bind_receiver.await.unwrap();
@@ -51,6 +51,7 @@ account = "0x{}"
 
 [liquidity]
 base-tokens = []
+graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [[liquidity.uniswap-v2]]
 router = "{:?}"
