@@ -79,11 +79,20 @@ impl Fulfillment {
         self.executed
     }
 
-    /// Returns the solver fee that should be considered as collected when
+    /// Returns the fee that should be considered as collected when
     /// scoring a solution.
-    pub fn solver_fee(&self) -> order::SellAmount {
+    pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.solver,
+            Fee::Dynamic(fee) => fee,
+        }
+    }
+
+    /// Returns the effectively paid fee from the user's perspective
+    /// considering their signed order and the uniform clearing prices
+    pub fn fee(&self) -> order::SellAmount {
+        match self.fee {
+            Fee::Static => self.order.fee.user,
             Fee::Dynamic(fee) => fee,
         }
     }
@@ -102,9 +111,7 @@ impl Fulfillment {
                 .checked_mul(*prices.get(&self.order.buy.token.wrap(weth))?)?
                 .checked_div(*prices.get(&self.order.sell.token.wrap(weth))?)?,
         };
-        Some(eth::TokenAmount(
-            before_fee.checked_add(self.solver_fee().0)?,
-        ))
+        Some(eth::TokenAmount(before_fee.checked_add(self.fee().0)?))
     }
 
     /// The effective amount the user received after all fees.
