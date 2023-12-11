@@ -20,7 +20,7 @@ use {
             quote::{self, Quote},
             Liquidity,
         },
-        infra::{simulator, solver},
+        infra::solver,
         util::http,
     },
     ethrpc::current_block::BlockInfo,
