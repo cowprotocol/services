@@ -86,7 +86,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             + Send
             + 'static,
         compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
-        provide_additional_context: impl Future<Output = Result<C, E>> + Send + 'static,
+        provide_comparison_context: impl Future<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
         async move {
@@ -145,7 +145,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
                 }
             }
 
-            let context = provide_additional_context.await?;
+            let context = provide_comparison_context.await?;
 
             let best_index = results
                 .iter()
@@ -404,7 +404,7 @@ impl RankingContext {
     /// Computes the actual received value from this estimate that takes `gas`
     /// into account. If an extremely complex trade route would only result
     /// in slightly more `out_amount` than a simple trade route the simple
-    /// trade route wourd report a higher `out_amount_in_eth`. This is also
+    /// trade route would report a higher `out_amount_in_eth`. This is also
     /// referred to as "bang-for-buck" and what matters most to traders.
     fn effective_eth_out(&self, estimate: &Estimate, kind: OrderKind) -> U256 {
         let eth_out = estimate.out_amount.to_f64_lossy() * self.native_price;
