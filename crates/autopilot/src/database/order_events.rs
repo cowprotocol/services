@@ -37,8 +37,8 @@ async fn store_order_events(
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
     let mut ex = db.0.begin().await.context("begin transaction")?;
-    for w in events.chunks(DEFAULT_BATCH_SIZE) {
-        let batch = w.iter().map(|(uid, label)| OrderEvent {
+    for chunk in events.chunks(DEFAULT_BATCH_SIZE) {
+        let batch = chunk.iter().map(|(uid, label)| OrderEvent {
             order_uid: ByteArray(uid.0),
             timestamp,
             label: *label,
