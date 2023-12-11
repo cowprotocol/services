@@ -395,23 +395,6 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let price_estimator = price_estimator_factory
-        .price_estimator(&PriceEstimatorSource::for_args(
-            args.order_quoting.price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
-        .unwrap();
-    let fast_price_estimator = price_estimator_factory
-        .fast_price_estimator(
-            &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
-            args.fast_price_estimation_results_required,
-        )
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
@@ -421,6 +404,29 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             args.fast_price_estimation_results_required,
+        )
+        .unwrap();
+    let price_estimator = price_estimator_factory
+        .price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+        )
+        .unwrap();
+    let fast_price_estimator = price_estimator_factory
+        .fast_price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            args.fast_price_estimation_results_required,
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 
