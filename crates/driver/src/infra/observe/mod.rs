@@ -167,7 +167,7 @@ pub fn score(settlement: &Settlement, score: &competition::Score) {
 
 // Observe that the winning settlement started failing upon arrival of a new
 // block
-pub fn winner_voided(block: BlockInfo, err: &simulator::Error) {
+pub fn winner_voided(block: BlockInfo, err: &simulator::RevertError) {
     tracing::warn!(block = block.number, ?err, "solution reverts on new block");
 }
 
