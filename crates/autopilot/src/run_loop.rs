@@ -9,8 +9,9 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
+            solve::{self, Class, TradedAmounts},
         },
+        protocol,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
@@ -497,6 +498,7 @@ pub fn solve_request(
     time_limit: Duration,
     fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
+    let fee_policies = protocol::fee::fee_policies(auction, fee_policy);
     solve::Request {
         id,
         orders: auction
@@ -521,17 +523,6 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-
-                let fee_policies = match order.metadata.class {
-                    OrderClass::Market => vec![],
-                    OrderClass::Liquidity => vec![],
-                    // todo https://github.com/cowprotocol/services/issues/2092
-                    // skip protocol fee for limit orders with in-market price
-
-                    // todo https://github.com/cowprotocol/services/issues/2115
-                    // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
-                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -557,7 +548,10 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies,
+                    fee_policies: fee_policies
+                        .get(&order.metadata.uid)
+                        .cloned()
+                        .unwrap_or_default(),
                 }
             })
             .collect(),
