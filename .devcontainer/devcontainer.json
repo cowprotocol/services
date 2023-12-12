@@ -19,7 +19,6 @@
 		"ghcr.io/nlordell/features/foundry": {},
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
 		"ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {},
-		"ghcr.io/devcontainers/features/node:1": {},
         "ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
             "plugins": "npm git rust docker docker-compose git-prompt postgres",
             "omzPlugins": "https://github.com/zsh-users/zsh-autosuggestions",
@@ -51,7 +50,7 @@
 
 	// Use 'postCreateCommand' to run commands after the container is created.
 	// "postCreateCommand": "rustc --version",
-	"postCreateCommand": ". ${NVM_DIR}/nvm.sh && nvm install --lts && rustup toolchain install nightly && cargo install flamegraph",
+	"postCreateCommand": "rustup toolchain install nightly && cargo install flamegraph",
 
 	// Set `remoteUser` to `root` to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "vscode"
