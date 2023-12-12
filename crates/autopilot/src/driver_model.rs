@@ -147,6 +147,7 @@ pub mod solve {
         /// quoted amounts) pay the protocol a factor of the achieved
         /// improvement. The fee is taken in `sell` token for `buy`
         /// orders and in `buy` token for `sell` orders.
+        #[serde(rename_all = "camelCase")]
         PriceImprovement {
             /// Factor of price improvement the protocol charges as a fee.
             /// Price improvement is the difference between executed price and
@@ -163,6 +164,7 @@ pub mod solve {
         /// How much of the order's volume should be taken as a protocol fee.
         /// The fee is taken in `sell` token for `sell` orders and in `buy`
         /// token for `buy` orders.
+        #[serde(rename_all = "camelCase")]
         Volume {
             /// Percentage of the order's volume should be taken as a protocol
             /// fee.

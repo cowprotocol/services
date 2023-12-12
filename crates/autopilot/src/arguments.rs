@@ -342,7 +342,7 @@ impl FromStr for FeePolicyKind {
         let mut parts = s.split(':');
         let kind = parts.next().ok_or("missing fee policy kind")?;
         match kind {
-            "price_improvement" => {
+            "priceImprovement" => {
                 let factor = parts
                     .next()
                     .ok_or("missing price improvement factor")?
