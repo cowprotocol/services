@@ -46,8 +46,22 @@ pub enum Error {
     OrderNotSupported,
     #[error("no valid swap interaction could be found")]
     NotFound,
+    #[error("rate limited")]
+    RateLimited,
     #[error(transparent)]
     Other(Box<dyn std::error::Error + Send + Sync>),
+}
+
+impl Error {
+    /// for instrumentization purposes
+    pub fn format_variant(&self) -> &'static str {
+        match self {
+            Self::OrderNotSupported => "OrderNotSupported",
+            Self::NotFound => "NotFound",
+            Self::RateLimited => "RateLimited",
+            Self::Other(_) => "Other",
+        }
+    }
 }
 
 impl From<balancer::Error> for Error {
@@ -64,6 +78,7 @@ impl From<oneinch::Error> for Error {
         match err {
             oneinch::Error::OrderNotSupported => Self::OrderNotSupported,
             oneinch::Error::NotFound => Self::NotFound,
+            oneinch::Error::RateLimited => Self::RateLimited,
             _ => Self::Other(Box::new(err)),
         }
     }
@@ -73,6 +88,7 @@ impl From<zeroex::Error> for Error {
     fn from(err: zeroex::Error) -> Self {
         match err {
             zeroex::Error::NotFound => Self::NotFound,
+            zeroex::Error::RateLimited => Self::RateLimited,
             _ => Self::Other(Box::new(err)),
         }
     }
@@ -82,6 +98,7 @@ impl From<paraswap::Error> for Error {
     fn from(err: paraswap::Error) -> Self {
         match err {
             paraswap::Error::NotFound => Self::NotFound,
+            paraswap::Error::RateLimited => Self::RateLimited,
             _ => Self::Other(Box::new(err)),
         }
     }

@@ -6,7 +6,6 @@
 use {
     super::internal::InternalPoolFetching,
     crate::{
-        maintenance::Maintaining,
         recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
         sources::balancer_v2::pools::Pool,
     },
@@ -59,21 +58,6 @@ where
 
     async fn pools_by_id(&self, pool_ids: HashSet<H256>, block: Block) -> Result<Vec<Pool>> {
         self.cache.fetch(pool_ids, block).await
-    }
-}
-
-#[async_trait::async_trait]
-impl<Inner> Maintaining for Cache<Inner>
-where
-    Inner: InternalPoolFetching,
-{
-    async fn run_maintenance(&self) -> Result<()> {
-        futures::try_join!(self.inner.run_maintenance(), self.cache.update_cache())?;
-        Ok(())
-    }
-
-    fn name(&self) -> &str {
-        "BalancerPoolFetcher"
     }
 }
 

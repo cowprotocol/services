@@ -113,6 +113,8 @@ pub enum Error {
     NotFound,
     #[error("decimals are missing for the swapped tokens")]
     MissingDecimals,
+    #[error("rate limited")]
+    RateLimited,
     #[error("api error {0}")]
     Api(String),
     #[error(transparent)]
@@ -122,7 +124,12 @@ pub enum Error {
 impl From<util::http::RoundtripError<dto::Error>> for Error {
     fn from(err: util::http::RoundtripError<dto::Error>) -> Self {
         match err {
-            util::http::RoundtripError::Http(err) => Self::Http(err),
+            util::http::RoundtripError::Http(http_err) => match http_err {
+                util::http::Error::Status(status_code, _) if status_code.as_u16() == 429 => {
+                    Self::RateLimited
+                }
+                other_err => Self::Http(other_err),
+            },
             util::http::RoundtripError::Api(err) => match err.error.as_str() {
                 "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT"
                 | "No routes found with enough liquidity"

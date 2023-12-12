@@ -77,6 +77,8 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     tracing::info!("waiting for liquidity state to update");
     wait_for_condition(TIMEOUT, || async {
+        // Mint blocks until we evict the cached liquidty and fetch the new state.
+        onchain.mint_block().await;
         let next = services.submit_quote(&quote).await.unwrap();
         next.quote.buy_amount != first.quote.buy_amount
     })

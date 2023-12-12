@@ -165,6 +165,8 @@ pub enum Error {
     OrderNotSupported,
     #[error("no valid swap could be found")]
     NotFound,
+    #[error("rate limited")]
+    RateLimited,
     #[error("api error {code}: {description}")]
     Api { code: i32, description: String },
     #[error(transparent)]
@@ -174,7 +176,12 @@ pub enum Error {
 impl From<util::http::RoundtripError<dto::Error>> for Error {
     fn from(err: util::http::RoundtripError<dto::Error>) -> Self {
         match err {
-            util::http::RoundtripError::Http(err) => Self::Http(err),
+            util::http::RoundtripError::Http(http_err) => match http_err {
+                util::http::Error::Status(status_code, _) if status_code.as_u16() == 429 => {
+                    Self::RateLimited
+                }
+                other_err => Self::Http(other_err),
+            },
             util::http::RoundtripError::Api(err) => {
                 // Unfortunately, AFAIK these codes aren't documented anywhere. These
                 // based on empirical observations of what the API has returned in the

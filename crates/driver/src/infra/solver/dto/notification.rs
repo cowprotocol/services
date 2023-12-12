@@ -4,7 +4,7 @@ use {
             competition::{auction, solution},
             eth,
         },
-        infra::notify,
+        infra::{notify, notify::SimulationSucceededAtLeastOnce},
         util::serialize,
     },
     serde::Serialize,
@@ -25,16 +25,19 @@ impl Notification {
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::SimulationFailed(block, tx) => Kind::SimulationFailed(
-                    block.0,
-                    Tx {
-                        from: tx.from.into(),
-                        to: tx.to.into(),
-                        input: tx.input.into(),
-                        value: tx.value.into(),
-                        access_list: tx.access_list.into(),
-                    },
-                ),
+                notify::Kind::SimulationFailed(block, tx, simulated_once) => {
+                    Kind::SimulationFailed(
+                        block.0,
+                        Tx {
+                            from: tx.from.into(),
+                            to: tx.to.into(),
+                            input: tx.input.into(),
+                            value: tx.value.into(),
+                            access_list: tx.access_list.into(),
+                        },
+                        simulated_once,
+                    )
+                }
                 notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
                     Kind::ScoringFailed(ScoreKind::ZeroScore)
                 }
@@ -97,7 +100,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx),
+    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,

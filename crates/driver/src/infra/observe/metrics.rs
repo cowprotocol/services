@@ -16,6 +16,9 @@ pub struct Metrics {
     /// The results of the quoting process.
     #[metric(labels("solver", "result"))]
     pub quotes: prometheus::IntCounterVec,
+    /// The results of the mempool submission.
+    #[metric(labels("mempool", "result"))]
+    pub mempool_submission: prometheus::IntCounterVec,
 }
 
 /// Setup the metrics registry.

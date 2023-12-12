@@ -184,7 +184,7 @@ mod tests {
                     score: Default::default(),
                     ranking: Some(1),
                     clearing_prices: [Default::default()].into_iter().collect(),
-                    orders: vec![Default::default()],
+                    orders: vec![],
                     call_data: vec![1, 2],
                     uninternalized_call_data: Some(vec![1, 2, 3, 4]),
                 }],

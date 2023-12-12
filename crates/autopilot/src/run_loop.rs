@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -8,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class},
+            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -20,7 +21,7 @@ use {
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
         interaction::InteractionData,
-        order::OrderClass,
+        order::{OrderClass, OrderUid},
         solver_competition::{
             CompetitionAuction,
             Order,
@@ -30,20 +31,21 @@ use {
         },
     },
     number::nonzero::U256 as NonZeroU256,
-    primitive_types::{H160, U256},
+    primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
-        collections::{BTreeMap, HashSet},
-        sync::Arc,
+        collections::{BTreeMap, HashMap, HashSet},
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     tracing::Instrument,
+    web3::types::TransactionReceipt,
 };
 
 pub struct RunLoop {
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub database: Postgres,
+    pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
     pub current_block: CurrentBlockStream,
     pub web3: Web3,
@@ -54,6 +56,8 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
+    pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -67,7 +71,7 @@ impl RunLoop {
                 if last_auction_id.replace(id) != Some(id)
                     || last_block.replace(current_block) != Some(current_block)
                 {
-                    self.single_run(id, &auction)
+                    self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
                 }
@@ -112,11 +116,13 @@ impl RunLoop {
         Some(AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: AuctionId, auction: &Auction) {
+    async fn single_run(&self, auction_id: AuctionId, auction: Auction) {
         tracing::info!(?auction, "solving");
 
+        let auction = self.remove_in_flight_orders(auction).await;
+
         let solutions = {
-            let mut solutions = self.competition(auction_id, auction).await;
+            let mut solutions = self.competition(auction_id, &auction).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
                 return;
@@ -145,9 +151,8 @@ impl RunLoop {
                 }
             };
 
-            let events = revealed
-                .orders
-                .iter()
+            let events = solution
+                .order_ids()
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
             self.database.store_order_events(&events).await;
@@ -174,7 +179,7 @@ impl RunLoop {
             // Save order executions for all orders in the solution. Surplus fees for
             // limit orders will be saved after settling the order onchain.
             let mut order_executions = vec![];
-            for order_id in &revealed.orders {
+            for order_id in solution.order_ids() {
                 let auction_order = auction
                     .orders
                     .iter()
@@ -235,22 +240,21 @@ impl RunLoop {
                             solver_address: participant.solution.account,
                             score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: Some(solutions.len() - index),
+                            orders: participant
+                                .solution
+                                .orders()
+                                .iter()
+                                .map(|(id, order)| Order::Colocated {
+                                    id: *id,
+                                    sell_amount: order.sell_amount,
+                                    buy_amount: order.buy_amount,
+                                })
+                                .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
                         };
                         if is_winner {
-                            settlement.orders = revealed
-                                .orders
-                                .iter()
-                                .map(|o| Order {
-                                    id: *o,
-                                    // TODO: revisit once colocation is enabled (remove not
-                                    // populated fields) Not all
-                                    // fields can be populated in the colocated world
-                                    ..Default::default()
-                                })
-                                .collect();
                             settlement.call_data = revealed.calldata.internalized.clone();
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
@@ -284,13 +288,19 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
-            match self.settle(driver, solution, &revealed).await {
+            match self.settle(driver, solution).await {
                 Ok(()) => Metrics::settle_ok(driver),
                 Err(err) => {
                     Metrics::settle_err(driver, &err);
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
+            let unsettled_orders: Vec<_> = solutions
+                .iter()
+                .flat_map(|p| p.solution.orders.keys())
+                .filter(|uid| !solution.orders.contains_key(uid))
+                .collect();
+            Metrics::matched_unsettled(driver, unsettled_orders.as_slice());
         }
     }
 
@@ -302,18 +312,26 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
+            self.fee_policy.clone(),
         );
         let request = &request;
 
-        self.database
-            .store_order_events(
-                &auction
-                    .orders
-                    .iter()
-                    .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
-                    .collect_vec(),
-            )
-            .await;
+        let db = self.database.clone();
+        let events = auction
+            .orders
+            .iter()
+            .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+            .collect_vec();
+        // insert into `order_events` table operations takes a while and the result is
+        // ignored, so we run it in the background
+        tokio::spawn(
+            async move {
+                let start = Instant::now();
+                db.store_order_events(&events).await;
+                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
+            }
+            .instrument(tracing::Span::current()),
+        );
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -374,6 +392,7 @@ impl RunLoop {
                     id: solution.solution_id,
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
+                    orders: solution.orders,
                 })
             })
             .collect())
@@ -403,15 +422,9 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn settle(
-        &self,
-        driver: &Driver,
-        solved: &Solution,
-        revealed: &reveal::Response,
-    ) -> Result<(), SettleError> {
-        let events = revealed
-            .orders
-            .iter()
+    async fn settle(&self, driver: &Driver, solved: &Solution) -> Result<(), SettleError> {
+        let events = solved
+            .order_ids()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
         self.database.store_order_events(&events).await;
@@ -426,9 +439,14 @@ impl RunLoop {
             .map_err(SettleError::Failure)?
             .tx_hash;
 
-        let events = revealed
+        *self.in_flight_orders.lock().unwrap() = InFlightOrders {
+            tx_hash,
+            orders: solved.orders.keys().copied().collect(),
+        };
+
+        let events = solved
             .orders
-            .iter()
+            .keys()
             .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
         self.database.store_order_events(&events).await;
@@ -441,6 +459,34 @@ impl RunLoop {
     async fn save_competition(&self, competition: &Competition) -> Result<()> {
         self.database.save_competition(competition).await
     }
+
+    /// Removes orders that are currently being settled to avoid solvers trying
+    /// to fill an order a second time.
+    async fn remove_in_flight_orders(&self, mut auction: Auction) -> Auction {
+        let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
+        let tx_receipt = self.web3.eth().transaction_receipt(prev_settlement).await;
+
+        let prev_settlement_block = match tx_receipt {
+            Ok(Some(TransactionReceipt {
+                block_number: Some(number),
+                ..
+            })) => number.0[0],
+            // Could not find the block of the previous settlement, let's be
+            // conservative and assume all orders are still in-flight.
+            _ => u64::MAX,
+        };
+
+        if auction.latest_settlement_block < prev_settlement_block {
+            // Auction was built before the in-flight orders were processed.
+            let in_flight_orders = self.in_flight_orders.lock().unwrap();
+            auction
+                .orders
+                .retain(|o| !in_flight_orders.orders.contains(&o.metadata.uid));
+            tracing::debug!(orders = ?in_flight_orders.orders, "filtered out in-flight orders");
+        }
+
+        auction
+    }
 }
 
 pub fn solve_request(
@@ -449,6 +495,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
+    fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -474,6 +521,17 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
+
+                let fee_policies = match order.metadata.class {
+                    OrderClass::Market => vec![],
+                    OrderClass::Liquidity => vec![],
+                    // todo https://github.com/cowprotocol/services/issues/2092
+                    // skip protocol fee for limit orders with in-market price
+
+                    // todo https://github.com/cowprotocol/services/issues/2115
+                    // skip protocol fee for TWAP limit orders
+                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
+                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -499,6 +557,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
+                    fee_policies,
                 }
             })
             .collect(),
@@ -522,6 +581,14 @@ pub fn solve_request(
     }
 }
 
+/// Orders settled in the previous auction that might still be in-flight.
+#[derive(Default)]
+pub struct InFlightOrders {
+    /// The transaction that these orders where settled in.
+    tx_hash: H256,
+    orders: HashSet<OrderUid>,
+}
+
 struct Participant<'a> {
     driver: &'a Driver,
     solution: Solution,
@@ -531,6 +598,17 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
+    orders: HashMap<OrderUid, TradedAmounts>,
+}
+
+impl Solution {
+    pub fn order_ids(&self) -> impl Iterator<Item = &OrderUid> {
+        self.orders.keys()
+    }
+
+    pub fn orders(&self) -> &HashMap<OrderUid, TradedAmounts> {
+        &self.orders
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -582,6 +660,11 @@ struct Metrics {
     /// Tracks the result of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
     settle: prometheus::IntCounterVec,
+
+    /// Tracks the number of orders that were part of some but not the winning
+    /// solution together with the winning driver that did't include it.
+    #[metric(labels("ignored_by"))]
+    matched_unsettled: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -659,5 +742,15 @@ impl Metrics {
             .settle
             .with_label_values(&[&driver.name, label])
             .inc();
+    }
+
+    fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {
+        if !unsettled.is_empty() {
+            tracing::debug!(?unsettled, "some orders were matched but not settled");
+        }
+        Self::get()
+            .matched_unsettled
+            .with_label_values(&[&winning.name])
+            .inc_by(unsettled.len() as u64);
     }
 }

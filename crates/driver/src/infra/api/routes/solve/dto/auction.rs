@@ -115,6 +115,22 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
+                    fee_policies: order
+                        .fee_policies
+                        .into_iter()
+                        .map(|policy| match policy {
+                            FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            },
+                            FeePolicy::Volume { factor } => {
+                                competition::order::FeePolicy::Volume { factor }
+                            }
+                        })
+                        .collect(),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -234,6 +250,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -286,4 +303,13 @@ enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
 }

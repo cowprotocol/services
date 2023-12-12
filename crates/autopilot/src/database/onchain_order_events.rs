@@ -573,7 +573,7 @@ async fn get_quote(
         quoter,
         &parameters.clone(),
         Some(*quote_id),
-        order_data.fee_amount,
+        Some(order_data.fee_amount),
     )
     .await
     .map_err(onchain_order_placement_error_from)
