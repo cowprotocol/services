@@ -26,6 +26,7 @@ futures = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
 hyper = "0.14"
+lazy_static = { workspace = true }
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.11"
 num = "0.4"

@@ -167,7 +167,7 @@ pub fn score(settlement: &Settlement, score: &competition::Score) {
 
 // Observe that the winning settlement started failing upon arrival of a new
 // block
-pub fn winner_voided(block: BlockInfo, err: &simulator::Error) {
+pub fn winner_voided(block: BlockInfo, err: &simulator::RevertError) {
     tracing::warn!(block = block.number, ?err, "solution reverts on new block");
 }
 
@@ -333,6 +333,15 @@ pub fn mempool_executed(
             );
         }
     }
+    let result = match res {
+        Ok(_) => "Success",
+        Err(mempools::Error::Revert(_) | mempools::Error::SimulationRevert) => "Revert",
+        Err(mempools::Error::Other(_)) => "Other",
+    };
+    metrics::get()
+        .mempool_submission
+        .with_label_values(&[&mempool.to_string(), result])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.

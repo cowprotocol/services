@@ -5,7 +5,7 @@ use {
 
 mod notification;
 
-pub use notification::{Kind, Notification, ScoreKind, Settlement};
+pub use notification::{Kind, Notification, ScoreKind, Settlement, SimulationSucceededAtLeastOnce};
 use {
     super::simulator,
     crate::domain::{competition::score, eth, mempools::Error},
@@ -74,7 +74,7 @@ pub fn encoding_failed(
         solution::Error::Blockchain(_) => return,
         solution::Error::Boundary(_) => return,
         solution::Error::Simulation(error) => {
-            simulation_failed(solver, auction_id, solution_id, error);
+            simulation_failed(solver, auction_id, solution_id, error, false);
             return;
         }
         solution::Error::Execution(_) => return,
@@ -90,12 +90,17 @@ pub fn simulation_failed(
     auction_id: Option<auction::Id>,
     solution_id: solution::Id,
     err: &simulator::Error,
+    succeeded_at_least_once: SimulationSucceededAtLeastOnce,
 ) {
     if let simulator::Error::Revert(error) = err {
         solver.notify(
             auction_id,
             Some(solution_id),
-            notification::Kind::SimulationFailed(error.block, error.tx.clone()),
+            notification::Kind::SimulationFailed(
+                error.block,
+                error.tx.clone(),
+                succeeded_at_least_once,
+            ),
         );
     }
 }

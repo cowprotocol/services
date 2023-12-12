@@ -235,7 +235,7 @@ where
             .await?;
 
         let mut mutexed = self.mutexed.lock().unwrap();
-        mutexed.insert(new_block, keys.into_iter(), found_values);
+        mutexed.insert(new_block, keys, found_values);
         let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
         mutexed.remove_cached_blocks_older_than(oldest_to_keep);
         mutexed.last_update_block = new_block;

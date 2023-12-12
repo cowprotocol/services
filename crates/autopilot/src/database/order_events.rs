@@ -27,20 +27,24 @@ impl super::Postgres {
     }
 }
 
+// Temporarily hardcoded. Will migrate to a config file in case the batches
+// approach has a positive impact.
+const DEFAULT_BATCH_SIZE: usize = 500;
+
 async fn store_order_events(
     db: &super::Postgres,
     events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
     let mut ex = db.0.begin().await.context("begin transaction")?;
-    for (uid, label) in events {
-        let event = OrderEvent {
+    for chunk in events.chunks(DEFAULT_BATCH_SIZE) {
+        let batch = chunk.iter().map(|(uid, label)| OrderEvent {
             order_uid: ByteArray(uid.0),
             timestamp,
             label: *label,
-        };
+        });
 
-        order_events::insert_order_event(&mut ex, &event).await?
+        order_events::insert_order_events_batch(&mut ex, batch).await?
     }
     ex.commit().await?;
     Ok(())

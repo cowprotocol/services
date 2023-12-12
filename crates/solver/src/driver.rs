@@ -386,7 +386,7 @@ impl Driver {
                     orders: rated_settlement
                         .settlement
                         .trades()
-                        .map(|trade| solver_competition::Order {
+                        .map(|trade| solver_competition::Order::Legacy {
                             id: trade.order.metadata.uid,
                             executed_amount: trade.executed_amount,
                         })

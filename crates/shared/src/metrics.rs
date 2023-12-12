@@ -1,5 +1,4 @@
 use {
-    prometheus::Encoder,
     std::{convert::Infallible, net::SocketAddr, sync::Arc},
     tokio::task::{self, JoinHandle},
     warp::{Filter, Rejection, Reply},
@@ -21,20 +20,7 @@ pub fn serve_metrics(liveness: Arc<dyn LivenessChecking>, address: SocketAddr) -
 // `/metrics` route exposing encoded prometheus data to monitoring system
 pub fn handle_metrics() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let registry = observe::metrics::get_registry();
-    warp::path("metrics").map(move || {
-        let encoder = prometheus::TextEncoder::new();
-        let mut buffer = Vec::new();
-        if let Err(e) = encoder.encode(&registry.gather(), &mut buffer) {
-            tracing::error!("could not encode metrics: {}", e);
-        };
-        match String::from_utf8(buffer) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!("metrics could not be from_utf8'd: {}", e);
-                String::default()
-            }
-        }
-    })
+    warp::path("metrics").map(move || observe::metrics::encode(registry))
 }
 
 fn handle_liveness(

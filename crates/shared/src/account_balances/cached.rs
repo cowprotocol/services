@@ -138,7 +138,7 @@ impl Balances {
                 let mut cache = cache.lock().unwrap();
                 balances_to_update
                     .into_iter()
-                    .zip(results.into_iter())
+                    .zip(results)
                     .for_each(|(query, result)| {
                         if let Ok(balance) = result {
                             cache.update_balance(&query, balance, block.number);
