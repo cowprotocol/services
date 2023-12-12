@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -8,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, TradedAmounts},
+            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -56,6 +57,7 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -310,6 +312,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
+            self.fee_policy.clone(),
         );
         let request = &request;
 
@@ -492,6 +495,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
+    fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -517,6 +521,17 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
+
+                let fee_policies = match order.metadata.class {
+                    OrderClass::Market => vec![],
+                    OrderClass::Liquidity => vec![],
+                    // todo https://github.com/cowprotocol/services/issues/2092
+                    // skip protocol fee for limit orders with in-market price
+
+                    // todo https://github.com/cowprotocol/services/issues/2115
+                    // skip protocol fee for TWAP limit orders
+                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
+                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -542,6 +557,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
+                    fee_policies,
                 }
             })
             .collect(),

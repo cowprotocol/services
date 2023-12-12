@@ -9,8 +9,12 @@
 
 use {
     crate::{
+        arguments::FeePolicy,
         driver_api::Driver,
-        driver_model::{reveal, solve},
+        driver_model::{
+            reveal,
+            solve::{self},
+        },
         protocol,
         run_loop,
     },
@@ -43,6 +47,7 @@ pub struct RunLoop {
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
+    fee_policy: FeePolicy,
 }
 
 impl RunLoop {
@@ -52,6 +57,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
+        fee_policy: FeePolicy,
     ) -> Self {
         Self {
             orderbook,
@@ -61,6 +67,7 @@ impl RunLoop {
             block: 0,
             score_cap,
             solve_deadline,
+            fee_policy,
         }
     }
 
@@ -193,6 +200,7 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
+            self.fee_policy.clone(),
         );
         let request = &request;
 
