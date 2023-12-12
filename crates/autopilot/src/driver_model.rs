@@ -87,7 +87,7 @@ pub mod solve {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
         pub uid: OrderUid,
@@ -140,21 +140,7 @@ pub mod solve {
         pub call_data: Vec<u8>,
     }
 
-    #[serde_as]
-    #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Solution {
-        /// Unique ID of the solution (per driver competition), used to identify
-        /// it in subsequent requests (reveal, settle).
-        #[serde_as(as = "serde_with::DisplayFromStr")]
-        pub solution_id: u64,
-        #[serde_as(as = "HexOrDecimalU256")]
-        pub score: U256,
-        /// Address used by the driver to submit the settlement onchain.
-        pub submission_address: H160,
-    }
-
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub enum FeePolicy {
         /// If the order receives more than expected (positive deviation from
@@ -184,12 +170,6 @@ pub mod solve {
         },
     }
 
-    #[derive(Clone, Debug, Default, Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    pub struct Response {
-        pub solutions: Vec<Solution>,
-    }
-
     pub fn fee_policy_to_dto(fee_policy: &arguments::FeePolicy) -> FeePolicy {
         match fee_policy.fee_policy_kind {
             arguments::FeePolicyKind::PriceImprovement {
@@ -201,6 +181,26 @@ pub mod solve {
             },
             arguments::FeePolicyKind::Volume { factor } => FeePolicy::Volume { factor },
         }
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Solution {
+        /// Unique ID of the solution (per driver competition), used to identify
+        /// it in subsequent requests (reveal, settle).
+        #[serde_as(as = "serde_with::DisplayFromStr")]
+        pub solution_id: u64,
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub score: U256,
+        /// Address used by the driver to submit the settlement onchain.
+        pub submission_address: H160,
+    }
+
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct Response {
+        pub solutions: Vec<Solution>,
     }
 }
 
