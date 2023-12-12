@@ -190,7 +190,7 @@ pub mod solve {
         pub solutions: Vec<Solution>,
     }
 
-    pub fn fee_policy_to_domain(fee_policy: &arguments::FeePolicy) -> FeePolicy {
+    pub fn fee_policy_to_dto(fee_policy: &arguments::FeePolicy) -> FeePolicy {
         match fee_policy.fee_policy_kind {
             arguments::FeePolicyKind::PriceImprovement {
                 factor: price_improvement_factor,

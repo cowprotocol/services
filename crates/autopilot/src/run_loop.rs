@@ -9,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, fee_policy_to_domain, Class},
+            solve::{self, fee_policy_to_dto, Class},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -526,7 +526,7 @@ pub fn solve_request(
 
                     // todo https://github.com/cowprotocol/services/issues/2115
                     // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => vec![fee_policy_to_domain(&fee_policy)],
+                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
                 };
                 solve::Order {
                     uid: order.metadata.uid,
