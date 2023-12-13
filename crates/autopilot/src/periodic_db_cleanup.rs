@@ -71,7 +71,6 @@ mod tests {
         },
         itertools::Itertools,
         sqlx::{PgPool, Row},
-        std::num::NonZeroUsize,
     };
 
     // Note: `tokio::time::advance` was not used in these tests. While it is a
@@ -85,9 +84,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn order_events_cleaner_flow() {
-        let db = Postgres::new("postgresql://", NonZeroUsize::new(500).unwrap())
-            .await
-            .unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
 

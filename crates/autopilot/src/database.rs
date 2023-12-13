@@ -41,6 +41,10 @@ impl Postgres {
         })
     }
 
+    pub async fn with_defaults() -> sqlx::Result<Self> {
+        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
+    }
+
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
         let metrics = Metrics::get();
 
@@ -164,9 +168,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_count_rows_in_table_() {
-        let db = Postgres::new("postgresql://", NonZeroUsize::new(500).unwrap())
-            .await
-            .unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
 

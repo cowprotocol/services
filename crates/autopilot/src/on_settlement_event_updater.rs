@@ -307,7 +307,6 @@ mod tests {
         super::*,
         database::{auction_prices::AuctionPrice, settlement_observations::Observation},
         sqlx::Executor,
-        std::num::NonZeroUsize,
     };
 
     #[tokio::test]
@@ -315,9 +314,7 @@ mod tests {
     async fn manual_node_test() {
         // TODO update test
         observe::tracing::initialize_reentrant("autopilot=trace");
-        let db = Postgres::new("postgresql://", NonZeroUsize::new(500).unwrap())
-            .await
-            .unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
