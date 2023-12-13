@@ -294,7 +294,7 @@ enable-slippage-protection = true
                     },
                 ],
                 "score": {
-                    "riskAdjusted": 0.5
+                    "riskadjusted": 0.5
                 }
             }]
         }),
