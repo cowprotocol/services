@@ -378,7 +378,7 @@ struct Arguments {
     api_get_order_min_interval: Duration,
 
     #[clap(long, env)]
-    api_key: String,
+    zero_ex_api_key: String,
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -401,7 +401,7 @@ async fn run(args: Arguments) {
 
     let mut alerter = Alerter::new(
         OrderBookApi::new(client.clone(), &args.orderbook_api),
-        ZeroExApi::new(client, args.api_key),
+        ZeroExApi::new(client, args.zero_ex_api_key),
         AlertConfig {
             time_without_trade: args.time_without_trade,
             min_order_solvable_time: args.min_order_age,
