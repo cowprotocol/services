@@ -1,5 +1,6 @@
 use {
     crate::{
+        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -8,7 +9,7 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, TradedAmounts},
+            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
@@ -56,6 +57,7 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -292,10 +294,11 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
+            let submission_start = Instant::now();
             match self.settle(driver, solution).await {
-                Ok(()) => Metrics::settle_ok(driver),
+                Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
-                    Metrics::settle_err(driver, &err);
+                    Metrics::settle_err(driver, &err, submission_start.elapsed());
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
@@ -316,6 +319,7 @@ impl RunLoop {
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
+            self.fee_policy.clone(),
         );
         let request = &request;
 
@@ -499,6 +503,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
+    fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -524,6 +529,17 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
+
+                let fee_policies = match order.metadata.class {
+                    OrderClass::Market => vec![],
+                    OrderClass::Liquidity => vec![],
+                    // todo https://github.com/cowprotocol/services/issues/2092
+                    // skip protocol fee for limit orders with in-market price
+
+                    // todo https://github.com/cowprotocol/services/issues/2115
+                    // skip protocol fee for TWAP limit orders
+                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
+                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -549,6 +565,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
+                    fee_policies,
                 }
             })
             .collect(),
@@ -638,7 +655,12 @@ struct Metrics {
     auction: prometheus::IntGauge,
 
     /// Tracks the duration of successful driver `/solve` requests.
-    #[metric(labels("driver", "result"))]
+    #[metric(
+        labels("driver", "result"),
+        buckets(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+        )
+    )]
     solve: prometheus::HistogramVec,
 
     /// Tracks driver solutions.
@@ -649,9 +671,9 @@ struct Metrics {
     #[metric(labels("driver", "result"))]
     reveal: prometheus::IntCounterVec,
 
-    /// Tracks the result of driver `/settle` requests.
+    /// Tracks the times and results of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
-    settle: prometheus::IntCounterVec,
+    settle_time: prometheus::IntCounterVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -719,21 +741,21 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &Driver) {
+    fn settle_ok(driver: &Driver, time: Duration) {
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, "success"])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn settle_err(driver: &Driver, err: &SettleError) {
+    fn settle_err(driver: &Driver, err: &SettleError, time: Duration) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, label])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
     fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {

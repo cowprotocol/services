@@ -62,7 +62,7 @@ async fn weighted() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x6810e776880c02933d47db1b9fc05908e5386b96": {
                             "balance": "11260752191375725565253",
@@ -117,7 +117,7 @@ async fn weighted() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -177,7 +177,7 @@ async fn weighted_v3plus() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "5089632258314443812936111",
@@ -194,7 +194,7 @@ async fn weighted_v3plus() {
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892",
-                    "version": "v3plus",
+                    "version": "v3Plus",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -232,7 +232,7 @@ async fn weighted_v3plus() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
@@ -370,7 +370,7 @@ async fn stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "riskAdjusted": 0.5
                     }
                 },
                 {
@@ -400,7 +400,7 @@ async fn stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "riskAdjusted": 0.5
                     }
                 },
             ]
@@ -533,7 +533,7 @@ async fn composable_stable_v4() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "riskAdjusted": 0.5
                     }
                 },
             ]

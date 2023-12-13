@@ -1,4 +1,3 @@
-pub use signature::Signature;
 use {
     super::auction,
     crate::{
@@ -9,7 +8,9 @@ use {
     bigdecimal::Zero,
     num::CheckedDiv,
 };
+pub use {fees::FeePolicy, signature::Signature};
 
+pub mod fees;
 pub mod signature;
 
 /// An order in the auction.
@@ -39,6 +40,10 @@ pub struct Order {
     pub sell_token_balance: SellTokenBalance,
     pub buy_token_balance: BuyTokenBalance,
     pub signature: Signature,
+    /// The types of fees the protocol collects from the winning solver.
+    /// Unless otherwise configured, the driver modifies solutions to take
+    /// sufficient fee in the form of positive slippage.
+    pub fee_policies: Vec<FeePolicy>,
 }
 
 /// An amount denominated in the sell token of an [`Order`].
@@ -453,6 +458,7 @@ mod tests {
                 data: Default::default(),
                 signer: Default::default(),
             },
+            fee_policies: Default::default(),
         };
 
         assert_eq!(

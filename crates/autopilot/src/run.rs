@@ -634,6 +634,7 @@ pub async fn run(args: Arguments) {
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
             in_flight_orders: Default::default(),
+            fee_policy: args.fee_policy,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -695,6 +696,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        args.fee_policy,
     );
     shadow.run_forever().await;
 
