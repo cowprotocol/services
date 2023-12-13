@@ -95,7 +95,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Kind {
     Timeout,
     EmptySolution,
@@ -129,7 +129,7 @@ pub struct Tx {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ScoreKind {
     ZeroScore,
     ScoreHigherThanQuality {
@@ -152,7 +152,7 @@ pub enum ScoreKind {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Settlement {
     Success { transaction: eth::H256 },
     Revert { transaction: eth::H256 },

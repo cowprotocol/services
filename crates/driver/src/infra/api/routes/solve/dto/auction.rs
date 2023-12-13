@@ -254,7 +254,7 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
@@ -272,7 +272,7 @@ struct Interaction {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -281,7 +281,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -289,7 +289,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -298,7 +298,7 @@ enum SigningScheme {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Class {
     Market,
     Limit,

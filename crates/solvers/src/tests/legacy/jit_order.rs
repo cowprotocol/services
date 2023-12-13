@@ -128,7 +128,7 @@ async fn test() {
                 ],
                 "interactions": [],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskAdjusted": 1.0
                 }
             }]
         }),

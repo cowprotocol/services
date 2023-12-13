@@ -23,7 +23,7 @@ pub mod quote {
     }
 
     #[derive(Clone, Debug, Default, Serialize)]
-    #[serde(rename_all = "lowercase")]
+    #[serde(rename_all = "camelCase")]
     pub enum Kind {
         #[default]
         Buy,
@@ -123,7 +123,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[serde(rename_all = "camelCase")]
     pub enum Class {
         Market,
         Limit,
