@@ -252,7 +252,7 @@ impl RunLoop {
                                 .solution
                                 .clearing_prices
                                 .iter()
-                                .cloned()
+                                .map(|(token, price)| (*token, *price))
                                 .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
