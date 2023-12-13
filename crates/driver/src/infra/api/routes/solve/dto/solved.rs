@@ -45,6 +45,11 @@ impl Solution {
                     )
                 })
                 .collect(),
+            clearing_prices: solved
+                .prices
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
         }
     }
 }
@@ -76,4 +81,6 @@ pub struct Solution {
     submission_address: eth::H160,
     #[serde_as(as = "HashMap<serialize::Hex, _>")]
     orders: HashMap<OrderId, TradedAmounts>,
+    #[serde_as(as = "HashMap<_, serialize::U256>")]
+    clearing_prices: HashMap<eth::H160, eth::U256>,
 }

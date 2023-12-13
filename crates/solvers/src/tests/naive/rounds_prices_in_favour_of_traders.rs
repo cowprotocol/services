@@ -52,7 +52,7 @@ async fn test() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000"
@@ -109,7 +109,7 @@ async fn test() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),

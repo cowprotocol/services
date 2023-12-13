@@ -75,7 +75,7 @@ async fn sell_orders_on_both_sides() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000000000"
@@ -122,7 +122,7 @@ async fn sell_orders_on_both_sides() {
                 ],
                 "interactions": [],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),
