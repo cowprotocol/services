@@ -188,7 +188,7 @@ Run an `autopilot` with:
 
 ```sh
 cargo run --bin autopilot -- \
-  --skip-event-sync \
+  --skip-event-sync true \
   --node-url <YOUR_NODE_URL>
 ```
 

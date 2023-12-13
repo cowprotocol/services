@@ -165,16 +165,17 @@ mod tests {
     }
 
     #[test]
-    fn domain_separator_goerli() {
+    fn domain_separator_sepolia() {
         let contract_address: H160 = hex!("9008D19f58AAbD9eD0D60971565AA8510560ab41").into(); // new deployment
-        let chain_id: u64 = 5;
-        let domain_separator_goerli = DomainSeparator::new(chain_id, contract_address);
-        // domain separator is taken from goerli deployment at address
+        let chain_id: u64 = 11155111;
+        let domain_separator_sepolia = DomainSeparator::new(chain_id, contract_address);
+        // domain separator is taken from Sepolia deployment at address
         // 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+        // https://sepolia.etherscan.io/address/0x9008d19f58aabd9ed0d60971565aa8510560ab41#readContract#F2
         let expected_domain_separator = DomainSeparator(hex!(
-            "fb378b35457022ecc5709ae5dafad9393c1387ae6d8ce24913a0c969074c07fb"
+            "daee378bd0eb30ddf479272accf91761e697bc00e067a268f95f1d2732ed230b"
         ));
-        assert_eq!(domain_separator_goerli, expected_domain_separator);
+        assert_eq!(domain_separator_sepolia, expected_domain_separator);
     }
 
     #[test]
