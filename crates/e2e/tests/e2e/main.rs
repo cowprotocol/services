@@ -21,7 +21,6 @@ mod limit_orders;
 mod onchain_settlement;
 mod order_cancellation;
 mod partially_fillable_balance;
-mod partially_fillable_observed_score;
 mod partially_fillable_pool;
 mod quoting;
 mod refunder;
