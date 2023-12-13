@@ -647,7 +647,12 @@ struct Metrics {
     auction: prometheus::IntGauge,
 
     /// Tracks the duration of successful driver `/solve` requests.
-    #[metric(labels("driver", "result"))]
+    #[metric(
+        labels("driver", "result"),
+        buckets(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+        )
+    )]
     solve: prometheus::HistogramVec,
 
     /// Tracks driver solutions.
