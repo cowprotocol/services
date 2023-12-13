@@ -34,6 +34,7 @@ base-tokens = [
     "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB",
     "0x6B175474E89094C44Da98b954EedeAC495271d0F",
 ]
+graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 # [[liquidity.uniswap-v2]] # Uniswap V2 configuration
 # preset = "uniswap-v2" # or "sushi-swap", "honeyswap", "baoswap", "pancake-swap", etc.
@@ -74,4 +75,3 @@ base-tokens = [
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
 # router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
-

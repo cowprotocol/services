@@ -1655,6 +1655,7 @@ dependencies = [
  "hyper",
  "indexmap 2.0.0",
  "itertools 0.11.0",
+ "lazy_static",
  "maplit",
  "mockall",
  "model",
