@@ -18,12 +18,15 @@ use {
     shared::{
         account_balances::{BalanceFetching, Query},
         bad_token::BadTokenDetecting,
-        price_estimation::native_price_cache::CachingNativePriceEstimator,
+        price_estimation::{
+            native::NativePriceEstimating,
+            native_price_cache::CachingNativePriceEstimator,
+        },
         remaining_amounts,
         signature_validator::{SignatureCheck, SignatureValidating},
     },
     std::{
-        collections::{BTreeMap, HashMap, HashSet},
+        collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
         sync::{Arc, Mutex, Weak},
         time::Duration,
     },
@@ -74,6 +77,7 @@ pub struct SolvableOrdersCache {
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
     ethflow_contract_address: Option<H160>,
+    weth: H160,
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
@@ -108,6 +112,7 @@ impl SolvableOrdersCache {
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
         ethflow_contract_address: Option<H160>,
+        weth: H160,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
         fee_objective_scaling_factor: f64,
@@ -131,6 +136,7 @@ impl SolvableOrdersCache {
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             ethflow_contract_address,
+            weth,
             limit_order_price_factor,
             store_in_db,
             fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
@@ -202,11 +208,24 @@ impl SolvableOrdersCache {
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
         // create auction
-        let (orders, prices) = get_orders_with_native_prices(
+        let (orders, mut prices) = get_orders_with_native_prices(
             orders.clone(),
             &self.native_price_estimator,
             self.metrics,
         );
+        // Add WETH price if it's not already there to support ETH wrap when required.
+        if let Entry::Vacant(entry) = prices.entry(self.weth) {
+            let weth_price = self
+                .native_price_estimator
+                .estimate_native_price(self.weth)
+                .await
+                .expect("weth price fetching can never fail");
+            let weth_price = to_normalized_price(weth_price)
+                .expect("weth price can never be outside of U256 range");
+
+            entry.insert(weth_price);
+        }
+
         let removed = counter.checkpoint("missing_price", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
