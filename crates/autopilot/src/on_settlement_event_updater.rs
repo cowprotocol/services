@@ -46,6 +46,7 @@ use {
         Web3,
     },
     futures::StreamExt,
+    model::DomainSeparator,
     primitive_types::{H160, H256},
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
@@ -128,9 +129,12 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let mut auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
-            .await?
-            .map(AuctionId::Colocated);
+        let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
+
+        let mut auction_id =
+            Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
+                .await?
+                .map(AuctionId::Colocated);
         if auction_id.is_none() {
             // This settlement was issued BEFORE solver-driver colocation.
             auction_id = database::auction_transaction::get_auction_id(
@@ -192,7 +196,7 @@ impl OnSettlementEventUpdater {
             );
 
             // surplus and fees calculation
-            match DecodedSettlement::new(&transaction.input.0) {
+            match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
                 Ok(settlement) => {
                     let surplus = settlement.total_surplus(&external_prices);
                     let fee = settlement.total_fees(&external_prices, orders.clone());
@@ -238,9 +242,10 @@ impl OnSettlementEventUpdater {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
+        domain_separator: &DomainSeparator,
     ) -> Result<Option<i64>> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0) {
+        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(
