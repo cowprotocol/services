@@ -45,20 +45,12 @@ async fn solver_competition(web3: Web3) {
             SolverEngine {
                 name: "solver1".into(),
                 account: solver.clone(),
-                endpoint: colocation::start_solver_on_port(
-                    onchain.contracts().weth.address(),
-                    7872,
-                )
-                .await,
+                endpoint: colocation::start_solver(onchain.contracts().weth.address()).await,
             },
             SolverEngine {
                 name: "solver2".into(),
                 account: solver,
-                endpoint: colocation::start_solver_on_port(
-                    onchain.contracts().weth.address(),
-                    7873,
-                )
-                .await,
+                endpoint: colocation::start_solver(onchain.contracts().weth.address()).await,
             },
         ],
     );

@@ -7,10 +7,6 @@ use {
 };
 
 pub async fn start_solver(weth: H160) -> Url {
-    start_solver_on_port(weth, 7872).await
-}
-
-pub async fn start_solver_on_port(weth: H160, port: u16) -> Url {
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
@@ -22,7 +18,7 @@ risk-parameters = [0,0,0,0]
     ));
     let args = vec![
         "solvers".to_string(),
-        format!("--addr=127.0.0.1:{port}"),
+        format!("--addr=0.0.0.0:0"),
         "baseline".to_string(),
         format!("--config={}", config_file.display()),
     ];
