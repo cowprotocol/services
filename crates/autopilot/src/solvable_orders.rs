@@ -213,6 +213,7 @@ impl SolvableOrdersCache {
             &self.native_price_estimator,
             self.metrics,
         );
+        // Add WETH price if it's not already there to support ETH wrap when required.
         if let Entry::Vacant(entry) = prices.entry(self.weth) {
             let weth_price = self
                 .native_price_estimator

@@ -25,7 +25,6 @@ async fn test(web3: Web3) {
 
     let [solver] = onchain.make_solvers(to_wei(10)).await;
     let [trader] = onchain.make_accounts(to_wei(10)).await;
-    // Use a shallow pool to make partial fills easier to setup.
     let safe = Safe::deploy(trader.clone(), &web3).await;
     let [token] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1000), to_wei(1000))
