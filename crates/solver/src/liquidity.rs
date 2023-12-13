@@ -186,7 +186,7 @@ pub struct LimitOrder {
     pub partially_fillable: bool,
     /// The fee that should be used for objective value computations.
     /// Takes partiall fill into account.
-    pub solver_fee: U256,
+    pub scoring_fee: U256,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
@@ -224,17 +224,19 @@ pub struct LimitOrderExecution {
     /// this trade.
     pub filled: U256,
     /// The fee (for the objective value) associated with this order.
-    /// For partially fillable limit orders this value gets computed by the
+    /// For limit orders this value gets computed by the
     /// solver already refers to the `filled` amount. In this case no
-    /// further scaling is necessary for partial fills. For all other orders
-    /// this is the `solver_fee` for the entire order and will get scaled
-    /// correctly by the [`SettlementEncoder`].
-    pub solver_fee: U256,
+    /// further scaling is necessary for partial fills. For market orders
+    /// this is unsubsidized fee amount.
+    pub scoring_fee: U256,
 }
 
 impl LimitOrderExecution {
-    pub fn new(filled: U256, solver_fee: U256) -> Self {
-        Self { filled, solver_fee }
+    pub fn new(filled: U256, scoring_fee: U256) -> Self {
+        Self {
+            filled,
+            scoring_fee,
+        }
     }
 }
 
@@ -265,7 +267,7 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            solver_fee: Default::default(),
+            scoring_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             id: Default::default(),
             exchange: Exchange::GnosisProtocol,

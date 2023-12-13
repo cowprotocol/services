@@ -50,7 +50,7 @@ use {
         },
         settlement_simulation::settle_method_builder,
     },
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 #[derive(Debug, Clone)]
@@ -98,7 +98,7 @@ impl Settlement {
                         to_boundary_order(trade.order()),
                         LimitOrderExecution {
                             filled: trade.executed().into(),
-                            solver_fee: trade.scoring_fee().into(),
+                            scoring_fee: trade.scoring_fee().into(),
                         },
                     )
                 }
@@ -106,7 +106,7 @@ impl Settlement {
                     to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
                     LimitOrderExecution {
                         filled: trade.executed().into(),
-                        solver_fee: 0.into(),
+                        scoring_fee: 0.into(),
                     },
                 ),
             };
@@ -233,7 +233,7 @@ impl Settlement {
         )?;
 
         let surplus = self.inner.total_surplus(&prices);
-        let solver_fees = self.inner.total_solver_fees(&prices);
+        let solver_fees = self.inner.total_scoring_fees(&prices);
         let quality = surplus + solver_fees;
 
         Ok(eth::U256::from_big_rational(&quality)?.into())
@@ -244,6 +244,14 @@ impl Settlement {
             inner,
             solver: self.solver,
         })
+    }
+
+    pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
+        self.inner
+            .clearing_prices()
+            .iter()
+            .map(|(&token, &amount)| (token.into(), amount.into()))
+            .collect()
     }
 }
 

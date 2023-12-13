@@ -1,4 +1,4 @@
-//! Framework for setting up tests.
+//! Framework for setting up tests .
 
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
@@ -56,7 +56,7 @@ pub enum Partial {
 
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
@@ -795,7 +795,7 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 4);
+        assert_eq!(solution.as_object().unwrap().len(), 5);
         solution
     }
 

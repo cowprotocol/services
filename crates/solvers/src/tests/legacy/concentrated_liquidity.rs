@@ -97,7 +97,7 @@ async fn test() {
             "orders": [],
             "liquidity": [
                 {
-                    "kind": "concentratedliquidity",
+                    "kind": "concentratedLiquidity",
                     "id": "0",
                     "address": "0x97b744df0b59d93A866304f97431D8EfAd29a08d",
                     "gasEstimate": "110000",
@@ -139,7 +139,7 @@ async fn test() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "riskAdjusted": 1.0
                 }
             }]
         }),
