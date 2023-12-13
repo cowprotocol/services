@@ -660,7 +660,7 @@ struct Metrics {
 
     /// Tracks the times and results of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
-    settle: prometheus::IntCounterVec,
+    settle_time: prometheus::IntCounterVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -730,7 +730,7 @@ impl Metrics {
 
     fn settle_ok(driver: &Driver, time: Duration) {
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, "success"])
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
@@ -740,7 +740,7 @@ impl Metrics {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, label])
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
