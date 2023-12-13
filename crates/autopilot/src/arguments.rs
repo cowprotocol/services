@@ -56,6 +56,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 
+    /// The number of order events to insert in a single batch.
+    #[clap(long, env, default_value = "500")]
+    pub order_events_insert_batch_size: NonZeroUsize,
+
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,

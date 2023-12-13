@@ -75,7 +75,7 @@ impl super::Postgres {
 
         let json = &serde_json::to_value(&competition.competition_table)?;
 
-        let mut ex = self.0.begin().await.context("begin")?;
+        let mut ex = self.pool.begin().await.context("begin")?;
 
         database::solver_competition::save(&mut ex, competition.auction_id, json)
             .await
