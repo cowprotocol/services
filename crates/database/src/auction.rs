@@ -24,6 +24,16 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
+pub async fn load_most_recent_id(ex: &mut PgConnection) -> Result<Option<AuctionId>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT id
+FROM auctions
+ORDER BY id DESC
+LIMIT 1
+    ;"#;
+    sqlx::query_scalar(QUERY).fetch_optional(ex).await
+}
+
 pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Error> {
     const QUERY: &str = "TRUNCATE auctions;";
     sqlx::query(QUERY).execute(ex).await.map(|_| ())
@@ -63,6 +73,9 @@ mod tests {
         assert_eq!(id + 1, id_);
         let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
         assert_eq!(value, value_);
+        assert_eq!(id_, id);
+
+        let id = load_most_recent_id(&mut db).await.unwrap().unwrap();
         assert_eq!(id_, id);
     }
 }
