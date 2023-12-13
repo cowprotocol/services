@@ -527,10 +527,10 @@ mod tests {
                     .unwrap(),
                 contract.clone(),
                 balancer_vault,
-                Arc::new(Allowances::new(
+                Allowances::new(
                     contract.address(),
                     hashmap! {"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".parse().unwrap()=> U256::from_dec_str("18000000000000000000000000").unwrap()},
-                )),
+                ),
             )),
         };
 
@@ -699,7 +699,7 @@ mod tests {
         .await
         .map(|settlement| vec![settlement])
         .unwrap();
-        let settlement = settlements.get(0).unwrap();
+        let settlement = settlements.first().unwrap();
         let settlement_encoded = settlement
             .clone()
             .encode(InternalizationStrategy::SkipInternalizableInteraction);

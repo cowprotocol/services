@@ -1,8 +1,8 @@
 //! Test cases.
 
-pub mod asset_flow;
 pub mod buy_eth;
 pub mod example_config;
+pub mod fees;
 pub mod internalization;
 pub mod merge_settlements;
 pub mod multiple_solutions;

@@ -49,13 +49,9 @@ pub async fn collector(
         &infra::liquidity::config::UniswapV2 {
             router: config.router,
             pool_code: config.pool_code,
+            missing_pool_cache_time: config.missing_pool_cache_time,
         },
-        |web3, pair_provider| {
-            SwaprPoolReader(DefaultPoolReader {
-                web3,
-                pair_provider,
-            })
-        },
+        |web3, pair_provider| SwaprPoolReader(DefaultPoolReader::new(web3, pair_provider)),
     )
     .await
 }

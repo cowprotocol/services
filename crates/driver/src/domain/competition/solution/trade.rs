@@ -1,9 +1,9 @@
-use crate::{
-    domain::{
+use {
+    crate::domain::{
         competition::{self, order},
         eth,
     },
-    util::conv::u256::U256Ext,
+    std::collections::HashMap,
 };
 
 /// A trade which executes an order as part of this solution.
@@ -79,13 +79,56 @@ impl Fulfillment {
         self.executed
     }
 
-    /// Returns the solver fee that should be considered as collected when
+    /// Returns the fee that should be considered as collected when
     /// scoring a solution.
-    pub fn solver_fee(&self) -> order::SellAmount {
+    pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.solver,
             Fee::Dynamic(fee) => fee,
         }
+    }
+
+    /// Returns the effectively paid fee from the user's perspective
+    /// considering their signed order and the uniform clearing prices
+    pub fn fee(&self) -> order::SellAmount {
+        match self.fee {
+            Fee::Static => self.order.fee.user,
+            Fee::Dynamic(fee) => fee,
+        }
+    }
+
+    /// The effective amount that left the user's wallet including all fees.
+    pub fn sell_amount(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+        weth: eth::WethAddress,
+    ) -> Option<eth::TokenAmount> {
+        let before_fee = match self.order.side {
+            order::Side::Sell => self.executed.0,
+            order::Side::Buy => self
+                .executed
+                .0
+                .checked_mul(*prices.get(&self.order.buy.token.wrap(weth))?)?
+                .checked_div(*prices.get(&self.order.sell.token.wrap(weth))?)?,
+        };
+        Some(eth::TokenAmount(before_fee.checked_add(self.fee().0)?))
+    }
+
+    /// The effective amount the user received after all fees.
+    pub fn buy_amount(
+        &self,
+        prices: &HashMap<eth::TokenAddress, eth::U256>,
+        weth: eth::WethAddress,
+    ) -> Option<eth::TokenAmount> {
+        let amount = match self.order.side {
+            order::Side::Buy => self.executed.0,
+            order::Side::Sell => self
+                .executed
+                .0
+                .checked_mul(*prices.get(&self.order.sell.token.wrap(weth))?)?
+                .checked_div(*prices.get(&self.order.buy.token.wrap(weth))?)?,
+        };
+        Some(eth::TokenAmount(amount))
     }
 }
 
@@ -137,234 +180,6 @@ impl Jit {
 
     pub fn executed(&self) -> order::TargetAmount {
         self.executed
-    }
-}
-
-impl Trade {
-    /// The surplus fee associated with this trade, if any.
-    ///
-    /// The protocol determines the fee for market orders whereas
-    /// solvers are responsible for computing the fee for limit orders.
-    pub(super) fn surplus_fee(&self) -> Option<order::SellAmount> {
-        if let &Self::Fulfillment(Fulfillment {
-            order:
-                competition::Order {
-                    kind: order::Kind::Limit,
-                    ..
-                },
-            fee: Fee::Dynamic(fee),
-            ..
-        }) = &self
-        {
-            return Some(*fee);
-        }
-
-        None
-    }
-
-    /// Calculate the final sold and bought amounts that are transferred to and
-    /// from the settlement contract when the settlement is executed. This is
-    /// calculated via the order sell and buy amounts and the trade clearing
-    /// prices.
-    pub(super) fn execution(
-        &self,
-        solution: &competition::Solution,
-    ) -> Result<Execution, ExecutionError> {
-        #[derive(Debug, Clone, Copy)]
-        struct ExecutionParams {
-            side: order::Side,
-            kind: order::Kind,
-            sell: eth::Asset,
-            buy: eth::Asset,
-            executed: order::TargetAmount,
-        }
-
-        // Values needed to calculate the executed amounts.
-        let ExecutionParams {
-            side,
-            kind,
-            sell,
-            buy,
-            executed,
-        } = match self {
-            Trade::Fulfillment(trade) => ExecutionParams {
-                side: trade.order().side,
-                kind: trade.order().kind,
-                sell: trade.order().sell,
-                buy: trade.order().buy,
-                executed: trade.executed(),
-            },
-            Trade::Jit(trade) => ExecutionParams {
-                side: trade.order.side,
-                // For the purposes of calculating the executed amounts, a JIT order behaves the
-                // same as a liquidity order. This makes sense, since their purposes are similar:
-                // to make the solution better for other (market) orders.
-                kind: order::Kind::Liquidity,
-                sell: trade.order.sell,
-                buy: trade.order.buy,
-                executed: trade.executed,
-            },
-        };
-
-        // For operations which require division, the rounding always happens in favor
-        // of the user.
-        // Errors are returned on 256-bit overflow in certain cases, even though
-        // technically they could be avoided by doing BigInt conversions. The
-        // reason for this behavior is to mimic the onchain settlement contract,
-        // which reverts on overflow.
-        Ok(match kind {
-            order::Kind::Market => {
-                // Market orders use clearing prices to calculate the executed amounts. See the
-                // [`competition::Solution::prices`] field for an explanation of how these work.
-                let sell_price = solution
-                    .clearing_price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
-                    .to_owned();
-                let buy_price = solution
-                    .clearing_price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
-                    .to_owned();
-                match side {
-                    order::Side::Buy => Execution {
-                        buy: eth::Asset {
-                            amount: executed.into(),
-                            token: buy.token,
-                        },
-                        sell: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(buy_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_div(sell_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: sell.token,
-                        },
-                    },
-                    order::Side::Sell => Execution {
-                        sell: eth::Asset {
-                            amount: executed.into(),
-                            token: sell.token,
-                        },
-                        buy: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(sell_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_ceil_div(&buy_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: buy.token,
-                        },
-                    },
-                }
-            }
-            order::Kind::Liquidity => {
-                // Liquidity orders (including JIT) compute the executed amounts by linearly
-                // scaling the buy/sell amounts in the order.
-                match side {
-                    order::Side::Buy => Execution {
-                        buy: eth::Asset {
-                            amount: executed.into(),
-                            token: buy.token,
-                        },
-                        sell: eth::Asset {
-                            amount: sell
-                                .amount
-                                .0
-                                .checked_mul(executed.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_div(buy.amount.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: sell.token,
-                        },
-                    },
-                    order::Side::Sell => Execution {
-                        sell: eth::Asset {
-                            amount: executed.into(),
-                            token: sell.token,
-                        },
-                        buy: eth::Asset {
-                            amount: buy
-                                .amount
-                                .0
-                                .checked_mul(executed.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_div(sell.amount.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: buy.token,
-                        },
-                    },
-                }
-            }
-            order::Kind::Limit => {
-                // Warning: calculating executed amounts for limit orders is confusing. To
-                // understand why the calculations work, it is important to note that the
-                // order execution specified in the solution **does not contain the solver
-                // computed surplus fee**. Therefore, in order to compute the real execution
-                // input/output amounts, we need to add the surplus fee to the final
-                // execution sell amount.
-                //
-                // See also [`order::Kind::Limit`].
-                //
-                // Similar to market orders, the executed amounts for limit orders are
-                // calculated using the clearing prices.
-                let surplus_fee = self
-                    .surplus_fee()
-                    .expect("all limit orders must have a surplus fee");
-
-                let sell_price = solution
-                    .clearing_price(sell.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing(sell.token))?
-                    .to_owned();
-                let buy_price = solution
-                    .clearing_price(buy.token)
-                    .ok_or(ExecutionError::ClearingPriceMissing(buy.token))?
-                    .to_owned();
-                match side {
-                    order::Side::Buy => Execution {
-                        buy: eth::Asset {
-                            amount: executed.into(),
-                            token: buy.token,
-                        },
-                        sell: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(buy_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_div(sell_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_add(surplus_fee.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: sell.token,
-                        },
-                    },
-                    order::Side::Sell => Execution {
-                        sell: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_add(surplus_fee.into())
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: sell.token,
-                        },
-                        buy: eth::Asset {
-                            amount: executed
-                                .0
-                                .checked_mul(sell_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .checked_ceil_div(&buy_price)
-                                .ok_or(ExecutionError::Overflow)?
-                                .into(),
-                            token: buy.token,
-                        },
-                    },
-                }
-            }
-        })
     }
 }
 

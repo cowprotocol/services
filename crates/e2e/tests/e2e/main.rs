@@ -6,6 +6,7 @@
 // Each of the following modules contains tests.
 mod app_data;
 mod app_data_signer;
+mod colocation_buffers;
 mod colocation_ethflow;
 mod colocation_hooks;
 mod colocation_partial_fill;

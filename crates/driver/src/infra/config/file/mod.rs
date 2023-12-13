@@ -148,8 +148,12 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-fn default_http_time_buffer_milliseconds() -> u64 {
-    1500
+pub fn default_http_time_buffer_milliseconds() -> u64 {
+    500
+}
+
+pub fn default_solving_share_of_deadline() -> f64 {
+    0.8
 }
 
 #[serde_as]
@@ -164,13 +168,8 @@ struct SolverConfig {
     /// running behind a single driver.
     name: String,
 
-    /// The relative slippage factor allowed by the solver.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    relative_slippage: bigdecimal::BigDecimal,
-
-    /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serialize::U256>")]
-    absolute_slippage: Option<eth::U256>,
+    #[serde(flatten)]
+    slippage: Slippage,
 
     /// Whether or not to skip fetching liquidity for this solver.
     #[serde(default)]
@@ -179,10 +178,9 @@ struct SolverConfig {
     /// The account which should be used to sign settlements for this solver.
     account: Account,
 
-    /// Maximum time allocated to wait for a solver response to propagate to the
-    /// driver.
-    #[serde(default = "default_http_time_buffer_milliseconds")]
-    http_time_buffer_miliseconds: u64,
+    /// Timeout configuration for the solver.
+    #[serde(default, flatten)]
+    timeouts: Timeouts,
 }
 
 #[serde_as]
@@ -198,6 +196,38 @@ enum Account {
     /// connected node's account management features. This can also be used to
     /// start the driver in a dry-run mode.
     Address(eth::H160),
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Timeouts {
+    /// Absolute time allocated from the total auction deadline for
+    /// request/response roundtrip between autopilot and driver.
+    #[serde(default = "default_http_time_buffer_milliseconds")]
+    http_time_buffer_milliseconds: u64,
+
+    /// Maximum time allocated for solver engines to return the solutions back
+    /// to the driver, in percentage of total driver deadline (after network
+    /// buffer). Remaining time is spent on encoding and postprocessing the
+    /// returned solutions. Expected value [0, 1]
+    #[serde(default = "default_solving_share_of_deadline")]
+    solving_share_of_deadline: f64,
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Slippage {
+    /// The relative slippage factor allowed by the solver.
+    #[serde(rename = "relative-slippage")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    relative: bigdecimal::BigDecimal,
+
+    /// The absolute slippage allowed by the solver.
+    #[serde(rename = "absolute-slippage")]
+    #[serde_as(as = "Option<serialize::U256>")]
+    absolute: Option<eth::U256>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -263,6 +293,9 @@ struct LiquidityConfig {
     /// Liquidity provided by a Balancer V2 compatible contract.
     #[serde(default)]
     balancer_v2: Vec<BalancerV2Config>,
+
+    /// The base URL used to connect to subgraph clients.
+    graph_api_base_url: Option<Url>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -278,6 +311,11 @@ enum UniswapV2Config {
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
+
+        /// How long liquidity should not be fetched for a token pair that
+        /// didn't return useful liquidity before allowing to fetch it
+        /// again.
+        missing_pool_cache_time_seconds: u64,
     },
 }
 
@@ -304,6 +342,11 @@ enum SwaprConfig {
 
         /// The digest of the pool initialization code.
         pool_code: eth::H256,
+
+        /// How long liquidity should not be fetched for a token pair that
+        /// didn't return useful liquidity before allowing to fetch it
+        /// again.
+        missing_pool_cache_time_seconds: u64,
     },
 }
 

@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::Mempools,
+    super::{time, Mempools},
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -13,10 +13,12 @@ use {
         },
         util::Bytes,
     },
-    futures::{future::join_all, StreamExt},
+    futures::{stream::FuturesUnordered, Stream, StreamExt},
     itertools::Itertools,
-    rand::seq::SliceRandom,
-    std::{collections::HashSet, sync::Mutex},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Mutex,
+    },
     tap::TapFallible,
 };
 
@@ -68,13 +70,15 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().timeout()?)
+            .solve(auction, &liquidity, auction.deadline().solvers()?.into())
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
                     notify::solver_timeout(&self.solver, auction.id());
                 }
             })?;
+
+        observe::postprocessing(&solutions, auction.deadline().driver().unwrap_or_default());
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -88,7 +92,7 @@ impl Competition {
             }
         });
 
-        // Empty solutions aren't useful, so discard them.
+        // Discard empty solutions.
         let solutions = solutions.filter(|solution| {
             if solution.is_empty() {
                 observe::empty_solution(self.solver.name(), solution.id());
@@ -99,66 +103,36 @@ impl Competition {
             }
         });
 
-        // Encode the solutions into settlements.
-        let settlements = join_all(solutions.map(|solution| async move {
-            observe::encoding(solution.id());
-            (
-                solution.id(),
-                solution.encode(auction, &self.eth, &self.simulator).await,
-            )
-        }))
-        .await;
-
-        // Filter out solutions that failed to encode.
-        let mut settlements = settlements
-            .into_iter()
-            .filter_map(|(id, result)| {
+        // Encode solutions into settlements (streamed).
+        let encoded = solutions
+            .map(|solution| async move {
+                let id = solution.id();
+                observe::encoding(id);
+                let settlement = solution.encode(auction, &self.eth, &self.simulator).await;
+                (id, settlement)
+            })
+            .collect::<FuturesUnordered<_>>()
+            .filter_map(|(id, result)| async move {
                 result
                     .tap_err(|err| {
                         observe::encoding_failed(self.solver.name(), id, err);
                         notify::encoding_failed(&self.solver, auction.id(), id, err);
                     })
                     .ok()
-            })
-            .collect_vec();
+            });
 
-        // TODO(#1483): parallelize this
-        // TODO(#1480): more optimal approach for settlement merging
-
-        // Merge the settlements in random order.
-        settlements.shuffle(&mut rand::thread_rng());
-
-        // The merging algorithm works as follows: the [`settlements`] vector keeps the
-        // "most merged" settlements until they can't be merged anymore, at
-        // which point they are moved into the [`results`] vector.
-
-        // The merged settlements in their final form.
-        let mut results = Vec::new();
-        while let Some(settlement) = settlements.pop() {
-            // Has [`settlement`] been merged into another settlement?
-            let mut merged = false;
-            // Try to merge [`settlement`] into some other settlement.
-            for other in settlements.iter_mut() {
-                match other.merge(&settlement, &self.eth, &self.simulator).await {
-                    Ok(m) => {
-                        *other = m;
-                        merged = true;
-                        observe::merged(&settlement, other);
-                        break;
-                    }
-                    Err(err) => {
-                        observe::not_merged(&settlement, other, err);
-                    }
-                }
-            }
-            // If [`settlement`] can't be merged into any other settlement, this is its
-            // final, most optimal form. Push it to the results.
-            if !merged {
-                results.push(settlement);
-            }
+        // Merge settlements as they arrive until there are no more new settlements or
+        // timeout is reached.
+        let mut settlements = Vec::new();
+        if tokio::time::timeout(
+            auction.deadline().driver().unwrap_or_default(),
+            merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
+        )
+        .await
+        .is_err()
+        {
+            observe::postprocessing_timed_out(&settlements)
         }
-
-        let settlements = results;
 
         // Score the settlements.
         let scores = settlements
@@ -200,7 +174,15 @@ impl Competition {
         let (mut score, settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
-            .map(|(score, settlement)| (Solved { score }, settlement))
+            .map(|(score, settlement)| {
+                (
+                    Solved {
+                        score,
+                        trades: settlement.orders(),
+                    },
+                    settlement,
+                )
+            })
             .unzip();
 
         *self.settlement.lock().unwrap() = settlement.clone();
@@ -214,25 +196,32 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(deadline) = auction.deadline().timeout() {
+        if let Ok(remaining) = auction.deadline().driver() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =
                     ethrpc::current_block::into_stream(self.eth.current_block().clone());
                 while let Some(block) = stream.next().await {
-                    if let Err(err) = self.simulate_settlement(&settlement).await {
-                        tracing::warn!(block = block.number, ?err, "solution reverts on new block");
+                    if let Err(infra::simulator::Error::Revert(err)) =
+                        self.simulate_settlement(&settlement).await
+                    {
+                        observe::winner_voided(block, &err);
                         *score_ref = None;
                         *self.settlement.lock().unwrap() = None;
                         if let Some(id) = settlement.notify_id() {
-                            notify::simulation_failed(&self.solver, auction.id(), id, &err);
+                            notify::simulation_failed(
+                                &self.solver,
+                                auction.id(),
+                                id,
+                                &infra::simulator::Error::Revert(err),
+                                true,
+                            );
                         }
                         return;
                     }
                 }
             };
-            let timeout = deadline.duration().to_std().unwrap_or_default();
-            let _ = tokio::time::timeout(timeout, simulate_on_new_blocks).await;
+            let _ = tokio::time::timeout(remaining, simulate_on_new_blocks).await;
         }
 
         Ok(score)
@@ -247,7 +236,6 @@ impl Competition {
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
         Ok(Revealed {
-            orders: settlement.orders(),
             internalized_calldata: settlement
                 .calldata(
                     self.eth.contracts().settlement(),
@@ -331,11 +319,47 @@ impl Competition {
     }
 }
 
+/// Tries to merge the incoming stream of new settlements into existing ones.
+/// Always adds the new settlement by itself.
+async fn merge_settlements(
+    merged: &mut Vec<Settlement>,
+    new: impl Stream<Item = Settlement>,
+    eth: &Ethereum,
+    simulator: &Simulator,
+) {
+    let mut new = std::pin::pin!(new);
+    while let Some(settlement) = new.next().await {
+        // Try to merge [`settlement`] into some settlements.
+        for other in merged.iter_mut() {
+            match other.merge(&settlement, eth, simulator).await {
+                Ok(m) => {
+                    *other = m;
+                    observe::merged(&settlement, other);
+                    // could possibly break here if we want to avoid merging
+                    // into multiple settlements
+                }
+                Err(err) => {
+                    observe::not_merged(&settlement, other, err);
+                }
+            }
+        }
+        // add [`settlement`] by itself
+        merged.push(settlement);
+    }
+}
+
 /// Solution information sent to the protocol by the driver before the solution
 /// ranking happens.
 #[derive(Debug)]
 pub struct Solved {
     pub score: Score,
+    pub trades: HashMap<order::Uid, Amounts>,
+}
+
+#[derive(Debug, Default)]
+pub struct Amounts {
+    pub sell: eth::TokenAmount,
+    pub buy: eth::TokenAmount,
 }
 
 /// Winning solution information revealed to the protocol by the driver before
@@ -343,8 +367,6 @@ pub struct Solved {
 /// point.
 #[derive(Debug)]
 pub struct Revealed {
-    /// The orders solved by this solution.
-    pub orders: HashSet<order::Uid>,
     /// The internalized calldata is the final calldata that appears onchain.
     pub internalized_calldata: Bytes<Vec<u8>>,
     /// The uninternalized calldata must be known so that the CoW solver team
@@ -372,7 +394,7 @@ pub enum Error {
     )]
     SolutionNotAvailable,
     #[error("{0:?}")]
-    DeadlineExceeded(#[from] solution::DeadlineExceeded),
+    DeadlineExceeded(#[from] time::DeadlineExceeded),
     #[error("solver error: {0:?}")]
     Solver(#[from] solver::Error),
     #[error("failed to submit the solution")]

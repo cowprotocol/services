@@ -57,7 +57,7 @@ fn to_interaction(
         // change this assumption, we would need to change it there as well.
         GPv2Settlement::at(&web3, receiver.0),
         BalancerV2Vault::at(&web3, pool.vault.into()),
-        Arc::new(Allowances::empty(receiver.0)),
+        Allowances::empty(receiver.0),
     );
 
     let interaction = handler.swap(
@@ -178,6 +178,7 @@ async fn init_liquidity(
 
     let balancer_pool_fetcher = Arc::new(
         BalancerPoolFetcher::new(
+            &config.graph_api_base_url,
             eth.network().chain.into(),
             block_retriever.clone(),
             token_info_fetcher.clone(),

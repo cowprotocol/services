@@ -1,13 +1,16 @@
 use {
     crate::{
-        domain::{auction, eth, notification},
+        domain::{
+            auction,
+            eth,
+            notification::{self, SimulationSucceededAtLeastOnce},
+        },
         util::serialize,
     },
-    bigdecimal::Num,
     ethereum_types::{H160, H256, U256},
     serde::Deserialize,
     serde_with::{serde_as, DisplayFromStr},
-    std::collections::{BTreeSet, HashMap},
+    std::collections::BTreeSet,
     web3::types::AccessList,
 };
 
@@ -23,16 +26,19 @@ impl Notification {
             kind: match &self.kind {
                 Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::SimulationFailed(block, tx) => notification::Kind::SimulationFailed(
-                    *block,
-                    eth::Tx {
-                        from: tx.from.into(),
-                        to: tx.to.into(),
-                        input: tx.input.clone().into(),
-                        value: tx.value.into(),
-                        access_list: tx.access_list.clone(),
-                    },
-                ),
+                Kind::SimulationFailed(block, tx, succeeded_at_least_once) => {
+                    notification::Kind::SimulationFailed(
+                        *block,
+                        eth::Tx {
+                            from: tx.from.into(),
+                            to: tx.to.into(),
+                            input: tx.input.clone().into(),
+                            value: tx.value.into(),
+                            access_list: tx.access_list.clone(),
+                        },
+                        *succeeded_at_least_once,
+                    )
+                }
                 Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive(
@@ -71,18 +77,6 @@ impl Notification {
                 Kind::SolverAccountInsufficientBalance { required } => {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
-                Kind::AssetFlow { amounts } => notification::Kind::AssetFlow(
-                    amounts
-                        .clone()
-                        .into_iter()
-                        .map(|(token, amount)| {
-                            (
-                                token.into(),
-                                num::BigInt::from_str_radix(&amount, 10).unwrap_or_default(),
-                            )
-                        })
-                        .collect(),
-                ),
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
                 Kind::Settled(kind) => notification::Kind::Settled(match kind {
                     Settlement::Success { transaction } => {
@@ -116,7 +110,7 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx),
+    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
@@ -124,9 +118,6 @@ pub enum Kind {
     SolverAccountInsufficientBalance {
         #[serde_as(as = "serialize::U256")]
         required: U256,
-    },
-    AssetFlow {
-        amounts: HashMap<eth::H160, String>,
     },
     Settled(Settlement),
 }

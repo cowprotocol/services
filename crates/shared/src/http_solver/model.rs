@@ -422,6 +422,8 @@ pub enum AuctionResult {
     SubmittedOnchain(SubmissionResult),
 }
 
+type SimulationSucceededAtLeastOnce = bool;
+
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -450,7 +452,7 @@ pub enum SolverRejectionReason {
 
     /// The solution didn't pass simulation. Includes all data needed to
     /// re-create simulation locally
-    SimulationFailure(TransactionWithError),
+    SimulationFailure(TransactionWithError, SimulationSucceededAtLeastOnce),
 
     /// The solution doesn't have a positive score. Currently this can happen
     /// only if the objective value is negative.
@@ -485,11 +487,6 @@ pub enum SolverRejectionReason {
 
     /// Solver balance too low to cover the execution costs.
     SolverAccountInsufficientBalance(U256),
-
-    /// For some of the tokens used in the solution, the amount leaving the
-    /// settlement contract is higher than amount entering the settlement
-    /// contract.
-    AssetFlow(HashMap<H160, String>),
 
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId(u64),

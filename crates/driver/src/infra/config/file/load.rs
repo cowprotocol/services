@@ -4,9 +4,17 @@ use {
         infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
     futures::future::join_all,
-    std::path::Path,
+    lazy_static::lazy_static,
+    reqwest::Url,
+    std::{path::Path, time::Duration},
     tokio::fs,
 };
+
+lazy_static! {
+    pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
+        Url::parse("https://api.thegraph.com/subgraphs/name/")
+            .expect("invalid default Graph API base URL");
+}
 
 /// Load the driver configuration from a TOML file for the specifed Ethereum
 /// network.
@@ -35,7 +43,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
         network.chain,
         "The configured chain ID does not match connected Ethereum node"
     );
-
+    let graph_api_base_url = config
+        .liquidity
+        .graph_api_base_url
+        .unwrap_or(DEFAULT_GRAPH_API_BASE_URL.clone());
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
@@ -57,8 +68,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 endpoint: config.endpoint,
                 name: config.name.into(),
                 slippage: solver::Slippage {
-                    relative: config.relative_slippage,
-                    absolute: config.absolute_slippage.map(eth::Ether),
+                    relative: config.slippage.relative,
+                    absolute: config.slippage.absolute.map(eth::Ether),
                 },
                 liquidity: if config.skip_liquidity {
                     solver::Liquidity::Skip
@@ -66,9 +77,20 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     solver::Liquidity::Fetch
                 },
                 account,
-                http_time_buffer: chrono::Duration::milliseconds(
-                    config.http_time_buffer_miliseconds.try_into().unwrap(),
-                ),
+                timeouts: solver::Timeouts {
+                    http_delay: chrono::Duration::milliseconds(
+                        config
+                            .timeouts
+                            .http_time_buffer_milliseconds
+                            .try_into()
+                            .unwrap(),
+                    ),
+                    solving_share_of_deadline: config
+                        .timeouts
+                        .solving_share_of_deadline
+                        .try_into()
+                        .unwrap(),
+                },
             }
         }))
         .await,
@@ -104,12 +126,17 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         }
                     }
                     .expect("no Uniswap V2 preset for current network"),
-                    file::UniswapV2Config::Manual { router, pool_code } => {
-                        liquidity::config::UniswapV2 {
-                            router: router.into(),
-                            pool_code: pool_code.into(),
-                        }
-                    }
+                    file::UniswapV2Config::Manual {
+                        router,
+                        pool_code,
+                        missing_pool_cache_time_seconds,
+                    } => liquidity::config::UniswapV2 {
+                        router: router.into(),
+                        pool_code: pool_code.into(),
+                        missing_pool_cache_time: Duration::from_secs(
+                            missing_pool_cache_time_seconds,
+                        ),
+                    },
                 })
                 .collect(),
             swapr: config
@@ -122,9 +149,16 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         file::SwaprPreset::Swapr => liquidity::config::Swapr::swapr(&network.id),
                     }
                     .expect("no Swapr preset for current network"),
-                    file::SwaprConfig::Manual { router, pool_code } => liquidity::config::Swapr {
+                    file::SwaprConfig::Manual {
+                        router,
+                        pool_code,
+                        missing_pool_cache_time_seconds,
+                    } => liquidity::config::Swapr {
                         router: router.into(),
                         pool_code: pool_code.into(),
+                        missing_pool_cache_time: Duration::from_secs(
+                            missing_pool_cache_time_seconds,
+                        ),
                     },
                 })
                 .collect(),
@@ -141,7 +175,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(&network.id)
+                                liquidity::config::UniswapV3::uniswap_v3(
+                                    &graph_api_base_url,
+                                    &network.id,
+                                )
                             }
                         }
                         .expect("no Uniswap V3 preset for current network")
@@ -152,6 +189,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
+                        graph_api_base_url: graph_api_base_url.clone(),
                     },
                 })
                 .collect(),
@@ -168,7 +206,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         pool_deny_list: pool_deny_list.clone(),
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
-                                liquidity::config::BalancerV2::balancer_v2(&network.id)
+                                liquidity::config::BalancerV2::balancer_v2(
+                                    &graph_api_base_url,
+                                    &network.id,
+                                )
                             }
                         }
                         .expect("no Balancer V2 preset for current network")
@@ -201,6 +242,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
+                        graph_api_base_url: graph_api_base_url.clone(),
                     },
                 })
                 .collect(),

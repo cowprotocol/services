@@ -1,7 +1,8 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
     hex_literal::hex,
-    std::collections::HashSet,
+    reqwest::Url,
+    std::{collections::HashSet, time::Duration},
 };
 
 /// Configuration options for liquidity fetching.
@@ -36,6 +37,9 @@ pub struct UniswapV2 {
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
     pub pool_code: eth::CodeDigest,
+    /// How long liquidity should not be fetched for a token pair that didn't
+    /// return useful liquidity before allowing to fetch it again.
+    pub missing_pool_cache_time: Duration,
 }
 
 impl UniswapV2 {
@@ -46,6 +50,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::UniswapV2Router02::raw_contract(), network)?,
             pool_code: hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -55,6 +60,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::SushiSwapRouter::raw_contract(), network)?,
             pool_code: hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -64,6 +70,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::HoneyswapRouter::raw_contract(), network)?,
             pool_code: hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -73,6 +80,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::BaoswapRouter::raw_contract(), network)?,
             pool_code: hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 
@@ -82,6 +90,7 @@ impl UniswapV2 {
             router: deployment_address(contracts::PancakeRouter::raw_contract(), network)?,
             pool_code: hex!("57224589c67f3f30a6b0d7a1b54cf3153ab84563bc609ef41dfb34f8b2974d2d")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 }
@@ -94,6 +103,9 @@ pub struct Swapr {
     /// The digest of the pool initialization code. This digest is used for
     /// computing the deterministic pool addresses per token pair.
     pub pool_code: eth::CodeDigest,
+    /// How long liquidity should not be fetched for a token pair that didn't
+    /// return useful liquidity before allowing to fetch it again.
+    pub missing_pool_cache_time: Duration,
 }
 
 impl Swapr {
@@ -104,27 +116,32 @@ impl Swapr {
             router: deployment_address(contracts::SwaprRouter::raw_contract(), network)?,
             pool_code: hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776")
                 .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
 }
 
 /// Uniswap V3 liquidity fetching options.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UniswapV3 {
     /// The address of the Uniswap V3 compatible router contract.
     pub router: eth::ContractAddress,
 
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
+    pub fn uniswap_v3(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
             max_pools_to_initialize: 100,
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
 }
@@ -156,12 +173,15 @@ pub struct BalancerV2 {
     /// pools to get "bricked". This configuration allows those pools to be
     /// ignored.
     pub pool_deny_list: Vec<eth::H256>,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn balancer_v2(network: &eth::NetworkId) -> Option<Self> {
+    pub fn balancer_v2(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         let factory_addresses =
             |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
                 contracts
@@ -193,6 +213,7 @@ impl BalancerV2 {
                 contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
 }

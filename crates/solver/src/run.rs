@@ -202,11 +202,6 @@ pub async fn run(args: Arguments) {
             })
             .collect()
             .await;
-    maintainers.extend(
-        univ2_sources
-            .iter()
-            .map(|(_, cache)| cache.clone() as Arc<_>),
-    );
 
     if baseline_sources.contains(&BaselineSource::BalancerV2) {
         let factories = args
@@ -215,6 +210,7 @@ pub async fn run(args: Arguments) {
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         match BalancerPoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             block_retriever.clone(),
             token_info_fetcher.clone(),
@@ -229,7 +225,6 @@ pub async fn run(args: Arguments) {
         {
             Ok(balancer_pool_fetcher) => {
                 let balancer_pool_fetcher = Arc::new(balancer_pool_fetcher);
-                maintainers.push(balancer_pool_fetcher.clone());
                 liquidity_sources.push(Box::new(BalancerV2Liquidity::new(
                     web3.clone(),
                     balancer_pool_fetcher,
@@ -424,6 +419,7 @@ pub async fn run(args: Arguments) {
 
     if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             web3.clone(),
             http_factory.create(),

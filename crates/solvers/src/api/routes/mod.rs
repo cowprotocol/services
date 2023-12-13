@@ -1,10 +1,11 @@
 use serde::Serialize;
 
 mod healthz;
+mod metrics;
 mod notify;
 mod solve;
 
-pub(super) use {healthz::healthz, notify::notify, solve::solve};
+pub(super) use {healthz::healthz, metrics::metrics, notify::notify, solve::solve};
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]

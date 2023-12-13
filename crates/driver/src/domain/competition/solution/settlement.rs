@@ -1,5 +1,5 @@
 use {
-    super::{trade, Error, Solution},
+    super::{Error, Solution},
     crate::{
         boundary,
         domain::{
@@ -8,9 +8,7 @@ use {
             mempools,
         },
         infra::{blockchain::Ethereum, observe, Simulator},
-        util::conv::u256::U256Ext,
     },
-    bigdecimal::Signed,
     futures::future::try_join_all,
     std::collections::{BTreeSet, HashMap, HashSet},
 };
@@ -29,9 +27,6 @@ use {
 /// - Simulation: the settlement has been simulated without reverting, including
 ///   the case where no interactions were internalized. Additionally the solver
 ///   account is known to have sufficient Ether to execute the transaction.
-/// - Asset flow: the sum of tokens into and out of the settlement are
-///   non-negative, meaning that the solver doesn't take any tokens out of the
-///   settlement contract.
 /// - Internalization: internalized interactions only use trusted tokens.
 ///
 /// Publishing a settlement which violates these rules would result in slashing
@@ -62,44 +57,6 @@ impl Settlement {
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules which
         // would otherwise lead to slashing. Check those rules first.
-
-        // Asset flow rule: check that the sum of tokens entering the settlement is not
-        // less than the sum of tokens exiting the settlement.
-        let mut flow: HashMap<eth::TokenAddress, num::BigInt> = Default::default();
-
-        // Interaction inputs represent flow out of the contract, i.e. negative flow.
-        for input in solution
-            .interactions
-            .iter()
-            .flat_map(|interaction| interaction.inputs())
-        {
-            *flow.entry(input.token).or_default() -= eth::U256::from(input.amount).to_big_int();
-        }
-
-        // Interaction outputs represent flow into the contract, i.e. positive flow.
-        for output in solution
-            .interactions
-            .iter()
-            .flat_map(|interaction| interaction.outputs())
-        {
-            *flow.entry(output.token).or_default() += eth::U256::from(output.amount).to_big_int();
-        }
-
-        // For trades, the sold amounts are always entering the contract (positive
-        // flow), whereas the bought amounts are always exiting the contract
-        // (negative flow).
-        for trade in solution.trades.iter() {
-            let trade::Execution { sell, buy } = trade.execution(&solution)?;
-            *flow.entry(sell.token).or_default() += eth::U256::from(sell.amount).to_big_int();
-            // Within the settlement contract, the orders which buy ETH are wrapped into
-            // WETH, and hence contribute to WETH flow.
-            *flow.entry(buy.token.wrap(solution.weth)).or_default() -=
-                eth::U256::from(buy.amount).to_big_int();
-        }
-
-        if flow.values().any(|v| v.is_negative()) {
-            return Err(Error::AssetFlow(flow));
-        }
 
         // Internalization rule: check that internalized interactions only use trusted
         // tokens.
@@ -346,12 +303,28 @@ impl Settlement {
         self.boundary.solver
     }
 
-    /// The settled user orders.
-    pub fn orders(&self) -> HashSet<order::Uid> {
+    /// The settled user orders with their in/out amounts.
+    pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         self.solutions
             .values()
-            .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
-            .collect()
+            .fold(Default::default(), |mut acc, solution| {
+                for trade in solution.user_trades() {
+                    let order = acc.entry(trade.order().uid).or_default();
+                    order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                        // This should never happen, returning 0 is better than panicking, but we
+                        // should still alert.
+                        tracing::error!(uid = ?trade.order().uid, "could not compute sell_amount");
+                        0.into()
+                    });
+                    order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                        // This should never happen, returning 0 is better than panicking, but we
+                        // should still alert.
+                        tracing::error!(uid = ?trade.order().uid, "could not compute buy_amount");
+                        0.into()
+                    });
+                }
+                acc
+            })
     }
 
     /// Settlements have valid notify ID only if they are originated from a

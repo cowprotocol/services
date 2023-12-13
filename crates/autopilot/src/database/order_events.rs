@@ -7,6 +7,7 @@ use {
         order_events::{self, OrderEvent},
     },
     model::order::OrderUid,
+    sqlx::Error,
 };
 
 impl super::Postgres {
@@ -19,7 +20,16 @@ impl super::Postgres {
             tracing::warn!(?err, "failed to insert order events");
         }
     }
+
+    /// Deletes events before the provided timestamp.
+    pub async fn delete_order_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
+        order_events::delete_order_events_before(&self.0, timestamp).await
+    }
 }
+
+// Temporarily hardcoded. Will migrate to a config file in case the batches
+// approach has a positive impact.
+const DEFAULT_BATCH_SIZE: usize = 500;
 
 async fn store_order_events(
     db: &super::Postgres,
@@ -27,14 +37,14 @@ async fn store_order_events(
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
     let mut ex = db.0.begin().await.context("begin transaction")?;
-    for (uid, label) in events {
-        let event = OrderEvent {
+    for chunk in events.chunks(DEFAULT_BATCH_SIZE) {
+        let batch = chunk.iter().map(|(uid, label)| OrderEvent {
             order_uid: ByteArray(uid.0),
             timestamp,
             label: *label,
-        };
+        });
 
-        order_events::insert_order_event(&mut ex, &event).await?
+        order_events::insert_order_events_batch(&mut ex, batch).await?
     }
     ex.commit().await?;
     Ok(())

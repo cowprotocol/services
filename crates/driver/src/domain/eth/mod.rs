@@ -192,7 +192,7 @@ impl TokenAddress {
 /// An ERC20 token amount.
 ///
 /// https://eips.ethereum.org/EIPS/eip-20
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TokenAmount(pub U256);
 
 impl From<U256> for TokenAmount {
@@ -354,6 +354,7 @@ impl std::fmt::Debug for Tx {
             .field("to", &self.to)
             .field("value", &self.value)
             .field("input", &self.input)
+            .field("access_list", &self.access_list)
             .finish()
     }
 }

@@ -97,10 +97,7 @@ pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    tokio::task::spawn(
-        crate::database::database_metrics(db.clone())
-            .instrument(tracing::info_span!("database_metrics")),
-    );
+    crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -310,6 +307,7 @@ pub async fn run(args: Arguments) {
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         match BalancerPoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             block_retriever.clone(),
             token_info_fetcher.clone(),
@@ -338,6 +336,7 @@ pub async fn run(args: Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             web3.clone(),
             http_factory.create(),
@@ -413,13 +412,6 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let price_estimator = price_estimator_factory
-        .price_estimator(&PriceEstimatorSource::for_args(
-            args.order_quoting.price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
@@ -429,6 +421,17 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             args.native_price_estimation_results_required,
+        )
+        .unwrap();
+    let price_estimator = price_estimator_factory
+        .price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 
@@ -443,8 +446,7 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -538,9 +540,6 @@ pub async fn run(args: Arguments) {
         );
         maintainers.push(broadcaster_event_updater);
     }
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
         maintainers.push(uniswap_v3);
     }
@@ -591,6 +590,21 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
+    let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
+        args.order_events_cleanup_interval,
+        args.order_events_cleanup_threshold,
+    );
+    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
+        order_events_cleaner_config,
+        db.clone(),
+    );
+
+    tokio::task::spawn(
+        order_events_cleaner
+            .run_forever()
+            .instrument(tracing::info_span!("order_events_cleaner")),
+    );
+
     if args.enable_colocation {
         if args.drivers.is_empty() {
             panic!("colocation is enabled but no drivers are configured");
@@ -608,7 +622,7 @@ pub async fn run(args: Arguments) {
                 .await;
         let run = RunLoop {
             solvable_orders_cache,
-            database: db,
+            database: Arc::new(db),
             drivers: args.drivers.into_iter().map(Driver::new).collect(),
             current_block: current_block_stream,
             web3,
@@ -619,6 +633,8 @@ pub async fn run(args: Arguments) {
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
+            in_flight_orders: Default::default(),
+            fee_policy: args.fee_policy,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -672,12 +688,15 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
+    shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
+
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        args.fee_policy,
     );
     shadow.run_forever().await;
 

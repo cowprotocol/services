@@ -3,14 +3,14 @@ use {
         competition::{auction, score::Quality, solution, Score},
         eth::{self, Ether, GasCost, TokenAddress},
     },
-    std::collections::{BTreeSet, HashMap},
+    std::collections::BTreeSet,
 };
 
 type RequiredEther = Ether;
 type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::TxId;
 type Transaction = eth::Tx;
-type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
+pub type SimulationSucceededAtLeastOnce = bool;
 
 /// A notification sent to solvers in case of important events in the driver.
 #[derive(Debug)]
@@ -28,8 +28,9 @@ pub enum Kind {
     EmptySolution,
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId,
-    /// Failed simulation during competition.
-    SimulationFailed(eth::BlockNo, Transaction),
+    /// Failed simulation during competition. Last parameter is true
+    /// if has simulated at least once.
+    SimulationFailed(eth::BlockNo, Transaction, SimulationSucceededAtLeastOnce),
     /// No valid score could be computed for the solution.
     ScoringFailed(ScoreKind),
     /// Solution aimed to internalize tokens that are not considered safe to
@@ -37,10 +38,6 @@ pub enum Kind {
     NonBufferableTokensUsed(TokensUsed),
     /// Solver don't have enough balance to submit the solution onchain.
     SolverAccountInsufficientBalance(RequiredEther),
-    /// For some of the tokens used in the solution, the amount leaving the
-    /// settlement contract is higher than amount entering the settlement
-    /// contract.
-    AssetFlow(Missmatches),
     /// Result of winning solver trying to settle the transaction onchain.
     Settled(Settlement),
 }

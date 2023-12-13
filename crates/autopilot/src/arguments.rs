@@ -6,7 +6,12 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{net::SocketAddr, num::NonZeroUsize, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::{NonZeroUsize, ParseFloatError},
+        str::FromStr,
+        time::Duration,
+    },
     url::Url,
 };
 
@@ -203,6 +208,20 @@ pub struct Arguments {
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub solve_deadline: Duration,
+
+    /// Describes how the protocol fee should be calculated.
+    #[clap(flatten)]
+    pub fee_policy: FeePolicy,
+
+    /// Time interval in days between each cleanup operation of the
+    /// `order_events` database table.
+    #[clap(long, env, default_value = "1", value_parser = duration_from_days)]
+    pub order_events_cleanup_interval: Duration,
+
+    /// Age threshold in days for order events to be eligible for cleanup in the
+    /// `order_events` database table.
+    #[clap(long, env, default_value = "30", value_parser = duration_from_days)]
+    pub order_events_cleanup_threshold: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -270,6 +289,89 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "score_cap: {}", self.score_cap)?;
         display_option(f, "shadow", &self.shadow)?;
         writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
+        writeln!(f, "fee_policy: {:?}", self.fee_policy)?;
+        writeln!(
+            f,
+            "order_events_cleanup_interval: {:?}",
+            self.order_events_cleanup_interval
+        )?;
+        writeln!(
+            f,
+            "order_events_cleanup_threshold: {:?}",
+            self.order_events_cleanup_threshold
+        )?;
         Ok(())
     }
+}
+
+#[derive(clap::Parser, Debug, Clone)]
+pub struct FeePolicy {
+    /// Type of fee policy to use. Examples:
+    ///
+    /// - Price improvement without cap
+    /// price_improvement:0.5:1.0
+    ///
+    /// - Price improvement with cap:
+    /// price_improvement:0.5:0.06
+    ///
+    /// - Volume based:
+    /// volume:0.1
+    #[clap(long, env, default_value = "priceImprovement:0.0:1.0")]
+    pub fee_policy_kind: FeePolicyKind,
+
+    /// Should protocol fees be collected or skipped for orders whose
+    /// limit price at order creation time suggests they can be immediately
+    /// filled.
+    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
+    pub fee_policy_skip_market_orders: bool,
+}
+
+#[derive(clap::Parser, Debug, Clone)]
+pub enum FeePolicyKind {
+    /// How much of the order's price improvement over max(limit price,
+    /// best_bid) should be taken as a protocol fee.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's volume should be taken as a protocol fee.
+    Volume { factor: f64 },
+}
+
+impl FromStr for FeePolicyKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split(':');
+        let kind = parts.next().ok_or("missing fee policy kind")?;
+        match kind {
+            "priceImprovement" => {
+                let factor = parts
+                    .next()
+                    .ok_or("missing price improvement factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid price improvement factor: {}", e))?;
+                let max_volume_factor = parts
+                    .next()
+                    .ok_or("missing max volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid max volume factor: {}", e))?;
+                Ok(Self::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                })
+            }
+            "volume" => {
+                let factor = parts
+                    .next()
+                    .ok_or("missing volume factor")?
+                    .parse::<f64>()
+                    .map_err(|e| format!("invalid volume factor: {}", e))?;
+                Ok(Self::Volume { factor })
+            }
+            _ => Err(format!("invalid fee policy kind: {}", kind)),
+        }
+    }
+}
+
+fn duration_from_days(s: &str) -> Result<Duration, ParseFloatError> {
+    let days = s.parse::<f64>()?;
+    Ok(Duration::from_secs_f64(days * 86_400.0))
 }
