@@ -211,6 +211,8 @@ pub mod solve {
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
         pub orders: HashMap<OrderUid, TradedAmounts>,
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]

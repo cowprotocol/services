@@ -50,7 +50,7 @@ use {
         },
         settlement_simulation::settle_method_builder,
     },
-    std::sync::Arc,
+    std::{collections::HashMap, sync::Arc},
 };
 
 #[derive(Debug, Clone)]
@@ -244,6 +244,14 @@ impl Settlement {
             inner,
             solver: self.solver,
         })
+    }
+
+    pub fn clearing_prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
+        self.inner
+            .clearing_prices()
+            .iter()
+            .map(|(&token, &amount)| (token.into(), amount.into()))
+            .collect()
     }
 }
 
