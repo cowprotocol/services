@@ -313,18 +313,23 @@ impl Settlement {
                     order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(uid = ?trade.order().uid, "could not compute sell_amount");
+                        tracing::error!(?trade, prices=?solution.prices, "could not compute sell_amount");
                         0.into()
                     });
                     order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
                         // This should never happen, returning 0 is better than panicking, but we
                         // should still alert.
-                        tracing::error!(uid = ?trade.order().uid, "could not compute buy_amount");
+                        tracing::error!(?trade, prices=?solution.prices, "could not compute buy_amount");
                         0.into()
                     });
                 }
                 acc
             })
+    }
+
+    /// The uniform price vector this settlement proposes
+    pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
+        self.boundary.clearing_prices()
     }
 
     /// Settlements have valid notify ID only if they are originated from a

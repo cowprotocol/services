@@ -93,7 +93,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
-      FORK_URL: https://eth.merkle.io
+      FORK_URL: ${{ secrets.FORK_URL }}
       TOML_TRACE_ERROR: 1      
     steps:
       - uses: actions/checkout@v3

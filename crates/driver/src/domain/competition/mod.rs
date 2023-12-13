@@ -179,6 +179,7 @@ impl Competition {
                     Solved {
                         score,
                         trades: settlement.orders(),
+                        prices: settlement.prices(),
                     },
                     settlement,
                 )
@@ -354,6 +355,7 @@ async fn merge_settlements(
 pub struct Solved {
     pub score: Score,
     pub trades: HashMap<order::Uid, Amounts>,
+    pub prices: HashMap<eth::TokenAddress, eth::TokenAmount>,
 }
 
 #[derive(Debug, Default)]

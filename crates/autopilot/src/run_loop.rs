@@ -250,6 +250,12 @@ impl RunLoop {
                                     buy_amount: order.buy_amount,
                                 })
                                 .collect(),
+                            clearing_prices: participant
+                                .solution
+                                .clearing_prices
+                                .iter()
+                                .map(|(token, price)| (*token, *price))
+                                .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
@@ -394,6 +400,7 @@ impl RunLoop {
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
                     orders: solution.orders,
+                    clearing_prices: solution.clearing_prices,
                 })
             })
             .collect())
@@ -600,6 +607,7 @@ struct Solution {
     account: H160,
     score: NonZeroU256,
     orders: HashMap<OrderUid, TradedAmounts>,
+    clearing_prices: HashMap<H160, U256>,
 }
 
 impl Solution {
