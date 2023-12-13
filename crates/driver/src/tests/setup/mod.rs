@@ -1,4 +1,4 @@
-//! Framework for setting up tests.
+//! Framework for setting up tests .
 
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
@@ -24,7 +24,6 @@ use {
     },
     ethcontract::BlockId,
     hyper::StatusCode,
-    itertools::Itertools,
     secp256k1::SecretKey,
     serde_with::serde_as,
     std::{
@@ -57,7 +56,7 @@ pub enum Partial {
 
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
@@ -86,8 +85,6 @@ pub struct Order {
     pub valid_for: util::Timestamp,
     pub kind: order::Kind,
 
-    // TODO For now I'll always set these to zero. But I think they should be tested as well.
-    // Figure out what (if anything) would constitute meaningful tests for these values.
     pub user_fee: eth::U256,
     // Currently used for limit orders to represent the surplus_fee calculated by the solver.
     pub solver_fee: Option<eth::U256>,
@@ -126,6 +123,13 @@ impl Order {
     pub fn multiply_amount(self, mult: eth::U256) -> Self {
         Self {
             sell_amount: self.sell_amount * mult,
+            ..self
+        }
+    }
+
+    pub fn user_fee(self, amount: eth::U256) -> Self {
+        Self {
+            user_fee: amount,
             ..self
         }
     }
@@ -624,7 +628,12 @@ impl Test {
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /solve");
-        Solve { status, body }
+        Solve {
+            status,
+            body,
+            fulfillments: &self.fulfillments,
+            blockchain: &self.blockchain,
+        }
     }
 
     /// Call the /reveal endpoint.
@@ -643,12 +652,7 @@ impl Test {
         let status = res.status();
         let body = res.text().await.unwrap();
         tracing::debug!(?status, ?body, "got a response from /reveal");
-        Reveal {
-            status,
-            body,
-            fulfillments: &self.fulfillments,
-            blockchain: &self.blockchain,
-        }
+        Reveal { status, body }
     }
 
     /// Call the /quote endpoint.
@@ -745,24 +749,36 @@ impl Test {
 }
 
 /// A /solve response.
-pub struct Solve {
+pub struct Solve<'a> {
     status: StatusCode,
     body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
 }
 
-pub struct SolveOk {
+pub struct SolveOk<'a> {
     body: String,
+    fulfillments: &'a [Fulfillment],
+    blockchain: &'a Blockchain,
 }
 
-impl Solve {
+impl<'a> Solve<'a> {
     /// Expect the /solve endpoint to have returned a 200 OK response.
-    pub fn ok(self) -> SolveOk {
+    pub fn ok(self) -> SolveOk<'a> {
         assert_eq!(self.status, hyper::StatusCode::OK);
-        SolveOk { body: self.body }
+        SolveOk {
+            body: self.body,
+            fulfillments: self.fulfillments,
+            blockchain: self.blockchain,
+        }
+    }
+
+    pub fn status(self, code: hyper::StatusCode) {
+        assert_eq!(self.status, code);
     }
 }
 
-impl SolveOk {
+impl<'a> SolveOk<'a> {
     fn solutions(&self) -> Vec<serde_json::Value> {
         #[derive(serde::Deserialize)]
         struct Body {
@@ -771,14 +787,22 @@ impl SolveOk {
         serde_json::from_str::<Body>(&self.body).unwrap().solutions
     }
 
-    /// Extracts the score from the response. Since response can contain
-    /// multiple solutions, it takes the score from the first solution.
-    pub fn score(&self) -> eth::U256 {
+    /// Extracts the first solution from the response. This is expected to be
+    /// always valid if there is a valid solution, as we expect from driver to
+    /// not send multiple solutions (yet).
+    fn solution(&self) -> serde_json::Value {
         let solutions = self.solutions();
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 3);
+        assert_eq!(solution.as_object().unwrap().len(), 5);
+        solution
+    }
+
+    /// Extracts the score from the response. Since response can contain
+    /// multiple solutions, it takes the score from the first solution.
+    pub fn score(&self) -> eth::U256 {
+        let solution = self.solution();
         assert!(solution.get("score").is_some());
         let score = solution.get("score").unwrap().as_str().unwrap();
         eth::U256::from_dec_str(score).unwrap()
@@ -804,69 +828,81 @@ impl SolveOk {
     pub fn empty(self) {
         assert!(self.solutions().is_empty());
     }
-}
 
-/// A /reveal response.
-pub struct Reveal<'a> {
-    status: StatusCode,
-    body: String,
-    fulfillments: &'a [Fulfillment],
-    blockchain: &'a Blockchain,
-}
+    /// Check that the solution contains the expected orders.
+    pub fn orders(self, order_names: &[&str]) -> Self {
+        let solution = self.solution();
+        assert!(solution.get("orders").is_some());
+        let trades = serde_json::from_value::<HashMap<String, serde_json::Value>>(
+            solution.get("orders").unwrap().clone(),
+        )
+        .unwrap();
 
-impl<'a> Reveal<'a> {
-    /// Expect the /reveal endpoint to have returned a 200 OK response.
-    pub fn ok(self) -> RevealOk<'a> {
-        assert_eq!(self.status, hyper::StatusCode::OK);
-        RevealOk {
-            body: self.body,
-            fulfillments: self.fulfillments,
-            blockchain: self.blockchain,
+        for expected in order_names.iter().map(|name| {
+            self.fulfillments
+                .iter()
+                .find(|f| f.quoted_order.order.name == *name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "unexpected orders {order_names:?}: fulfillment not found in {:?}",
+                        self.fulfillments,
+                    )
+                })
+        }) {
+            let uid = expected.quoted_order.order_uid(self.blockchain);
+            let trade = trades
+                .get(&uid.to_string())
+                .expect("Didn't find expected trade in solution");
+            let u256 = |value: &serde_json::Value| {
+                eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
+            };
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
+            assert!(
+                u256(trade.get("sellAmount").unwrap())
+                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
+            );
         }
+        self
     }
 }
 
-pub struct RevealOk<'a> {
+/// A /reveal response.
+pub struct Reveal {
+    status: StatusCode,
     body: String,
-    fulfillments: &'a [Fulfillment],
-    blockchain: &'a Blockchain,
 }
 
-impl RevealOk<'_> {
-    /// Check that the solution contains the expected orders.
-    pub fn orders(self, order_names: &[&str]) -> Self {
-        let expected_order_uids = order_names
-            .iter()
-            .map(|name| {
-                self.fulfillments
-                    .iter()
-                    .find(|f| f.quoted_order.order.name == *name)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "unexpected orders {order_names:?}: fulfillment not found in {:?}",
-                            self.fulfillments,
-                        )
-                    })
-                    .quoted_order
-                    .order_uid(self.blockchain)
-                    .to_string()
-            })
-            .sorted()
-            .collect_vec();
+impl Reveal {
+    /// Expect the /reveal endpoint to have returned a 200 OK response.
+    pub fn ok(self) -> RevealOk {
+        assert_eq!(self.status, hyper::StatusCode::OK);
+        RevealOk { body: self.body }
+    }
+}
+
+pub struct RevealOk {
+    body: String,
+}
+
+impl RevealOk {
+    pub fn calldata(self) -> Self {
         let result: serde_json::Value = serde_json::from_str(&self.body).unwrap();
         assert!(result.is_object());
-        assert_eq!(result.as_object().unwrap().len(), 2);
-        assert!(result.get("orders").is_some());
-        let order_uids = result
-            .get("orders")
+        assert_eq!(result.as_object().unwrap().len(), 1);
+        let calldata = result.get("calldata").unwrap().as_object().unwrap();
+        assert_eq!(calldata.len(), 2);
+        assert!(!calldata
+            .get("internalized")
             .unwrap()
-            .as_array()
+            .as_str()
             .unwrap()
-            .iter()
-            .map(|order| order.as_str().unwrap().to_owned())
-            .sorted()
-            .collect_vec();
-        assert_eq!(order_uids, expected_order_uids);
+            .is_empty());
+        assert!(!calldata
+            .get("uninternalized")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .is_empty());
         self
     }
 }

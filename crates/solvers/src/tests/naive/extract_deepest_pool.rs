@@ -40,7 +40,7 @@ async fn test() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x0101010101010101010101010101010101010101": {
                             "balance": "100"
@@ -55,7 +55,7 @@ async fn test() {
                     "gasEstimate": "0"
                 },
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x0101010101010101010101010101010101010101": {
                             "balance": "10000000"
@@ -70,7 +70,7 @@ async fn test() {
                     "gasEstimate": "0"
                 },
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x0303030303030303030303030303030303030303": {
                             "balance": "10000000000000000"
@@ -120,7 +120,7 @@ async fn test() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "riskAdjusted": 0.5
                 }
             }]
         }),

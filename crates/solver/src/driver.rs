@@ -386,7 +386,7 @@ impl Driver {
                     orders: rated_settlement
                         .settlement
                         .trades()
-                        .map(|trade| solver_competition::Order {
+                        .map(|trade| solver_competition::Order::Legacy {
                             id: trade.order.metadata.uid,
                             executed_amount: trade.executed_amount,
                         })
@@ -421,7 +421,7 @@ impl Driver {
                 .map(|trade| {
                     let execution = Execution {
                         surplus_fee: trade.surplus_fee(),
-                        solver_fee: trade.solver_fee,
+                        scoring_fee: trade.scoring_fee,
                     };
                     (trade.order.metadata.uid, execution)
                 })

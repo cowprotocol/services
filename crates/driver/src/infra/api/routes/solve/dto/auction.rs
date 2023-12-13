@@ -115,6 +115,22 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
+                    fee_policies: order
+                        .fee_policies
+                        .into_iter()
+                        .map(|policy| match policy {
+                            FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            },
+                            FeePolicy::Volume { factor } => {
+                                competition::order::FeePolicy::Volume { factor }
+                            }
+                        })
+                        .collect(),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -234,10 +250,11 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
@@ -255,7 +272,7 @@ struct Interaction {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -264,7 +281,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -272,7 +289,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -281,9 +298,18 @@ enum SigningScheme {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
 }

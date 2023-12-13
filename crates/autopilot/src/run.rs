@@ -97,10 +97,7 @@ pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    tokio::task::spawn(
-        crate::database::database_metrics(db.clone())
-            .instrument(tracing::info_span!("database_metrics")),
-    );
+    crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -310,6 +307,7 @@ pub async fn run(args: Arguments) {
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         match BalancerPoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             block_retriever.clone(),
             token_info_fetcher.clone(),
@@ -338,6 +336,7 @@ pub async fn run(args: Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             web3.clone(),
             http_factory.create(),
@@ -413,13 +412,6 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let price_estimator = price_estimator_factory
-        .price_estimator(&PriceEstimatorSource::for_args(
-            args.order_quoting.price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
@@ -429,6 +421,17 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             args.native_price_estimation_results_required,
+        )
+        .unwrap();
+    let price_estimator = price_estimator_factory
+        .price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 
@@ -558,6 +561,7 @@ pub async fn run(args: Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
+        native_token.address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -619,7 +623,7 @@ pub async fn run(args: Arguments) {
                 .await;
         let run = RunLoop {
             solvable_orders_cache,
-            database: db,
+            database: Arc::new(db),
             drivers: args.drivers.into_iter().map(Driver::new).collect(),
             current_block: current_block_stream,
             web3,
@@ -631,6 +635,7 @@ pub async fn run(args: Arguments) {
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
             in_flight_orders: Default::default(),
+            fee_policy: args.fee_policy,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -692,6 +697,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        args.fee_policy,
     );
     shadow.run_forever().await;
 

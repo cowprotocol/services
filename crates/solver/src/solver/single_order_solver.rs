@@ -493,7 +493,7 @@ impl SingleOrderSettlement {
 
         // Compute the surplus fee that needs to be incorporated into the prices
         // and solver fee which will be used for scoring.
-        let (surplus_fee, solver_fee) = if order.solver_determines_fee() {
+        let (surplus_fee, scoring_fee) = if order.solver_determines_fee() {
             let fee = number::conversions::big_rational_to_u256(
                 &prices
                     .try_get_token_amount(
@@ -506,7 +506,7 @@ impl SingleOrderSettlement {
 
             (fee, fee)
         } else {
-            (U256::zero(), order.solver_fee)
+            (U256::zero(), order.scoring_fee)
         };
 
         // Compute the actual executed amounts accounting for surplus fees.
@@ -569,7 +569,7 @@ impl SingleOrderSettlement {
                 OrderKind::Buy => executed_buy_amount,
                 OrderKind::Sell => executed_sell_amount - surplus_fee,
             },
-            solver_fee,
+            scoring_fee,
         };
         settlement.with_liquidity(order, execution)?;
         for interaction in &self.interactions {

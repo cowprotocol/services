@@ -46,7 +46,7 @@ impl SolverCompetitionStoring for Postgres {
                 &ByteArray(order.0),
                 request.auction,
                 surplus_fee.as_ref(),
-                Some(&u256_to_big_decimal(&execution.solver_fee)),
+                Some(&u256_to_big_decimal(&execution.scoring_fee)),
             )
             .await
             .context("order_execution::save")?;
@@ -184,7 +184,7 @@ mod tests {
                     score: Default::default(),
                     ranking: Some(1),
                     clearing_prices: [Default::default()].into_iter().collect(),
-                    orders: vec![Default::default()],
+                    orders: vec![],
                     call_data: vec![1, 2],
                     uninternalized_call_data: Some(vec![1, 2, 3, 4]),
                 }],
