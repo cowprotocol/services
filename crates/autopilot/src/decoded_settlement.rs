@@ -1135,7 +1135,7 @@ mod tests {
     #[test]
     fn test_signature_collision() {
         // 0xd881e90f4afb020d92b8fa1b4931d2352aab4179e4f8d9a4aeafd01ebc75f808
-        // Two FOK orders with identical signatures led to fee computation
+        // Two FOK orders with identical signatures led to incorrect fee computation
         let call_data = hex_literal::hex!(
             "13d79a0b
             0000000000000000000000000000000000000000000000000000000000000080
