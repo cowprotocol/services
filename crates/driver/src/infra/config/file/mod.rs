@@ -92,14 +92,7 @@ struct SubmissionConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
     #[serde(rename_all = "kebab-case")]
-    Public {
-        /// Don't submit transactions with high revert risk (i.e. transactions
-        /// that interact with on-chain AMMs) to the public mempool.
-        /// This can be enabled to avoid MEV when private transaction
-        /// submission strategies are available.
-        #[serde(default)]
-        revert_protection: bool,
-    },
+    Public,
     #[serde(rename_all = "kebab-case")]
     MevBlocker {
         /// The MEVBlocker URL to use.
