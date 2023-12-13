@@ -234,10 +234,10 @@ impl DecodedSettlement {
 
         // Decoding calldata without expecting metadata can succeed even if metadata
         // was appended. The other way around would not work so we do that first.
-        if let Ok(decoded) = Self::try_new(without_selector, function, &domain_separator, true) {
+        if let Ok(decoded) = Self::try_new(without_selector, function, domain_separator, true) {
             return Ok(decoded);
         }
-        Self::try_new(without_selector, function, &domain_separator, false).map_err(Into::into)
+        Self::try_new(without_selector, function, domain_separator, false).map_err(Into::into)
     }
 
     fn try_new(

@@ -245,7 +245,7 @@ impl OnSettlementEventUpdater {
         domain_separator: &DomainSeparator,
     ) -> Result<Option<i64>> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0, &domain_separator) {
+        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(
