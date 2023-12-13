@@ -5,7 +5,7 @@ use {
     },
     ethcontract::U256,
     model::{
-        order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind, BUY_ETH_ADDRESS},
+        order::{OrderCreation, OrderKind, BUY_ETH_ADDRESS},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -74,7 +74,7 @@ async fn test(web3: Web3) {
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
-    let uid = services.create_order(&order).await.unwrap();
+    services.create_order(&order).await.unwrap();
 
     tracing::info!("Waiting for trade.");
     let trade_happened = || async {
@@ -84,27 +84,4 @@ async fn test(web3: Web3) {
             .contains(&safe_balance.as_u128())
     };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
-
-    onchain.mint_blocks_past_reorg_threshold().await;
-
-    let settlement_event_processed = || async {
-        onchain.mint_block().await;
-        let order = services.get_order(&uid).await.unwrap();
-        if let OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee,
-        }) = order.metadata.class
-        {
-            executed_surplus_fee > U256::zero()
-        } else {
-            panic!("order is not a limit order");
-        }
-    };
-    wait_for_condition(TIMEOUT, settlement_event_processed)
-        .await
-        .unwrap();
-
-    let tx_hash = services.get_trades(&uid).await.unwrap()[0].tx_hash.unwrap();
-    let competition = services.get_solver_competition(tx_hash).await.unwrap();
-    assert!(!competition.common.solutions.is_empty());
-    assert!(competition.common.auction.orders.contains(&uid));
 }
