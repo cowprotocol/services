@@ -168,11 +168,17 @@ impl Competition {
         }
 
         // Pick the best-scoring settlement.
-        let (mut score, settlement) = scores
+        let (mut score, mut settlement) = scores
             .into_iter()
             .max_by_key(|(score, _)| score.to_owned())
             .map(|(score, settlement)| (Solved { score }, settlement))
             .unzip();
+
+        // Adjust the settlement to leave the protocol fees in the settlement contract
+        settlement.map(|settlement| {
+            settlement.with_protocol_fees();
+            settlement
+        });
 
         *self.settlement.lock().unwrap() = settlement.clone();
 

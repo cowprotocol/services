@@ -75,9 +75,6 @@ impl Settlement {
         // Encode the solution into a settlement.
         let mut boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
 
-        // Apply the protocol fees to the settlement.
-        boundary.with_protocol_fees(&solution);
-
         Self::new(
             auction.id().unwrap(),
             [(solution.id, solution)].into(),
@@ -218,6 +215,14 @@ impl Settlement {
             .tx(self.auction_id, contract, internalization)
             .input
             .into()
+    }
+
+    /// Adjusts the settlement so that the protocol fees are taken from user and
+    /// put into the settlement contract.
+    pub fn with_protocol_fees(&mut self) {
+        for solution in self.solutions.values() {
+            self.boundary.with_protocol_fees(solution);
+        }
     }
 
     // TODO(#1494): score() should be defined on Solution rather than Settlement.
