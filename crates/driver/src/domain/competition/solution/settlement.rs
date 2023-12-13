@@ -73,7 +73,7 @@ impl Settlement {
         }
 
         // Encode the solution into a settlement.
-        let mut boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
+        let boundary = boundary::Settlement::encode(eth, &solution, auction).await?;
 
         Self::new(
             auction.id().unwrap(),

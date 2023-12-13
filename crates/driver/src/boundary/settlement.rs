@@ -275,7 +275,7 @@ impl Settlement {
             .iter()
             .filter_map(|trade| {
                 match trade {
-                    solution::Trade::Jit(_) => return None,
+                    solution::Trade::Jit(_) => None,
                     solution::Trade::Fulfillment(fulfillment) => {
                         let protocol_fee_factor = 0.5;
                         let protocol_fee_cap = 0.05;
@@ -291,8 +291,8 @@ impl Settlement {
                             sell_price,
                             buy_price,
                         } = boundary_trades.get(&order.uid).unwrap().clone();
-                        let sell_amount = buy_price.clone();
-                        let buy_amount = sell_price.clone();
+                        let sell_amount = *buy_price;
+                        let buy_amount = *sell_price;
 
                         let executed_amount = match order.side {
                             order::Side::Sell => fulfillment
