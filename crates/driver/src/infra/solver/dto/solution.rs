@@ -377,7 +377,7 @@ enum SigningScheme {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]

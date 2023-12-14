@@ -326,7 +326,7 @@ struct WeightedProductReserve {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 enum WeightedProductVersion {
     V0,
     V3Plus,
