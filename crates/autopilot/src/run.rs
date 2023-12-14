@@ -96,7 +96,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
-    let db = Postgres::new(args.db_url.as_str()).await.unwrap();
+    let db = Postgres::new(args.db_url.as_str(), args.order_events_insert_batch_size)
+        .await
+        .unwrap();
     crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);

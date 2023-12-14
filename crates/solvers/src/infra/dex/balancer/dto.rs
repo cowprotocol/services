@@ -9,7 +9,7 @@ use {
 };
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     Sell,
     Buy,

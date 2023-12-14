@@ -17,7 +17,7 @@ impl super::Postgres {
             .with_label_values(&["update_settlement_tx_info"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await.context("acquire")?;
+        let mut ex = self.pool.acquire().await.context("acquire")?;
         database::auction_transaction::insert_settlement_tx_info(
             &mut ex,
             block_number,
@@ -40,7 +40,7 @@ impl super::Postgres {
             .with_label_values(&["get_settlement_event_without_tx_info"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await?;
+        let mut ex = self.pool.acquire().await?;
         database::auction_transaction::get_settlement_event_without_tx_info(
             &mut ex,
             max_block_number,
@@ -58,7 +58,7 @@ impl super::Postgres {
             .with_label_values(&["get_auction_id"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await?;
+        let mut ex = self.pool.acquire().await?;
         database::auction_transaction::get_auction_id(&mut ex, &ByteArray(tx_from.0), tx_nonce)
             .await
     }

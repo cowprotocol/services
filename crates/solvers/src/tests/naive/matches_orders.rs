@@ -45,7 +45,7 @@ async fn sell_orders_on_both_sides() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000000"
@@ -102,7 +102,7 @@ async fn sell_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskAdjusted": 0.5
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -151,7 +151,7 @@ async fn sell_orders_on_one_side() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000000000"
@@ -208,7 +208,7 @@ async fn sell_orders_on_one_side() {
                     },
                 ],
                 "score": {
-                    "riskAdjusted": 0.5
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -257,7 +257,7 @@ async fn buy_orders_on_both_sides() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000000"
@@ -314,7 +314,7 @@ async fn buy_orders_on_both_sides() {
                     },
                 ],
                 "score": {
-                    "riskAdjusted": 0.5
+                    "riskadjusted": 0.5
                 }
             }]
         }),
@@ -363,7 +363,7 @@ async fn buy_and_sell_orders() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantProduct",
+                    "kind": "constantproduct",
                     "tokens": {
                         "0x000000000000000000000000000000000000000a": {
                             "balance": "1000000000000000000000"
@@ -420,7 +420,7 @@ async fn buy_and_sell_orders() {
                     },
                 ],
                 "score": {
-                    "riskAdjusted": 0.5
+                    "riskadjusted": 0.5
                 }
             }]
         }),
