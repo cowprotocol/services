@@ -61,7 +61,7 @@ async fn store_invalid_order_events(
     order_uids: &HashSet<OrderUid>,
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
-    let mut ex = db.0.begin().await.context("begin transaction")?;
+    let mut ex = db.pool.begin().await.context("begin transaction")?;
     for uid in order_uids {
         let event = OrderEvent {
             order_uid: ByteArray(uid.0),
