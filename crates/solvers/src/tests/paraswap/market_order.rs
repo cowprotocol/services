@@ -236,7 +236,7 @@ async fn sell() {
                 }
               ],
               "score": {
-                "riskAdjusted": 0.5
+                "riskadjusted": 0.5
               }
             }
           ]
@@ -490,7 +490,7 @@ async fn buy() {
                 }
               ],
               "score": {
-                "riskAdjusted": 0.5
+                "riskadjusted": 0.5
               }
             }
           ]
