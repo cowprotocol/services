@@ -18,6 +18,9 @@ pub struct Fulfillment {
     /// The amount executed by this fulfillment. See [`order::Partial`]. If the
     /// order is not partial, the executed amount must equal the amount from the
     /// order.
+    /// For sell orders, the executed amount excludes the fee. For example, if
+    /// the sell_amount is 100 and the fee is 1, the executed amount is 99 for
+    /// FoK orders.
     executed: order::TargetAmount,
     fee: Fee,
 }
