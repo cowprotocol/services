@@ -421,7 +421,7 @@ impl Driver {
                 .map(|trade| {
                     let execution = Execution {
                         surplus_fee: trade.surplus_fee(),
-                        solver_fee: trade.solver_fee,
+                        scoring_fee: trade.scoring_fee,
                     };
                     (trade.order.metadata.uid, execution)
                 })

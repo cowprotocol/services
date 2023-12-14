@@ -13,16 +13,36 @@ pub mod recent_settlements;
 
 use {
     sqlx::{Executor, PgConnection, PgPool},
-    std::time::Duration,
+    std::{num::NonZeroUsize, time::Duration},
     tracing::Instrument,
 };
 
 #[derive(Debug, Clone)]
-pub struct Postgres(pub PgPool);
+pub struct Config {
+    pub order_events_insert_batch_size: NonZeroUsize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Postgres {
+    pub pool: PgPool,
+    pub config: Config,
+}
 
 impl Postgres {
-    pub async fn new(url: &str) -> sqlx::Result<Self> {
-        Ok(Self(PgPool::connect(url).await?))
+    pub async fn new(
+        url: &str,
+        order_events_insert_batch_size: NonZeroUsize,
+    ) -> sqlx::Result<Self> {
+        Ok(Self {
+            pool: PgPool::connect(url).await?,
+            config: Config {
+                order_events_insert_batch_size,
+            },
+        })
+    }
+
+    pub async fn with_defaults() -> sqlx::Result<Self> {
+        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
     }
 
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
@@ -30,21 +50,21 @@ impl Postgres {
 
         // update table row metrics
         for &table in database::TABLES {
-            let mut ex = self.0.acquire().await?;
+            let mut ex = self.pool.acquire().await?;
             let count = count_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
         // update table row metrics
         for &table in database::LARGE_TABLES {
-            let mut ex = self.0.acquire().await?;
+            let mut ex = self.pool.acquire().await?;
             let count = estimate_rows_in_table(&mut ex, table).await?;
             metrics.table_rows.with_label_values(&[table]).set(count);
         }
 
         // update unused app data metric
         {
-            let mut ex = self.0.acquire().await?;
+            let mut ex = self.pool.acquire().await?;
             let count = count_unused_app_data(&mut ex).await?;
             metrics.unused_app_data.set(count);
         }
@@ -54,7 +74,7 @@ impl Postgres {
 
     pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
         for &table in database::LARGE_TABLES {
-            let mut ex = self.0.acquire().await?;
+            let mut ex = self.pool.acquire().await?;
             analyze_table(&mut ex, table).await?;
         }
 
@@ -148,8 +168,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_count_rows_in_table_() {
-        let db = Postgres::new("postgresql://").await.unwrap();
-        let mut ex = db.0.begin().await.unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
 
         let count = count_rows_in_table(&mut ex, "orders").await.unwrap();

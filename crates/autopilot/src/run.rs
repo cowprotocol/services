@@ -96,7 +96,9 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
-    let db = Postgres::new(args.db_url.as_str()).await.unwrap();
+    let db = Postgres::new(args.db_url.as_str(), args.order_events_insert_batch_size)
+        .await
+        .unwrap();
     crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
@@ -561,6 +563,7 @@ pub async fn run(args: Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
+        native_token.address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),

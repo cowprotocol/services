@@ -23,21 +23,17 @@ impl super::Postgres {
 
     /// Deletes events before the provided timestamp.
     pub async fn delete_order_events_before(&self, timestamp: DateTime<Utc>) -> Result<u64, Error> {
-        order_events::delete_order_events_before(&self.0, timestamp).await
+        order_events::delete_order_events_before(&self.pool, timestamp).await
     }
 }
-
-// Temporarily hardcoded. Will migrate to a config file in case the batches
-// approach has a positive impact.
-const DEFAULT_BATCH_SIZE: usize = 500;
 
 async fn store_order_events(
     db: &super::Postgres,
     events: &[(OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
-    let mut ex = db.0.begin().await.context("begin transaction")?;
-    for chunk in events.chunks(DEFAULT_BATCH_SIZE) {
+    let mut ex = db.pool.begin().await.context("begin transaction")?;
+    for chunk in events.chunks(db.config.order_events_insert_batch_size.get()) {
         let batch = chunk.iter().map(|(uid, label)| OrderEvent {
             order_uid: ByteArray(uid.0),
             timestamp,
