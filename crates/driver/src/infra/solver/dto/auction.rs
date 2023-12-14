@@ -268,7 +268,7 @@ struct Token {
 // TODO Remove dead_code
 #[allow(dead_code, clippy::enum_variant_names)]
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),

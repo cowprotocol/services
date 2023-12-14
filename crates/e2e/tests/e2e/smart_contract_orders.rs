@@ -32,8 +32,14 @@ async fn smart_contract_orders(web3: Web3) {
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
         .await;
 
+    tracing::info!("Starting services.");
+    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    services.start_autopilot(vec![
+        "--enable-colocation=true".to_string(),
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services.start_api(vec![]).await;
 
     let order_template = OrderCreation {
@@ -128,7 +134,6 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })
@@ -150,5 +155,5 @@ async fn smart_contract_orders(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(7_975_363_884_976_534_272_u128));
+    assert_eq!(balance, U256::from(7_975_363_406_512_003_608_u128));
 }
