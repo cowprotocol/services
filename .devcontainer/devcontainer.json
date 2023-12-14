@@ -17,7 +17,9 @@
         "ghcr.io/devcontainers/features/rust:1": {},
 		"ghcr.io/devcontainers/features/git:1": {},
 		"ghcr.io/nlordell/features/foundry": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "dockerDashComposeVersion": "v2"
+        },
 		"ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {},
         "ghcr.io/devcontainers-contrib/features/zsh-plugins:0": {
             "plugins": "npm git rust docker docker-compose git-prompt postgres",
