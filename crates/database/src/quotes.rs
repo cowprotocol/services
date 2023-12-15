@@ -129,21 +129,6 @@ LIMIT 1
         .await
 }
 
-pub async fn remove_expired_quotes(
-    ex: &mut PgConnection,
-    max_expiry: DateTime<Utc>,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-DELETE FROM quotes
-WHERE expiration_timestamp < $1
-    "#;
-    sqlx::query(QUERY)
-        .bind(max_expiry)
-        .execute(ex)
-        .await
-        .map(|_| ())
-}
-
 #[cfg(test)]
 mod tests {
     use {
@@ -185,11 +170,6 @@ mod tests {
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
         assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
-
-        remove_expired_quotes(&mut db, now + Duration::seconds(30))
-            .await
-            .unwrap();
-        assert_eq!(get(&mut db, id).await.unwrap(), None);
     }
 
     #[tokio::test]
@@ -369,13 +349,6 @@ mod tests {
             .unwrap(),
             None
         );
-
-        // Query that previously succeeded after cleaning up expired measurements.
-        remove_expired_quotes(&mut db, now + Duration::seconds(120))
-            .await
-            .unwrap();
-        assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
-        assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
     }
 
     #[tokio::test]
