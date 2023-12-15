@@ -458,6 +458,7 @@ pub struct FullOrder {
     pub executed_surplus_fee: BigDecimal,
     pub executed_solver_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
+    pub quote_id: Option<i64>,
 }
 
 impl FullOrder {

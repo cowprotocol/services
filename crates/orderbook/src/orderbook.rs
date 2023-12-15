@@ -19,13 +19,14 @@ use {
             OrderUid,
             SignedOrderCancellations,
         },
-        quote::QuoteId,
+        quote::{OrderQuoteResponse, QuoteId},
         DomainSeparator,
     },
     primitive_types::H160,
     shared::{
         app_data,
         metrics::LivenessChecking,
+        order_quoting::QuoteStoring,
         order_validation::{OrderValidating, ValidationError},
     },
     std::{borrow::Cow, sync::Arc},
@@ -423,6 +424,13 @@ impl Orderbook {
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
+    }
+
+    pub async fn get_quote(&self, uid: &OrderUid) -> Result<Option<OrderQuoteResponse>> {
+        // let order = self.get_order(uid).await.unwrap().unwrap();
+        // let quote_id = order.metadata
+        // let quote = self.database.quo
+        Ok(None)
     }
 }
 

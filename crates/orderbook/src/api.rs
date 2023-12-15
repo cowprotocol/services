@@ -16,6 +16,7 @@ mod get_auction;
 mod get_native_price;
 mod get_order_by_uid;
 mod get_orders_by_tx;
+mod get_quote;
 mod get_solver_competition;
 mod get_total_surplus;
 mod get_trades;
@@ -75,7 +76,7 @@ pub fn handle_all_routes(
         ("v1/post_quote", box_filter(post_quote::post_quote(quotes))),
         (
             "v1/auction",
-            box_filter(get_auction::get_auction(orderbook)),
+            box_filter(get_auction::get_auction(orderbook.clone())),
         ),
         (
             "v1/solver_competition",
@@ -105,6 +106,7 @@ pub fn handle_all_routes(
             "v1/get_total_surplus",
             box_filter(get_total_surplus::get(database)),
         ),
+        ("v1/get_quote", box_filter(get_quote::get(orderbook))),
     ];
 
     finalize_router(routes, "orderbook::api::request_summary")
