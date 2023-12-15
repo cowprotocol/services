@@ -1,4 +1,9 @@
-/// Protocol fee implementation.
+//! Protocol fee implementation.
+//!
+//! The protocol fee is a fee that is defined by the protocol and for each order
+//! in the auction we define the way to calculate the protocol fee based on the
+//! configuration parameters.
+
 use {
     crate::{
         arguments,
@@ -20,18 +25,19 @@ pub fn fee_policies(
     auction
         .orders
         .iter()
-        .map(|order| {
-            let fee_policies = match order.metadata.class {
-                OrderClass::Market => vec![],
-                OrderClass::Liquidity => vec![],
-                // todo https://github.com/cowprotocol/services/issues/2092
+        .filter_map(|order| {
+            match order.metadata.class {
+                OrderClass::Market => None,
+                OrderClass::Liquidity => None,
+                // TODO: https://github.com/cowprotocol/services/issues/2092
                 // skip protocol fee for limit orders with in-market price
 
-                // todo https://github.com/cowprotocol/services/issues/2115
+                // TODO: https://github.com/cowprotocol/services/issues/2115
                 // skip protocol fee for TWAP limit orders
-                OrderClass::Limit(_) => vec![fee_policy_to_dto(&config)],
-            };
-            (order.metadata.uid, fee_policies)
+                OrderClass::Limit(_) => {
+                    Some((order.metadata.uid, vec![fee_policy_to_dto(&config)]))
+                }
+            }
         })
         .collect()
 }

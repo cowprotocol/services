@@ -498,7 +498,7 @@ pub fn solve_request(
     time_limit: Duration,
     fee_policy: arguments::FeePolicy,
 ) -> solve::Request {
-    let fee_policies = protocol::fee::fee_policies(auction, fee_policy);
+    let mut fee_policies = protocol::fee::fee_policies(auction, fee_policy);
     solve::Request {
         id,
         orders: auction
@@ -548,10 +548,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies: fee_policies
-                        .get(&order.metadata.uid)
-                        .cloned()
-                        .unwrap_or_default(),
+                    fee_policies: fee_policies.remove(&order.metadata.uid).unwrap_or_default(),
                 }
             })
             .collect(),
