@@ -91,7 +91,6 @@ struct SubmissionConfig {
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
-    #[serde(rename_all = "kebab-case")]
     Public,
     #[serde(rename_all = "kebab-case")]
     MevBlocker {

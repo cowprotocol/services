@@ -265,14 +265,21 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 ),
                 kind: match mempool {
                     file::Mempool::Public => {
-                        // If there is only one mempool - public mempool - revert protection is
+                        // If there is no private mempool, revert protection is
                         // disabled, otherwise driver would not even try to settle revertable
                         // settlements
-                        mempool::Kind::Public(if config.submission.mempools.len() == 1 {
-                            mempool::RevertProtection::Disabled
-                        } else {
-                            mempool::RevertProtection::Enabled
-                        })
+                        mempool::Kind::Public(
+                            if config
+                                .submission
+                                .mempools
+                                .iter()
+                                .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
+                            {
+                                mempool::RevertProtection::Enabled
+                            } else {
+                                mempool::RevertProtection::Disabled
+                            },
+                        )
                     }
                     file::Mempool::MevBlocker {
                         url,

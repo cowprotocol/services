@@ -42,12 +42,6 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.
-    ///
-    /// Don't submit transactions with high revert risk (i.e. transactions
-    /// that interact with on-chain AMMs) to the public mempool.
-    /// This can be enabled to avoid MEV when private transaction
-    /// submission strategies are available. If private submission strategies
-    /// are not available, revert protection is always disabled.
     Public(RevertProtection),
     /// The MEVBlocker private mempool.
     MEVBlocker {
@@ -67,6 +61,11 @@ impl Kind {
     }
 }
 
+/// Don't submit transactions with high revert risk (i.e. transactions
+/// that interact with on-chain AMMs) to the public mempool.
+/// This can be enabled to avoid MEV when private transaction
+/// submission strategies are available. If private submission strategies
+/// are not available, revert protection is always disabled.
 #[derive(Debug, Clone, Copy)]
 pub enum RevertProtection {
     Enabled,
