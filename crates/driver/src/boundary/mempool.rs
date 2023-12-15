@@ -150,11 +150,15 @@ impl Mempool {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
-            max_additional_tip: match self.config.kind {
-                Kind::Public(_) => 0.,
-                Kind::MEVBlocker {
-                    max_additional_tip, ..
-                } => max_additional_tip,
+            max_additional_tip: match (&self.config.kind, settlement.boundary.revertable()) {
+                (
+                    Kind::MEVBlocker {
+                        max_additional_tip, ..
+                    },
+                    true,
+                ) => *max_additional_tip,
+                (Kind::MEVBlocker { .. }, false) => 0.,
+                (Kind::Public(_), _) => 0.,
             },
         };
         let use_soft_cancellations = match self.config.kind {

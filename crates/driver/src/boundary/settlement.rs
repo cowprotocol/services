@@ -253,6 +253,10 @@ impl Settlement {
             .map(|(&token, &amount)| (token.into(), amount.into()))
             .collect()
     }
+
+    pub fn revertable(&self) -> bool {
+        self.inner.revertable()
+    }
 }
 
 fn to_boundary_order(order: &competition::Order) -> Order {
