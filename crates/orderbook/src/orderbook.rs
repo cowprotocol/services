@@ -5,6 +5,7 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
+    database::orders::Quote,
     ethcontract::H256,
     model::{
         app_data::AppDataHash,
@@ -423,6 +424,14 @@ impl Orderbook {
             .user_orders(owner, offset, Some(limit))
             .await
             .context("get_user_orders error")
+    }
+
+    pub async fn get_quote(&self, _uid: &OrderUid) -> Result<Option<Quote>> {
+        //let quote = self.database.read_quote
+        // let order = self.get_order(uid).await.unwrap().unwrap();
+        // let quote_id = order.metadata
+        // let quote = self.database.quo
+        Ok(None)
     }
 }
 
