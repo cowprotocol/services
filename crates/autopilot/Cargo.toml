@@ -16,7 +16,6 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-approx = "0.5"
 async-trait = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true }
