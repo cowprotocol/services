@@ -61,6 +61,11 @@ impl Kind {
     }
 }
 
+/// Don't submit transactions with high revert risk (i.e. transactions
+/// that interact with on-chain AMMs) to the public mempool.
+/// This can be enabled to avoid MEV when private transaction
+/// submission strategies are available. If private submission strategies
+/// are not available, revert protection is always disabled.
 #[derive(Debug, Clone, Copy)]
 pub enum RevertProtection {
     Enabled,
