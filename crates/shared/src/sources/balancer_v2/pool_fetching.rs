@@ -206,6 +206,12 @@ impl BalancerFactoryKind {
                 Self::ComposableStableV4,
                 Self::ComposableStableV5,
             ],
+            11155111 => vec![
+                Self::WeightedV4,
+                Self::ComposableStableV4,
+                Self::ComposableStableV5,
+                Self::NoProtocolFeeLiquidityBootstrapping,
+            ],
             _ => Default::default(),
         }
     }

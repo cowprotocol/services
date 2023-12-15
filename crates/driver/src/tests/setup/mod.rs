@@ -1,4 +1,4 @@
-//! Framework for setting up tests .
+//! Framework for setting up tests.
 
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
@@ -56,7 +56,7 @@ pub enum Partial {
 
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]

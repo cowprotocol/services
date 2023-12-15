@@ -2,5 +2,4 @@
 
 /target
 /.vscode
-/.idea
 **/testing.*.toml

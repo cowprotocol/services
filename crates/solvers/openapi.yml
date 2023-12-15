@@ -243,7 +243,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [constantProduct]
+          enum: [constantproduct]
         tokens:
           description: |
             A mapping of token address to its reserve amounts.
@@ -264,7 +264,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [weightedProduct]
+          enum: [weightedproduct]
         tokens:
           description: |
             A mapping of token address to its reserve amounts with weights.
@@ -329,7 +329,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [concentratedLiquidity]
+          enum: [concentratedliquidity]
         tokens:
           type: array
           items:
@@ -364,7 +364,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [limitOrder]
+          enum: [limitorder]
         hash:
           $ref: "#/components/schemas/Digest"
         makerToken:
