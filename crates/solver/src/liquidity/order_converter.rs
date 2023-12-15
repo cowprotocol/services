@@ -66,7 +66,7 @@ impl OrderConverter {
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
-        let solver_fee = match order.solver_determines_fee() {
+        let scoring_fee = match order.solver_determines_fee() {
             true => 0.into(),
             false => remaining.remaining(order.metadata.solver_fee)?,
         };
@@ -85,7 +85,7 @@ impl OrderConverter {
             buy_amount,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            solver_fee,
+            scoring_fee,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token: self.native_token.clone(),
@@ -116,7 +116,7 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         }
 
         let trade =
-            encoder.add_trade(self.order.clone(), execution.filled, execution.solver_fee)?;
+            encoder.add_trade(self.order.clone(), execution.filled, execution.scoring_fee)?;
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {
@@ -195,7 +195,7 @@ pub mod tests {
 
         let execution = LimitOrderExecution::new(1337.into(), 0.into());
         let executed_buy_amount = U256::from(2 * 1337);
-        let solver_fee = U256::from(1234);
+        let scoring_fee = U256::from(1234);
 
         let prices = hashmap! {
             native_token.address() => U256::from(100),
@@ -231,7 +231,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, execution.filled, solver_fee)
+                    .add_trade(order, execution.filled, scoring_fee)
                     .is_ok());
             },
         );
@@ -359,7 +359,7 @@ pub mod tests {
         // Amounts are halved because the order is half executed.
         assert_eq!(order_.sell_amount, 10.into());
         assert_eq!(order_.buy_amount, 20.into());
-        assert_eq!(order_.solver_fee, 100.into());
+        assert_eq!(order_.scoring_fee, 100.into());
 
         let order_ = converter
             .normalize_limit_order(BalancedOrder {
@@ -370,7 +370,7 @@ pub mod tests {
         // Amounts are quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
-        assert_eq!(order_.solver_fee, 50.into());
+        assert_eq!(order_.scoring_fee, 50.into());
 
         order.metadata.executed_sell_amount_before_fees = 0.into();
         let order_ = converter
@@ -382,7 +382,7 @@ pub mod tests {
         // Amounts are still quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
-        assert_eq!(order_.solver_fee, 50.into());
+        assert_eq!(order_.scoring_fee, 50.into());
     }
 
     #[test]

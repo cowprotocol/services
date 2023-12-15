@@ -21,6 +21,7 @@ pub fn block_interval(network_id: &str, chain_id: u64) -> Option<Duration> {
         ("1", 1) => 12,
         ("5", 5) => 12,
         ("100", 100) => 5,
+        ("11155111", 11155111) => 12,
         _ => return None,
     }))
 }

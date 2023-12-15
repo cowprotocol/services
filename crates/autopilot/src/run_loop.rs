@@ -250,6 +250,12 @@ impl RunLoop {
                                     buy_amount: order.buy_amount,
                                 })
                                 .collect(),
+                            clearing_prices: participant
+                                .solution
+                                .clearing_prices
+                                .iter()
+                                .map(|(token, price)| (*token, *price))
+                                .collect(),
                             // TODO: revisit once colocation is enabled (remove not populated
                             // fields) Not all fields can be populated in the colocated world
                             ..Default::default()
@@ -288,10 +294,11 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
+            let submission_start = Instant::now();
             match self.settle(driver, solution).await {
-                Ok(()) => Metrics::settle_ok(driver),
+                Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
-                    Metrics::settle_err(driver, &err);
+                    Metrics::settle_err(driver, &err, submission_start.elapsed());
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
@@ -393,6 +400,7 @@ impl RunLoop {
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
                     orders: solution.orders,
+                    clearing_prices: solution.clearing_prices,
                 })
             })
             .collect())
@@ -599,6 +607,7 @@ struct Solution {
     account: H160,
     score: NonZeroU256,
     orders: HashMap<OrderUid, TradedAmounts>,
+    clearing_prices: HashMap<H160, U256>,
 }
 
 impl Solution {
@@ -646,7 +655,12 @@ struct Metrics {
     auction: prometheus::IntGauge,
 
     /// Tracks the duration of successful driver `/solve` requests.
-    #[metric(labels("driver", "result"))]
+    #[metric(
+        labels("driver", "result"),
+        buckets(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+        )
+    )]
     solve: prometheus::HistogramVec,
 
     /// Tracks driver solutions.
@@ -657,9 +671,9 @@ struct Metrics {
     #[metric(labels("driver", "result"))]
     reveal: prometheus::IntCounterVec,
 
-    /// Tracks the result of driver `/settle` requests.
+    /// Tracks the times and results of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
-    settle: prometheus::IntCounterVec,
+    settle_time: prometheus::IntCounterVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -727,21 +741,21 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &Driver) {
+    fn settle_ok(driver: &Driver, time: Duration) {
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, "success"])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn settle_err(driver: &Driver, err: &SettleError) {
+    fn settle_err(driver: &Driver, err: &SettleError, time: Duration) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, label])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
     fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {

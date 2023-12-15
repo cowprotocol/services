@@ -124,6 +124,9 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         file::UniswapV2Preset::PancakeSwap => {
                             liquidity::config::UniswapV2::pancake_swap(&network.id)
                         }
+                        file::UniswapV2Preset::TestnetUniswapV2 => {
+                            liquidity::config::UniswapV2::testnet_uniswapv2(&network.id)
+                        }
                     }
                     .expect("no Uniswap V2 preset for current network"),
                     file::UniswapV2Config::Manual {

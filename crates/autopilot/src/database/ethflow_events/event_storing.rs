@@ -38,7 +38,7 @@ type EthFlowEvent = contracts::cowswap_eth_flow::Event;
 #[async_trait::async_trait]
 impl EventStoring<EthFlowEvent> for Postgres {
     async fn last_event_block(&self) -> Result<u64> {
-        let mut ex = self.0.acquire().await?;
+        let mut ex = self.pool.acquire().await?;
         let block = database::ethflow_orders::last_indexed_block(&mut ex).await?;
         Ok(block.unwrap_or_default() as u64)
     }
@@ -52,7 +52,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
             .database_queries
             .with_label_values(&["append_ethflow_refund_events"])
             .start_timer();
-        let mut ex = self.0.begin().await?;
+        let mut ex = self.pool.begin().await?;
         database::ethflow_orders::insert_refund_tx_hashes(&mut ex, &refunds).await?;
         ex.commit().await?;
         Ok(())
@@ -68,7 +68,7 @@ impl EventStoring<EthFlowEvent> for Postgres {
             .database_queries
             .with_label_values(&["replace_ethflow_refund_events"])
             .start_timer();
-        let mut ex = self.0.begin().await?;
+        let mut ex = self.pool.begin().await?;
         database::ethflow_orders::delete_refunds(
             &mut ex,
             *range.start() as i64,

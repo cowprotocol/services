@@ -14,7 +14,7 @@ impl super::Postgres {
             .with_label_values(&["recent_settlement_tx_hashes"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await.context("acquire")?;
+        let mut ex = self.pool.acquire().await.context("acquire")?;
         let hashes = database::settlements::recent_settlement_tx_hashes(&mut ex, block_range)
             .await
             .context("recent_settlement_tx_hashes")?;

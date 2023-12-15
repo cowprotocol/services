@@ -93,6 +93,20 @@ impl UniswapV2 {
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
+
+    /// Returns the liquidity configuration for liquidity sources only used on
+    /// test networks.
+    pub fn testnet_uniswapv2(network: &eth::NetworkId) -> Option<Self> {
+        Some(Self {
+            router: deployment_address(
+                contracts::TestnetUniswapV2Router02::raw_contract(),
+                network,
+            )?,
+            pool_code: hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86")
+                .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
+        })
+    }
 }
 
 /// Swapr (Uniswap V2 clone with a twist) liquidity fetching options.

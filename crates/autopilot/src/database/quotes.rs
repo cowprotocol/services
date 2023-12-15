@@ -12,7 +12,7 @@ impl Postgres {
             .with_label_values(&["remove_expired_quotes"])
             .start_timer();
 
-        let mut ex = self.0.acquire().await?;
+        let mut ex = self.pool.acquire().await?;
         database::quotes::remove_expired_quotes(&mut ex, max_expiry).await?;
         Ok(())
     }

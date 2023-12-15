@@ -46,6 +46,7 @@ use {
         Web3,
     },
     futures::StreamExt,
+    model::DomainSeparator,
     primitive_types::{H160, H256},
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
@@ -97,7 +98,12 @@ impl OnSettlementEventUpdater {
             .try_into()
             .context("convert block")?;
 
-        let mut ex = self.db.0.begin().await.context("acquire DB connection")?;
+        let mut ex = self
+            .db
+            .pool
+            .begin()
+            .await
+            .context("acquire DB connection")?;
         let event = match database::auction_transaction::get_settlement_event_without_tx_info(
             &mut ex,
             reorg_safe_block,
@@ -128,9 +134,12 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let mut auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction)
-            .await?
-            .map(AuctionId::Colocated);
+        let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
+
+        let mut auction_id =
+            Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
+                .await?
+                .map(AuctionId::Colocated);
         if auction_id.is_none() {
             // This settlement was issued BEFORE solver-driver colocation.
             auction_id = database::auction_transaction::get_auction_id(
@@ -192,7 +201,7 @@ impl OnSettlementEventUpdater {
             );
 
             // surplus and fees calculation
-            match DecodedSettlement::new(&transaction.input.0) {
+            match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
                 Ok(settlement) => {
                     let surplus = settlement.total_surplus(&external_prices);
                     let fee = settlement.total_fees(&external_prices, orders.clone());
@@ -238,9 +247,10 @@ impl OnSettlementEventUpdater {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
+        domain_separator: &DomainSeparator,
     ) -> Result<Option<i64>> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0) {
+        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(
@@ -304,8 +314,8 @@ mod tests {
     async fn manual_node_test() {
         // TODO update test
         observe::tracing::initialize_reentrant("autopilot=trace");
-        let db = Postgres::new("postgresql://").await.unwrap();
-        database::clear_DANGER(&db.0).await.unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let transport = shared::ethrpc::create_env_test_transport();
         let web3 = Web3::new(transport);
 
@@ -324,13 +334,13 @@ mod tests {
 INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_nonce)
 VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a', NULL, NULL)
     ;";
-        updater.db.0.execute(query).await.unwrap();
+        updater.db.pool.execute(query).await.unwrap();
 
         let query = r"
 INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
 VALUES (0, '\xa21740833858985e4d801533a808786d3647fb83', 4701)
     ;";
-        updater.db.0.execute(query).await.unwrap();
+        updater.db.pool.execute(query).await.unwrap();
 
         let query = r"
 INSERT INTO auction_prices (auction_id, token, price)
@@ -339,7 +349,7 @@ VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 63477957279334750883433
         (0, '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 634553336916241343152390144)
             ;";
 
-        updater.db.0.execute(query).await.unwrap();
+        updater.db.pool.execute(query).await.unwrap();
 
         assert!(updater.update(15875900).await.unwrap());
 
@@ -349,7 +359,7 @@ FROM settlements
 WHERE block_number = 15875801 AND log_index = 405
         ;";
         let (tx_from, tx_nonce): (Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.0)
+            .fetch_one(&updater.db.pool)
             .await
             .unwrap();
         assert_eq!(
@@ -363,7 +373,7 @@ SELECT auction_id, tx_from, tx_nonce
 FROM auction_transaction
         ;";
         let (auction_id, tx_from, tx_nonce): (i64, Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.0)
+            .fetch_one(&updater.db.pool)
             .await
             .unwrap();
         assert_eq!(auction_id, 0);
@@ -376,7 +386,7 @@ FROM auction_transaction
         // assert that the prices are updated
         let query = r#"SELECT * FROM auction_prices;"#;
         let prices: Vec<AuctionPrice> = sqlx::query_as(query)
-            .fetch_all(&updater.db.0)
+            .fetch_all(&updater.db.pool)
             .await
             .unwrap();
         assert_eq!(prices.len(), 2);
@@ -384,7 +394,7 @@ FROM auction_transaction
         // assert that the observations are updated
         let query = r#"SELECT * FROM settlement_observations;"#;
         let observation: Observation = sqlx::query_as(query)
-            .fetch_one(&updater.db.0)
+            .fetch_one(&updater.db.pool)
             .await
             .unwrap();
         assert_eq!(observation.gas_used, 179155.into());
