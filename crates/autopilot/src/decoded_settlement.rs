@@ -359,7 +359,7 @@ impl DecodedSettlement {
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
 
-                // Update fee only for orders with solver computed fees (limit orders)
+                // Save fee only for orders with solver computed fees (limit orders)
                 if !order.solver_determines_fee {
                     return None;
                 }

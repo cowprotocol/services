@@ -20,16 +20,12 @@ pub enum ExecutedFee {
     /// Fee is calculated by the solver and known upfront (before the settlement
     /// is finalized).
     Solver(U256),
-    /// Fee is unknown before the settlement is finalized and is calculated in
-    /// the postprocessing. Currently only used for limit orders.
-    Surplus,
 }
 
 impl ExecutedFee {
-    pub fn fee(&self) -> Option<&U256> {
+    pub fn fee(&self) -> &U256 {
         match self {
-            ExecutedFee::Solver(fee) => Some(fee),
-            ExecutedFee::Surplus => None,
+            ExecutedFee::Solver(fee) => fee,
         }
     }
 }
@@ -82,13 +78,11 @@ impl super::Postgres {
             .context("solver_competition::save")?;
 
         for order_execution in &competition.order_executions {
-            let solver_fee = order_execution.executed_fee.fee().map(u256_to_big_decimal);
             database::order_execution::save(
                 &mut ex,
                 &ByteArray(order_execution.order_id.0),
                 competition.auction_id,
-                None,
-                solver_fee.as_ref(),
+                &u256_to_big_decimal(order_execution.executed_fee.fee()),
             )
             .await
             .context("order_execution::save")?;

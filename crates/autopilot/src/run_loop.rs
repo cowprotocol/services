@@ -186,16 +186,15 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.metadata.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        let executed_fee = match auction_order.solver_determines_fee() {
-                            // we don't know the surplus fee in advance. will be populated
-                            // after the transaction containing the order is mined
-                            true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
-                        };
-                        order_executions.push(OrderExecution {
-                            order_id: *order_id,
-                            executed_fee,
-                        });
+                        // save only the solver fee for market orders
+                        if !auction_order.solver_determines_fee() {
+                            order_executions.push(OrderExecution {
+                                order_id: *order_id,
+                                executed_fee: ExecutedFee::Solver(
+                                    auction_order.metadata.solver_fee,
+                                ),
+                            });
+                        }
                         if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
                             prices.insert(auction_order.data.sell_token, *price);
                         } else {
