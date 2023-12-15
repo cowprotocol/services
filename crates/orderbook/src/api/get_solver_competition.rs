@@ -1,10 +1,7 @@
 use {
-    crate::{
-        orderbook::Orderbook,
-        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
-    },
+    crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     anyhow::Result,
-    model::auction::AuctionId,
+    model::{auction::AuctionId, solver_competition::SolverCompetitionAPI},
     primitive_types::H256,
     reqwest::StatusCode,
     std::{convert::Infallible, sync::Arc},
@@ -39,49 +36,33 @@ pub fn get(
         .and_then(move |identifier: Identifier| {
             let handler = handler.clone();
             async move {
-                Result::<_, Infallible>::Ok(
-                    load_competition_by_identifier(handler, identifier).await,
-                )
+                let result = handler.load_competition(identifier).await;
+                Result::<_, Infallible>::Ok(response(result))
             }
         })
 }
 
 pub fn get_latest(
-    orderbook: Arc<Orderbook>,
     handler: Arc<dyn SolverCompetitionStoring>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     request_latest().and_then(move || {
-        let orderbook = orderbook.clone();
         let handler = handler.clone();
         async move {
-            let latest_auction_id = orderbook.most_recent_auction_id().await;
-            Result::<_, Infallible>::Ok(match latest_auction_id {
-                Ok(Some(auction_id)) => {
-                    load_competition_by_identifier(handler, Identifier::Id(auction_id)).await
-                }
-                Ok(None) => with_status(
-                    super::error("NotFound", "There is no active auction"),
-                    StatusCode::NOT_FOUND,
-                ),
-                Err(err) => {
-                    tracing::error!(?err, "load latest competition");
-                    shared::api::internal_error_reply()
-                }
-            })
+            let result = handler.load_latest_competition().await;
+            Result::<_, Infallible>::Ok(response(result))
         }
     })
 }
 
-async fn load_competition_by_identifier(
-    handler: Arc<dyn SolverCompetitionStoring>,
-    identifier: Identifier,
+fn response(
+    result: Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>,
 ) -> WithStatus<Json> {
-    let result = handler.load_competition(identifier).await;
     match result {
         Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
-        Err(LoadSolverCompetitionError::NotFound) => {
-            with_status(super::error("NotFound", ""), StatusCode::NOT_FOUND)
-        }
+        Err(LoadSolverCompetitionError::NotFound) => with_status(
+            super::error("NotFound", "no competition found"),
+            StatusCode::NOT_FOUND,
+        ),
         Err(LoadSolverCompetitionError::Other(err)) => {
             tracing::error!(?err, "load solver competition");
             shared::api::internal_error_reply()

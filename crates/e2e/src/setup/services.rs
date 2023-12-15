@@ -231,7 +231,6 @@ impl<'a> Services<'a> {
 
         let status = response.status();
         let body = response.text().await.unwrap();
-
         match status {
             StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
             code => Err(code),

@@ -132,4 +132,6 @@ async fn test(web3: Web3) {
     let competition = services.get_solver_competition(tx_hash).await.unwrap();
     assert!(!competition.common.solutions.is_empty());
     assert!(competition.common.auction.orders.contains(&uid));
+    let latest_competition = services.get_latest_solver_competition().await.unwrap();
+    assert_eq!(latest_competition, competition);
 }

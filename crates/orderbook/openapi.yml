@@ -378,6 +378,20 @@ paths:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
         404:
           description: No competition information available for this `tx_hash`.
+  /api/v1/solver_competition/latest:
+    get:
+      summary: Get information about the most recent solver competition.
+      description: |
+        Returns the competition information for the last seen auction_id.
+      responses:
+        200:
+          description: Competition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        404:
+          description: No competition information available.
   /api/v1/version:
     get:
       summary: Get the API's current deployed version.

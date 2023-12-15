@@ -82,11 +82,10 @@ pub fn handle_all_routes(
             box_filter(get_solver_competition::get(Arc::new(database.clone()))),
         ),
         (
-            "v1/solver_competition",
-            box_filter(get_solver_competition::get_latest(
-                orderbook.clone(),
-                Arc::new(database.clone()),
-            )),
+            "v1/solver_competition/latest",
+            box_filter(get_solver_competition::get_latest(Arc::new(
+                database.clone(),
+            ))),
         ),
         (
             "v1/solver_competition",

@@ -5,7 +5,6 @@ use {
     },
     anyhow::{Context, Result},
     chrono::Utc,
-    database::auction::AuctionId,
     ethcontract::H256,
     model::{
         app_data::AppDataHash,
@@ -405,17 +404,6 @@ impl Orderbook {
 
     pub async fn get_auction(&self) -> Result<Option<AuctionWithId>> {
         let auction = match self.database.most_recent_auction().await? {
-            Some(auction) => auction,
-            None => {
-                tracing::warn!("there is no current auction");
-                return Ok(None);
-            }
-        };
-        Ok(Some(auction))
-    }
-
-    pub async fn most_recent_auction_id(&self) -> Result<Option<AuctionId>> {
-        let auction = match self.database.most_recent_auction_id().await? {
             Some(auction) => auction,
             None => {
                 tracing::warn!("there is no current auction");
