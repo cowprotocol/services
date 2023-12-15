@@ -149,6 +149,16 @@ pub enum NativePriceEstimator {
     OneInchSpotPriceApi,
 }
 
+impl Display for NativePriceEstimator {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let formatter = match self {
+            NativePriceEstimator::GenericPriceEstimator(s) => s,
+            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi",
+        };
+        write!(f, "{}", formatter)
+    }
+}
+
 impl NativePriceEstimators {
     pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
@@ -171,7 +181,7 @@ impl Display for NativePriceEstimators {
             .map(|stage| {
                 stage
                     .iter()
-                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+                    .format_with(",", |estimator, f| f(&format_args!("{estimator}")))
             })
             .format(";");
         write!(f, "{}", formatter)
@@ -604,5 +614,26 @@ mod tests {
             parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
             estimator(PriceEstimatorKind::BalancerSor, address(1))
         );
+    }
+
+    #[test]
+    fn string_repr_round_trip_native_price_estimators() {
+        // We use NativePriceEstimators as one of the types used in an Arguments object
+        // that derives clap::Parser. Clap parsing of an argument using
+        // default_value_t requires that std::fmt::Display roundtrips correctly with the
+        // Arg::value_parser or #[arg(value_enum)]:
+        // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
+
+        let parsed = |arg: &str| NativePriceEstimators::from(arg);
+        let stringified = |arg: &NativePriceEstimators| format!("{arg}");
+
+        for repr in [
+            &NativePriceEstimator::GenericPriceEstimator("Baseline".into()).to_string(),
+            &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
+            "one,two;three,four",
+            &format!("one,two;{},four", NativePriceEstimator::OneInchSpotPriceApi),
+        ] {
+            assert_eq!(stringified(&parsed(repr)), repr);
+        }
     }
 }

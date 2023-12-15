@@ -105,13 +105,15 @@ fn convert_eth_to_weth(token: H160) -> H160 {
 struct ZeroExApi {
     base: Url,
     client: Client,
+    api_key: String,
 }
 
 impl ZeroExApi {
-    pub fn new(client: Client) -> Self {
+    pub fn new(client: Client, api_key: String) -> Self {
         Self {
             base: "https://api.0x.org".parse().unwrap(),
             client,
+            api_key,
         }
     }
 
@@ -142,6 +144,7 @@ impl ZeroExApi {
         let response: Response = self
             .client
             .get(url.clone())
+            .header("0x-api-key", self.api_key.clone())
             .send()
             .await?
             .error_for_status()?
@@ -373,6 +376,9 @@ struct Arguments {
     /// can rate limit us.
     #[clap(long, env, default_value = "0.2", value_parser = shared::arguments::duration_from_seconds)]
     api_get_order_min_interval: Duration,
+
+    #[clap(long, env)]
+    zero_ex_api_key: String,
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -395,7 +401,7 @@ async fn run(args: Arguments) {
 
     let mut alerter = Alerter::new(
         OrderBookApi::new(client.clone(), &args.orderbook_api),
-        ZeroExApi::new(client),
+        ZeroExApi::new(client, args.zero_ex_api_key),
         AlertConfig {
             time_without_trade: args.time_without_trade,
             min_order_solvable_time: args.min_order_age,

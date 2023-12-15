@@ -24,14 +24,14 @@ pub struct Trade {
     pub order: Order,
     pub executed_amount: U256,
     /// The fee amount used for objective value computations.
-    pub solver_fee: U256,
+    pub scoring_fee: U256,
 }
 
 impl Trade {
     /// Returns the fee taken from the surplus.
     pub fn surplus_fee(&self) -> Option<U256> {
         match self.order.solver_determines_fee() {
-            true => Some(self.solver_fee),
+            true => Some(self.scoring_fee),
             false => None,
         }
     }
@@ -146,22 +146,13 @@ impl Trade {
         self.scale_amount(self.order.data.fee_amount)
     }
 
-    /// Returns the solver fee used for computing the objective value adjusted
-    /// for partial fills.
-    pub fn executed_solver_fee(&self) -> Option<U256> {
-        match self.order.solver_determines_fee() {
-            true => Some(self.solver_fee),
-            false => self.scale_amount(self.solver_fee),
-        }
-    }
-
     /// Returns the actual fees taken by the protocol.
     pub fn executed_earned_fee(&self) -> Option<U256> {
         let user_fee = self.order.data.fee_amount;
         match self.order.solver_determines_fee() {
             true => {
-                // Solvers already scale the `solver_fee` for these orders.
-                self.scale_amount(user_fee)?.checked_add(self.solver_fee)
+                // Solvers already scale the `scoring_fee` for these orders.
+                self.scale_amount(user_fee)?.checked_add(self.scoring_fee)
             }
             false => self.scale_amount(user_fee),
         }
@@ -442,12 +433,12 @@ impl Settlement {
 
     /// Computes the total solver fees (in wei) used to compute the objective
     /// value.
-    pub fn total_solver_fees(&self, external_prices: &ExternalPrices) -> BigRational {
+    pub fn total_scoring_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.user_trades()
             .filter_map(|trade| {
                 external_prices.try_get_native_amount(
                     trade.order.data.sell_token,
-                    trade.executed_solver_fee()?.to_big_rational(),
+                    trade.scoring_fee.to_big_rational(),
                 )
             })
             .sum()
@@ -1335,7 +1326,7 @@ pub mod tests {
             // Note that the scaled fee amount is different than the order's
             // signed fee amount. This happens for subsidized orders, and when
             // a fee objective scaling factor is configured.
-            solver_fee: 5.into(),
+            scoring_fee: 5.into(),
         };
         let trade1 = Trade {
             order: Order {
@@ -1349,7 +1340,7 @@ pub mod tests {
                 ..Default::default()
             },
             executed_amount: 10.into(),
-            solver_fee: 2.into(),
+            scoring_fee: 2.into(),
         };
 
         let clearing_prices = hashmap! {token0 => 5.into(), token1 => 10.into()};
@@ -1361,14 +1352,14 @@ pub mod tests {
 
         // Fee in sell tokens
         assert_eq!(trade0.executed_fee().unwrap(), 1.into());
-        assert_eq!(trade0.executed_solver_fee().unwrap(), 5.into());
+        assert_eq!(trade0.scoring_fee, 5.into());
         assert_eq!(trade1.executed_fee().unwrap(), 2.into());
-        assert_eq!(trade1.executed_solver_fee().unwrap(), 2.into());
+        assert_eq!(trade1.scoring_fee, 2.into());
 
         // Fee in wei of ETH
         let settlement = test_settlement(clearing_prices, vec![trade0, trade1]);
         assert_eq!(
-            settlement.total_solver_fees(&external_prices),
+            settlement.total_scoring_fees(&external_prices),
             BigRational::from_integer(45.into())
         );
     }
@@ -1395,7 +1386,7 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // This is what matters for the objective value
-                    solver_fee: 42.into(),
+                    scoring_fee: 42.into(),
                 },
                 Trade {
                     order: Order {
@@ -1415,13 +1406,13 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // Doesn't count because it is a "liquidity order"
-                    solver_fee: 1337.into(),
+                    scoring_fee: 1337.into(),
                 },
             ],
         );
 
         assert_eq!(
-            settlement.total_solver_fees(&externalprices! { native_token: token0 }),
+            settlement.total_scoring_fees(&externalprices! { native_token: token0 }),
             r(42),
         );
     }
@@ -1447,7 +1438,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 executed_amount: 99760667014_u128.into(),
-                solver_fee: 239332986_u128.into(),
+                scoring_fee: 239332986_u128.into(),
             }],
         );
 
@@ -1472,7 +1463,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    solver_fee: 239332986_u128.into(),
+                    scoring_fee: 239332986_u128.into(),
                 },
                 Trade {
                     order: Order {
@@ -1492,7 +1483,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    solver_fee: 77577144_u128.into(),
+                    scoring_fee: 77577144_u128.into(),
                 },
             ],
         );
@@ -1509,7 +1500,7 @@ pub mod tests {
         let gas_price = 105386573044;
         let objective_value = |settlement: &Settlement, gas: u128| {
             settlement.total_surplus(&external_prices)
-                + settlement.total_solver_fees(&external_prices)
+                + settlement.total_scoring_fees(&external_prices)
                 - r(gas * gas_price)
         };
 
@@ -1555,7 +1546,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99_000_u128.into(),
-                    solver_fee: 1_000_u128.into(),
+                    scoring_fee: 1_000_u128.into(),
                 }],
             );
 
@@ -1590,7 +1581,7 @@ pub mod tests {
                         OrderKind::Sell => 99_000_u128,
                     }
                     .into(),
-                    solver_fee: 1_000_u128.into(),
+                    scoring_fee: 1_000_u128.into(),
                 }],
             );
 
@@ -1628,7 +1619,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 executed_amount: 99_000_u128.into(),
-                solver_fee: 1_000_u128.into(),
+                scoring_fee: 1_000_u128.into(),
             }],
         )
         .encode(InternalizationStrategy::SkipInternalizableInteraction);

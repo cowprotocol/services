@@ -84,8 +84,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn order_events_cleaner_flow() {
-        let db = Postgres::new("postgresql://").await.unwrap();
-        let mut ex = db.0.begin().await.unwrap();
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
 
         let now = Utc::now();
@@ -111,7 +111,7 @@ mod tests {
 
         ex.commit().await.unwrap();
 
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 3);
         assert!(ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -125,7 +125,7 @@ mod tests {
 
         // delete `order_a` after the initialization
         time::sleep(Duration::from_millis(20)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -133,7 +133,7 @@ mod tests {
 
         // nothing deleted after the first interval
         time::sleep(Duration::from_millis(50)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 2);
         assert!(!ids.contains(&event_a.order_uid));
         assert!(ids.contains(&event_b.order_uid));
@@ -141,14 +141,14 @@ mod tests {
 
         // delete `event_b` only
         time::sleep(Duration::from_millis(100)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids_before(&db.pool).await;
         assert_eq!(ids.len(), 1);
         assert!(!ids.contains(&event_b.order_uid));
         assert!(ids.contains(&event_c.order_uid));
 
         // delete `event_c`
         time::sleep(Duration::from_millis(200)).await;
-        let ids = order_event_ids_before(&db.0).await;
+        let ids = order_event_ids_before(&db.pool).await;
         assert!(ids.is_empty());
     }
 
