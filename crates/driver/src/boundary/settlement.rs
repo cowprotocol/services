@@ -48,6 +48,7 @@ use {
             AmmOrderExecution,
             LimitOrderExecution,
         },
+        settlement::Revertable,
         settlement_simulation::settle_method_builder,
     },
     std::{collections::HashMap, sync::Arc},
@@ -255,7 +256,7 @@ impl Settlement {
     }
 
     pub fn revertable(&self) -> bool {
-        self.inner.revertable()
+        self.inner.revertable() != Revertable::NoRisk
     }
 }
 
