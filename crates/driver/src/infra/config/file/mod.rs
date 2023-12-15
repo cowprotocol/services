@@ -327,6 +327,7 @@ enum UniswapV2Preset {
     Honeyswap,
     Baoswap,
     PancakeSwap,
+    TestnetUniswapV2,
 }
 
 #[derive(Clone, Debug, Deserialize)]
