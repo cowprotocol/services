@@ -4,7 +4,7 @@ use {
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
     ethcontract::H256,
-    futures::{StreamExt, TryStreamExt},
+    futures::{TryFutureExt, TryStreamExt},
     model::auction::AuctionId,
     shared::db_order_conversions::full_order_into_model_order,
     sqlx::PgConnection,
@@ -25,8 +25,8 @@ impl Postgres {
 
         let executions =
             database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
-                .map(|result| result.map_err(anyhow::Error::from))
                 .try_collect::<Vec<_>>()
+                .map_err(anyhow::Error::from)
                 .await?;
 
         if let Some(execution) = executions.first() {
