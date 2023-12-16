@@ -33,8 +33,7 @@ impl Postgres {
             let order = database::orders::single_full_order(ex, &execution.order_uid)
                 .await?
                 .map(full_order_into_model_order)
-                .transpose()?
-                .context("order not found")?;
+                .context("order not found")??;
 
             for execution in executions {
                 order_executions.push(OrderExecution::new(&order, execution)?);
