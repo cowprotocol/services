@@ -1,11 +1,12 @@
 use {
     super::Postgres,
     crate::decoded_settlement::OrderExecution,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::byte_array::ByteArray,
     ethcontract::H256,
     futures::{StreamExt, TryStreamExt},
     model::auction::AuctionId,
+    shared::db_order_conversions::full_order_into_model_order,
     sqlx::PgConnection,
 };
 
@@ -20,12 +21,26 @@ impl Postgres {
             .with_label_values(&["orders_for_tx"])
             .start_timer();
 
-        database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
-            .map(|result| match result {
-                Ok(execution) => execution.try_into().map_err(Into::into),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await
+        let mut order_executions = Vec::new();
+
+        let executions =
+            database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
+                .map(|result| result.map_err(anyhow::Error::from))
+                .try_collect::<Vec<_>>()
+                .await?;
+
+        if let Some(execution) = executions.first() {
+            let order = database::orders::single_full_order(ex, &execution.order_uid)
+                .await?
+                .map(full_order_into_model_order)
+                .transpose()?
+                .context("order not found")?;
+
+            for execution in executions {
+                order_executions.push(OrderExecution::new(&order, execution)?);
+            }
+        }
+
+        Ok(order_executions)
     }
 }
