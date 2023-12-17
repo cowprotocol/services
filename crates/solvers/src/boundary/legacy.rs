@@ -699,13 +699,13 @@ impl From<model::signature::EcdsaSignature> for order::EcdsaSignature {
 
 impl From<model::signature::Signature> for order::Signature {
     fn from(signature: model::signature::Signature) -> Self {
-        use model::signature::Signature as S;
+        use model::signature::Signature;
 
         match signature {
-            S::Eip712(signature) => order::Signature::Eip712(signature.into()),
-            S::EthSign(signature) => order::Signature::EthSign(signature.into()),
-            S::Eip1271(data) => order::Signature::Eip1271(data),
-            S::PreSign => order::Signature::PreSign,
+            Signature::Eip712(signature) => order::Signature::Eip712(signature.into()),
+            Signature::EthSign(signature) => order::Signature::EthSign(signature.into()),
+            Signature::Eip1271(data) => order::Signature::Eip1271(data),
+            Signature::PreSign => order::Signature::PreSign,
         }
     }
 }
