@@ -124,6 +124,9 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         file::UniswapV2Preset::PancakeSwap => {
                             liquidity::config::UniswapV2::pancake_swap(&network.id)
                         }
+                        file::UniswapV2Preset::TestnetUniswapV2 => {
+                            liquidity::config::UniswapV2::testnet_uniswapv2(&network.id)
+                        }
                     }
                     .expect("no Uniswap V2 preset for current network"),
                     file::UniswapV2Config::Manual {
@@ -264,12 +267,22 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     config.submission.retry_interval_secs,
                 ),
                 kind: match mempool {
-                    file::Mempool::Public { revert_protection } => {
-                        mempool::Kind::Public(if *revert_protection {
-                            mempool::RevertProtection::Enabled
-                        } else {
-                            mempool::RevertProtection::Disabled
-                        })
+                    file::Mempool::Public => {
+                        // If there is no private mempool, revert protection is
+                        // disabled, otherwise driver would not even try to settle revertable
+                        // settlements
+                        mempool::Kind::Public(
+                            if config
+                                .submission
+                                .mempools
+                                .iter()
+                                .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
+                            {
+                                mempool::RevertProtection::Enabled
+                            } else {
+                                mempool::RevertProtection::Disabled
+                            },
+                        )
                     }
                     file::Mempool::MevBlocker {
                         url,

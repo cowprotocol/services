@@ -150,17 +150,17 @@ impl Erc20 {
         trader: eth::Address,
         source: order::SellTokenBalance,
     ) -> Result<eth::TokenAmount, Error> {
-        use order::SellTokenBalance::*;
+        use order::SellTokenBalance;
         let web3 = self.token.raw_instance().web3();
 
         let usable_balance = match source {
-            Erc20 => {
+            SellTokenBalance::Erc20 => {
                 let balance = self.balance(trader);
                 let allowance = self.allowance(trader, eth::Address(self.vault_relayer.0));
                 let (balance, allowance) = futures::try_join!(balance, allowance)?;
                 std::cmp::min(balance.0, allowance.0.amount)
             }
-            External => {
+            SellTokenBalance::External => {
                 let vault = BalancerV2Vault::at(&web3, self.vault.0);
                 let balance = self.balance(trader);
                 let approved = vault
@@ -176,7 +176,7 @@ impl Erc20 {
                     false => 0.into(),
                 }
             }
-            Internal => {
+            SellTokenBalance::Internal => {
                 let vault = BalancerV2Vault::at(&web3, self.vault.0);
                 let balance = vault
                     .methods()

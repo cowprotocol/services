@@ -22,7 +22,7 @@ mockall = { workspace = true }
 observe = { path = "../observe" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true }
 scopeguard = "1"
 serde = { workspace = true }

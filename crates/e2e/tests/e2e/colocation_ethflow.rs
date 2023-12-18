@@ -2,7 +2,7 @@ use {
     crate::ethflow::{EthFlowOrderOnchainStatus, EthFlowTradeIntent, ExtendedEthFlowOrder},
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     contracts::ERC20Mintable,
-    e2e::setup::*,
+    e2e::setup::{colocation::SolverEngine, *},
     ethcontract::{Account, H160, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
     model::{
@@ -43,7 +43,14 @@ async fn eth_flow_tx(web3: Web3) {
     };
 
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
