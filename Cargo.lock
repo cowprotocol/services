@@ -156,15 +156,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "approx"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,7 +238,6 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "approx",
  "async-trait",
  "bigdecimal",
  "chrono",
@@ -1301,7 +1291,6 @@ dependencies = [
  "anyhow",
  "ethcontract",
  "ethcontract-generate",
- "maplit",
  "serde",
  "serde_json",
  "tracing",
@@ -4538,7 +4527,6 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 name = "testlib"
 version = "0.1.0"
 dependencies = [
- "contracts",
  "ethcontract",
  "ethcontract-mock",
  "hex-literal",
