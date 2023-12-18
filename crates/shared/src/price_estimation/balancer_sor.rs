@@ -15,7 +15,7 @@ use {
     futures::{future::BoxFuture, FutureExt},
     gas_estimation::GasPriceEstimating,
     primitive_types::{H160, U256},
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

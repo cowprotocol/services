@@ -7,7 +7,7 @@ use {
     },
     crate::{trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi},
     primitive_types::H160,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

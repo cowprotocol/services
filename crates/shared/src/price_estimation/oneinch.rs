@@ -8,7 +8,7 @@ use {
     crate::{oneinch_api::OneInchClient, trade_finding::oneinch::OneInchTradeFinder},
     futures::FutureExt as _,
     primitive_types::H160,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 
@@ -57,7 +57,6 @@ mod tests {
         },
         model::order::OrderKind,
         number::nonzero::U256 as NonZeroU256,
-        rate_limiter::RateLimiter,
     };
 
     impl OneInchPriceEstimator {

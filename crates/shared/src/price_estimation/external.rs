@@ -7,7 +7,7 @@ use {
     },
     crate::trade_finding::external::ExternalTradeFinder,
     ethrpc::current_block::CurrentBlockStream,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     reqwest::{Client, Url},
     std::sync::Arc,
 };

@@ -3478,7 +3478,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rate-limiter"
+name = "rate-limit"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -4021,7 +4021,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
- "rate-limiter",
+ "rate-limit",
  "regex",
  "reqwest",
  "secp256k1",
@@ -4144,7 +4144,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand",
- "rate-limiter",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
@@ -4181,7 +4181,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
- "rate-limiter",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",

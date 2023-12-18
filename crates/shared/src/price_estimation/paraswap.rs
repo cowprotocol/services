@@ -12,7 +12,7 @@ use {
     },
     futures::FutureExt,
     primitive_types::H160,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

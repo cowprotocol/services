@@ -36,7 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     number::nonzero::U256 as NonZeroU256,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };

@@ -45,7 +45,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };

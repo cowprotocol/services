@@ -6,7 +6,7 @@ pub mod zeroex;
 
 use {
     crate::domain::{dex::slippage, eth, Risk},
-    rate_limiter::RateLimitingStrategy,
+    rate_limit::Strategy,
     std::num::NonZeroUsize,
 };
 
@@ -24,5 +24,5 @@ pub struct Config {
     pub concurrent_requests: NonZeroUsize,
     pub smallest_partial_fill: eth::Ether,
     pub risk: Risk,
-    pub rate_limiting_strategy: RateLimitingStrategy,
+    pub rate_limiting_strategy: Strategy,
 }

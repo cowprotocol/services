@@ -14,7 +14,7 @@ use {
         infra,
     },
     futures::{future, stream, FutureExt, StreamExt},
-    rate_limiter::{RateLimiter, RateLimiterError},
+    rate_limit::{Error, RateLimiter},
     std::num::NonZeroUsize,
     tracing::Instrument,
 };
@@ -145,7 +145,7 @@ impl Dex {
             })
             .await
             .map_err(|err| match err {
-                RateLimiterError::RateLimited => infra::dex::Error::RateLimited,
+                Error::RateLimited => infra::dex::Error::RateLimited,
             })
             .and_then(|result| result)
             .ok()

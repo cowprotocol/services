@@ -45,7 +45,7 @@ use {
     gas_estimation::GasPriceEstimating,
     model::{order::OrderKind, TokenPair},
     num::{BigInt, BigRational},
-    rate_limiter::RateLimiter,
+    rate_limit::RateLimiter,
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,

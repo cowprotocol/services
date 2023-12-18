@@ -35,7 +35,7 @@ use {
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
-    rate_limiter::RateLimitingStrategy,
+    rate_limit::Strategy,
     reqwest::Url,
     std::{
         collections::HashMap,
@@ -88,9 +88,9 @@ pub struct Arguments {
     pub ethplorer_api_key: Option<String>,
 
     /// Token owner finding rate limiting strategy. See
-    /// --price-estimation-rate-limiter documentation for format details.
+    /// --price-estimation-rate-limit documentation for format details.
     #[clap(long, env)]
-    pub token_owner_finder_rate_limiter: Option<RateLimitingStrategy>,
+    pub token_owner_finder_rate_limiter: Option<Strategy>,
 
     /// List of token addresses to be whitelisted as a potential token owners
     /// For each token a list of owners is defined.
