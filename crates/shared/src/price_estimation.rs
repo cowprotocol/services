@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
-        rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
     anyhow::{Context, Result},
@@ -12,6 +11,7 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
+    rate_limiter::{RateLimiter, RateLimitingStrategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{

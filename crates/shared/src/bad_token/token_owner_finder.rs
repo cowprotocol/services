@@ -28,7 +28,6 @@ use {
         ethcontract_error::EthcontractErrorType,
         ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
         http_client::HttpClientFactory,
-        rate_limiter::RateLimitingStrategy,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
     anyhow::{Context, Result},
@@ -36,6 +35,7 @@ use {
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
+    rate_limiter::RateLimitingStrategy,
     reqwest::Url,
     std::{
         collections::HashMap,

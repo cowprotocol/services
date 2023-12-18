@@ -22,12 +22,12 @@ use {
     number::conversions::u256_to_big_rational,
     primitive_types::{H160, U256},
     rand::prelude::SliceRandom,
+    rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     shared::{
         arguments::display_option,
         conversions::U256Ext,
         external_prices::ExternalPrices,
         interaction::Interaction,
-        rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     },
     std::{
         collections::VecDeque,

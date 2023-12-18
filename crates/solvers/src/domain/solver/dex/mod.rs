@@ -3,7 +3,6 @@
 
 use {
     crate::{
-        boundary::rate_limiter::{RateLimiter, RateLimiterError},
         domain::{
             self,
             auction,
@@ -15,6 +14,7 @@ use {
         infra,
     },
     futures::{future, stream, FutureExt, StreamExt},
+    rate_limiter::{RateLimiter, RateLimiterError},
     std::num::NonZeroUsize,
     tracing::Instrument,
 };
@@ -47,7 +47,8 @@ pub struct Dex {
 
 impl Dex {
     pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
-        let rate_limiter = RateLimiter::new(config.rate_limiting_strategy, "dex_api".to_string());
+        let rate_limiter =
+            RateLimiter::from_strategy(config.rate_limiting_strategy, "dex_api".to_string());
         Self {
             dex,
             simulator: infra::dex::Simulator::new(

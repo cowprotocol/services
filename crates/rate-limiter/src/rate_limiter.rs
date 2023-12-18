@@ -1,8 +1,10 @@
 use {
-    anyhow::{ensure, Result},
+    anyhow::{ensure, Context, Result},
     std::{
         fmt::{Display, Formatter},
         future::Future,
+        num::ParseFloatError,
+        str::FromStr,
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
     },
@@ -51,6 +53,27 @@ impl Display for RateLimitingStrategy {
             "RateLimitingStrategy{{ min_back_off: {:?}, max_back_off: {:?}, growth_factor: {:?} }}",
             self.min_back_off, self.max_back_off, self.back_off_growth_factor
         )
+    }
+}
+
+impl FromStr for RateLimitingStrategy {
+    type Err = anyhow::Error;
+
+    fn from_str(config: &str) -> Result<Self> {
+        let mut parts = config.split(',');
+        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
+        let min_back_off = parts.next().context("missing min_back_off")?;
+        let max_back_off = parts.next().context("missing max_back_off")?;
+        ensure!(
+            parts.next().is_none(),
+            "extraneous rate limiting parameters"
+        );
+        let back_off_growth_factor: f64 = back_off_growth_factor
+            .parse()
+            .context("parsing back_off_growth_factor")?;
+        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
+        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
+        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
 
@@ -256,6 +279,10 @@ pub mod back_off {
     pub fn on_http_429(response: &Result<Response, reqwest::Error>) -> bool {
         matches!(response, Ok(response) if response.status() == 429)
     }
+}
+
+fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
+    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 #[cfg(test)]

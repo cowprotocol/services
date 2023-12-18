@@ -2,12 +2,12 @@
 
 use {
     crate::{
-        boundary::rate_limiter::RateLimitingStrategy,
         domain::{dex::slippage, eth, Risk},
         infra::{blockchain, config::unwrap_or_log, contracts},
         util::serialize,
     },
     bigdecimal::BigDecimal,
+    rate_limiter::RateLimitingStrategy,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
     std::{fmt::Debug, num::NonZeroUsize, path::Path, time::Duration},

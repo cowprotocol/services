@@ -5,10 +5,8 @@ pub mod paraswap;
 pub mod zeroex;
 
 use {
-    crate::{
-        boundary::rate_limiter::RateLimitingStrategy,
-        domain::{dex::slippage, eth, Risk},
-    },
+    crate::domain::{dex::slippage, eth, Risk},
+    rate_limiter::RateLimitingStrategy,
     std::num::NonZeroUsize,
 };
 

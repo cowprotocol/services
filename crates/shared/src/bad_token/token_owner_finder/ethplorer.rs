@@ -1,10 +1,10 @@
 use {
     super::TokenOwnerProposing,
-    crate::rate_limiter::{back_off, RateLimiter, RateLimitingStrategy},
     anyhow::{ensure, Result},
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
+    rate_limiter::{rate_limiter::back_off, RateLimiter, RateLimitingStrategy},
     reqwest::{Client, StatusCode, Url},
     serde::Deserialize,
 };

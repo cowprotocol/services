@@ -5,7 +5,6 @@ use {
     crate::{
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
-        rate_limiter::RateLimitingStrategy,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -568,27 +567,6 @@ impl FromStr for LegacySolver {
             address: address.parse()?,
             use_liquidity: use_liquidity.parse()?,
         })
-    }
-}
-
-impl FromStr for RateLimitingStrategy {
-    type Err = anyhow::Error;
-
-    fn from_str(config: &str) -> Result<Self> {
-        let mut parts = config.split(',');
-        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
-        let min_back_off = parts.next().context("missing min_back_off")?;
-        let max_back_off = parts.next().context("missing max_back_off")?;
-        ensure!(
-            parts.next().is_none(),
-            "extraneous rate limiting parameters"
-        );
-        let back_off_growth_factor: f64 = back_off_growth_factor
-            .parse()
-            .context("parsing back_off_growth_factor")?;
-        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
-        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
 
