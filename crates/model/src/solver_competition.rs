@@ -55,9 +55,7 @@ pub struct Execution {
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SolverCompetitionDB {
-    pub gas_price: f64,
     pub auction_start_block: u64,
-    pub liquidity_collected_block: u64,
     pub competition_simulation_block: u64,
     pub auction: CompetitionAuction,
     pub solutions: Vec<SolverSettlement>,
@@ -89,18 +87,15 @@ pub struct SolverSettlement {
     pub solver: String,
     #[serde(default)]
     pub solver_address: H160,
-    pub objective: Objective,
     #[serde(flatten)]
-    pub score: Option<Score>, // auction based score
-    // auction based ranking
-    // this is temporarily needed as the scored settlements are ordered by objective value ATM
-    // and this represents how they would be ranked after switching to the auction based scoring
-    pub ranking: Option<usize>,
+    pub score: Score,
+    pub ranking: usize,
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub clearing_prices: BTreeMap<H160, U256>,
     pub orders: Vec<Order>,
-    #[serde(with = "crate::bytes_hex")]
-    pub call_data: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<BytesHex>")]
+    pub call_data: Option<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
     pub uninternalized_call_data: Option<Vec<u8>>,
@@ -184,9 +179,7 @@ mod tests {
     fn serialize() {
         let correct = serde_json::json!({
             "auctionId": 0,
-            "gasPrice": 1.0f64,
             "auctionStartBlock": 13u64,
-            "liquidityCollectedBlock": 14u64,
             "competitionSimulationBlock": 15u64,
             "transactionHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
             "auction": {
@@ -211,13 +204,6 @@ mod tests {
                 {
                     "solver": "2",
                     "solverAddress": "0x2222222222222222222222222222222222222222",
-                    "objective": {
-                        "total": 3.0f64,
-                        "surplus": 4.0f64,
-                        "fees": 5.0f64,
-                        "cost": 6.0f64,
-                        "gas": 7u64,
-                    },
                     "score": "1",
                     "ranking": 1,
                     "clearingPrices": {
@@ -246,9 +232,7 @@ mod tests {
             auction_id: 0,
             transaction_hash: Some(H256([0x11; 32])),
             common: SolverCompetitionDB {
-                gas_price: 1.,
                 auction_start_block: 13,
-                liquidity_collected_block: 14,
                 competition_simulation_block: 15,
                 auction: CompetitionAuction {
                     orders: vec![
@@ -265,15 +249,8 @@ mod tests {
                 solutions: vec![SolverSettlement {
                     solver: "2".to_string(),
                     solver_address: H160([0x22; 20]),
-                    objective: Objective {
-                        total: 3.,
-                        surplus: 4.,
-                        fees: 5.,
-                        cost: 6.,
-                        gas: 7,
-                    },
-                    score: Some(Score::Solver(1.into())),
-                    ranking: Some(1),
+                    score: Score::Solver(1.into()),
+                    ranking: 1,
                     clearing_prices: btreemap! {
                         H160([0x22; 20]) => 8.into(),
                     },
@@ -288,7 +265,7 @@ mod tests {
                             executed_amount: 14.into(),
                         },
                     ],
-                    call_data: vec![0x13],
+                    call_data: Some(vec![0x13]),
                     uninternalized_call_data: Some(vec![0x13, 0x14]),
                 }],
             },

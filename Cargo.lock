@@ -3401,8 +3401,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3282447ea0b07baa9011e45de96794c5963db0162c1001d2867750715d63ff14"
 dependencies = [
  "lazy_static",
  "prometheus",
@@ -3411,8 +3412,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage-derive"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239221aa10cd35277c58b8f6509280b2613321760b49584d7a7351a6aacb6963"
 dependencies = [
  "proc-macro2",
  "quote",
