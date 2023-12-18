@@ -32,7 +32,7 @@ itertools = "0.11"
 num = "0.4"
 number = { path = "../number" }
 prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+prometheus-metric-storage = { workspace = true }
 rand = "0.8"
 reqwest = "0.11"
 serde = "1.0"
