@@ -1,6 +1,6 @@
 use {
     e2e::{
-        setup::{safe::Safe, *},
+        setup::{colocation::SolverEngine, safe::Safe, *},
         tx,
     },
     ethcontract::U256,
@@ -38,7 +38,14 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![

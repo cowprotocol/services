@@ -169,9 +169,7 @@ mod tests {
                 nonce: 8,
             },
             competition: SolverCompetitionDB {
-                gas_price: 1.,
                 auction_start_block: 2,
-                liquidity_collected_block: 3,
                 competition_simulation_block: 4,
                 auction: CompetitionAuction {
                     orders: vec![Default::default()],
@@ -180,12 +178,11 @@ mod tests {
                 solutions: vec![SolverSettlement {
                     solver: "asdf".to_string(),
                     solver_address: H160([1; 20]),
-                    objective: Default::default(),
                     score: Default::default(),
-                    ranking: Some(1),
+                    ranking: 1,
                     clearing_prices: [Default::default()].into_iter().collect(),
                     orders: vec![],
-                    call_data: vec![1, 2],
+                    call_data: Some(vec![1, 2]),
                     uninternalized_call_data: Some(vec![1, 2, 3, 4]),
                 }],
             },
