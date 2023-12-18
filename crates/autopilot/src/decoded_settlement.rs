@@ -10,16 +10,11 @@ use {
     model::{
         app_data::AppDataHash,
         order::{BuyTokenDestination, Order, OrderData, OrderKind, OrderUid, SellTokenSource},
-        signature::Signature,
         DomainSeparator,
     },
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
-    shared::{
-        conversions::U256Ext,
-        db_order_conversions::signing_scheme_from,
-        external_prices::ExternalPrices,
-    },
+    shared::{conversions::U256Ext, external_prices::ExternalPrices},
     web3::ethabi::{Function, Token},
 };
 
@@ -179,7 +174,6 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for DecodedInteraction {
 #[derive(Debug, Clone)]
 pub struct OrderExecution {
     pub order_uid: OrderUid,
-    pub signature: Vec<u8>, //encoded signature
     pub owner: H160,
     pub executed_amount: U256,
     pub executed_fee: ExecutedFee,
@@ -190,17 +184,12 @@ impl OrderExecution {
         let owner = H160(execution.owner.0);
         Ok(Self {
             order_uid: OrderUid(execution.order_uid.0),
-            signature: {
-                let signing_scheme = signing_scheme_from(execution.signing_scheme);
-                let signature = Signature::from_bytes(signing_scheme, &execution.signature)?;
-                signature.encode_for_settlement(owner).to_vec()
-            },
             owner,
             executed_amount: big_decimal_to_u256(&execution.executed_amount).unwrap(),
             executed_fee: if order.metadata.solver_fee == U256::zero() {
                 ExecutedFee::Surplus
             } else {
-                ExecutedFee::Solver(order.metadata.solver_fee)
+                ExecutedFee::Order(order.metadata.solver_fee)
             },
         })
     }
@@ -347,8 +336,8 @@ impl DecodedSettlement {
                 // use every `OrderExecution` exactly once.
                 let order = orders.swap_remove(i);
 
-                // Update fee only for orders with solver computed fees (limit orders)
-                if matches!(order.executed_fee, ExecutedFee::Solver { .. }) {
+                // Update fee only for orders where fee is taken from surplus
+                if !matches!(order.executed_fee, ExecutedFee::Surplus) {
                     return None;
                 }
 
@@ -374,7 +363,7 @@ impl DecodedSettlement {
         let buy_token = self.tokens.get(buy_index)?;
 
         let solver_fee = match &order.executed_fee {
-            ExecutedFee::Solver(fee) => *fee,
+            ExecutedFee::Order(fee) => *fee,
             ExecutedFee::Surplus => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -766,17 +755,15 @@ mod tests {
         let orders = vec![
             OrderExecution {
                 order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
-                signature: hex::decode("155ff208365bbf30585f5b18fc92d766e46121a1963f903bb6f3f77e5d0eaefb27abc4831ce1f837fcb70e11d4e4d97474c677469240849d69e17f7173aead841b").unwrap(),
                 owner: addr!("E995E2A9Ae5210FEb6DD07618af28ec38B2D7ce1"),
                 executed_amount: 14955083027u128.into(),
-                executed_fee: ExecutedFee::Solver(48263037u128.into())
+                executed_fee: ExecutedFee::Order(48263037u128.into())
             },
             OrderExecution {
                 order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
-                signature: hex::decode("882a1c875ff1316bb79bde0d0792869f784d58097d8489a722519e6417c577cf5cc745a2e353298dea6514036d5eb95563f8f7640e20ef0fd41b10ccbdfc87641b").unwrap(),
                 owner: addr!("f352bFFB3E902d78166a79C9878e138a65022e11"),
                 executed_amount: 5701912712048588025933u128.into(),
-                executed_fee: ExecutedFee::Solver(127253135942751092736u128.into())
+                executed_fee: ExecutedFee::Order(127253135942751092736u128.into())
             }
         ];
         let fees = settlement
@@ -873,7 +860,6 @@ mod tests {
         let orders = vec![
             OrderExecution {
                 order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
-                signature: hex::decode("f8ad81db7333b891f88527d100a06f23ff4d7859c66ddd71514291379deb8ff660f4fb2a24173eaac5fad2a124823e968686e39467c7f3054c13c4b70980cc1a1c").unwrap(),
                 owner: addr!("6c7f534c81dfedf90c9e42effb410a44e4f8ef10"),
                 executed_amount: 134069619089011499167823218927u128.into(),
                 executed_fee: ExecutedFee::Surplus
@@ -983,10 +969,9 @@ mod tests {
         let orders = vec![
             OrderExecution {
                 order_uid: OrderUid::from_str("0x999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02b70cd1ebd3b24aeeaf90c6041446630338536e7f643d6a39").unwrap(),
-                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
                 owner: addr!("b70cd1ebd3b24aeeaf90c6041446630338536e7f"),
                 executed_amount: 0.into(),
-                executed_fee: ExecutedFee::Solver(463182886014406361088u128.into())
+                executed_fee: ExecutedFee::Order(463182886014406361088u128.into())
             },
         ];
         let fees = settlement
@@ -1357,7 +1342,6 @@ mod tests {
 
         let orders = vec![OrderExecution {
             order_uid: OrderUid::from_str("0x77425bd23d5fbb24d32229b1c343807bee572f0555429632161350a56811d263c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap(),
-            signature: hex::decode("c001d00d425fa92c4f840baa8f1e0c27c4297a0b").unwrap(),
             owner: addr!("c001d00d425fa92c4f840baa8f1e0c27c4297a0b"),
             executed_amount: 1558319022273364070254u128.into(),
             executed_fee: ExecutedFee::Surplus
