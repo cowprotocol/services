@@ -30,6 +30,7 @@ gas-estimation = { workspace = true }
 observe = { path = "../observe" }
 hex = { workspace = true }
 hex-literal = { workspace = true }
+humantime = { workspace = true }
 itertools = { workspace = true }
 maplit = { workspace = true }
 model = { path = "../model" }

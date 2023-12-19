@@ -376,6 +376,8 @@ impl FromStr for FeePolicyKind {
 }
 
 fn duration_from_days(s: &str) -> Result<Duration, ParseFloatError> {
-    let days = s.parse::<f64>()?;
-    Ok(Duration::from_secs_f64(days * 86_400.0))
+    humantime::parse_duration(s).or_else(|_| {
+        s.parse::<f64>()
+            .map(|days| Duration::from_secs_f64(days * 86_400.0))
+    })
 }

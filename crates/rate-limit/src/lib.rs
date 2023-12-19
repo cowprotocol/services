@@ -282,7 +282,7 @@ pub mod back_off {
 }
 
 fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f64(s.parse()?))
+    humantime::parse_duration(s).or_else(|_| s.parse::<f64>().map(Duration::from_secs_f64))
 }
 
 #[cfg(test)]
