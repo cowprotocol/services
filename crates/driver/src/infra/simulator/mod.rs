@@ -191,8 +191,8 @@ where
                     None
                 }
             }
-            SimulatorError::Blockchain(blockchain::Error::Gas(_)) => Some(tx),
-            SimulatorError::Blockchain(blockchain::Error::Response(_)) => Some(tx),
+            SimulatorError::Blockchain(blockchain::Error::GasPrice(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::AccessList(_)) => Some(tx),
             SimulatorError::Enso(enso::Error::Http(_)) => None,
             SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
         };
