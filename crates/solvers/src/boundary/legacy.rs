@@ -394,17 +394,6 @@ fn to_domain_solution(
         trades.push(solution::Trade::Jit(solution::JitTrade {
             order: order::JitOrder {
                 owner: jit.order.from,
-                pre_interactions: jit
-                    .order
-                    .interactions
-                    .pre
-                    .iter()
-                    .map(|i| order::Interaction {
-                        target: i.target,
-                        value: eth::Ether(i.value),
-                        calldata: i.call_data.clone(),
-                    })
-                    .collect(),
                 signature: jit.order.signature.clone().into(),
                 sell: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.sell_token),

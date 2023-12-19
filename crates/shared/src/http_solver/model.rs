@@ -7,7 +7,7 @@ use {
     ethcontract::{Bytes, H160},
     model::{
         auction::AuctionId,
-        order::{Interactions, OrderData, OrderUid},
+        order::{OrderData, OrderUid},
         ratio_as_decimal,
         signature::Signature,
     },
@@ -347,8 +347,6 @@ pub struct NativeLiquidityOrder {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
-    #[serde(default)]
-    pub interactions: Interactions,
 }
 
 #[serde_as]
@@ -1166,7 +1164,6 @@ mod tests {
                         ..Default::default()
                     },
                     signature: Signature::Eip1271(vec![1, 2, 3, 4]),
-                    interactions: Default::default(),
                 },
                 exec_sell_amount: 50.into(),
                 exec_buy_amount: 51.into(),

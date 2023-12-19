@@ -67,16 +67,6 @@ impl Solutions {
                                         buy_token_balance: BuyTokenBalance::Erc20,
                                         signing_scheme,
                                         signature,
-                                        pre_interactions: trade
-                                            .order
-                                            .pre_interactions
-                                            .iter()
-                                            .map(|i| OrderInteraction {
-                                                target: i.target,
-                                                value: i.value.0,
-                                                calldata: i.calldata.clone(),
-                                            })
-                                            .collect(),
                                     },
                                     executed_amount: trade.executed,
                                 })
@@ -212,7 +202,6 @@ struct JitOrder {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    pre_interactions: Vec<OrderInteraction>,
 }
 
 #[derive(Debug, Serialize)]

@@ -23,7 +23,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Solution"
+                type: array
+                items:
+                  $ref: "#/components/schemas/Solution"
         400:
           description: There is something wrong with the request.
         429:
@@ -282,6 +284,9 @@ components:
                     $ref: "#/components/schemas/Decimal"
         fee:
           $ref: "#/components/schemas/Decimal"
+        version:
+          type: string
+          enum: ["v0", "v3plus"]
 
     StablePool:
       description: |
@@ -535,6 +540,11 @@ components:
             must be included in the auction input.
           allOf:
             - $ref: "#/components/schemas/OrderUid"
+        fee:
+          description: |
+            The sell token amount that should be taken as a fee for this
+            trade. This only gets returned for partially fillable limit
+            orders and only refers to the actual amount filled by the trade.
 
     JitTrade:
       description: |
@@ -569,11 +579,6 @@ components:
                 "sellToken" for sell orders, and "buyToken" for buy orders.
               allOf:
                 - $ref: "#/components/schemas/TokenAmount"
-            fee:
-              description: |
-                The sell token amount that should be taken as a fee for this
-                trade. This only gets returned for partially fillable limit
-                orders and only refers to the actual amount filled by the trade.
 
     LiquidityInteraction:
       description: |
@@ -630,7 +635,7 @@ components:
         - kind
         - target
         - value
-        - callData
+        - calldata
         - inputs
         - outputs
       properties:
@@ -641,7 +646,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        callData:
+        calldata:
           description: |
             The EVM calldata bytes.
           type: string
@@ -681,10 +686,15 @@ components:
         The computed solution for a given auction.
       type: object
       required:
+        - id
         - prices
         - trades
         - interactions
+        - score
       properties:
+        id:
+          description: An opaque identifier for the solution.
+          type: number
         prices:
           description: |
             A clearing price map of token address to price. The price can have
@@ -704,3 +714,27 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
+        score:
+          description: |
+            Information required by the driver to score the solution. 
+            
+            Can either be a raw score or a revert probability.
+          oneOf:
+            - type: object
+              properties:
+                solver:
+                  type: object
+                  properties:
+                    score:
+                      description: |
+                        The raw score of the solution. This is the score that is
+                        used by the driver to rank solutions.
+                      allOf:
+                        - $ref: "#/components/schemas/Decimal"
+            - type: object
+              properties:
+                riskAdjusted:
+                  description: |
+                    The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
+                  type: number
+                  example: 0.9
