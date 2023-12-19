@@ -4,7 +4,7 @@ use {
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
-    rate_limit::{rate_limiter::back_off, RateLimiter, Strategy},
+    rate_limit::{back_off, RateLimiter, Strategy},
     reqwest::{Client, StatusCode, Url},
     serde::Deserialize,
 };

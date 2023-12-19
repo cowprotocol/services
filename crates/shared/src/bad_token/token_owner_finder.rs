@@ -88,7 +88,7 @@ pub struct Arguments {
     pub ethplorer_api_key: Option<String>,
 
     /// Token owner finding rate limiting strategy. See
-    /// --price-estimation-rate-limit documentation for format details.
+    /// --price-estimation-rate-limiter documentation for format details.
     #[clap(long, env)]
     pub token_owner_finder_rate_limiter: Option<Strategy>,
 
