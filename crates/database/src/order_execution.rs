@@ -2,7 +2,6 @@ use {
     crate::{auction::AuctionId, OrderUid},
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
-    std::ops::DerefMut,
 };
 
 pub async fn save(
@@ -15,7 +14,9 @@ pub async fn save(
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
 VALUES ($1, $2, $3, $4, $5)
-    ;"#;
+ON CONFLICT (order_uid, auction_id)
+DO UPDATE SET reward = $3, surplus_fee = $4, solver_fee = $5
+;"#;
     sqlx::query(QUERY)
         .bind(order)
         .bind(auction)
@@ -23,28 +24,6 @@ VALUES ($1, $2, $3, $4, $5)
         .bind(surplus_fee)
         .bind(scoring_fee)
         .execute(ex)
-        .await?;
-    Ok(())
-}
-
-// update already existing order_execution record with surplus_fee for partial
-// limit orders
-pub async fn update_surplus_fee(
-    mut ex: &mut PgConnection,
-    order: &OrderUid,
-    auction: AuctionId,
-    surplus_fee: &BigDecimal,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-UPDATE order_execution
-SET surplus_fee = $1
-WHERE order_uid = $2 AND auction_id = $3
-    ;"#;
-    sqlx::query(QUERY)
-        .bind(surplus_fee)
-        .bind(order)
-        .bind(auction)
-        .execute(ex.deref_mut())
         .await?;
     Ok(())
 }

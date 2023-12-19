@@ -215,7 +215,7 @@ impl OnSettlementEventUpdater {
                         effective_gas_price,
                         order_executions: order_executions
                             .iter()
-                            .map(|fees| (fees.order, fees.sell))
+                            .map(|fees| (fees.order, fees.sell.clone()))
                             .collect(),
                     });
                 }

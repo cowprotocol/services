@@ -14,8 +14,7 @@ pub struct AuctionData {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
-    // pairs <order id, fee> for orders with solver computed fees (limit orders)
-    pub order_executions: Vec<(OrderUid, U256)>,
+    pub order_executions: Vec<(OrderUid, ExecutedFee)>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +58,18 @@ pub struct SettlementUpdate {
     pub tx_from: H160,
     pub tx_nonce: i64,
     pub auction_data: Option<AuctionData>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExecutedFee {
+    /// Unsubsidized fee (full fee amount) that is taken from the signed order
+    /// and known upfront (before the settlement is finalized).
+    /// Different from what the protocol actually collects as fee (fee_amount).
+    Order(U256),
+    /// Fee is unknown before the settlement is finalized and is calculated in
+    /// the postprocessing. Currently only used for limit orders.
+    /// Equal to what the protocol actually collects as fee.
+    Surplus(U256),
 }
 
 impl super::Postgres {
@@ -112,19 +123,20 @@ impl super::Postgres {
             .context("insert_settlement_observations")?;
 
             if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
-                // update order executions for orders with solver computed fees (limit orders)
-                // for limit orders, fee is called surplus_fee and is determined by the solver
-                // therefore, when transaction is settled onchain we calculate the fee and save
-                // it to DB
-                for order_execution in auction_data.order_executions {
-                    database::order_execution::update_surplus_fee(
+                for (order, executed_fee) in auction_data.order_executions {
+                    let (surplus_fee, scoring_fee) = match executed_fee {
+                        ExecutedFee::Order(fee) => (None, Some(u256_to_big_decimal(&fee))),
+                        ExecutedFee::Surplus(fee) => (Some(u256_to_big_decimal(&fee)), None),
+                    };
+                    database::order_execution::save(
                         ex,
-                        &ByteArray(order_execution.0 .0), // order uid
+                        &ByteArray(order.0),
                         auction_data.auction_id.assume_verified(),
-                        &u256_to_big_decimal(&order_execution.1), // order fee
+                        surplus_fee.as_ref(),
+                        scoring_fee.as_ref(),
                     )
                     .await
-                    .context("insert_missing_order_executions")?;
+                    .context("save_order_executions")?;
                 }
             }
         }
