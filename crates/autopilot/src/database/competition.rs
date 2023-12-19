@@ -17,9 +17,9 @@ use {
 
 #[derive(Clone, Debug)]
 pub enum ExecutedFee {
-    /// Fee is calculated by the solver and known upfront (before the settlement
-    /// is finalized).
-    Solver(U256),
+    /// Unsubsidized fee (full fee amount) that is taken from the signed order
+    /// and known upfront (before the settlement is finalized).
+    Order(U256),
     /// Fee is unknown before the settlement is finalized and is calculated in
     /// the postprocessing. Currently only used for limit orders.
     Surplus,
@@ -28,7 +28,7 @@ pub enum ExecutedFee {
 impl ExecutedFee {
     pub fn fee(&self) -> Option<&U256> {
         match self {
-            ExecutedFee::Solver(fee) => Some(fee),
+            ExecutedFee::Order(fee) => Some(fee),
             ExecutedFee::Surplus => None,
         }
     }
