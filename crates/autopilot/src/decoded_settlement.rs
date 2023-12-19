@@ -180,9 +180,9 @@ pub struct OrderExecution {
 }
 
 impl OrderExecution {
-    pub fn new(order: &Order, execution: database::orders::OrderExecution) -> Result<Self> {
+    pub fn new(order: &Order, execution: database::orders::OrderExecution) -> Self {
         let owner = H160(execution.owner.0);
-        Ok(Self {
+        Self {
             order_uid: OrderUid(execution.order_uid.0),
             owner,
             executed_amount: big_decimal_to_u256(&execution.executed_amount).unwrap(),
@@ -191,7 +191,7 @@ impl OrderExecution {
             } else {
                 ExecutedFee::Order(order.metadata.solver_fee)
             },
-        })
+        }
     }
 }
 

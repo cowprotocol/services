@@ -2,12 +2,13 @@ use {
     super::Postgres,
     crate::decoded_settlement::OrderExecution,
     anyhow::{Context, Result},
-    database::byte_array::ByteArray,
+    database::{byte_array::ByteArray, OrderUid},
     ethcontract::H256,
     futures::{TryFutureExt, TryStreamExt},
-    model::auction::AuctionId,
+    model::{auction::AuctionId, order::Order},
     shared::db_order_conversions::full_order_into_model_order,
     sqlx::PgConnection,
+    std::collections::HashMap,
 };
 
 impl Postgres {
@@ -29,15 +30,20 @@ impl Postgres {
                 .map_err(anyhow::Error::from)
                 .await?;
 
-        if let Some(execution) = executions.first() {
-            let order = database::orders::single_full_order(ex, &execution.order_uid)
-                .await?
-                .map(full_order_into_model_order)
-                .context("order not found")??;
+        let mut orders: HashMap<OrderUid, Order> = Default::default();
+        for execution in executions {
+            if let std::collections::hash_map::Entry::Vacant(e) = orders.entry(execution.order_uid)
+            {
+                let order = database::orders::single_full_order(ex, &execution.order_uid)
+                    .await?
+                    .map(full_order_into_model_order)
+                    .context("order not found")??;
 
-            for execution in executions {
-                order_executions.push(OrderExecution::new(&order, execution)?);
+                e.insert(order);
             }
+
+            let order = orders.get(&execution.order_uid).expect("order not found");
+            order_executions.push(OrderExecution::new(order, execution));
         }
 
         Ok(order_executions)
