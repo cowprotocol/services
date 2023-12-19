@@ -75,11 +75,17 @@ pub fn handle_all_routes(
         ("v1/post_quote", box_filter(post_quote::post_quote(quotes))),
         (
             "v1/auction",
-            box_filter(get_auction::get_auction(orderbook)),
+            box_filter(get_auction::get_auction(orderbook.clone())),
         ),
         (
             "v1/solver_competition",
             box_filter(get_solver_competition::get(Arc::new(database.clone()))),
+        ),
+        (
+            "v1/solver_competition/latest",
+            box_filter(get_solver_competition::get_latest(Arc::new(
+                database.clone(),
+            ))),
         ),
         (
             "v1/solver_competition",

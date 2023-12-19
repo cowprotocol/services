@@ -56,15 +56,15 @@ There are additional crates that live in the cargo workspace.
 
 ## Testing
 
-The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
+The CI (check .github/workflows/pull-request.yaml) runs unit tests, e2e tests, `clippy` and `cargo fmt`
 
 ### Unit Tests:
 
 `cargo test`
 
-### Integration Tests:
+### DB Tests:
 
-`cargo test --jobs 1 -- --ignored --test-threads 1 --skip http_solver`
+`cargo test -- postgres --test-threads 1 --ignored`
 
 **Note:** Requires postgres database running (see below).
 
@@ -88,63 +88,12 @@ The CI runs unit tests, e2e tests, `clippy` and `cargo fmt`
 
 ### Postgres
 
-The tests that require postgres connect to the default database of a locally running postgres instance on the default port. There are several ways to set up postgres:
-
-- Docker
-
-```sh
-docker run -d -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=`whoami` -p 5432:5432 docker.io/postgres
-```
-
-- Host System Service
+The tests that require postgres connect to the default database of a locally running postgres instance on the default port.
+To achieve this, open a new shell and run the command below:
+Note: The migrations will be applied as well.
 
 ```sh
-sudo systemctl start postgresql.service
-sudo -u postgres createuser $USER
-sudo -u postgres createdb $USER
-```
-
-- Manual setup in local folder
-
-```sh
-mkdir postgres && cd postgres
-initdb data # Arbitrary directory that stores the database
-# In data/postgresql.conf set unix_socket_directories to the absolute path to an arbitrary existing
-# and writable directory that postgres creates a temporary file in.
-# Run postgres
-postgres -D data
-# In another terminal, only for first time setup
-createdb -h localhost $USER
-```
-
-<br>
-
-At this point the database should be running and reachable. You can test connecting to it with
-
-```sh
-psql postgresql://localhost/
-```
-
-### DB Migration/Initialization
-
-Finally, we need to apply the schema (set up in the `database` folder). Again, this can be done via docker or locally:
-
-- Docker
-
-```sh
-docker build --tag services-migration -f docker/Dockerfile.migration .
-# If you are running postgres in locally, your URL is `localhost` instead of `host.docker.internal`
-docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql services-migration migrate
-```
-
-In case you run into `java.net.UnknownHostException: host.docker.internal` add `--add-host=host.docker.internal:host-gateway` right after `docker run`.
-
-If you're combining a local postgres installation with docker flyway you have to add to the above `--network host` and change `host.docker.internal` to `localhost`.
-
-- Local [flyway installation](https://flywaydb.org/documentation/usage/commandline/#download-and-installation)
-
-```sh
-flyway -user=$USER -password="" -locations="filesystem:database/sql/" -url=jdbc:postgresql:/// migrate
+docker-compose up
 ```
 
 ### Local Test Network

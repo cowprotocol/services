@@ -1,8 +1,10 @@
 use {
-    anyhow::{ensure, Result},
+    anyhow::{ensure, Context, Result},
     std::{
         fmt::{Display, Formatter},
         future::Future,
+        num::ParseFloatError,
+        str::FromStr,
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
     },
@@ -29,7 +31,7 @@ fn metrics() -> &'static Metrics {
 }
 
 #[derive(Debug, Clone)]
-pub struct RateLimitingStrategy {
+pub struct Strategy {
     drop_requests_until: Instant,
     /// How many requests got rate limited in a row.
     times_rate_limited: u64,
@@ -38,13 +40,13 @@ pub struct RateLimitingStrategy {
     max_back_off: Duration,
 }
 
-impl Default for RateLimitingStrategy {
+impl Default for Strategy {
     fn default() -> Self {
         Self::try_new(1.0, Duration::default(), Duration::default()).unwrap()
     }
 }
 
-impl Display for RateLimitingStrategy {
+impl Display for Strategy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -54,7 +56,28 @@ impl Display for RateLimitingStrategy {
     }
 }
 
-impl RateLimitingStrategy {
+impl FromStr for Strategy {
+    type Err = anyhow::Error;
+
+    fn from_str(config: &str) -> Result<Self> {
+        let mut parts = config.split(',');
+        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
+        let min_back_off = parts.next().context("missing min_back_off")?;
+        let max_back_off = parts.next().context("missing max_back_off")?;
+        ensure!(
+            parts.next().is_none(),
+            "extraneous rate limiting parameters"
+        );
+        let back_off_growth_factor: f64 = back_off_growth_factor
+            .parse()
+            .context("parsing back_off_growth_factor")?;
+        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
+        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
+        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
+    }
+}
+
+impl Strategy {
     pub fn try_new(
         back_off_growth_factor: f64,
         min_back_off: Duration,
@@ -139,16 +162,16 @@ impl RateLimitingStrategy {
 
 #[derive(Debug)]
 pub struct RateLimiter {
-    pub strategy: Mutex<RateLimitingStrategy>,
+    pub strategy: Mutex<Strategy>,
     pub name: String,
 }
 
 impl RateLimiter {
-    fn strategy(&self) -> MutexGuard<RateLimitingStrategy> {
+    fn strategy(&self) -> MutexGuard<Strategy> {
         self.strategy.lock().unwrap()
     }
 
-    pub fn from_strategy(strategy: RateLimitingStrategy, name: String) -> Self {
+    pub fn from_strategy(strategy: Strategy, name: String) -> Self {
         let metrics = metrics();
         metrics.requests_dropped.with_label_values(&[&name]).reset();
         metrics
@@ -175,7 +198,7 @@ impl RateLimiter {
 }
 
 #[derive(Error, Debug, Clone, Default, PartialEq)]
-pub enum RateLimiterError {
+pub enum Error {
     #[default]
     #[error("rate limited")]
     RateLimited,
@@ -191,14 +214,14 @@ impl RateLimiter {
         &self,
         task: impl Future<Output = T>,
         requires_back_off: impl Fn(&T) -> bool,
-    ) -> Result<T, RateLimiterError> {
+    ) -> Result<T, Error> {
         let times_rate_limited = self
             .strategy()
             .times_rate_limited(Instant::now(), &self.name);
         let times_rate_limited = match times_rate_limited {
             None => {
                 tracing::warn!(?self.name, "dropping task because API is currently rate limited");
-                return Err(RateLimiterError::RateLimited);
+                return Err(Error::RateLimited);
             }
             Some(times_rate_limited) => times_rate_limited,
         };
@@ -226,7 +249,7 @@ impl RateLimiter {
         &self,
         task: impl Future<Output = T>,
         requires_back_off: impl Fn(&T) -> bool,
-    ) -> Result<T, RateLimiterError> {
+    ) -> Result<T, Error> {
         if let Some(back_off_duration) = self.get_back_off_duration_if_limited() {
             tokio::time::sleep(back_off_duration).await;
         }
@@ -258,6 +281,10 @@ pub mod back_off {
     }
 }
 
+fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
+    Ok(Duration::from_secs_f64(s.parse()?))
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, futures::FutureExt, std::ops::Add, tokio::time::sleep};
@@ -265,7 +292,7 @@ mod tests {
     #[test]
     fn current_back_off_does_not_panic() {
         let max = Duration::from_secs(60);
-        let back_off = RateLimitingStrategy {
+        let back_off = Strategy {
             drop_requests_until: Instant::now(),
             times_rate_limited: 1,
             // internal calculations don't overflow `Duration`
@@ -277,7 +304,7 @@ mod tests {
         assert_eq!(max, back_off);
 
         let max = Duration::from_secs(60);
-        let back_off = RateLimitingStrategy {
+        let back_off = Strategy {
             drop_requests_until: Instant::now(),
             times_rate_limited: 3,
             back_off_growth_factor: 2.,
@@ -290,12 +317,8 @@ mod tests {
 
     #[tokio::test]
     async fn drops_requests_correctly() {
-        let strategy = RateLimitingStrategy::try_new(
-            2.0,
-            Duration::from_millis(20),
-            Duration::from_millis(50),
-        )
-        .unwrap();
+        let strategy =
+            Strategy::try_new(2.0, Duration::from_millis(20), Duration::from_millis(50)).unwrap();
         let rate_limiter = RateLimiter::from_strategy(strategy, "test".into());
 
         let result = rate_limiter.execute(async { 1 }, |_| false).await;
@@ -327,7 +350,7 @@ mod tests {
             )
             .now_or_never()
             .expect("tasks return immediately during back off period");
-        assert!(matches!(result, Err(RateLimiterError::RateLimited)));
+        assert!(matches!(result, Err(Error::RateLimited)));
 
         // sleep until new requests are allowed
         sleep(Duration::from_millis(20)).await;
@@ -345,7 +368,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_no_back_off() {
         let timeout = Duration::from_secs(30);
-        let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
+        let strategy = Strategy::try_new(1.0, timeout, timeout).unwrap();
         let original_drop_until = strategy.drop_requests_until;
         let rate_limiter = RateLimiter::from_strategy(strategy, "test_no_back_off".to_string());
 
@@ -368,7 +391,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_with_back_off() {
         let timeout = Duration::from_millis(50);
-        let strategy = RateLimitingStrategy::try_new(1.0, timeout, timeout).unwrap();
+        let strategy = Strategy::try_new(1.0, timeout, timeout).unwrap();
         let original_drop_until = strategy.drop_requests_until;
         let rate_limiter = RateLimiter::from_strategy(strategy, "test_back_off".to_string());
 
@@ -388,7 +411,7 @@ mod tests {
 
         // back off is not over, expecting a RateLimiterError
         let result = rate_limiter.execute(async { 1 }, |_| false).await;
-        assert_eq!(result, Err(RateLimiterError::RateLimited));
+        assert_eq!(result, Err(Error::RateLimited));
         {
             let current_strategy = rate_limiter.strategy.lock().unwrap();
             assert_eq!(current_strategy.drop_requests_until, drop_until);

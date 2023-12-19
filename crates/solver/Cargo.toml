@@ -45,6 +45,7 @@ primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rand = { workspace = true }
+rate-limit = { path = "../rate-limit" }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

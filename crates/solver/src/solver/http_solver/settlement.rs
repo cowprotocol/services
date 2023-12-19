@@ -87,10 +87,8 @@ impl Execution {
         internalizable: bool,
         enforce_correct_fees: bool,
     ) -> Result<()> {
-        use Execution::*;
-
         match self {
-            LimitOrder(order) => {
+            Execution::LimitOrder(order) => {
                 let scoring_fee = match order.order.solver_determines_fee() {
                     true => {
                         let fee = order.executed_fee_amount;
@@ -109,7 +107,7 @@ impl Execution {
 
                 settlement.with_liquidity(&order.order, execution)
             }
-            Amm(executed_amm) => {
+            Execution::Amm(executed_amm) => {
                 let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
                     input_max: executed_amm.input.clone(),
                     output: executed_amm.output.clone(),
@@ -132,7 +130,7 @@ impl Execution {
                     }
                 }
             }
-            CustomInteraction(interaction_data) => {
+            Execution::CustomInteraction(interaction_data) => {
                 settlement.encoder.append_to_execution_plan_internalizable(
                     Arc::new(*interaction_data.clone()),
                     internalizable,

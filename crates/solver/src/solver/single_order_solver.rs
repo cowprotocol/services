@@ -22,12 +22,12 @@ use {
     number::conversions::u256_to_big_rational,
     primitive_types::{H160, U256},
     rand::prelude::SliceRandom,
+    rate_limit::{Error, RateLimiter, Strategy},
     shared::{
         arguments::display_option,
         conversions::U256Ext,
         external_prices::ExternalPrices,
         interaction::Interaction,
-        rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     },
     std::{
         collections::VecDeque,
@@ -66,7 +66,7 @@ pub struct Arguments {
     /// issued while back off is active get dropped entirely. Expects
     /// "<factor >= 1.0>,<min: seconds>,<max: seconds>".
     #[clap(long, env)]
-    pub single_order_solver_rate_limiter: Option<RateLimitingStrategy>,
+    pub single_order_solver_rate_limiter: Option<Strategy>,
 }
 
 impl Arguments {
@@ -225,7 +225,7 @@ impl SingleOrderSolver {
                 |result| matches!(result, Err(SettlementError::RateLimited)),
             )
             .await
-            .unwrap_or_else(|RateLimiterError::RateLimited| Err(SettlementError::RateLimited))
+            .unwrap_or_else(|Error::RateLimited| Err(SettlementError::RateLimited))
         {
             Ok(value) => {
                 self.metrics.single_order_solver_succeeded(name);

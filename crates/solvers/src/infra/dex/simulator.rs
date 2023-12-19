@@ -82,6 +82,7 @@ impl Simulator {
                 },
             ),
         ]);
+        tracing::debug!(?call, "simulate swap gas usage");
 
         let return_data = self
             .web3
