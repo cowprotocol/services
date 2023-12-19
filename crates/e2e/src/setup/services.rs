@@ -132,7 +132,7 @@ impl<'a> Services<'a> {
     }
 
     /// Starts a basic version of the protocol with a single baseline solver.
-    pub async fn start_colocated_protocol(&self, solver: TestAccount) {
+    pub async fn start_protocol(&self, solver: TestAccount) {
         let solver_endpoint = colocation::start_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
             self.contracts,
@@ -150,23 +150,6 @@ impl<'a> Services<'a> {
             "--enable-colocation=true".to_string(),
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ]);
-    }
-
-    /// Start the solver service in a background task.
-    pub fn start_old_driver(&self, private_key: &[u8; 32], extra_args: Vec<String>) {
-        let args = [
-            "solver".to_string(),
-            format!("--solver-account={}", hex::encode(private_key)),
-            "--settle-interval=1".to_string(),
-            format!("--transaction-submission-nodes={NODE_HOST}"),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-        ]
-        .into_iter()
-        .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args);
-
-        let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(solver::run::run(args));
     }
 
     /// Start the solver service in a background task with a custom http solver

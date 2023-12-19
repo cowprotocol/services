@@ -33,8 +33,7 @@ async fn smart_contract_orders(web3: Web3) {
         .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order_template = OrderCreation {
         kind: OrderKind::Sell,
@@ -128,7 +127,6 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive solution
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })

@@ -78,8 +78,7 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -121,7 +120,6 @@ async fn onchain_settlement(web3: Web3) {
     assert_eq!(balance, 0.into());
 
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
