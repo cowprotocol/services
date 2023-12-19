@@ -182,7 +182,7 @@ where
             {
                 Some(tx)
             }
-            SimulatorError::Blockchain(blockchain::Error::Method(_)) => Some(tx),
+            SimulatorError::Blockchain(blockchain::Error::Method(_)) => None,
             SimulatorError::Blockchain(blockchain::Error::Web3(inner)) => {
                 let error = ExecutionError::from(inner.clone());
                 if matches!(error, ExecutionError::Revert(_)) {
