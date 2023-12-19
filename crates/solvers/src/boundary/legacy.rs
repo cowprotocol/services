@@ -658,6 +658,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
             Settlement::Fail => SubmissionResult::Fail,
         }),
+        Kind::DriverError(reason) => {
+            AuctionResult::Rejected(SolverRejectionReason::Driver(reason.clone()))
+        }
     };
 
     (auction_id, auction_result)

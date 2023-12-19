@@ -158,12 +158,14 @@ pub struct RevertError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error(transparent)]
-    Basic(#[from] SimulatorError),
     /// If a transaction reverted, forward that transaction together with the
     /// error.
     #[error(transparent)]
     Revert(#[from] RevertError),
+    /// Any other error that is not related to the underlying transaction
+    /// failing.
+    #[error(transparent)]
+    Other(#[from] SimulatorError),
 }
 
 fn with<E>(tx: eth::Tx, block: eth::BlockNo) -> impl FnOnce(E) -> Error
@@ -180,7 +182,7 @@ where
             {
                 Some(tx)
             }
-            SimulatorError::Blockchain(blockchain::Error::Method(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Method(_)) => Some(tx),
             SimulatorError::Blockchain(blockchain::Error::Web3(inner)) => {
                 let error = ExecutionError::from(inner.clone());
                 if matches!(error, ExecutionError::Revert(_)) {
@@ -189,14 +191,14 @@ where
                     None
                 }
             }
-            SimulatorError::Blockchain(blockchain::Error::Gas(_)) => None,
-            SimulatorError::Blockchain(blockchain::Error::Response(_)) => None,
+            SimulatorError::Blockchain(blockchain::Error::Gas(_)) => Some(tx),
+            SimulatorError::Blockchain(blockchain::Error::Response(_)) => Some(tx),
             SimulatorError::Enso(enso::Error::Http(_)) => None,
             SimulatorError::Enso(enso::Error::Revert(_)) => Some(tx),
         };
         match tx {
             Some(tx) => Error::Revert(RevertError { err, tx, block }),
-            None => Error::Basic(err),
+            None => Error::Other(err),
         }
     }
 }

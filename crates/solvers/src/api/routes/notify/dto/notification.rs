@@ -88,6 +88,7 @@ impl Notification {
                     Settlement::SimulationRevert => notification::Settlement::SimulationRevert,
                     Settlement::Fail => notification::Settlement::Fail,
                 }),
+                Kind::DriverError(reason) => notification::Kind::DriverError(reason.clone()),
             },
         }
     }
@@ -120,6 +121,7 @@ pub enum Kind {
         required: U256,
     },
     Settled(Settlement),
+    DriverError(String),
 }
 
 type BlockNo = u64;
