@@ -238,8 +238,8 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Some(Score::Solver(participant.solution.score.get())),
-                            ranking: Some(solutions.len() - index),
+                            score: Score::Solver(participant.solution.score.get()),
+                            ranking: solutions.len() - index,
                             orders: participant
                                 .solution
                                 .orders()
@@ -256,21 +256,17 @@ impl RunLoop {
                                 .iter()
                                 .map(|(token, price)| (*token, *price))
                                 .collect(),
-                            // TODO: revisit once colocation is enabled (remove not populated
-                            // fields) Not all fields can be populated in the colocated world
-                            ..Default::default()
+                            call_data: None,
+                            uninternalized_call_data: None,
                         };
                         if is_winner {
-                            settlement.call_data = revealed.calldata.internalized.clone();
+                            settlement.call_data = Some(revealed.calldata.internalized.clone());
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
                         }
                         settlement
                     })
                     .collect(),
-                // TODO: revisit once colocation is enabled (remove not populated fields)
-                // Not all fields can be populated in the colocated world
-                ..Default::default()
             };
             let competition = Competition {
                 auction_id,

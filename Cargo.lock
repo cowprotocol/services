@@ -156,15 +156,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "approx"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,7 +238,6 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "approx",
  "async-trait",
  "bigdecimal",
  "chrono",
@@ -1301,7 +1291,6 @@ dependencies = [
  "anyhow",
  "ethcontract",
  "ethcontract-generate",
- "maplit",
  "serde",
  "serde_json",
  "tracing",
@@ -3401,8 +3390,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3282447ea0b07baa9011e45de96794c5963db0162c1001d2867750715d63ff14"
 dependencies = [
  "lazy_static",
  "prometheus",
@@ -3411,8 +3401,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage-derive"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239221aa10cd35277c58b8f6509280b2613321760b49584d7a7351a6aacb6963"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4536,7 +4527,6 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 name = "testlib"
 version = "0.1.0"
 dependencies = [
- "contracts",
  "ethcontract",
  "ethcontract-mock",
  "hex-literal",
