@@ -318,7 +318,6 @@ mod tests {
                             user_data: Default::default(),
                         },
                     ],
-                    ..Default::default()
                 }))
             });
 
@@ -437,7 +436,6 @@ mod tests {
                         amount: buy_amount,
                         user_data: Default::default(),
                     }],
-                    ..Default::default()
                 }))
             });
 

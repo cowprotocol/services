@@ -67,42 +67,17 @@ pub struct Quote {
     /// In sell token for sell orders or buy token for buy orders.
     #[serde_as(as = "serialize::U256")]
     pub swap_amount: U256,
-    /// The real swapped amount for certain kinds of wrapped tokens.
-    ///
-    /// Some wrapped tokens like stETH/wstETH support wrapping and unwrapping at
-    /// a conversion rate before trading using a Relayer. In those cases, this
-    /// amount represents the value of the real token before wrapping.
-    ///
-    /// This amount is useful for informational purposes and not intended to be
-    /// used when calling `singleSwap` an `batchSwap` on the Vault.
-    #[serde_as(as = "serialize::U256")]
-    pub swap_amount_for_swaps: U256,
     /// The returned token amount.
     ///
     /// In buy token for sell orders or sell token for buy orders.
     #[serde_as(as = "serialize::U256")]
     pub return_amount: U256,
-    /// The real returned amount.
-    ///
-    /// See `swap_amount_for_swap` for more details.
-    #[serde_as(as = "serialize::U256")]
-    pub return_amount_from_swaps: U256,
-    /// The received considering fees.
-    ///
-    /// This can be negative when quoting small sell amounts at high gas costs
-    /// or greater than `U256::MAX` when quoting large buy amounts at high
-    /// gas costs.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub return_amount_considering_fees: num::BigInt,
     /// The input (sell) token.
     #[serde(with = "address_default_when_empty")]
     pub token_in: H160,
     /// The output (buy) token.
     #[serde(with = "address_default_when_empty")]
     pub token_out: H160,
-    /// The price impact (i.e. market slippage).
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub market_sp: f64,
 }
 
 impl Quote {
