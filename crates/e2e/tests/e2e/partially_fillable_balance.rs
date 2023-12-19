@@ -71,11 +71,7 @@ async fn test(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![]);
-    services
-        .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
-        ])
-        .await;
+    services.start_api(vec![]).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),

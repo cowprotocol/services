@@ -1,7 +1,13 @@
 use {
+    super::TestAccount,
     crate::{
         nodes::NODE_HOST,
-        setup::{wait_for_condition, Contracts, TIMEOUT},
+        setup::{
+            colocation::{self, SolverEngine},
+            wait_for_condition,
+            Contracts,
+            TIMEOUT,
+        },
     },
     clap::Parser,
     ethcontract::{H160, H256},
@@ -106,10 +112,13 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
+            "--enable-custom-interactions=true".to_string(),
+            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--enable-eth-smart-contract-payments=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -120,6 +129,27 @@ impl<'a> Services<'a> {
         tokio::task::spawn(orderbook::run(args));
 
         Self::wait_for_api_to_come_up().await;
+    }
+
+    /// Starts a basic version of the protocol with a single baseline solver.
+    pub async fn start_colocated_protocol(&self, solver: TestAccount) {
+        let solver_endpoint = colocation::start_solver(self.contracts.weth.address()).await;
+        colocation::start_driver(
+            self.contracts,
+            vec![SolverEngine {
+                name: "test_solver".into(),
+                account: solver,
+                endpoint: solver_endpoint,
+            }],
+        );
+        self.start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+        self.start_autopilot(vec![
+            "--enable-colocation=true".to_string(),
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ]);
     }
 
     /// Start the solver service in a background task.

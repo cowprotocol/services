@@ -60,11 +60,7 @@ async fn test(web3: Web3) {
         "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
-    services
-        .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
-        ])
-        .await;
+    services.start_api(vec![]).await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
