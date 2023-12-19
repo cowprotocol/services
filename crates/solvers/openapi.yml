@@ -32,6 +32,34 @@ paths:
           description: The solver cannot keep up. It is too busy to handle more requests.
         500:
           description: Something went wrong when handling the request.
+  /notify:
+    post:
+      description: |
+        Receive a status notification about a previously provided solution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auctionId:
+                  description: |
+                    The auction ID of the auction that the solution was provided
+                    for.
+                  type: number
+                solutionId:
+                  description: |
+                    The solution ID within the auction for which the notification applies
+                  type: number
+                kind:
+                  description: |
+                    The kind of notification.
+                  type: string
+                  enum: [Timeout, EmptySolution, DuplicatedSolutionId, SimulationFailed, ScoringFailed, NonBufferableTokensUsed, SolverAccountInsufficientBalance, Settled]
+      responses:
+        200:
+          description: notification successfully received.
 
 components:
   schemas:
