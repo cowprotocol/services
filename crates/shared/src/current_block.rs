@@ -24,7 +24,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "5",
+        default_value = "5s",
         value_parser = duration_from_seconds,
     )]
     pub block_stream_poll_interval_seconds: Duration,

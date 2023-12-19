@@ -329,7 +329,7 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
+        default_value = "30s",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     update_interval: Duration,
@@ -338,7 +338,7 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "600",
+        default_value = "10m",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     time_without_trade: Duration,
@@ -347,7 +347,7 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "180",
+        default_value = "3m",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     min_order_age: Duration,
@@ -356,7 +356,7 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1800",
+        default_value = "30m",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     min_alert_interval: Duration,
@@ -374,7 +374,7 @@ struct Arguments {
 
     /// Minimum time between get order requests to the api. Without this the api
     /// can rate limit us.
-    #[clap(long, env, default_value = "0.2", value_parser = shared::arguments::duration_from_seconds)]
+    #[clap(long, env, default_value = "200ms", value_parser = shared::arguments::duration_from_seconds)]
     api_get_order_min_interval: Duration,
 
     #[clap(long, env)]

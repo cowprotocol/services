@@ -230,7 +230,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1",
+        default_value = "1s",
         value_parser = crate::arguments::duration_from_seconds,
     )]
     pub native_price_cache_refresh_secs: Duration,
@@ -239,7 +239,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
+        default_value = "30s",
         value_parser = crate::arguments::duration_from_seconds,
     )]
     pub native_price_cache_max_age_secs: Duration,
@@ -251,7 +251,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2",
+        default_value = "2s",
         value_parser = crate::arguments::duration_from_seconds,
     )]
     pub native_price_prefetch_time_secs: Duration,

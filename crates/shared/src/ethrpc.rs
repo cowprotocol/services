@@ -32,7 +32,7 @@ pub struct Arguments {
 
     /// Buffering "nagle" delay to wait for additional requests before sending
     /// out an incomplete batch.
-    #[clap(long, env, value_parser = duration_from_seconds, default_value = "0")]
+    #[clap(long, env, value_parser = duration_from_seconds, default_value = "0s")]
     pub ethrpc_batch_delay: Duration,
 }
 

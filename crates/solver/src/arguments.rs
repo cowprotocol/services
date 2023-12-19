@@ -59,7 +59,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
+        default_value = "30s",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub target_confirm_time: Duration,
@@ -73,7 +73,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "10",
+        default_value = "10s",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub settle_interval: Duration,
@@ -116,7 +116,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
+        default_value = "30s",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub solver_time_limit: Duration,
@@ -134,7 +134,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "3600",
+        default_value = "1h",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub market_makable_token_list_update_interval: Duration,
@@ -209,7 +209,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "120",
+        default_value = "2m",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_submission_seconds: Duration,
@@ -229,7 +229,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2",
+        default_value = "2s",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub submission_retry_interval_seconds: Duration,
@@ -309,7 +309,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "60",
+        default_value = "1m",
         value_parser = shared::arguments::duration_from_seconds,
     )]
     pub additional_mining_deadline: Duration,

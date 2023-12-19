@@ -88,7 +88,7 @@ pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
-        default_value = "600",
+        default_value = "10m",
         value_parser = duration_from_seconds,
     )]
     pub eip1271_onchain_quote_validity_seconds: Duration,
@@ -97,7 +97,7 @@ pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
-        default_value = "600",
+        default_value = "10m",
         value_parser = duration_from_seconds,
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
@@ -107,7 +107,7 @@ pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
-        default_value = "60",
+        default_value = "1m",
         value_parser = duration_from_seconds,
     )]
     pub standard_offchain_quote_validity_seconds: Duration,
@@ -230,7 +230,7 @@ pub struct Arguments {
     pub pool_cache_maximum_retries: u32,
 
     /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
+    #[clap(long, env, default_value = "1s", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
     /// The ParaSwap API base url to use.
@@ -295,7 +295,7 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
+        default_value = "30s",
         value_parser = duration_from_seconds,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
