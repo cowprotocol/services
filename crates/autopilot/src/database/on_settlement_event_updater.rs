@@ -60,14 +60,14 @@ pub struct SettlementUpdate {
     pub auction_data: Option<AuctionData>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExecutedFee {
     /// Unsubsidized fee (full fee amount) that is taken from the signed order
-    /// and known upfront (before the settlement is finalized).
+    /// and known upfront (before the settlement is settled onchain).
     /// Different from what the protocol actually collects as fee (fee_amount).
     Order(U256),
-    /// Fee is unknown before the settlement is finalized and is calculated in
-    /// the postprocessing. Currently only used for limit orders.
+    /// Fee is unknown before the settlement is settled onchain. Used for limit
+    /// orders.
     /// Equal to what the protocol actually collects as fee.
     Surplus(U256),
 }

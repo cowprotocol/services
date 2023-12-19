@@ -757,13 +757,13 @@ mod tests {
                 order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
                 owner: addr!("E995E2A9Ae5210FEb6DD07618af28ec38B2D7ce1"),
                 executed_amount: 14955083027u128.into(),
-                order_fee: ExecutedFee::Order(48263037u128.into())
+                order_fee: Some(48263037u128.into())
             },
             OrderExecution {
                 order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
                 owner: addr!("f352bFFB3E902d78166a79C9878e138a65022e11"),
                 executed_amount: 5701912712048588025933u128.into(),
-                order_fee: ExecutedFee::Order(127253135942751092736u128.into())
+                order_fee: Some(127253135942751092736u128.into())
             }
         ];
         let fees = settlement
@@ -862,7 +862,7 @@ mod tests {
                 order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
                 owner: addr!("6c7f534c81dfedf90c9e42effb410a44e4f8ef10"),
                 executed_amount: 134069619089011499167823218927u128.into(),
-                order_fee: ExecutedFee::Surplus
+                order_fee: None
             },
         ];
         let fees = settlement
@@ -971,7 +971,7 @@ mod tests {
                 order_uid: OrderUid::from_str("0x999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02b70cd1ebd3b24aeeaf90c6041446630338536e7f643d6a39").unwrap(),
                 owner: addr!("b70cd1ebd3b24aeeaf90c6041446630338536e7f"),
                 executed_amount: 0.into(),
-                order_fee: ExecutedFee::Order(463182886014406361088u128.into())
+                order_fee: Some(463182886014406361088u128.into())
             },
         ];
         let fees = settlement
@@ -1344,10 +1344,13 @@ mod tests {
             order_uid: OrderUid::from_str("0x77425bd23d5fbb24d32229b1c343807bee572f0555429632161350a56811d263c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap(),
             owner: addr!("c001d00d425fa92c4f840baa8f1e0c27c4297a0b"),
             executed_amount: 1558319022273364070254u128.into(),
-            order_fee: ExecutedFee::Surplus
+            order_fee: None
         }];
 
         let fees = decoded.order_executions(&external_prices, orders);
-        assert_eq!(fees[0].sell, 7487413756444483822u128.into());
+        assert_eq!(
+            fees[0].sell,
+            ExecutedFee::Surplus(7487413756444483822u128.into())
+        );
     }
 }
