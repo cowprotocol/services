@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
-        rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
     anyhow::{Context, Result},
@@ -12,6 +11,7 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -224,7 +224,7 @@ pub struct Arguments {
     /// min_back_off: f64 in seconds
     /// max_back_off: f64 in seconds
     #[clap(long, env, verbatim_doc_comment)]
-    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
+    pub price_estimation_rate_limiter: Option<Strategy>,
 
     /// How often the native price estimator should refresh its cache.
     #[clap(

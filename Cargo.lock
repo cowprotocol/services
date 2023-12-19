@@ -3478,6 +3478,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rate-limit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4006,6 +4021,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
+ "rate-limit",
  "regex",
  "reqwest",
  "secp256k1",
@@ -4128,6 +4144,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
@@ -4164,6 +4181,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
