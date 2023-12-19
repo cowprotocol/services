@@ -260,6 +260,9 @@ struct TenderlyConfig {
 struct EnsoConfig {
     /// URL at which the trade simulator is hosted
     url: Url,
+    /// How often the network produces a new block. If this is not set the
+    /// system assumes an unpredictable network like proof-of-work.
+    network_block_interval_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
