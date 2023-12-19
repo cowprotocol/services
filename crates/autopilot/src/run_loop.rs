@@ -9,13 +9,13 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
+            solve::{self, fee_policy_to_dto, Class, FeePolicy, TradedAmounts},
         },
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
     chrono::Utc,
-    database::order_events::OrderEventLabel,
+    database::{order_events::OrderEventLabel, orders::Quote},
     ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
@@ -30,7 +30,7 @@ use {
             SolverSettlement,
         },
     },
-    number::nonzero::U256 as NonZeroU256,
+    number::{conversions::big_decimal_to_u256, nonzero::U256 as NonZeroU256},
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
@@ -309,6 +309,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        let quotes = self.database.read_quotes(auction).await.unwrap();
         let request = solve_request(
             id,
             auction,
@@ -316,6 +317,7 @@ impl RunLoop {
             self.score_cap,
             self.solve_deadline,
             self.fee_policy.clone(),
+            quotes,
         );
         let request = &request;
 
@@ -493,6 +495,56 @@ impl RunLoop {
     }
 }
 
+/// Checks whether or not an order's limit price is outside the market price
+/// specified by the quote.
+///
+/// Note that this check only looks at the order's limit price and the market
+/// price and is independent of amounts or trade direction.
+pub fn is_order_outside_market_price(
+    sell_amount: &U256,
+    buy_amount: &U256,
+    quote_buy_amount: U256,
+    quote_sell_amount: U256,
+) -> bool {
+    sell_amount.full_mul(quote_buy_amount) < quote_sell_amount.full_mul(*buy_amount)
+}
+
+/// Prepares the fee policies for each order in the auction.
+/// Determines if the protocol fee should be applied to the order.
+fn fee_policies(
+    auction: &Auction,
+    fee_policy: arguments::FeePolicy,
+    quotes: HashMap<OrderUid, Quote>,
+) -> HashMap<OrderUid, Vec<FeePolicy>> {
+    auction
+        .orders
+        .iter()
+        .filter_map(|order| {
+            match order.metadata.class {
+                OrderClass::Market => None,
+                OrderClass::Liquidity => None,
+                // TODO: https://github.com/cowprotocol/services/issues/2115
+                // skip protocol fee for TWAP limit orders
+                OrderClass::Limit(_) => {
+                    let quote = quotes.get(&order.metadata.uid)?;
+                    let quote_buy_amount = big_decimal_to_u256(&quote.buy_amount)?;
+                    let quote_sell_amount = big_decimal_to_u256(&quote.sell_amount)?;
+                    let is_in_money_order = !is_order_outside_market_price(
+                        &order.data.sell_amount,
+                        &order.data.buy_amount,
+                        quote_buy_amount,
+                        quote_sell_amount,
+                    );
+                    if fee_policy.fee_policy_skip_market_orders && is_in_money_order {
+                        return None;
+                    }
+                    Some((order.metadata.uid, vec![fee_policy_to_dto(&fee_policy)]))
+                }
+            }
+        })
+        .collect()
+}
+
 pub fn solve_request(
     id: AuctionId,
     auction: &Auction,
@@ -500,7 +552,9 @@ pub fn solve_request(
     score_cap: U256,
     time_limit: Duration,
     fee_policy: arguments::FeePolicy,
+    quotes: HashMap<OrderUid, Quote>,
 ) -> solve::Request {
+    let fee_policies_by_order = fee_policies(auction, fee_policy.clone(), quotes);
     solve::Request {
         id,
         orders: auction
@@ -525,17 +579,6 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-
-                let fee_policies = match order.metadata.class {
-                    OrderClass::Market => vec![],
-                    OrderClass::Liquidity => vec![],
-                    // todo https://github.com/cowprotocol/services/issues/2092
-                    // skip protocol fee for limit orders with in-market price
-
-                    // todo https://github.com/cowprotocol/services/issues/2115
-                    // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
-                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -561,7 +604,10 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies,
+                    fee_policies: fee_policies_by_order
+                        .get(&order.metadata.uid)
+                        .cloned()
+                        .unwrap_or_default(),
                 }
             })
             .collect(),

@@ -26,7 +26,7 @@ use {
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::{metrics::LivenessChecking, token_list::AutoUpdatingTokenList},
-    std::{cmp, time::Duration},
+    std::{cmp, collections::HashMap, time::Duration},
     tracing::Instrument,
 };
 
@@ -201,6 +201,7 @@ impl RunLoop {
             self.score_cap,
             self.solve_deadline,
             self.fee_policy.clone(),
+            HashMap::new(),
         );
         let request = &request;
 
