@@ -17,8 +17,8 @@ use {
 
 #[derive(Clone, Debug)]
 pub enum ExecutedFee {
-    /// Fee is taken from the signed order and known upfront (before the
-    /// settlement is finalized).
+    /// Unsubsidized fee (full fee amount) that is taken from the signed order
+    /// and known upfront (before the settlement is finalized).
     Order(U256),
     /// Fee is unknown before the settlement is finalized and is calculated in
     /// the postprocessing. Currently only used for limit orders.
