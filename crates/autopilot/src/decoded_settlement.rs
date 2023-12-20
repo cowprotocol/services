@@ -6,15 +6,15 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
-    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, H160, U256},
+    ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
     model::{
         app_data::AppDataHash,
-        order::{BuyTokenDestination, Order, OrderData, OrderKind, OrderUid, SellTokenSource},
+        order::{BuyTokenDestination, OrderData, OrderKind, OrderUid, SellTokenSource},
         signature::{Signature, SigningScheme},
         DomainSeparator,
     },
     num::BigRational,
-    number::conversions::{big_decimal_to_u256, big_rational_to_u256, u256_to_big_rational},
+    number::conversions::{big_rational_to_u256, u256_to_big_rational},
     shared::{conversions::U256Ext, external_prices::ExternalPrices},
     web3::ethabi::{Function, Token},
 };
@@ -180,38 +180,6 @@ impl From<(Address, U256, Bytes<Vec<u8>>)> for DecodedInteraction {
             target,
             value,
             call_data,
-        }
-    }
-}
-
-/// It's possible that the same order gets filled in portions across multiple or
-/// even the same settlement. This struct describes the details of such a fill.
-/// Note that most orders only have a single fill as they are fill-or-kill
-/// orders but partially fillable orders could have associated any number of
-/// [`OrderExecution`]s with them.
-#[derive(Debug, Clone)]
-pub struct OrderExecution {
-    pub order_uid: OrderUid,
-    pub owner: H160,
-    pub executed_amount: U256,
-    /// Is there an unsubsidized signed fee for this fullfillment?
-    /// Used to determine if the order was created as a market order with a
-    /// `full_fee_amount` != 0 or as a limit order with `full_fee_amount` == 0.
-    pub order_fee: Option<U256>,
-}
-
-impl OrderExecution {
-    pub fn new(order: &Order, execution: database::orders::OrderExecution) -> Self {
-        let owner = H160(execution.owner.0);
-        Self {
-            order_uid: OrderUid(execution.order_uid.0),
-            owner,
-            executed_amount: big_decimal_to_u256(&execution.executed_amount).unwrap(),
-            order_fee: if order.metadata.solver_fee == U256::zero() {
-                None
-            } else {
-                Some(order.metadata.solver_fee)
-            },
         }
     }
 }
