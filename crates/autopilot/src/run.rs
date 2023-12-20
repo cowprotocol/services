@@ -287,7 +287,7 @@ pub async fn run(args: Arguments) {
         number_of_entries_to_auto_update: args.pool_cache_lru_size,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries,
     };
     let pool_fetcher = Arc::new(
         PoolCache::new(
@@ -481,15 +481,15 @@ pub async fn run(args: Arguments) {
         Arc::new(db.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+                args.order_quoting.eip1271_onchain_quote_validity,
             )
             .unwrap(),
             presign_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.presign_onchain_quote_validity_seconds,
+                args.order_quoting.presign_onchain_quote_validity,
             )
             .unwrap(),
             standard_quote: chrono::Duration::from_std(
-                args.order_quoting.standard_offchain_quote_validity_seconds,
+                args.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
         },

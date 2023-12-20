@@ -371,7 +371,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
-            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
@@ -395,7 +395,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.args.native_price_cache_max_age_secs,
             self.args.native_price_cache_refresh_secs,
             Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time_secs,
+            self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)

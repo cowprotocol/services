@@ -69,7 +69,7 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    /// The amount of time in seconds a classification of a token into good or
+    /// The amount of time a classification of a token into good or
     /// bad is valid for.
     #[clap(
         long,
@@ -97,7 +97,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "2")]
     pub native_price_estimation_results_required: NonZeroUsize,
 
-    /// The minimum amount of time in seconds an order has to be valid for.
+    /// The minimum amount of time an order has to be valid for.
     #[clap(
         long,
         env,
@@ -199,7 +199,7 @@ pub struct Arguments {
     #[clap(long, env)]
     pub shadow: Option<Url>,
 
-    /// Time in seconds solvers have to compute a score per auction.
+    /// Time solvers have to compute a score per auction.
     #[clap(
         long,
         env,

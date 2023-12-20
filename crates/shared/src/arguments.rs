@@ -91,7 +91,7 @@ pub struct OrderQuotingArguments {
         default_value = "10m",
         value_parser = humantime::parse_duration,
     )]
-    pub eip1271_onchain_quote_validity_seconds: Duration,
+    pub eip1271_onchain_quote_validity: Duration,
 
     /// The time period an PRESIGN-quote request is valid.
     #[clap(
@@ -100,7 +100,7 @@ pub struct OrderQuotingArguments {
         default_value = "10m",
         value_parser = humantime::parse_duration,
     )]
-    pub presign_onchain_quote_validity_seconds: Duration,
+    pub presign_onchain_quote_validity: Duration,
 
     /// The time period a regular offchain-quote request (ethsign/eip712) is
     /// valid.
@@ -110,7 +110,7 @@ pub struct OrderQuotingArguments {
         default_value = "1m",
         value_parser = humantime::parse_duration,
     )]
-    pub standard_offchain_quote_validity_seconds: Duration,
+    pub standard_offchain_quote_validity: Duration,
 
     /// A flat fee discount denominated in the network's native token (i.e.
     /// Ether for Mainnet).
@@ -231,7 +231,7 @@ pub struct Arguments {
 
     /// How long to sleep in seconds between retries in the pool cache.
     #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
-    pub pool_cache_delay_between_retries_seconds: Duration,
+    pub pool_cache_delay_between_retries: Duration,
 
     /// The ParaSwap API base url to use.
     #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
@@ -304,7 +304,7 @@ pub struct Arguments {
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: usize,
 
-    /// The time in seconds between new blocks on the network.
+    /// The time between new blocks on the network.
     #[clap(long, env, value_parser = humantime::parse_duration)]
     pub network_block_interval: Option<Duration>,
 
@@ -374,12 +374,12 @@ impl Display for OrderQuotingArguments {
         writeln!(
             f,
             "eip1271_onchain_quote_validity_second: {:?}",
-            self.eip1271_onchain_quote_validity_seconds
+            self.eip1271_onchain_quote_validity
         )?;
         writeln!(
             f,
             "presign_onchain_quote_validity_second: {:?}",
-            self.presign_onchain_quote_validity_seconds
+            self.presign_onchain_quote_validity
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
@@ -437,8 +437,8 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {:?}",
-            self.pool_cache_delay_between_retries_seconds
+            "pool_cache_delay_between_retries: {:?}",
+            self.pool_cache_delay_between_retries
         )?;
         display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;

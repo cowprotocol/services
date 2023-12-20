@@ -64,7 +64,7 @@ pub struct Arguments {
     )]
     pub target_confirm_time: Duration,
 
-    /// Specify the interval in seconds between consecutive driver run loops.
+    /// Specify the interval between consecutive driver run loops.
     ///
     /// This is typically a low value to prevent busy looping in case of some
     /// internal driver error, but can be set to a larger value for running
@@ -204,7 +204,7 @@ pub struct Arguments {
     )]
     pub max_additional_eden_tip: f64,
 
-    /// The maximum time in seconds we spend trying to settle a transaction
+    /// The maximum time we spend trying to settle a transaction
     /// through the ethereum network before going to back to solving.
     #[clap(
         long,
@@ -212,7 +212,7 @@ pub struct Arguments {
         default_value = "2m",
         value_parser = humantime::parse_duration,
     )]
-    pub max_submission_seconds: Duration,
+    pub max_submission: Duration,
 
     /// Maximum additional tip in gwei that we are willing to give to flashbots
     /// above regular gas price estimation
@@ -232,7 +232,7 @@ pub struct Arguments {
         default_value = "2s",
         value_parser = humantime::parse_duration,
     )]
-    pub submission_retry_interval_seconds: Duration,
+    pub submission_retry_interval: Duration,
 
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation
@@ -415,11 +415,7 @@ impl std::fmt::Display for Arguments {
             "max_additional_eden_tip: {}",
             self.max_additional_eden_tip
         )?;
-        writeln!(
-            f,
-            "max_submission_seconds: {:?}",
-            self.max_submission_seconds
-        )?;
+        writeln!(f, "max_submission: {:?}", self.max_submission)?;
         writeln!(
             f,
             "max_additional_flashbots_tip: {}",
@@ -427,8 +423,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "submission_retry_interval_seconds: {:?}",
-            self.submission_retry_interval_seconds
+            "submission_retry_interval: {:?}",
+            self.submission_retry_interval
         )?;
         writeln!(
             f,
