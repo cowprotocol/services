@@ -233,7 +233,7 @@ pub struct Arguments {
         default_value = "1s",
         value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_refresh_secs: Duration,
+    pub native_price_cache_refresh: Duration,
 
     /// How long cached native prices stay valid.
     #[clap(
@@ -242,7 +242,7 @@ pub struct Arguments {
         default_value = "30s",
         value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_max_age_secs: Duration,
+    pub native_price_cache_max_age: Duration,
 
     /// How long before expiry the native price cache should try to update the
     /// price in the background. This is useful to make sure that prices are
@@ -323,17 +323,17 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh_secs: {:?}",
-            self.native_price_cache_refresh_secs
+            "native_price_cache_refresh: {:?}",
+            self.native_price_cache_refresh
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age: {:?}",
+            self.native_price_cache_max_age
         )?;
         writeln!(
             f,
-            "native_price_prefetch_time_secs: {:?}",
+            "native_price_prefetch_time: {:?}",
             self.native_price_prefetch_time
         )?;
         writeln!(
