@@ -16,28 +16,35 @@ use {
     std::collections::HashMap,
 };
 
-/// Prepares the fee policies for each order in the auction.
-/// Determines if the protocol fee should be applied to the order.
-pub fn fee_policies(
-    auction: &Auction,
-    config: arguments::FeePolicy,
-) -> HashMap<OrderUid, Vec<FeePolicy>> {
-    auction
-        .orders
-        .iter()
-        .filter_map(|order| {
-            match order.metadata.class {
-                OrderClass::Market => None,
-                OrderClass::Liquidity => None,
-                // TODO: https://github.com/cowprotocol/services/issues/2092
-                // skip protocol fee for limit orders with in-market price
+pub struct Policies {
+    policies: HashMap<OrderUid, Vec<FeePolicy>>,
+}
 
-                // TODO: https://github.com/cowprotocol/services/issues/2115
-                // skip protocol fee for TWAP limit orders
-                OrderClass::Limit(_) => {
-                    Some((order.metadata.uid, vec![fee_policy_to_dto(&config)]))
-                }
-            }
-        })
-        .collect()
+impl Policies {
+    pub fn new(auction: &Auction, config: arguments::FeePolicy) -> Self {
+        Self {
+            policies: auction
+                .orders
+                .iter()
+                .filter_map(|order| {
+                    match order.metadata.class {
+                        OrderClass::Market => None,
+                        OrderClass::Liquidity => None,
+                        // TODO: https://github.com/cowprotocol/services/issues/2092
+                        // skip protocol fee for limit orders with in-market price
+
+                        // TODO: https://github.com/cowprotocol/services/issues/2115
+                        // skip protocol fee for TWAP limit orders
+                        OrderClass::Limit(_) => {
+                            Some((order.metadata.uid, vec![fee_policy_to_dto(&config)]))
+                        }
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    pub fn get(&self, order: &OrderUid) -> Option<Vec<FeePolicy>> {
+        self.policies.get(order).cloned()
+    }
 }

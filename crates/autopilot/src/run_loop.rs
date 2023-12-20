@@ -11,7 +11,7 @@ use {
             settle,
             solve::{self, Class, TradedAmounts},
         },
-        protocol,
+        protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
@@ -307,13 +307,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
+            fee_policies,
         );
         let request = &request;
 
@@ -496,9 +497,8 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policy: arguments::FeePolicy,
+    fee_policies: fee::Policies,
 ) -> solve::Request {
-    let mut fee_policies = protocol::fee::fee_policies(auction, fee_policy);
     solve::Request {
         id,
         orders: auction
@@ -548,7 +548,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies: fee_policies.remove(&order.metadata.uid).unwrap_or_default(),
+                    fee_policies: fee_policies.get(&order.metadata.uid).unwrap_or_default(),
                 }
             })
             .collect(),
