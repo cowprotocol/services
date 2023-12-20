@@ -434,9 +434,9 @@ components:
     VolumeFee:
       type: object
       properties:
-      kind:
-        type: string
-        enum: ["volume"]
+        kind:
+          type: string
+          enum: ["volume"]
         factor:
           description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
           type: number
