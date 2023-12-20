@@ -184,9 +184,6 @@ impl OnSettlementEventUpdater {
                     .with_context(|| {
                         format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
                     })?;
-            let orders =
-                Postgres::order_executions_for_tx(&mut ex, &hash, auction_id.assume_verified())
-                    .await?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),
@@ -195,7 +192,6 @@ impl OnSettlementEventUpdater {
             tracing::debug!(
                 ?auction_id,
                 ?auction_external_prices,
-                ?orders,
                 ?external_prices,
                 "observations input"
             );
@@ -203,9 +199,17 @@ impl OnSettlementEventUpdater {
             // surplus and fees calculation
             match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
                 Ok(settlement) => {
+                    let order_uids = settlement.order_uids()?;
+                    let order_fees = order_uids
+                        .clone()
+                        .into_iter()
+                        .zip(Postgres::order_fees(&mut ex, &order_uids).await?)
+                        .collect::<Vec<_>>();
+
                     let surplus = settlement.total_surplus(&external_prices);
-                    let fee = settlement.total_fees(&external_prices, orders.clone());
-                    let order_executions = settlement.order_executions(&external_prices, orders);
+                    let fee = settlement.total_fees(&external_prices, &order_fees);
+                    let order_executions =
+                        settlement.order_executions(&external_prices, &order_fees);
 
                     update.auction_data = Some(AuctionData {
                         auction_id,

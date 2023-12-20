@@ -10,6 +10,7 @@ use {
     model::{
         app_data::AppDataHash,
         order::{BuyTokenDestination, Order, OrderData, OrderKind, OrderUid, SellTokenSource},
+        signature::{Signature, SigningScheme},
         DomainSeparator,
     },
     num::BigRational,
@@ -52,6 +53,16 @@ pub struct DecodedSettlement {
     pub domain_separator: DomainSeparator,
 }
 
+impl DecodedSettlement {
+    /// Returns the list of order uids that are associated with each trade.
+    pub fn order_uids(&self) -> Result<Vec<OrderUid>> {
+        self.trades
+            .iter()
+            .map(|trade| trade.uid(&self.domain_separator, &self.tokens))
+            .collect()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DecodedTrade {
     pub sell_token_index: U256,
@@ -68,13 +79,14 @@ pub struct DecodedTrade {
 }
 
 impl DecodedTrade {
-    fn matches_execution(
-        &self,
-        order: &OrderExecution,
-        tokens: &[Address],
-        domain_separator: &DomainSeparator,
-    ) -> bool {
-        let uid = OrderData {
+    /// Returns the signature of the order.
+    fn signature(&self) -> Result<Signature> {
+        Signature::from_bytes(self.flags.signing_scheme(), &self.signature.0)
+    }
+
+    /// Returns the order uid of the order associated with this trade.
+    pub fn uid(&self, domain_separator: &DomainSeparator, tokens: &[Address]) -> Result<OrderUid> {
+        let order = OrderData {
             sell_token: tokens[self.sell_token_index.as_u64() as usize],
             buy_token: tokens[self.buy_token_index.as_u64() as usize],
             sell_amount: self.sell_amount,
@@ -87,17 +99,13 @@ impl DecodedTrade {
             receiver: Some(self.receiver),
             sell_token_balance: self.flags.sell_token_balance(),
             buy_token_balance: self.flags.buy_token_balance(),
-        }
-        .uid(domain_separator, &order.owner);
-        let matches_order = uid == order.order_uid;
-
-        // the `executed_amount` field is ignored by the smart contract for
-        // fill-or-kill orders, so only check that executed amounts match for
-        // partially fillable orders.
-        let matches_execution =
-            !self.flags.partially_fillable() || self.executed_amount == order.executed_amount;
-
-        matches_order && matches_execution
+        };
+        let owner = self
+            .signature()
+            .context("signature is invalid")?
+            .decode_from_settlement(&self.signature.0, domain_separator, &order.hash_struct())
+            .context("cant recover owner")?;
+        Ok(order.uid(domain_separator, &owner))
     }
 }
 
@@ -139,6 +147,16 @@ impl TradeFlags {
             BuyTokenDestination::Erc20
         } else {
             BuyTokenDestination::Internal
+        }
+    }
+
+    fn signing_scheme(&self) -> SigningScheme {
+        match (self.as_u8() >> 5) & 0b11 {
+            0b00 => SigningScheme::Eip712,
+            0b01 => SigningScheme::EthSign,
+            0b10 => SigningScheme::Eip1271,
+            0b11 => SigningScheme::PreSign,
+            _ => unreachable!(),
         }
     }
 }
@@ -290,33 +308,11 @@ impl DecodedSettlement {
     pub fn total_fees(
         &self,
         external_prices: &ExternalPrices,
-        mut orders: Vec<OrderExecution>,
+        order_fees: &[(OrderUid, Option<U256>)],
     ) -> U256 {
-        self.trades.iter().fold(0.into(), |acc, trade| {
-            match orders.iter().position(|order| {
-                trade.matches_execution(order, &self.tokens, &self.domain_separator)
-            }) {
-                Some(i) => {
-                    // It's possible to have multiple fills with the same `executed_amount` for the
-                    // same order with different `solver_fees`. To end up with the correct total
-                    // fees we can only use every `OrderExecution` exactly once.
-                    let order = orders.swap_remove(i);
-                    acc + match self.fee(external_prices, &order, trade) {
-                        Some(fees) => fees.native,
-                        None => {
-                            tracing::warn!("possible incomplete fee calculation");
-                            0.into()
-                        }
-                    }
-                }
-                None => {
-                    tracing::warn!(
-                        "order not found for trade, possible incomplete fee calculation"
-                    );
-                    acc
-                }
-            }
-        })
+        self.order_executions(external_prices, order_fees)
+            .iter()
+            .fold(0.into(), |acc, fees| acc + fees.native)
     }
 
     /// Returns the list of executions with their fees,
@@ -324,26 +320,27 @@ impl DecodedSettlement {
     pub fn order_executions(
         &self,
         external_prices: &ExternalPrices,
-        mut orders: Vec<OrderExecution>,
+        order_fees: &[(OrderUid, Option<U256>)],
     ) -> Vec<Fees> {
         self.trades
             .iter()
-            .filter_map(|trade| {
-                let i = orders.iter().position(|order| {
-                    trade.matches_execution(order, &self.tokens, &self.domain_separator)
-                })?;
-                // It's possible to have multiple fills with the same `executed_amount` for
-                // the same order with different `solver_fees`. To
-                // end up with the correct total fees we can only
-                // use every `OrderExecution` exactly once.
-                let order = orders.swap_remove(i);
-
-                let fees = self.fee(external_prices, &order, trade);
-
-                if fees.is_none() {
-                    tracing::warn!("possible incomplete fee calculation");
+            .zip(order_fees.iter())
+            .map(|(trade, (order, order_fee))| {
+                match self.fee(external_prices, *order, *order_fee, trade) {
+                    Some(fees) => fees,
+                    None => {
+                        tracing::warn!("possible incomplete fee calculation");
+                        // we should have an order execution for every trade
+                        Fees {
+                            order: *order,
+                            sell: match order_fee {
+                                Some(_) => ExecutedFee::Order(U256::zero()),
+                                None => ExecutedFee::Surplus(U256::zero()),
+                            },
+                            native: U256::zero(),
+                        }
+                    }
                 }
-                fees
             })
             .collect()
     }
@@ -351,7 +348,8 @@ impl DecodedSettlement {
     fn fee(
         &self,
         external_prices: &ExternalPrices,
-        order: &OrderExecution,
+        order: OrderUid,
+        order_fee: Option<U256>,
         trade: &DecodedTrade,
     ) -> Option<Fees> {
         let sell_index = trade.sell_token_index.as_u64() as usize;
@@ -359,8 +357,8 @@ impl DecodedSettlement {
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let solver_fee = match &order.order_fee {
-            Some(fee) => *fee,
+        let solver_fee = match order_fee {
+            Some(fee) => fee,
             None => {
                 // get executed(adjusted) prices
                 let adjusted_sell_price = self.clearing_prices.get(sell_index).cloned()?;
@@ -409,8 +407,8 @@ impl DecodedSettlement {
         tracing::trace!(?fee, "fee after conversion to native token");
 
         Some(Fees {
-            order: order.order_uid,
-            sell: match &order.order_fee {
+            order,
+            sell: match order_fee {
                 Some(_) => ExecutedFee::Order(solver_fee),
                 None => ExecutedFee::Surplus(solver_fee),
             },
@@ -419,8 +417,8 @@ impl DecodedSettlement {
     }
 }
 
-/// Computed executed fees for an order with solver-computed fees. These are
-/// computed based on-chain settlement data.
+/// These are computed based on-chain settlement data.
+#[derive(Debug)]
 pub struct Fees {
     /// The UID of the order associated with these fees.
     pub order: OrderUid,
@@ -752,22 +750,15 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let orders = vec![
-            OrderExecution {
-                order_uid: OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap(),
-                owner: addr!("E995E2A9Ae5210FEb6DD07618af28ec38B2D7ce1"),
-                executed_amount: 14955083027u128.into(),
-                order_fee: Some(48263037u128.into())
-            },
-            OrderExecution {
-                order_uid: OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap(),
-                owner: addr!("f352bFFB3E902d78166a79C9878e138a65022e11"),
-                executed_amount: 5701912712048588025933u128.into(),
-                order_fee: Some(127253135942751092736u128.into())
-            }
+        let order1 = OrderUid::from_str("0xa8b0c9be7320d1314c6412e6557efd062bb9f97f2f4187f8b513f50ff63597cae995e2a9ae5210feb6dd07618af28ec38b2d7ce163f4d8c4").unwrap();
+        let order2 = OrderUid::from_str("0x82582487739d1331572710a9283dc244c134d323f309eb0aac6c842ff5227e90f352bffb3e902d78166a79c9878e138a65022e1163f4d8bb").unwrap();
+
+        let order_fees = vec![
+            (order1, Some(48263037u128.into())),
+            (order2, Some(127253135942751092736u128.into())),
         ];
         let fees = settlement
-            .total_fees(&external_prices, orders)
+            .total_fees(&external_prices, &order_fees)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 45377573614605000.);
@@ -857,16 +848,10 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let orders = vec![
-            OrderExecution {
-                order_uid: OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap(),
-                owner: addr!("6c7f534c81dfedf90c9e42effb410a44e4f8ef10"),
-                executed_amount: 134069619089011499167823218927u128.into(),
-                order_fee: None
-            },
-        ];
+        let order1 = OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap();
+        let order_fees = vec![(order1, None)];
         let fees = settlement
-            .total_fees(&external_prices, orders)
+            .total_fees(&external_prices, &order_fees)
             .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                              // competition
         assert_eq!(fees, 3768095572151424.);
@@ -966,16 +951,10 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let orders = vec![
-            OrderExecution {
-                order_uid: OrderUid::from_str("0x999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02b70cd1ebd3b24aeeaf90c6041446630338536e7f643d6a39").unwrap(),
-                owner: addr!("b70cd1ebd3b24aeeaf90c6041446630338536e7f"),
-                executed_amount: 0.into(),
-                order_fee: Some(463182886014406361088u128.into())
-            },
-        ];
+        let order1 = OrderUid::from_str("0x999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02b70cd1ebd3b24aeeaf90c6041446630338536e7f643d6a39").unwrap();
+        let order_fees = vec![(order1, Some(463182886014406361088u128.into()))];
         let fees = settlement
-            .total_fees(&external_prices, orders)
+            .total_fees(&external_prices, &order_fees)
             .to_f64_lossy();
         assert_eq!(fees, 13630555109200196.);
     }
@@ -1340,16 +1319,14 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let orders = vec![OrderExecution {
-            order_uid: OrderUid::from_str("0x77425bd23d5fbb24d32229b1c343807bee572f0555429632161350a56811d263c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap(),
-            owner: addr!("c001d00d425fa92c4f840baa8f1e0c27c4297a0b"),
-            executed_amount: 1558319022273364070254u128.into(),
-            order_fee: None
-        }];
+        let order1 = OrderUid::from_str("0xa490cba25239cb53df89d967be391e52a0aa605fc6681c1cd122b5b5e29a20e2c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
+        let order2 = OrderUid::from_str("0x77425bd23d5fbb24d32229b1c343807bee572f0555429632161350a56811d263c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
+        let order3 = OrderUid::from_str("0x78a8cb7e6103675633deb4a0136dab29dd84a1abd209ab406cbd9cfd0a7f953ec001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
 
-        let fees = decoded.order_executions(&external_prices, orders);
+        let order_fees = vec![(order1, None), (order2, None), (order3, None)];
+        let fees = decoded.order_executions(&external_prices, &order_fees);
         assert_eq!(
-            fees[0].sell,
+            fees[1].sell,
             ExecutedFee::Surplus(7487413756444483822u128.into())
         );
     }
