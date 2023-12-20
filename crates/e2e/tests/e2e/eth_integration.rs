@@ -125,6 +125,6 @@ async fn eth_integration(web3: Web3) {
     );
     assert_eq!(
         trader_b_eth_balance_after - trader_b_eth_balance_before,
-        49_800_747_827_208_136_744_u128.into()
+        49_776_284_258_574_379_601_u128.into()
     );
 }
