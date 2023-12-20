@@ -537,7 +537,7 @@ pub async fn run(args: Arguments) {
         contract: settlement_contract.clone(),
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
-        max_confirm_time: args.max_submission,
+        max_confirm_time: args.max_submission_time,
         retry_interval: args.submission_retry_interval,
         transaction_strategies,
         access_list_estimator,

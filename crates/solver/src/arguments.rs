@@ -212,7 +212,7 @@ pub struct Arguments {
         default_value = "2m",
         value_parser = humantime::parse_duration,
     )]
-    pub max_submission: Duration,
+    pub max_submission_time: Duration,
 
     /// Maximum additional tip in gwei that we are willing to give to flashbots
     /// above regular gas price estimation
@@ -415,7 +415,7 @@ impl std::fmt::Display for Arguments {
             "max_additional_eden_tip: {}",
             self.max_additional_eden_tip
         )?;
-        writeln!(f, "max_submission: {:?}", self.max_submission)?;
+        writeln!(f, "max_submission_time: {:?}", self.max_submission_time)?;
         writeln!(
             f,
             "max_additional_flashbots_tip: {}",
