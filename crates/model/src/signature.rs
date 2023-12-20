@@ -178,8 +178,8 @@ impl Signature {
             Self::Eip712(_) | Self::EthSign(_) => {
                 let recovered = self
                     .recover(domain_separator, struct_hash)
-                    .unwrap()
-                    .unwrap();
+                    .context("failed to recover owner")?
+                    .context("unreachable?")?;
                 Ok(recovered.signer)
             }
             Self::Eip1271(_) => Ok(H160::from_slice(&signature[..20])),
