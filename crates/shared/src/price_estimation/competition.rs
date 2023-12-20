@@ -85,7 +85,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
             + Send
             + 'static,
-        compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
+        pick_best_index: impl Fn(&[(EstimatorIndex, Result<R, E>)], &C) -> usize + Send + 'static,
         provide_comparison_context: impl Future<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
@@ -146,14 +146,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             }
 
             let context = provide_comparison_context.await?;
-
-            let best_index = results
-                .iter()
-                .map(|(_, result)| result)
-                .enumerate()
-                .max_by(|a, b| compare_results(a.1, b.1, &context))
-                .map(|(index, _)| index)
-                .unwrap();
+            let best_index = pick_best_index(&results, &context);
             let (estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
             tracing::debug!(
@@ -203,12 +196,14 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             query.clone(),
             query.kind,
             |estimator, query| estimator.estimate(query),
-            move |a, b, context| {
-                if is_second_quote_result_preferred(query.as_ref(), a, b, context) {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+            move |results, context| {
+                results
+                    .iter()
+                    .map(|(_, result)| result)
+                    .enumerate()
+                    .max_by(|a, b| is_second_quote_result_preferred(&query, a.1, b.1, context))
+                    .map(|(index, _)| index)
+                    .unwrap()
             },
             context_future,
         )
@@ -225,12 +220,14 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
             token,
             OrderKind::Buy,
             |estimator, token| estimator.estimate_native_price(token),
-            move |a, b, _context| {
-                if is_second_native_result_preferred(a, b) {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+            move |results, _context| {
+                results
+                    .iter()
+                    .map(|(_, result)| result)
+                    .enumerate()
+                    .max_by(|a, b| is_second_native_result_preferred(a.1, b.1))
+                    .map(|(index, _)| index)
+                    .unwrap()
             },
             context_future,
         )
@@ -265,11 +262,11 @@ fn is_second_quote_result_preferred(
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
-) -> bool {
+) -> Ordering {
     match (a, b) {
         (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, context),
-        (Ok(_), Err(_)) => false,
-        (Err(_), Ok(_)) => true,
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
     }
 }
@@ -277,11 +274,11 @@ fn is_second_quote_result_preferred(
 fn is_second_native_result_preferred(
     a: &Result<f64, PriceEstimationError>,
     b: &Result<f64, PriceEstimationError>,
-) -> bool {
+) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => b >= a,
-        (Ok(_), Err(_)) => false,
-        (Err(_), Ok(_)) => true,
+        (Ok(a), Ok(b)) => b.total_cmp(a),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
         (Err(a), Err(b)) => is_second_error_preferred(a, b),
     }
 }
@@ -291,16 +288,20 @@ fn is_second_estimate_preferred(
     a: &Estimate,
     b: &Estimate,
     context: &RankingContext,
-) -> bool {
+) -> Ordering {
+    if b.gas == 0 {
+        return Ordering::Less;
+    }
+
     let a = context.effective_eth_out(a, query.kind);
     let b = context.effective_eth_out(b, query.kind);
     match query.kind {
-        OrderKind::Buy => b < a,
-        OrderKind::Sell => a < b,
+        OrderKind::Buy => b.cmp(&a),
+        OrderKind::Sell => a.cmp(&b),
     }
 }
 
-fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
+fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering {
     // Errors are sorted by recoverability. E.g. a rate-limited estimation may
     // succeed if tried again, whereas unsupported order types can never recover
     // unless code changes. This can be used to decide which errors we want to
@@ -317,7 +318,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             // lowest priority
         }
     }
-    error_to_integer_priority(b) > error_to_integer_priority(a)
+    error_to_integer_priority(b).cmp(&error_to_integer_priority(a))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
