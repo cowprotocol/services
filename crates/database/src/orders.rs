@@ -1820,8 +1820,7 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, 0.into());
 
         let fee: BigDecimal = 1.into();
-        let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
+        crate::order_execution::save(&mut db, &order_uid, 0, &fee)
             .await
             .unwrap();
 
@@ -1871,8 +1870,7 @@ mod tests {
             &mut db,
             &order_uid,
             auction_id,
-            None,
-            Some(&bigdecimal(463182886014406361088)),
+            &bigdecimal(463182886014406361088),
         )
         .await
         .unwrap();
@@ -1951,10 +1949,10 @@ mod tests {
 
         insert_order(&mut db, &order).await.unwrap();
 
-        crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
+        crate::order_execution::save(&mut db, &order.uid, 1, &bigdecimal(1))
             .await
             .unwrap();
-        crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
+        crate::order_execution::save(&mut db, &order.uid, 42, &bigdecimal(42))
             .await
             .unwrap();
 

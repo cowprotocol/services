@@ -2,7 +2,6 @@
 //! GPv2Settlement::settle function.
 
 use {
-    crate::database::on_settlement_event_updater::ExecutedFee,
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
@@ -269,7 +268,7 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the total `executed_solver_fee` of this solution converted to
+    /// Returns the total sum of unsubsidized fees of this solution converted to
     /// the native token. This is only the value used for objective value
     /// computatations and can theoretically be different from the value of
     /// fees actually collected by the protocol.
@@ -278,14 +277,35 @@ impl DecodedSettlement {
         external_prices: &ExternalPrices,
         order_fees: &[(OrderUid, Option<U256>)],
     ) -> U256 {
-        self.order_executions(external_prices, order_fees)
+        self.all_fees(external_prices, order_fees)
             .iter()
             .fold(0.into(), |acc, fees| acc + fees.native)
     }
 
     /// Returns the list of executions with their fees,
-    /// which are supposed to be updated whenever a new settlement is executed.
+    /// which are supposed to be saved whenever a new settlement is executed.
     pub fn order_executions(
+        &self,
+        external_prices: &ExternalPrices,
+        order_fees: &[(OrderUid, Option<U256>)],
+    ) -> Vec<Fees> {
+        self.all_fees(external_prices, order_fees)
+            .into_iter()
+            .zip(order_fees.iter())
+            .filter_map(|(fee, (_, order_fee))| match order_fee {
+                // filter out orders with order_fee
+                // since their fee can already be fetched from the database table `orders`
+                // so no point in storing the same value twice, in another table
+                Some(_) => None,
+                None => Some(fee),
+            })
+            .collect()
+    }
+
+    /// Returns unsubsidized fees for all trades.
+    /// Length of the returned vector is equal to the length of `self.trades`
+    /// and `order_fees`.
+    fn all_fees(
         &self,
         external_prices: &ExternalPrices,
         order_fees: &[(OrderUid, Option<U256>)],
@@ -301,10 +321,7 @@ impl DecodedSettlement {
                         // we should have an order execution for every trade
                         Fees {
                             order: *order,
-                            sell: match order_fee {
-                                Some(_) => ExecutedFee::Order(U256::zero()),
-                                None => ExecutedFee::Surplus(U256::zero()),
-                            },
+                            sell: U256::zero(),
                             native: U256::zero(),
                         }
                     }
@@ -376,22 +393,21 @@ impl DecodedSettlement {
 
         Some(Fees {
             order,
-            sell: match order_fee {
-                Some(_) => ExecutedFee::Order(solver_fee),
-                None => ExecutedFee::Surplus(solver_fee),
-            },
+            sell: solver_fee,
             native: big_rational_to_u256(&fee).ok()?,
         })
     }
 }
 
 /// These are computed based on-chain settlement data.
+/// Can be populated multiple times for the same order (partially fillable
+/// orders)
 #[derive(Debug)]
 pub struct Fees {
     /// The UID of the order associated with these fees.
     pub order: OrderUid,
     /// The executed fees in the sell token.
-    pub sell: ExecutedFee,
+    pub sell: U256,
     /// The executed fees in the native token.
     pub native: U256,
 }
@@ -1293,9 +1309,6 @@ mod tests {
 
         let order_fees = vec![(order1, None), (order2, None), (order3, None)];
         let fees = decoded.order_executions(&external_prices, &order_fees);
-        assert_eq!(
-            fees[1].sell,
-            ExecutedFee::Surplus(7487413756444483822u128.into())
-        );
+        assert_eq!(fees[1].sell, 7487413756444483822u128.into());
     }
 }

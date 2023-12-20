@@ -7,6 +7,9 @@ use {
     sqlx::PgConnection,
 };
 
+/// Executed network fee for the gas costs. This fee is solver determined.
+type ExecutedFee = U256;
+
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
     pub auction_id: AuctionId,
@@ -58,18 +61,6 @@ pub struct SettlementUpdate {
     pub tx_from: H160,
     pub tx_nonce: i64,
     pub auction_data: Option<AuctionData>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExecutedFee {
-    /// Unsubsidized fee (full fee amount) that is taken from the signed order
-    /// and known upfront (before the settlement is settled onchain).
-    /// Different from what the protocol actually collects as fee (fee_amount).
-    Order(U256),
-    /// Fee is unknown before the settlement is settled onchain. Used for limit
-    /// orders.
-    /// Equal to what the protocol actually collects as fee.
-    Surplus(U256),
 }
 
 impl super::Postgres {
@@ -124,16 +115,11 @@ impl super::Postgres {
 
             if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
                 for (order, executed_fee) in auction_data.order_executions {
-                    let (surplus_fee, scoring_fee) = match executed_fee {
-                        ExecutedFee::Order(fee) => (None, Some(u256_to_big_decimal(&fee))),
-                        ExecutedFee::Surplus(fee) => (Some(u256_to_big_decimal(&fee)), None),
-                    };
                     database::order_execution::save(
                         ex,
                         &ByteArray(order.0),
                         auction_data.auction_id.assume_verified(),
-                        surplus_fee.as_ref(),
-                        scoring_fee.as_ref(),
+                        &u256_to_big_decimal(&executed_fee),
                     )
                     .await
                     .context("save_order_executions")?;

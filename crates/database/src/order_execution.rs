@@ -8,9 +8,9 @@ pub async fn save(
     ex: &mut PgConnection,
     order: &OrderUid,
     auction: AuctionId,
-    surplus_fee: Option<&BigDecimal>,
-    scoring_fee: Option<&BigDecimal>,
+    executed_fee: &BigDecimal,
 ) -> Result<(), sqlx::Error> {
+    let scoring_fee: Option<&BigDecimal> = None; // we don't need a scoring fee anymore
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
 VALUES ($1, $2, $3, $4, $5)
@@ -21,7 +21,7 @@ DO UPDATE SET reward = $3, surplus_fee = $4, solver_fee = $5
         .bind(order)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
-        .bind(surplus_fee)
+        .bind(Some(executed_fee))
         .bind(scoring_fee)
         .execute(ex)
         .await?;
@@ -39,18 +39,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        save(&mut db, &Default::default(), 0, None, Default::default())
+        save(&mut db, &Default::default(), 0, &Default::default())
             .await
             .unwrap();
-
-        save(
-            &mut db,
-            &Default::default(),
-            1,
-            Some(&Default::default()),
-            Default::default(),
-        )
-        .await
-        .unwrap();
     }
 }
