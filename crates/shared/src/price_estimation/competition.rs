@@ -14,6 +14,7 @@ use {
         TryFutureExt,
     },
     gas_estimation::GasPriceEstimating,
+    itertools::Itertools,
     model::order::OrderKind,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
@@ -197,13 +198,30 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             query.kind,
             |estimator, query| estimator.estimate(query),
             move |results, context| {
+                let gas_costs = results
+                    .iter()
+                    .filter_map(|(_, r)| Some(r.as_ref().ok()?.gas))
+                    .sorted()
+                    .collect_vec();
+                let median_gas = *gas_costs.get(gas_costs.len() / 2usize).unwrap_or(&0);
+                let gas_lower_bound = std::cmp::max(1, median_gas / 2);
+
                 results
                     .iter()
                     .map(|(_, result)| result)
                     .enumerate()
-                    .max_by(|a, b| is_second_quote_result_preferred(&query, a.1, b.1, context))
+                    // Solvers could try to game the system by providing unreasonably low gas amounts.
+                    // That way they'll win the best quote and the protocol will quote a very low fee
+                    // to the user (which is basically a huge subsidy we'd have to pay).
+                    // To avoid that we discard all quotes with gas costs significantly below the
+                    // median.
+                    .filter(|(_, r)| match r {
+                        Ok(estimate) => estimate.gas >= gas_lower_bound,
+                        Err(_) => true,
+                    })
+                    .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
                     .map(|(index, _)| index)
-                    .unwrap()
+                    .expect("we never discard all the results so at least 1 should remain")
             },
             context_future,
         )
@@ -225,7 +243,7 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
                     .iter()
                     .map(|(_, result)| result)
                     .enumerate()
-                    .max_by(|a, b| is_second_native_result_preferred(a.1, b.1))
+                    .max_by(|a, b| compare_native_result(a.1, b.1))
                     .map(|(index, _)| index)
                     .unwrap()
             },
@@ -257,21 +275,21 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     }
 }
 
-fn is_second_quote_result_preferred(
+fn compare_quote_result(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, context),
+        (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
         (Ok(_), Err(_)) => Ordering::Less,
         (Err(_), Ok(_)) => Ordering::Greater,
-        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+        (Err(a), Err(b)) => compare_error(a, b),
     }
 }
 
-fn is_second_native_result_preferred(
+fn compare_native_result(
     a: &Result<f64, PriceEstimationError>,
     b: &Result<f64, PriceEstimationError>,
 ) -> Ordering {
@@ -279,20 +297,11 @@ fn is_second_native_result_preferred(
         (Ok(a), Ok(b)) => b.total_cmp(a),
         (Ok(_), Err(_)) => Ordering::Less,
         (Err(_), Ok(_)) => Ordering::Greater,
-        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+        (Err(a), Err(b)) => compare_error(a, b),
     }
 }
 
-fn is_second_estimate_preferred(
-    query: &Query,
-    a: &Estimate,
-    b: &Estimate,
-    context: &RankingContext,
-) -> Ordering {
-    if b.gas == 0 {
-        return Ordering::Less;
-    }
-
+fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingContext) -> Ordering {
     let a = context.effective_eth_out(a, query.kind);
     let b = context.effective_eth_out(b, query.kind);
     match query.kind {
@@ -301,7 +310,7 @@ fn is_second_estimate_preferred(
     }
 }
 
-fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering {
+fn compare_error(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering {
     // Errors are sorted by recoverability. E.g. a rate-limited estimation may
     // succeed if tried again, whereas unsupported order types can never recover
     // unless code changes. This can be used to decide which errors we want to
