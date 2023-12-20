@@ -148,5 +148,5 @@ async fn smart_contract_orders(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch native token balance");
-    assert_eq!(balance, U256::from(7_975_363_884_976_534_272_u128));
+    assert_eq!(balance, U256::from(7_975_363_406_512_003_608_u128));
 }
