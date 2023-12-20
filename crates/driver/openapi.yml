@@ -171,6 +171,12 @@ components:
             trades one to one with the native token). These prices are used for solution competition
             for computing surplus and converting fees to native token.
         trusted:
+          description: |
+            Whether the protocol trusts the token to be used for internalizing trades.
+
+            Solvers are allowed to internalize trades, ie. omit the interaction that executes the swap from token A to token B
+            and instead use the settlement contract balances, aka buffers, to fulfil the interaction as long as the token 
+            the contract receives (A in the example) is trusted.
           type: boolean
     Order:
       description: |
@@ -360,18 +366,17 @@ components:
             type: number
           submissionAddress:
             description: |
-              The address that should be used to submit the solution.
+              The address that will be used to submit the solution.
             $ref: "#/components/schemas/Address"
           orders:
             description: executed orders
             type: array
             items:
               type: object
-              properties:
-                uid:
-                  $ref: "#/components/schemas/OrderUID"
-                executedAmount:
-                  $ref: "#/components/schemas/TokenAmount"
+              description: |
+                Mapping of order uid to net executed amount (including all fees).
+              additionalProperties:
+                $ref: "#/components/schemas/TokenAmount"
           clearingPrices:
             description: |
               Mapping of hex token address to price.
