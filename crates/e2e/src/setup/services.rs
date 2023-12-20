@@ -142,14 +142,14 @@ impl<'a> Services<'a> {
                 endpoint: solver_endpoint,
             }],
         );
-        self.start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ])
-        .await;
         self.start_autopilot(vec![
             "--enable-colocation=true".to_string(),
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ]);
+        self.start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
     }
 
     /// Start the solver service in a background task with a custom http solver
