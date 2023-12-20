@@ -1,7 +1,6 @@
 //! Global block stream arguments.
 
 use {
-    crate::arguments::duration_from_seconds,
     anyhow::Result,
     clap::Parser,
     ethrpc::{
@@ -24,8 +23,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
+        default_value = "5s",
+        value_parser = humantime::parse_duration,
     )]
     pub block_stream_poll_interval_seconds: Duration,
 }

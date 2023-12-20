@@ -59,8 +59,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub target_confirm_time: Duration,
 
@@ -73,8 +73,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "10",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "10s",
+        value_parser = humantime::parse_duration,
     )]
     pub settle_interval: Duration,
 
@@ -116,8 +116,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub solver_time_limit: Duration,
 
@@ -134,8 +134,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "3600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1h",
+        value_parser = humantime::parse_duration,
     )]
     pub market_makable_token_list_update_interval: Duration,
 
@@ -209,8 +209,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "120",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
     )]
     pub max_submission_seconds: Duration,
 
@@ -229,8 +229,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
     pub submission_retry_interval_seconds: Duration,
 
@@ -309,8 +309,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
     pub additional_mining_deadline: Duration,
 

@@ -221,8 +221,8 @@ pub struct Arguments {
     /// entirely. Needs to be passed as
     /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: f64 in seconds
-    /// max_back_off: f64 in seconds
+    /// min_back_off: Duration
+    /// max_back_off: Duration
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
@@ -230,8 +230,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
     )]
     pub native_price_cache_refresh_secs: Duration,
 
@@ -239,8 +239,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub native_price_cache_max_age_secs: Duration,
 
@@ -251,8 +251,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
     pub native_price_prefetch_time_secs: Duration,
 

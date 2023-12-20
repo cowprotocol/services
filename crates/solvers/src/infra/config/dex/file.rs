@@ -54,12 +54,12 @@ struct Config {
     back_off_growth_factor: f64,
 
     /// Minimum back-off time in seconds for rate limiting.
-    #[serde(default = "default_min_back_off")]
-    min_back_off: u64,
+    #[serde(with = "humantime_serde", default = "default_min_back_off")]
+    min_back_off: Duration,
 
     /// Maximum back-off time in seconds for rate limiting.
-    #[serde(default = "default_max_back_off")]
-    max_back_off: u64,
+    #[serde(with = "humantime_serde", default = "default_max_back_off")]
+    max_back_off: Duration,
 
     /// Settings specific to the wrapped dex API.
     dex: toml::Value,
@@ -81,12 +81,12 @@ fn default_back_off_growth_factor() -> f64 {
     2.0
 }
 
-fn default_min_back_off() -> u64 {
-    1
+fn default_min_back_off() -> Duration {
+    Duration::from_secs(1)
 }
 
-fn default_max_back_off() -> u64 {
-    8
+fn default_max_back_off() -> Duration {
+    Duration::from_secs(8)
 }
 
 /// Loads the base solver configuration from a TOML file.
@@ -144,8 +144,8 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
         },
         rate_limiting_strategy: Strategy::try_new(
             config.back_off_growth_factor,
-            Duration::from_secs(config.min_back_off),
-            Duration::from_secs(config.max_back_off),
+            config.min_back_off,
+            config.max_back_off,
         )
         .unwrap(),
     };
