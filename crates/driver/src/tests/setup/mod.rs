@@ -56,18 +56,21 @@ pub enum Partial {
 
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
         score: eth::U256,
     },
-    RiskAdjusted(f64),
+    #[serde(rename_all = "camelCase")]
+    RiskAdjusted { success_probability: f64 },
 }
 
 impl Default for Score {
     fn default() -> Self {
-        Self::RiskAdjusted(1.0)
+        Self::RiskAdjusted {
+            success_probability: 1.0,
+        }
     }
 }
 

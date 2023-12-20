@@ -601,7 +601,6 @@ components:
             The just-in-time liquidity order to execute in a solution.
           allOf:
             - $ref: "#/components/schemas/JitOrder"
-
     Trade:
       description: |
         A trade for a CoW Protocol order included in a solution.
@@ -751,18 +750,21 @@ components:
           oneOf:
             - type: object
               properties:
-                solver:
-                  type: object
-                  properties:
-                    score:
-                      description: |
-                        The raw score of the solution. This is the score that is
-                        used by the driver to rank solutions.
-                      allOf:
-                        - $ref: "#/components/schemas/Decimal"
+                kind: 
+                  type: string
+                  enum: [solver]
+                score:
+                  description: |
+                    The raw score of the solution. This is the score that is
+                    used by the driver to rank solutions.
+                  allOf:
+                    - $ref: "#/components/schemas/Decimal"
             - type: object
               properties:
-                riskAdjusted:
+                kind: 
+                  type: string
+                  enum: [riskadjusted]
+                successProbability: 
                   description: |
                     The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
                   type: number
