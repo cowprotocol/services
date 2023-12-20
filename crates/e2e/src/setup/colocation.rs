@@ -78,7 +78,7 @@ graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
-missing-pool-cache-time = 10m
+missing-pool-cache-time = "10m"
 
 [submission]
 gas-price-cap = 1000000000000
