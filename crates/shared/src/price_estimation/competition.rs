@@ -216,7 +216,13 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
                     // To avoid that we discard all quotes with gas costs significantly below the
                     // median.
                     .filter(|(_, r)| match r {
-                        Ok(estimate) => estimate.gas >= gas_lower_bound,
+                        Ok(estimate) => {
+                            let keep = estimate.gas >= gas_lower_bound;
+                            if !keep {
+                                tracing::warn!(?estimate, "discarding outlier estimate");
+                            }
+                            keep
+                        }
                         Err(_) => true,
                     })
                     .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
@@ -283,8 +289,8 @@ fn compare_quote_result(
 ) -> Ordering {
     match (a, b) {
         (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
-        (Ok(_), Err(_)) => Ordering::Less,
-        (Err(_), Ok(_)) => Ordering::Greater,
+        (Ok(_), Err(_)) => Ordering::Greater,
+        (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
     }
 }
@@ -294,9 +300,9 @@ fn compare_native_result(
     b: &Result<f64, PriceEstimationError>,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => b.total_cmp(a),
-        (Ok(_), Err(_)) => Ordering::Less,
-        (Err(_), Ok(_)) => Ordering::Greater,
+        (Ok(a), Ok(b)) => a.total_cmp(b).reverse(),
+        (Ok(_), Err(_)) => Ordering::Greater,
+        (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
     }
 }
@@ -305,7 +311,7 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
     let a = context.effective_eth_out(a, query.kind);
     let b = context.effective_eth_out(b, query.kind);
     match query.kind {
-        OrderKind::Buy => b.cmp(&a),
+        OrderKind::Buy => a.cmp(&b).reverse(),
         OrderKind::Sell => a.cmp(&b),
     }
 }
@@ -327,7 +333,7 @@ fn compare_error(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering
             // lowest priority
         }
     }
-    error_to_integer_priority(b).cmp(&error_to_integer_priority(a))
+    error_to_integer_priority(a).cmp(&error_to_integer_priority(b))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -495,10 +501,12 @@ mod tests {
         let estimates = [
             Estimate {
                 out_amount: 1.into(),
+                gas: 1,
                 ..Default::default()
             },
             Estimate {
                 out_amount: 2.into(),
+                gas: 1,
                 ..Default::default()
             },
         ];
@@ -584,6 +592,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -645,6 +654,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -721,6 +731,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -824,8 +835,8 @@ mod tests {
                 OrderKind::Buy,
                 // User effectively pays `100_000` `sell_token`.
                 estimate(96_000, 1_000),
-                // User effectively pays `100_001` `sell_token`.
-                estimate(92_001, 2_000),
+                // User effectively pays `100_002` `sell_token`.
+                estimate(92_002, 2_000),
             ),
         ];
 
