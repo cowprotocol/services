@@ -573,6 +573,12 @@ components:
             The sell token amount that should be taken as a fee for this
             trade. This only gets returned for partially fillable limit
             orders and only refers to the actual amount filled by the trade.
+        executedAmount:
+          description: |
+            The amount of the order that was executed. This is denoted in
+            "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
 
     JitTrade:
       description: |
@@ -584,6 +590,12 @@ components:
         kind:
           type: string
           enum: [jit]
+        executedAmount:
+          description: |
+            The amount of the order that was executed. This is denoted in
+            "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         order:
           description: |
             The just-in-time liquidity order to execute in a solution.
@@ -593,20 +605,9 @@ components:
     Trade:
       description: |
         A trade for a CoW Protocol order included in a solution.
-      allOf:
-        - oneOf:
-            - $ref: "#/components/schemas/Fulfillment"
-            - $ref: "#/components/schemas/JitTrade"
-        - type: object
-          required:
-            - executedAmount
-          properties:
-            executedAmount:
-              description: |
-                The amount of the order that was executed. This is denoted in
-                "sellToken" for sell orders, and "buyToken" for buy orders.
-              allOf:
-                - $ref: "#/components/schemas/TokenAmount"
+      oneOf:
+        - $ref: "#/components/schemas/Fulfillment"
+        - $ref: "#/components/schemas/JitTrade"
 
     LiquidityInteraction:
       description: |
@@ -746,7 +747,7 @@ components:
           description: |
             Information required by the driver to score the solution. 
             
-            Can either be a raw score or a revert probability.
+            Can either be a raw score or a success probability.
           oneOf:
             - type: object
               properties:
