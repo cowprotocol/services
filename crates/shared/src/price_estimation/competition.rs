@@ -859,4 +859,84 @@ mod tests {
             assert_eq!(result.unwrap(), preferred_estimate);
         }
     }
+
+    #[tokio::test]
+    async fn discards_low_gas_cost_estimates() {
+        let estimator = |estimate| {
+            let mut estimator = MockPriceEstimating::new();
+            estimator
+                .expect_estimate()
+                .times(1)
+                .returning(move |_| async move { Ok(estimate) }.boxed());
+            Arc::new(estimator) as Arc<dyn PriceEstimating>
+        };
+        let estimate = |out: u128, gas| Estimate {
+            out_amount: out.into(),
+            gas,
+            ..Default::default()
+        };
+
+        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
+        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
+        let mut native = MockNativePriceEstimating::new();
+        native
+            .expect_estimate_native_price()
+            .returning(move |_| async { Ok(0.5) }.boxed());
+        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
+            base_fee_per_gas: 2.0,
+            max_fee_per_gas: 2.0,
+            max_priority_fee_per_gas: 2.0,
+        }));
+        let ranking = PriceRanking::BestBangForBuck {
+            native: Arc::new(native),
+            gas,
+        };
+
+        let tests = [
+            (
+                OrderKind::Sell,
+                vec![
+                    // User effectively receives `100_000` `buy_token`.
+                    estimate(104_000, 1_000),
+                    // User effectively receives `99_999` `buy_token`.
+                    estimate(107_999, 2_000),
+                    // User effectively receives `~103_000` `buy_token` but the estimate
+                    // gets discarded because it's a suspicious outlier.
+                    estimate(104_000, 499),
+                ],
+            ),
+            (
+                OrderKind::Buy,
+                vec![
+                    // User effectively pays `100_000` `sell_token`.
+                    estimate(96_000, 1_000),
+                    // User effectively pays `100_002` `sell_token`.
+                    estimate(92_002, 2_000),
+                    // User effectively pays `~97_000` `sell_token` but the estimate
+                    // gets discarded because it's a suspicious outlier.
+                    estimate(96_000, 499),
+                ],
+            ),
+        ];
+
+        for (quote_kind, estimates) in tests {
+            let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
+                CompetitionEstimator::new(
+                    vec![estimates
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| (format!("{i}"), estimator(*e)))
+                        .collect()],
+                    ranking.clone(),
+                );
+
+            let result = priority
+                .estimate(Arc::new(Query {
+                    kind: quote_kind,
+                    ..Default::default()
+                }))
+                .await;
+            assert_eq!(result.unwrap(), estimates[0]);
+        }
+    }
 }
