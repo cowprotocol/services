@@ -67,6 +67,7 @@ impl Notification {
                     }
                 }
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
+                notify::Kind::DriverError(reason) => Kind::DriverError { reason },
                 notify::Kind::Settled(kind) => match kind {
                     notify::Settlement::Success(hash) => Kind::Success {
                         transaction: hash.0,
@@ -133,6 +134,9 @@ pub enum Kind {
     },
     Revert {
         transaction: eth::H256,
+    },
+    DriverError {
+        reason: String,
     },
     Cancelled,
     Fail,

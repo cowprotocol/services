@@ -488,6 +488,9 @@ pub enum SolverRejectionReason {
 
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId(u64),
+
+    /// Some aspect of the driver logic failed.
+    Driver(String),
 }
 
 #[derive(Debug, Serialize)]

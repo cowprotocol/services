@@ -86,6 +86,7 @@ impl Notification {
                 Kind::Revert { transaction } => {
                     notification::Kind::Settled(notification::Settlement::Revert(*transaction))
                 }
+                Kind::DriverError { reason } => notification::Kind::DriverError(reason.clone()),
                 Kind::Cancelled => {
                     notification::Kind::Settled(notification::Settlement::SimulationRevert)
                 }
@@ -148,6 +149,9 @@ pub enum Kind {
     },
     Revert {
         transaction: H256,
+    },
+    DriverError {
+        reason: String,
     },
     Cancelled,
     Fail,
