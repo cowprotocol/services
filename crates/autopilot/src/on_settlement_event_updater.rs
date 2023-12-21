@@ -207,9 +207,27 @@ impl OnSettlementEventUpdater {
                         .collect::<Vec<_>>();
 
                     let surplus = settlement.total_surplus(&external_prices);
-                    let fee = settlement.total_fees(&external_prices, &order_fees);
-                    let order_executions =
-                        settlement.order_executions(&external_prices, &order_fees);
+                    let (fee, order_executions) = {
+                        let all_fees = settlement.all_fees(&external_prices, &order_fees);
+                        // total unsubsidized fee used for CIP20 rewards
+                        let fee = all_fees
+                            .iter()
+                            .fold(0.into(), |acc, fees| acc + fees.native);
+                        // executed fees for each order execution
+                        let order_executions = all_fees
+                            .into_iter()
+                            .zip(order_fees.iter())
+                            .filter_map(|(fee, (_, order_fee))| match order_fee {
+                                // filter out orders with order_fee
+                                // since their fee can already be fetched from the database table
+                                // `orders` so no point in storing the same
+                                // value twice, in another table
+                                Some(_) => None,
+                                None => Some((fee.order, fee.sell)),
+                            })
+                            .collect();
+                        (fee, order_executions)
+                    };
 
                     update.auction_data = Some(AuctionData {
                         auction_id,
@@ -217,10 +235,7 @@ impl OnSettlementEventUpdater {
                         fee,
                         gas_used,
                         effective_gas_price,
-                        order_executions: order_executions
-                            .iter()
-                            .map(|fees| (fees.order, fees.sell))
-                            .collect(),
+                        order_executions,
                     });
                 }
                 Err(DecodingError::InvalidSelector) => {

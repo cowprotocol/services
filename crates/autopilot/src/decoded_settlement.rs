@@ -268,44 +268,10 @@ impl DecodedSettlement {
         })
     }
 
-    /// Returns the total sum of unsubsidized fees of this solution converted to
-    /// the native token. This is only the value used for objective value
-    /// computatations and can theoretically be different from the value of
-    /// fees actually collected by the protocol.
-    pub fn total_fees(
-        &self,
-        external_prices: &ExternalPrices,
-        order_fees: &[(OrderUid, Option<U256>)],
-    ) -> U256 {
-        self.all_fees(external_prices, order_fees)
-            .iter()
-            .fold(0.into(), |acc, fees| acc + fees.native)
-    }
-
-    /// Returns the list of executions with their fees,
-    /// which are supposed to be saved whenever a new settlement is executed.
-    pub fn order_executions(
-        &self,
-        external_prices: &ExternalPrices,
-        order_fees: &[(OrderUid, Option<U256>)],
-    ) -> Vec<Fees> {
-        self.all_fees(external_prices, order_fees)
-            .into_iter()
-            .zip(order_fees.iter())
-            .filter_map(|(fee, (_, order_fee))| match order_fee {
-                // filter out orders with order_fee
-                // since their fee can already be fetched from the database table `orders`
-                // so no point in storing the same value twice, in another table
-                Some(_) => None,
-                None => Some(fee),
-            })
-            .collect()
-    }
-
     /// Returns unsubsidized fees for all trades.
     /// Length of the returned vector is equal to the length of `self.trades`
     /// and `order_fees`.
-    fn all_fees(
+    pub fn all_fees(
         &self,
         external_prices: &ExternalPrices,
         order_fees: &[(OrderUid, Option<U256>)],
@@ -579,6 +545,20 @@ mod tests {
         "c078f884a2676e1345748b1feace7b0abee5d00ecadb6e574dcdd109a63e8943"
     ));
 
+    fn total_fee(fees: Vec<Fees>) -> U256 {
+        fees.iter().fold(0.into(), |acc, fee| acc + fee.native)
+    }
+
+    fn order_executions(fees: Vec<Fees>, order_fees: &Vec<(OrderUid, Option<U256>)>) -> Vec<Fees> {
+        fees.into_iter()
+            .zip(order_fees.iter())
+            .filter_map(|(fee, (_, order_fee))| match order_fee {
+                Some(_) => None,
+                None => Some(fee),
+            })
+            .collect()
+    }
+
     #[test]
     fn total_surplus_test() {
         // transaction hash:
@@ -740,11 +720,10 @@ mod tests {
             (order1, Some(48263037u128.into())),
             (order2, Some(127253135942751092736u128.into())),
         ];
-        let fees = settlement
-            .total_fees(&external_prices, &order_fees)
-            .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
-                             // competition
-        assert_eq!(fees, 45377573614605000.);
+        let fees = settlement.all_fees(&external_prices, &order_fees);
+        let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
+                                                  // competition
+        assert_eq!(fee, 45377573614605000.);
     }
 
     #[test]
@@ -833,11 +812,10 @@ mod tests {
 
         let order1 = OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap();
         let order_fees = vec![(order1, None)];
-        let fees = settlement
-            .total_fees(&external_prices, &order_fees)
-            .to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
-                             // competition
-        assert_eq!(fees, 3768095572151424.);
+        let fees = settlement.all_fees(&external_prices, &order_fees);
+        let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
+                                                  // competition
+        assert_eq!(fee, 3768095572151424.);
     }
 
     #[test]
@@ -936,10 +914,10 @@ mod tests {
 
         let order1 = OrderUid::from_str("0x999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02b70cd1ebd3b24aeeaf90c6041446630338536e7f643d6a39").unwrap();
         let order_fees = vec![(order1, Some(463182886014406361088u128.into()))];
-        let fees = settlement
-            .total_fees(&external_prices, &order_fees)
-            .to_f64_lossy();
-        assert_eq!(fees, 13630555109200196.);
+        let fees = settlement.all_fees(&external_prices, &order_fees);
+        let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
+                                                  // competition
+        assert_eq!(fee, 13630555109200196.);
     }
 
     #[test]
@@ -1307,7 +1285,8 @@ mod tests {
         let order3 = OrderUid::from_str("0x78a8cb7e6103675633deb4a0136dab29dd84a1abd209ab406cbd9cfd0a7f953ec001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
 
         let order_fees = vec![(order1, None), (order2, None), (order3, None)];
-        let fees = decoded.order_executions(&external_prices, &order_fees);
+        let fees = decoded.all_fees(&external_prices, &order_fees);
+        let fees = order_executions(fees, &order_fees);
         assert_eq!(fees[1].sell, 7487413756444483822u128.into());
     }
 }
