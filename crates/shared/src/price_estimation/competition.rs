@@ -7,6 +7,7 @@ use {
         PriceEstimationError,
         Query,
     },
+    anyhow::Context,
     futures::{
         future::Future,
         stream::{FuturesUnordered, StreamExt},
@@ -86,7 +87,9 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
             + Send
             + 'static,
-        pick_best_index: impl Fn(&[(EstimatorIndex, Result<R, E>)], &C) -> usize + Send + 'static,
+        pick_best_index: impl Fn(&[(EstimatorIndex, Result<R, E>)], &C) -> Result<usize, E>
+            + Send
+            + 'static,
         provide_comparison_context: impl Future<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
@@ -147,7 +150,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             }
 
             let context = provide_comparison_context.await?;
-            let best_index = pick_best_index(&results, &context);
+            let best_index = pick_best_index(&results, &context)?;
             let (estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
             tracing::debug!(
@@ -227,7 +230,8 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
                     })
                     .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
                     .map(|(index, _)| index)
-                    .expect("we never discard all the results so at least 1 should remain")
+                    .with_context(|| "discarded all price estimates")
+                    .map_err(PriceEstimationError::ProtocolInternal)
             },
             context_future,
         )
@@ -245,13 +249,14 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
             OrderKind::Buy,
             |estimator, token| estimator.estimate_native_price(token),
             move |results, _context| {
-                results
+                let best_index = results
                     .iter()
                     .map(|(_, result)| result)
                     .enumerate()
                     .max_by(|a, b| compare_native_result(a.1, b.1))
                     .map(|(index, _)| index)
-                    .unwrap()
+                    .expect("we get passed at least 1 result and did not filter out any of them");
+                Ok(best_index)
             },
             context_future,
         )
