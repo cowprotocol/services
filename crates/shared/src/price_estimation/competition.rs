@@ -454,6 +454,67 @@ mod tests {
         tokio::time::sleep,
     };
 
+    fn estimator(estimate: Estimate) -> Arc<dyn PriceEstimating> {
+        let mut estimator = MockPriceEstimating::new();
+        estimator
+            .expect_estimate()
+            .times(1)
+            .returning(move |_| async move { Ok(estimate) }.boxed());
+        Arc::new(estimator)
+    }
+
+    fn estimate(out_amount: u128, gas: u64) -> Estimate {
+        Estimate {
+            out_amount: out_amount.into(),
+            gas,
+            ..Default::default()
+        }
+    }
+
+    /// Builds a `BestBangForBuck` setup where every token is estimated
+    /// to be half as valuable as ETH and the gas price is 2.
+    /// That effectively means every unit of `gas` in an estimate worth
+    /// 4 units of `out_amount`.
+    fn bang_for_buck_ranking() -> PriceRanking {
+        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
+        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
+        let mut native = MockNativePriceEstimating::new();
+        native
+            .expect_estimate_native_price()
+            .returning(move |_| async { Ok(0.5) }.boxed());
+        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
+            base_fee_per_gas: 2.0,
+            max_fee_per_gas: 2.0,
+            max_priority_fee_per_gas: 2.0,
+        }));
+        PriceRanking::BestBangForBuck {
+            native: Arc::new(native),
+            gas,
+        }
+    }
+
+    /// Reusable test setup that verifies that the ranking logic picks the
+    /// execpted estimate as the winner. The estimate that is supposed to be
+    /// picked as the winner should be the first item in `estimates`.
+    async fn ranking_test(ranking: PriceRanking, kind: OrderKind, estimates: &[Estimate]) {
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![estimates
+                .iter()
+                .enumerate()
+                .map(|(i, e)| (format!("estimator_{i}"), estimator(*e)))
+                .collect()],
+            ranking.clone(),
+        );
+
+        let result = priority
+            .estimate(Arc::new(Query {
+                kind,
+                ..Default::default()
+            }))
+            .await;
+        assert_eq!(result.unwrap(), estimates[0]);
+    }
+
     #[tokio::test]
     async fn works() {
         let queries = [
@@ -792,151 +853,65 @@ mod tests {
     /// the simpler quote will be preferred.
     #[tokio::test]
     async fn best_bang_for_buck_adjusts_for_complexity() {
-        let estimator = |estimate| {
-            let mut estimator = MockPriceEstimating::new();
-            estimator
-                .expect_estimate()
-                .times(1)
-                .returning(move |_| async move { Ok(estimate) }.boxed());
-            Arc::new(estimator)
-        };
-        let estimate = |out: u128, gas| Estimate {
-            out_amount: out.into(),
-            gas,
-            ..Default::default()
-        };
-
-        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
-        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
-        let mut native = MockNativePriceEstimating::new();
-        native
-            .expect_estimate_native_price()
-            .returning(move |_| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
-        }));
-        let ranking = PriceRanking::BestBangForBuck {
-            native: Arc::new(native),
-            gas,
-        };
-
-        // tests are given as (quote_kind, preferred_estimate, worse_estimate)
-        let tests = [
-            (
-                OrderKind::Sell,
+        ranking_test(
+            bang_for_buck_ranking(),
+            OrderKind::Sell,
+            &[
                 // User effectively receives `100_000` `buy_token`.
                 estimate(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
                 estimate(107_999, 2_000),
-            ),
-            (
-                OrderKind::Buy,
+            ],
+        )
+        .await;
+
+        ranking_test(
+            bang_for_buck_ranking(),
+            OrderKind::Buy,
+            &[
                 // User effectively pays `100_000` `sell_token`.
                 estimate(96_000, 1_000),
                 // User effectively pays `100_002` `sell_token`.
                 estimate(92_002, 2_000),
-            ),
-        ];
-
-        for (quote_kind, preferred_estimate, worse_estimate) in tests {
-            let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-                CompetitionEstimator::new(
-                    vec![vec![
-                        ("first".to_owned(), estimator(preferred_estimate)),
-                        ("second".to_owned(), estimator(worse_estimate)),
-                    ]],
-                    ranking.clone(),
-                );
-
-            let result = priority
-                .estimate(Arc::new(Query {
-                    kind: quote_kind,
-                    ..Default::default()
-                }))
-                .await;
-            assert_eq!(result.unwrap(), preferred_estimate);
-        }
+            ],
+        )
+        .await;
     }
 
+    /// Same test as above but now we also add an estimate that should
+    /// win under normal circumstances but the `gas` cost is suspiciously
+    /// low so we discard it. This protects us from quoting unreasonably
+    /// low fees for user orders.
     #[tokio::test]
     async fn discards_low_gas_cost_estimates() {
-        let estimator = |estimate| {
-            let mut estimator = MockPriceEstimating::new();
-            estimator
-                .expect_estimate()
-                .times(1)
-                .returning(move |_| async move { Ok(estimate) }.boxed());
-            Arc::new(estimator) as Arc<dyn PriceEstimating>
-        };
-        let estimate = |out: u128, gas| Estimate {
-            out_amount: out.into(),
-            gas,
-            ..Default::default()
-        };
+        ranking_test(
+            bang_for_buck_ranking(),
+            OrderKind::Sell,
+            &[
+                // User effectively receives `100_000` `buy_token`.
+                estimate(104_000, 1_000),
+                // User effectively receives `99_999` `buy_token`.
+                estimate(107_999, 2_000),
+                // User effectively receives `~103_000` `buy_token` but the estimate
+                // gets discarded because it quotes suspiciously little gas.
+                estimate(104_000, 499),
+            ],
+        )
+        .await;
 
-        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
-        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
-        let mut native = MockNativePriceEstimating::new();
-        native
-            .expect_estimate_native_price()
-            .returning(move |_| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
-        }));
-        let ranking = PriceRanking::BestBangForBuck {
-            native: Arc::new(native),
-            gas,
-        };
-
-        let tests = [
-            (
-                OrderKind::Sell,
-                vec![
-                    // User effectively receives `100_000` `buy_token`.
-                    estimate(104_000, 1_000),
-                    // User effectively receives `99_999` `buy_token`.
-                    estimate(107_999, 2_000),
-                    // User effectively receives `~103_000` `buy_token` but the estimate
-                    // gets discarded because it's a suspicious outlier.
-                    estimate(104_000, 499),
-                ],
-            ),
-            (
-                OrderKind::Buy,
-                vec![
-                    // User effectively pays `100_000` `sell_token`.
-                    estimate(96_000, 1_000),
-                    // User effectively pays `100_002` `sell_token`.
-                    estimate(92_002, 2_000),
-                    // User effectively pays `~97_000` `sell_token` but the estimate
-                    // gets discarded because it's a suspicious outlier.
-                    estimate(96_000, 499),
-                ],
-            ),
-        ];
-
-        for (quote_kind, estimates) in tests {
-            let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-                CompetitionEstimator::new(
-                    vec![estimates
-                        .iter()
-                        .enumerate()
-                        .map(|(i, e)| (format!("{i}"), estimator(*e)))
-                        .collect()],
-                    ranking.clone(),
-                );
-
-            let result = priority
-                .estimate(Arc::new(Query {
-                    kind: quote_kind,
-                    ..Default::default()
-                }))
-                .await;
-            assert_eq!(result.unwrap(), estimates[0]);
-        }
+        ranking_test(
+            bang_for_buck_ranking(),
+            OrderKind::Buy,
+            &[
+                // User effectively pays `100_000` `sell_token`.
+                estimate(96_000, 1_000),
+                // User effectively pays `100_002` `sell_token`.
+                estimate(92_002, 2_000),
+                // User effectively pays `~97_000` `sell_token` but the estimate
+                // gets discarded because it quotes suspiciously little gas.
+                estimate(96_000, 499),
+            ],
+        )
+        .await;
     }
 }
