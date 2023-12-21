@@ -5,10 +5,7 @@ use {
         infra::{
             self,
             blockchain::contracts::Addresses,
-            config::file::{
-                default_http_time_buffer_milliseconds,
-                default_solving_share_of_deadline,
-            },
+            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
             Ethereum,
         },
         tests::hex_address,
@@ -217,9 +214,7 @@ impl Solver {
             gas,
         )
         .await;
-        let http_delay = chrono::Duration::milliseconds(
-            default_http_time_buffer_milliseconds().try_into().unwrap(),
-        );
+        let http_delay = chrono::Duration::from_std(default_http_time_buffer()).unwrap();
         let timeouts = infra::solver::Timeouts {
             http_delay,
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),

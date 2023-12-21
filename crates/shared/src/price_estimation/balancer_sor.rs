@@ -9,13 +9,13 @@ use {
     },
     crate::{
         balancer_sor_api::{self, BalancerSorApi},
-        rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
     },
     anyhow::Result,
     futures::{future::BoxFuture, FutureExt},
     gas_estimation::GasPriceEstimating,
     primitive_types::{H160, U256},
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

@@ -30,7 +30,6 @@ use {
             PriceEstimationError,
             Query,
         },
-        rate_limiter::RateLimiter,
         recent_block_cache::Block,
         request_sharing::RequestSharing,
         sources::{
@@ -46,6 +45,7 @@ use {
     gas_estimation::GasPriceEstimating,
     model::{order::OrderKind, TokenPair},
     num::{BigInt, BigRational},
+    rate_limit::RateLimiter,
     std::{
         collections::{BTreeMap, HashSet},
         sync::Arc,

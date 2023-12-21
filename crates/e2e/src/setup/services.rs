@@ -53,7 +53,7 @@ impl<'a> Services<'a> {
             "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
             "--native-price-estimators=Baseline".to_string(),
             "--amount-to-estimate-prices-with=1000000000000000000".to_string(),
-            "--block-stream-poll-interval-seconds=1".to_string(),
+            "--block-stream-poll-interval=1s".to_string(),
         ]
         .into_iter()
     }
@@ -61,7 +61,7 @@ impl<'a> Services<'a> {
     fn api_autopilot_solver_arguments(&self) -> impl Iterator<Item = String> {
         [
             "--baseline-sources=None".to_string(),
-            "--network-block-interval=1".to_string(),
+            "--network-block-interval=1s".to_string(),
             "--solver-competition-auth=super_secret_key".to_string(),
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
@@ -85,10 +85,10 @@ impl<'a> Services<'a> {
     pub fn start_autopilot(&self, extra_args: Vec<String>) {
         let args = [
             "autopilot".to_string(),
-            "--auction-update-interval=1".to_string(),
+            "--auction-update-interval=1s".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
-            "--solve-deadline=2".to_string(),
+            "--solve-deadline=2s".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -127,7 +127,7 @@ impl<'a> Services<'a> {
         let args = [
             "solver".to_string(),
             format!("--solver-account={}", hex::encode(private_key)),
-            "--settle-interval=1".to_string(),
+            "--settle-interval=1s".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
         ]
@@ -158,7 +158,7 @@ impl<'a> Services<'a> {
             ),
             "--solvers=None".to_string(),
             format!("--solver-account={:#x}", solver_account),
-            "--settle-interval=1".to_string(),
+            "--settle-interval=1s".to_string(),
             format!("--transaction-submission-nodes={NODE_HOST}"),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
         ]

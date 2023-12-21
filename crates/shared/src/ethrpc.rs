@@ -6,7 +6,7 @@ pub use ethrpc::{
     Web3Transport,
 };
 use {
-    crate::{arguments::duration_from_seconds, http_client::HttpClientFactory},
+    crate::http_client::HttpClientFactory,
     reqwest::Url,
     std::{
         fmt::{self, Display, Formatter},
@@ -32,7 +32,7 @@ pub struct Arguments {
 
     /// Buffering "nagle" delay to wait for additional requests before sending
     /// out an incomplete batch.
-    #[clap(long, env, value_parser = duration_from_seconds, default_value = "0")]
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "0s")]
     pub ethrpc_batch_delay: Duration,
 }
 

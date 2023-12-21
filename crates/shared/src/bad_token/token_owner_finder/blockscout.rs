@@ -1,10 +1,10 @@
 use {
     super::TokenOwnerProposing,
-    crate::rate_limiter::{back_off, RateLimiter, RateLimitingStrategy},
     anyhow::{bail, Result},
     ethcontract::H160,
     prometheus::IntCounterVec,
     prometheus_metric_storage::MetricStorage,
+    rate_limit::{back_off, RateLimiter, Strategy},
     reqwest::{Client, Url},
     serde::Deserialize,
 };
@@ -37,7 +37,7 @@ impl BlockscoutTokenOwnerFinder {
         self
     }
 
-    pub fn with_rate_limiter(&mut self, strategy: RateLimitingStrategy) -> &mut Self {
+    pub fn with_rate_limiter(&mut self, strategy: Strategy) -> &mut Self {
         self.rate_limiter = Some(RateLimiter::from_strategy(
             strategy,
             "blockscout".to_owned(),
