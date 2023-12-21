@@ -15,7 +15,7 @@ use {
             reveal,
             solve::{self},
         },
-        protocol,
+        protocol::{self, fee},
         run_loop,
     },
     model::{
@@ -194,13 +194,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
+            fee_policies,
         );
         let request = &request;
 
