@@ -34,7 +34,6 @@ pub mod order_quoting;
 pub mod order_validation;
 pub mod paraswap_api;
 pub mod price_estimation;
-pub mod rate_limiter;
 pub mod recent_block_cache;
 pub mod remaining_amounts;
 pub mod request_sharing;
@@ -54,8 +53,6 @@ use std::{
     future::Future,
     time::{Duration, Instant},
 };
-
-pub use rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy};
 
 /// Run a future and callback with the time the future took. The call back can
 /// for example log the time.

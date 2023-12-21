@@ -16,7 +16,6 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
-        rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Trade, TradeError, TradeFinding},
     },
@@ -37,6 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::RateLimiter,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };

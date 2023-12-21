@@ -32,7 +32,6 @@ use {
         oneinch_api::OneInchClient,
         paraswap_api::DefaultParaswapApi,
         price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
-        rate_limiter::RateLimiter,
         sources::{
             balancer_v2::BalancerPoolFetching,
             uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
@@ -46,6 +45,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::RateLimiter,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };

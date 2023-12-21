@@ -191,7 +191,7 @@ impl RunLoop {
                             // we don't know the surplus fee in advance. will be populated
                             // after the transaction containing the order is mined
                             true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                            false => ExecutedFee::Order(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
                             order_id: *order_id,
@@ -239,8 +239,8 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Some(Score::Solver(participant.solution.score.get())),
-                            ranking: Some(solutions.len() - index),
+                            score: Score::Solver(participant.solution.score.get()),
+                            ranking: solutions.len() - index,
                             orders: participant
                                 .solution
                                 .orders()
@@ -251,21 +251,23 @@ impl RunLoop {
                                     buy_amount: order.buy_amount,
                                 })
                                 .collect(),
-                            // TODO: revisit once colocation is enabled (remove not populated
-                            // fields) Not all fields can be populated in the colocated world
-                            ..Default::default()
+                            clearing_prices: participant
+                                .solution
+                                .clearing_prices
+                                .iter()
+                                .map(|(token, price)| (*token, *price))
+                                .collect(),
+                            call_data: None,
+                            uninternalized_call_data: None,
                         };
                         if is_winner {
-                            settlement.call_data = revealed.calldata.internalized.clone();
+                            settlement.call_data = Some(revealed.calldata.internalized.clone());
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
                         }
                         settlement
                     })
                     .collect(),
-                // TODO: revisit once colocation is enabled (remove not populated fields)
-                // Not all fields can be populated in the colocated world
-                ..Default::default()
             };
             let competition = Competition {
                 auction_id,
@@ -289,10 +291,11 @@ impl RunLoop {
             }
 
             tracing::info!(driver = %driver.name, "settling");
+            let submission_start = Instant::now();
             match self.settle(driver, solution).await {
-                Ok(()) => Metrics::settle_ok(driver),
+                Ok(()) => Metrics::settle_ok(driver, submission_start.elapsed()),
                 Err(err) => {
-                    Metrics::settle_err(driver, &err);
+                    Metrics::settle_err(driver, &err, submission_start.elapsed());
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
@@ -395,6 +398,7 @@ impl RunLoop {
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
                     orders: solution.orders,
+                    clearing_prices: solution.clearing_prices,
                 })
             })
             .collect())
@@ -590,6 +594,7 @@ struct Solution {
     account: H160,
     score: NonZeroU256,
     orders: HashMap<OrderUid, TradedAmounts>,
+    clearing_prices: HashMap<H160, U256>,
 }
 
 impl Solution {
@@ -637,7 +642,12 @@ struct Metrics {
     auction: prometheus::IntGauge,
 
     /// Tracks the duration of successful driver `/solve` requests.
-    #[metric(labels("driver", "result"))]
+    #[metric(
+        labels("driver", "result"),
+        buckets(
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+        )
+    )]
     solve: prometheus::HistogramVec,
 
     /// Tracks driver solutions.
@@ -648,9 +658,9 @@ struct Metrics {
     #[metric(labels("driver", "result"))]
     reveal: prometheus::IntCounterVec,
 
-    /// Tracks the result of driver `/settle` requests.
+    /// Tracks the times and results of driver `/settle` requests.
     #[metric(labels("driver", "result"))]
-    settle: prometheus::IntCounterVec,
+    settle_time: prometheus::IntCounterVec,
 
     /// Tracks the number of orders that were part of some but not the winning
     /// solution together with the winning driver that did't include it.
@@ -718,21 +728,21 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &Driver) {
+    fn settle_ok(driver: &Driver, time: Duration) {
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, "success"])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn settle_err(driver: &Driver, err: &SettleError) {
+    fn settle_err(driver: &Driver, err: &SettleError, time: Duration) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
         Self::get()
-            .settle
+            .settle_time
             .with_label_values(&[&driver.name, label])
-            .inc();
+            .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
     fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {

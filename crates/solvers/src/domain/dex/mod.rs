@@ -115,6 +115,7 @@ impl Swap {
                 Ok(value) => value,
                 Err(err) => {
                     tracing::warn!(?err, "gas simulation failed");
+                    infra::metrics::solve_error("SimulationFailed");
                     return None;
                 }
             }

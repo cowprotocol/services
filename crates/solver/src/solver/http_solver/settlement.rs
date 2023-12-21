@@ -87,11 +87,9 @@ impl Execution {
         internalizable: bool,
         enforce_correct_fees: bool,
     ) -> Result<()> {
-        use Execution::*;
-
         match self {
-            LimitOrder(order) => {
-                let solver_fee = match order.order.solver_determines_fee() {
+            Execution::LimitOrder(order) => {
+                let scoring_fee = match order.order.solver_determines_fee() {
                     true => {
                         let fee = order.executed_fee_amount;
                         match enforce_correct_fees {
@@ -99,17 +97,17 @@ impl Execution {
                             false => fee.unwrap_or_default(),
                         }
                     }
-                    false => order.order.solver_fee,
+                    false => order.order.scoring_fee,
                 };
 
                 let execution = LimitOrderExecution {
                     filled: order.executed_amount(),
-                    solver_fee,
+                    scoring_fee,
                 };
 
                 settlement.with_liquidity(&order.order, execution)
             }
-            Amm(executed_amm) => {
+            Execution::Amm(executed_amm) => {
                 let execution = slippage.apply_to_amm_execution(AmmOrderExecution {
                     input_max: executed_amm.input.clone(),
                     output: executed_amm.output.clone(),
@@ -132,7 +130,7 @@ impl Execution {
                     }
                 }
             }
-            CustomInteraction(interaction_data) => {
+            Execution::CustomInteraction(interaction_data) => {
                 settlement.encoder.append_to_execution_plan_internalizable(
                     Arc::new(*interaction_data.clone()),
                     internalizable,
@@ -742,7 +740,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    solver_fee: 0.into(),
+                    scoring_fee: 0.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),

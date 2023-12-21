@@ -28,7 +28,6 @@ use {
         ethcontract_error::EthcontractErrorType,
         ethrpc::{Web3, Web3CallBatch, MAX_BATCH_SIZE},
         http_client::HttpClientFactory,
-        rate_limiter::RateLimitingStrategy,
         sources::uniswap_v2::pair_provider::PairProvider,
     },
     anyhow::{Context, Result},
@@ -36,6 +35,7 @@ use {
     ethcontract::U256,
     futures::{Stream, StreamExt as _},
     primitive_types::H160,
+    rate_limit::Strategy,
     reqwest::Url,
     std::{
         collections::HashMap,
@@ -90,7 +90,7 @@ pub struct Arguments {
     /// Token owner finding rate limiting strategy. See
     /// --price-estimation-rate-limiter documentation for format details.
     #[clap(long, env)]
-    pub token_owner_finder_rate_limiter: Option<RateLimitingStrategy>,
+    pub token_owner_finder_rate_limiter: Option<Strategy>,
 
     /// List of token addresses to be whitelisted as a potential token owners
     /// For each token a list of owners is defined.

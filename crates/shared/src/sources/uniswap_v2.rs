@@ -20,6 +20,14 @@ use {
     std::{fmt::Display, str::FromStr, sync::Arc},
 };
 
+// How to compute for unknown contracts
+// Find a pair creation transaction and open it with Tenderly on the debugger
+// page. Example:
+// https://dashboard.tenderly.co/tx/sepolia/0x4d31daa9e74b96a5c9a780cf8839b115ac25127b17226ecb1ad6e7f244fd1c8f/debugger?trace=0.1
+// Find the CREATE2 step and take the  "input" value in the debugger box; this
+// is the init code. Trim 0x and hash the resulting hex-encoded bytestring, for
+// example with `xxd -ps -r < ./initcode.txt | openssl dgst -keccak-256` (with
+// Openssl version ≥3.2) or https://emn178.github.io/online-tools/keccak_256.html
 pub const UNISWAP_INIT: [u8; 32] =
     hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f");
 pub const HONEYSWAP_INIT: [u8; 32] =
@@ -30,6 +38,8 @@ pub const BAOSWAP_INIT: [u8; 32] =
     hex!("0bae3ead48c325ce433426d2e8e6b07dac10835baec21e163760682ea3d3520d");
 pub const SWAPR_INIT: [u8; 32] =
     hex!("d306a548755b9295ee49cc729e13ca4a45e00199bbd890fa146da43a50571776");
+pub const TESTNET_UNISWAP_INIT: [u8; 32] =
+    hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86");
 
 #[derive(Debug, Clone, Copy)]
 pub struct UniV2BaselineSourceParameters {
@@ -79,6 +89,11 @@ impl UniV2BaselineSourceParameters {
                 contracts::SwaprRouter::raw_contract(),
                 SWAPR_INIT,
                 PoolReadingStyle::Swapr,
+            )),
+            BS::TestnetUniswapV2 => Some((
+                contracts::TestnetUniswapV2Router02::raw_contract(),
+                TESTNET_UNISWAP_INIT,
+                PoolReadingStyle::Default,
             )),
         }?;
         Some(Self {
@@ -228,6 +243,27 @@ mod tests {
             addr!("a1d65E8fB6e87b60FECCBc582F7f97804B725521"),
             testlib::tokens::WETH,
             addr!("b0Dc4B36e0B4d2e3566D2328F6806EA0B76b4F13"),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn baseline_sepolia() {
+        let http = crate::ethrpc::create_env_test_transport();
+        let web3 = Web3::new(http);
+        let version = web3.net().version().await.unwrap();
+        assert_eq!(version, "11155111", "test must be run with mainnet node");
+        let test = |source, token0, token1, expected| {
+            test_baseline_source(&web3, "11155111", source, token0, token1, expected)
+        };
+
+        // https://sepolia.etherscan.io/tx/0x4d31daa9e74b96a5c9a780cf8839b115ac25127b17226ecb1ad6e7f244fd1c8f
+        test(
+            BaselineSource::TestnetUniswapV2,
+            addr!("fff9976782d46cc05630d1f6ebab18b2324d6b14"),
+            addr!("7c43482436624585c27cc9f804e53463d5a37aba"),
+            addr!("84A1CE0e56500D51a6a6e2559567007E26dc8a7C"),
         )
         .await;
     }

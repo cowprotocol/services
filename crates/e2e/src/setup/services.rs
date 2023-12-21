@@ -221,6 +221,22 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub async fn get_latest_solver_competition(&self) -> Result<SolverCompetitionAPI, StatusCode> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}{SOLVER_COMPETITION_ENDPOINT}/latest"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err(code),
+        }
+    }
+
     pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
         let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
         let response = self.http.get(url).send().await.unwrap();

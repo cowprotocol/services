@@ -40,6 +40,7 @@ number = { path = "../number" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rate-limit = { path = "../rate-limit" }
 reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
 secp256k1 = { workspace = true }
 serde = { workspace = true }

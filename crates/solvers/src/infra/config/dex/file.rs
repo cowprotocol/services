@@ -2,12 +2,12 @@
 
 use {
     crate::{
-        boundary::rate_limiter::RateLimitingStrategy,
         domain::{dex::slippage, eth, Risk},
         infra::{blockchain, config::unwrap_or_log, contracts},
         util::serialize,
     },
     bigdecimal::BigDecimal,
+    rate_limit::Strategy,
     serde::{de::DeserializeOwned, Deserialize},
     serde_with::serde_as,
     std::{fmt::Debug, num::NonZeroUsize, path::Path, time::Duration},
@@ -142,7 +142,7 @@ pub async fn load<T: DeserializeOwned>(path: &Path) -> (super::Config, T) {
             nmb_orders_factor: config.risk_parameters.2,
             intercept: config.risk_parameters.3,
         },
-        rate_limiting_strategy: RateLimitingStrategy::try_new(
+        rate_limiting_strategy: Strategy::try_new(
             config.back_off_growth_factor,
             Duration::from_secs(config.min_back_off),
             Duration::from_secs(config.max_back_off),

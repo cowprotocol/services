@@ -795,7 +795,7 @@ impl<'a> SolveOk<'a> {
         assert_eq!(solutions.len(), 1);
         let solution = solutions[0].clone();
         assert!(solution.is_object());
-        assert_eq!(solution.as_object().unwrap().len(), 4);
+        assert_eq!(solution.as_object().unwrap().len(), 5);
         solution
     }
 

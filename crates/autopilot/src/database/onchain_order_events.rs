@@ -174,7 +174,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .with_label_values(&["replace_onchain_order_events"])
             .start_timer();
 
-        let mut transaction = self.db.0.begin().await?;
+        let mut transaction = self.db.pool.begin().await?;
 
         database::onchain_broadcasted_orders::mark_as_reorged(
             &mut transaction,
@@ -252,7 +252,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .database_queries
             .with_label_values(&["append_onchain_order_events"])
             .start_timer();
-        let mut transaction = self.db.0.begin().await?;
+        let mut transaction = self.db.pool.begin().await?;
 
         database::onchain_invalidations::insert_onchain_invalidations(
             &mut transaction,
@@ -296,7 +296,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .with_label_values(&["last_event_block"])
             .start_timer();
 
-        let mut con = self.db.0.acquire().await?;
+        let mut con = self.db.pool.acquire().await?;
         let block_number = database::onchain_broadcasted_orders::last_block(&mut con)
             .await
             .context("block_number_of_most_recent_event failed")?;
@@ -724,6 +724,7 @@ impl Metrics {
 mod test {
     use {
         super::*,
+        crate::database::Config,
         contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethcontract::{Bytes, EventMetadata, H160, U256},
@@ -748,6 +749,7 @@ mod test {
             order_quoting::{FindQuoteError, MockOrderQuoting, Quote, QuoteData},
         },
         sqlx::PgPool,
+        std::num::NonZeroUsize,
     };
 
     #[test]
@@ -1372,7 +1374,12 @@ mod test {
             .returning(|_, _, _, _| 1u8);
         let web3 = Web3::new(create_env_test_transport());
         let onchain_order_parser = OnchainOrderParser {
-            db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
+            db: Postgres {
+                pool: PgPool::connect_lazy("postgresql://").unwrap(),
+                config: Config {
+                    order_events_insert_batch_size: NonZeroUsize::new(500).unwrap(),
+                },
+            },
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
