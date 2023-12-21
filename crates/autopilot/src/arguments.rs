@@ -264,7 +264,7 @@ impl std::fmt::Display for Arguments {
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
-        }: &Arguments = self;
+        } = self;
 
         write!(f, "{}", shared)?;
         write!(f, "{}", order_quoting)?;
