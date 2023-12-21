@@ -6,12 +6,7 @@ use {
         http_client,
         price_estimation::{self, NativePriceEstimators},
     },
-    std::{
-        net::SocketAddr,
-        num::{NonZeroUsize, ParseFloatError},
-        str::FromStr,
-        time::Duration,
-    },
+    std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
     url::Url,
 };
 
@@ -74,13 +69,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
-    /// The amount of time in seconds a classification of a token into good or
+    /// The amount of time a classification of a token into good or
     /// bad is valid for.
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
     pub token_quality_cache_expiry: Duration,
 
@@ -102,12 +97,12 @@ pub struct Arguments {
     #[clap(long, env, default_value = "2")]
     pub native_price_estimation_results_required: NonZeroUsize,
 
-    /// The minimum amount of time in seconds an order has to be valid for.
+    /// The minimum amount of time an order has to be valid for.
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
     pub min_order_validity_period: Duration,
 
@@ -120,8 +115,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "300",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "5m",
+        value_parser = humantime::parse_duration,
     )]
     pub max_auction_age: Duration,
 
@@ -129,7 +124,7 @@ pub struct Arguments {
     pub limit_order_price_factor: f64,
 
     /// The time between auction updates.
-    #[clap(long, env, default_value = "10", value_parser = shared::arguments::duration_from_seconds)]
+    #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
     pub auction_update_interval: Duration,
 
     /// Fee scaling factor for objective value. This controls the constant
@@ -153,8 +148,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "3600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1h",
+        value_parser = humantime::parse_duration,
     )]
     pub trusted_tokens_update_interval: Duration,
 
@@ -188,8 +183,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
     pub max_settlement_transaction_wait: Duration,
 
@@ -204,12 +199,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub shadow: Option<Url>,
 
-    /// Time in seconds solvers have to compute a score per auction.
+    /// Time solvers have to compute a score per auction.
     #[clap(
         long,
         env,
-        default_value = "15",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "15s",
+        value_parser = humantime::parse_duration,
     )]
     pub solve_deadline: Duration,
 
@@ -219,12 +214,12 @@ pub struct Arguments {
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.
-    #[clap(long, env, default_value = "1", value_parser = duration_from_days)]
+    #[clap(long, env, default_value = "1d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_interval: Duration,
 
     /// Age threshold in days for order events to be eligible for cleanup in the
     /// `order_events` database table.
-    #[clap(long, env, default_value = "30", value_parser = duration_from_days)]
+    #[clap(long, env, default_value = "30d", value_parser = humantime::parse_duration)]
     pub order_events_cleanup_threshold: Duration,
 }
 
@@ -373,9 +368,4 @@ impl FromStr for FeePolicyKind {
             _ => Err(format!("invalid fee policy kind: {}", kind)),
         }
     }
-}
-
-fn duration_from_days(s: &str) -> Result<Duration, ParseFloatError> {
-    let days = s.parse::<f64>()?;
-    Ok(Duration::from_secs_f64(days * 86_400.0))
 }

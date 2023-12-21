@@ -142,7 +142,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Serialize)]
-    #[serde(rename_all = "camelCase")]
+    #[serde(rename_all = "lowercase", tag = "kind")]
     pub enum FeePolicy {
         /// If the order receives more than expected (positive deviation from
         /// quoted amounts) pay the protocol a factor of the achieved
