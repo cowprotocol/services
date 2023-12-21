@@ -168,7 +168,7 @@ impl Signature {
 
     /// Opposite of `encode_for_settlement`. Given the encoded signature returns
     /// the owner.
-    pub fn decode_from_settlement(
+    pub fn recover_owner(
         &self,
         signature: &[u8],
         domain_separator: &DomainSeparator,

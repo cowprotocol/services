@@ -9,7 +9,7 @@ use {
 };
 
 impl Postgres {
-    /// Returns the order fees for the given orders.
+    /// Returns the unsubsidised fees for the given orders.
     /// For limit orders, the order fee is None.
     pub async fn order_fees(
         ex: &mut PgConnection,

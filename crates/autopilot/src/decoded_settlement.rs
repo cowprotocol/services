@@ -102,7 +102,7 @@ impl DecodedTrade {
         let owner = self
             .signature()
             .context("signature is invalid")?
-            .decode_from_settlement(&self.signature.0, domain_separator, &order.hash_struct())
+            .recover_owner(&self.signature.0, domain_separator, &order.hash_struct())
             .context("cant recover owner")?;
         Ok(order.uid(domain_separator, &owner))
     }
@@ -342,7 +342,7 @@ impl DecodedSettlement {
         let sell_token = self.tokens.get(sell_index)?;
         let buy_token = self.tokens.get(buy_index)?;
 
-        let solver_fee = match order_fee {
+        let fee = match order_fee {
             Some(fee) => fee,
             None => {
                 // get executed(adjusted) prices
@@ -384,17 +384,16 @@ impl DecodedSettlement {
             }
         };
 
-        // converts the order's `solver_fee` which is denominated in `sell_token` to the
-        // native token.
-        tracing::trace!(?solver_fee, "fee before conversion to native token");
-        let fee = external_prices
-            .try_get_native_amount(*sell_token, u256_to_big_rational(&solver_fee))?;
-        tracing::trace!(?fee, "fee after conversion to native token");
+        // converts the fee which is denominated in `sell_token` to the native token.
+        tracing::trace!(?fee, "fee before conversion to native token");
+        let native =
+            external_prices.try_get_native_amount(*sell_token, u256_to_big_rational(&fee))?;
+        tracing::trace!(?native, "fee after conversion to native token");
 
         Some(Fees {
             order,
-            sell: solver_fee,
-            native: big_rational_to_u256(&fee).ok()?,
+            sell: fee,
+            native: big_rational_to_u256(&native).ok()?,
         })
     }
 }
