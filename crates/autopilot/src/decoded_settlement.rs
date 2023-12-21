@@ -549,7 +549,7 @@ mod tests {
         fees.iter().fold(0.into(), |acc, fee| acc + fee.native)
     }
 
-    fn order_executions(fees: Vec<Fees>, order_fees: &Vec<(OrderUid, Option<U256>)>) -> Vec<Fees> {
+    fn order_executions(fees: Vec<Fees>, order_fees: &[(OrderUid, Option<U256>)]) -> Vec<Fees> {
         fees.into_iter()
             .zip(order_fees.iter())
             .filter_map(|(fee, (_, order_fee))| match order_fee {
