@@ -338,7 +338,7 @@ fn convert_foreign_liquidity_orders(
                 },
                 data: liquidity.order.data,
                 signature: liquidity.order.signature,
-                interactions: liquidity.order.interactions,
+                interactions: Default::default(),
             };
             let converted = order_converter.normalize_limit_order(BalancedOrder::full(order))?;
             Ok(ExecutedLimitOrder {
@@ -609,7 +609,6 @@ mod tests {
                     ..Default::default()
                 },
                 signature: Signature::PreSign,
-                interactions: Default::default(),
             },
             exec_sell_amount: 101.into(),
             exec_buy_amount: 102.into(),
