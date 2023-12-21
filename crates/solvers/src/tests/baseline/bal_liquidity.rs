@@ -117,7 +117,8 @@ async fn weighted() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "kind": "riskadjusted",
+                    "successProbability": 0.5,
                 }
             }]
         }),
@@ -232,7 +233,8 @@ async fn weighted_v3plus() {
                     },
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "kind": "riskadjusted",
+                    "successProbability": 0.5,
                 }
             }]
         }),
@@ -370,7 +372,8 @@ async fn stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "kind": "riskadjusted",
+                    "successProbability": 0.5,
                     }
                 },
                 {
@@ -400,7 +403,8 @@ async fn stable() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "kind": "riskadjusted",
+                    "successProbability": 0.5,
                     }
                 },
             ]
@@ -533,7 +537,8 @@ async fn composable_stable_v4() {
                         },
                     ],
                     "score": {
-                        "riskadjusted": 0.5
+                        "kind": "riskadjusted",
+                    "successProbability": 0.5,
                     }
                 },
             ]
