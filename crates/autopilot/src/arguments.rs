@@ -259,8 +259,12 @@ impl std::fmt::Display for Arguments {
             fee_policy,
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
-            ..
-        } = self;
+            db_url,
+            order_events_insert_batch_size,
+            native_price_estimation_results_required,
+            auction_update_interval,
+            max_settlement_transaction_wait,
+        }: &Arguments = self;
 
         write!(f, "{}", shared)?;
         write!(f, "{}", order_quoting)?;
@@ -271,6 +275,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
         writeln!(f, "ethflow_indexing_start: {:?}", ethflow_indexing_start)?;
         writeln!(f, "metrics_address: {}", metrics_address)?;
+        let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", skip_event_sync)?;
         writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
@@ -327,6 +332,22 @@ impl std::fmt::Display for Arguments {
             f,
             "order_events_cleanup_threshold: {:?}",
             order_events_cleanup_threshold
+        )?;
+        writeln!(
+            f,
+            "order_events_insert_batch_size: {}",
+            order_events_insert_batch_size
+        )?;
+        writeln!(
+            f,
+            "native_price_estimation_results_required: {}",
+            native_price_estimation_results_required
+        )?;
+        writeln!(f, "auction_update_interval: {:?}", auction_update_interval)?;
+        writeln!(
+            f,
+            "max_settlement_transaction_wait: {:?}",
+            max_settlement_transaction_wait
         )?;
         Ok(())
     }
