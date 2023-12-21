@@ -10,6 +10,8 @@ use {
     url::Url,
 };
 
+mod s3;
+
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(flatten)]
@@ -202,6 +204,10 @@ pub struct Arguments {
     /// Describes how the protocol fee should be calculated.
     #[clap(flatten)]
     pub fee_policy: FeePolicy,
+
+    /// Describes how the protocol fee should be calculated.
+    #[clap(flatten)]
+    pub s3: s3::UploadArguments,
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.
