@@ -221,8 +221,8 @@ pub struct Arguments {
     /// entirely. Needs to be passed as
     /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: f64 in seconds
-    /// max_back_off: f64 in seconds
+    /// min_back_off: Duration
+    /// max_back_off: Duration
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<Strategy>,
 
@@ -230,31 +230,31 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_refresh_secs: Duration,
+    pub native_price_cache_refresh: Duration,
 
     /// How long cached native prices stay valid.
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_max_age_secs: Duration,
+    pub native_price_cache_max_age: Duration,
 
     /// How long before expiry the native price cache should try to update the
     /// price in the background. This is useful to make sure that prices are
     /// usable at all times. This value has to be smaller than
-    /// `--native-price-cache-max-age-secs`.
+    /// `--native-price-cache-max-age`.
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_prefetch_time_secs: Duration,
+    pub native_price_prefetch_time: Duration,
 
     /// How many cached native token prices can be updated at most in one
     /// maintenance cycle.
@@ -323,18 +323,18 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh_secs: {:?}",
-            self.native_price_cache_refresh_secs
+            "native_price_cache_refresh: {:?}",
+            self.native_price_cache_refresh
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age: {:?}",
+            self.native_price_cache_max_age
         )?;
         writeln!(
             f,
-            "native_price_prefetch_time_secs: {:?}",
-            self.native_price_prefetch_time_secs
+            "native_price_prefetch_time: {:?}",
+            self.native_price_prefetch_time
         )?;
         writeln!(
             f,

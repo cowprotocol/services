@@ -44,8 +44,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
     pub min_order_validity_period: Duration,
 
@@ -55,8 +55,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "10800",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "3h",
+        value_parser = humantime::parse_duration,
     )]
     pub max_order_validity_period: Duration,
 
@@ -65,8 +65,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "31536000",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1y",
+        value_parser = humantime::parse_duration,
     )]
     pub max_limit_order_validity_period: Duration,
 
@@ -75,8 +75,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
     pub token_quality_cache_expiry: Duration,
 
