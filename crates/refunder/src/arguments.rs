@@ -25,8 +25,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "120",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
     )]
     pub min_validity_duration: Duration,
 

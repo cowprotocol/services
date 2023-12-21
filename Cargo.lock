@@ -55,6 +55,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "humantime",
  "model",
  "number",
  "observe",
@@ -251,6 +252,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "maplit",
  "mockall",
@@ -1641,6 +1643,8 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
+ "humantime-serde",
  "hyper",
  "indexmap 2.0.0",
  "itertools 0.11.0",
@@ -2369,6 +2373,22 @@ name = "httpdate"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4a1e36c821dbe04574f602848a19f742f4fb3c98d40449f11bcad18d6b17421"
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
+
+[[package]]
+name = "humantime-serde"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
+dependencies = [
+ "humantime",
+ "serde",
+]
 
 [[package]]
 name = "hyper"
@@ -3121,6 +3141,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "hyper",
  "maplit",
  "mockall",
@@ -3483,6 +3504,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
+ "humantime",
  "observe",
  "prometheus",
  "prometheus-metric-storage",
@@ -3515,6 +3537,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
+ "humantime",
  "lazy_static",
  "model",
  "number",
@@ -4010,6 +4033,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "lazy_static",
  "maplit",
@@ -4130,6 +4154,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "jsonrpc-core",
  "lazy_static",
@@ -4174,6 +4199,7 @@ dependencies = [
  "futures",
  "glob",
  "hex",
+ "humantime-serde",
  "hyper",
  "itertools 0.11.0",
  "model",
