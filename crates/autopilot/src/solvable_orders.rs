@@ -79,8 +79,6 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    // Will be obsolete when the new autopilot run loop takes over the competition.
-    store_in_db: bool,
     fee_objective_scaling_factor: BigRational,
 }
 
@@ -114,7 +112,6 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        store_in_db: bool,
         fee_objective_scaling_factor: f64,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
@@ -138,7 +135,6 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             weth,
             limit_order_price_factor,
-            store_in_db,
             fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
                 .unwrap(),
         });
@@ -248,14 +244,6 @@ impl SolvableOrdersCache {
 
         self.database.store_order_events(&order_events).await;
 
-        let id = if self.store_in_db {
-            let id = self.database.replace_current_auction(&auction).await?;
-            tracing::info!(auction = %id, %block, "stored new auction in database");
-            Some(id)
-        } else {
-            None
-        };
-
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),
             orders: SolvableOrders {
@@ -266,7 +254,7 @@ impl SolvableOrdersCache {
             },
         };
 
-        tracing::debug!(%block, ?id, "updated current auction cache");
+        tracing::debug!(%block, "updated current auction cache");
         Ok(())
     }
 
