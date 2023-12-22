@@ -225,79 +225,129 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.shared)?;
-        write!(f, "{}", self.order_quoting)?;
-        write!(f, "{}", self.http_client)?;
-        write!(f, "{}", self.token_owner_finder)?;
-        write!(f, "{}", self.price_estimation)?;
-        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "ethflow_contract: {:?}", self.ethflow_contract)?;
-        writeln!(
-            f,
-            "ethflow_indexing_start: {:?}",
-            self.ethflow_indexing_start
-        )?;
-        writeln!(f, "metrics_address: {}", self.metrics_address)?;
+        let Arguments {
+            shared,
+            order_quoting,
+            http_client,
+            token_owner_finder,
+            price_estimation,
+            tracing_node_url,
+            ethflow_contract,
+            ethflow_indexing_start,
+            metrics_address,
+            skip_event_sync,
+            allowed_tokens,
+            unsupported_tokens,
+            token_quality_cache_expiry,
+            pool_cache_lru_size,
+            native_price_estimators,
+            min_order_validity_period,
+            banned_users,
+            max_auction_age,
+            limit_order_price_factor,
+            fee_objective_scaling_factor,
+            trusted_tokens_url,
+            trusted_tokens,
+            trusted_tokens_update_interval,
+            enable_colocation,
+            drivers,
+            submission_deadline,
+            additional_deadline_for_rewards,
+            score_cap,
+            shadow,
+            solve_deadline,
+            fee_policy,
+            order_events_cleanup_interval,
+            order_events_cleanup_threshold,
+            db_url,
+            order_events_insert_batch_size,
+            native_price_estimation_results_required,
+            auction_update_interval,
+            max_settlement_transaction_wait,
+        } = self;
+
+        write!(f, "{}", shared)?;
+        write!(f, "{}", order_quoting)?;
+        write!(f, "{}", http_client)?;
+        write!(f, "{}", token_owner_finder)?;
+        write!(f, "{}", price_estimation)?;
+        display_option(f, "tracing_node_url", tracing_node_url)?;
+        writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
+        writeln!(f, "ethflow_indexing_start: {:?}", ethflow_indexing_start)?;
+        writeln!(f, "metrics_address: {}", metrics_address)?;
+        let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
-        writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
-        writeln!(f, "allowed_tokens: {:?}", self.allowed_tokens)?;
-        writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
+        writeln!(f, "skip_event_sync: {}", skip_event_sync)?;
+        writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
+        writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
         writeln!(
             f,
             "token_quality_cache_expiry: {:?}",
-            self.token_quality_cache_expiry
+            token_quality_cache_expiry
         )?;
-        writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        writeln!(
-            f,
-            "native_price_estimators: {}",
-            self.native_price_estimators
-        )?;
+        writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
+        writeln!(f, "native_price_estimators: {}", native_price_estimators)?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",
-            self.min_order_validity_period
+            min_order_validity_period
         )?;
-        writeln!(f, "banned_users: {:?}", self.banned_users)?;
-        writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
+        writeln!(f, "banned_users: {:?}", banned_users)?;
+        writeln!(f, "max_auction_age: {:?}", max_auction_age)?;
         writeln!(
             f,
             "limit_order_price_factor: {:?}",
-            self.limit_order_price_factor
+            limit_order_price_factor
         )?;
         writeln!(
             f,
             "fee_objective_scaling_factor: {}",
-            self.fee_objective_scaling_factor
+            fee_objective_scaling_factor
         )?;
-        display_option(f, "trusted_tokens_url", &self.trusted_tokens_url)?;
-        writeln!(f, "trusted_tokens: {:?}", self.trusted_tokens)?;
+        display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
+        writeln!(f, "trusted_tokens: {:?}", trusted_tokens)?;
         writeln!(
             f,
             "trusted_tokens_update_interval: {:?}",
-            self.trusted_tokens_update_interval
+            trusted_tokens_update_interval
         )?;
-        writeln!(f, "enable_colocation: {:?}", self.enable_colocation,)?;
-        display_list(f, "drivers", self.drivers.iter())?;
-        writeln!(f, "submission_deadline: {}", self.submission_deadline)?;
+        writeln!(f, "enable_colocation: {:?}", enable_colocation,)?;
+        display_list(f, "drivers", drivers.iter())?;
+        writeln!(f, "submission_deadline: {}", submission_deadline)?;
         writeln!(
             f,
             "additional_deadline_for_rewards: {}",
-            self.additional_deadline_for_rewards
+            additional_deadline_for_rewards
         )?;
-        writeln!(f, "score_cap: {}", self.score_cap)?;
-        display_option(f, "shadow", &self.shadow)?;
-        writeln!(f, "solve_deadline: {:?}", self.solve_deadline)?;
-        writeln!(f, "fee_policy: {:?}", self.fee_policy)?;
+        writeln!(f, "score_cap: {}", score_cap)?;
+        display_option(f, "shadow", shadow)?;
+        writeln!(f, "solve_deadline: {:?}", solve_deadline)?;
+        writeln!(f, "fee_policy: {:?}", fee_policy)?;
         writeln!(
             f,
             "order_events_cleanup_interval: {:?}",
-            self.order_events_cleanup_interval
+            order_events_cleanup_interval
         )?;
         writeln!(
             f,
             "order_events_cleanup_threshold: {:?}",
-            self.order_events_cleanup_threshold
+            order_events_cleanup_threshold
+        )?;
+        writeln!(
+            f,
+            "order_events_insert_batch_size: {}",
+            order_events_insert_batch_size
+        )?;
+        writeln!(
+            f,
+            "native_price_estimation_results_required: {}",
+            native_price_estimation_results_required
+        )?;
+        writeln!(f, "auction_update_interval: {:?}", auction_update_interval)?;
+        writeln!(
+            f,
+            "max_settlement_transaction_wait: {:?}",
+            max_settlement_transaction_wait
         )?;
         Ok(())
     }
