@@ -85,6 +85,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
 
+    if args.drivers.is_empty() {
+        panic!("colocation is enabled but no drivers are configured");
+    }
+
     if args.shadow.is_some() {
         shadow_mode(args).await;
     } else {
@@ -644,9 +648,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    if args.drivers.is_empty() {
-        panic!("shadow mode is enabled but no drivers are configured");
-    }
     let drivers = args.drivers.into_iter().map(Driver::new).collect();
 
     let trusted_tokens = {
