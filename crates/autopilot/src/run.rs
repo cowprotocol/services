@@ -568,7 +568,6 @@ pub async fn run(args: Arguments) {
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
         !args.enable_colocation,
-        args.fee_objective_scaling_factor,
     );
     solvable_orders_cache
         .update(block)
