@@ -11,13 +11,13 @@ use {
             settle,
             solve::{self, Class, TradedAmounts},
         },
+        infra::blockchain::Ethereum,
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
@@ -45,12 +45,10 @@ use {
 };
 
 pub struct RunLoop {
+    pub eth: Ethereum,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
-    pub current_block: CurrentBlockStream,
-    pub web3: Web3,
-    pub network_block_interval: Duration,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
@@ -67,7 +65,7 @@ impl RunLoop {
         let mut last_block = None;
         loop {
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.current_block.borrow().hash;
+                let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
                 if last_auction_id.replace(id) != Some(id)
                     || last_block.replace(current_block) != Some(current_block)
@@ -134,7 +132,7 @@ impl RunLoop {
             solutions.sort_unstable_by_key(|participant| participant.solution.score);
             solutions
         };
-        let competition_simulation_block = self.current_block.borrow().number;
+        let competition_simulation_block = self.eth.current_block().borrow().number;
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
@@ -470,7 +468,7 @@ impl RunLoop {
     /// to fill an order a second time.
     async fn remove_in_flight_orders(&self, mut auction: Auction) -> Auction {
         let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
-        let tx_receipt = self.web3.eth().transaction_receipt(prev_settlement).await;
+        let tx_receipt = self.eth.transaction_receipt(prev_settlement).await;
 
         let prev_settlement_block = match tx_receipt {
             Ok(Some(TransactionReceipt {

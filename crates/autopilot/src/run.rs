@@ -12,6 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        infra::{blockchain, cli},
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -73,6 +74,16 @@ impl LivenessChecking for Liveness {
         let age = self.solvable_orders_cache.last_update_time().elapsed();
         age <= self.max_auction_age
     }
+}
+
+async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
+    blockchain::Rpc::new(&args.ethrpc)
+        .await
+        .expect("connect ethereum RPC")
+}
+
+async fn ethereum(ethrpc: blockchain::Rpc) -> blockchain::Ethereum {
+    blockchain::Ethereum::new(ethrpc).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -173,11 +184,6 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let network_time_between_blocks = args
-        .shared
-        .network_block_interval
-        .or_else(|| shared::network::block_interval(&network, chain_id))
-        .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -623,13 +629,17 @@ pub async fn run(args: Arguments) {
         let market_makable_token_list =
             AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
                 .await;
+
+        let new_args = cli::Args {
+            ethrpc: args.shared.node_url,
+        };
+        let ethrpc = ethrpc(&new_args).await;
+        let eth = ethereum(ethrpc).await;
         let run = RunLoop {
+            eth,
             solvable_orders_cache,
             database: Arc::new(db),
             drivers: args.drivers.into_iter().map(Driver::new).collect(),
-            current_block: current_block_stream,
-            web3,
-            network_block_interval: network_time_between_blocks,
             market_makable_token_list,
             submission_deadline: args.submission_deadline as u64,
             additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
