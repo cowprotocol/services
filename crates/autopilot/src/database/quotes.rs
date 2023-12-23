@@ -21,26 +21,17 @@ impl Postgres {
     }
 
     pub async fn read_quotes(&self, auction: &Auction) -> Result<HashMap<OrderUid, Quote>> {
-        let mut quote_tasks = Vec::new();
+        let mut ex = self.pool.acquire().await?;
+        let mut quotes = HashMap::new();
         for order in &auction.orders {
-            let mut ex = self.pool.acquire().await?;
             let order_uid = ByteArray(order.metadata.uid.0);
-            let quote_task = tokio::spawn(async move {
-                database::orders::read_quote(&mut ex, &order_uid)
-                    .await
-                    .ok()?
-            });
-            quote_tasks.push((order.metadata.uid, quote_task));
-        }
-        let mut quotes_map = HashMap::new();
-        for (order_uid, quote_task) in quote_tasks {
-            let quote = quote_task
+            let quote = database::orders::read_quote(&mut ex, &order_uid)
                 .await?
-                .ok_or(anyhow::anyhow!("failed to parse quote"))?;
-            quotes_map.insert(order_uid, quote);
+                .context("failed to read quote")?;
+            quotes.insert(order.metadata.uid, quote);
         }
 
-        Ok(quotes_map)
+        Ok(quotes)
     }
 }
 
