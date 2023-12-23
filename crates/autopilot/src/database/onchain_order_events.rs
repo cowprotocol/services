@@ -600,7 +600,12 @@ fn convert_onchain_order_placement(
         order_data.fee_amount
     };
     let is_outside_market_price = if let Ok(ref quote) = quote {
-        if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
+        if is_order_outside_market_price(
+            &order_data.sell_amount,
+            &order_data.buy_amount,
+            &quote.sell_amount,
+            &quote.buy_amount,
+        ) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             metrics.inc_onchain_order_errors("outside_market_price");
             true
