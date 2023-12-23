@@ -9,7 +9,6 @@ use {
         arguments,
         database::Postgres,
         driver_model::solve::{fee_policy_to_dto, FeePolicy},
-        run_loop::is_order_outside_market_price,
     },
     anyhow::{Context, Result},
     model::{
@@ -17,6 +16,7 @@ use {
         order::{OrderClass, OrderUid},
     },
     number::conversions::big_decimal_to_u256,
+    shared::order_validation::is_order_outside_market_price,
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -53,8 +53,8 @@ impl PolicyFactory {
                             let is_in_money_order = !is_order_outside_market_price(
                                 &order.data.sell_amount,
                                 &order.data.buy_amount,
-                                quote_buy_amount,
-                                quote_sell_amount,
+                                &quote_buy_amount,
+                                &quote_sell_amount,
                             );
                             if self.config.fee_policy_skip_market_orders && is_in_money_order {
                                 return None;

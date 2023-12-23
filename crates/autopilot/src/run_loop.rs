@@ -501,20 +501,6 @@ impl RunLoop {
     }
 }
 
-/// Checks whether or not an order's limit price is outside the market price
-/// specified by the quote.
-///
-/// Note that this check only looks at the order's limit price and the market
-/// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(
-    sell_amount: &U256,
-    buy_amount: &U256,
-    quote_buy_amount: U256,
-    quote_sell_amount: U256,
-) -> bool {
-    sell_amount.full_mul(quote_buy_amount) < quote_sell_amount.full_mul(*buy_amount)
-}
-
 pub fn solve_request(
     id: AuctionId,
     auction: &Auction,
