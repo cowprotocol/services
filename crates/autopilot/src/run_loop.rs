@@ -310,7 +310,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let fee_policies = self.policy_factory.build(auction).await;
+        let fee_policies = self
+            .policy_factory
+            .build(auction)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::warn!(?err, "no protocol fees are applied");
+                Default::default()
+            });
         let request = solve_request(
             id,
             auction,
