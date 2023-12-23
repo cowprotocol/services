@@ -26,6 +26,10 @@ pub struct PolicyFactory {
 }
 
 impl PolicyFactory {
+    pub fn new(config: arguments::FeePolicy, db: Arc<Postgres>) -> Self {
+        Self { config, db }
+    }
+
     pub async fn build(&self, auction: &Auction) -> Result<Policies> {
         let quotes = self
             .db

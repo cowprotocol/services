@@ -12,7 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        protocol,
+        protocol::{self, fee},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
@@ -622,9 +622,10 @@ pub async fn run(args: Arguments) {
         let market_makable_token_list =
             AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
                 .await;
+        let db = Arc::new(db);
         let run = RunLoop {
             solvable_orders_cache,
-            database: Arc::new(db),
+            database: db.clone(),
             drivers: args.drivers.into_iter().map(Driver::new).collect(),
             current_block: current_block_stream,
             web3,
@@ -635,8 +636,8 @@ pub async fn run(args: Arguments) {
             score_cap: args.score_cap,
             max_settlement_transaction_wait: args.max_settlement_transaction_wait,
             solve_deadline: args.solve_deadline,
+            policy_factory: fee::PolicyFactory::new(args.fee_policy, db.clone()),
             in_flight_orders: Default::default(),
-            fee_policy: args.fee_policy,
         };
         run.run_forever().await;
         unreachable!("run loop exited");
@@ -698,7 +699,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
-        args.fee_policy,
     );
     shadow.run_forever().await;
 

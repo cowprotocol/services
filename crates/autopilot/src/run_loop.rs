@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments,
         database::{
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
@@ -9,14 +8,14 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, fee_policy_to_dto, Class, FeePolicy, TradedAmounts},
+            solve::{self, Class, TradedAmounts},
         },
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
     chrono::Utc,
-    database::{order_events::OrderEventLabel, orders::Quote},
+    database::order_events::OrderEventLabel,
     ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
@@ -31,7 +30,7 @@ use {
             SolverSettlement,
         },
     },
-    number::{conversions::big_decimal_to_u256, nonzero::U256 as NonZeroU256},
+    number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
@@ -514,42 +513,6 @@ pub fn is_order_outside_market_price(
     quote_sell_amount: U256,
 ) -> bool {
     sell_amount.full_mul(quote_buy_amount) < quote_sell_amount.full_mul(*buy_amount)
-}
-
-/// Prepares the fee policies for each order in the auction.
-/// Determines if the protocol fee should be applied to the order.
-fn fee_policies(
-    auction: &Auction,
-    fee_policy: arguments::FeePolicy,
-    quotes: HashMap<OrderUid, Quote>,
-) -> HashMap<OrderUid, Vec<FeePolicy>> {
-    auction
-        .orders
-        .iter()
-        .filter_map(|order| {
-            match order.metadata.class {
-                OrderClass::Market => None,
-                OrderClass::Liquidity => None,
-                // TODO: https://github.com/cowprotocol/services/issues/2115
-                // skip protocol fee for TWAP limit orders
-                OrderClass::Limit(_) => {
-                    let quote = quotes.get(&order.metadata.uid)?;
-                    let quote_buy_amount = big_decimal_to_u256(&quote.buy_amount)?;
-                    let quote_sell_amount = big_decimal_to_u256(&quote.sell_amount)?;
-                    let is_in_money_order = !is_order_outside_market_price(
-                        &order.data.sell_amount,
-                        &order.data.buy_amount,
-                        quote_buy_amount,
-                        quote_sell_amount,
-                    );
-                    if fee_policy.fee_policy_skip_market_orders && is_in_money_order {
-                        return None;
-                    }
-                    Some((order.metadata.uid, vec![fee_policy_to_dto(&fee_policy)]))
-                }
-            }
-        })
-        .collect()
 }
 
 pub fn solve_request(
