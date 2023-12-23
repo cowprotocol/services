@@ -205,7 +205,8 @@ async fn quote() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "kind": "riskadjusted",
+                    "successProbability": 1.0,
                 }
             }]
         }),
@@ -410,7 +411,8 @@ async fn solve() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "kind": "riskadjusted",
+                    "successProbability": 1.0,
                 }
             }]
         }),

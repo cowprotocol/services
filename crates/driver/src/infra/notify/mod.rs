@@ -92,17 +92,15 @@ pub fn simulation_failed(
     err: &simulator::Error,
     succeeded_at_least_once: SimulationSucceededAtLeastOnce,
 ) {
-    if let simulator::Error::Revert(error) = err {
-        solver.notify(
-            auction_id,
-            Some(solution_id),
-            notification::Kind::SimulationFailed(
-                error.block,
-                error.tx.clone(),
-                succeeded_at_least_once,
-            ),
-        );
-    }
+    let kind = match err {
+        simulator::Error::Revert(error) => notification::Kind::SimulationFailed(
+            error.block,
+            error.tx.clone(),
+            succeeded_at_least_once,
+        ),
+        simulator::Error::Other(error) => notification::Kind::DriverError(error.to_string()),
+    };
+    solver.notify(auction_id, Some(solution_id), kind);
 }
 
 pub fn executed(

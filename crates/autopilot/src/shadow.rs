@@ -15,7 +15,7 @@ use {
             reveal,
             solve::{self},
         },
-        protocol,
+        protocol::{self, fee},
         run_loop,
     },
     model::{
@@ -26,7 +26,7 @@ use {
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::{metrics::LivenessChecking, token_list::AutoUpdatingTokenList},
-    std::{cmp, collections::HashMap, time::Duration},
+    std::{cmp, time::Duration},
     tracing::Instrument,
 };
 
@@ -200,8 +200,7 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
-            HashMap::new(),
+            fee::Policies::new(Default::default()),
         );
         let request = &request;
 

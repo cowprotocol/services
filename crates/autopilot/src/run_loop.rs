@@ -11,6 +11,7 @@ use {
             settle,
             solve::{self, fee_policy_to_dto, Class, FeePolicy, TradedAmounts},
         },
+        protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
@@ -56,8 +57,8 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
+    pub policy_factory: fee::PolicyFactory,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
-    pub fee_policy: arguments::FeePolicy,
 }
 
 impl RunLoop {
@@ -309,15 +310,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let quotes = self.database.read_quotes(auction).await.unwrap();
+        let fee_policies = self.policy_factory.build(auction).await;
         let request = solve_request(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
-            quotes,
+            fee_policies,
         );
         let request = &request;
 
@@ -551,10 +551,8 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policy: arguments::FeePolicy,
-    quotes: HashMap<OrderUid, Quote>,
+    fee_policies: fee::Policies,
 ) -> solve::Request {
-    let fee_policies_by_order = fee_policies(auction, fee_policy.clone(), quotes);
     solve::Request {
         id,
         orders: auction
@@ -604,7 +602,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies: fee_policies_by_order
+                    fee_policies: fee_policies
                         .get(&order.metadata.uid)
                         .cloned()
                         .unwrap_or_default(),

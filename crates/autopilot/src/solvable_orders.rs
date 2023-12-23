@@ -11,8 +11,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    num::{BigRational, FromPrimitive},
-    number::conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
+    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -81,7 +80,6 @@ pub struct SolvableOrdersCache {
     limit_order_price_factor: BigDecimal,
     // Will be obsolete when the new autopilot run loop takes over the competition.
     store_in_db: bool,
-    fee_objective_scaling_factor: BigRational,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -115,7 +113,6 @@ impl SolvableOrdersCache {
         weth: H160,
         limit_order_price_factor: BigDecimal,
         store_in_db: bool,
-        fee_objective_scaling_factor: f64,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -139,8 +136,6 @@ impl SolvableOrdersCache {
             weth,
             limit_order_price_factor,
             store_in_db,
-            fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
-                .unwrap(),
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -233,10 +228,6 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("out_of_market", &orders);
         order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
 
-        let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
-        let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
-
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -280,37 +271,6 @@ impl SolvableOrdersCache {
             .with_label_values(&[result])
             .inc();
     }
-}
-
-/// Applies fee objective scaling and discard all orders where an overflow
-/// occurred.
-fn apply_fee_objective_scaling_factor(
-    mut orders: Vec<Order>,
-    scaling_factor: &BigRational,
-) -> Vec<Order> {
-    orders.retain_mut(|order| {
-        if order.metadata.class == OrderClass::Liquidity {
-            // A liquidity order should only be used if it can increase a settlement's total
-            // surplus more than it costs to execute it.
-            // That's why we don't want to promote it artificially by scaling its fee.
-            return true;
-        }
-        let fee = u256_to_big_rational(&order.metadata.solver_fee);
-        let scaled_fee = fee * scaling_factor;
-        let scaled_fee = match big_rational_to_u256(&scaled_fee) {
-            Ok(fee) => fee,
-            Err(_) => {
-                let scaling_factor = scaling_factor.to_string();
-                tracing::error!(?order, scaling_factor, "fee scaling overflows U256");
-                return false;
-            }
-        };
-
-        order.metadata.solver_fee = scaled_fee;
-        true
-    });
-
-    orders
 }
 
 /// Filters all orders whose owners are in the set of "banned" users.
@@ -1064,34 +1024,6 @@ mod tests {
             filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
             1
         );
-    }
-
-    #[test]
-    fn applies_fee_scaling() {
-        let order = |solver_fee: U256, is_liquidity_order: bool| Order {
-            metadata: OrderMetadata {
-                solver_fee,
-                class: match is_liquidity_order {
-                    true => OrderClass::Liquidity,
-                    false => OrderClass::Market,
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let orders = vec![
-            order(100.into(), false),
-            // Will get filtered out because the scaled fee would overflow a `U256`.
-            order(U256::MAX, false),
-            // We don't scale the fee for liquidity orders.
-            order(100.into(), true),
-        ];
-        let scaling_factor = BigRational::from_f64(2.).unwrap();
-        let updated_orders = apply_fee_objective_scaling_factor(orders, &scaling_factor);
-        assert_eq!(updated_orders.len(), 2);
-        assert_eq!(updated_orders[0].metadata.solver_fee, 200.into());
-        assert_eq!(updated_orders[1].metadata.solver_fee, 100.into());
     }
 
     #[test]

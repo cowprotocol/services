@@ -15,7 +15,7 @@ use {
         },
     },
     crate::{
-        arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
+        arguments::{display_list, display_option, display_secret_option},
         bad_token::token_owner_finder::{
             ethplorer::EthplorerTokenOwnerFinder,
             solvers::{
@@ -109,7 +109,7 @@ pub struct Arguments {
     /// Interval in seconds between consecutive queries to update the solver
     /// token owner pairs. Values should be in pair with
     /// `solver_token_owners_urls`
-    #[clap(long, env, use_value_delimiter = true, value_parser = duration_from_seconds)]
+    #[clap(long, env, use_value_delimiter = true, value_parser = humantime::parse_duration)]
     pub solver_token_owners_cache_update_intervals: Vec<Duration>,
 }
 
