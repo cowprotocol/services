@@ -54,7 +54,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         format!(
             "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
             weth = onchain.contracts().weth.address(),

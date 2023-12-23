@@ -30,6 +30,7 @@ impl PolicyFactory {
         Self { config, db }
     }
 
+    /// Determine the fee policy for each order in the auction.
     pub async fn build(&self, auction: &Auction) -> Result<Policies> {
         let quotes = self
             .db

@@ -148,10 +148,6 @@ pub struct Arguments {
     )]
     pub trusted_tokens_update_interval: Duration,
 
-    /// Enable the colocation run loop.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_colocation: bool,
-
     /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
     pub drivers: Vec<ExternalSolver>,
@@ -243,7 +239,6 @@ impl std::fmt::Display for Arguments {
             trusted_tokens_url,
             trusted_tokens,
             trusted_tokens_update_interval,
-            enable_colocation,
             drivers,
             submission_deadline,
             additional_deadline_for_rewards,
@@ -300,7 +295,6 @@ impl std::fmt::Display for Arguments {
             "trusted_tokens_update_interval: {:?}",
             trusted_tokens_update_interval
         )?;
-        writeln!(f, "enable_colocation: {:?}", enable_colocation,)?;
         display_list(f, "drivers", drivers.iter())?;
         writeln!(f, "submission_deadline: {}", submission_deadline)?;
         writeln!(
