@@ -22,12 +22,18 @@ impl super::Postgres {
         }
     }
 
-    /// Inserts an invalid order event for each order uid in the given set.
-    /// Unique order uids are required to avoid inserting duplicated `Invalid`
-    /// events for the same order.
-    pub async fn store_invalid_order_events(&self, order_uids: &HashSet<OrderUid>) {
-        if let Err(err) = store_invalid_order_events(self, order_uids, Utc::now()).await {
-            tracing::warn!(?err, "failed to insert invalid order events");
+    /// Inserts an order event for each order uid in the given set.
+    /// Unique order uids are required to avoid inserting events with the same
+    /// label within the same order_uid.
+    pub async fn store_non_subsequent_label_order_events(
+        &self,
+        order_uids: &HashSet<OrderUid>,
+        label: OrderEventLabel,
+    ) {
+        if let Err(err) =
+            store_non_subsequent_label_order_events(self, order_uids, label, Utc::now()).await
+        {
+            tracing::warn!(?err, "failed to insert non-subsequent label order events");
         }
     }
 
@@ -56,9 +62,10 @@ async fn store_order_events(
     Ok(())
 }
 
-async fn store_invalid_order_events(
+async fn store_non_subsequent_label_order_events(
     db: &super::Postgres,
     order_uids: &HashSet<OrderUid>,
+    label: OrderEventLabel,
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
     let mut ex = db.pool.begin().await.context("begin transaction")?;
@@ -66,10 +73,10 @@ async fn store_invalid_order_events(
         let event = OrderEvent {
             order_uid: ByteArray(uid.0),
             timestamp,
-            label: OrderEventLabel::Invalid,
+            label,
         };
 
-        order_events::insert_invalid_order_event(&mut ex, &event).await?
+        order_events::insert_non_subsequent_label_order_event(&mut ex, &event).await?
     }
     ex.commit().await?;
     Ok(())

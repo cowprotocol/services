@@ -156,7 +156,7 @@ impl SolvableOrdersCache {
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
         let mut invalid_order_uids = HashSet::new();
-        let mut filtered_order_events = vec![];
+        let mut filtered_order_events = HashSet::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
@@ -238,12 +238,14 @@ impl SolvableOrdersCache {
         // a while and the result is ignored.
         let db = self.database.clone();
         tokio::spawn(async move {
-            db.store_invalid_order_events(&invalid_order_uids).await;
-            db.store_order_events(
-                &filtered_order_events
-                    .into_iter()
-                    .map(|o| (o, OrderEventLabel::Filtered))
-                    .collect_vec(),
+            db.store_non_subsequent_label_order_events(
+                &invalid_order_uids,
+                OrderEventLabel::Invalid,
+            )
+            .await;
+            db.store_non_subsequent_label_order_events(
+                &filtered_order_events,
+                OrderEventLabel::Filtered,
             )
             .await;
         });

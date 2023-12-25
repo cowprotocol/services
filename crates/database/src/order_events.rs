@@ -86,8 +86,8 @@ pub async fn insert_order_events_batch(
 }
 
 /// Inserts a row into the `order_events` table only if the latest event for the
-/// corresponding order uid is not `Invalid`.
-pub async fn insert_invalid_order_event(
+/// corresponding order UID has a different label than the provided event..
+pub async fn insert_non_subsequent_label_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
@@ -104,12 +104,13 @@ pub async fn insert_invalid_order_event(
         WHERE NOT EXISTS (
             SELECT 1
             FROM cte
-            WHERE label = 'invalid'
+            WHERE label = $4
         )
     "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(event.timestamp)
+        .bind(event.label)
         .bind(event.label)
         .execute(ex)
         .await
