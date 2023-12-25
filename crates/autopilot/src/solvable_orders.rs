@@ -225,10 +225,6 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
-        let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
-        let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        filtered_order_events.extend(removed);
-
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
