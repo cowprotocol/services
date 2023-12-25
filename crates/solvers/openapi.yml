@@ -23,13 +23,43 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Solution"
+                type: array
+                items:
+                  $ref: "#/components/schemas/Solution"
         400:
           description: There is something wrong with the request.
         429:
           description: The solver cannot keep up. It is too busy to handle more requests.
         500:
           description: Something went wrong when handling the request.
+  /notify:
+    post:
+      description: |
+        Receive a status notification about a previously provided solution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auctionId:
+                  description: |
+                    The auction ID of the auction that the solution was provided
+                    for.
+                  type: number
+                solutionId:
+                  description: |
+                    The solution ID within the auction for which the notification applies
+                  type: number
+                kind:
+                  description: |
+                    The kind of notification.
+                  type: string
+                  enum: [Timeout, EmptySolution, DuplicatedSolutionId, SimulationFailed, ZeroScore, ScoreHigherThanQuality, SuccessProbabilityOutOfRange, ObjectiveValueNonPositive, NonBufferableTokensUsed, SolverAccountInsufficientBalance, Success, Revert, Cancelled, Failed]
+      responses:
+        200:
+          description: notification successfully received.
 
 components:
   schemas:
@@ -282,6 +312,9 @@ components:
                     $ref: "#/components/schemas/Decimal"
         fee:
           $ref: "#/components/schemas/Decimal"
+        version:
+          type: string
+          enum: ["v0", "v3plus"]
 
     StablePool:
       description: |
@@ -535,6 +568,17 @@ components:
             must be included in the auction input.
           allOf:
             - $ref: "#/components/schemas/OrderUid"
+        fee:
+          description: |
+            The sell token amount that should be taken as a fee for this
+            trade. This only gets returned for partially fillable limit
+            orders and only refers to the actual amount filled by the trade.
+        executedAmount:
+          description: |
+            The amount of the order that was executed. This is denoted in
+            "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
 
     JitTrade:
       description: |
@@ -546,34 +590,23 @@ components:
         kind:
           type: string
           enum: [jit]
+        executedAmount:
+          description: |
+            The amount of the order that was executed. This is denoted in
+            "sellToken" for sell orders, and "buyToken" for buy orders.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         order:
           description: |
             The just-in-time liquidity order to execute in a solution.
           allOf:
             - $ref: "#/components/schemas/JitOrder"
-
     Trade:
       description: |
         A trade for a CoW Protocol order included in a solution.
-      allOf:
-        - oneOf:
-            - $ref: "#/components/schemas/Fulfillment"
-            - $ref: "#/components/schemas/JitTrade"
-        - type: object
-          required:
-            - executedAmount
-          properties:
-            executedAmount:
-              description: |
-                The amount of the order that was executed. This is denoted in
-                "sellToken" for sell orders, and "buyToken" for buy orders.
-              allOf:
-                - $ref: "#/components/schemas/TokenAmount"
-            fee:
-              description: |
-                The sell token amount that should be taken as a fee for this
-                trade. This only gets returned for partially fillable limit
-                orders and only refers to the actual amount filled by the trade.
+      oneOf:
+        - $ref: "#/components/schemas/Fulfillment"
+        - $ref: "#/components/schemas/JitTrade"
 
     LiquidityInteraction:
       description: |
@@ -630,7 +663,7 @@ components:
         - kind
         - target
         - value
-        - callData
+        - calldata
         - inputs
         - outputs
       properties:
@@ -641,7 +674,7 @@ components:
           $ref: "#/components/schemas/Address"
         value:
           $ref: "#/components/schemas/TokenAmount"
-        callData:
+        calldata:
           description: |
             The EVM calldata bytes.
           type: string
@@ -681,10 +714,15 @@ components:
         The computed solution for a given auction.
       type: object
       required:
+        - id
         - prices
         - trades
         - interactions
+        - score
       properties:
+        id:
+          description: An opaque identifier for the solution.
+          type: number
         prices:
           description: |
             A clearing price map of token address to price. The price can have
@@ -704,3 +742,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
+        score:
+          description: |
+            Information required by the driver to score the solution. 
+            
+            Can either be a raw score or a success probability.
+          oneOf:
+            - type: object
+              properties:
+                kind: 
+                  type: string
+                  enum: [solver]
+                score:
+                  description: |
+                    The raw score of the solution. This is the score that is
+                    used by the driver to rank solutions.
+                  allOf:
+                    - $ref: "#/components/schemas/Decimal"
+            - type: object
+              properties:
+                kind: 
+                  type: string
+                  enum: [riskadjusted]
+                successProbability: 
+                  description: |
+                    The revert probability of the solution. Used by the driver to compute a risk-adjusted score.
+                  type: number
+                  example: 0.9

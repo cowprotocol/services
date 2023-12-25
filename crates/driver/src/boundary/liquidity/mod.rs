@@ -61,7 +61,7 @@ impl Fetcher {
     /// Creates a new fetcher for the specified configuration.
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
-            block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
+            block_stream_poll_interval: BLOCK_POLL_INTERVAL,
         };
 
         let block_stream = blocks.stream(boundary::web3(eth)).await?;

@@ -5,13 +5,10 @@ use {
         PriceEstimating,
         Query,
     },
-    crate::{
-        oneinch_api::OneInchClient,
-        rate_limiter::RateLimiter,
-        trade_finding::oneinch::OneInchTradeFinder,
-    },
+    crate::{oneinch_api::OneInchClient, trade_finding::oneinch::OneInchTradeFinder},
     futures::FutureExt as _,
     primitive_types::H160,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

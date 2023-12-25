@@ -1,5 +1,9 @@
 use {
-    e2e::{setup::*, tx, tx_value},
+    e2e::{
+        setup::{colocation::SolverEngine, *},
+        tx,
+        tx_value,
+    },
     ethcontract::U256,
     model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     number::nonzero::U256 as NonZeroU256,
@@ -37,11 +41,17 @@ async fn uses_stale_liquidity(web3: Web3) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
     services

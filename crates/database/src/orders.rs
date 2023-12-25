@@ -456,7 +456,6 @@ pub struct FullOrder {
     pub onchain_user: Option<Address>,
     pub onchain_placement_error: Option<OnchainOrderPlacementError>,
     pub executed_surplus_fee: BigDecimal,
-    pub executed_solver_fee: BigDecimal,
     pub full_app_data: Option<Vec<u8>>,
 }
 
@@ -520,7 +519,6 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.sender from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_user,
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(surplus_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_surplus_fee,
-COALESCE((SELECT SUM(solver_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_solver_fee,
 (SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
 "#;
 
@@ -586,8 +584,6 @@ WHERE
 #[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
 pub struct OrderExecution {
     pub order_uid: OrderUid,
-    /// The `solver_fee` that got executed for this specific fill.
-    pub executed_solver_fee: Option<BigDecimal>,
     pub sell_token: Address,
     pub buy_token: Address,
     pub kind: OrderKind,
@@ -613,7 +609,6 @@ pub fn order_executions_in_tx<'a>(
 {SETTLEMENT_LOG_INDICES}
 SELECT
     oe.order_uid AS order_uid,
-    oe.solver_fee AS executed_solver_fee,
     o.sell_token,
     o.buy_token,
     o.sell_amount,
@@ -1835,7 +1830,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, fee);
-        assert_eq!(order.executed_solver_fee, solver_fee);
     }
 
     #[tokio::test]
@@ -1924,7 +1918,6 @@ mod tests {
             executions,
             vec![OrderExecution {
                 order_uid,
-                executed_solver_fee: Some(bigdecimal(463182886014406361088)),
                 sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
                 buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
                 kind: OrderKind::Sell,
@@ -2003,7 +1996,6 @@ mod tests {
         assert_eq!(
             executions,
             vec![OrderExecution {
-                executed_solver_fee: Some(bigdecimal(42)),
                 kind: OrderKind::Sell,
                 class: OrderClass::Limit,
                 sell_amount: bigdecimal(1),

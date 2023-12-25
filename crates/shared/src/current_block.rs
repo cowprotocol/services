@@ -1,7 +1,6 @@
 //! Global block stream arguments.
 
 use {
-    crate::arguments::duration_from_seconds,
     anyhow::Result,
     clap::Parser,
     ethrpc::{
@@ -24,10 +23,10 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "5",
-        value_parser = duration_from_seconds,
+        default_value = "5s",
+        value_parser = humantime::parse_duration,
     )]
-    pub block_stream_poll_interval_seconds: Duration,
+    pub block_stream_poll_interval: Duration,
 }
 
 impl Arguments {
@@ -36,11 +35,7 @@ impl Arguments {
     }
 
     pub async fn stream(&self, web3: Web3) -> Result<CurrentBlockStream> {
-        current_block_stream(
-            self.retriever(web3),
-            self.block_stream_poll_interval_seconds,
-        )
-        .await
+        current_block_stream(self.retriever(web3), self.block_stream_poll_interval).await
     }
 }
 
@@ -48,8 +43,8 @@ impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(
             f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds
+            "block_stream_poll_interval: {:?}",
+            self.block_stream_poll_interval
         )?;
 
         Ok(())

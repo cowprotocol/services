@@ -27,13 +27,12 @@ use {
             self,
             CompetitionAuction,
             Execution,
-            Objective,
             SolverCompetitionDB,
             SolverSettlement,
         },
         TokenPair,
     },
-    num::{rational::Ratio, BigInt, ToPrimitive},
+    num::{rational::Ratio, BigInt},
     primitive_types::{H160, U256},
     shared::{
         account_balances::BalanceFetching,
@@ -354,9 +353,7 @@ impl Driver {
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetitionDB {
-            gas_price: gas_price.effective_gas_price(),
             auction_start_block,
-            liquidity_collected_block: current_block_during_liquidity_fetch,
             competition_simulation_block: block_during_simulation,
             auction: competition_auction,
             solutions: rated_settlements
@@ -364,19 +361,8 @@ impl Driver {
                 .map(|(solver, rated_settlement)| SolverSettlement {
                     solver: solver.name().to_string(),
                     solver_address: solver.account().address(),
-                    objective: Objective {
-                        total: rated_settlement
-                            .objective_value
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
-                        surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement.solver_fees.to_f64().unwrap_or(f64::NAN),
-                        cost: rated_settlement.gas_estimate.to_f64_lossy()
-                            * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                        gas: rated_settlement.gas_estimate.low_u64(),
-                    },
-                    score: Some(rated_settlement.score),
-                    ranking: Some(rated_settlement.ranking),
+                    score: rated_settlement.score,
+                    ranking: rated_settlement.ranking,
                     clearing_prices: rated_settlement
                         .settlement
                         .clearing_prices()
@@ -391,12 +377,12 @@ impl Driver {
                             executed_amount: trade.executed_amount,
                         })
                         .collect(),
-                    call_data: settlement_simulation::call_data(
+                    call_data: Some(settlement_simulation::call_data(
                         rated_settlement
                             .settlement
                             .clone()
                             .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
-                    ),
+                    )),
                     uninternalized_call_data: rated_settlement
                         .settlement
                         .clone()

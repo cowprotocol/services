@@ -9,8 +9,9 @@ use {
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, fee_policy_to_dto, Class, TradedAmounts},
+            solve::{self, Class, TradedAmounts},
         },
+        protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     anyhow::Result,
@@ -190,7 +191,7 @@ impl RunLoop {
                             // we don't know the surplus fee in advance. will be populated
                             // after the transaction containing the order is mined
                             true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Solver(auction_order.metadata.solver_fee),
+                            false => ExecutedFee::Order(auction_order.metadata.solver_fee),
                         };
                         order_executions.push(OrderExecution {
                             order_id: *order_id,
@@ -238,8 +239,8 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Some(Score::Solver(participant.solution.score.get())),
-                            ranking: Some(solutions.len() - index),
+                            score: Score::Solver(participant.solution.score.get()),
+                            ranking: solutions.len() - index,
                             orders: participant
                                 .solution
                                 .orders()
@@ -256,21 +257,17 @@ impl RunLoop {
                                 .iter()
                                 .map(|(token, price)| (*token, *price))
                                 .collect(),
-                            // TODO: revisit once colocation is enabled (remove not populated
-                            // fields) Not all fields can be populated in the colocated world
-                            ..Default::default()
+                            call_data: None,
+                            uninternalized_call_data: None,
                         };
                         if is_winner {
-                            settlement.call_data = revealed.calldata.internalized.clone();
+                            settlement.call_data = Some(revealed.calldata.internalized.clone());
                             settlement.uninternalized_call_data =
                                 Some(revealed.calldata.uninternalized.clone());
                         }
                         settlement
                     })
                     .collect(),
-                // TODO: revisit once colocation is enabled (remove not populated fields)
-                // Not all fields can be populated in the colocated world
-                ..Default::default()
             };
             let competition = Competition {
                 auction_id,
@@ -313,13 +310,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
+            fee_policies,
         );
         let request = &request;
 
@@ -503,7 +501,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policy: arguments::FeePolicy,
+    fee_policies: fee::Policies,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -529,17 +527,6 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-
-                let fee_policies = match order.metadata.class {
-                    OrderClass::Market => vec![],
-                    OrderClass::Liquidity => vec![],
-                    // todo https://github.com/cowprotocol/services/issues/2092
-                    // skip protocol fee for limit orders with in-market price
-
-                    // todo https://github.com/cowprotocol/services/issues/2115
-                    // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => vec![fee_policy_to_dto(&fee_policy)],
-                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
@@ -565,7 +552,7 @@ pub fn solve_request(
                     class,
                     app_data: order.data.app_data,
                     signature: order.signature.clone(),
-                    fee_policies,
+                    fee_policies: fee_policies.get(&order.metadata.uid).unwrap_or_default(),
                 }
             })
             .collect(),
