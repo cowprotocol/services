@@ -1635,6 +1635,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "derivative",
  "ethabi",
  "ethcontract",
  "ethereum-types",
