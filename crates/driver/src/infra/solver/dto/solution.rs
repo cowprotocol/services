@@ -38,6 +38,9 @@ impl Solutions {
                                     ))?
                                     .clone();
 
+                                let uniform_sell_price = solution.prices[&order.sell.token.into()];
+                                let uniform_buy_price = solution.prices[&order.buy.token.into()];
+
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),
@@ -47,6 +50,8 @@ impl Solutions {
                                         ),
                                         None => competition::solution::trade::Fee::Static,
                                     },
+                                    uniform_sell_price,
+                                    uniform_buy_price,
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(

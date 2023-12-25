@@ -23,6 +23,7 @@ pub struct Fulfillment {
     /// order.
     executed: order::TargetAmount,
     fee: Fee,
+    protocol_fee: order::SellAmount,
 }
 
 impl Fulfillment {
@@ -30,7 +31,119 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
+        uniform_sell_price: eth::U256,
+        uniform_buy_price: eth::U256,
     ) -> Result<Self, InvalidExecutedAmount> {
+        let protocol_fee = {
+            let surplus_fee = match fee {
+                Fee::Static => eth::U256::default(),
+                Fee::Dynamic(fee) => fee.0,
+            };
+
+            let mut protocol_fee = Default::default();
+            for fee_policy in &order.fee_policies {
+                match fee_policy {
+                    order::FeePolicy::PriceImprovement {
+                        factor,
+                        max_volume_factor,
+                    } => {
+                        let fee = match order.side {
+                            order::Side::Buy => {
+                                // Equal to full sell amount for FOK orders, otherwise scalled with
+                                // executed amount for partially
+                                // fillable orders
+                                let limit_sell_amount =
+                                    order.sell.amount.0 * executed.0 / order.buy.amount.0;
+                                // How much `sell_token` we need to sell to buy `executed` amount of
+                                // `buy_token`
+                                let executed_sell_amount = executed
+                                    .0
+                                    .checked_mul(uniform_buy_price)
+                                    .ok_or(InvalidExecutedAmount)?
+                                    .checked_div(uniform_sell_price)
+                                    .ok_or(InvalidExecutedAmount)?;
+                                // We have to sell slightly more `sell_token` to capture the
+                                // `surplus_fee`
+                                let executed_sell_amount_with_surplus_fee = executed_sell_amount
+                                    .checked_add(surplus_fee)
+                                    .ok_or(InvalidExecutedAmount)?;
+                                // Sold exactly `executed_sell_amount_with_surplus_fee` while the
+                                // limit price is
+                                // `limit_sell_amount` Take protocol fee from the price
+                                // improvement
+                                let price_improvement_fee = limit_sell_amount
+                                    .checked_sub(executed_sell_amount_with_surplus_fee)
+                                    .ok_or(InvalidExecutedAmount)?
+                                    * (eth::U256::from_f64_lossy(factor * 100.))
+                                    / 100;
+                                let max_volume_fee = executed_sell_amount_with_surplus_fee
+                                    * (eth::U256::from_f64_lossy(max_volume_factor * 100.))
+                                    / 100;
+                                // take the smaller of the two
+                                std::cmp::min(price_improvement_fee, max_volume_fee)
+                            }
+                            order::Side::Sell => {
+                                let executed_sell_amount = executed
+                                    .0
+                                    .checked_add(surplus_fee)
+                                    .ok_or(InvalidExecutedAmount)?;
+
+                                // Equal to full buy amount for FOK orders, otherwise scalled with
+                                // executed amount for partially
+                                // fillable orders
+                                let limit_buy_amount =
+                                    order.buy.amount.0 * executed_sell_amount / order.sell.amount.0;
+                                // How much `buy_token` we get for `executed_sell_amount` of
+                                // `sell_token`
+                                let executed_buy_amount = executed_sell_amount
+                                    .checked_mul(uniform_sell_price)
+                                    .ok_or(InvalidExecutedAmount)?
+                                    .checked_div(uniform_buy_price)
+                                    .ok_or(InvalidExecutedAmount)?;
+                                // Bought exactly `executed_buy_amount` while the limit price is
+                                // `limit_buy_amount` Take protocol fee from the price
+                                // improvement
+                                let price_improvement_fee = executed_buy_amount
+                                    .checked_sub(limit_buy_amount)
+                                    .ok_or(InvalidExecutedAmount)?
+                                    * (eth::U256::from_f64_lossy(factor * 100.))
+                                    / 100;
+                                let max_volume_fee = executed_buy_amount
+                                    * (eth::U256::from_f64_lossy(max_volume_factor * 100.))
+                                    / 100;
+                                // take the smaller of the two
+                                let protocol_fee_in_buy_amount =
+                                    std::cmp::min(price_improvement_fee, max_volume_fee);
+
+                                // express protocol fee in sell token
+                                protocol_fee_in_buy_amount
+                                    .checked_mul(uniform_buy_price)
+                                    .ok_or(InvalidExecutedAmount)?
+                                    .checked_div(uniform_sell_price)
+                                    .ok_or(InvalidExecutedAmount)?
+                            }
+                        };
+                        protocol_fee += fee;
+                    }
+                    order::FeePolicy::Volume { factor: _ } => unimplemented!(),
+                }
+            }
+            order::SellAmount(protocol_fee)
+        };
+
+        // Adjust the executed amount by the protocol fee. This is because solvers are
+        // unaware of the protocol fee that driver introduces and they only account
+        // for the network fee.
+        let executed = match order.side {
+            order::Side::Buy => executed,
+            order::Side::Sell => order::TargetAmount(
+                executed
+                    .0
+                    .checked_sub(protocol_fee.0)
+                    .ok_or(InvalidExecutedAmount)?,
+            ),
+        };
+
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -43,12 +156,18 @@ impl Fulfillment {
                 }),
             };
 
+            let protocol_fee = match order.side {
+                order::Side::Buy => order::TargetAmount::default(),
+                order::Side::Sell => order::TargetAmount(protocol_fee.0),
+            };
+
             match order.partial {
                 order::Partial::Yes { available } => {
-                    order::TargetAmount(executed.0 + surplus_fee.0) <= available
+                    order::TargetAmount(executed.0 + surplus_fee.0 + protocol_fee.0) <= available
                 }
                 order::Partial::No => {
-                    order::TargetAmount(executed.0 + surplus_fee.0) == order.target()
+                    order::TargetAmount(executed.0 + surplus_fee.0 + protocol_fee.0)
+                        == order.target()
                 }
             }
         };
@@ -65,6 +184,7 @@ impl Fulfillment {
                 order,
                 executed,
                 fee,
+                protocol_fee,
             })
         } else {
             Err(InvalidExecutedAmount)
@@ -84,7 +204,7 @@ impl Fulfillment {
     pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.solver,
-            Fee::Dynamic(fee) => fee,
+            Fee::Dynamic(fee) => (fee.0 + self.protocol_fee.0).into(),
         }
     }
 
@@ -93,7 +213,7 @@ impl Fulfillment {
     pub fn fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.user,
-            Fee::Dynamic(fee) => fee,
+            Fee::Dynamic(fee) => (fee.0 + self.protocol_fee.0).into(),
         }
     }
 
