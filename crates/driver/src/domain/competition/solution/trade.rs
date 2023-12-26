@@ -42,12 +42,12 @@ impl Fulfillment {
 
             let mut protocol_fee = Default::default();
             for fee_policy in &order.fee_policies {
-                match fee_policy {
+                let fee = match fee_policy {
                     order::FeePolicy::PriceImprovement {
                         factor,
                         max_volume_factor,
                     } => {
-                        let fee = match order.side {
+                        match order.side {
                             order::Side::Buy => {
                                 // How much `sell_token` we need to sell to buy `executed` amount of
                                 // `buy_token`
@@ -130,11 +130,40 @@ impl Fulfillment {
                                 // take the smaller of the two
                                 std::cmp::min(price_improvement_fee, max_volume_fee)
                             }
-                        };
-                        protocol_fee += fee;
+                        }
                     }
-                    order::FeePolicy::Volume { factor: _ } => unimplemented!(),
-                }
+                    order::FeePolicy::Volume { factor } => {
+                        match order.side {
+                            order::Side::Buy => {
+                                // How much `sell_token` we need to sell to buy `executed` amount of
+                                // `buy_token`
+                                let executed_sell_amount = executed
+                                    .0
+                                    .checked_mul(uniform_buy_price)
+                                    .ok_or(InvalidFullfilment)?
+                                    .checked_div(uniform_sell_price)
+                                    .ok_or(InvalidFullfilment)?;
+                                // We have to sell slightly more `sell_token` to capture the
+                                // `surplus_fee`
+                                let executed_sell_amount_with_surplus_fee = executed_sell_amount
+                                    .checked_add(surplus_fee)
+                                    .ok_or(InvalidFullfilment)?;
+                                executed_sell_amount_with_surplus_fee
+                                    * (eth::U256::from_f64_lossy(factor * 100.))
+                                    / 100
+                            }
+                            order::Side::Sell => {
+                                let executed_sell_amount = executed
+                                    .0
+                                    .checked_add(surplus_fee)
+                                    .ok_or(InvalidFullfilment)?;
+                                executed_sell_amount * (eth::U256::from_f64_lossy(factor * 100.))
+                                    / 100
+                            }
+                        }
+                    }
+                };
+                protocol_fee += fee;
             }
             order::SellAmount(protocol_fee)
         };
