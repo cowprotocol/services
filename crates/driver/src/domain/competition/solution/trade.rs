@@ -128,7 +128,7 @@ impl Fulfillment {
 
         // Adjust the executed amount by the protocol fee. This is because solvers are
         // unaware of the protocol fee that driver introduces and they only account
-        // for the network fee.
+        // for the surplus fee.
         let executed = match order.side {
             order::Side::Buy => executed,
             order::Side::Sell => order::TargetAmount(
@@ -158,12 +158,9 @@ impl Fulfillment {
 
             match order.partial {
                 order::Partial::Yes { available } => {
-                    order::TargetAmount(executed.0 + surplus_fee.0 + protocol_fee.0) <= available
+                    executed + surplus_fee + protocol_fee <= available
                 }
-                order::Partial::No => {
-                    order::TargetAmount(executed.0 + surplus_fee.0 + protocol_fee.0)
-                        == order.target()
-                }
+                order::Partial::No => executed + surplus_fee + protocol_fee == order.target(),
             }
         };
 
@@ -199,7 +196,7 @@ impl Fulfillment {
     pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.solver,
-            Fee::Dynamic(fee) => (fee.0 + self.protocol_fee.0).into(),
+            Fee::Dynamic(fee) => fee + self.protocol_fee,
         }
     }
 
@@ -208,7 +205,7 @@ impl Fulfillment {
     pub fn fee(&self) -> order::SellAmount {
         match self.fee {
             Fee::Static => self.order.fee.user,
-            Fee::Dynamic(fee) => (fee.0 + self.protocol_fee.0).into(),
+            Fee::Dynamic(fee) => fee + self.protocol_fee,
         }
     }
 

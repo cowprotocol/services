@@ -68,6 +68,14 @@ impl From<SellAmount> for eth::U256 {
     }
 }
 
+impl std::ops::Add for SellAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
 /// An amount denominated in the sell token for [`Side::Sell`] [`Order`]s, or in
 /// the buy token for [`Side::Buy`] [`Order`]s.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -94,6 +102,14 @@ impl From<eth::TokenAmount> for TargetAmount {
 impl From<TargetAmount> for eth::TokenAmount {
     fn from(value: TargetAmount) -> Self {
         Self(value.0)
+    }
+}
+
+impl std::ops::Add for TargetAmount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 
