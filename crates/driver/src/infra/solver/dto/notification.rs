@@ -156,36 +156,3 @@ pub struct Tx {
     pub value: eth::U256,
     pub access_list: AccessList,
 }
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ScoreKind {
-    ZeroScore,
-    ScoreHigherThanQuality {
-        #[serde_as(as = "serialize::U256")]
-        score: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-    },
-    SuccessProbabilityOutOfRange {
-        probability: f64,
-    },
-    #[serde(rename_all = "camelCase")]
-    ObjectiveValueNonPositive {
-        #[serde_as(as = "serialize::U256")]
-        quality: eth::U256,
-        #[serde_as(as = "serialize::U256")]
-        gas_cost: eth::U256,
-    },
-}
-
-#[serde_as]
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Settlement {
-    Success { transaction: eth::H256 },
-    Revert { transaction: eth::H256 },
-    SimulationRevert,
-    Fail,
-}
