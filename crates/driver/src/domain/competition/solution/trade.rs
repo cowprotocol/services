@@ -237,7 +237,7 @@ impl Fulfillment {
     /// scoring a solution.
     pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
-            Fee::Static => self.order.fee.solver,
+            Fee::Static => self.order.fee.solver + self.protocol_fee,
             Fee::Dynamic(fee) => fee + self.protocol_fee,
         }
     }
@@ -246,7 +246,7 @@ impl Fulfillment {
     /// considering their signed order and the uniform clearing prices
     pub fn fee(&self) -> order::SellAmount {
         match self.fee {
-            Fee::Static => self.order.fee.user,
+            Fee::Static => self.order.fee.user + self.protocol_fee,
             Fee::Dynamic(fee) => fee + self.protocol_fee,
         }
     }
