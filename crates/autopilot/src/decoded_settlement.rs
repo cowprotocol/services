@@ -280,9 +280,8 @@ impl DecodedSettlement {
             .iter()
             .zip(order_fees.iter())
             .map(|(trade, (order, order_fee))| {
-                match self.fee(external_prices, *order, *order_fee, trade) {
-                    Some(fees) => fees,
-                    None => {
+                self.fee(external_prices, *order, *order_fee, trade)
+                    .unwrap_or_else(|| {
                         tracing::warn!("possible incomplete fee calculation");
                         // we should have an order execution for every trade
                         Fees {
@@ -290,8 +289,7 @@ impl DecodedSettlement {
                             sell: U256::zero(),
                             native: U256::zero(),
                         }
-                    }
-                }
+                    })
             })
             .collect()
     }
@@ -364,7 +362,6 @@ impl DecodedSettlement {
     }
 }
 
-/// These are computed based on-chain settlement data.
 /// Can be populated multiple times for the same order (partially fillable
 /// orders)
 #[derive(Debug)]
