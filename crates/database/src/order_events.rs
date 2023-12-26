@@ -104,13 +104,12 @@ pub async fn insert_non_subsequent_label_order_event(
         WHERE NOT EXISTS (
             SELECT 1
             FROM cte
-            WHERE label = $4
+            WHERE label = $3
         )
     "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(event.timestamp)
-        .bind(event.label)
         .bind(event.label)
         .execute(ex)
         .await
