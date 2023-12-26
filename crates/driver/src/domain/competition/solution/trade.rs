@@ -33,7 +33,7 @@ impl Fulfillment {
         fee: Fee,
         uniform_sell_price: eth::U256,
         uniform_buy_price: eth::U256,
-    ) -> Result<Self, InvalidExecutedAmount> {
+    ) -> Result<Self, InvalidFullfilment> {
         let protocol_fee = {
             let surplus_fee = match fee {
                 Fee::Static => eth::U256::default(),
@@ -49,30 +49,36 @@ impl Fulfillment {
                     } => {
                         let fee = match order.side {
                             order::Side::Buy => {
-                                // Equal to full sell amount for FOK orders, otherwise scalled with
-                                // executed amount for partially
-                                // fillable orders
-                                let limit_sell_amount =
-                                    order.sell.amount.0 * executed.0 / order.buy.amount.0;
                                 // How much `sell_token` we need to sell to buy `executed` amount of
                                 // `buy_token`
                                 let executed_sell_amount = executed
                                     .0
                                     .checked_mul(uniform_buy_price)
-                                    .ok_or(InvalidExecutedAmount)?
+                                    .ok_or(InvalidFullfilment)?
                                     .checked_div(uniform_sell_price)
-                                    .ok_or(InvalidExecutedAmount)?;
+                                    .ok_or(InvalidFullfilment)?;
                                 // We have to sell slightly more `sell_token` to capture the
                                 // `surplus_fee`
                                 let executed_sell_amount_with_surplus_fee = executed_sell_amount
                                     .checked_add(surplus_fee)
-                                    .ok_or(InvalidExecutedAmount)?;
-                                // Sold exactly `executed_sell_amount_with_surplus_fee` while the
-                                // limit price is
-                                // `limit_sell_amount` Take protocol fee from the surplus
+                                    .ok_or(InvalidFullfilment)?;
+                                // What is the maximum amount of `sell_token` we are allowed to
+                                // sell based on limit price?
+                                // Equal to full sell amount for FOK orders, otherwise scalled with
+                                // executed amount for partially fillable orders
+                                let limit_sell_amount = order
+                                    .sell
+                                    .amount
+                                    .0
+                                    .checked_mul(executed.0)
+                                    .ok_or(InvalidFullfilment)?
+                                    .checked_div(order.buy.amount.0)
+                                    .ok_or(InvalidFullfilment)?;
+                                // Take protocol fee from the surplus
+                                // Surplus is the diff between the limit price and executed amount
                                 let surplus = limit_sell_amount
                                     .checked_sub(executed_sell_amount_with_surplus_fee)
-                                    .ok_or(InvalidExecutedAmount)?;
+                                    .ok_or(InvalidFullfilment)?;
                                 let price_improvement_fee =
                                     surplus * (eth::U256::from_f64_lossy(factor * 100.)) / 100;
                                 let max_volume_fee = executed_sell_amount_with_surplus_fee
@@ -82,32 +88,39 @@ impl Fulfillment {
                                 std::cmp::min(price_improvement_fee, max_volume_fee)
                             }
                             order::Side::Sell => {
-                                let executed_sell_amount = executed
-                                    .0
-                                    .checked_add(surplus_fee)
-                                    .ok_or(InvalidExecutedAmount)?;
-                                // Equal to full buy amount for FOK orders, otherwise scalled with
-                                // executed amount for partially
-                                // fillable orders
-                                let limit_buy_amount =
-                                    order.buy.amount.0 * executed_sell_amount / order.sell.amount.0;
                                 // How much `buy_token` we get for `executed` amount of `sell_token`
                                 let executed_buy_amount = executed
                                     .0
                                     .checked_mul(uniform_sell_price)
-                                    .ok_or(InvalidExecutedAmount)?
+                                    .ok_or(InvalidFullfilment)?
                                     .checked_div(uniform_buy_price)
-                                    .ok_or(InvalidExecutedAmount)?;
+                                    .ok_or(InvalidFullfilment)?;
+                                let executed_sell_amount = executed
+                                    .0
+                                    .checked_add(surplus_fee)
+                                    .ok_or(InvalidFullfilment)?;
+                                // What is the minimum amount of `buy_token` we have to buy based on
+                                // limit price?
+                                // Equal to full buy amount for FOK orders, otherwise scalled with
+                                // executed amount for partially fillable orders
+                                let limit_buy_amount = order
+                                    .buy
+                                    .amount
+                                    .0
+                                    .checked_mul(executed_sell_amount)
+                                    .ok_or(InvalidFullfilment)?
+                                    .checked_div(order.sell.amount.0)
+                                    .ok_or(InvalidFullfilment)?;
                                 // Bought exactly `executed_buy_amount` while the limit price is
                                 // `limit_buy_amount` Take protocol fee from the surplus
                                 let surplus = executed_buy_amount
                                     .checked_sub(limit_buy_amount)
-                                    .ok_or(InvalidExecutedAmount)?;
+                                    .ok_or(InvalidFullfilment)?;
                                 let surplus_in_sell_token = surplus
                                     .checked_mul(uniform_buy_price)
-                                    .ok_or(InvalidExecutedAmount)?
+                                    .ok_or(InvalidFullfilment)?
                                     .checked_div(uniform_sell_price)
-                                    .ok_or(InvalidExecutedAmount)?;
+                                    .ok_or(InvalidFullfilment)?;
                                 let price_improvement_fee = surplus_in_sell_token
                                     * (eth::U256::from_f64_lossy(factor * 100.))
                                     / 100;
@@ -135,7 +148,7 @@ impl Fulfillment {
                 executed
                     .0
                     .checked_sub(protocol_fee.0)
-                    .ok_or(InvalidExecutedAmount)?,
+                    .ok_or(InvalidFullfilment)?,
             ),
         };
 
@@ -179,7 +192,7 @@ impl Fulfillment {
                 protocol_fee,
             })
         } else {
-            Err(InvalidExecutedAmount)
+            Err(InvalidFullfilment)
         }
     }
 
@@ -270,7 +283,7 @@ impl Jit {
     pub fn new(
         order: order::Jit,
         executed: order::TargetAmount,
-    ) -> Result<Self, InvalidExecutedAmount> {
+    ) -> Result<Self, InvalidFullfilment> {
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -282,7 +295,7 @@ impl Jit {
         if is_valid {
             Ok(Self { order, executed })
         } else {
-            Err(InvalidExecutedAmount)
+            Err(InvalidFullfilment)
         }
     }
 
@@ -306,7 +319,7 @@ pub struct Execution {
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid executed amount")]
-pub struct InvalidExecutedAmount;
+pub struct InvalidFullfilment;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {

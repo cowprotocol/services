@@ -55,7 +55,7 @@ impl Solutions {
                                 )
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(
-                                    |competition::solution::trade::InvalidExecutedAmount| {
+                                    |competition::solution::trade::InvalidFullfilment| {
                                         super::Error("invalid trade fulfillment")
                                     },
                                 )
@@ -121,7 +121,7 @@ impl Solutions {
                                     jit.executed_amount.into(),
                                 )
                                 .map_err(
-                                    |competition::solution::trade::InvalidExecutedAmount| {
+                                    |competition::solution::trade::InvalidFullfilment| {
                                         super::Error("invalid executed amount in JIT order")
                                     },
                                 )?,
