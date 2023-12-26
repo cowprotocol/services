@@ -625,8 +625,7 @@ pub async fn run(args: Arguments) {
     };
     // updated in background task
     let market_makable_token_list =
-        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
-            .await;
+        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
     let new_args = cli::Args {
         ethrpc: args.shared.node_url,
