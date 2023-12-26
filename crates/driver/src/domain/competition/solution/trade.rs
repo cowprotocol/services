@@ -340,6 +340,7 @@ mod tests {
                 FeePolicy,
                 SellTokenBalance,
                 Signature,
+                TargetAmount,
             },
             util,
         },
@@ -412,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_fullfilment_buy_limit_order_fok() {
+    pub fn test_fulfillment_buy_limit_order_fok() {
         // https://explorer.cow.fi/orders/0xc9096a3dbfb1f661e65ecc14644adec6bd8e385ae818aa73181def24996affb589e4042fd85e857e81a4fa89831b1f5ad4f384b7659357d7?tab=overview
         let order = competition::Order {
             uid: Default::default(),
@@ -470,5 +471,196 @@ mod tests {
         );
         // executed amount same as before
         assert_eq!(fulfillment.executed(), executed);
+    }
+
+    #[test]
+    fn test_fulfillment_sell_limit_order_partial() {
+        // https://explorer.cow.fi/orders/0x1a146dba48512326c647aae1ce511206b373b151e1b9ada9772c313e7d24ec2e0960da039bb8151cacfef620476e8baf34bd95656594209e?tab=overview
+        // 3 fullfillments
+        //
+        // 1. tx hash 0xbc95b97d09a62e6a68b15a8dfd4655a6e25d100ce0dd98a6a43e3b7eac9951cc
+        //
+        // https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.26?id=W-uxp4wBlutGF6GyxkCq
+        let order1 = competition::Order {
+            uid: Default::default(),
+            side: order::Side::Sell,
+            buy: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0x70edf1c215d0ce69e7f16fd4e6276ba0d99d4de7").unwrap(),
+                )),
+                amount: eth::TokenAmount(136363636363636u128.into()),
+            },
+            sell: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap(),
+                )),
+                amount: eth::TokenAmount(9000000000u128.into()),
+            },
+            kind: order::Kind::Limit,
+            fee: Default::default(),
+            fee_policies: vec![FeePolicy::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 1.0,
+            }],
+            partial: order::Partial::Yes {
+                available: TargetAmount(9000000000u128.into()),
+            },
+            receiver: Default::default(),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            valid_to: util::Timestamp(0),
+            app_data: AppData(Default::default()),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: Scheme::Eip712,
+                data: Default::default(),
+                signer: eth::Address::default(),
+            },
+        };
+
+        let uniform_sell_price = eth::U256::from(452471455796126723289489746u128);
+        let uniform_buy_price = eth::U256::from(29563373796548615411833u128);
+        let executed = order::TargetAmount(1746031488u128.into());
+        let fee = Fee::Dynamic(order::SellAmount(11566733u128.into()));
+        let fulfillment = Fulfillment::new(
+            order1.clone(),
+            executed,
+            fee,
+            uniform_sell_price,
+            uniform_buy_price,
+        )
+        .unwrap();
+        // fee contains protocol fee
+        assert_eq!(
+            fulfillment.fee(),
+            order::SellAmount((11566733u128 + 3037322u128).into())
+        );
+        // executed amount reduced by protocol fee
+        assert_eq!(fulfillment.executed(), U256::from(1742994166u128).into()); // 1746031488 - 3037322
+
+        // 2. tx hash 0x2f9b928182649aad2eaf04361fff1aff3cb8d37e4988c952aed49465eff01c9e
+        //
+        // https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.26?id=uvXcp4wB4Ql8nk7aQgeZ
+
+        let order2 = competition::Order {
+            uid: Default::default(),
+            side: order::Side::Sell,
+            buy: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0x70edf1c215d0ce69e7f16fd4e6276ba0d99d4de7").unwrap(),
+                )),
+                amount: eth::TokenAmount(136363636363636u128.into()),
+            },
+            sell: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap(),
+                )),
+                amount: eth::TokenAmount(9000000000u128.into()),
+            },
+            kind: order::Kind::Limit,
+            fee: Default::default(),
+            fee_policies: vec![FeePolicy::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 1.0,
+            }],
+            partial: order::Partial::Yes {
+                available: TargetAmount(7242401779u128.into()),
+            },
+            receiver: Default::default(),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            valid_to: util::Timestamp(0),
+            app_data: AppData(Default::default()),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: Scheme::Eip712,
+                data: Default::default(),
+                signer: eth::Address::default(),
+            },
+        };
+
+        let uniform_sell_price = eth::U256::from(49331008874302634851980418220032u128);
+        let uniform_buy_price = eth::U256::from(3204738565525085525012119552u128);
+        let executed = order::TargetAmount(2887238741u128.into());
+        let fee = Fee::Dynamic(order::SellAmount(27827963u128.into()));
+        let fulfillment = Fulfillment::new(
+            order2.clone(),
+            executed,
+            fee,
+            uniform_sell_price,
+            uniform_buy_price,
+        )
+        .unwrap();
+        // fee contains protocol fee
+        assert_eq!(
+            fulfillment.fee(),
+            order::SellAmount((27827963u128 + 8965365u128).into())
+        );
+        // executed amount reduced by protocol fee
+        assert_eq!(fulfillment.executed(), U256::from(2878273376u128).into()); // 2887238741 - 8965365
+
+        // 3. 0x813dab5983fd3643e1ce3e7efbdbfe1ca8c41419bcfaf1e898e067e37c455d75
+        //
+        // https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.26?id=xPXdp4wB4Ql8nk7a8ert
+
+        let order3 = competition::Order {
+            uid: Default::default(),
+            side: order::Side::Sell,
+            buy: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0x70edf1c215d0ce69e7f16fd4e6276ba0d99d4de7").unwrap(),
+                )),
+                amount: eth::TokenAmount(136363636363636u128.into()),
+            },
+            sell: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap(),
+                )),
+                amount: eth::TokenAmount(9000000000u128.into()),
+            },
+            kind: order::Kind::Limit,
+            fee: Default::default(),
+            fee_policies: vec![FeePolicy::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 1.0,
+            }],
+            partial: order::Partial::Yes {
+                available: TargetAmount(4327335075u128.into()),
+            },
+            receiver: Default::default(),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            valid_to: util::Timestamp(0),
+            app_data: AppData(Default::default()),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: Scheme::Eip712,
+                data: Default::default(),
+                signer: eth::Address::default(),
+            },
+        };
+
+        let uniform_sell_price = eth::U256::from(65841033847428u128);
+        let uniform_buy_price = eth::U256::from(4302554937u128);
+        let executed = order::TargetAmount(4302554937u128.into());
+        let fee = Fee::Dynamic(order::SellAmount(24780138u128.into()));
+        let fulfillment = Fulfillment::new(
+            order3.clone(),
+            executed,
+            fee,
+            uniform_sell_price,
+            uniform_buy_price,
+        )
+        .unwrap();
+        // fee contains protocol fee
+        assert_eq!(
+            fulfillment.fee(),
+            order::SellAmount((24780138u128 + 8996762u128).into())
+        );
+        // executed amount reduced by protocol fee
+        assert_eq!(fulfillment.executed(), U256::from(4293558175u128).into()); // 4302554937 - 8996762
     }
 }
