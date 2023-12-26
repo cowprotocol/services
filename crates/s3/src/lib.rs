@@ -71,7 +71,6 @@ impl Uploader {
                  on that. \n{err:?}"
             )
         });
-        ()
     }
 
     /// Compresses the input bytes using Gzip.

@@ -3794,7 +3794,6 @@ dependencies = [
  "aws-config 0.56.0",
  "aws-sdk-s3",
  "chrono",
- "clap",
  "flate2",
  "serde",
  "serde_json",
