@@ -807,8 +807,12 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let order1 = OrderUid::from_str("0xaa6ff3f3f755e804eefc023967be5d7f8267674d4bae053eaca01be5801854bf6c7f534c81dfedf90c9e42effb410a44e4f8ef1064690e05").unwrap();
-        let order_fees = vec![(order1, None)];
+        let order_fees = settlement
+            .order_uids()
+            .unwrap()
+            .into_iter()
+            .map(|uid| (uid, None))
+            .collect::<Vec<_>>();
         let fees = settlement.all_fees(&external_prices, &order_fees);
         let fee = total_fee(fees).to_f64_lossy(); // to_f64_lossy() to mimic what happens when value is saved for solver
                                                   // competition
@@ -1277,11 +1281,12 @@ mod tests {
         let external_prices =
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
-        let order1 = OrderUid::from_str("0xa490cba25239cb53df89d967be391e52a0aa605fc6681c1cd122b5b5e29a20e2c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
-        let order2 = OrderUid::from_str("0x77425bd23d5fbb24d32229b1c343807bee572f0555429632161350a56811d263c001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
-        let order3 = OrderUid::from_str("0x78a8cb7e6103675633deb4a0136dab29dd84a1abd209ab406cbd9cfd0a7f953ec001d00d425fa92c4f840baa8f1e0c27c4297a0b65782608").unwrap();
-
-        let order_fees = vec![(order1, None), (order2, None), (order3, None)];
+        let order_fees = decoded
+            .order_uids()
+            .unwrap()
+            .into_iter()
+            .map(|uid| (uid, None))
+            .collect::<Vec<_>>();
         let fees = decoded.all_fees(&external_prices, &order_fees);
         let fees = order_executions(fees, &order_fees);
         assert_eq!(fees[1].sell, 7487413756444483822u128.into());
