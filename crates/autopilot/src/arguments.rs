@@ -120,19 +120,14 @@ pub struct Arguments {
     )]
     pub max_auction_age: Duration,
 
+    /// Used to filter out limit orders with prices that are too far from the
+    /// market price. 0 means no filtering.
     #[clap(long, env, default_value = "0")]
     pub limit_order_price_factor: f64,
 
     /// The time between auction updates.
     #[clap(long, env, default_value = "10s", value_parser = humantime::parse_duration)]
     pub auction_update_interval: Duration,
-
-    /// Fee scaling factor for objective value. This controls the constant
-    /// factor by which order fees are multiplied with. Setting this to a value
-    /// greater than 1.0 makes settlements with negative objective values less
-    /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
-    pub fee_objective_scaling_factor: f64,
 
     /// The URL of a list of tokens our settlement contract is willing to
     /// internalize.
@@ -152,10 +147,6 @@ pub struct Arguments {
         value_parser = humantime::parse_duration,
     )]
     pub trusted_tokens_update_interval: Duration,
-
-    /// Enable the colocation run loop.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_colocation: bool,
 
     /// A list of drivers in the following format: `<NAME>|<URL>,<NAME>|<URL>`
     #[clap(long, env, use_value_delimiter = true)]
@@ -245,11 +236,9 @@ impl std::fmt::Display for Arguments {
             banned_users,
             max_auction_age,
             limit_order_price_factor,
-            fee_objective_scaling_factor,
             trusted_tokens_url,
             trusted_tokens,
             trusted_tokens_update_interval,
-            enable_colocation,
             drivers,
             submission_deadline,
             additional_deadline_for_rewards,
@@ -299,11 +288,6 @@ impl std::fmt::Display for Arguments {
             "limit_order_price_factor: {:?}",
             limit_order_price_factor
         )?;
-        writeln!(
-            f,
-            "fee_objective_scaling_factor: {}",
-            fee_objective_scaling_factor
-        )?;
         display_option(f, "trusted_tokens_url", trusted_tokens_url)?;
         writeln!(f, "trusted_tokens: {:?}", trusted_tokens)?;
         writeln!(
@@ -311,7 +295,6 @@ impl std::fmt::Display for Arguments {
             "trusted_tokens_update_interval: {:?}",
             trusted_tokens_update_interval
         )?;
-        writeln!(f, "enable_colocation: {:?}", enable_colocation,)?;
         display_list(f, "drivers", drivers.iter())?;
         writeln!(f, "submission_deadline: {}", submission_deadline)?;
         writeln!(

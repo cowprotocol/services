@@ -57,7 +57,6 @@ async fn solver_competition(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2"
             .to_string(),
     ]);
