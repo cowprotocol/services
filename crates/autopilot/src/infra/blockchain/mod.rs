@@ -7,6 +7,27 @@ use {
     web3::types::TransactionReceipt,
 };
 
+/// Chain ID as defined by EIP-155.
+///
+/// https://eips.ethereum.org/EIPS/eip-155
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ChainId(pub eth::U256);
+
+impl From<eth::U256> for ChainId {
+    fn from(value: eth::U256) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct NetworkId(pub String);
+
+impl From<String> for NetworkId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
 /// An Ethereum RPC connection.
 pub struct Rpc {
     web3: DynWeb3,
@@ -16,8 +37,8 @@ pub struct Rpc {
 /// Network information for an Ethereum blockchain connection.
 #[derive(Clone, Debug)]
 pub struct Network {
-    pub id: eth::NetworkId,
-    pub chain: eth::ChainId,
+    pub id: NetworkId,
+    pub chain: ChainId,
 }
 
 impl Rpc {
