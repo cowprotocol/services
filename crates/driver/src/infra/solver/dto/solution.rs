@@ -38,8 +38,10 @@ impl Solutions {
                                     ))?
                                     .clone();
 
-                                let uniform_sell_price = solution.prices[&order.sell.token.into()];
-                                let uniform_buy_price = solution.prices[&order.buy.token.into()];
+                                let uniform_sell_price =
+                                    solution.prices[&order.sell.token.wrap(weth).into()];
+                                let uniform_buy_price =
+                                    solution.prices[&order.buy.token.wrap(weth).into()];
 
                                 competition::solution::trade::Fulfillment::new(
                                     order,
