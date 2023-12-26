@@ -47,21 +47,26 @@ impl PolicyFactory {
                         OrderClass::Liquidity => None,
                         // TODO: https://github.com/cowprotocol/services/issues/2115
                         // skip protocol fee for TWAP limit orders
-                        OrderClass::Limit(_) => {
-                            let quote = quotes.get(&order.metadata.uid)?;
-                            let quote_buy_amount = big_decimal_to_u256(&quote.buy_amount)?;
-                            let quote_sell_amount = big_decimal_to_u256(&quote.sell_amount)?;
-                            let is_in_money_order = !is_order_outside_market_price(
-                                &order.data.sell_amount,
-                                &order.data.buy_amount,
-                                &quote_buy_amount,
-                                &quote_sell_amount,
-                            );
-                            if self.config.fee_policy_skip_market_orders && is_in_money_order {
-                                return None;
+                        OrderClass::Limit(_) => match quotes.get(&order.metadata.uid) {
+                            Some(quote) => {
+                                let quote_buy_amount = big_decimal_to_u256(&quote.buy_amount)?;
+                                let quote_sell_amount = big_decimal_to_u256(&quote.sell_amount)?;
+                                let is_market_order = !is_order_outside_market_price(
+                                    &order.data.sell_amount,
+                                    &order.data.buy_amount,
+                                    &quote_buy_amount,
+                                    &quote_sell_amount,
+                                );
+                                if self.config.fee_policy_skip_market_orders && is_market_order {
+                                    return None;
+                                }
+                                Some((order.metadata.uid, vec![fee_policy_to_dto(&self.config)]))
                             }
-                            Some((order.metadata.uid, vec![fee_policy_to_dto(&self.config)]))
-                        }
+                            None => {
+                                tracing::warn!(?order.metadata.uid, "quote not found for order");
+                                None
+                            }
+                        },
                     }
                 })
                 .collect(),
