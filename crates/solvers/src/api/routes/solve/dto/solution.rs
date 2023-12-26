@@ -312,7 +312,7 @@ enum SigningScheme {
 /// A score for a solution. The score is used to rank solutions.
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
