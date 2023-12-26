@@ -69,13 +69,12 @@ impl Fulfillment {
                                     .ok_or(InvalidExecutedAmount)?;
                                 // Sold exactly `executed_sell_amount_with_surplus_fee` while the
                                 // limit price is
-                                // `limit_sell_amount` Take protocol fee from the price
-                                // improvement
-                                let price_improvement_fee = limit_sell_amount
+                                // `limit_sell_amount` Take protocol fee from the surplus
+                                let surplus = limit_sell_amount
                                     .checked_sub(executed_sell_amount_with_surplus_fee)
-                                    .ok_or(InvalidExecutedAmount)?
-                                    * (eth::U256::from_f64_lossy(factor * 100.))
-                                    / 100;
+                                    .ok_or(InvalidExecutedAmount)?;
+                                let price_improvement_fee =
+                                    surplus * (eth::U256::from_f64_lossy(factor * 100.)) / 100;
                                 let max_volume_fee = executed_sell_amount_with_surplus_fee
                                     * (eth::U256::from_f64_lossy(max_volume_factor * 100.))
                                     / 100;
@@ -339,7 +338,7 @@ mod tests {
     };
 
     #[test]
-    fn test_fulfillment() {
+    fn test_fulfillment_sell_limit_order_fok() {
         // https://explorer.cow.fi/orders/0xef6de27933bde867c768ead05d34a08c806d35b89f6bea565bdeb40108265e9a6f419390da10911abd1e1c962b569312a9c9c7b1658a2936?tab=overview
         let order = competition::Order {
             uid: Default::default(),
@@ -395,11 +394,71 @@ mod tests {
             fulfillment.fee(),
             order::SellAmount((16799999999999998u128 + 306723471216604081u128).into())
         );
-        println!("{:?}", fulfillment.fee());
         // executed amount reduced by protocol fee
         assert_eq!(
             fulfillment.executed(),
             U256::from(3843143195450062587u128).into()
         ); // 4149866666666666668 - 306723471216604081
+    }
+
+    #[test]
+    pub fn test_fullfilment_buy_limit_order_fok() {
+        // https://explorer.cow.fi/orders/0xc9096a3dbfb1f661e65ecc14644adec6bd8e385ae818aa73181def24996affb589e4042fd85e857e81a4fa89831b1f5ad4f384b7659357d7?tab=overview
+        let order = competition::Order {
+            uid: Default::default(),
+            side: order::Side::Buy,
+            buy: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2").unwrap(),
+                )),
+                amount: eth::TokenAmount(170000000000000000u128.into()),
+            },
+            sell: eth::Asset {
+                token: eth::TokenAddress(eth::ContractAddress(
+                    H160::from_str("0xdef1ca1fb7fbcdc777520aa7f396b4e015f497ab").unwrap(),
+                )),
+                amount: eth::TokenAmount(1781433576205823004786u128.into()),
+            },
+            kind: order::Kind::Limit,
+            fee: Default::default(),
+            fee_policies: vec![FeePolicy::PriceImprovement {
+                factor: 0.5,
+                max_volume_factor: 1.0,
+            }],
+            partial: order::Partial::No,
+            receiver: Default::default(),
+            pre_interactions: Default::default(),
+            post_interactions: Default::default(),
+            valid_to: util::Timestamp(0),
+            app_data: AppData(Default::default()),
+            sell_token_balance: SellTokenBalance::Erc20,
+            buy_token_balance: BuyTokenBalance::Erc20,
+            signature: Signature {
+                scheme: Scheme::Eip712,
+                data: Default::default(),
+                signer: eth::Address::default(),
+            },
+        };
+
+        // taken from https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.26?id=cYSDo4wBlutGF6Gybl6x
+        let uniform_sell_price = eth::U256::from(7213317128720734077u128);
+        let uniform_buy_price = eth::U256::from(74745150907421124481191u128);
+        let executed = order::TargetAmount(170000000000000000u128.into());
+        let fee = Fee::Dynamic(order::SellAmount(19868323826701104280u128.into()));
+        let fulfillment = Fulfillment::new(
+            order.clone(),
+            executed,
+            fee,
+            uniform_sell_price,
+            uniform_buy_price,
+        )
+        .unwrap();
+        // fee contains protocol fee
+        assert_eq!(
+            fulfillment.fee(),
+            order::SellAmount((19868323826701104280u128 + 3684441086061450u128).into())
+        );
+        // executed amount same as before
+        assert_eq!(fulfillment.executed(), executed);
     }
 }
