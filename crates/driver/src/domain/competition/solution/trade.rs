@@ -78,7 +78,7 @@ impl Fulfillment {
                                 // Surplus is the diff between the limit price and executed amount
                                 let surplus = limit_sell_amount
                                     .checked_sub(executed_sell_amount_with_surplus_fee)
-                                    .ok_or(InvalidFullfilment)?;
+                                    .unwrap_or(eth::U256::zero());
                                 let price_improvement_fee =
                                     surplus * (eth::U256::from_f64_lossy(factor * 100.)) / 100;
                                 let max_volume_fee = executed_sell_amount_with_surplus_fee
@@ -115,7 +115,7 @@ impl Fulfillment {
                                 // `limit_buy_amount` Take protocol fee from the surplus
                                 let surplus = executed_buy_amount
                                     .checked_sub(limit_buy_amount)
-                                    .ok_or(InvalidFullfilment)?;
+                                    .unwrap_or(eth::U256::zero());
                                 let surplus_in_sell_token = surplus
                                     .checked_mul(uniform_buy_price)
                                     .ok_or(InvalidFullfilment)?
@@ -691,5 +691,14 @@ mod tests {
         );
         // executed amount reduced by protocol fee
         assert_eq!(fulfillment.executed(), U256::from(4293558175u128).into()); // 4302554937 - 8996762
+    }
+
+    #[test]
+    fn test_checked_sub() {
+        assert_eq!(U256::from(1u128).checked_sub(U256::from(2u128)), None);
+        assert_eq!(
+            U256::from(2u128).checked_sub(U256::from(1u128)),
+            Some(U256::from(1u128))
+        );
     }
 }
