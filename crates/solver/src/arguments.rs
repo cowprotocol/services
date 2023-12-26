@@ -59,12 +59,12 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub target_confirm_time: Duration,
 
-    /// Specify the interval in seconds between consecutive driver run loops.
+    /// Specify the interval between consecutive driver run loops.
     ///
     /// This is typically a low value to prevent busy looping in case of some
     /// internal driver error, but can be set to a larger value for running
@@ -73,8 +73,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "10",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "10s",
+        value_parser = humantime::parse_duration,
     )]
     pub settle_interval: Duration,
 
@@ -116,8 +116,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub solver_time_limit: Duration,
 
@@ -134,8 +134,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "3600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1h",
+        value_parser = humantime::parse_duration,
     )]
     pub market_makable_token_list_update_interval: Duration,
 
@@ -204,15 +204,15 @@ pub struct Arguments {
     )]
     pub max_additional_eden_tip: f64,
 
-    /// The maximum time in seconds we spend trying to settle a transaction
+    /// The maximum time we spend trying to settle a transaction
     /// through the ethereum network before going to back to solving.
     #[clap(
         long,
         env,
-        default_value = "120",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
     )]
-    pub max_submission_seconds: Duration,
+    pub max_submission_time: Duration,
 
     /// Maximum additional tip in gwei that we are willing to give to flashbots
     /// above regular gas price estimation
@@ -229,10 +229,10 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
-    pub submission_retry_interval_seconds: Duration,
+    pub submission_retry_interval: Duration,
 
     /// Additional tip in percentage of max_fee_per_gas we are willing to give
     /// to miners above regular gas price estimation
@@ -309,8 +309,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
     pub additional_mining_deadline: Duration,
 
@@ -415,11 +415,7 @@ impl std::fmt::Display for Arguments {
             "max_additional_eden_tip: {}",
             self.max_additional_eden_tip
         )?;
-        writeln!(
-            f,
-            "max_submission_seconds: {:?}",
-            self.max_submission_seconds
-        )?;
+        writeln!(f, "max_submission_time: {:?}", self.max_submission_time)?;
         writeln!(
             f,
             "max_additional_flashbots_tip: {}",
@@ -427,8 +423,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "submission_retry_interval_seconds: {:?}",
-            self.submission_retry_interval_seconds
+            "submission_retry_interval: {:?}",
+            self.submission_retry_interval
         )?;
         writeln!(
             f,

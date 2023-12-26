@@ -142,9 +142,6 @@ pub struct JitOrder {
     pub side: Side,
     pub class: Class,
     pub partially_fillable: bool,
-    /// Interactions that get executed before tokens get transfer from users
-    /// into the settlement contract.
-    pub pre_interactions: Vec<Interaction>,
     pub valid_to: u32,
     pub app_data: AppData,
     pub receiver: Address,

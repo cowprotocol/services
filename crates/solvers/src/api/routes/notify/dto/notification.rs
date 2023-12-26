@@ -3,7 +3,7 @@ use {
         domain::{
             auction,
             eth,
-            notification::{self, SimulationSucceededAtLeastOnce},
+            notification::{self},
         },
         util::serialize,
     },
@@ -26,20 +26,22 @@ impl Notification {
             kind: match &self.kind {
                 Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::SimulationFailed(block, tx, succeeded_at_least_once) => {
-                    notification::Kind::SimulationFailed(
-                        *block,
-                        eth::Tx {
-                            from: tx.from.into(),
-                            to: tx.to.into(),
-                            input: tx.input.clone().into(),
-                            value: tx.value.into(),
-                            access_list: tx.access_list.clone(),
-                        },
-                        *succeeded_at_least_once,
-                    )
-                }
-                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
+                Kind::SimulationFailed {
+                    block,
+                    tx,
+                    succeeded_once,
+                } => notification::Kind::SimulationFailed(
+                    *block,
+                    eth::Tx {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        input: tx.input.clone().into(),
+                        value: tx.value.into(),
+                        access_list: tx.access_list.clone(),
+                    },
+                    *succeeded_once,
+                ),
+                Kind::ObjectiveValueNonPositive { quality, gas_cost } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive(
                             (*quality).into(),
@@ -47,10 +49,10 @@ impl Notification {
                         ),
                     )
                 }
-                Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+                Kind::ZeroScore => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality { score, quality }) => {
+                Kind::ScoreHigherThanQuality { score, quality } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ScoreHigherThanQuality(
                             (*score).into(),
@@ -58,7 +60,7 @@ impl Notification {
                         ),
                     )
                 }
-                Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange { probability }) => {
+                Kind::SuccessProbabilityOutOfRange { probability } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::SuccessProbabilityOutOfRange(
                             (*probability).into(),
@@ -78,16 +80,17 @@ impl Notification {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
-                Kind::Settled(kind) => notification::Kind::Settled(match kind {
-                    Settlement::Success { transaction } => {
-                        notification::Settlement::Success(*transaction)
-                    }
-                    Settlement::Revert { transaction } => {
-                        notification::Settlement::Revert(*transaction)
-                    }
-                    Settlement::SimulationRevert => notification::Settlement::SimulationRevert,
-                    Settlement::Fail => notification::Settlement::Fail,
-                }),
+                Kind::Success { transaction } => {
+                    notification::Kind::Settled(notification::Settlement::Success(*transaction))
+                }
+                Kind::Revert { transaction } => {
+                    notification::Kind::Settled(notification::Settlement::Revert(*transaction))
+                }
+                Kind::DriverError { reason } => notification::Kind::DriverError(reason.clone()),
+                Kind::Cancelled => {
+                    notification::Kind::Settled(notification::Settlement::SimulationRevert)
+                }
+                Kind::Fail => notification::Kind::Settled(notification::Settlement::Fail),
             },
         }
     }
@@ -100,18 +103,40 @@ pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
     solution_id: Option<u64>,
+    #[serde(flatten)]
     kind: Kind,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
-    ScoringFailed(ScoreKind),
+    #[serde(rename_all = "camelCase")]
+    SimulationFailed {
+        block: BlockNo,
+        tx: Tx,
+        succeeded_once: bool,
+    },
+    ZeroScore,
+    ScoreHigherThanQuality {
+        #[serde_as(as = "serialize::U256")]
+        score: U256,
+        #[serde_as(as = "serialize::U256")]
+        quality: U256,
+    },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ObjectiveValueNonPositive {
+        #[serde_as(as = "serialize::U256")]
+        quality: U256,
+        #[serde_as(as = "serialize::U256")]
+        gas_cost: U256,
+    },
     NonBufferableTokensUsed {
         tokens: BTreeSet<H160>,
     },
@@ -119,7 +144,17 @@ pub enum Kind {
         #[serde_as(as = "serialize::U256")]
         required: U256,
     },
-    Settled(Settlement),
+    Success {
+        transaction: H256,
+    },
+    Revert {
+        transaction: H256,
+    },
+    DriverError {
+        reason: String,
+    },
+    Cancelled,
+    Fail,
 }
 
 type BlockNo = u64;

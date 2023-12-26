@@ -545,6 +545,7 @@ impl OrderValidating for OrderValidator {
                 let protocol = if let Some(full) = full_app_data_override {
                     validate(full)?.protocol
                 } else {
+                    tracing::warn!(hash = hex::encode(hash.0), "Unknown appData pre-image");
                     ProtocolAppData::default()
                 };
 

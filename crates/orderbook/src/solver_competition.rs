@@ -28,6 +28,13 @@ pub trait SolverCompetitionStoring: Send + Sync {
         &self,
         identifier: Identifier,
     ) -> Result<SolverCompetitionAPI, LoadSolverCompetitionError>;
+
+    /// Retrieves the solver competition for the most recent auction.
+    ///
+    /// Returns a `NotFound` error if no solver competition could be found.
+    async fn load_latest_competition(
+        &self,
+    ) -> Result<SolverCompetitionAPI, crate::solver_competition::LoadSolverCompetitionError>;
 }
 
 /// Possible errors when loading a solver competition by ID.

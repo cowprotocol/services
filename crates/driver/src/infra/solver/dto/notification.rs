@@ -4,7 +4,7 @@ use {
             competition::{auction, solution},
             eth,
         },
-        infra::{notify, notify::SimulationSucceededAtLeastOnce},
+        infra::notify,
         util::serialize,
     },
     serde::Serialize,
@@ -25,41 +25,39 @@ impl Notification {
             kind: match kind {
                 notify::Kind::Timeout => Kind::Timeout,
                 notify::Kind::EmptySolution => Kind::EmptySolution,
-                notify::Kind::SimulationFailed(block, tx, simulated_once) => {
-                    Kind::SimulationFailed(
-                        block.0,
-                        Tx {
+                notify::Kind::SimulationFailed(block, tx, succeeded_once) => {
+                    Kind::SimulationFailed {
+                        block: block.0,
+                        tx: Tx {
                             from: tx.from.into(),
                             to: tx.to.into(),
                             input: tx.input.into(),
                             value: tx.value.into(),
                             access_list: tx.access_list.into(),
                         },
-                        simulated_once,
-                    )
+                        succeeded_once,
+                    }
                 }
-                notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => {
-                    Kind::ScoringFailed(ScoreKind::ZeroScore)
-                }
+                notify::Kind::ScoringFailed(notify::ScoreKind::ZeroScore) => Kind::ZeroScore,
                 notify::Kind::ScoringFailed(notify::ScoreKind::ScoreHigherThanQuality(
                     score,
                     quality,
-                )) => Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality {
+                )) => Kind::ScoreHigherThanQuality {
                     score: score.0.get(),
                     quality: quality.0,
-                }),
+                },
                 notify::Kind::ScoringFailed(notify::ScoreKind::SuccessProbabilityOutOfRange(
                     success_probability,
-                )) => Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange {
+                )) => Kind::SuccessProbabilityOutOfRange {
                     probability: success_probability,
-                }),
+                },
                 notify::Kind::ScoringFailed(notify::ScoreKind::ObjectiveValueNonPositive(
                     quality,
                     gas_cost,
-                )) => Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive {
+                )) => Kind::ObjectiveValueNonPositive {
                     quality: quality.0,
                     gas_cost: gas_cost.get().0,
-                }),
+                },
                 notify::Kind::NonBufferableTokensUsed(tokens) => Kind::NonBufferableTokensUsed {
                     tokens: tokens.into_iter().map(|token| token.0 .0).collect(),
                 },
@@ -69,16 +67,17 @@ impl Notification {
                     }
                 }
                 notify::Kind::DuplicatedSolutionId => Kind::DuplicatedSolutionId,
-                notify::Kind::Settled(kind) => Kind::Settled(match kind {
-                    notify::Settlement::Success(hash) => Settlement::Success {
+                notify::Kind::DriverError(reason) => Kind::DriverError { reason },
+                notify::Kind::Settled(kind) => match kind {
+                    notify::Settlement::Success(hash) => Kind::Success {
                         transaction: hash.0,
                     },
-                    notify::Settlement::Revert(hash) => Settlement::Revert {
+                    notify::Settlement::Revert(hash) => Kind::Revert {
                         transaction: hash.0,
                     },
-                    notify::Settlement::SimulationRevert => Settlement::SimulationRevert,
-                    notify::Settlement::Fail => Settlement::Fail,
-                }),
+                    notify::Settlement::SimulationRevert => Kind::Cancelled,
+                    notify::Settlement::Fail => Kind::Fail,
+                },
             },
         }
     }
@@ -95,13 +94,34 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx, SimulationSucceededAtLeastOnce),
-    ScoringFailed(ScoreKind),
+    #[serde(rename_all = "camelCase")]
+    SimulationFailed {
+        block: BlockNo,
+        tx: Tx,
+        succeeded_once: bool,
+    },
+    ZeroScore,
+    ScoreHigherThanQuality {
+        #[serde_as(as = "serialize::U256")]
+        score: eth::U256,
+        #[serde_as(as = "serialize::U256")]
+        quality: eth::U256,
+    },
+    SuccessProbabilityOutOfRange {
+        probability: f64,
+    },
+    #[serde(rename_all = "camelCase")]
+    ObjectiveValueNonPositive {
+        #[serde_as(as = "serialize::U256")]
+        quality: eth::U256,
+        #[serde_as(as = "serialize::U256")]
+        gas_cost: eth::U256,
+    },
     NonBufferableTokensUsed {
         tokens: BTreeSet<eth::H160>,
     },
@@ -109,7 +129,17 @@ pub enum Kind {
         #[serde_as(as = "serialize::U256")]
         required: eth::U256,
     },
-    Settled(Settlement),
+    Success {
+        transaction: eth::H256,
+    },
+    Revert {
+        transaction: eth::H256,
+    },
+    DriverError {
+        reason: String,
+    },
+    Cancelled,
+    Fail,
 }
 
 type BlockNo = u64;

@@ -17,17 +17,18 @@ VALUES ($1, $2)
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
-pub struct LoadById {
+pub struct LoadCompetition {
     pub json: JsonValue,
+    pub id: AuctionId,
     pub tx_hash: Option<TransactionHash>,
 }
 
 pub async fn load_by_id(
     ex: &mut PgConnection,
     id: AuctionId,
-) -> Result<Option<LoadById>, sqlx::Error> {
+) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, s.tx_hash
+SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
 LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
@@ -37,18 +38,27 @@ WHERE sc.id = $1
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
-#[derive(sqlx::FromRow)]
-pub struct LoadByTxHash {
-    pub json: JsonValue,
-    pub id: AuctionId,
+pub async fn load_latest_competition(
+    ex: &mut PgConnection,
+) -> Result<Option<LoadCompetition>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT sc.json, sc.id, s.tx_hash
+FROM solver_competitions sc
+-- outer joins because the data might not have been indexed yet
+LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
+LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+ORDER BY sc.id DESC
+LIMIT 1
+    ;"#;
+    sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
 pub async fn load_by_tx_hash(
     ex: &mut PgConnection,
     tx_hash: &TransactionHash,
-) -> Result<Option<LoadByTxHash>, sqlx::Error> {
+) -> Result<Option<LoadCompetition>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT sc.json, sc.id
+SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 JOIN auction_transaction at ON sc.id = at.auction_id
 JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)

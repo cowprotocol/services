@@ -61,9 +61,9 @@ pub struct SubmitterParams {
     pub gas_estimate: U256,
     /// Maximum duration of a single run loop
     pub deadline: Option<Instant>,
-    /// Re-simulate and resend transaction on every retry_interval seconds
+    /// Re-simulate and resend transaction on every retry_interval
     pub retry_interval: Duration,
-    /// Network id (mainnet, rinkeby, goerli, gnosis chain)
+    /// Network id (mainnet, goerli, sepolia, gnosis chain)
     pub network_id: String,
     /// Additional bytes to append to the call data. This is required by the
     /// `driver`.

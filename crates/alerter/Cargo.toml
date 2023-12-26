@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+humantime = { workspace = true }
 observe = { path = "../observe" }
 model = { path = "../model" }
 number = { path = "../number" }

@@ -26,6 +26,7 @@ pub enum BaselineSource {
     Swapr,
     ZeroEx,
     UniswapV3,
+    TestnetUniswapV2,
 }
 
 pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
@@ -38,11 +39,6 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::ZeroEx,
             BaselineSource::UniswapV3,
         ],
-        4 => vec![
-            BaselineSource::UniswapV2,
-            BaselineSource::SushiSwap,
-            BaselineSource::BalancerV2,
-        ],
         5 => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
@@ -54,6 +50,7 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::Baoswap,
             BaselineSource::Swapr,
         ],
+        11155111 => vec![BaselineSource::TestnetUniswapV2],
         _ => bail!("unsupported chain {:#x}", chain_id),
     })
 }
