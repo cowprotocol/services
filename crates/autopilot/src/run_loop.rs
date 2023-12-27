@@ -495,7 +495,7 @@ impl RunLoop {
     }
 }
 
-fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
+pub fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
     let previous_uids = match previous {
         Some(previous) => previous
             .orders

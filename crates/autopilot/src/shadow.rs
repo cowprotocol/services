@@ -16,7 +16,7 @@ use {
             solve::{self},
         },
         protocol::{self, fee},
-        run_loop,
+        run_loop::{self, log_auction_delta},
     },
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
@@ -72,11 +72,14 @@ impl RunLoop {
     }
 
     pub async fn run_forever(mut self) -> ! {
+        let mut previous = None;
         loop {
             let Some(AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            log_auction_delta(id, &previous, &auction);
+            previous = Some(auction.clone());
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))
