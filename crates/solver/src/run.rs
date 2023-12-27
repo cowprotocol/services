@@ -169,7 +169,7 @@ pub async fn run(args: Arguments) {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries,
         ..Default::default()
     };
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
@@ -537,8 +537,8 @@ pub async fn run(args: Arguments) {
         contract: settlement_contract.clone(),
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
-        max_confirm_time: args.max_submission_seconds,
-        retry_interval: args.submission_retry_interval_seconds,
+        max_confirm_time: args.max_submission_time,
+        retry_interval: args.submission_retry_interval,
         transaction_strategies,
         access_list_estimator,
         code_fetcher,

@@ -1,14 +1,14 @@
+pub use load::load;
 use {
     crate::{domain::eth, util::serialize},
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
     solver::solver::Arn,
+    std::time::Duration,
 };
 
 mod load;
-
-pub use load::load;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -67,19 +67,19 @@ struct SubmissionConfig {
     gas_price_cap: f64,
 
     /// The target confirmation time for settlement transactions used
-    /// to estimate gas price. Specified in seconds.
-    #[serde(default = "default_target_confirm_time_secs")]
-    target_confirm_time_secs: u64,
+    /// to estimate gas price.
+    #[serde(with = "humantime_serde", default = "default_target_confirm_time")]
+    target_confirm_time: Duration,
 
     /// Amount of time to wait before retrying to submit the tx to
-    /// the ethereum network. Specified in seconds.
-    #[serde(default = "default_retry_interval_secs")]
-    retry_interval_secs: u64,
+    /// the ethereum network.
+    #[serde(with = "humantime_serde", default = "default_retry_interval")]
+    retry_interval: Duration,
 
     /// The maximum time to spend trying to settle a transaction through the
-    /// Ethereum network before giving up. Specified in seconds.
-    #[serde(default = "default_max_confirm_time_secs")]
-    max_confirm_time_secs: u64,
+    /// Ethereum network before giving up.
+    #[serde(with = "humantime_serde", default = "default_max_confirm_time")]
+    max_confirm_time: Duration,
 
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
@@ -119,16 +119,16 @@ fn default_gas_price_cap() -> f64 {
     1e12
 }
 
-fn default_target_confirm_time_secs() -> u64 {
-    30
+fn default_target_confirm_time() -> Duration {
+    Duration::from_secs(30)
 }
 
-fn default_retry_interval_secs() -> u64 {
-    2
+fn default_retry_interval() -> Duration {
+    Duration::from_secs(2)
 }
 
-fn default_max_confirm_time_secs() -> u64 {
-    120
+fn default_max_confirm_time() -> Duration {
+    Duration::from_secs(120)
 }
 
 /// 3 gwei
@@ -140,8 +140,8 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-pub fn default_http_time_buffer_milliseconds() -> u64 {
-    500
+pub fn default_http_time_buffer() -> Duration {
+    Duration::from_millis(500)
 }
 
 pub fn default_solving_share_of_deadline() -> f64 {
@@ -196,8 +196,8 @@ enum Account {
 struct Timeouts {
     /// Absolute time allocated from the total auction deadline for
     /// request/response roundtrip between autopilot and driver.
-    #[serde(default = "default_http_time_buffer_milliseconds")]
-    http_time_buffer_milliseconds: u64,
+    #[serde(with = "humantime_serde", default = "default_http_time_buffer")]
+    http_time_buffer: Duration,
 
     /// Maximum time allocated for solver engines to return the solutions back
     /// to the driver, in percentage of total driver deadline (after network
@@ -307,7 +307,8 @@ enum UniswapV2Config {
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
         /// again.
-        missing_pool_cache_time_seconds: u64,
+        #[serde(with = "humantime_serde")]
+        missing_pool_cache_time: Duration,
     },
 }
 
@@ -339,7 +340,8 @@ enum SwaprConfig {
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
         /// again.
-        missing_pool_cache_time_seconds: u64,
+        #[serde(with = "humantime_serde")]
+        missing_pool_cache_time: Duration,
     },
 }
 

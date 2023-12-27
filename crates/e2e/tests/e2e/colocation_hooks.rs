@@ -81,7 +81,6 @@ async fn allowance(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
     services.start_api(vec![]).await;
@@ -264,7 +263,6 @@ async fn signature(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
     services.start_api(vec![]).await;
@@ -376,7 +374,6 @@ async fn partial_fills(web3: Web3) {
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
     services.start_api(vec![]).await;

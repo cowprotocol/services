@@ -8,11 +8,10 @@ use {
     anyhow::{Context, Result},
     ethcontract::{H160, H256, U256},
     model::order::OrderKind,
-    num::BigInt,
     number::serialization::HexOrDecimalU256,
     reqwest::{Client, IntoUrl, StatusCode, Url},
     serde::{Deserialize, Serialize},
-    serde_with::{serde_as, DisplayFromStr},
+    serde_with::serde_as,
 };
 
 /// Trait for mockable Balancer SOR API.
@@ -119,42 +118,17 @@ pub struct Quote {
     /// In sell token for sell orders or buy token for buy orders.
     #[serde_as(as = "HexOrDecimalU256")]
     pub swap_amount: U256,
-    /// The real swapped amount for certain kinds of wrapped tokens.
-    ///
-    /// Some wrapped tokens like stETH/wstETH support wrapping and unwrapping at
-    /// a conversion rate before trading using a Relayer. In those cases, this
-    /// amount represents the value of the real token before wrapping.
-    ///
-    /// This amount is useful for informational purposes and not intended to be
-    /// used when calling `singleSwap` an `batchSwap` on the Vault.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub swap_amount_for_swaps: U256,
     /// The returned token amount.
     ///
     /// In buy token for sell orders or sell token for buy orders.
     #[serde_as(as = "HexOrDecimalU256")]
     pub return_amount: U256,
-    /// The real returned amount.
-    ///
-    /// See `swap_amount_for_swap` for more details.
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub return_amount_from_swaps: U256,
-    /// The received considering fees.
-    ///
-    /// This can be negative when quoting small sell amounts at high gas costs
-    /// or greater than `U256::MAX` when quoting large buy amounts at high
-    /// gas costs.
-    #[serde_as(as = "DisplayFromStr")]
-    pub return_amount_considering_fees: BigInt,
     /// The input (sell) token.
     #[serde(with = "address_default_when_empty")]
     pub token_in: H160,
     /// The output (buy) token.
     #[serde(with = "address_default_when_empty")]
     pub token_out: H160,
-    /// The price impact (i.e. market slippage).
-    #[serde_as(as = "DisplayFromStr")]
-    pub market_sp: f64,
 }
 
 /// A swap included in a larger batched swap.
@@ -322,13 +296,9 @@ mod tests {
                     },
                 ],
                 swap_amount: 1_000_000_000_000_000_000_u128.into(),
-                swap_amount_for_swaps: 1_000_000_000_000_000_000_u128.into(),
                 return_amount: 15_520_274_244_171_816_967_u128.into(),
-                return_amount_from_swaps: 15_520_274_244_171_816_967_u128.into(),
-                return_amount_considering_fees: 15_517_420_194_930_649_326_u128.into(),
                 token_in: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                 token_out: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
-                market_sp: 0.06443180020713868,
             },
         );
     }

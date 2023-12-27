@@ -25,6 +25,8 @@ ethrpc = { path = "../ethrpc" }
 futures = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
+humantime = { workspace = true }
+humantime-serde = { workspace = true }
 hyper = "0.14"
 lazy_static = { workspace = true }
 indexmap = { version = "2", features = ["serde"] }

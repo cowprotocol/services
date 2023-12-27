@@ -6,7 +6,7 @@ use {
     futures::future::join_all,
     lazy_static::lazy_static,
     reqwest::Url,
-    std::{path::Path, time::Duration},
+    std::path::Path,
     tokio::fs,
 };
 
@@ -78,13 +78,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 },
                 account,
                 timeouts: solver::Timeouts {
-                    http_delay: chrono::Duration::milliseconds(
-                        config
-                            .timeouts
-                            .http_time_buffer_milliseconds
-                            .try_into()
-                            .unwrap(),
-                    ),
+                    http_delay: chrono::Duration::from_std(config.timeouts.http_time_buffer)
+                        .unwrap(),
                     solving_share_of_deadline: config
                         .timeouts
                         .solving_share_of_deadline
@@ -132,13 +127,11 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::UniswapV2Config::Manual {
                         router,
                         pool_code,
-                        missing_pool_cache_time_seconds,
+                        missing_pool_cache_time,
                     } => liquidity::config::UniswapV2 {
                         router: router.into(),
                         pool_code: pool_code.into(),
-                        missing_pool_cache_time: Duration::from_secs(
-                            missing_pool_cache_time_seconds,
-                        ),
+                        missing_pool_cache_time,
                     },
                 })
                 .collect(),
@@ -155,13 +148,11 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::SwaprConfig::Manual {
                         router,
                         pool_code,
-                        missing_pool_cache_time_seconds,
+                        missing_pool_cache_time,
                     } => liquidity::config::Swapr {
                         router: router.into(),
                         pool_code: pool_code.into(),
-                        missing_pool_cache_time: Duration::from_secs(
-                            missing_pool_cache_time_seconds,
-                        ),
+                        missing_pool_cache_time,
                     },
                 })
                 .collect(),
@@ -257,15 +248,9 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
             .map(|mempool| mempool::Config {
                 additional_tip_percentage: config.submission.additional_tip_percentage,
                 gas_price_cap: config.submission.gas_price_cap,
-                target_confirm_time: std::time::Duration::from_secs(
-                    config.submission.target_confirm_time_secs,
-                ),
-                max_confirm_time: std::time::Duration::from_secs(
-                    config.submission.max_confirm_time_secs,
-                ),
-                retry_interval: std::time::Duration::from_secs(
-                    config.submission.retry_interval_secs,
-                ),
+                target_confirm_time: config.submission.target_confirm_time,
+                max_confirm_time: config.submission.max_confirm_time,
+                retry_interval: config.submission.retry_interval,
                 kind: match mempool {
                     file::Mempool::Public => {
                         // If there is no private mempool, revert protection is
