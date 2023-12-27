@@ -136,7 +136,6 @@ async fn onchain_settlement(web3: Web3) {
     // However, this currently does not work because the driver will not merge the
     // individual solutions because the token prices don't match after scaling.
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
 
