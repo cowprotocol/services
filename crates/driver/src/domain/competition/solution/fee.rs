@@ -15,8 +15,8 @@ use {
 };
 
 impl Fulfillment {
-    pub fn apply_protocol_fee(
-        self,
+    pub fn add_protocol_fee(
+        &self,
         uniform_sell_price: eth::U256,
         uniform_buy_price: eth::U256,
     ) -> Result<Self, InvalidFullfilment> {
@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(fulfillment.executed(), executed);
 
         let fulfillment = fulfillment
-            .apply_protocol_fee(uniform_sell_price, uniform_buy_price)
+            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
             .unwrap();
         // fee contains protocol fee
         assert_eq!(
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(fulfillment.executed(), executed);
 
         let fulfillment = fulfillment
-            .apply_protocol_fee(uniform_sell_price, uniform_buy_price)
+            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
             .unwrap();
         // fee contains protocol fee
         assert_eq!(
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(fulfillment.executed(), executed);
 
         let fulfillment = fulfillment
-            .apply_protocol_fee(uniform_sell_price, uniform_buy_price)
+            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
             .unwrap();
         // fee contains protocol fee
         assert_eq!(
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(fulfillment.executed(), executed);
 
         let fulfillment = fulfillment
-            .apply_protocol_fee(uniform_sell_price, uniform_buy_price)
+            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
             .unwrap();
         // fee contains protocol fee
         assert_eq!(
@@ -540,7 +540,7 @@ mod tests {
         assert_eq!(fulfillment.executed(), executed);
 
         let fulfillment = fulfillment
-            .apply_protocol_fee(uniform_sell_price, uniform_buy_price)
+            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
             .unwrap();
         // fee contains protocol fee
         assert_eq!(

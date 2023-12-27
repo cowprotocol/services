@@ -37,7 +37,7 @@ impl Solutions {
                                         "invalid order UID specified in fulfillment"
                                     ))?
                                     .clone();
-                                
+
                                 competition::solution::trade::Fulfillment::new(
                                     order,
                                     fulfillment.executed_amount.into(),

@@ -67,7 +67,7 @@ impl Solution {
             solution.clearing_price(trade.order().sell.token).is_some()
                 && solution.clearing_price(trade.order().buy.token).is_some()
         }) {
-            Ok(solution)
+            Ok(solution.with_protocol_fees())
         } else {
             Err(InvalidClearingPrices)
         }
@@ -176,6 +176,30 @@ impl Solution {
         simulator: &Simulator,
     ) -> Result<Settlement, Error> {
         Settlement::encode(self, auction, eth, simulator).await
+    }
+
+    pub fn with_protocol_fees(self) -> Self {
+        let trades = self
+            .trades
+            .into_iter()
+            .map(|trade| match &trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let uniform_sell_price =
+                            self.prices[&fulfillment.order().sell.token.wrap(self.weth)];
+                        let uniform_buy_price =
+                            self.prices[&fulfillment.order().buy.token.wrap(self.weth)];
+                        fulfillment
+                            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
+                            .map(Trade::Fulfillment)
+                            .unwrap_or(trade)
+                    }
+                    order::Kind::Liquidity => trade,
+                },
+                Trade::Jit(_) => trade,
+            })
+            .collect();
+        Self { trades, ..self }
     }
 
     /// Token prices settled by this solution, expressed using an arbitrary
