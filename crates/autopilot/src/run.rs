@@ -12,6 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        infra::blockchain,
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -60,6 +61,7 @@ use {
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
+    url::Url,
 };
 
 struct Liveness {
@@ -75,6 +77,16 @@ impl LivenessChecking for Liveness {
     }
 }
 
+async fn ethrpc(url: &Url) -> blockchain::Rpc {
+    blockchain::Rpc::new(url)
+        .await
+        .expect("connect ethereum RPC")
+}
+
+async fn ethereum(ethrpc: blockchain::Rpc) -> blockchain::Ethereum {
+    blockchain::Ethereum::new(ethrpc).await
+}
+
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     observe::tracing::initialize(
@@ -84,6 +96,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
+
+    if args.drivers.is_empty() {
+        panic!("colocation is enabled but no drivers are configured");
+    }
 
     if args.shadow.is_some() {
         shadow_mode(args).await;
@@ -173,11 +189,6 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let network_time_between_blocks = args
-        .shared
-        .network_block_interval
-        .or_else(|| shared::network::block_interval(&network, chain_id))
-        .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -567,8 +578,6 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        !args.enable_colocation,
-        args.fee_objective_scaling_factor,
     );
     solvable_orders_cache
         .update(block)
@@ -578,7 +587,7 @@ pub async fn run(args: Arguments) {
         max_auction_age: args.max_auction_age,
         solvable_orders_cache: solvable_orders_cache.clone(),
     };
-    let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
+    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
@@ -608,43 +617,35 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("order_events_cleaner")),
     );
 
-    if args.enable_colocation {
-        if args.drivers.is_empty() {
-            panic!("colocation is enabled but no drivers are configured");
-        }
-        let market_makable_token_list_configuration = TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
-            chain_id,
-            client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
-        };
-        // updated in background task
-        let market_makable_token_list =
-            AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
-                .await;
-        let run = RunLoop {
-            solvable_orders_cache,
-            database: Arc::new(db),
-            drivers: args.drivers.into_iter().map(Driver::new).collect(),
-            current_block: current_block_stream,
-            web3,
-            network_block_interval: network_time_between_blocks,
-            market_makable_token_list,
-            submission_deadline: args.submission_deadline as u64,
-            additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-            score_cap: args.score_cap,
-            max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-            solve_deadline: args.solve_deadline,
-            in_flight_orders: Default::default(),
-            fee_policy: args.fee_policy,
-        };
-        run.run_forever().await;
-        unreachable!("run loop exited");
-    } else {
-        let result = serve_metrics.await;
-        unreachable!("serve_metrics exited {result:?}");
-    }
+    let market_makable_token_list_configuration = TokenListConfiguration {
+        url: args.trusted_tokens_url,
+        update_interval: args.trusted_tokens_update_interval,
+        chain_id,
+        client: http_factory.create(),
+        hardcoded: args.trusted_tokens.unwrap_or_default(),
+    };
+    // updated in background task
+    let market_makable_token_list =
+        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
+    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let eth = ethereum(ethrpc).await;
+    let run = RunLoop {
+        eth,
+        solvable_orders_cache,
+        database: Arc::new(db),
+        drivers: args.drivers.into_iter().map(Driver::new).collect(),
+        market_makable_token_list,
+        submission_deadline: args.submission_deadline as u64,
+        additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+        score_cap: args.score_cap,
+        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
+        solve_deadline: args.solve_deadline,
+        in_flight_orders: Default::default(),
+        fee_policy: args.fee_policy,
+    };
+    run.run_forever().await;
+    unreachable!("run loop exited");
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -655,9 +656,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    if args.drivers.is_empty() {
-        panic!("shadow mode is enabled but no drivers are configured");
-    }
     let drivers = args.drivers.into_iter().map(Driver::new).collect();
 
     let trusted_tokens = {
