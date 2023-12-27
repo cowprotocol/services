@@ -1,4 +1,4 @@
-//! Framework for setting up tests .
+//! Framework for setting up tests.
 
 use {
     self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
