@@ -1,0 +1,18 @@
+[package]
+name = "s3"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = { workspace = true }
+aws-config = { version ="0.56" }
+aws-sdk-s3 = { version = "0.29", default-features = false, features = ["rustls", "rt-tokio"] }
+flate2 = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true, features = ["clock"] }
+tokio = { workspace = true, features = ["test-util", "macros"] }

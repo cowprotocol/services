@@ -3787,6 +3787,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
 
 [[package]]
+name = "s3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config 0.56.0",
+ "aws-sdk-s3",
+ "chrono",
+ "flate2",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
