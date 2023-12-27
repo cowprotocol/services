@@ -361,7 +361,7 @@ impl Driver {
                 .map(|(solver, rated_settlement)| SolverSettlement {
                     solver: solver.name().to_string(),
                     solver_address: solver.account().address(),
-                    score: rated_settlement.score,
+                    score: Some(rated_settlement.score),
                     ranking: rated_settlement.ranking,
                     clearing_prices: rated_settlement
                         .settlement
