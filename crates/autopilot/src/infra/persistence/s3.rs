@@ -1,7 +1,8 @@
-use {anyhow::Result, s3::Config};
+use anyhow::Result;
+pub use s3::{Config, Uploader};
 
 #[derive(clap::Parser, Debug, Clone)]
-pub struct UploadArguments {
+pub struct Arguments {
     #[clap(long, env)]
     /// The s3_instance_upload_* arguments configure how auction instances
     /// should be uploaded to AWS S3.
@@ -14,8 +15,8 @@ pub struct UploadArguments {
     pub s3_instance_upload_filename_prefix: Option<String>,
 }
 
-impl UploadArguments {
-    pub fn into_config(self) -> Result<Option<Config>> {
+impl Arguments {
+    pub fn into(self) -> Result<Option<Config>> {
         let s3_args = &[
             &self.s3_instance_upload_bucket,
             &self.s3_instance_upload_filename_prefix,

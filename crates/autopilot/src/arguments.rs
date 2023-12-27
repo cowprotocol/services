@@ -1,4 +1,5 @@
 use {
+    crate::infra,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -9,8 +10,6 @@ use {
     std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration},
     url::Url,
 };
-
-mod s3;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -205,9 +204,9 @@ pub struct Arguments {
     #[clap(flatten)]
     pub fee_policy: FeePolicy,
 
-    /// Describes how the protocol fee should be calculated.
+    /// Arguments for uploading information to S3.
     #[clap(flatten)]
-    pub s3: s3::UploadArguments,
+    pub s3: infra::persistence::s3::Arguments,
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.
@@ -259,6 +258,7 @@ impl std::fmt::Display for Arguments {
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
+            s3,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -338,6 +338,7 @@ impl std::fmt::Display for Arguments {
             "max_settlement_transaction_wait: {:?}",
             max_settlement_transaction_wait
         )?;
+        writeln!(f, "s3: {:?}", s3)?;
         Ok(())
     }
 }

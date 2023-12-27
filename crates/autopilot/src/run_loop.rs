@@ -11,7 +11,7 @@ use {
             settle,
             solve::{self, Class, TradedAmounts},
         },
-        infra::blockchain::Ethereum,
+        infra::{self, blockchain::Ethereum},
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
@@ -57,7 +57,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub fee_policy: arguments::FeePolicy,
-    pub uploader: Option<s3::Uploader>,
+    pub persistence: infra::persistence::Persistence,
 }
 
 impl RunLoop {
@@ -309,24 +309,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        // Upload the auction to S3 in the background.
-        if let Some(uploader) = self.uploader.clone() {
-            let auction = auction.clone();
-            tokio::spawn(
-                async move {
-                    match uploader.upload(id.to_string(), &auction).await {
-                        Ok(key) => {
-                            tracing::info!(?key, "uploaded auction to s3");
-                        }
-                        Err(err) => {
-                            tracing::warn!(?err, "failed to upload auction to s3");
-                        }
-                    }
-                }
-                .instrument(tracing::Span::current()),
-            );
-        }
-
+        self.persistence.store_auction(id, &auction);
         let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
