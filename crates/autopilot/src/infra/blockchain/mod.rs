@@ -101,8 +101,8 @@ impl Ethereum {
         &self.network
     }
 
-    /// Returns a stream that monitors the block chain to inform about the current
-    /// and new blocks.
+    /// Returns a stream that monitors the block chain to inform about the
+    /// current and new blocks.
     pub fn current_block(&self) -> &CurrentBlockStream {
         &self.current_block
     }

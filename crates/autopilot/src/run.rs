@@ -12,7 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{blockchain, cli},
+        infra::blockchain,
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -61,6 +61,7 @@ use {
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
+    url::Url,
 };
 
 struct Liveness {
@@ -76,8 +77,8 @@ impl LivenessChecking for Liveness {
     }
 }
 
-async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
-    blockchain::Rpc::new(&args.ethrpc)
+async fn ethrpc(url: &Url) -> blockchain::Rpc {
+    blockchain::Rpc::new(url)
         .await
         .expect("connect ethereum RPC")
 }
@@ -627,10 +628,7 @@ pub async fn run(args: Arguments) {
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let new_args = cli::Args {
-        ethrpc: args.shared.node_url,
-    };
-    let ethrpc = ethrpc(&new_args).await;
+    let ethrpc = ethrpc(&args.shared.node_url).await;
     let eth = ethereum(ethrpc).await;
     let run = RunLoop {
         eth,
