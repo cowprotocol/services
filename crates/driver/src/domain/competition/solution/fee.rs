@@ -4,7 +4,7 @@
 //! solver.
 
 use {
-    super::trade::{Fee, Fulfillment, InvalidFullfilment},
+    super::trade::{Fee, Fulfillment, InvalidExecutedAmount},
     crate::domain::{
         competition::{
             order,
@@ -19,7 +19,7 @@ impl Fulfillment {
         &self,
         uniform_sell_price: eth::U256,
         uniform_buy_price: eth::U256,
-    ) -> Result<Self, InvalidFullfilment> {
+    ) -> Result<Self, InvalidExecutedAmount> {
         let order = self.order().clone();
         let executed = self.executed();
         let surplus_fee = match self.raw_fee() {
@@ -97,13 +97,12 @@ impl Fulfillment {
                     tracing::warn!(?order.uid, "failed to calculate protocol fee");
                     acc
                 }
-            })
-            .into();
+            });
 
         // Increase the fee by the protocol fee
         let fee = match self.raw_fee() {
             Fee::Static => Fee::Static,
-            Fee::Dynamic(fee) => Fee::Dynamic(fee + protocol_fee),
+            Fee::Dynamic(fee) => Fee::Dynamic((fee.0 + protocol_fee).into()),
         };
 
         // Adjust the executed amount by the protocol fee. This is because solvers are
@@ -114,8 +113,8 @@ impl Fulfillment {
             order::Side::Sell => order::TargetAmount(
                 executed
                     .0
-                    .checked_sub(protocol_fee.0)
-                    .ok_or(InvalidFullfilment)?,
+                    .checked_sub(protocol_fee)
+                    .ok_or(InvalidExecutedAmount)?,
             ),
         };
 

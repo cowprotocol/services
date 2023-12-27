@@ -30,7 +30,7 @@ impl Fulfillment {
         order: competition::Order,
         executed: order::TargetAmount,
         fee: Fee,
-    ) -> Result<Self, InvalidFullfilment> {
+    ) -> Result<Self, InvalidExecutedAmount> {
         // If the order is partial, the total executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -44,8 +44,10 @@ impl Fulfillment {
             };
 
             match order.partial {
-                order::Partial::Yes { available } => executed + fee <= available,
-                order::Partial::No => executed + fee == order.target(),
+                order::Partial::Yes { available } => {
+                    order::TargetAmount(executed.0 + fee.0) <= available
+                }
+                order::Partial::No => order::TargetAmount(executed.0 + fee.0) == order.target(),
             }
         };
 
@@ -63,7 +65,7 @@ impl Fulfillment {
                 fee,
             })
         } else {
-            Err(InvalidFullfilment)
+            Err(InvalidExecutedAmount)
         }
     }
 
@@ -159,7 +161,7 @@ impl Jit {
     pub fn new(
         order: order::Jit,
         executed: order::TargetAmount,
-    ) -> Result<Self, InvalidFullfilment> {
+    ) -> Result<Self, InvalidExecutedAmount> {
         // If the order is partially fillable, the executed amount can be smaller than
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
@@ -171,7 +173,7 @@ impl Jit {
         if is_valid {
             Ok(Self { order, executed })
         } else {
-            Err(InvalidFullfilment)
+            Err(InvalidExecutedAmount)
         }
     }
 
@@ -195,7 +197,7 @@ pub struct Execution {
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid executed amount")]
-pub struct InvalidFullfilment;
+pub struct InvalidExecutedAmount;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
