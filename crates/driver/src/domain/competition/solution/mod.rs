@@ -19,6 +19,7 @@ use {
     thiserror::Error,
 };
 
+pub mod fee;
 pub mod interaction;
 pub mod settlement;
 pub mod trade;
