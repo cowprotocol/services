@@ -699,8 +699,7 @@ WHERE
         WHEN 'buy' THEN sum_buy < buy_amount
     END AND
     (NOT invalidated) AND
-    (onchain_placement_error IS NULL) AND
-    (NOT presignature_pending)
+    (onchain_placement_error IS NULL)
 "#
 );
 
