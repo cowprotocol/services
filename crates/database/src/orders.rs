@@ -1335,19 +1335,19 @@ mod tests {
         }
 
         // not solvable because there is no presignature event.
-        assert!(get_order(&mut db).await.unwrap().presignature_pending == true);
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable because once presignature event is observed.
         pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.unwrap().presignature_pending == false);
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
 
         // not solvable because "unsigned" presignature event.
         pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
-        assert!(get_order(&mut db).await.unwrap().presignature_pending == true);
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.unwrap().presignature_pending == false);
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
     }
 
     #[tokio::test]
