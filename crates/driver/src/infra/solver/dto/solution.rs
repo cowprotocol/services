@@ -206,8 +206,13 @@ impl Solutions {
                     },
                     weth,
                 )
-                .map_err(|competition::solution::InvalidClearingPrices| {
-                    super::Error("invalid clearing prices")
+                .map_err(|err| match err {
+                    competition::solution::SolutionError::InvalidClearingPrices => {
+                        super::Error("invalid clearing prices")
+                    }
+                    competition::solution::SolutionError::FailedProtocolFee(_) => {
+                        super::Error("failed protocol fee")
+                    }
                 })
             })
             .collect()

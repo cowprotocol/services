@@ -95,7 +95,8 @@ impl Fulfillment {
         }
     }
 
-    /// Returns the raw form of the fee
+    /// Returns the raw internal representation of the fee that contains
+    /// original source of the fee
     pub fn raw_fee(&self) -> Fee {
         self.fee
     }
@@ -198,11 +199,3 @@ pub struct Execution {
 #[derive(Debug, thiserror::Error)]
 #[error("invalid executed amount")]
 pub struct InvalidExecutedAmount;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ExecutionError {
-    #[error("overflow error while calculating executed amounts")]
-    Overflow,
-    #[error("missing clearing price for {0:?}")]
-    ClearingPriceMissing(eth::TokenAddress),
-}

@@ -1,23 +1,23 @@
 //! Applies the protocol fee to the solution received from the solver.
 //!
 //! Solvers respond differently for the sell and buy orders.
-//! 
+//!
 //! EXAMPLES:
-//! 
+//!
 //! SELL ORDER
 //! Selling 1 WETH for at least `x` amount of USDC. Solvers respond with
 //! Fee = 0.05 WETH
 //! Executed = 0.95 WETH
-//! 
+//!
 //! This response is adjusted by the protocol fee of 0.1 WETH:
 //! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
 //! Executed = 0.95 WETH - 0.1 WETH = 0.85 WETH
-//! 
+//!
 //! BUY ORDER
 //! Buying 1 WETH for at most `x` amount of USDC. Solvers respond with
 //! Fee = 0.05 WETH
 //! Executed = 1 WETH
-//! 
+//!
 //! This response is adjusted by the protocol fee of 0.1 WETH:
 //! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
 //! Executed = 1 WETH
@@ -34,8 +34,8 @@ use {
 };
 
 impl Fulfillment {
-    /// Applies the protocol fee to the existing fulfillment.
-    pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, InvalidExecutedAmount> {
+    /// Applies the protocol fee to the existing fulfillment creating a new one.
+    pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, Error> {
         let protocol_fee = self.protocol_fee(prices)?;
 
         // Increase the fee by the protocol fee
@@ -54,14 +54,14 @@ impl Fulfillment {
                 self.executed()
                     .0
                     .checked_sub(protocol_fee)
-                    .ok_or(InvalidExecutedAmount)?,
+                    .ok_or(Error::Overflow)?,
             ),
         };
 
-        Fulfillment::new(order, executed, fee)
+        Fulfillment::new(order, executed, fee).map_err(Into::into)
     }
 
-    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, InvalidExecutedAmount> {
+    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
         let mut protocol_fee = eth::U256::zero();
         for fee_policy in self.order().fee_policies.iter() {
             match fee_policy {
@@ -69,29 +69,27 @@ impl Fulfillment {
                     factor,
                     max_volume_factor,
                 } => {
-                    let price_improvement_fee = self
-                        .price_improvement_fee(prices, *factor)
-                        .ok_or(InvalidExecutedAmount)?;
-                    let max_volume_fee = self
-                        .volume_fee(prices, *max_volume_factor)
-                        .ok_or(InvalidExecutedAmount)?;
+                    let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
+                    let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
                     // take the smaller of the two
                     protocol_fee = protocol_fee
                         .checked_add(std::cmp::min(price_improvement_fee, max_volume_fee))
-                        .ok_or(InvalidExecutedAmount)?;
+                        .ok_or(Error::Overflow)?;
                 }
                 FeePolicy::Volume { factor } => {
-                    let fee = self
-                        .volume_fee(prices, *factor)
-                        .ok_or(InvalidExecutedAmount)?;
-                    protocol_fee = protocol_fee.checked_add(fee).ok_or(InvalidExecutedAmount)?;
+                    let fee = self.volume_fee(prices, *factor)?;
+                    protocol_fee = protocol_fee.checked_add(fee).ok_or(Error::Overflow)?;
                 }
             }
         }
         Ok(protocol_fee)
     }
 
-    fn price_improvement_fee(&self, prices: ClearingPrices, factor: f64) -> Option<eth::U256> {
+    fn price_improvement_fee(
+        &self,
+        prices: ClearingPrices,
+        factor: f64,
+    ) -> Result<eth::U256, Error> {
         let sell_amount = self.order().sell.amount.0;
         let buy_amount = self.order().buy.amount.0;
         let executed = self.executed().0;
@@ -102,44 +100,63 @@ impl Fulfillment {
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                let executed_sell_amount =
-                    executed.checked_mul(prices.buy)?.checked_div(prices.sell)?;
+                let executed_sell_amount = executed
+                    .checked_mul(prices.buy)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.sell)
+                    .ok_or(Error::DivisionByZero)?;
                 // Sell slightly more `sell_token` to capture the `surplus_fee`
-                let executed_sell_amount_with_fee =
-                    executed_sell_amount.checked_add(surplus_fee)?;
+                let executed_sell_amount_with_fee = executed_sell_amount
+                    .checked_add(surplus_fee)
+                    .ok_or(Error::Overflow)?;
                 // Scale to support partially fillable orders
-                let limit_sell_amount =
-                    sell_amount.checked_mul(executed)?.checked_div(buy_amount)?;
+                let limit_sell_amount = sell_amount
+                    .checked_mul(executed)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(buy_amount)
+                    .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
                 let surplus = limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
                     .unwrap_or(eth::U256::zero());
-                Some(surplus.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
+                Ok(surplus
+                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                    .ok_or(Error::Overflow)?
+                    / 100)
             }
             Side::Sell => {
                 // How much `buy_token` we get for `executed` amount of `sell_token`
-                let executed_buy_amount =
-                    executed.checked_mul(prices.sell)?.checked_div(prices.buy)?;
-                let executed_sell_amount_with_fee = executed.checked_add(surplus_fee)?;
+                let executed_buy_amount = executed
+                    .checked_mul(prices.sell)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.buy)
+                    .ok_or(Error::DivisionByZero)?;
+                let executed_sell_amount_with_fee =
+                    executed.checked_add(surplus_fee).ok_or(Error::Overflow)?;
                 // Scale to support partially fillable orders
                 let limit_buy_amount = buy_amount
-                    .checked_mul(executed_sell_amount_with_fee)?
-                    .checked_div(sell_amount)?;
+                    .checked_mul(executed_sell_amount_with_fee)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(sell_amount)
+                    .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
                 let surplus = executed_buy_amount
                     .checked_sub(limit_buy_amount)
                     .unwrap_or(eth::U256::zero());
-                let surplus_in_sell_token =
-                    surplus.checked_mul(prices.buy)?.checked_div(prices.sell)?;
-                Some(
-                    surplus_in_sell_token.checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
-                        / 100,
-                )
+                let surplus_in_sell_token = surplus
+                    .checked_mul(prices.buy)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.sell)
+                    .ok_or(Error::DivisionByZero)?;
+                Ok(surplus_in_sell_token
+                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                    .ok_or(Error::Overflow)?
+                    / 100)
             }
         }
     }
 
-    fn volume_fee(&self, prices: ClearingPrices, factor: f64) -> Option<eth::U256> {
+    fn volume_fee(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
         let surplus_fee = match self.raw_fee() {
             Fee::Static => eth::U256::zero(),
@@ -148,24 +165,27 @@ impl Fulfillment {
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                let executed_sell_amount =
-                    executed.checked_mul(prices.buy)?.checked_div(prices.sell)?;
+                let executed_sell_amount = executed
+                    .checked_mul(prices.buy)
+                    .ok_or(Error::Overflow)?
+                    .checked_div(prices.sell)
+                    .ok_or(Error::DivisionByZero)?;
                 // Sell slightly more `sell_token` to capture the `surplus_fee`
-                let executed_sell_amount_with_fee =
-                    executed_sell_amount.checked_add(surplus_fee)?;
-                Some(
-                    executed_sell_amount_with_fee
-                        .checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
-                        / 100,
-                )
+                let executed_sell_amount_with_fee = executed_sell_amount
+                    .checked_add(surplus_fee)
+                    .ok_or(Error::Overflow)?;
+                Ok(executed_sell_amount_with_fee
+                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                    .ok_or(Error::Overflow)?
+                    / 100)
             }
             Side::Sell => {
-                let executed_sell_amount_with_fee = executed.checked_add(surplus_fee)?;
-                Some(
-                    executed_sell_amount_with_fee
-                        .checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
-                        / 100,
-                )
+                let executed_sell_amount_with_fee =
+                    executed.checked_add(surplus_fee).ok_or(Error::Overflow)?;
+                Ok(executed_sell_amount_with_fee
+                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                    .ok_or(Error::Overflow)?
+                    / 100)
             }
         }
     }
@@ -176,6 +196,16 @@ impl Fulfillment {
 pub struct ClearingPrices {
     pub sell: eth::U256,
     pub buy: eth::U256,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("overflow error while calculating protocol fee")]
+    Overflow,
+    #[error("division by zero error while calculating protocol fee")]
+    DivisionByZero,
+    #[error(transparent)]
+    InvalidExecutedAmount(#[from] InvalidExecutedAmount),
 }
 
 mod tests {
