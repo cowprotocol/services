@@ -48,8 +48,8 @@ impl Auction {
                 liquidity::Kind::Swapr(pool) => {
                     pool.base.reserves.iter().map(|r| r.token).collect()
                 }
-                liquidity::Kind::ZeroEx(pool) => {
-                    vec![pool.sell_token.into(), pool.buy_token.into()]
+                liquidity::Kind::ZeroEx(limit_order) => {
+                    vec![limit_order.sell_token.into(), limit_order.buy_token.into()]
                 }
             })
         {

@@ -21,17 +21,20 @@ use {
     std::sync::Arc,
 };
 
-pub fn to_domain(id: liquidity::Id, pool: LimitOrder) -> anyhow::Result<liquidity::Liquidity> {
-    let handler = pool
+pub fn to_domain(
+    id: liquidity::Id,
+    limit_order: LimitOrder,
+) -> anyhow::Result<liquidity::Liquidity> {
+    let handler = limit_order
         .settlement_handling
         .as_any()
         .downcast_ref::<solver::liquidity::zeroex::OrderSettlementHandler>()
         .ok_or(anyhow!("not a zeroex::OrderSettlementHandler"))?
         .clone();
 
-    let full_execution_amount = match pool.kind {
-        OrderKind::Sell => pool.sell_amount,
-        OrderKind::Buy => pool.buy_amount,
+    let full_execution_amount = match limit_order.kind {
+        OrderKind::Sell => limit_order.sell_amount,
+        OrderKind::Buy => limit_order.buy_amount,
     };
 
     let order = Order {
@@ -54,10 +57,10 @@ pub fn to_domain(id: liquidity::Id, pool: LimitOrder) -> anyhow::Result<liquidit
     };
 
     let domain = zeroex::LimitOrder {
-        sell_token: pool.sell_token,
-        buy_token: pool.buy_token,
-        sell_amount: pool.sell_amount,
-        buy_amount: pool.buy_amount,
+        sell_token: limit_order.sell_token,
+        buy_token: limit_order.buy_token,
+        sell_amount: limit_order.sell_amount,
+        buy_amount: limit_order.buy_amount,
         order,
         full_execution_amount,
         zeroex: handler.zeroex,
