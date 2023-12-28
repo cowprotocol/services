@@ -1,14 +1,14 @@
 use {database::auction::AuctionId, model::auction::Auction, tracing::Instrument};
-pub mod s3;
+pub mod cli;
 
 pub struct Persistence {
-    inner: Option<s3::Uploader>,
+    s3: Option<s3::Uploader>,
 }
 
 impl Persistence {
     pub async fn new(config: Option<s3::Config>) -> Self {
         Self {
-            inner: match config {
+            s3: match config {
                 Some(config) => Some(s3::Uploader::new(config).await),
                 None => None,
             },
@@ -17,7 +17,7 @@ impl Persistence {
 
     /// Persists the given auction in a background task.
     pub fn store_auction(&self, id: AuctionId, instance: &Auction) {
-        if let Some(uploader) = self.inner.clone() {
+        if let Some(uploader) = self.s3.clone() {
             let instance = instance.clone();
             tokio::spawn(
                 async move {

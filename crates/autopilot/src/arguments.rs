@@ -206,7 +206,7 @@ pub struct Arguments {
 
     /// Arguments for uploading information to S3.
     #[clap(flatten)]
-    pub s3: infra::persistence::s3::Arguments,
+    pub s3: infra::persistence::cli::S3,
 
     /// Time interval in days between each cleanup operation of the
     /// `order_events` database table.

@@ -309,7 +309,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        self.persistence.store_auction(id, &auction);
+        self.persistence.store_auction(id, auction);
         let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
