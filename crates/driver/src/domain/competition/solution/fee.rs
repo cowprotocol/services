@@ -21,36 +21,22 @@ impl Fulfillment {
         uniform_buy_price: eth::U256,
     ) -> Result<Self, InvalidExecutedAmount> {
         let order = self.order().clone();
-        let executed = self.executed();
-        let surplus_fee = match self.raw_fee() {
-            Fee::Static => eth::U256::default(),
-            Fee::Dynamic(fee) => fee.0,
-        };
 
         let protocol_fee = order
             .fee_policies
             .iter()
             .map(|fee_policy| {
-                match (fee_policy, order.side) {
-                    (
-                        FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                        },
-                        Side::Buy,
-                    ) => {
-                        let price_improvement_fee = price_improvement_fee_for_buy(
-                            order.sell.amount.0,
-                            order.buy.amount.0,
-                            executed.0,
-                            surplus_fee,
+                match fee_policy {
+                    FeePolicy::PriceImprovement {
+                        factor,
+                        max_volume_factor,
+                    } => {
+                        let price_improvement_fee = self.price_improvement_fee(
                             uniform_sell_price,
                             uniform_buy_price,
                             *factor,
                         )?;
-                        let max_volume_fee = volume_fee_for_buy(
-                            executed.0,
-                            surplus_fee,
+                        let max_volume_fee = self.volume_fee(
                             uniform_sell_price,
                             uniform_buy_price,
                             *max_volume_factor,
@@ -58,36 +44,8 @@ impl Fulfillment {
                         // take the smaller of the two
                         Some(std::cmp::min(price_improvement_fee, max_volume_fee))
                     }
-                    (
-                        FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                        },
-                        Side::Sell,
-                    ) => {
-                        let price_improvement_fee = price_improvement_fee_for_sell(
-                            order.sell.amount.0,
-                            order.buy.amount.0,
-                            executed.0,
-                            surplus_fee,
-                            uniform_sell_price,
-                            uniform_buy_price,
-                            *factor,
-                        )?;
-                        let max_volume_fee =
-                            volume_fee_for_sell(executed.0, surplus_fee, *max_volume_factor)?;
-                        // take the smaller of the two
-                        Some(std::cmp::min(price_improvement_fee, max_volume_fee))
-                    }
-                    (FeePolicy::Volume { factor }, Side::Buy) => volume_fee_for_buy(
-                        executed.0,
-                        surplus_fee,
-                        uniform_sell_price,
-                        uniform_buy_price,
-                        *factor,
-                    ),
-                    (FeePolicy::Volume { factor }, Side::Sell) => {
-                        volume_fee_for_sell(executed.0, surplus_fee, *factor)
+                    FeePolicy::Volume { factor } => {
+                        self.volume_fee(uniform_sell_price, uniform_buy_price, *factor)
                     }
                 }
             })
@@ -109,9 +67,9 @@ impl Fulfillment {
         // unaware of the protocol fee that driver introduces and they only account
         // for the surplus fee.
         let executed = match order.side {
-            order::Side::Buy => executed,
+            order::Side::Buy => self.executed(),
             order::Side::Sell => order::TargetAmount(
-                executed
+                self.executed()
                     .0
                     .checked_sub(protocol_fee)
                     .ok_or(InvalidExecutedAmount)?,
@@ -120,85 +78,99 @@ impl Fulfillment {
 
         Fulfillment::new(order, executed, fee)
     }
-}
 
-fn price_improvement_fee_for_buy(
-    sell_amount: eth::U256,
-    buy_amount: eth::U256,
-    executed_buy_amount: eth::U256,
-    surplus_fee: eth::U256,
-    uniform_sell_price: eth::U256,
-    uniform_buy_price: eth::U256,
-    factor: f64,
-) -> Option<eth::U256> {
-    // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-    let executed_sell_amount = executed_buy_amount
-        .checked_mul(uniform_buy_price)?
-        .checked_div(uniform_sell_price)?;
-    // Sell slightly more `sell_token` to capture the `surplus_fee`
-    let executed_sell_amount_with_fee = executed_sell_amount.checked_add(surplus_fee)?;
-    // Scale to support partially fillable orders
-    let limit_sell_amount = sell_amount
-        .checked_mul(executed_buy_amount)?
-        .checked_div(buy_amount)?;
-    // Remaining surplus after fees
-    let surplus = limit_sell_amount
-        .checked_sub(executed_sell_amount_with_fee)
-        .unwrap_or(eth::U256::zero());
-    Some(surplus.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
-}
+    fn price_improvement_fee(
+        &self,
+        uniform_sell_price: eth::U256,
+        uniform_buy_price: eth::U256,
+        factor: f64,
+    ) -> Option<eth::U256> {
+        let sell_amount = self.order().sell.amount.0;
+        let buy_amount = self.order().buy.amount.0;
+        let executed = self.executed().0;
+        let surplus_fee = match self.raw_fee() {
+            Fee::Static => eth::U256::zero(),
+            Fee::Dynamic(fee) => fee.0,
+        };
+        match self.order().side {
+            Side::Buy => {
+                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
+                let executed_sell_amount = executed
+                    .checked_mul(uniform_buy_price)?
+                    .checked_div(uniform_sell_price)?;
+                // Sell slightly more `sell_token` to capture the `surplus_fee`
+                let executed_sell_amount_with_fee =
+                    executed_sell_amount.checked_add(surplus_fee)?;
+                // Scale to support partially fillable orders
+                let limit_sell_amount =
+                    sell_amount.checked_mul(executed)?.checked_div(buy_amount)?;
+                // Remaining surplus after fees
+                let surplus = limit_sell_amount
+                    .checked_sub(executed_sell_amount_with_fee)
+                    .unwrap_or(eth::U256::zero());
+                Some(surplus.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
+            }
+            Side::Sell => {
+                // How much `buy_token` we get for `executed` amount of `sell_token`
+                let executed_buy_amount = executed
+                    .checked_mul(uniform_sell_price)?
+                    .checked_div(uniform_buy_price)?;
+                let executed_sell_amount_with_fee = executed.checked_add(surplus_fee)?;
+                // Scale to support partially fillable orders
+                let limit_buy_amount = buy_amount
+                    .checked_mul(executed_sell_amount_with_fee)?
+                    .checked_div(sell_amount)?;
+                // Remaining surplus after fees
+                let surplus = executed_buy_amount
+                    .checked_sub(limit_buy_amount)
+                    .unwrap_or(eth::U256::zero());
+                let surplus_in_sell_token = surplus
+                    .checked_mul(uniform_buy_price)?
+                    .checked_div(uniform_sell_price)?;
+                Some(
+                    surplus_in_sell_token.checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
+                        / 100,
+                )
+            }
+        }
+    }
 
-fn price_improvement_fee_for_sell(
-    sell_amount: eth::U256,
-    buy_amount: eth::U256,
-    executed_sell_amount: eth::U256,
-    surplus_fee: eth::U256,
-    uniform_sell_price: eth::U256,
-    uniform_buy_price: eth::U256,
-    factor: f64,
-) -> Option<eth::U256> {
-    // How much `buy_token` we get for `executed` amount of `sell_token`
-    let executed_buy_amount = executed_sell_amount
-        .checked_mul(uniform_sell_price)?
-        .checked_div(uniform_buy_price)?;
-    let executed_sell_amount_with_fee = executed_sell_amount.checked_add(surplus_fee)?;
-    // Scale to support partially fillable orders
-    let limit_buy_amount = buy_amount
-        .checked_mul(executed_sell_amount_with_fee)?
-        .checked_div(sell_amount)?;
-    // Remaining surplus after fees
-    let surplus = executed_buy_amount
-        .checked_sub(limit_buy_amount)
-        .unwrap_or(eth::U256::zero());
-    let surplus_in_sell_token = surplus
-        .checked_mul(uniform_buy_price)?
-        .checked_div(uniform_sell_price)?;
-    Some(surplus_in_sell_token.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
-}
-
-fn volume_fee_for_buy(
-    executed_buy_amount: eth::U256,
-    surplus_fee: eth::U256,
-    uniform_sell_price: eth::U256,
-    uniform_buy_price: eth::U256,
-    factor: f64,
-) -> Option<eth::U256> {
-    // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-    let executed_sell_amount = executed_buy_amount
-        .checked_mul(uniform_buy_price)?
-        .checked_div(uniform_sell_price)?;
-    // Sell slightly more `sell_token` to capture the `surplus_fee`
-    let executed_sell_amount_with_fee = executed_sell_amount.checked_add(surplus_fee)?;
-    Some(executed_sell_amount_with_fee.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
-}
-
-fn volume_fee_for_sell(
-    executed_sell_amount: eth::U256,
-    surplus_fee: eth::U256,
-    factor: f64,
-) -> Option<eth::U256> {
-    let executed_sell_amount_with_fee = executed_sell_amount.checked_add(surplus_fee)?;
-    Some(executed_sell_amount_with_fee.checked_mul(eth::U256::from_f64_lossy(factor * 100.))? / 100)
+    fn volume_fee(
+        &self,
+        uniform_sell_price: eth::U256,
+        uniform_buy_price: eth::U256,
+        factor: f64,
+    ) -> Option<eth::U256> {
+        let executed = self.executed().0;
+        let surplus_fee = match self.raw_fee() {
+            Fee::Static => eth::U256::zero(),
+            Fee::Dynamic(fee) => fee.0,
+        };
+        match self.order().side {
+            Side::Buy => {
+                // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
+                let executed_sell_amount = executed
+                    .checked_mul(uniform_buy_price)?
+                    .checked_div(uniform_sell_price)?;
+                // Sell slightly more `sell_token` to capture the `surplus_fee`
+                let executed_sell_amount_with_fee =
+                    executed_sell_amount.checked_add(surplus_fee)?;
+                Some(
+                    executed_sell_amount_with_fee
+                        .checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
+                        / 100,
+                )
+            }
+            Side::Sell => {
+                let executed_sell_amount_with_fee = executed.checked_add(surplus_fee)?;
+                Some(
+                    executed_sell_amount_with_fee
+                        .checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
+                        / 100,
+                )
+            }
+        }
+    }
 }
 
 mod tests {
