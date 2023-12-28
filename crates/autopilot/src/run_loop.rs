@@ -11,7 +11,7 @@ use {
             settle,
             solve::{self, Class, TradedAmounts},
         },
-        infra::blockchain::Ethereum,
+        infra::{self, blockchain::Ethereum},
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
@@ -57,6 +57,7 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub fee_policy: arguments::FeePolicy,
+    pub persistence: infra::persistence::Persistence,
 }
 
 impl RunLoop {
@@ -116,7 +117,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: Auction) {
-        tracing::info!(?auction, "solving");
+        tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
 
@@ -308,6 +309,7 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        self.persistence.store_auction(id, auction);
         let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
