@@ -6,6 +6,7 @@ use {
         },
         infra::{self, Ethereum},
     },
+    anyhow::anyhow,
     ethrpc::current_block::CurrentBlockStream,
     shared::{
         http_client::HttpClientFactory,
@@ -41,14 +42,16 @@ pub fn to_interaction(
 
     pool.inner
         .settlement_handling
-        .clone()
         .encode(execution, &mut encoder)?;
 
     let [_, interactions, _] = encoder
         .finish(InternalizationStrategy::EncodeAllInteractions)
         .interactions;
 
-    let (target, value, call_data) = interactions[1].clone();
+    let (target, value, call_data) = interactions
+        .last()
+        .ok_or(anyhow!("no interactions found"))?
+        .clone();
     Ok(eth::Interaction {
         target: target.into(),
         value: value.into(),
