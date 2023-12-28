@@ -12,7 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::blockchain,
+        infra::{self, blockchain},
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -643,6 +643,7 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
         fee_policy: args.fee_policy,
+        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
     };
     run.run_forever().await;
     unreachable!("run loop exited");
