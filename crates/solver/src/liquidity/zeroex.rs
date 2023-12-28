@@ -176,10 +176,11 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
     filtered_zeroex_orders
 }
 
+#[derive(Clone)]
 pub struct OrderSettlementHandler {
-    order: Order,
-    zeroex: IZeroEx,
-    allowances: Arc<Allowances>,
+    pub order: Order,
+    pub zeroex: IZeroEx,
+    pub allowances: Arc<Allowances>,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {

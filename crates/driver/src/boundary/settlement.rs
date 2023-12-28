@@ -451,9 +451,7 @@ pub fn to_boundary_interaction(
                 liquidity::Kind::Swapr(pool) => pool
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid swapr execution")?,
-                liquidity::Kind::ZeroEx(pool) => pool
-                    .swap(&input, &output, &settlement_contract.into())
-                    .context("invalid zeroex execution")?,
+                liquidity::Kind::ZeroEx(pool) => pool.swap().context("invalid zeroex execution")?,
             };
 
             Ok(InteractionData {
