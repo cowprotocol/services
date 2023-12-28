@@ -51,7 +51,7 @@ impl Interaction {
                     liquidity::Kind::BalancerV2Stable(pool) => pool.vault.into(),
                     liquidity::Kind::BalancerV2Weighted(pool) => pool.vault.into(),
                     liquidity::Kind::Swapr(pool) => pool.base.router.into(),
-                    liquidity::Kind::ZeroEx(_) => todo!(),
+                    liquidity::Kind::ZeroEx(pool) => pool.zeroex.address().into(),
                 };
                 vec![eth::Allowance {
                     token: interaction.input.token,

@@ -399,8 +399,6 @@ struct ForeignLimitOrder {
     address: H160,
     #[serde_as(as = "serialize::U256")]
     gas_estimate: U256,
-    #[serde_as(as = "serialize::Hex")]
-    hash: [u8; 32],
     maker_token: H160,
     taker_token: H160,
     #[serde_as(as = "serialize::U256")]

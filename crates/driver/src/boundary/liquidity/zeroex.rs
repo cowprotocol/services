@@ -51,14 +51,14 @@ pub fn to_interaction(limit_order: &zeroex::LimitOrder) -> anyhow::Result<eth::I
             Bytes(limit_order.order.signature.r.0),
             Bytes(limit_order.order.signature.s.0),
         ),
-        limit_order.full_execution_amount().as_u128(),
+        limit_order.full_execution_amount.as_u128(),
     );
-    let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?.0;
+    let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 
     Ok(eth::Interaction {
         target: limit_order.zeroex.address().into(),
         value: 0.into(),
-        call_data: calldata.into(),
+        call_data: calldata.0.into(),
     })
 }
 
