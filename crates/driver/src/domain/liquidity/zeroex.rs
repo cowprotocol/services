@@ -1,24 +1,19 @@
 use {
-    crate::{
-        boundary,
-        domain::{eth, liquidity},
-    },
+    crate::domain::eth,
     anyhow::anyhow,
     contracts::IZeroEx,
+    ethcontract::Bytes,
     model::order::OrderKind,
     primitive_types::U256,
     shared::zeroex_api::Order,
     solver::liquidity::{zeroex, LimitOrderId},
 };
 
-/// A signed 0x Protocol Limit Order [^1].
-///
-/// [^1]: <https://0x.org/docs/0x-limit-orders/docs/introduction>
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub id: LimitOrderId,
-    pub full_execution_amount: U256,
     pub order: Order,
+    pub full_execution_amount: U256,
     pub zeroex: IZeroEx,
 }
 
@@ -38,13 +33,42 @@ impl LimitOrder {
 
         Ok(Self {
             id: limit_order.id,
-            full_execution_amount,
             order: handler.order,
+            full_execution_amount,
             zeroex: handler.zeroex,
         })
     }
 
-    pub fn swap(&self) -> Result<eth::Interaction, liquidity::InvalidSwap> {
-        boundary::liquidity::zeroex::to_interaction(self).map_err(|_| liquidity::InvalidSwap)
+    pub fn to_interaction(&self) -> anyhow::Result<eth::Interaction> {
+        let method = self.zeroex.fill_or_kill_limit_order(
+            (
+                self.order.maker_token,
+                self.order.taker_token,
+                self.order.maker_amount,
+                self.order.taker_amount,
+                self.order.taker_token_fee_amount,
+                self.order.maker,
+                self.order.taker,
+                self.order.sender,
+                self.order.fee_recipient,
+                Bytes(self.order.pool.0),
+                self.order.expiry,
+                self.order.salt,
+            ),
+            (
+                self.order.signature.signature_type,
+                self.order.signature.v,
+                Bytes(self.order.signature.r.0),
+                Bytes(self.order.signature.s.0),
+            ),
+            self.full_execution_amount.as_u128(),
+        );
+        let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
+
+        Ok(eth::Interaction {
+            target: self.zeroex.address().into(),
+            value: 0.into(),
+            call_data: calldata.0.into(),
+        })
     }
 }
