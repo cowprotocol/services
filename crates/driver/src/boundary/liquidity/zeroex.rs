@@ -1,9 +1,14 @@
 use {
     crate::{
-        domain::liquidity::{self, zeroex},
+        domain::liquidity::{
+            self,
+            zeroex::{self, Order},
+        },
         infra::{self, Ethereum},
     },
+    anyhow::anyhow,
     ethrpc::current_block::CurrentBlockStream,
+    model::order::OrderKind,
     shared::{
         http_client::HttpClientFactory,
         price_estimation::gas::GAS_PER_ZEROEX_ORDER,
@@ -17,10 +22,51 @@ use {
 };
 
 pub fn to_domain(id: liquidity::Id, pool: LimitOrder) -> anyhow::Result<liquidity::Liquidity> {
+    let handler = pool
+        .settlement_handling
+        .as_any()
+        .downcast_ref::<solver::liquidity::zeroex::OrderSettlementHandler>()
+        .ok_or(anyhow!("not a zeroex::OrderSettlementHandler"))?
+        .clone();
+
+    let full_execution_amount = match pool.kind {
+        OrderKind::Sell => pool.sell_amount,
+        OrderKind::Buy => pool.buy_amount,
+    };
+
+    let order = Order {
+        maker: handler.order.maker,
+        taker: handler.order.taker,
+        sender: handler.order.sender,
+        maker_token: handler.order.maker_token,
+        taker_token: handler.order.taker_token,
+        maker_amount: handler.order.maker_amount,
+        taker_amount: handler.order.taker_amount,
+        taker_token_fee_amount: handler.order.taker_token_fee_amount,
+        fee_recipient: handler.order.fee_recipient,
+        pool: handler.order.pool,
+        expiry: handler.order.expiry,
+        salt: handler.order.salt,
+        signature_type: handler.order.signature.signature_type,
+        signature_r: handler.order.signature.r,
+        signature_s: handler.order.signature.s,
+        signature_v: handler.order.signature.v,
+    };
+
+    let domain = zeroex::LimitOrder {
+        sell_token: pool.sell_token,
+        buy_token: pool.buy_token,
+        sell_amount: pool.sell_amount,
+        buy_amount: pool.buy_amount,
+        order,
+        full_execution_amount,
+        zeroex: handler.zeroex,
+    };
+
     Ok(liquidity::Liquidity {
         id,
         gas: GAS_PER_ZEROEX_ORDER.into(),
-        kind: liquidity::Kind::ZeroEx(zeroex::LimitOrder::new(pool)?),
+        kind: liquidity::Kind::ZeroEx(domain),
     })
 }
 

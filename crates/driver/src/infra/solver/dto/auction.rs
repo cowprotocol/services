@@ -49,7 +49,7 @@ impl Auction {
                     pool.base.reserves.iter().map(|r| r.token).collect()
                 }
                 liquidity::Kind::ZeroEx(pool) => {
-                    vec![pool.order.maker_token.into(), pool.order.taker_token.into()]
+                    vec![pool.sell_token.into(), pool.buy_token.into()]
                 }
             })
         {
@@ -201,10 +201,10 @@ impl Auction {
                         id: liquidity.id.0,
                         address: pool.zeroex.address(),
                         gas_estimate: liquidity.gas.into(),
-                        maker_token: pool.order.maker_token,
-                        taker_token: pool.order.taker_token,
-                        maker_amount: pool.order.maker_amount.into(),
-                        taker_amount: pool.order.taker_amount.into(),
+                        maker_token: pool.sell_token,
+                        taker_token: pool.buy_token,
+                        maker_amount: pool.sell_amount,
+                        taker_amount: pool.buy_amount,
                         taker_token_fee_amount: pool.order.taker_token_fee_amount.into(),
                     }),
                 })
