@@ -1,7 +1,26 @@
 //! Applies the protocol fee to the solution received from the solver.
 //!
-//! Protocol fee is applied by increasing already existing fee determined by the
-//! solver.
+//! Solvers respond differently for the sell and buy orders.
+//! 
+//! EXAMPLES:
+//! 
+//! SELL ORDER
+//! Selling 1 WETH for at least `x` amount of USDC. Solvers respond with
+//! Fee = 0.05 WETH
+//! Executed = 0.95 WETH
+//! 
+//! This response is adjusted by the protocol fee of 0.1 WETH:
+//! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
+//! Executed = 0.95 WETH - 0.1 WETH = 0.85 WETH
+//! 
+//! BUY ORDER
+//! Buying 1 WETH for at most `x` amount of USDC. Solvers respond with
+//! Fee = 0.05 WETH
+//! Executed = 1 WETH
+//! 
+//! This response is adjusted by the protocol fee of 0.1 WETH:
+//! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
+//! Executed = 1 WETH
 
 use {
     super::trade::{Fee, Fulfillment, InvalidExecutedAmount},
@@ -15,47 +34,9 @@ use {
 };
 
 impl Fulfillment {
-    pub fn add_protocol_fee(
-        &self,
-        uniform_sell_price: eth::U256,
-        uniform_buy_price: eth::U256,
-    ) -> Result<Self, InvalidExecutedAmount> {
-        let order = self.order().clone();
-
-        let protocol_fee = order
-            .fee_policies
-            .iter()
-            .map(|fee_policy| {
-                match fee_policy {
-                    FeePolicy::PriceImprovement {
-                        factor,
-                        max_volume_factor,
-                    } => {
-                        let price_improvement_fee = self.price_improvement_fee(
-                            uniform_sell_price,
-                            uniform_buy_price,
-                            *factor,
-                        )?;
-                        let max_volume_fee = self.volume_fee(
-                            uniform_sell_price,
-                            uniform_buy_price,
-                            *max_volume_factor,
-                        )?;
-                        // take the smaller of the two
-                        Some(std::cmp::min(price_improvement_fee, max_volume_fee))
-                    }
-                    FeePolicy::Volume { factor } => {
-                        self.volume_fee(uniform_sell_price, uniform_buy_price, *factor)
-                    }
-                }
-            })
-            .fold(eth::U256::zero(), |acc, fee| match fee {
-                Some(fee) => acc + fee,
-                None => {
-                    tracing::warn!(?order.uid, "failed to calculate protocol fee");
-                    acc
-                }
-            });
+    /// Applies the protocol fee to the existing fulfillment.
+    pub fn with_protocol_fee(&self, prices: ClearingPrices) -> Result<Self, InvalidExecutedAmount> {
+        let protocol_fee = self.protocol_fee(prices)?;
 
         // Increase the fee by the protocol fee
         let fee = match self.raw_fee() {
@@ -63,9 +44,10 @@ impl Fulfillment {
             Fee::Dynamic(fee) => Fee::Dynamic((fee.0 + protocol_fee).into()),
         };
 
-        // Adjust the executed amount by the protocol fee. This is because solvers are
+        // Reduce the executed amount by the protocol fee. This is because solvers are
         // unaware of the protocol fee that driver introduces and they only account
-        // for the surplus fee.
+        // for their own fee.
+        let order = self.order().clone();
         let executed = match order.side {
             order::Side::Buy => self.executed(),
             order::Side::Sell => order::TargetAmount(
@@ -79,12 +61,37 @@ impl Fulfillment {
         Fulfillment::new(order, executed, fee)
     }
 
-    fn price_improvement_fee(
-        &self,
-        uniform_sell_price: eth::U256,
-        uniform_buy_price: eth::U256,
-        factor: f64,
-    ) -> Option<eth::U256> {
+    fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, InvalidExecutedAmount> {
+        let mut protocol_fee = eth::U256::zero();
+        for fee_policy in self.order().fee_policies.iter() {
+            match fee_policy {
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                } => {
+                    let price_improvement_fee = self
+                        .price_improvement_fee(prices, *factor)
+                        .ok_or(InvalidExecutedAmount)?;
+                    let max_volume_fee = self
+                        .volume_fee(prices, *max_volume_factor)
+                        .ok_or(InvalidExecutedAmount)?;
+                    // take the smaller of the two
+                    protocol_fee = protocol_fee
+                        .checked_add(std::cmp::min(price_improvement_fee, max_volume_fee))
+                        .ok_or(InvalidExecutedAmount)?;
+                }
+                FeePolicy::Volume { factor } => {
+                    let fee = self
+                        .volume_fee(prices, *factor)
+                        .ok_or(InvalidExecutedAmount)?;
+                    protocol_fee = protocol_fee.checked_add(fee).ok_or(InvalidExecutedAmount)?;
+                }
+            }
+        }
+        Ok(protocol_fee)
+    }
+
+    fn price_improvement_fee(&self, prices: ClearingPrices, factor: f64) -> Option<eth::U256> {
         let sell_amount = self.order().sell.amount.0;
         let buy_amount = self.order().buy.amount.0;
         let executed = self.executed().0;
@@ -95,9 +102,8 @@ impl Fulfillment {
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                let executed_sell_amount = executed
-                    .checked_mul(uniform_buy_price)?
-                    .checked_div(uniform_sell_price)?;
+                let executed_sell_amount =
+                    executed.checked_mul(prices.buy)?.checked_div(prices.sell)?;
                 // Sell slightly more `sell_token` to capture the `surplus_fee`
                 let executed_sell_amount_with_fee =
                     executed_sell_amount.checked_add(surplus_fee)?;
@@ -112,9 +118,8 @@ impl Fulfillment {
             }
             Side::Sell => {
                 // How much `buy_token` we get for `executed` amount of `sell_token`
-                let executed_buy_amount = executed
-                    .checked_mul(uniform_sell_price)?
-                    .checked_div(uniform_buy_price)?;
+                let executed_buy_amount =
+                    executed.checked_mul(prices.sell)?.checked_div(prices.buy)?;
                 let executed_sell_amount_with_fee = executed.checked_add(surplus_fee)?;
                 // Scale to support partially fillable orders
                 let limit_buy_amount = buy_amount
@@ -124,9 +129,8 @@ impl Fulfillment {
                 let surplus = executed_buy_amount
                     .checked_sub(limit_buy_amount)
                     .unwrap_or(eth::U256::zero());
-                let surplus_in_sell_token = surplus
-                    .checked_mul(uniform_buy_price)?
-                    .checked_div(uniform_sell_price)?;
+                let surplus_in_sell_token =
+                    surplus.checked_mul(prices.buy)?.checked_div(prices.sell)?;
                 Some(
                     surplus_in_sell_token.checked_mul(eth::U256::from_f64_lossy(factor * 100.))?
                         / 100,
@@ -135,12 +139,7 @@ impl Fulfillment {
         }
     }
 
-    fn volume_fee(
-        &self,
-        uniform_sell_price: eth::U256,
-        uniform_buy_price: eth::U256,
-        factor: f64,
-    ) -> Option<eth::U256> {
+    fn volume_fee(&self, prices: ClearingPrices, factor: f64) -> Option<eth::U256> {
         let executed = self.executed().0;
         let surplus_fee = match self.raw_fee() {
             Fee::Static => eth::U256::zero(),
@@ -149,9 +148,8 @@ impl Fulfillment {
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                let executed_sell_amount = executed
-                    .checked_mul(uniform_buy_price)?
-                    .checked_div(uniform_sell_price)?;
+                let executed_sell_amount =
+                    executed.checked_mul(prices.buy)?.checked_div(prices.sell)?;
                 // Sell slightly more `sell_token` to capture the `surplus_fee`
                 let executed_sell_amount_with_fee =
                     executed_sell_amount.checked_add(surplus_fee)?;
@@ -171,6 +169,13 @@ impl Fulfillment {
             }
         }
     }
+}
+
+/// Uniform clearing prices at which the trade was executed.
+#[derive(Debug, Clone, Copy)]
+pub struct ClearingPrices {
+    pub sell: eth::U256,
+    pub buy: eth::U256,
 }
 
 mod tests {
@@ -235,8 +240,10 @@ mod tests {
         };
 
         // taken from https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.25?id=m8dnoowB4Ql8nk7a5ber
-        let uniform_sell_price = eth::U256::from(913320970421237626580182u128);
-        let uniform_buy_price = eth::U256::from(4149866666666666668u128);
+        let prices = ClearingPrices {
+            sell: eth::U256::from(913320970421237626580182u128),
+            buy: eth::U256::from(4149866666666666668u128),
+        };
         let executed = order::TargetAmount(4149866666666666668u128.into());
         let fee = Fee::Dynamic(order::SellAmount(16799999999999998u128.into()));
         let fulfillment = Fulfillment::new(order.clone(), executed, fee).unwrap();
@@ -248,9 +255,7 @@ mod tests {
         // executed amount before protocol fee
         assert_eq!(fulfillment.executed(), executed);
 
-        let fulfillment = fulfillment
-            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
-            .unwrap();
+        let fulfillment = fulfillment.with_protocol_fee(prices).unwrap();
         // fee contains protocol fee
         assert_eq!(
             fulfillment.fee(),
@@ -303,8 +308,10 @@ mod tests {
         };
 
         // taken from https://production-6de61f.kb.eu-central-1.aws.cloud.es.io/app/discover#/doc/c0e240e0-d9b3-11ed-b0e6-e361adffce0b/cowlogs-prod-2023.12.26?id=cYSDo4wBlutGF6Gybl6x
-        let uniform_sell_price = eth::U256::from(7213317128720734077u128);
-        let uniform_buy_price = eth::U256::from(74745150907421124481191u128);
+        let prices = ClearingPrices {
+            sell: eth::U256::from(7213317128720734077u128),
+            buy: eth::U256::from(74745150907421124481191u128),
+        };
         let executed = order::TargetAmount(170000000000000000u128.into());
         let fee = Fee::Dynamic(order::SellAmount(19868323826701104280u128.into()));
         let fulfillment = Fulfillment::new(order.clone(), executed, fee).unwrap();
@@ -316,9 +323,7 @@ mod tests {
         // executed amount before protocol fee
         assert_eq!(fulfillment.executed(), executed);
 
-        let fulfillment = fulfillment
-            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
-            .unwrap();
+        let fulfillment = fulfillment.with_protocol_fee(prices).unwrap();
         // fee contains protocol fee
         assert_eq!(
             fulfillment.fee(),
@@ -374,8 +379,10 @@ mod tests {
             },
         };
 
-        let uniform_sell_price = eth::U256::from(452471455796126723289489746u128);
-        let uniform_buy_price = eth::U256::from(29563373796548615411833u128);
+        let prices = ClearingPrices {
+            sell: eth::U256::from(452471455796126723289489746u128),
+            buy: eth::U256::from(29563373796548615411833u128),
+        };
         let executed = order::TargetAmount(1746031488u128.into());
         let fee = Fee::Dynamic(order::SellAmount(11566733u128.into()));
         let fulfillment = Fulfillment::new(order1.clone(), executed, fee).unwrap();
@@ -384,9 +391,7 @@ mod tests {
         // executed amount before protocol fee
         assert_eq!(fulfillment.executed(), executed);
 
-        let fulfillment = fulfillment
-            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
-            .unwrap();
+        let fulfillment = fulfillment.with_protocol_fee(prices).unwrap();
         // fee contains protocol fee
         assert_eq!(
             fulfillment.fee(),
@@ -437,8 +442,10 @@ mod tests {
             },
         };
 
-        let uniform_sell_price = eth::U256::from(49331008874302634851980418220032u128);
-        let uniform_buy_price = eth::U256::from(3204738565525085525012119552u128);
+        let prices = ClearingPrices {
+            sell: eth::U256::from(49331008874302634851980418220032u128),
+            buy: eth::U256::from(3204738565525085525012119552u128),
+        };
         let executed = order::TargetAmount(2887238741u128.into());
         let fee = Fee::Dynamic(order::SellAmount(27827963u128.into()));
         let fulfillment = Fulfillment::new(order2.clone(), executed, fee).unwrap();
@@ -447,9 +454,7 @@ mod tests {
         // executed amount before protocol fee
         assert_eq!(fulfillment.executed(), executed);
 
-        let fulfillment = fulfillment
-            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
-            .unwrap();
+        let fulfillment = fulfillment.with_protocol_fee(prices).unwrap();
         // fee contains protocol fee
         assert_eq!(
             fulfillment.fee(),
@@ -500,8 +505,10 @@ mod tests {
             },
         };
 
-        let uniform_sell_price = eth::U256::from(65841033847428u128);
-        let uniform_buy_price = eth::U256::from(4302554937u128);
+        let prices = ClearingPrices {
+            sell: eth::U256::from(65841033847428u128),
+            buy: eth::U256::from(4302554937u128),
+        };
         let executed = order::TargetAmount(4302554937u128.into());
         let fee = Fee::Dynamic(order::SellAmount(24780138u128.into()));
         let fulfillment = Fulfillment::new(order3.clone(), executed, fee).unwrap();
@@ -510,9 +517,7 @@ mod tests {
         // executed amount before protocol fee
         assert_eq!(fulfillment.executed(), executed);
 
-        let fulfillment = fulfillment
-            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
-            .unwrap();
+        let fulfillment = fulfillment.with_protocol_fee(prices).unwrap();
         // fee contains protocol fee
         assert_eq!(
             fulfillment.fee(),

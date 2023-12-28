@@ -1,4 +1,5 @@
 use {
+    self::fee::ClearingPrices,
     crate::{
         boundary,
         domain::{
@@ -185,12 +186,12 @@ impl Solution {
             .map(|trade| match &trade {
                 Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
                     order::Kind::Market | order::Kind::Limit { .. } => {
-                        let uniform_sell_price =
-                            self.prices[&fulfillment.order().sell.token.wrap(self.weth)];
-                        let uniform_buy_price =
-                            self.prices[&fulfillment.order().buy.token.wrap(self.weth)];
+                        let prices = ClearingPrices {
+                            sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
+                            buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
+                        };
                         fulfillment
-                            .add_protocol_fee(uniform_sell_price, uniform_buy_price)
+                            .with_protocol_fee(prices)
                             .map(Trade::Fulfillment)
                             .unwrap_or(trade)
                     }
