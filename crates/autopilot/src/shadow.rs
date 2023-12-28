@@ -16,8 +16,9 @@ use {
             solve::{self},
         },
         protocol::{self, fee},
-        run_loop::{self, log_auction_delta},
+        run_loop::{self, observe},
     },
+    ::observe::metrics,
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
         order::OrderClass,
@@ -78,7 +79,7 @@ impl RunLoop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
-            log_auction_delta(id, &previous, &auction);
+            observe::log_auction_delta(id, &previous, &auction);
             previous = Some(auction.clone());
 
             self.single_run(id, auction)
@@ -333,6 +334,6 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }

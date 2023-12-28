@@ -15,6 +15,7 @@ use {
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
+    ::observe::metrics,
     anyhow::Result,
     chrono::Utc,
     database::order_events::OrderEventLabel,
@@ -71,7 +72,7 @@ impl RunLoop {
                 if previous.as_ref() != Some(&auction)
                     || last_block.replace(current_block) != Some(current_block)
                 {
-                    log_auction_delta(id, &previous, &auction);
+                    observe::log_auction_delta(id, &previous, &auction);
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
@@ -495,34 +496,6 @@ impl RunLoop {
     }
 }
 
-pub fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
-    let previous_uids = match previous {
-        Some(previous) => previous
-            .orders
-            .iter()
-            .map(|order| order.metadata.uid)
-            .collect::<HashSet<_>>(),
-        None => HashSet::new(),
-    };
-    let current_uids = current
-        .orders
-        .iter()
-        .map(|order| order.metadata.uid)
-        .collect::<HashSet<_>>();
-    let added = current_uids.difference(&previous_uids);
-    let removed = previous_uids.difference(&current_uids);
-    tracing::debug!(
-        id,
-        added = ?added,
-        "New orders in auction"
-    );
-    tracing::debug!(
-        id,
-        removed = ?removed,
-        "Orders no longer in auction"
-    );
-}
-
 pub fn solve_request(
     id: AuctionId,
     auction: &Auction,
@@ -698,7 +671,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 
     fn auction(auction_id: AuctionId) {
@@ -781,5 +754,37 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
+    }
+}
+
+pub mod observe {
+    use {model::auction::Auction, std::collections::HashSet};
+
+    pub fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
+        let previous_uids = match previous {
+            Some(previous) => previous
+                .orders
+                .iter()
+                .map(|order| order.metadata.uid)
+                .collect::<HashSet<_>>(),
+            None => HashSet::new(),
+        };
+        let current_uids = current
+            .orders
+            .iter()
+            .map(|order| order.metadata.uid)
+            .collect::<HashSet<_>>();
+        let added = current_uids.difference(&previous_uids);
+        let removed = previous_uids.difference(&current_uids);
+        tracing::debug!(
+            id,
+            added = ?added,
+            "New orders in auction"
+        );
+        tracing::debug!(
+            id,
+            removed = ?removed,
+            "Orders no longer in auction"
+        );
     }
 }
