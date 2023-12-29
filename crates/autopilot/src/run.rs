@@ -10,10 +10,11 @@ use {
             },
             Postgres,
         },
+        domain,
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{self, blockchain},
-        protocol::{self, fee},
+        infra::{self, blockchain, Database},
+        protocol::{self},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
@@ -630,6 +631,11 @@ pub async fn run(args: Arguments) {
     let db = Arc::new(db);
     let ethrpc = ethrpc(&args.shared.node_url).await;
     let eth = ethereum(ethrpc).await;
+    let fee_policies = domain::fee::Policies::new(domain::fee::Config {
+        fee_policy_skip_market_orders: args.fee_policy.fee_policy_skip_market_orders,
+        policy: args.fee_policy.to_domain(),
+        db: Database::new(db.clone()),
+    });
     let run = RunLoop {
         eth,
         solvable_orders_cache,
@@ -641,9 +647,9 @@ pub async fn run(args: Arguments) {
         score_cap: args.score_cap,
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
-        policy_factory: fee::PolicyFactory::new(args.fee_policy, db),
         in_flight_orders: Default::default(),
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
+        fee_policies,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

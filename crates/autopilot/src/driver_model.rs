@@ -49,7 +49,7 @@ pub mod quote {
 
 pub mod solve {
     use {
-        crate::arguments,
+        crate::domain,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
@@ -173,16 +173,18 @@ pub mod solve {
         },
     }
 
-    pub fn fee_policy_to_dto(fee_policy: &arguments::FeePolicy) -> FeePolicy {
-        match fee_policy.fee_policy_kind {
-            arguments::FeePolicyKind::PriceImprovement {
-                factor: price_improvement_factor,
-                max_volume_factor,
-            } => FeePolicy::PriceImprovement {
-                factor: price_improvement_factor,
-                max_volume_factor,
-            },
-            arguments::FeePolicyKind::Volume { factor } => FeePolicy::Volume { factor },
+    impl FeePolicy {
+        pub fn new(policy: domain::fee::Policy) -> Self {
+            match policy {
+                domain::fee::Policy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                } => FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                },
+                domain::fee::Policy::Volume { factor } => FeePolicy::Volume { factor },
+            }
         }
     }
 

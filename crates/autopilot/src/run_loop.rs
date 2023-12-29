@@ -4,14 +4,14 @@ use {
             competition::{Competition, ExecutedFee, OrderExecution},
             Postgres,
         },
+        domain,
         driver_api::Driver,
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, TradedAmounts},
+            solve::{self, Class, FeePolicy, TradedAmounts},
         },
         infra::{self, blockchain::Ethereum},
-        protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -55,7 +55,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub policy_factory: fee::PolicyFactory,
+    pub fee_policies: domain::fee::Policies,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub persistence: infra::persistence::Persistence,
 }
@@ -312,8 +312,8 @@ impl RunLoop {
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
         let fee_policies = self
-            .policy_factory
-            .build(auction)
+            .fee_policies
+            .get(&auction.orders)
             .await
             .unwrap_or_else(|err| {
                 tracing::warn!(?err, "no protocol fees are applied");
@@ -510,7 +510,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policies: fee::Policies,
+    fee_policies: HashMap<OrderUid, Vec<domain::fee::Policy>>,
 ) -> solve::Request {
     solve::Request {
         id,
@@ -564,6 +564,7 @@ pub fn solve_request(
                     fee_policies: fee_policies
                         .get(&order.metadata.uid)
                         .cloned()
+                        .map(|policies| policies.into_iter().map(FeePolicy::new).collect_vec())
                         .unwrap_or_default(),
                 }
             })
