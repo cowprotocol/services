@@ -1,5 +1,5 @@
 use {
-    model::order::OrderUid,
+    crate::boundary::OrderUid,
     primitive_types::{H160, U256},
 };
 
