@@ -668,7 +668,7 @@ impl OrderValidating for OrderValidator {
                         .await?;
                 Some(quote)
             }
-            OrderClass::Limit(_) => {
+            OrderClass::Limit => {
                 let quote =
                     get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
                         .await?;
@@ -684,7 +684,7 @@ impl OrderValidating for OrderValidator {
                 // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
                 // subsidies). This only makes a difference for liquidity orders.
                 .unwrap_or(data.fee_amount),
-            OrderClass::Limit(_) => 0.into(), // limit orders have a solver determined fee
+            OrderClass::Limit => 0.into(), // limit orders have a solver determined fee
         };
 
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
