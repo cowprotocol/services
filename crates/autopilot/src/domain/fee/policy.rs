@@ -17,14 +17,14 @@ use {
 
 /// Protocol fee policies with cache being updated on each auction.
 #[derive(Debug)]
-pub struct Policies {
+pub struct PoliciesCache {
     config: Config,
     database: infra::Database,
 
     policies: Arc<RwLock<HashMap<OrderUid, Vec<Policy>>>>,
 }
 
-impl Policies {
+impl PoliciesCache {
     pub fn new(config: Config, database: infra::Database) -> Self {
         Self {
             config,
@@ -38,7 +38,15 @@ impl Policies {
     /// If policies don't exist for the order, they will be added.
     pub async fn get(&self, orders: &[Order]) -> Result<HashMap<OrderUid, Vec<Policy>>, Error> {
         self.add(orders).await?;
-        Ok(self.policies.read().unwrap().clone())
+        let all_policies = self.policies.read().unwrap();
+        Ok(orders
+            .iter()
+            .filter_map(|order| {
+                all_policies
+                    .get(&order.metadata.uid)
+                    .map(|policies| (order.metadata.uid, policies.clone()))
+            })
+            .collect())
     }
 
     /// Add new policies if they don't exist for the order.

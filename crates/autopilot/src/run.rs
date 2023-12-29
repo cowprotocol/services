@@ -631,7 +631,7 @@ pub async fn run(args: Arguments) {
     let db = Arc::new(db);
     let ethrpc = ethrpc(&args.shared.node_url).await;
     let eth = ethereum(ethrpc).await;
-    let fee_policies = domain::fee::Policies::new(
+    let fee_policies = domain::fee::PoliciesCache::new(
         domain::fee::Config {
             fee_policy_skip_market_orders: args.fee_policy.fee_policy_skip_market_orders,
             policy: args.fee_policy.to_domain(),
