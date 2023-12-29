@@ -1,3 +1,5 @@
+CREATE TYPE PolicyKind AS ENUM ('price_improvement', 'volume');
+
 CREATE TABLE fee_policies (
   auction_id bigint NOT NULL
   order_uid bytea NOT NULL
@@ -5,7 +7,7 @@ CREATE TABLE fee_policies (
   application_order SERIAL NOT NULL
 
   -- The type of the fee policy.
-  kind VARCHAR(255) NOT NULL
+  kind PolicyKind NOT NULL
   -- The fee should be taken as a percentage of the price improvement. The value is between 0 and 1.
   price_improvement_factor NUMERIC CHECK (price_improvement_factor >= 0 AND price_improvement_factor <= 1)
   -- The fee should be taken as a percentage of the order volume. The value is between 0 and 1.
