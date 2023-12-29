@@ -452,7 +452,7 @@ pub fn to_boundary_interaction(
                     .swap(&input, &output, &settlement_contract.into())
                     .context("invalid swapr execution")?,
                 liquidity::Kind::ZeroEx(limit_order) => limit_order
-                    .to_interaction()
+                    .to_interaction(&input)
                     .context("invalid zeroex execution")?,
             };
 

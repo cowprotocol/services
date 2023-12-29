@@ -1,5 +1,5 @@
 use {
-    crate::domain::eth,
+    crate::domain::{eth, liquidity},
     anyhow::anyhow,
     contracts::IZeroEx,
     ethcontract::Bytes,
@@ -8,12 +8,7 @@ use {
 
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
     pub order: Order,
-    pub full_execution_amount: U256,
     pub zeroex: IZeroEx,
 }
 
@@ -38,7 +33,7 @@ pub struct Order {
 }
 
 impl LimitOrder {
-    pub fn to_interaction(&self) -> anyhow::Result<eth::Interaction> {
+    pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
         let method = self.zeroex.fill_or_kill_limit_order(
             (
                 self.order.maker_token,
@@ -60,7 +55,7 @@ impl LimitOrder {
                 Bytes(self.order.signature_r.0),
                 Bytes(self.order.signature_s.0),
             ),
-            self.full_execution_amount.as_u128(),
+            input.0.amount.0.as_u128(),
         );
         let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 

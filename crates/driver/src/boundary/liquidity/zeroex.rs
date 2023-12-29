@@ -8,7 +8,6 @@ use {
     },
     anyhow::anyhow,
     ethrpc::current_block::CurrentBlockStream,
-    model::order::OrderKind,
     shared::{
         http_client::HttpClientFactory,
         price_estimation::gas::GAS_PER_ZEROEX_ORDER,
@@ -25,17 +24,17 @@ pub fn to_domain(
     id: liquidity::Id,
     limit_order: LimitOrder,
 ) -> anyhow::Result<liquidity::Liquidity> {
+    // `order` and `contract` should be provided somehow through the `LimitOrder`
+    // struct. Currently, it's not possible to add 0x-specific fields right to
+    // the `solver::LimitOrder` since it's used with different settlement
+    // handlers. One of the options to address it: to use a separate
+    // `solver::Liquidity` enum value for 0x liquidity.
     let handler = limit_order
         .settlement_handling
         .as_any()
         .downcast_ref::<solver::liquidity::zeroex::OrderSettlementHandler>()
         .ok_or(anyhow!("not a zeroex::OrderSettlementHandler"))?
         .clone();
-
-    let full_execution_amount = match limit_order.kind {
-        OrderKind::Sell => limit_order.sell_amount,
-        OrderKind::Buy => limit_order.buy_amount,
-    };
 
     let order = Order {
         maker: handler.order.maker,
@@ -57,12 +56,7 @@ pub fn to_domain(
     };
 
     let domain = zeroex::LimitOrder {
-        sell_token: limit_order.sell_token,
-        buy_token: limit_order.buy_token,
-        sell_amount: limit_order.sell_amount,
-        buy_amount: limit_order.buy_amount,
         order,
-        full_execution_amount,
         zeroex: handler.zeroex,
     };
 
