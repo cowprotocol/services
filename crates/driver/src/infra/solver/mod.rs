@@ -156,13 +156,7 @@ impl Solver {
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
-            auction, liquidity,
-            // Reduce the timeout by a small buffer to account for network latency. Otherwise the
-            // HTTP timeout might happen before the solver times out its search algorithm.
-            weth,
-        ))
-        .unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
