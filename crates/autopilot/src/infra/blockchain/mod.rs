@@ -1,8 +1,7 @@
 use {
-    crate::boundary,
+    crate::{boundary, domain::eth},
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
-    primitive_types::{H256, U256},
     std::sync::Arc,
     thiserror::Error,
     web3::types::TransactionReceipt,
@@ -12,10 +11,10 @@ use {
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ChainId(pub U256);
+pub struct ChainId(pub eth::U256);
 
-impl From<U256> for ChainId {
-    fn from(value: U256) -> Self {
+impl From<eth::U256> for ChainId {
+    fn from(value: eth::U256) -> Self {
         Self(value)
     }
 }
@@ -109,7 +108,7 @@ impl Ethereum {
 
     pub async fn transaction_receipt(
         &self,
-        hash: H256,
+        hash: eth::H256,
     ) -> Result<Option<TransactionReceipt>, Error> {
         self.web3
             .eth()
