@@ -33,6 +33,7 @@ impl Api {
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
             .with_state(Arc::new(self.solver))
+            // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
             .layer(axum::extract::DefaultBodyLimit::disable());
 
         let make_svc = observe::make_service_with_task_local_storage!(app);

@@ -85,6 +85,7 @@ impl Api {
             infra::observe::mounting_solver(&name, &path);
             app = app
                 .nest(&path, router)
+                // axum's default body limit needs to be disabled to not have the default limit on top of our custom limit
                 .layer(axum::extract::DefaultBodyLimit::disable());
         }
 
