@@ -7,7 +7,7 @@
 use {
     crate::{
         boundary::{self, Order, OrderClass, OrderUid},
-        infra::{self, Database},
+        infra::{self},
     },
     std::{
         collections::HashMap,
@@ -15,24 +15,20 @@ use {
     },
 };
 
-#[derive(Debug)]
-pub struct Config {
-    pub db: Database,
-    pub policy: Policy,
-    pub fee_policy_skip_market_orders: bool,
-}
-
 /// Protocol fee policies with cache being updated on each auction.
 #[derive(Debug)]
 pub struct Policies {
     config: Config,
+    database: infra::Database,
+
     policies: Arc<RwLock<HashMap<OrderUid, Vec<Policy>>>>,
 }
 
 impl Policies {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, database: infra::Database) -> Self {
         Self {
             config,
+            database,
             policies: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -58,8 +54,7 @@ impl Policies {
 
         // read quotes for orders that don't have policies yet
         let quotes = self
-            .config
-            .db
+            .database
             .read_quotes(orders.iter().map(|order| &order.metadata.uid))
             .await?;
 
@@ -95,6 +90,12 @@ impl Policies {
 
         Ok(())
     }
+}
+
+#[derive(Debug)]
+pub struct Config {
+    pub policy: Policy,
+    pub fee_policy_skip_market_orders: bool,
 }
 
 #[derive(Debug, Copy, Clone)]

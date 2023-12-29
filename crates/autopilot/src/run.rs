@@ -13,7 +13,7 @@ use {
         domain,
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{self, blockchain, Database},
+        infra::{self, blockchain},
         protocol::{self},
         run_loop::RunLoop,
         shadow,
@@ -631,11 +631,13 @@ pub async fn run(args: Arguments) {
     let db = Arc::new(db);
     let ethrpc = ethrpc(&args.shared.node_url).await;
     let eth = ethereum(ethrpc).await;
-    let fee_policies = domain::fee::Policies::new(domain::fee::Config {
-        fee_policy_skip_market_orders: args.fee_policy.fee_policy_skip_market_orders,
-        policy: args.fee_policy.to_domain(),
-        db: Database::new(db.clone()),
-    });
+    let fee_policies = domain::fee::Policies::new(
+        domain::fee::Config {
+            fee_policy_skip_market_orders: args.fee_policy.fee_policy_skip_market_orders,
+            policy: args.fee_policy.to_domain(),
+        },
+        infra::Database::new(db.clone()),
+    );
     let run = RunLoop {
         eth,
         solvable_orders_cache,
