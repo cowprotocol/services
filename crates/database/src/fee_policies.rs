@@ -22,13 +22,6 @@ pub enum FeePolicyKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "PolicyKind", rename_all = "lowercase")]
-enum FeePolicyKindRow {
-    PriceImprovement,
-    Volume,
-}
-
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 struct FeePolicyRow {
     auction_id: AuctionId,
@@ -36,6 +29,13 @@ struct FeePolicyRow {
     kind: FeePolicyKindRow,
     price_improvement_factor: Option<f64>,
     volume_factor: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "PolicyKind", rename_all = "lowercase")]
+enum FeePolicyKindRow {
+    PriceImprovement,
+    Volume,
 }
 
 pub async fn insert(ex: &mut PgTransaction<'_>, fee_policy: FeePolicy) -> Result<(), sqlx::Error> {
