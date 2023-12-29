@@ -530,28 +530,6 @@ pub fn solve_request(
                             .collect()
                     };
                 let order_is_untouched = remaining_order.executed_amount.is_zero();
-                let fee_policy = match (
-                    fee_policy.price_improvement_factor,
-                    fee_policy.volume_factor,
-                ) {
-                    (Some(factor), volume_cap_factor) => Some(FeePolicy::QuoteDeviation {
-                        factor,
-                        volume_cap_factor,
-                    }),
-                    (None, Some(factor)) => Some(FeePolicy::Volume { factor }),
-                    (_, _) => None,
-                };
-
-                let fee_policies = match order.metadata.class {
-                    OrderClass::Market => vec![],
-                    OrderClass::Liquidity => vec![],
-                    // todo https://github.com/cowprotocol/services/issues/2092
-                    // skip protocol fee for limit orders with in-market price
-
-                    // todo https://github.com/cowprotocol/services/issues/2115
-                    // skip protocol fee for TWAP limit orders
-                    OrderClass::Limit(_) => fee_policy.map(|policy| vec![policy]).unwrap_or(vec![]),
-                };
                 solve::Order {
                     uid: order.metadata.uid,
                     sell_token: order.data.sell_token,
