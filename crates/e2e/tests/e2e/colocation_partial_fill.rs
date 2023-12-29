@@ -104,11 +104,7 @@ async fn test(web3: Web3) {
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        if order.metadata.class == OrderClass::Limit {
-            order.metadata.executed_fee_amount > U256::zero()
-        } else {
-            panic!("order is not a limit order");
-        }
+        order.metadata.executed_surplus_fee > U256::zero()
     };
     wait_for_condition(TIMEOUT, settlement_event_processed)
         .await

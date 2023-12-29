@@ -67,10 +67,6 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // subsidized one which we don't want.
         OrderClass::Limit | OrderClass::Market => full_fee_amount,
     };
-    let executed_fee_amount = match class {
-        OrderClass::Limit => &order.executed_surplus_fee,
-        _ => &order.sum_fee,
-    };
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
@@ -88,8 +84,10 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
             .context(
             "executed sell amount before fees does not fit in a u256",
         )?,
-        executed_fee_amount: big_decimal_to_u256(executed_fee_amount)
+        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
+            .context("executed surplus fee is not a valid u256")?,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,

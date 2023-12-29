@@ -289,6 +289,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             executed_sell_amount: Default::default(),
             executed_sell_amount_before_fees: Default::default(),
             executed_fee_amount: Default::default(),
+            executed_surplus_fee: Default::default(),
             invalidated: Default::default(),
             status: Default::default(),
             settlement_contract: Default::default(),

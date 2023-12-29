@@ -126,12 +126,7 @@ async fn test(web3: Web3) {
 
     let metadata_updated = || async {
         let order = services.get_order(&uid).await.unwrap();
-        let executed_fee_amount = if order.metadata.class == OrderClass::Limit {
-            order.metadata.executed_fee_amount
-        } else {
-            unreachable!()
-        };
-        !executed_fee_amount.is_zero()
+        !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
             && order.metadata.executed_sell_amount != Default::default()
     };
