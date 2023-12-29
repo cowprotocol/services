@@ -189,11 +189,8 @@ impl Solution {
                             sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
                             buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
                         };
-                        trades.push(
-                            fulfillment
-                                .with_protocol_fee(prices)
-                                .map(Trade::Fulfillment)?,
-                        );
+                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
                     }
                     order::Kind::Liquidity => {
                         trades.push(trade);
@@ -350,5 +347,5 @@ pub enum SolutionError {
     #[error("invalid clearing prices")]
     InvalidClearingPrices,
     #[error(transparent)]
-    FailedProtocolFee(#[from] fee::Error),
+    ProtocolFee(#[from] fee::Error),
 }

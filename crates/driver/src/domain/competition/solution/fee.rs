@@ -39,9 +39,14 @@ impl Fulfillment {
         let protocol_fee = self.protocol_fee(prices)?;
 
         // Increase the fee by the protocol fee
-        let fee = match self.raw_fee() {
-            Fee::Static => Fee::Static,
-            Fee::Dynamic(fee) => Fee::Dynamic((fee.0 + protocol_fee).into()),
+        let fee = match self.dynamic_fee() {
+            None => {
+                if !protocol_fee.is_zero() {
+                    return Err(Error::ProtocolFeeOnStaticOrder);
+                }
+                Fee::Static
+            }
+            Some(fee) => Fee::Dynamic((fee.0 + protocol_fee).into()),
         };
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
@@ -62,22 +67,27 @@ impl Fulfillment {
     }
 
     fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
+        // TODO: support multiple fee policies
+        if self.order().fee_policies.len() > 1 {
+            return Err(Error::MultipleFeePolicies);
+        }
+
         let mut protocol_fee = eth::U256::zero();
-        for fee_policy in self.order().fee_policies.iter() {
+        for fee_policy in self.order().fee_policies.clone() {
             match fee_policy {
                 FeePolicy::PriceImprovement {
                     factor,
                     max_volume_factor,
                 } => {
-                    let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
-                    let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
+                    let price_improvement_fee = self.price_improvement_fee(prices, factor)?;
+                    let max_volume_fee = self.volume_fee(prices, max_volume_factor)?;
                     // take the smaller of the two
                     protocol_fee = protocol_fee
                         .checked_add(std::cmp::min(price_improvement_fee, max_volume_fee))
                         .ok_or(Error::Overflow)?;
                 }
                 FeePolicy::Volume { factor } => {
-                    let fee = self.volume_fee(prices, *factor)?;
+                    let fee = self.volume_fee(prices, factor)?;
                     protocol_fee = protocol_fee.checked_add(fee).ok_or(Error::Overflow)?;
                 }
             }
@@ -93,10 +103,10 @@ impl Fulfillment {
         let sell_amount = self.order().sell.amount.0;
         let buy_amount = self.order().buy.amount.0;
         let executed = self.executed().0;
-        let surplus_fee = match self.raw_fee() {
-            Fee::Static => eth::U256::zero(),
-            Fee::Dynamic(fee) => fee.0,
-        };
+        let surplus_fee = self
+            .dynamic_fee()
+            .map(|fee| fee.0)
+            .ok_or(Error::ProtocolFeeOnStaticOrder)?;
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
@@ -158,10 +168,10 @@ impl Fulfillment {
 
     fn volume_fee(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
-        let surplus_fee = match self.raw_fee() {
-            Fee::Static => eth::U256::zero(),
-            Fee::Dynamic(fee) => fee.0,
-        };
+        let surplus_fee = self
+            .dynamic_fee()
+            .map(|fee| fee.0)
+            .ok_or(Error::ProtocolFeeOnStaticOrder)?;
         match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
@@ -200,6 +210,10 @@ pub struct ClearingPrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("orders with non solver determined gas cost fees are not supported")]
+    ProtocolFeeOnStaticOrder,
+    #[error("multiple fee policies are not supported yet")]
+    MultipleFeePolicies,
     #[error("overflow error while calculating protocol fee")]
     Overflow,
     #[error("division by zero error while calculating protocol fee")]

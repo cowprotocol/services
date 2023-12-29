@@ -108,10 +108,6 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                         "kind": "priceimprovement",
                         "factor": 0.5,
                         "maxVolumeFactor": 0.06,
-                    }),
-                    json!({
-                        "kind": "volume",
-                        "factor": 0.1,
                     })
                 ],
             },

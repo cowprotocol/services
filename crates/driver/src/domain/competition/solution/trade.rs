@@ -43,11 +43,11 @@ impl Fulfillment {
                 }),
             };
 
+            let executed_with_fee =
+                order::TargetAmount(executed.0.checked_add(fee.0).ok_or(InvalidExecutedAmount)?);
             match order.partial {
-                order::Partial::Yes { available } => {
-                    order::TargetAmount(executed.0 + fee.0) <= available
-                }
-                order::Partial::No => order::TargetAmount(executed.0 + fee.0) == order.target(),
+                order::Partial::Yes { available } => executed_with_fee <= available,
+                order::Partial::No => executed_with_fee == order.target(),
             }
         };
 
@@ -95,10 +95,12 @@ impl Fulfillment {
         }
     }
 
-    /// Returns the raw internal representation of the fee that contains
-    /// original source of the fee
-    pub fn raw_fee(&self) -> Fee {
-        self.fee
+    /// Returns the solver determined fee if it exists.
+    pub fn dynamic_fee(&self) -> Option<order::SellAmount> {
+        match self.fee {
+            Fee::Static => None,
+            Fee::Dynamic(fee) => Some(fee),
+        }
     }
 
     /// The effective amount that left the user's wallet including all fees.

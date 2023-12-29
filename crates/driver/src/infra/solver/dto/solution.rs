@@ -210,7 +210,7 @@ impl Solutions {
                     competition::solution::SolutionError::InvalidClearingPrices => {
                         super::Error("invalid clearing prices")
                     }
-                    competition::solution::SolutionError::FailedProtocolFee(_) => {
+                    competition::solution::SolutionError::ProtocolFee(_) => {
                         super::Error("failed protocol fee")
                     }
                 })
