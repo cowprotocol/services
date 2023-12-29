@@ -859,10 +859,10 @@ impl<'a> SolveOk<'a> {
             let u256 = |value: &serde_json::Value| {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
-            assert!(u256(trade.get("buyAmount").unwrap()) <= expected.quoted_order.buy);
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
             assert!(
                 u256(trade.get("sellAmount").unwrap())
-                    >= expected.quoted_order.sell + expected.quoted_order.order.user_fee
+                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
             );
         }
         self
