@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{simulator, Ethereum, Mempool},
+    super::{simulator, solver::Timeouts, Ethereum, Mempool},
     crate::{
         boundary,
         domain::{
@@ -18,6 +18,7 @@ use {
             eth::{self, Gas},
             mempools,
             quote::{self, Quote},
+            time::Deadline,
             Liquidity,
         },
         infra::solver,
@@ -363,6 +364,10 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
     }
+}
+
+pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
+    tracing::debug!(?deadline, ?timeouts, "computed deadline");
 }
 
 #[derive(Debug)]
