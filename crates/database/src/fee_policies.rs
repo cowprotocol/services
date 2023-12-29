@@ -32,7 +32,7 @@ struct FeePolicyRow {
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "PolicyKind", rename_all = "lowercase")]
+#[sqlx(type_name = "kind", rename_all = "lowercase")]
 enum FeePolicyKindRow {
     PriceImprovement,
     Volume,
