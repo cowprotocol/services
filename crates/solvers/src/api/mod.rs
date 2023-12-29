@@ -8,6 +8,8 @@ use {
 
 mod routes;
 
+const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
+
 pub struct Api {
     pub addr: SocketAddr,
     pub solver: Solver,
@@ -20,6 +22,9 @@ impl Api {
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> Result<(), hyper::Error> {
         let app = axum::Router::new()
+            .layer(tower::ServiceBuilder::new().layer(
+                tower_http::limit::RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT),
+            ))
             .route("/metrics", axum::routing::get(routes::metrics))
             .route("/healthz", axum::routing::get(routes::healthz))
             .route("/solve", axum::routing::post(routes::solve))
