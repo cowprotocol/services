@@ -34,7 +34,6 @@ pub mod order_quoting;
 pub mod order_validation;
 pub mod paraswap_api;
 pub mod price_estimation;
-pub mod rate_limiter;
 pub mod recent_block_cache;
 pub mod remaining_amounts;
 pub mod request_sharing;

@@ -1,7 +1,6 @@
 use std::fmt::Debug;
 
 pub mod baseline;
-pub mod dex;
 pub mod legacy;
 pub mod naive;
 

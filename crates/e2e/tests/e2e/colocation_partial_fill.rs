@@ -1,5 +1,9 @@
 use {
-    e2e::{setup::*, tx, tx_value},
+    e2e::{
+        setup::{colocation::SolverEngine, *},
+        tx,
+        tx_value,
+    },
     ethcontract::U256,
     model::{
         order::{OrderClass, OrderCreation, OrderKind},
@@ -42,11 +46,17 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(onchain.contracts(), &solver_endpoint, &solver);
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
 
     let services = Services::new(onchain.contracts()).await;
     services.start_autopilot(vec![
-        "--enable-colocation=true".to_string(),
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
     services
@@ -114,4 +124,6 @@ async fn test(web3: Web3) {
     let competition = services.get_solver_competition(tx_hash).await.unwrap();
     assert!(!competition.common.solutions.is_empty());
     assert!(competition.common.auction.orders.contains(&uid));
+    let latest_competition = services.get_latest_solver_competition().await.unwrap();
+    assert_eq!(latest_competition, competition);
 }

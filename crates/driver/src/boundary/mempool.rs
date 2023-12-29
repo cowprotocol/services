@@ -61,6 +61,11 @@ impl Kind {
     }
 }
 
+/// Don't submit transactions with high revert risk (i.e. transactions
+/// that interact with on-chain AMMs) to the public mempool.
+/// This can be enabled to avoid MEV when private transaction
+/// submission strategies are available. If private submission strategies
+/// are not available, revert protection is always disabled.
 #[derive(Debug, Clone, Copy)]
 pub enum RevertProtection {
     Enabled,
@@ -145,11 +150,15 @@ impl Mempool {
             inner: self.gas_price_estimator.as_ref(),
             max_fee_per_gas: max_fee_per_gas.min(self.config.gas_price_cap),
             additional_tip_percentage_of_max_fee: self.config.additional_tip_percentage,
-            max_additional_tip: match self.config.kind {
-                Kind::Public(_) => 0.,
-                Kind::MEVBlocker {
-                    max_additional_tip, ..
-                } => max_additional_tip,
+            max_additional_tip: match (&self.config.kind, settlement.boundary.revertable()) {
+                (
+                    Kind::MEVBlocker {
+                        max_additional_tip, ..
+                    },
+                    true,
+                ) => *max_additional_tip,
+                (Kind::MEVBlocker { .. }, false) => 0.,
+                (Kind::Public(_), _) => 0.,
             },
         };
         let use_soft_cancellations = match self.config.kind {

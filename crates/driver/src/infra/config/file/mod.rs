@@ -1,14 +1,14 @@
+pub use load::load;
 use {
     crate::{domain::eth, util::serialize},
     reqwest::Url,
     serde::Deserialize,
     serde_with::serde_as,
     solver::solver::Arn,
+    std::time::Duration,
 };
 
 mod load;
-
-pub use load::load;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -67,19 +67,19 @@ struct SubmissionConfig {
     gas_price_cap: f64,
 
     /// The target confirmation time for settlement transactions used
-    /// to estimate gas price. Specified in seconds.
-    #[serde(default = "default_target_confirm_time_secs")]
-    target_confirm_time_secs: u64,
+    /// to estimate gas price.
+    #[serde(with = "humantime_serde", default = "default_target_confirm_time")]
+    target_confirm_time: Duration,
 
     /// Amount of time to wait before retrying to submit the tx to
-    /// the ethereum network. Specified in seconds.
-    #[serde(default = "default_retry_interval_secs")]
-    retry_interval_secs: u64,
+    /// the ethereum network.
+    #[serde(with = "humantime_serde", default = "default_retry_interval")]
+    retry_interval: Duration,
 
     /// The maximum time to spend trying to settle a transaction through the
-    /// Ethereum network before giving up. Specified in seconds.
-    #[serde(default = "default_max_confirm_time_secs")]
-    max_confirm_time_secs: u64,
+    /// Ethereum network before giving up.
+    #[serde(with = "humantime_serde", default = "default_max_confirm_time")]
+    max_confirm_time: Duration,
 
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
@@ -91,15 +91,7 @@ struct SubmissionConfig {
 #[serde(tag = "mempool")]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Mempool {
-    #[serde(rename_all = "kebab-case")]
-    Public {
-        /// Don't submit transactions with high revert risk (i.e. transactions
-        /// that interact with on-chain AMMs) to the public mempool.
-        /// This can be enabled to avoid MEV when private transaction
-        /// submission strategies are available.
-        #[serde(default)]
-        revert_protection: bool,
-    },
+    Public,
     #[serde(rename_all = "kebab-case")]
     MevBlocker {
         /// The MEVBlocker URL to use.
@@ -127,16 +119,16 @@ fn default_gas_price_cap() -> f64 {
     1e12
 }
 
-fn default_target_confirm_time_secs() -> u64 {
-    30
+fn default_target_confirm_time() -> Duration {
+    Duration::from_secs(30)
 }
 
-fn default_retry_interval_secs() -> u64 {
-    2
+fn default_retry_interval() -> Duration {
+    Duration::from_secs(2)
 }
 
-fn default_max_confirm_time_secs() -> u64 {
-    120
+fn default_max_confirm_time() -> Duration {
+    Duration::from_secs(120)
 }
 
 /// 3 gwei
@@ -148,8 +140,8 @@ fn default_soft_cancellations_flag() -> bool {
     false
 }
 
-pub fn default_http_time_buffer_milliseconds() -> u64 {
-    500
+pub fn default_http_time_buffer() -> Duration {
+    Duration::from_millis(500)
 }
 
 pub fn default_solving_share_of_deadline() -> f64 {
@@ -168,13 +160,8 @@ struct SolverConfig {
     /// running behind a single driver.
     name: String,
 
-    /// The relative slippage factor allowed by the solver.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    relative_slippage: bigdecimal::BigDecimal,
-
-    /// The absolute slippage allowed by the solver.
-    #[serde_as(as = "Option<serialize::U256>")]
-    absolute_slippage: Option<eth::U256>,
+    #[serde(flatten)]
+    slippage: Slippage,
 
     /// Whether or not to skip fetching liquidity for this solver.
     #[serde(default)]
@@ -184,7 +171,7 @@ struct SolverConfig {
     account: Account,
 
     /// Timeout configuration for the solver.
-    #[serde(default)]
+    #[serde(default, flatten)]
     timeouts: Timeouts,
 }
 
@@ -204,26 +191,35 @@ enum Account {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct Timeouts {
-    /// Maximum time allocated for http request/reponse to propagate through
-    /// network.
-    http_time_buffer_milliseconds: u64,
+    /// Absolute time allocated from the total auction deadline for
+    /// request/response roundtrip between autopilot and driver.
+    #[serde(with = "humantime_serde", default = "default_http_time_buffer")]
+    http_time_buffer: Duration,
 
     /// Maximum time allocated for solver engines to return the solutions back
-    /// to the driver, in percentage of total driver deadline.
-    /// Expected value [0, 1]
+    /// to the driver, in percentage of total driver deadline (after network
+    /// buffer). Remaining time is spent on encoding and postprocessing the
+    /// returned solutions. Expected value [0, 1]
+    #[serde(default = "default_solving_share_of_deadline")]
     solving_share_of_deadline: f64,
 }
 
-impl Default for Timeouts {
-    fn default() -> Self {
-        Self {
-            http_time_buffer_milliseconds: default_http_time_buffer_milliseconds(),
-            solving_share_of_deadline: default_solving_share_of_deadline(),
-        }
-    }
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Slippage {
+    /// The relative slippage factor allowed by the solver.
+    #[serde(rename = "relative-slippage")]
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    relative: bigdecimal::BigDecimal,
+
+    /// The absolute slippage allowed by the solver.
+    #[serde(rename = "absolute-slippage")]
+    #[serde_as(as = "Option<serialize::U256>")]
+    absolute: Option<eth::U256>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -289,6 +285,13 @@ struct LiquidityConfig {
     /// Liquidity provided by a Balancer V2 compatible contract.
     #[serde(default)]
     balancer_v2: Vec<BalancerV2Config>,
+
+    /// Liquidity provided by 0x API.
+    #[serde(default)]
+    zeroex: Option<ZeroExConfig>,
+
+    /// The base URL used to connect to subgraph clients.
+    graph_api_base_url: Option<Url>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -308,7 +311,8 @@ enum UniswapV2Config {
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
         /// again.
-        missing_pool_cache_time_seconds: u64,
+        #[serde(with = "humantime_serde")]
+        missing_pool_cache_time: Duration,
     },
 }
 
@@ -320,6 +324,7 @@ enum UniswapV2Preset {
     Honeyswap,
     Baoswap,
     PancakeSwap,
+    TestnetUniswapV2,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -339,7 +344,8 @@ enum SwaprConfig {
         /// How long liquidity should not be fetched for a token pair that
         /// didn't return useful liquidity before allowing to fetch it
         /// again.
-        missing_pool_cache_time_seconds: u64,
+        #[serde(with = "humantime_serde")]
+        missing_pool_cache_time: Duration,
     },
 }
 
@@ -434,4 +440,22 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct ZeroExConfig {
+    #[serde(default = "default_zeroex_base_url")]
+    pub base_url: String,
+    pub api_key: Option<String>,
+    #[serde(with = "humantime_serde", default = "default_http_timeout")]
+    pub http_timeout: Duration,
+}
+
+fn default_zeroex_base_url() -> String {
+    "https://api.0x.org/".to_string()
+}
+
+fn default_http_timeout() -> Duration {
+    Duration::from_secs(10)
 }

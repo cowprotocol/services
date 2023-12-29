@@ -5,8 +5,9 @@ use {
         PriceEstimating,
         Query,
     },
-    crate::{rate_limiter::RateLimiter, trade_finding::external::ExternalTradeFinder},
+    crate::trade_finding::external::ExternalTradeFinder,
     ethrpc::current_block::CurrentBlockStream,
+    rate_limit::RateLimiter,
     reqwest::{Client, Url},
     std::sync::Arc,
 };

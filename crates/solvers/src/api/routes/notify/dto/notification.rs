@@ -1,6 +1,10 @@
 use {
     crate::{
-        domain::{auction, eth, notification},
+        domain::{
+            auction,
+            eth,
+            notification::{self},
+        },
         util::serialize,
     },
     ethereum_types::{H160, H256, U256},
@@ -22,7 +26,11 @@ impl Notification {
             kind: match &self.kind {
                 Kind::Timeout => notification::Kind::Timeout,
                 Kind::EmptySolution => notification::Kind::EmptySolution,
-                Kind::SimulationFailed(block, tx) => notification::Kind::SimulationFailed(
+                Kind::SimulationFailed {
+                    block,
+                    tx,
+                    succeeded_once,
+                } => notification::Kind::SimulationFailed(
                     *block,
                     eth::Tx {
                         from: tx.from.into(),
@@ -31,8 +39,9 @@ impl Notification {
                         value: tx.value.into(),
                         access_list: tx.access_list.clone(),
                     },
+                    *succeeded_once,
                 ),
-                Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive { quality, gas_cost }) => {
+                Kind::ObjectiveValueNonPositive { quality, gas_cost } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ObjectiveValueNonPositive(
                             (*quality).into(),
@@ -40,10 +49,10 @@ impl Notification {
                         ),
                     )
                 }
-                Kind::ScoringFailed(ScoreKind::ZeroScore) => {
+                Kind::ZeroScore => {
                     notification::Kind::ScoringFailed(notification::ScoreKind::ZeroScore)
                 }
-                Kind::ScoringFailed(ScoreKind::ScoreHigherThanQuality { score, quality }) => {
+                Kind::ScoreHigherThanQuality { score, quality } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::ScoreHigherThanQuality(
                             (*score).into(),
@@ -51,7 +60,7 @@ impl Notification {
                         ),
                     )
                 }
-                Kind::ScoringFailed(ScoreKind::SuccessProbabilityOutOfRange { probability }) => {
+                Kind::SuccessProbabilityOutOfRange { probability } => {
                     notification::Kind::ScoringFailed(
                         notification::ScoreKind::SuccessProbabilityOutOfRange(
                             (*probability).into(),
@@ -71,16 +80,17 @@ impl Notification {
                     notification::Kind::SolverAccountInsufficientBalance(eth::Ether(*required))
                 }
                 Kind::DuplicatedSolutionId => notification::Kind::DuplicatedSolutionId,
-                Kind::Settled(kind) => notification::Kind::Settled(match kind {
-                    Settlement::Success { transaction } => {
-                        notification::Settlement::Success(*transaction)
-                    }
-                    Settlement::Revert { transaction } => {
-                        notification::Settlement::Revert(*transaction)
-                    }
-                    Settlement::SimulationRevert => notification::Settlement::SimulationRevert,
-                    Settlement::Fail => notification::Settlement::Fail,
-                }),
+                Kind::Success { transaction } => {
+                    notification::Kind::Settled(notification::Settlement::Success(*transaction))
+                }
+                Kind::Revert { transaction } => {
+                    notification::Kind::Settled(notification::Settlement::Revert(*transaction))
+                }
+                Kind::DriverError { reason } => notification::Kind::DriverError(reason.clone()),
+                Kind::Cancelled => {
+                    notification::Kind::Settled(notification::Settlement::SimulationRevert)
+                }
+                Kind::Fail => notification::Kind::Settled(notification::Settlement::Fail),
             },
         }
     }
@@ -93,47 +103,23 @@ pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
     solution_id: Option<u64>,
+    #[serde(flatten)]
     kind: Kind,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Tx),
-    ScoringFailed(ScoreKind),
-    NonBufferableTokensUsed {
-        tokens: BTreeSet<H160>,
+    #[serde(rename_all = "camelCase")]
+    SimulationFailed {
+        block: BlockNo,
+        tx: Tx,
+        succeeded_once: bool,
     },
-    SolverAccountInsufficientBalance {
-        #[serde_as(as = "serialize::U256")]
-        required: U256,
-    },
-    Settled(Settlement),
-}
-
-type BlockNo = u64;
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Tx {
-    from: H160,
-    to: H160,
-    #[serde_as(as = "serialize::Hex")]
-    input: Vec<u8>,
-    #[serde_as(as = "serialize::U256")]
-    value: U256,
-    access_list: AccessList,
-}
-
-#[serde_as]
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ScoreKind {
     ZeroScore,
     ScoreHigherThanQuality {
         #[serde_as(as = "serialize::U256")]
@@ -151,14 +137,37 @@ pub enum ScoreKind {
         #[serde_as(as = "serialize::U256")]
         gas_cost: U256,
     },
+    NonBufferableTokensUsed {
+        tokens: BTreeSet<H160>,
+    },
+    SolverAccountInsufficientBalance {
+        #[serde_as(as = "serialize::U256")]
+        required: U256,
+    },
+    Success {
+        transaction: H256,
+    },
+    Revert {
+        transaction: H256,
+    },
+    DriverError {
+        reason: String,
+    },
+    Cancelled,
+    Fail,
 }
+
+type BlockNo = u64;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Settlement {
-    Success { transaction: H256 },
-    Revert { transaction: H256 },
-    SimulationRevert,
-    Fail,
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Tx {
+    from: H160,
+    to: H160,
+    #[serde_as(as = "serialize::Hex")]
+    input: Vec<u8>,
+    #[serde_as(as = "serialize::U256")]
+    value: U256,
+    access_list: AccessList,
 }

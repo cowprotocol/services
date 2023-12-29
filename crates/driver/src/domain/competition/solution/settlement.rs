@@ -303,12 +303,33 @@ impl Settlement {
         self.boundary.solver
     }
 
-    /// The settled user orders.
-    pub fn orders(&self) -> HashSet<order::Uid> {
+    /// The settled user orders with their in/out amounts.
+    pub fn orders(&self) -> HashMap<order::Uid, competition::Amounts> {
         self.solutions
             .values()
-            .flat_map(|solution| solution.user_trades().map(|trade| trade.order().uid))
-            .collect()
+            .fold(Default::default(), |mut acc, solution| {
+                for trade in solution.user_trades() {
+                    let order = acc.entry(trade.order().uid).or_default();
+                    order.sell = trade.sell_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                        // This should never happen, returning 0 is better than panicking, but we
+                        // should still alert.
+                        tracing::error!(?trade, prices=?solution.prices, "could not compute sell_amount");
+                        0.into()
+                    });
+                    order.buy = trade.buy_amount(&solution.prices, solution.weth).unwrap_or_else(|| {
+                        // This should never happen, returning 0 is better than panicking, but we
+                        // should still alert.
+                        tracing::error!(?trade, prices=?solution.prices, "could not compute buy_amount");
+                        0.into()
+                    });
+                }
+                acc
+            })
+    }
+
+    /// The uniform price vector this settlement proposes
+    pub fn prices(&self) -> HashMap<eth::TokenAddress, eth::TokenAmount> {
+        self.boundary.clearing_prices()
     }
 
     /// Settlements have valid notify ID only if they are originated from a

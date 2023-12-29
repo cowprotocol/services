@@ -19,19 +19,23 @@ async-trait = "0.1"
 axum = "0.6"
 bigdecimal = "0.3"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
+derivative = { workspace = true }
 ethabi = "18.0"
 ethereum-types = "0.14"
 ethrpc = { path = "../ethrpc" }
 futures = "0.3"
 hex = "0.4"
 hex-literal = "0.4"
+humantime = { workspace = true }
+humantime-serde = { workspace = true }
 hyper = "0.14"
+lazy_static = { workspace = true }
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.11"
 num = "0.4"
 number = { path = "../number" }
 prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage", tag = "v0.4.0" }
+prometheus-metric-storage = { workspace = true }
 rand = "0.8"
 reqwest = "0.11"
 serde = "1.0"
