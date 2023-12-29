@@ -16,8 +16,9 @@ use {
             solve::{self},
         },
         protocol::{self, fee},
-        run_loop,
+        run_loop::{self, observe},
     },
+    ::observe::metrics,
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
         order::OrderClass,
@@ -72,11 +73,14 @@ impl RunLoop {
     }
 
     pub async fn run_forever(mut self) -> ! {
+        let mut previous = None;
         loop {
             let Some(AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            observe::log_auction_delta(id, &previous, &auction);
+            previous = Some(auction.clone());
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))
@@ -330,6 +334,6 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }

@@ -1,5 +1,6 @@
 use {
     crate::infra::{
+        observe,
         solver::Timeouts,
         {self},
     },
@@ -20,7 +21,7 @@ pub struct Deadline {
 impl Deadline {
     pub fn new(deadline: chrono::DateTime<chrono::Utc>, timeouts: Timeouts) -> Self {
         let deadline = deadline - timeouts.http_delay;
-        Self {
+        let deadline = Self {
             driver: deadline,
             solvers: {
                 let now = infra::time::now();
@@ -28,7 +29,9 @@ impl Deadline {
                 now + duration * (timeouts.solving_share_of_deadline.get() * 100.0).round() as i32
                     / 100
             },
-        }
+        };
+        observe::deadline(&deadline, &timeouts);
+        deadline
     }
 
     /// Remaining time until the deadline for driver to return solution to
