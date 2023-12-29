@@ -83,7 +83,9 @@ impl Api {
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
-            app = app.nest(&path, router);
+            app = app
+                .nest(&path, router)
+                .layer(axum::extract::DefaultBodyLimit::disable());
         }
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
