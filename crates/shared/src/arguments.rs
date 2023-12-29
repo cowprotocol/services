@@ -5,7 +5,6 @@ use {
     crate::{
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
-        rate_limiter::RateLimitingStrategy,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -18,7 +17,7 @@ use {
     ethcontract::{H160, H256, U256},
     std::{
         fmt::{self, Display, Formatter},
-        num::{NonZeroU64, ParseFloatError},
+        num::NonZeroU64,
         str::FromStr,
         time::Duration,
     },
@@ -89,29 +88,29 @@ pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
-    pub eip1271_onchain_quote_validity_seconds: Duration,
+    pub eip1271_onchain_quote_validity: Duration,
 
     /// The time period an PRESIGN-quote request is valid.
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
-    pub presign_onchain_quote_validity_seconds: Duration,
+    pub presign_onchain_quote_validity: Duration,
 
     /// The time period a regular offchain-quote request (ethsign/eip712) is
     /// valid.
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
-    pub standard_offchain_quote_validity_seconds: Duration,
+    pub standard_offchain_quote_validity: Duration,
 
     /// A flat fee discount denominated in the network's native token (i.e.
     /// Ether for Mainnet).
@@ -162,6 +161,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
+    /// The base URL used to connect to subgraph clients.
+    #[clap(long, env, default_value = "https://api.thegraph.com/subgraphs/name/")]
+    pub graph_api_base_url: Url,
+
     /// An Ethereum node URL that supports `eth_call`s with state overrides to
     /// be used for simulations.
     #[clap(long, env)]
@@ -177,7 +180,6 @@ pub struct Arguments {
     /// a previous one fails. Individual estimators support different
     /// networks. `EthGasStation`: supports mainnet.
     /// `GasNow`: supports mainnet.
-    /// `GnosisSafe`: supports mainnet and goerli.
     /// `Web3`: supports every network.
     /// `Native`: supports every network.
     #[clap(
@@ -228,8 +230,8 @@ pub struct Arguments {
     pub pool_cache_maximum_retries: u32,
 
     /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
-    pub pool_cache_delay_between_retries_seconds: Duration,
+    #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
+    pub pool_cache_delay_between_retries: Duration,
 
     /// The ParaSwap API base url to use.
     #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
@@ -293,8 +295,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
 
@@ -302,8 +304,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: usize,
 
-    /// The time in seconds between new blocks on the network.
-    #[clap(long, env, value_parser = duration_from_seconds)]
+    /// The time between new blocks on the network.
+    #[clap(long, env, value_parser = humantime::parse_duration)]
     pub network_block_interval: Option<Duration>,
 
     /// Override address of the settlement contract.
@@ -372,12 +374,12 @@ impl Display for OrderQuotingArguments {
         writeln!(
             f,
             "eip1271_onchain_quote_validity_second: {:?}",
-            self.eip1271_onchain_quote_validity_seconds
+            self.eip1271_onchain_quote_validity
         )?;
         writeln!(
             f,
             "presign_onchain_quote_validity_second: {:?}",
-            self.presign_onchain_quote_validity_seconds
+            self.presign_onchain_quote_validity
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
@@ -415,6 +417,7 @@ impl Display for Arguments {
             self.logging.log_stderr_threshold
         )?;
         writeln!(f, "node_url: {}", self.node_url)?;
+        writeln!(f, "graph_api_base_url: {}", self.graph_api_base_url)?;
         display_option(f, "chain_id", &self.chain_id)?;
         display_option(f, "simulation_node_url", &self.simulation_node_url)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
@@ -434,8 +437,8 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {:?}",
-            self.pool_cache_delay_between_retries_seconds
+            "pool_cache_delay_between_retries: {:?}",
+            self.pool_cache_delay_between_retries
         )?;
         display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
@@ -517,10 +520,6 @@ pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     Ok(percentage_factor)
 }
 
-pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f64(s.parse()?))
-}
-
 pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
     let in_ether = s.parse::<BigDecimal>()?;
     let base = BigDecimal::new(1.into(), -18);
@@ -564,27 +563,6 @@ impl FromStr for LegacySolver {
             address: address.parse()?,
             use_liquidity: use_liquidity.parse()?,
         })
-    }
-}
-
-impl FromStr for RateLimitingStrategy {
-    type Err = anyhow::Error;
-
-    fn from_str(config: &str) -> Result<Self> {
-        let mut parts = config.split(',');
-        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
-        let min_back_off = parts.next().context("missing min_back_off")?;
-        let max_back_off = parts.next().context("missing max_back_off")?;
-        ensure!(
-            parts.next().is_none(),
-            "extraneous rate limiting parameters"
-        );
-        let back_off_growth_factor: f64 = back_off_growth_factor
-            .parse()
-            .context("parsing back_off_growth_factor")?;
-        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
-        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
 

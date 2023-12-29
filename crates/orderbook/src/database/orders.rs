@@ -569,7 +569,6 @@ mod tests {
             onchain_user: None,
             onchain_placement_error: None,
             executed_surplus_fee: Default::default(),
-            executed_solver_fee: Default::default(),
             full_app_data: Default::default(),
         };
 

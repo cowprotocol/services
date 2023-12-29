@@ -31,8 +31,7 @@ use {
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
         oneinch_api::OneInchClient,
         paraswap_api::DefaultParaswapApi,
-        price_estimation::native::NativePriceEstimating,
-        rate_limiter::RateLimiter,
+        price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
         sources::{
             balancer_v2::BalancerPoolFetching,
             uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
@@ -46,6 +45,7 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     gas_estimation::GasPriceEstimating,
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::RateLimiter,
     reqwest::Url,
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
 };
@@ -336,9 +336,14 @@ impl<'a> PriceEstimatorFactory<'a> {
     pub fn price_estimator(
         &mut self,
         sources: &[PriceEstimatorSource],
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.optimal)?;
-        let competition_estimator = CompetitionEstimator::new(vec![estimators]);
+        let competition_estimator = CompetitionEstimator::new(
+            vec![estimators],
+            PriceRanking::BestBangForBuck { native, gas },
+        );
         Ok(Arc::new(self.sanitized(Arc::new(competition_estimator))))
     }
 
@@ -346,12 +351,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         &mut self,
         sources: &[PriceEstimatorSource],
         fast_price_estimation_results_required: NonZeroUsize,
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
         Ok(Arc::new(self.sanitized(Arc::new(
             RacingCompetitionEstimator::new(
                 vec![estimators],
                 fast_price_estimation_results_required,
+                PriceRanking::BestBangForBuck { native, gas },
             ),
         ))))
     }
@@ -363,7 +371,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
-            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
@@ -377,13 +385,17 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect::<Result<Vec<Vec<_>>>>()?;
 
-        let competition_estimator = RacingCompetitionEstimator::new(estimators, results_required);
+        let competition_estimator = RacingCompetitionEstimator::new(
+            estimators,
+            results_required,
+            PriceRanking::MaxOutAmount,
+        );
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
-            self.args.native_price_cache_max_age_secs,
-            self.args.native_price_cache_refresh_secs,
+            self.args.native_price_cache_max_age,
+            self.args.native_price_cache_refresh,
             Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time_secs,
+            self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)

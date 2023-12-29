@@ -209,6 +209,7 @@ impl SettlementRanker {
                                 transaction: error.simulation.transaction.clone(),
                                 error: error.error.to_string(),
                             },
+                            false,
                         )),
                     );
                     Some((solver, Rating::Err(error)))

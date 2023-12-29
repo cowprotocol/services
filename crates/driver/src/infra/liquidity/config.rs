@@ -1,6 +1,8 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
+    derivative::Derivative,
     hex_literal::hex,
+    reqwest::Url,
     std::{collections::HashSet, time::Duration},
 };
 
@@ -26,6 +28,9 @@ pub struct Config {
     /// The collection of Balancer V2 compatible exchanges to fetch liquidity
     /// for.
     pub balancer_v2: Vec<BalancerV2>,
+
+    /// 0x liquidity fetcher.
+    pub zeroex: Option<ZeroEx>,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.
@@ -92,6 +97,20 @@ impl UniswapV2 {
             missing_pool_cache_time: Duration::from_secs(60 * 60),
         })
     }
+
+    /// Returns the liquidity configuration for liquidity sources only used on
+    /// test networks.
+    pub fn testnet_uniswapv2(network: &eth::NetworkId) -> Option<Self> {
+        Some(Self {
+            router: deployment_address(
+                contracts::TestnetUniswapV2Router02::raw_contract(),
+                network,
+            )?,
+            pool_code: hex!("0efd7612822d579e24a8851501d8c2ad854264a1050e3dfcee8afcca08f80a86")
+                .into(),
+            missing_pool_cache_time: Duration::from_secs(60 * 60),
+        })
+    }
 }
 
 /// Swapr (Uniswap V2 clone with a twist) liquidity fetching options.
@@ -121,22 +140,26 @@ impl Swapr {
 }
 
 /// Uniswap V3 liquidity fetching options.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct UniswapV3 {
     /// The address of the Uniswap V3 compatible router contract.
     pub router: eth::ContractAddress,
 
     /// How many pools should be initialized during start up.
     pub max_pools_to_initialize: usize,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl UniswapV3 {
     /// Returns the liquidity configuration for Uniswap V3.
     #[allow(clippy::self_named_constructors)]
-    pub fn uniswap_v3(network: &eth::NetworkId) -> Option<Self> {
+    pub fn uniswap_v3(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         Some(Self {
             router: deployment_address(contracts::UniswapV3SwapRouter::raw_contract(), network)?,
             max_pools_to_initialize: 100,
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
 }
@@ -168,12 +191,15 @@ pub struct BalancerV2 {
     /// pools to get "bricked". This configuration allows those pools to be
     /// ignored.
     pub pool_deny_list: Vec<eth::H256>,
+
+    /// The base URL used to connect to subgraph clients.
+    pub graph_api_base_url: Url,
 }
 
 impl BalancerV2 {
     /// Returns the liquidity configuration for Balancer V2.
     #[allow(clippy::self_named_constructors)]
-    pub fn balancer_v2(network: &eth::NetworkId) -> Option<Self> {
+    pub fn balancer_v2(graph_api_base_url: &Url, network: &eth::NetworkId) -> Option<Self> {
         let factory_addresses =
             |contracts: &[&ethcontract::Contract]| -> Vec<eth::ContractAddress> {
                 contracts
@@ -205,6 +231,17 @@ impl BalancerV2 {
                 contracts::BalancerV2ComposableStablePoolFactoryV5::raw_contract(),
             ]),
             pool_deny_list: Vec::new(),
+            graph_api_base_url: graph_api_base_url.clone(),
         })
     }
+}
+
+/// ZeroEx liquidity fetching options.
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct ZeroEx {
+    pub base_url: String,
+    #[derivative(Debug = "ignore")]
+    pub api_key: Option<String>,
+    pub http_timeout: Duration,
 }

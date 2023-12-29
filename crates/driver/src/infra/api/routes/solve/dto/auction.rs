@@ -119,12 +119,12 @@ impl Auction {
                         .fee_policies
                         .into_iter()
                         .map(|policy| match policy {
-                            FeePolicy::QuoteDeviation {
+                            FeePolicy::PriceImprovement {
                                 factor,
-                                volume_cap_factor,
-                            } => competition::order::FeePolicy::QuoteDeviation {
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::PriceImprovement {
                                 factor,
-                                volume_cap_factor,
+                                max_volume_factor,
                             },
                             FeePolicy::Volume { factor } => {
                                 competition::order::FeePolicy::Volume { factor }
@@ -306,8 +306,10 @@ enum Class {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "lowercase", tag = "kind", deny_unknown_fields)]
 enum FeePolicy {
-    QuoteDeviation { factor: f64, volume_cap_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }

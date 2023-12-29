@@ -7,7 +7,7 @@ use {
     ethcontract::{Bytes, H160},
     model::{
         auction::AuctionId,
-        order::{Interactions, OrderData, OrderUid},
+        order::{OrderData, OrderUid},
         ratio_as_decimal,
         signature::Signature,
     },
@@ -347,8 +347,6 @@ pub struct NativeLiquidityOrder {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
-    #[serde(default)]
-    pub interactions: Interactions,
 }
 
 #[serde_as]
@@ -422,6 +420,8 @@ pub enum AuctionResult {
     SubmittedOnchain(SubmissionResult),
 }
 
+type SimulationSucceededAtLeastOnce = bool;
+
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -450,7 +450,7 @@ pub enum SolverRejectionReason {
 
     /// The solution didn't pass simulation. Includes all data needed to
     /// re-create simulation locally
-    SimulationFailure(TransactionWithError),
+    SimulationFailure(TransactionWithError, SimulationSucceededAtLeastOnce),
 
     /// The solution doesn't have a positive score. Currently this can happen
     /// only if the objective value is negative.
@@ -488,6 +488,9 @@ pub enum SolverRejectionReason {
 
     /// Solution received from solver engine don't have unique id.
     DuplicatedSolutionId(u64),
+
+    /// Some aspect of the driver logic failed.
+    Driver(String),
 }
 
 #[derive(Debug, Serialize)]
@@ -1164,7 +1167,6 @@ mod tests {
                         ..Default::default()
                     },
                     signature: Signature::Eip1271(vec![1, 2, 3, 4]),
-                    interactions: Default::default(),
                 },
                 exec_sell_amount: 50.into(),
                 exec_buy_amount: 51.into(),

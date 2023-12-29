@@ -269,7 +269,7 @@ pub async fn run(args: Arguments) {
         number_of_entries_to_auto_update: args.pool_cache_lru_size,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries,
     };
     let pool_fetcher = Arc::new(
         PoolCache::new(
@@ -291,6 +291,7 @@ pub async fn run(args: Arguments) {
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         match BalancerPoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             block_retriever.clone(),
             token_info_fetcher.clone(),
@@ -319,6 +320,7 @@ pub async fn run(args: Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             web3.clone(),
             http_factory.create(),
@@ -393,23 +395,6 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let price_estimator = price_estimator_factory
-        .price_estimator(&PriceEstimatorSource::for_args(
-            args.order_quoting.price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
-        .unwrap();
-    let fast_price_estimator = price_estimator_factory
-        .fast_price_estimator(
-            &PriceEstimatorSource::for_args(
-                args.order_quoting.price_estimators.as_slice(),
-                &args.order_quoting.price_estimation_drivers,
-                &args.order_quoting.price_estimation_legacy_solvers,
-            ),
-            args.fast_price_estimation_results_required,
-        )
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
@@ -419,6 +404,29 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             args.fast_price_estimation_results_required,
+        )
+        .unwrap();
+    let price_estimator = price_estimator_factory
+        .price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+        )
+        .unwrap();
+    let fast_price_estimator = price_estimator_factory
+        .fast_price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            args.fast_price_estimation_results_required,
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 
@@ -454,15 +462,15 @@ pub async fn run(args: Arguments) {
             Arc::new(postgres.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.eip1271_onchain_quote_validity_seconds,
+                    args.order_quoting.eip1271_onchain_quote_validity,
                 )
                 .unwrap(),
                 presign_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.presign_onchain_quote_validity_seconds,
+                    args.order_quoting.presign_onchain_quote_validity,
                 )
                 .unwrap(),
                 standard_quote: chrono::Duration::from_std(
-                    args.order_quoting.standard_offchain_quote_validity_seconds,
+                    args.order_quoting.standard_offchain_quote_validity,
                 )
                 .unwrap(),
             },

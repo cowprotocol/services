@@ -394,17 +394,6 @@ fn to_domain_solution(
         trades.push(solution::Trade::Jit(solution::JitTrade {
             order: order::JitOrder {
                 owner: jit.order.from,
-                pre_interactions: jit
-                    .order
-                    .interactions
-                    .pre
-                    .iter()
-                    .map(|i| order::Interaction {
-                        target: i.target,
-                        value: eth::Ether(i.value),
-                        calldata: i.call_data.clone(),
-                    })
-                    .collect(),
                 signature: jit.order.signature.clone().into(),
                 sell: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.sell_token),
@@ -599,22 +588,25 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             AuctionResult::Rejected(SolverRejectionReason::RunError(SolverRunError::Timeout))
         }
         Kind::EmptySolution => AuctionResult::Rejected(SolverRejectionReason::NoUserOrders),
-        Kind::SimulationFailed(block_number, tx) => AuctionResult::Rejected(
-            SolverRejectionReason::SimulationFailure(TransactionWithError {
-                error: "".to_string(),
-                transaction: SimulatedTransaction {
-                    from: tx.from.into(),
-                    to: tx.to.into(),
-                    data: tx.input.clone().into(),
-                    internalization: InternalizationStrategy::Unknown,
-                    block_number: *block_number,
-                    tx_index: Default::default(),
-                    access_list: Default::default(),
-                    max_fee_per_gas: Default::default(),
-                    max_priority_fee_per_gas: Default::default(),
+        Kind::SimulationFailed(block_number, tx, succeeded_at_least_once) => {
+            AuctionResult::Rejected(SolverRejectionReason::SimulationFailure(
+                TransactionWithError {
+                    error: "".to_string(),
+                    transaction: SimulatedTransaction {
+                        from: tx.from.into(),
+                        to: tx.to.into(),
+                        data: tx.input.clone().into(),
+                        internalization: InternalizationStrategy::Unknown,
+                        block_number: *block_number,
+                        tx_index: Default::default(),
+                        access_list: Default::default(),
+                        max_fee_per_gas: Default::default(),
+                        max_priority_fee_per_gas: Default::default(),
+                    },
                 },
-            }),
-        ),
+                *succeeded_at_least_once,
+            ))
+        }
         Kind::ScoringFailed(ScoreKind::ObjectiveValueNonPositive(quality, gas_cost)) => {
             AuctionResult::Rejected(SolverRejectionReason::ObjectiveValueNonPositive {
                 quality: quality.0,
@@ -655,6 +647,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
             Settlement::Fail => SubmissionResult::Fail,
         }),
+        Kind::DriverError(reason) => {
+            AuctionResult::Rejected(SolverRejectionReason::Driver(reason.clone()))
+        }
     };
 
     (auction_id, auction_result)
@@ -696,13 +691,13 @@ impl From<model::signature::EcdsaSignature> for order::EcdsaSignature {
 
 impl From<model::signature::Signature> for order::Signature {
     fn from(signature: model::signature::Signature) -> Self {
-        use model::signature::Signature::*;
+        use model::signature::Signature;
 
         match signature {
-            Eip712(signature) => order::Signature::Eip712(signature.into()),
-            EthSign(signature) => order::Signature::EthSign(signature.into()),
-            Eip1271(data) => order::Signature::Eip1271(data),
-            PreSign => order::Signature::PreSign,
+            Signature::Eip712(signature) => order::Signature::Eip712(signature.into()),
+            Signature::EthSign(signature) => order::Signature::EthSign(signature.into()),
+            Signature::Eip1271(data) => order::Signature::Eip1271(data),
+            Signature::PreSign => order::Signature::PreSign,
         }
     }
 }

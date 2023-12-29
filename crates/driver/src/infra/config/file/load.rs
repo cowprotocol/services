@@ -4,9 +4,17 @@ use {
         infra::{self, blockchain, config::file, liquidity, mempool, simulator, solver},
     },
     futures::future::join_all,
-    std::{path::Path, time::Duration},
+    lazy_static::lazy_static,
+    reqwest::Url,
+    std::path::Path,
     tokio::fs,
 };
+
+lazy_static! {
+    pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
+        Url::parse("https://api.thegraph.com/subgraphs/name/")
+            .expect("invalid default Graph API base URL");
+}
 
 /// Load the driver configuration from a TOML file for the specifed Ethereum
 /// network.
@@ -35,7 +43,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
         network.chain,
         "The configured chain ID does not match connected Ethereum node"
     );
-
+    let graph_api_base_url = config
+        .liquidity
+        .graph_api_base_url
+        .unwrap_or(DEFAULT_GRAPH_API_BASE_URL.clone());
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|config| async move {
             let account = match config.account {
@@ -67,13 +78,8 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                 },
                 account,
                 timeouts: solver::Timeouts {
-                    http_delay: chrono::Duration::milliseconds(
-                        config
-                            .timeouts
-                            .http_time_buffer_milliseconds
-                            .try_into()
-                            .unwrap(),
-                    ),
+                    http_delay: chrono::Duration::from_std(config.timeouts.http_time_buffer)
+                        .unwrap(),
                     solving_share_of_deadline: config
                         .timeouts
                         .solving_share_of_deadline
@@ -113,18 +119,19 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         file::UniswapV2Preset::PancakeSwap => {
                             liquidity::config::UniswapV2::pancake_swap(&network.id)
                         }
+                        file::UniswapV2Preset::TestnetUniswapV2 => {
+                            liquidity::config::UniswapV2::testnet_uniswapv2(&network.id)
+                        }
                     }
                     .expect("no Uniswap V2 preset for current network"),
                     file::UniswapV2Config::Manual {
                         router,
                         pool_code,
-                        missing_pool_cache_time_seconds,
+                        missing_pool_cache_time,
                     } => liquidity::config::UniswapV2 {
                         router: router.into(),
                         pool_code: pool_code.into(),
-                        missing_pool_cache_time: Duration::from_secs(
-                            missing_pool_cache_time_seconds,
-                        ),
+                        missing_pool_cache_time,
                     },
                 })
                 .collect(),
@@ -141,13 +148,11 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     file::SwaprConfig::Manual {
                         router,
                         pool_code,
-                        missing_pool_cache_time_seconds,
+                        missing_pool_cache_time,
                     } => liquidity::config::Swapr {
                         router: router.into(),
                         pool_code: pool_code.into(),
-                        missing_pool_cache_time: Duration::from_secs(
-                            missing_pool_cache_time_seconds,
-                        ),
+                        missing_pool_cache_time,
                     },
                 })
                 .collect(),
@@ -164,7 +169,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         max_pools_to_initialize,
                         ..match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(&network.id)
+                                liquidity::config::UniswapV3::uniswap_v3(
+                                    &graph_api_base_url,
+                                    &network.id,
+                                )
                             }
                         }
                         .expect("no Uniswap V3 preset for current network")
@@ -175,6 +183,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
+                        graph_api_base_url: graph_api_base_url.clone(),
                     },
                 })
                 .collect(),
@@ -191,7 +200,10 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                         pool_deny_list: pool_deny_list.clone(),
                         ..match preset {
                             file::BalancerV2Preset::BalancerV2 => {
-                                liquidity::config::BalancerV2::balancer_v2(&network.id)
+                                liquidity::config::BalancerV2::balancer_v2(
+                                    &graph_api_base_url,
+                                    &network.id,
+                                )
                             }
                         }
                         .expect("no Balancer V2 preset for current network")
@@ -224,9 +236,18 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                             .map(eth::ContractAddress::from)
                             .collect(),
                         pool_deny_list: pool_deny_list.clone(),
+                        graph_api_base_url: graph_api_base_url.clone(),
                     },
                 })
                 .collect(),
+            zeroex: config
+                .liquidity
+                .zeroex
+                .map(|config| liquidity::config::ZeroEx {
+                    base_url: config.base_url,
+                    api_key: config.api_key,
+                    http_timeout: config.http_timeout,
+                }),
         },
         mempools: config
             .submission
@@ -235,22 +256,26 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
             .map(|mempool| mempool::Config {
                 additional_tip_percentage: config.submission.additional_tip_percentage,
                 gas_price_cap: config.submission.gas_price_cap,
-                target_confirm_time: std::time::Duration::from_secs(
-                    config.submission.target_confirm_time_secs,
-                ),
-                max_confirm_time: std::time::Duration::from_secs(
-                    config.submission.max_confirm_time_secs,
-                ),
-                retry_interval: std::time::Duration::from_secs(
-                    config.submission.retry_interval_secs,
-                ),
+                target_confirm_time: config.submission.target_confirm_time,
+                max_confirm_time: config.submission.max_confirm_time,
+                retry_interval: config.submission.retry_interval,
                 kind: match mempool {
-                    file::Mempool::Public { revert_protection } => {
-                        mempool::Kind::Public(if *revert_protection {
-                            mempool::RevertProtection::Enabled
-                        } else {
-                            mempool::RevertProtection::Disabled
-                        })
+                    file::Mempool::Public => {
+                        // If there is no private mempool, revert protection is
+                        // disabled, otherwise driver would not even try to settle revertable
+                        // settlements
+                        mempool::Kind::Public(
+                            if config
+                                .submission
+                                .mempools
+                                .iter()
+                                .any(|pool| matches!(pool, file::Mempool::MevBlocker { .. }))
+                            {
+                                mempool::RevertProtection::Enabled
+                            } else {
+                                mempool::RevertProtection::Disabled
+                            },
+                        )
                     }
                     file::Mempool::MevBlocker {
                         url,

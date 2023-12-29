@@ -1,17 +1,18 @@
-use crate::domain::{auction, notification, solution};
+use crate::{
+    domain::{auction, notification, solution},
+    infra::metrics,
+};
 
 pub mod baseline;
-pub mod dex;
 pub mod legacy;
 pub mod naive;
 
-pub use self::{baseline::Baseline, dex::Dex, legacy::Legacy, naive::Naive};
+pub use self::{baseline::Baseline, legacy::Legacy, naive::Naive};
 
 pub enum Solver {
     Baseline(Baseline),
     Naive(Naive),
     Legacy(Legacy),
-    Dex(Dex),
 }
 
 impl Solver {
@@ -19,12 +20,15 @@ impl Solver {
     /// returning multiple solutions to later merge multiple non-overlapping
     /// solutions to get one big more gas efficient solution.
     pub async fn solve(&self, auction: auction::Auction) -> Vec<solution::Solution> {
-        match self {
+        metrics::solve(&auction);
+        let deadline = auction.deadline.clone();
+        let solutions = match self {
             Solver::Baseline(solver) => solver.solve(auction).await,
             Solver::Naive(solver) => solver.solve(auction).await,
             Solver::Legacy(solver) => solver.solve(auction).await,
-            Solver::Dex(solver) => solver.solve(auction).await,
-        }
+        };
+        metrics::solved(&deadline, &solutions);
+        solutions
     }
 
     /// Notifies the solver about important events. Some of those events are
@@ -34,7 +38,6 @@ impl Solver {
             Solver::Baseline(_) => (),
             Solver::Naive(_) => (),
             Solver::Legacy(solver) => solver.notify(notification),
-            Solver::Dex(_) => (),
         }
     }
 }
