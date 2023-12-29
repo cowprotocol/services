@@ -10,13 +10,14 @@ use {
             settle,
             solve::{self, Class, TradedAmounts},
         },
+        infra::{self, blockchain::Ethereum},
         protocol::fee,
         solvable_orders::SolvableOrdersCache,
     },
+    ::observe::metrics,
     anyhow::Result,
     chrono::Utc,
     database::order_events::OrderEventLabel,
-    ethrpc::{current_block::CurrentBlockStream, Web3},
     itertools::Itertools,
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
@@ -44,12 +45,10 @@ use {
 };
 
 pub struct RunLoop {
+    pub eth: Ethereum,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
-    pub current_block: CurrentBlockStream,
-    pub web3: Web3,
-    pub network_block_interval: Duration,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
@@ -58,19 +57,22 @@ pub struct RunLoop {
     pub solve_deadline: Duration,
     pub policy_factory: fee::PolicyFactory,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub persistence: infra::persistence::Persistence,
 }
 
 impl RunLoop {
     pub async fn run_forever(self) -> ! {
-        let mut last_auction_id = None;
+        let mut last_auction = None;
         let mut last_block = None;
         loop {
             if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
-                let current_block = self.current_block.borrow().hash;
+                let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
-                if last_auction_id.replace(id) != Some(id)
+                let previous = last_auction.replace(auction.clone());
+                if previous.as_ref() != Some(&auction)
                     || last_block.replace(current_block) != Some(current_block)
                 {
+                    observe::log_auction_delta(id, &previous, &auction);
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
@@ -117,7 +119,7 @@ impl RunLoop {
     }
 
     async fn single_run(&self, auction_id: AuctionId, auction: Auction) {
-        tracing::info!(?auction, "solving");
+        tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
 
@@ -133,7 +135,7 @@ impl RunLoop {
             solutions.sort_unstable_by_key(|participant| participant.solution.score);
             solutions
         };
-        let competition_simulation_block = self.current_block.borrow().number;
+        let competition_simulation_block = self.eth.current_block().borrow().number;
 
         // TODO: Keep going with other solutions until some deadline.
         if let Some(Participant { driver, solution }) = solutions.last() {
@@ -238,7 +240,7 @@ impl RunLoop {
                         let mut settlement = SolverSettlement {
                             solver: participant.driver.name.clone(),
                             solver_address: participant.solution.account,
-                            score: Score::Solver(participant.solution.score.get()),
+                            score: Some(Score::Solver(participant.solution.score.get())),
                             ranking: solutions.len() - index,
                             orders: participant
                                 .solution
@@ -317,6 +319,7 @@ impl RunLoop {
                 tracing::warn!(?err, "no protocol fees are applied");
                 Default::default()
             });
+        self.persistence.store_auction(id, auction);
         let request = solve_request(
             id,
             auction,
@@ -476,7 +479,7 @@ impl RunLoop {
     /// to fill an order a second time.
     async fn remove_in_flight_orders(&self, mut auction: Auction) -> Auction {
         let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
-        let tx_receipt = self.web3.eth().transaction_receipt(prev_settlement).await;
+        let tx_receipt = self.eth.transaction_receipt(prev_settlement).await;
 
         let prev_settlement_block = match tx_receipt {
             Ok(Some(TransactionReceipt {
@@ -679,7 +682,7 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 
     fn auction(auction_id: AuctionId) {
@@ -762,5 +765,37 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
+    }
+}
+
+pub mod observe {
+    use {model::auction::Auction, std::collections::HashSet};
+
+    pub fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
+        let previous_uids = match previous {
+            Some(previous) => previous
+                .orders
+                .iter()
+                .map(|order| order.metadata.uid)
+                .collect::<HashSet<_>>(),
+            None => HashSet::new(),
+        };
+        let current_uids = current
+            .orders
+            .iter()
+            .map(|order| order.metadata.uid)
+            .collect::<HashSet<_>>();
+        let added = current_uids.difference(&previous_uids);
+        let removed = previous_uids.difference(&current_uids);
+        tracing::debug!(
+            id,
+            added = ?added,
+            "New orders in auction"
+        );
+        tracing::debug!(
+            id,
+            removed = ?removed,
+            "Orders no longer in auction"
+        );
     }
 }
