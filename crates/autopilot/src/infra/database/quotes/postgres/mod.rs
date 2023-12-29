@@ -1,7 +1,7 @@
 use {
     crate::{boundary::OrderUid, database::Postgres},
     anyhow::Result,
-    database::{byte_array::ByteArray, orders::Quote},
+    database::byte_array::ByteArray,
     std::collections::HashMap,
 };
 
@@ -16,7 +16,7 @@ impl Postgres {
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &OrderUid>,
-    ) -> Result<HashMap<OrderUid, Quote>> {
+    ) -> Result<HashMap<OrderUid, database::orders::Quote>> {
         let mut ex = self.pool.acquire().await?;
         let mut quotes = HashMap::new();
         for order in orders {
