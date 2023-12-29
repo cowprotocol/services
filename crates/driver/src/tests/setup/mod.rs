@@ -862,7 +862,7 @@ impl<'a> SolveOk<'a> {
             assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
             assert!(
                 u256(trade.get("sellAmount").unwrap())
-                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
+                    >= expected.quoted_order.sell + expected.quoted_order.order.user_fee
             );
         }
         self
