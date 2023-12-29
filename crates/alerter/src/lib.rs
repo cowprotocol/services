@@ -221,7 +221,11 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
+            .filter(|order| {
+                !order.is_liquidity_order()
+                    && !order.partially_fillable
+                    && !matches!(order.status, OrderStatus::PresignaturePending)
+            })
             .map(|order| {
                 let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
                 (order.uid, (order, existing_time))
