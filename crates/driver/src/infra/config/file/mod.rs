@@ -286,6 +286,10 @@ struct LiquidityConfig {
     #[serde(default)]
     balancer_v2: Vec<BalancerV2Config>,
 
+    /// Liquidity provided by 0x API.
+    #[serde(default)]
+    zeroex: Option<ZeroExConfig>,
+
     /// The base URL used to connect to subgraph clients.
     graph_api_base_url: Option<Url>,
 }
@@ -436,4 +440,22 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct ZeroExConfig {
+    #[serde(default = "default_zeroex_base_url")]
+    pub base_url: String,
+    pub api_key: Option<String>,
+    #[serde(with = "humantime_serde", default = "default_http_timeout")]
+    pub http_timeout: Duration,
+}
+
+fn default_zeroex_base_url() -> String {
+    "https://api.0x.org/".to_string()
+}
+
+fn default_http_timeout() -> Duration {
+    Duration::from_secs(10)
 }

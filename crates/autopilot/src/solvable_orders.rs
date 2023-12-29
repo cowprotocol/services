@@ -67,7 +67,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Postgres,
+    database: Arc<Postgres>,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -113,7 +113,7 @@ impl SolvableOrdersCache {
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
-            database,
+            database: Arc::new(database),
             banned_users,
             balance_fetcher,
             bad_token_detector,
@@ -155,20 +155,21 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut order_events = vec![];
+        let mut invalid_order_uids = HashSet::new();
+        let mut filtered_order_events = HashSet::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let removed = counter.checkpoint("unsupported_token", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
         let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
@@ -192,11 +193,11 @@ impl SolvableOrdersCache {
 
         let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("insufficient_balance", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         // create auction
         let (orders, mut prices) = get_orders_with_native_prices(
@@ -218,11 +219,11 @@ impl SolvableOrdersCache {
         }
 
         let removed = counter.checkpoint("missing_price", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         let removed = counter.checkpoint("out_of_market", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let auction = Auction {
             block,
@@ -231,9 +232,23 @@ impl SolvableOrdersCache {
             prices,
         };
         let removed = counter.record(&auction.orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
-        self.database.store_order_events(&order_events).await;
+        // spawning a background task since `order_events` table insert operation takes
+        // a while and the result is ignored.
+        let db = self.database.clone();
+        tokio::spawn(async move {
+            db.store_non_subsequent_label_order_events(
+                &invalid_order_uids,
+                OrderEventLabel::Invalid,
+            )
+            .await;
+            db.store_non_subsequent_label_order_events(
+                &filtered_order_events,
+                OrderEventLabel::Filtered,
+            )
+            .await;
+        });
 
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),
