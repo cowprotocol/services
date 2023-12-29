@@ -32,7 +32,8 @@ impl Api {
             .layer(
                 tower::ServiceBuilder::new().layer(tower_http::trace::TraceLayer::new_for_http()),
             )
-            .with_state(Arc::new(self.solver));
+            .with_state(Arc::new(self.solver))
+            .layer(axum::extract::DefaultBodyLimit::disable());
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
 

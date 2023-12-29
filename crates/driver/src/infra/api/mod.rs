@@ -19,7 +19,7 @@ use {
 mod error;
 mod routes;
 
-const REQUEST_BODY_LIMIT: usize = 20 * 1024 * 1024;
+const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub solvers: Vec<Solver>,
@@ -83,7 +83,9 @@ impl Api {
             })));
             let path = format!("/{name}");
             infra::observe::mounting_solver(&name, &path);
-            app = app.nest(&path, router);
+            app = app
+                .nest(&path, router)
+                .layer(axum::extract::DefaultBodyLimit::disable());
         }
 
         let make_svc = observe::make_service_with_task_local_storage!(app);
