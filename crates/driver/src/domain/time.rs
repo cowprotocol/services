@@ -36,20 +36,23 @@ impl Deadline {
 
     /// Remaining time until the deadline for driver to return solution to
     /// autopilot is reached.
-    pub fn driver(self) -> Result<std::time::Duration, DeadlineExceeded> {
-        Self::remaining(self.driver)
+    pub fn driver(self) -> chrono::DateTime<chrono::Utc> {
+        self.driver
     }
 
     /// Remaining time until the deadline for solvers to return solution to
     /// driver is reached.
-    pub fn solvers(self) -> Result<std::time::Duration, DeadlineExceeded> {
-        Self::remaining(self.solvers)
+    pub fn solvers(self) -> chrono::DateTime<chrono::Utc> {
+        self.solvers
     }
+}
 
-    fn remaining(
-        deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Result<std::time::Duration, DeadlineExceeded> {
-        let deadline = deadline - infra::time::now();
+pub trait Remaining {
+    fn remaining(self) -> Result<std::time::Duration, DeadlineExceeded>;
+}
+impl Remaining for chrono::DateTime<chrono::Utc> {
+    fn remaining(self) -> Result<std::time::Duration, DeadlineExceeded> {
+        let deadline = self - infra::time::now();
         if deadline <= chrono::Duration::zero() {
             Err(DeadlineExceeded)
         } else {
