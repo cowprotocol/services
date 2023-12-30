@@ -9,9 +9,9 @@ CREATE TABLE fee_policies (
   -- The type of the fee policy.
   kind PolicyKind NOT NULL,
   -- The fee should be taken as a percentage of the price improvement. The value is between 0 and 1.
-  price_improvement_factor real CHECK (price_improvement_factor >= 0 AND price_improvement_factor <= 1),
+  price_improvement_factor double precision CHECK (price_improvement_factor >= 0 AND price_improvement_factor <= 1),
   -- The fee should be taken as a percentage of the order volume. The value is between 0 and 1.
-  volume_factor real CHECK (volume_factor >= 0 AND volume_factor <= 1),
+  volume_factor double precision CHECK (volume_factor >= 0 AND volume_factor <= 1),
 
   PRIMARY KEY (auction_id, order_uid, application_order)
 );
