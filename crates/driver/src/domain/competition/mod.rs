@@ -55,7 +55,6 @@ pub struct Competition {
 impl Competition {
     /// Solve an auction as part of this competition.
     pub async fn solve(&self, auction: &Auction) -> Result<Option<Solved>, Error> {
-        tracing::warn!("solveee");
         let liquidity = match self.solver.liquidity() {
             solver::Liquidity::Fetch => {
                 self.liquidity
@@ -230,7 +229,6 @@ impl Competition {
     }
 
     pub async fn reveal(&self) -> Result<Revealed, Error> {
-        tracing::warn!("reveal");
         let settlement = self
             .settlement
             .lock()
@@ -257,7 +255,6 @@ impl Competition {
     /// Execute the solution generated as part of this competition. Use
     /// [`Competition::solve`] to generate the solution.
     pub async fn settle(&self) -> Result<Settled, Error> {
-        tracing::warn!("settle");
         let settlement = self
             .settlement
             .lock()
@@ -266,7 +263,6 @@ impl Competition {
             .ok_or(Error::SolutionNotAvailable)?;
 
         let executed = self.mempools.execute(&self.solver, &settlement).await;
-        tracing::warn!("settlement executed");
         notify::executed(
             &self.solver,
             settlement.auction_id,
