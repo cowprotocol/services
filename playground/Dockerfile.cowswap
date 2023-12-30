@@ -1,0 +1,64 @@
+# Stage 1: Build the frontend
+FROM docker.io/node:18-bullseye-slim as node-build
+WORKDIR /usr/src/app
+
+# RPC URL args
+ARG REACT_APP_NETWORK_URL_1=https://rpc.mevblocker.io
+ARG REACT_APP_NETWORK_URL_5=https://ethereum-goerli.publicnode.com
+ARG REACT_APP_NETWORK_URL_100=https://gnosis.publicnode.com
+
+# Orderbook URL args
+ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://api.cow.fi/goerli","5":"https://api.cow.fi/xdai"}'
+
+# Install dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
+    apt-get install -y git libssl-dev pkg-config git jq
+
+# Clone the repo to the present working directory
+RUN git clone https://github.com/cowprotocol/cowswap . && \
+    git submodule update --init --recursive
+
+# Install npm dependencies
+RUN --mount=type=cache,target=/home/node/.yarn YARN_CACHE_FOLDER=/home/node/.yarn yarn install --frozen-lockfile
+
+# Set the environment variable "chain"
+ARG CHAIN
+ENV CHAIN=$CHAIN
+
+# Set the environment variable "ETH_RPC_URL"
+ARG ETH_RPC_URL
+ENV ETH_RPC_URL=$ETH_RPC_URL
+
+# Set the default environment variables
+ENV REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1
+ENV REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5
+ENV REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100
+ENV REACT_APP_ORDER_BOOK_URLS=$REACT_APP_ORDER_BOOK_URLS
+
+# Update environment variables based on "chain" and "ETH_RPC_URL" and build the frontend
+RUN if [ -n "$ETH_RPC_URL" ]; then \
+        case "$CHAIN" in \
+            1) \
+                REACT_APP_NETWORK_URL_1=$ETH_RPC_URL \
+                REACT_APP_ORDER_BOOK_URLS=$(echo $REACT_APP_ORDER_BOOK_URLS | jq --arg chain "1" '.[$chain]="http://127.0.0.1:8080"') \
+                ;; \
+            5) \
+                REACT_APP_NETWORK_URL_5=$ETH_RPC_URL \
+                REACT_APP_ORDER_BOOK_URLS=$(echo $REACT_APP_ORDER_BOOK_URLS | jq --arg chain "5" '.[$chain]="http://127.0.0.1:8080"') \
+                ;; \
+            100) \
+                REACT_APP_NETWORK_URL_100=$ETH_RPC_URL \
+                REACT_APP_ORDER_BOOK_URLS=$(echo $REACT_APP_ORDER_BOOK_URLS | jq --arg chain "100" '.[$chain]="http://127.0.0.1:8080"') \
+                ;; \
+        esac; \
+        yarn build --env REACT_APP_NETWORK_URL_1=$REACT_APP_NETWORK_URL_1 \
+                   --env REACT_APP_NETWORK_URL_5=$REACT_APP_NETWORK_URL_5 \
+                   --env REACT_APP_NETWORK_URL_100=$REACT_APP_NETWORK_URL_100 \
+                   --env REACT_APP_ORDER_BOOK_URLS="$REACT_APP_ORDER_BOOK_URLS"; \
+    fi
+
+# Stage 2: Copy the frontend to the nginx container
+FROM docker.io/nginx:1.21-alpine as frontend
+COPY --from=node-build /usr/src/app/build/cowswap /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
