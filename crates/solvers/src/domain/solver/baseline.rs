@@ -26,7 +26,7 @@ pub struct Baseline(Arc<Inner>);
 
 /// The amount of time we aim the solver to finish before the final deadline is
 /// reached.
-const DEADLINE_SLACK: chrono::Duration = chrono::Duration::milliseconds(500);
+const DEADLINE_SLACK: chrono::Duration = chrono::Duration::microseconds(500);
 
 struct Inner {
     weth: eth::WethAddress,
