@@ -55,7 +55,7 @@ pub struct RunLoop {
     pub score_cap: U256,
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
-    pub fee_policies: domain::fee::PoliciesCache,
+    pub fee_policies: domain::fee::Policies,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub persistence: infra::persistence::Persistence,
 }

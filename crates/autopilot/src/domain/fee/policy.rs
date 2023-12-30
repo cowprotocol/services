@@ -9,65 +9,29 @@ use {
         boundary::{self, Order, OrderClass, OrderUid},
         infra::{self},
     },
-    std::{
-        collections::HashMap,
-        sync::{Arc, RwLock},
-    },
+    std::collections::HashMap,
 };
 
 /// Protocol fee policies with cache being updated on each auction.
 #[derive(Debug)]
-pub struct PoliciesCache {
+pub struct Policies {
     config: Config,
     database: infra::Database,
-
-    policies: Arc<RwLock<HashMap<OrderUid, Vec<Policy>>>>,
 }
 
-impl PoliciesCache {
+impl Policies {
     pub fn new(config: Config, database: infra::Database) -> Self {
-        Self {
-            config,
-            database,
-            policies: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self { config, database }
     }
 
     /// Get policies for orders.
-    ///
-    /// If policies don't exist for the order, they will be added.
     pub async fn get(&self, orders: &[Order]) -> Result<HashMap<OrderUid, Vec<Policy>>, Error> {
-        self.add(orders).await?;
-        let all_policies = self.policies.read().unwrap();
-        Ok(orders
-            .iter()
-            .filter_map(|order| {
-                all_policies
-                    .get(&order.metadata.uid)
-                    .map(|policies| (order.metadata.uid, policies.clone()))
-            })
-            .collect())
-    }
-
-    /// Add new policies if they don't exist for the order.
-    async fn add(&self, orders: &[Order]) -> Result<(), Error> {
-        // find orders that don't have policies yet
-        let orders = {
-            let policies = self.policies.read().unwrap();
-            orders
-                .iter()
-                .filter(|order| !policies.contains_key(&order.metadata.uid))
-                .collect::<Vec<_>>()
-        };
-
-        // read quotes for orders that don't have policies yet
         let quotes = self
             .database
             .read_quotes(orders.iter().map(|order| &order.metadata.uid))
             .await?;
 
-        // determine policies for orders that don't have policies yet
-        let new_policies = orders
+        Ok(orders
             .iter()
             .filter_map(|order| match order.metadata.class {
                 OrderClass::Market => None,
@@ -91,12 +55,7 @@ impl PoliciesCache {
                     }
                 },
             })
-            .collect::<HashMap<_, _>>();
-
-        let mut policies = self.policies.write().unwrap();
-        policies.extend(new_policies);
-
-        Ok(())
+            .collect())
     }
 }
 
