@@ -282,11 +282,19 @@ fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160
     orders
 }
 
-/// Filters EIP-1271 orders whose signatures are no longer validating.
+/// Filters unsigned PreSign and EIP-1271 orders whose signatures are no longer
+/// validating.
 async fn filter_invalid_signature_orders(
-    orders: Vec<Order>,
+    mut orders: Vec<Order>,
     signature_validator: &dyn SignatureValidating,
 ) -> Vec<Order> {
+    orders.retain(|order| {
+        !matches!(
+            order.metadata.status,
+            model::order::OrderStatus::PresignaturePending
+        )
+    });
+
     let checks = orders
         .iter()
         .filter_map(|order| match &order.signature {
