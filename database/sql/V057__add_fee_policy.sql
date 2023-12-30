@@ -13,7 +13,5 @@ CREATE TABLE fee_policies (
   -- The fee should be taken as a percentage of the order volume. The value is between 0 and 1.
   volume_factor NUMERIC CHECK (volume_factor >= 0 AND volume_factor <= 1),
 
-  PRIMARY KEY (auction_id, order_uid),
-
-  CONSTRAINT unique_auction_order UNIQUE (auction_id, order_uid, application_order)
+  PRIMARY KEY (auction_id, order_uid, application_order)
 );
