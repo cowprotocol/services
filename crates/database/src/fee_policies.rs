@@ -28,6 +28,7 @@ struct FeePolicyRow {
     order_uid: OrderUid,
     kind: FeePolicyKindRow,
     price_improvement_factor: Option<f64>,
+    max_volume_factor: Option<f64>,
     volume_factor: Option<f64>,
 }
 
@@ -40,8 +41,8 @@ enum FeePolicyKindRow {
 
 pub async fn insert(ex: &mut PgTransaction<'_>, fee_policy: FeePolicy) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-        INSERT INTO fee_policies (auction_id, order_uid, kind, price_improvement_factor, volume_factor)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO fee_policies (auction_id, order_uid, kind, price_improvement_factor, max_volume_factor, volume_factor)
+        VALUES ($1, $2, $3, $4, $5, $6)
     "#;
     let fee_policy = FeePolicyRow::from(fee_policy);
     sqlx::query(QUERY)
@@ -49,6 +50,7 @@ pub async fn insert(ex: &mut PgTransaction<'_>, fee_policy: FeePolicy) -> Result
         .bind(fee_policy.order_uid)
         .bind(fee_policy.kind)
         .bind(fee_policy.price_improvement_factor)
+        .bind(fee_policy.max_volume_factor)
         .bind(fee_policy.volume_factor)
         .execute(ex.deref_mut())
         .await?;
@@ -83,7 +85,7 @@ impl From<FeePolicyRow> for FeePolicy {
                 price_improvement_factor: row
                     .price_improvement_factor
                     .expect("missing price improvement factor"),
-                max_volume_factor: row.volume_factor.expect("missing volume factor"),
+                max_volume_factor: row.max_volume_factor.expect("missing max volume factor"),
             },
             FeePolicyKindRow::Volume => FeePolicyKind::Volume {
                 factor: row.volume_factor.expect("missing volume factor"),
@@ -108,13 +110,15 @@ impl From<FeePolicy> for FeePolicyRow {
                 order_uid: fee_policy.order_uid,
                 kind: FeePolicyKindRow::PriceImprovement,
                 price_improvement_factor: Some(price_improvement_factor),
-                volume_factor: Some(max_volume_factor),
+                max_volume_factor: Some(max_volume_factor),
+                volume_factor: None,
             },
             FeePolicyKind::Volume { factor } => FeePolicyRow {
                 auction_id: fee_policy.auction_id,
                 order_uid: fee_policy.order_uid,
                 kind: FeePolicyKindRow::Volume,
                 price_improvement_factor: None,
+                max_volume_factor: None,
                 volume_factor: Some(factor),
             },
         }
