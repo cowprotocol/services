@@ -120,6 +120,7 @@ pub fn executed(
         Err(Error::Other(_)) => notification::Settlement::Fail,
     };
 
+    tracing::warn!("notify");
     solver.notify(
         Some(auction_id),
         solution_id,

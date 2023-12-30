@@ -193,8 +193,10 @@ impl Solver {
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
+        tracing::warn!("solver notification almost sent");
         let future = async move {
-            let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+            let result = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+            tracing::warn!(?result, "solver notification sent");
         };
         tokio::task::spawn(future.in_current_span());
     }
