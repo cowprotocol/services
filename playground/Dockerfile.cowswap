@@ -12,7 +12,7 @@ ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config git jq
+    apt-get install -y git libssl-dev pkg-config git jq python3 make g++
 
 # Clone the repo to the present working directory
 RUN git clone https://github.com/cowprotocol/cowswap . && \

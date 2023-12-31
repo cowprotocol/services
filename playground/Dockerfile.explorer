@@ -1,5 +1,5 @@
 # Stage 1: Build the frontend
-FROM docker.io/node:16-bullseye-slim as node-build
+FROM --platform=linux/amd64 docker.io/node:16-bullseye-slim as node-build
 WORKDIR /usr/src/app
 
 # RPC URL args
@@ -12,7 +12,8 @@ ARG REACT_APP_ORDER_BOOK_URLS='{"1":"https://api.cow.fi/mainnet","100":"https://
 
 # Install dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked apt-get update && \
-    apt-get install -y git libssl-dev pkg-config git
+    apt-get install -y git libssl-dev pkg-config git autoconf automake file g++ libtool make nasm libpng-dev optipng
+
 
 # Clone the repo to the present working directory
 RUN git clone https://github.com/cowprotocol/explorer . && \
