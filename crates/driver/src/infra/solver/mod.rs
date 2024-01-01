@@ -163,7 +163,7 @@ impl Solver {
             .client
             .post(url.clone())
             .body(body)
-            .timeout(auction.deadline().solvers().remaining().unwrap());
+            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
