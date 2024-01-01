@@ -203,6 +203,8 @@ async fn create_config_file(
                absolute-slippage = "{}"
                relative-slippage = "{}"
                account = "0x{}"
+               solving-share-of-deadline = {}
+               http-time-buffer = "{}ms"
                "#,
             solver.name,
             addr,
@@ -213,6 +215,8 @@ async fn create_config_file(
                 .unwrap_or_default(),
             solver.slippage.relative,
             hex::encode(solver.private_key.secret_bytes()),
+            solver.timeouts.solving_share_of_deadline.get(),
+            solver.timeouts.http_delay.num_milliseconds(),
         )
         .unwrap();
     }
