@@ -55,6 +55,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "humantime",
  "model",
  "number",
  "observe",
@@ -156,15 +157,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "approx"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "arrayvec"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -247,7 +239,6 @@ name = "autopilot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "approx",
  "async-trait",
  "bigdecimal",
  "chrono",
@@ -261,6 +252,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "maplit",
  "mockall",
@@ -273,6 +265,7 @@ dependencies = [
  "prometheus-metric-storage",
  "rand",
  "reqwest",
+ "s3",
  "serde",
  "serde_json",
  "serde_with",
@@ -1301,7 +1294,6 @@ dependencies = [
  "anyhow",
  "ethcontract",
  "ethcontract-generate",
- "maplit",
  "serde",
  "serde_json",
  "tracing",
@@ -1541,6 +1533,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "delay_map"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4355c25cbf99edcb6b4a0e906f6bdc6956eda149e84455bea49696429b2f8e8"
+dependencies = [
+ "futures",
+ "tokio-util 0.7.8",
+]
+
+[[package]]
 name = "der"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1634,6 +1636,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "derivative",
  "ethabi",
  "ethcontract",
  "ethereum-types",
@@ -1642,9 +1645,12 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
+ "humantime-serde",
  "hyper",
  "indexmap 2.0.0",
  "itertools 0.11.0",
+ "lazy_static",
  "maplit",
  "mockall",
  "model",
@@ -1800,9 +1806,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d08846ff0ee806115900c1936bc8499a9276b4ae27fe75492417765bd539322"
+checksum = "c28ee036fde35000df46c82ec67f2e9f5a6ebc53093e0af2a9b045cce9818acf"
 dependencies = [
  "arrayvec",
  "aws-config 0.55.3",
@@ -1827,9 +1833,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-common"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "742bc83515d431a92e6c5978d95e02076e494cfe05949717bc7f8340812823f4"
+checksum = "422d0b0977f0855eaeab796ff5502302f5ac33ae96209c0ea81b0aa164dd370e"
 dependencies = [
  "ethabi",
  "hex",
@@ -1843,9 +1849,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-derive"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb46cfc07d197ef11a37254eadac65f334d076ac07e468ba16f5866a2e96ce1f"
+checksum = "2e68257cfdf589ae3f9d2edd348072e2bf105fa87288fc0a7f5e090e20a2acd4"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -1857,9 +1863,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-generate"
-version = "0.25.2"
+version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d030b773b4837eec117c11c4aab4f56412d4c342c12300648ba73fb6b1f8ab20"
+checksum = "8c013062a68f3e5d6fa2db391134cfc5fb0ee64d8d15d6205d79ec7cf7e8ffa4"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -2369,6 +2375,22 @@ name = "httpdate"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4a1e36c821dbe04574f602848a19f742f4fb3c98d40449f11bcad18d6b17421"
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
+
+[[package]]
+name = "humantime-serde"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
+dependencies = [
+ "humantime",
+ "serde",
+]
 
 [[package]]
 name = "hyper"
@@ -3121,6 +3143,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "hyper",
  "maplit",
  "mockall",
@@ -3390,8 +3413,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3282447ea0b07baa9011e45de96794c5963db0162c1001d2867750715d63ff14"
 dependencies = [
  "lazy_static",
  "prometheus",
@@ -3400,8 +3424,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage-derive"
-version = "0.4.0"
-source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "239221aa10cd35277c58b8f6509280b2613321760b49584d7a7351a6aacb6963"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3476,6 +3501,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rate-limit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "humantime",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3498,6 +3539,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
+ "humantime",
  "lazy_static",
  "model",
  "number",
@@ -3747,6 +3789,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
 
 [[package]]
+name = "s3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config 0.56.0",
+ "aws-sdk-s3",
+ "chrono",
+ "flate2",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3983,6 +4039,7 @@ dependencies = [
  "clap",
  "contracts",
  "database",
+ "delay_map",
  "derivative",
  "ethcontract",
  "ethcontract-mock",
@@ -3992,6 +4049,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "lazy_static",
  "maplit",
@@ -4003,6 +4061,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
+ "rate-limit",
  "regex",
  "reqwest",
  "secp256k1",
@@ -4111,6 +4170,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "jsonrpc-core",
  "lazy_static",
@@ -4125,6 +4185,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
@@ -4154,11 +4215,15 @@ dependencies = [
  "futures",
  "glob",
  "hex",
+ "humantime-serde",
  "hyper",
  "itertools 0.11.0",
  "model",
  "num",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
@@ -4522,7 +4587,6 @@ checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 name = "testlib"
 version = "0.1.0"
 dependencies = [
- "contracts",
  "ethcontract",
  "ethcontract-mock",
  "hex-literal",
@@ -4710,6 +4774,7 @@ dependencies = [
  "futures-io",
  "futures-sink",
  "pin-project-lite",
+ "slab",
  "tokio",
  "tracing",
 ]

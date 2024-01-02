@@ -49,6 +49,7 @@ pub mod quote {
 
 pub mod solve {
     use {
+        crate::arguments,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
@@ -60,6 +61,7 @@ pub mod solve {
         primitive_types::{H160, U256},
         serde::{Deserialize, Serialize},
         serde_with::{serde_as, DisplayFromStr},
+        std::collections::HashMap,
     };
 
     #[serde_as]
@@ -86,7 +88,7 @@ pub mod solve {
     }
 
     #[serde_as]
-    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Serialize)]
     #[serde(rename_all = "camelCase")]
     pub struct Order {
         pub uid: OrderUid,
@@ -115,6 +117,9 @@ pub mod solve {
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
+        /// The types of fees that will be collected by the protocol.
+        /// Multiple fees are applied in the order they are listed
+        pub fee_policies: Vec<FeePolicy>,
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -136,6 +141,63 @@ pub mod solve {
         pub call_data: Vec<u8>,
     }
 
+    #[derive(Clone, Debug, Serialize)]
+    #[serde(rename_all = "lowercase", tag = "kind")]
+    pub enum FeePolicy {
+        /// If the order receives more than expected (positive deviation from
+        /// quoted amounts) pay the protocol a factor of the achieved
+        /// improvement. The fee is taken in `sell` token for `buy`
+        /// orders and in `buy` token for `sell` orders.
+        #[serde(rename_all = "camelCase")]
+        PriceImprovement {
+            /// Factor of price improvement the protocol charges as a fee.
+            /// Price improvement is the difference between executed price and
+            /// limit price or quoted price (whichever is better)
+            ///
+            /// E.g. if a user received 2000USDC for 1ETH while having been
+            /// quoted 1990USDC, their price improvement is 10USDC.
+            /// A factor of 0.5 requires the solver to pay 5USDC to
+            /// the protocol for settling this order.
+            factor: f64,
+            /// Cap protocol fee with a percentage of the order's volume.
+            max_volume_factor: f64,
+        },
+        /// How much of the order's volume should be taken as a protocol fee.
+        /// The fee is taken in `sell` token for `sell` orders and in `buy`
+        /// token for `buy` orders.
+        #[serde(rename_all = "camelCase")]
+        Volume {
+            /// Percentage of the order's volume should be taken as a protocol
+            /// fee.
+            factor: f64,
+        },
+    }
+
+    pub fn fee_policy_to_dto(fee_policy: &arguments::FeePolicy) -> FeePolicy {
+        match fee_policy.fee_policy_kind {
+            arguments::FeePolicyKind::PriceImprovement {
+                factor: price_improvement_factor,
+                max_volume_factor,
+            } => FeePolicy::PriceImprovement {
+                factor: price_improvement_factor,
+                max_volume_factor,
+            },
+            arguments::FeePolicyKind::Volume { factor } => FeePolicy::Volume { factor },
+        }
+    }
+
+    #[serde_as]
+    #[derive(Clone, Debug, Default, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    pub struct TradedAmounts {
+        /// The effective amount that left the user's wallet including all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub sell_amount: U256,
+        /// The effective amount the user received after all fees.
+        #[serde_as(as = "HexOrDecimalU256")]
+        pub buy_amount: U256,
+    }
+
     #[serde_as]
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -148,6 +210,9 @@ pub mod solve {
         pub score: U256,
         /// Address used by the driver to submit the settlement onchain.
         pub submission_address: H160,
+        pub orders: HashMap<OrderUid, TradedAmounts>,
+        #[serde_as(as = "HashMap<_, HexOrDecimalU256>")]
+        pub clearing_prices: HashMap<H160, U256>,
     }
 
     #[derive(Clone, Debug, Default, Deserialize)]
@@ -159,7 +224,7 @@ pub mod solve {
 
 pub mod reveal {
     use {
-        model::{bytes_hex, order::OrderUid},
+        model::bytes_hex,
         serde::{Deserialize, Serialize},
         serde_with::serde_as,
     };
@@ -186,7 +251,6 @@ pub mod reveal {
     #[derive(Clone, Debug, Default, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     pub struct Response {
-        pub orders: Vec<OrderUid>,
         pub calldata: Calldata,
     }
 }

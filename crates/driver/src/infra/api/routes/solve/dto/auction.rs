@@ -1,11 +1,11 @@
 use {
     crate::{
         domain::{
-            competition,
-            competition::{auction, order},
+            competition::{self, auction, order},
             eth,
+            time,
         },
-        infra::{tokens, Ethereum},
+        infra::{solver::Timeouts, tokens, Ethereum},
         util::serialize,
     },
     serde::Deserialize,
@@ -17,6 +17,7 @@ impl Auction {
         self,
         eth: &Ethereum,
         tokens: &tokens::Fetcher,
+        timeouts: Timeouts,
     ) -> Result<competition::Auction, Error> {
         let token_addresses: Vec<_> = self
             .tokens
@@ -114,6 +115,22 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
+                    fee_policies: order
+                        .fee_policies
+                        .into_iter()
+                        .map(|policy| match policy {
+                            FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                            },
+                            FeePolicy::Volume { factor } => {
+                                competition::order::FeePolicy::Volume { factor }
+                            }
+                        })
+                        .collect(),
                 })
                 .collect(),
             self.tokens.into_iter().map(|token| {
@@ -127,7 +144,7 @@ impl Auction {
                     trusted: token.trusted,
                 }
             }),
-            self.deadline.into(),
+            time::Deadline::new(self.deadline, timeouts),
             eth,
             self.score_cap.try_into().map_err(|_| Error::ZeroScoreCap)?,
         )
@@ -233,6 +250,7 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
+    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,4 +303,13 @@ enum Class {
     Market,
     Limit,
     Liquidity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase", tag = "kind", deny_unknown_fields)]
+enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
 }

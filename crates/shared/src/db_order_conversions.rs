@@ -38,7 +38,11 @@ use {
 };
 
 pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
-    let status = OrderStatus::Open;
+    let status = if order.presignature_pending {
+        OrderStatus::PresignaturePending
+    } else {
+        OrderStatus::Open
+    };
     let pre_interactions = extract_interactions(&order, ExecutionTime::Pre)?;
     let post_interactions = extract_interactions(&order, ExecutionTime::Post)?;
     let ethflow_data = if let Some((refund_tx, user_valid_to)) = order.ethflow_data {

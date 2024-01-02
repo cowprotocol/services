@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
-        rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
     anyhow::{Context, Result},
@@ -12,6 +11,7 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -149,6 +149,16 @@ pub enum NativePriceEstimator {
     OneInchSpotPriceApi,
 }
 
+impl Display for NativePriceEstimator {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let formatter = match self {
+            NativePriceEstimator::GenericPriceEstimator(s) => s,
+            NativePriceEstimator::OneInchSpotPriceApi => "OneInchSpotPriceApi",
+        };
+        write!(f, "{}", formatter)
+    }
+}
+
 impl NativePriceEstimators {
     pub fn as_slice(&self) -> &[Vec<NativePriceEstimator>] {
         &self.0
@@ -171,7 +181,7 @@ impl Display for NativePriceEstimators {
             .map(|stage| {
                 stage
                     .iter()
-                    .format_with(",", |estimator, f| f(&format_args!("{:?}", estimator)))
+                    .format_with(",", |estimator, f| f(&format_args!("{estimator}")))
             })
             .format(";");
         write!(f, "{}", formatter)
@@ -211,40 +221,40 @@ pub struct Arguments {
     /// entirely. Needs to be passed as
     /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: f64 in seconds
-    /// max_back_off: f64 in seconds
+    /// min_back_off: Duration
+    /// max_back_off: Duration
     #[clap(long, env, verbatim_doc_comment)]
-    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
+    pub price_estimation_rate_limiter: Option<Strategy>,
 
     /// How often the native price estimator should refresh its cache.
     #[clap(
         long,
         env,
-        default_value = "1",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_refresh_secs: Duration,
+    pub native_price_cache_refresh: Duration,
 
     /// How long cached native prices stay valid.
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_max_age_secs: Duration,
+    pub native_price_cache_max_age: Duration,
 
     /// How long before expiry the native price cache should try to update the
     /// price in the background. This is useful to make sure that prices are
     /// usable at all times. This value has to be smaller than
-    /// `--native-price-cache-max-age-secs`.
+    /// `--native-price-cache-max-age`.
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_prefetch_time_secs: Duration,
+    pub native_price_prefetch_time: Duration,
 
     /// How many cached native token prices can be updated at most in one
     /// maintenance cycle.
@@ -261,10 +271,6 @@ pub struct Arguments {
     /// not set a reasonable default is used based on network id.
     #[clap(long, env, value_parser = U256::from_dec_str)]
     pub amount_to_estimate_prices_with: Option<U256>,
-
-    /// The API endpoint to call the Quasimodo solver for price estimation
-    #[clap(long, env)]
-    pub quasimodo_solver_url: Option<Url>,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -313,18 +319,18 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh_secs: {:?}",
-            self.native_price_cache_refresh_secs
+            "native_price_cache_refresh: {:?}",
+            self.native_price_cache_refresh
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age: {:?}",
+            self.native_price_cache_max_age
         )?;
         writeln!(
             f,
-            "native_price_prefetch_time_secs: {:?}",
-            self.native_price_prefetch_time_secs
+            "native_price_prefetch_time: {:?}",
+            self.native_price_prefetch_time
         )?;
         writeln!(
             f,
@@ -341,7 +347,6 @@ impl Display for Arguments {
             "amount_to_estimate_prices_with",
             &self.amount_to_estimate_prices_with,
         )?;
-        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
             f,
@@ -604,5 +609,26 @@ mod tests {
             parsed("BalancerSor|0x0000000000000000000000000000000000000001"),
             estimator(PriceEstimatorKind::BalancerSor, address(1))
         );
+    }
+
+    #[test]
+    fn string_repr_round_trip_native_price_estimators() {
+        // We use NativePriceEstimators as one of the types used in an Arguments object
+        // that derives clap::Parser. Clap parsing of an argument using
+        // default_value_t requires that std::fmt::Display roundtrips correctly with the
+        // Arg::value_parser or #[arg(value_enum)]:
+        // https://docs.rs/clap/latest/clap/_derive/index.html#arg-attributes
+
+        let parsed = |arg: &str| NativePriceEstimators::from(arg);
+        let stringified = |arg: &NativePriceEstimators| format!("{arg}");
+
+        for repr in [
+            &NativePriceEstimator::GenericPriceEstimator("Baseline".into()).to_string(),
+            &NativePriceEstimator::OneInchSpotPriceApi.to_string(),
+            "one,two;three,four",
+            &format!("one,two;{},four", NativePriceEstimator::OneInchSpotPriceApi),
+        ] {
+            assert_eq!(stringified(&parsed(repr)), repr);
+        }
     }
 }

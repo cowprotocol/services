@@ -16,7 +16,6 @@ impl Auction {
     pub fn new(
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
-        timeout: competition::SolverTimeout,
         weth: eth::WethAddress,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
@@ -200,7 +199,7 @@ impl Auction {
                 .collect(),
             tokens,
             effective_gas_price: auction.gas_price().effective().into(),
-            deadline: timeout.deadline(),
+            deadline: auction.deadline().solvers(),
         }
     }
 }
@@ -266,7 +265,7 @@ struct Token {
 }
 
 // TODO Remove dead_code
-#[allow(dead_code)]
+#[allow(dead_code, clippy::enum_variant_names)]
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Liquidity {

@@ -16,7 +16,6 @@ use {
         code_simulation::CodeSimulating,
         encoded_settlement::{encode_trade, EncodedSettlement},
         interaction::EncodedInteraction,
-        rate_limiter::RateLimiter,
         request_sharing::RequestSharing,
         trade_finding::{Interaction, Trade, TradeError, TradeFinding},
     },
@@ -37,6 +36,7 @@ use {
         signature::{Signature, SigningScheme},
     },
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::RateLimiter,
     std::sync::Arc,
     web3::{ethabi::Token, types::CallRequest},
 };
@@ -411,7 +411,7 @@ impl SettleOutput {
     /// Computes the actual [`Trade::out_amount`] based on the simulation.
     fn out_amount(&self, kind: OrderKind) -> Result<U256> {
         let balances = &self.queried_balances;
-        let balance_before = balances.get(0).context("no balance before settlement")?;
+        let balance_before = balances.first().context("no balance before settlement")?;
         let balance_after = balances.get(1).context("no balance after settlement")?;
         let out_amount = match kind {
             // for sell orders we track the buy_token amount which increases during the settlement

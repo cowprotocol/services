@@ -11,13 +11,14 @@ pub async fn start_solver(weth: H160) -> Url {
         r#"
 weth = "{weth:?}"
 base-tokens = []
-max-hops = 0
+max-hops = 1
 max-partial-attempts = 5
 risk-parameters = [0,0,0,0]
         "#,
     ));
     let args = vec![
         "solvers".to_string(),
+        format!("--addr=0.0.0.0:0"),
         "baseline".to_string(),
         format!("--config={}", config_file.display()),
     ];
@@ -25,36 +26,59 @@ risk-parameters = [0,0,0,0]
     let (bind, bind_receiver) = tokio::sync::oneshot::channel();
     tokio::task::spawn(async move {
         let _config_file = config_file;
-        solvers::run(args.into_iter(), Some(bind)).await;
+        solvers::run(args, Some(bind)).await;
     });
 
     let solver_addr = bind_receiver.await.unwrap();
     format!("http://{solver_addr}").parse().unwrap()
 }
 
-pub fn start_driver(
-    contracts: &Contracts,
-    solver_endpoint: &Url,
-    solver_account: &TestAccount,
-) -> JoinHandle<()> {
+pub struct SolverEngine {
+    pub name: String,
+    pub endpoint: Url,
+    pub account: TestAccount,
+}
+
+pub fn start_driver(contracts: &Contracts, solvers: Vec<SolverEngine>) -> JoinHandle<()> {
+    let solvers = solvers
+        .iter()
+        .map(
+            |SolverEngine {
+                 name,
+                 account,
+                 endpoint,
+             }| {
+                let account = hex::encode(account.private_key());
+                format!(
+                    r#"
+[[solver]]
+name = "{name}"
+endpoint = "{endpoint}"
+relative-slippage = "0.1"
+account = "{account}"
+
+"#
+                )
+            },
+        )
+        .collect::<Vec<String>>()
+        .join("\n");
     let config_file = config_tmp_file(format!(
         r#"
 [contracts]
 gp-v2-settlement = "{:?}"
 weth = "{:?}"
 
-[[solver]]
-name = "test_solver"
-endpoint = "{solver_endpoint}"
-relative-slippage = "0.1"
-account = "0x{}"
+{solvers}
 
 [liquidity]
 base-tokens = []
+graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
+missing-pool-cache-time = "1h"
 
 [submission]
 gas-price-cap = 1000000000000
@@ -64,7 +88,6 @@ mempool = "public"
 "#,
         contracts.gp_settlement.address(),
         contracts.weth.address(),
-        hex::encode(solver_account.private_key()),
         contracts.uniswap_v2_router.address(),
         H256(UNISWAP_INIT),
     ));

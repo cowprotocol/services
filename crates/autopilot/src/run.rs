@@ -12,6 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        infra::{self, blockchain},
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -60,6 +61,7 @@ use {
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
+    url::Url,
 };
 
 struct Liveness {
@@ -75,6 +77,16 @@ impl LivenessChecking for Liveness {
     }
 }
 
+async fn ethrpc(url: &Url) -> blockchain::Rpc {
+    blockchain::Rpc::new(url)
+        .await
+        .expect("connect ethereum RPC")
+}
+
+async fn ethereum(ethrpc: blockchain::Rpc) -> blockchain::Ethereum {
+    blockchain::Ethereum::new(ethrpc).await
+}
+
 pub async fn start(args: impl Iterator<Item = String>) {
     let args = Arguments::parse_from(args);
     observe::tracing::initialize(
@@ -84,6 +96,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("gp_v2_autopilot".into()), None);
+
+    if args.drivers.is_empty() {
+        panic!("colocation is enabled but no drivers are configured");
+    }
 
     if args.shadow.is_some() {
         shadow_mode(args).await;
@@ -96,11 +112,10 @@ pub async fn start(args: impl Iterator<Item = String>) {
 pub async fn run(args: Arguments) {
     assert!(args.shadow.is_none(), "cannot run in shadow mode");
 
-    let db = Postgres::new(args.db_url.as_str()).await.unwrap();
-    tokio::task::spawn(
-        crate::database::database_metrics(db.clone())
-            .instrument(tracing::info_span!("database_metrics")),
-    );
+    let db = Postgres::new(args.db_url.as_str(), args.order_events_insert_batch_size)
+        .await
+        .unwrap();
+    crate::database::run_database_metrics_work(db.clone());
 
     let http_factory = HttpClientFactory::new(&args.http_client);
     let web3 = shared::ethrpc::web3(
@@ -174,11 +189,6 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let network_time_between_blocks = args
-        .shared
-        .network_block_interval
-        .or_else(|| shared::network::block_interval(&network, chain_id))
-        .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -288,7 +298,7 @@ pub async fn run(args: Arguments) {
         number_of_entries_to_auto_update: args.pool_cache_lru_size,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries,
     };
     let pool_fetcher = Arc::new(
         PoolCache::new(
@@ -310,6 +320,7 @@ pub async fn run(args: Arguments) {
             .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
         let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         match BalancerPoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             block_retriever.clone(),
             token_info_fetcher.clone(),
@@ -338,6 +349,7 @@ pub async fn run(args: Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         match UniswapV3PoolFetcher::new(
+            &args.shared.graph_api_base_url,
             chain_id,
             web3.clone(),
             http_factory.create(),
@@ -413,13 +425,6 @@ pub async fn run(args: Arguments) {
     )
     .expect("failed to initialize price estimator factory");
 
-    let price_estimator = price_estimator_factory
-        .price_estimator(&PriceEstimatorSource::for_args(
-            args.order_quoting.price_estimators.as_slice(),
-            &args.order_quoting.price_estimation_drivers,
-            &args.order_quoting.price_estimation_legacy_solvers,
-        ))
-        .unwrap();
     let native_price_estimator = price_estimator_factory
         .native_price_estimator(
             args.native_price_estimators.as_slice(),
@@ -429,6 +434,17 @@ pub async fn run(args: Arguments) {
                 &args.order_quoting.price_estimation_legacy_solvers,
             ),
             args.native_price_estimation_results_required,
+        )
+        .unwrap();
+    let price_estimator = price_estimator_factory
+        .price_estimator(
+            &PriceEstimatorSource::for_args(
+                args.order_quoting.price_estimators.as_slice(),
+                &args.order_quoting.price_estimation_drivers,
+                &args.order_quoting.price_estimation_legacy_solvers,
+            ),
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
         )
         .unwrap();
 
@@ -443,8 +459,7 @@ pub async fn run(args: Arguments) {
         block_retriever.clone(),
         skip_event_sync_start,
     ));
-    let mut maintainers: Vec<Arc<dyn Maintaining>> =
-        vec![pool_fetcher.clone(), event_updater, Arc::new(db.clone())];
+    let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -477,15 +492,15 @@ pub async fn run(args: Arguments) {
         Arc::new(db.clone()),
         order_quoting::Validity {
             eip1271_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.eip1271_onchain_quote_validity_seconds,
+                args.order_quoting.eip1271_onchain_quote_validity,
             )
             .unwrap(),
             presign_onchain_quote: chrono::Duration::from_std(
-                args.order_quoting.presign_onchain_quote_validity_seconds,
+                args.order_quoting.presign_onchain_quote_validity,
             )
             .unwrap(),
             standard_quote: chrono::Duration::from_std(
-                args.order_quoting.standard_offchain_quote_validity_seconds,
+                args.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
         },
@@ -538,9 +553,6 @@ pub async fn run(args: Arguments) {
         );
         maintainers.push(broadcaster_event_updater);
     }
-    if let Some(balancer) = balancer_pool_fetcher {
-        maintainers.push(balancer);
-    }
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
         maintainers.push(uniswap_v3);
     }
@@ -562,11 +574,10 @@ pub async fn run(args: Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
+        native_token.address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
-        !args.enable_colocation,
-        args.fee_objective_scaling_factor,
     );
     solvable_orders_cache
         .update(block)
@@ -576,7 +587,7 @@ pub async fn run(args: Arguments) {
         max_auction_age: args.max_auction_age,
         solvable_orders_cache: solvable_orders_cache.clone(),
     };
-    let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
+    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
@@ -591,41 +602,51 @@ pub async fn run(args: Arguments) {
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
-    if args.enable_colocation {
-        if args.drivers.is_empty() {
-            panic!("colocation is enabled but no drivers are configured");
-        }
-        let market_makable_token_list_configuration = TokenListConfiguration {
-            url: args.trusted_tokens_url,
-            update_interval: args.trusted_tokens_update_interval,
-            chain_id,
-            client: http_factory.create(),
-            hardcoded: args.trusted_tokens.unwrap_or_default(),
-        };
-        // updated in background task
-        let market_makable_token_list =
-            AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration)
-                .await;
-        let run = RunLoop {
-            solvable_orders_cache,
-            database: db,
-            drivers: args.drivers.into_iter().map(Driver::new).collect(),
-            current_block: current_block_stream,
-            web3,
-            network_block_interval: network_time_between_blocks,
-            market_makable_token_list,
-            submission_deadline: args.submission_deadline as u64,
-            additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
-            score_cap: args.score_cap,
-            max_settlement_transaction_wait: args.max_settlement_transaction_wait,
-            solve_deadline: args.solve_deadline,
-        };
-        run.run_forever().await;
-        unreachable!("run loop exited");
-    } else {
-        let result = serve_metrics.await;
-        unreachable!("serve_metrics exited {result:?}");
-    }
+    let order_events_cleaner_config = crate::periodic_db_cleanup::OrderEventsCleanerConfig::new(
+        args.order_events_cleanup_interval,
+        args.order_events_cleanup_threshold,
+    );
+    let order_events_cleaner = crate::periodic_db_cleanup::OrderEventsCleaner::new(
+        order_events_cleaner_config,
+        db.clone(),
+    );
+
+    tokio::task::spawn(
+        order_events_cleaner
+            .run_forever()
+            .instrument(tracing::info_span!("order_events_cleaner")),
+    );
+
+    let market_makable_token_list_configuration = TokenListConfiguration {
+        url: args.trusted_tokens_url,
+        update_interval: args.trusted_tokens_update_interval,
+        chain_id,
+        client: http_factory.create(),
+        hardcoded: args.trusted_tokens.unwrap_or_default(),
+    };
+    // updated in background task
+    let market_makable_token_list =
+        AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
+    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let eth = ethereum(ethrpc).await;
+    let run = RunLoop {
+        eth,
+        solvable_orders_cache,
+        database: Arc::new(db),
+        drivers: args.drivers.into_iter().map(Driver::new).collect(),
+        market_makable_token_list,
+        submission_deadline: args.submission_deadline as u64,
+        additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
+        score_cap: args.score_cap,
+        max_settlement_transaction_wait: args.max_settlement_transaction_wait,
+        solve_deadline: args.solve_deadline,
+        in_flight_orders: Default::default(),
+        fee_policy: args.fee_policy,
+        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
+    };
+    run.run_forever().await;
+    unreachable!("run loop exited");
 }
 
 async fn shadow_mode(args: Arguments) -> ! {
@@ -636,9 +657,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    if args.drivers.is_empty() {
-        panic!("shadow mode is enabled but no drivers are configured");
-    }
     let drivers = args.drivers.into_iter().map(Driver::new).collect();
 
     let trusted_tokens = {
@@ -672,12 +690,15 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
+    shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
+
     let shadow = shadow::RunLoop::new(
         orderbook,
         drivers,
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        args.fee_policy,
     );
     shadow.run_forever().await;
 

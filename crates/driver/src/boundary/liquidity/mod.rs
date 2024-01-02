@@ -7,7 +7,6 @@ use {
     anyhow::Result,
     ethrpc::current_block::CurrentBlockStream,
     futures::future,
-    itertools::Itertools,
     model::TokenPair,
     shared::{
         baseline_solver::BaseTokens,
@@ -30,6 +29,7 @@ use {
 pub mod balancer;
 pub mod swapr;
 pub mod uniswap;
+mod zeroex;
 
 /// The default poll interval for the block stream updating task.
 const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -38,7 +38,7 @@ const BLOCK_POLL_INTERVAL: Duration = Duration::from_secs(1);
 fn cache_config() -> CacheConfig {
     CacheConfig {
         number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
-        number_of_entries_to_auto_update: NonZeroUsize::new(200).unwrap(),
+        number_of_entries_to_auto_update: NonZeroUsize::new(1000).unwrap(),
         maximum_recent_block_age: 4,
         max_retries: 5,
         delay_between_retries: Duration::from_secs(1),
@@ -61,32 +61,28 @@ impl Fetcher {
     /// Creates a new fetcher for the specified configuration.
     pub async fn new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let blocks = current_block::Arguments {
-            block_stream_poll_interval_seconds: BLOCK_POLL_INTERVAL,
+            block_stream_poll_interval: BLOCK_POLL_INTERVAL,
         };
 
         let block_stream = blocks.stream(boundary::web3(eth)).await?;
         let block_retriever = blocks.retriever(boundary::web3(eth));
 
-        let uni_v2: Vec<_> = future::join_all(
+        let uni_v2: Vec<_> = future::try_join_all(
             config
                 .uniswap_v2
                 .iter()
                 .map(|config| uniswap::v2::collector(eth, &block_stream, config)),
         )
-        .await
-        .into_iter()
-        .try_collect()?;
+        .await?;
 
         let swapr_routers = config.swapr.iter().map(|config| config.router).collect();
-        let swapr: Vec<_> = future::join_all(
+        let swapr: Vec<_> = future::try_join_all(
             config
                 .swapr
                 .iter()
                 .map(|config| swapr::collector(eth, &block_stream, config)),
         )
-        .await
-        .into_iter()
-        .try_collect()?;
+        .await?;
 
         let bal_v2: Vec<_> = config
             .balancer_v2
@@ -102,6 +98,16 @@ impl Fetcher {
             .map(|config| uniswap::v3::collector(eth, block_retriever.clone(), config))
             .collect();
 
+        let zeroex: Vec<_> = future::try_join_all(
+            config
+                .zeroex
+                .as_ref()
+                .map(|config| zeroex::collector(eth, block_stream.clone(), config))
+                .into_iter()
+                .collect::<Vec<_>>(),
+        )
+        .await?;
+
         let base_tokens = BaseTokens::new(
             eth.contracts().weth().address(),
             &config
@@ -115,7 +121,7 @@ impl Fetcher {
         Ok(Self {
             blocks: block_stream,
             inner: LiquidityCollector {
-                liquidity_sources: [uni_v2, swapr, bal_v2, uni_v3]
+                liquidity_sources: [uni_v2, swapr, bal_v2, uni_v3, zeroex]
                     .into_iter()
                     .flatten()
                     .collect(),

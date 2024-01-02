@@ -88,6 +88,29 @@ paths:
           $ref: "#/components/responses/BadRequest"
         500:
           $ref: "#/components/responses/InternalServerError"
+  /reveal:
+    post:
+      description: |
+        Reveal the calldata of the previously solved auction.
+
+        This may be used by the autopilot to verify the solution before requesting its execution it on chain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Solution"
+      responses:
+        200:
+          description: Execution accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealedResponse"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
   /settle:
     post:
       description: |
@@ -102,7 +125,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SettleRequest"
+              $ref: "#/components/schemas/Solution"
       responses:
         200:
           description: Execution accepted.
@@ -138,10 +161,6 @@ components:
       description: Token information.
       type: object
       properties:
-        decimals:
-          type: integer
-        symbol:
-          type: string
         address:
           $ref: "#/components/schemas/Address"
         price:
@@ -151,49 +170,73 @@ components:
             The reference price denominated in native token (i.e. 1e18 represents a token that
             trades one to one with the native token). These prices are used for solution competition
             for computing surplus and converting fees to native token.
-        available_balance:
-          $ref: "#/components/schemas/TokenAmount"
         trusted:
+          description: |
+            Whether the protocol trusts the token to be used for internalizing trades.
+
+            Solvers are allowed to internalize trades, ie. omit the interaction that executes the swap from token A to token B
+            and instead use the settlement contract balances, aka buffers, to fulfil the interaction as long as the token 
+            the contract receives (A in the example) is trusted.
           type: boolean
     Order:
       description: |
         Order information like what is returned by the Orderbook apis.
-
-        TODO: document all fields
       type: object
       properties:
         uid:
-          type: string
+          $ref: "#/components/schemas/OrderUID"
         sellToken:
+          description: Token being sold
           $ref: "#/components/schemas/Address"
         buyToken:
+          description: Token being bought
           $ref: "#/components/schemas/Address"
         sellAmount:
+          description: Amount to be sold
           $ref: "#/components/schemas/TokenAmount"
         buyAmount:
+          description: Amount to be bought
           $ref: "#/components/schemas/TokenAmount"
         solverFee:
+          description: |
+            The fee that the solver should use to compute the objective value of the solution.
+
+            This fee may be different from user fee as it removes any subsidies.
           $ref: "#/components/schemas/TokenAmount"
         userFee:
+          description: |
+            The fee that the user signed to pay for getting their order included.
+
+            This fee may be different from solver fee as it includes subsidies.
           $ref: "#/components/schemas/TokenAmount"
         validTo:
+          description: The time until which the order is valid.
           type: integer
         kind:
           type: string
           enum: ["buy", "sell"]
         receiver:
+          description: The address that should receive the bought tokens.
           $ref: "#/components/schemas/Address"
         owner:
+          description: The address that created the order.
           $ref: "#/components/schemas/Address"
         partiallyFillable:
+          description: |
+            Whether the order can be partially filled.
+
+            If this is false then the solver must fill the entire order or not at all.
           type: boolean
         executed:
+          description: The amount that has already been filled.
           $ref: "#/components/schemas/TokenAmount"
         preInteractions:
+          description: Interactions that must be executed before the order can be filled.
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
         postInteractions:
+          description: Interactions that must be executed after the order has been filled.
           type: array
           items:
             $ref: "#/components/schemas/Interaction"
@@ -206,10 +249,6 @@ components:
         class:
           type: string
           enum: ["market", "limit", "liquidity"]
-        surplusFee:
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
-          nullable: true
         appData:
           description: 32 bytes encoded as hex with `0x` prefix.
           type: string
@@ -219,6 +258,14 @@ components:
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string
+        feePolicies:
+          description: |
+            Any protocol fee policies that apply to the order.
+
+            The solver should make sure the fee policy is applied when computing their solution.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
@@ -248,11 +295,32 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/Interaction"
+            solver:
+              description: The address of the solver that quoted this order.
+              $ref: "#/components/schemas/Address"
         - $ref: "#/components/schemas/Error"
     DateTime:
       description: An ISO 8601 UTC date time string.
       type: string
       example: "2020-12-03T18:35:18.814523Z"
+    Calldata:
+      description: hex encoded calldata with `0x` prefix.
+      type: object
+      properties:
+        internalized:
+          description: |
+            The calldata without any internalized interactions encoded.
+
+            This is the calldata that can be found on chain.
+          type: string
+          example: "0x1234567890"
+        uninternalized:
+          description: |
+            The calldata with all internalized interactions encoded.
+
+            This is the calldata that should be used for simulation/verification purposes.
+          type: string
+          example: "0x1234567890"
     SolveRequest:
       description: Request to the solve endpoint.
       type: object
@@ -261,10 +329,6 @@ components:
           type: integer
           description: |
             The unique identifier of the auction.
-        block:
-          type: integer
-          description: |
-            The block number at which the auction was created.
         orders:
           type: array
           items:
@@ -279,94 +343,109 @@ components:
             Information about tokens used in the auction.
         deadline:
           $ref: "#/components/schemas/DateTime"
+        scoreCap:
+          description: |
+            The protocol rewards the winning solver the difference between the observed score and the second best score up to this cap.
+          $ref: "#/components/schemas/BigUint"
     SolveResponse:
       description: |
         Response of the solve endpoint.
+      type: array
+      items:
+        type: object
+        properties:
+          solutionId:
+            description: |
+              The unique identifier of the solution.
 
-        A score of 0 indicates the empty solution, which is never executed.
-      type: object
-      properties:
-        score:
-          description: |
-            The objective value of the solution.
-          type: number
-        signature:
-          description: |
-            Signature confirming that the Solver promised to have this solution for this auction.
+              This id is used to identify the solution when executing it.
+            type: integer
+          score:
+            description: |
+              The objective value of the solution.
+            type: number
+          submissionAddress:
+            description: |
+              The address that will be used to submit the solution.
+            $ref: "#/components/schemas/Address"
+          orders:
+            description: executed orders
+            type: array
+            items:
+              type: object
+              description: |
+                Mapping of order uid to net executed amount (including all fees).
+              additionalProperties:
+                $ref: "#/components/schemas/TokenAmount"
+          clearingPrices:
+            description: |
+              Mapping of hex token address to price.
 
-            TODO: Decide what is signed and how it is signed.
-          type: string
-    SettleRequest:
-      description: Request to the execute endpoint.
+              The prices of tokens for settled user orders as passed to the settlement contract.
+            type: object
+            additionalProperties:
+              $ref: "#/components/schemas/BigUint"
+    Solution:
+      description: Request to the settle and reveal endpoint.
       type: object
       properties:
         auctionId:
           description: Id of the auction that should be executed.
           type: integer
-        transactionIdentifier:
-          description: |
-            Extra calldata that is appended to the settlement contract invocation by the Solver to
-            identify the transaction.
-
-            Hex encoded bytes. No fixed length.
-          type: string
-          example: "0x00112233"
-    SettleResponse:
-      description: Response of the execute endpoint.
+    RevealedResponse:
+      description: Response of the reveal endpoint.
       type: object
       properties:
-        clearingPrices:
-          description: |
-            Mapping of hex token address to price.
-
-            The prices of tokens for settled user orders as passed to the settlement contract.
-          type: object
-          additionalProperties:
-            $ref: "#/components/schemas/BigUint"
-        trades:
-          description: executed orders
-          type: array
-          items:
-            type: object
-            properties:
-              uid:
-                $ref: "#/components/schemas/OrderUID"
-              executedAmount:
-                $ref: "#/components/schemas/TokenAmount"
-        internalizedInteractions:
-          type: array
-          items:
-            type: object
-            description: |
-              An internalized interaction is an interaction that could have executed on chain but
-              was instead handled through the settlement contract's buffers to save gas. The
-              information included here allows reconstructing the interaction so that it can be
-              checked for validity.
-            properties:
-              calldata:
-                description: hex encoded
-                type: string
-                example: "0x01"
-              inputs:
-                description: Mapping of hex token address to amount.
-                type: object
-                additionalProperties:
-                  $ref: "#/components/schemas/TokenAmount"
-              outputs:
-                description: Mapping of token address to amount.
-                type: object
-                additionalProperties:
-                  $ref: "#/components/schemas/TokenAmount"
         calldata:
-          description: hex encoded
-          type: string
-          example: "0x01"
-        signature:
+          $ref: "#/components/schemas/Calldata"
+    SettleResponse:
+      description: Response of the settle endpoint.
+      type: object
+      properties:
+        calldata:
+          $ref: "#/components/schemas/Calldata"
+        txHash:
           description: |
-            Signature confirming that the Solver promised to execute this auction.
+            The hash of the transaction that executed the solution.
 
-            TODO: Decide what is signed and how it is signed.
+            This is the hash that should be used to submit the solution.
           type: string
+          example: "0x2fa8a928efdd11fcf09e196dfa6e3ac4884967a9409ecc1b854ed2eabe4839e2"
+    FeePolicy:
+      description: |
+        A fee policy that applies to an order.
+
+        The solver should make sure the fee policy is applied when computing their solution.
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/PriceImprovementFee"
+        - $ref: "#/components/schemas/VolumeFee"
+    PriceImprovementFee:
+      description: |
+        If the order receives more than expected (positive deviation from quoted amounts) pay the protocol a factor of the achieved improvement.
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: ["priceimprovement"]
+        maxVolumeFactor:
+          description: Never charge more than that percentage of the order volume.
+          type: number
+          example: 0.1
+        factor:
+          description: The factor of the user surplus that the protocol will request from the solver after settling the order
+          type: number
+          example: 0.5
+    VolumeFee:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: ["volume"]
+        factor:
+          description: The fraction of the order's volume that the protocol will request from the solver after settling the order.
+          type: number
+          example: 0.5
     Error:
       description: Response on API errors.
       type: object

@@ -4,7 +4,7 @@ use {
         eth::{self, Ether, TokenAddress},
         solution::{self, SuccessProbability},
     },
-    std::collections::{BTreeSet, HashMap},
+    std::collections::BTreeSet,
 };
 
 type RequiredEther = Ether;
@@ -12,7 +12,7 @@ type TokensUsed = BTreeSet<TokenAddress>;
 type TransactionHash = eth::H256;
 type Transaction = eth::Tx;
 type BlockNo = u64;
-type Missmatches = HashMap<eth::TokenAddress, num::BigInt>;
+pub type SimulationSucceededAtLeastOnce = bool;
 
 /// The notification about important events happened in driver, that solvers
 /// need to know about.
@@ -29,12 +29,12 @@ pub enum Kind {
     Timeout,
     EmptySolution,
     DuplicatedSolutionId,
-    SimulationFailed(BlockNo, Transaction),
+    SimulationFailed(BlockNo, Transaction, SimulationSucceededAtLeastOnce),
     ScoringFailed(ScoreKind),
     NonBufferableTokensUsed(TokensUsed),
     SolverAccountInsufficientBalance(RequiredEther),
-    AssetFlow(Missmatches),
     Settled(Settlement),
+    DriverError(String),
 }
 
 /// The result of winning solver trying to settle the transaction onchain.

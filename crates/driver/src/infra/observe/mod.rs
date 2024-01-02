@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{simulator, Ethereum, Mempool},
+    super::{simulator, solver::Timeouts, Ethereum, Mempool},
     crate::{
         boundary,
         domain::{
@@ -12,18 +12,19 @@ use {
                 self,
                 score,
                 solution::{self, Settlement},
-                Auction,
                 Solution,
                 Solved,
             },
             eth::{self, Gas},
             mempools,
             quote::{self, Quote},
+            time::{Deadline, Remaining},
             Liquidity,
         },
         infra::solver,
         util::http,
     },
+    ethrpc::current_block::BlockInfo,
     std::collections::HashMap,
     url::Url,
 };
@@ -38,8 +39,8 @@ pub fn init(log: &str) {
 }
 
 /// Observe a received auction.
-pub fn auction(auction: &Auction) {
-    tracing::debug!(?auction, "received auction");
+pub fn auction(auction_id: i64) {
+    tracing::debug!(id=?auction_id, "received auction");
 }
 
 /// Observe that liquidity fetching is about to start.
@@ -85,6 +86,24 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
         .dropped_solutions
         .with_label_values(&[solver.as_str(), "EmptySolution"])
         .inc();
+}
+
+// Observe that postprocessing (encoding & merging) of solutions is about to
+// start.
+pub fn postprocessing(solutions: &[Solution], deadline: chrono::DateTime<chrono::Utc>) {
+    tracing::debug!(
+        solutions = ?solutions.len(),
+        remaining = ?deadline.remaining(),
+        "postprocessing solutions"
+    );
+}
+
+// Observe that postprocessing didn't complete before the timeout.
+pub fn postprocessing_timed_out(completed: &[Settlement]) {
+    tracing::debug!(
+        completed = ?completed.len(),
+        "postprocessing solutions timed out"
+    );
 }
 
 /// Observe that a solution is about to be encoded into a settlement.
@@ -145,6 +164,12 @@ pub fn score(settlement: &Settlement, score: &competition::Score) {
         score = ?score,
         "scored settlement"
     );
+}
+
+// Observe that the winning settlement started failing upon arrival of a new
+// block
+pub fn winner_voided(block: BlockInfo, err: &simulator::RevertError) {
+    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
 }
 
 pub fn revealing() {
@@ -309,6 +334,15 @@ pub fn mempool_executed(
             );
         }
     }
+    let result = match res {
+        Ok(_) => "Success",
+        Err(mempools::Error::Revert(_) | mempools::Error::SimulationRevert) => "Revert",
+        Err(mempools::Error::Other(_)) => "Other",
+    };
+    metrics::get()
+        .mempool_submission
+        .with_label_values(&[&mempool.to_string(), result])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.
@@ -330,6 +364,10 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::Solver(solver::Error::Dto(_)) => "SolverDtoError",
         competition::Error::SubmissionError => "SubmissionError",
     }
+}
+
+pub fn deadline(deadline: &Deadline, timeouts: &Timeouts) {
+    tracing::debug!(?deadline, ?timeouts, "computed deadline");
 }
 
 #[derive(Debug)]

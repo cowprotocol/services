@@ -61,13 +61,19 @@ impl BalancerV2Liquidity {
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
         let tokens = pools.relevant_tokens();
-        let allowances = Arc::new(
-            self.allowance_manager
-                .get_allowances(tokens, self.vault.address())
-                .await?,
-        );
 
-        let weighted_product_orders = pools
+        let allowances = self
+            .allowance_manager
+            .get_allowances(tokens, self.vault.address())
+            .await?;
+
+        let inner = Arc::new(Inner {
+            allowances,
+            settlement: self.settlement.clone(),
+            vault: self.vault.clone(),
+        });
+
+        let weighted_product_orders: Vec<_> = pools
             .weighted_pools
             .into_iter()
             .map(|pool| WeightedProductOrder {
@@ -77,13 +83,11 @@ impl BalancerV2Liquidity {
                 version: pool.version,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.id,
-                    settlement: self.settlement.clone(),
-                    vault: self.vault.clone(),
-                    allowances: allowances.clone(),
+                    inner: inner.clone(),
                 }),
             })
             .collect();
-        let stable_pool_orders = pools
+        let stable_pool_orders: Vec<_> = pools
             .stable_pools
             .into_iter()
             .map(|pool| StablePoolOrder {
@@ -93,9 +97,7 @@ impl BalancerV2Liquidity {
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.id,
-                    settlement: self.settlement.clone(),
-                    vault: self.vault.clone(),
-                    allowances: allowances.clone(),
+                    inner: inner.clone(),
                 }),
             })
             .collect();
@@ -125,9 +127,13 @@ impl LiquidityCollecting for BalancerV2Liquidity {
 
 pub struct SettlementHandler {
     pool_id: H256,
+    inner: Arc<Inner>,
+}
+
+struct Inner {
     settlement: GPv2Settlement,
     vault: BalancerV2Vault,
-    allowances: Arc<Allowances>,
+    allowances: Allowances,
 }
 
 impl SettlementHandler {
@@ -135,18 +141,20 @@ impl SettlementHandler {
         pool_id: H256,
         settlement: GPv2Settlement,
         vault: BalancerV2Vault,
-        allowances: Arc<Allowances>,
+        allowances: Allowances,
     ) -> Self {
         SettlementHandler {
             pool_id,
-            settlement,
-            vault,
-            allowances,
+            inner: Arc::new(Inner {
+                settlement,
+                vault,
+                allowances,
+            }),
         }
     }
 
     pub fn vault(&self) -> &BalancerV2Vault {
-        &self.vault
+        &self.inner.vault
     }
 
     pub fn pool_id(&self) -> H256 {
@@ -159,8 +167,8 @@ impl SettlementHandler {
         output: TokenAmount,
     ) -> BalancerSwapGivenOutInteraction {
         BalancerSwapGivenOutInteraction {
-            settlement: self.settlement.clone(),
-            vault: self.vault.clone(),
+            settlement: self.inner.settlement.clone(),
+            vault: self.inner.vault.clone(),
             pool_id: self.pool_id,
             asset_in_max: input_max,
             asset_out: output,
@@ -198,7 +206,11 @@ impl SettlementHandler {
         execution: AmmOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> Result<()> {
-        if let Some(approval) = self.allowances.approve_token(execution.input_max.clone())? {
+        if let Some(approval) = self
+            .inner
+            .allowances
+            .approve_token(execution.input_max.clone())?
+        {
             encoder.append_to_execution_plan_internalizable(
                 Arc::new(approval),
                 execution.internalizable,
@@ -436,17 +448,20 @@ mod tests {
     #[test]
     fn encodes_swaps_in_settlement() {
         let (settlement, vault) = dummy_contracts();
-        let handler = SettlementHandler {
-            pool_id: H256([0x90; 32]),
+        let inner = Arc::new(Inner {
             settlement: settlement.clone(),
             vault: vault.clone(),
-            allowances: Arc::new(Allowances::new(
+            allowances: Allowances::new(
                 vault.address(),
                 hashmap! {
                     H160([0x70; 20]) => 0.into(),
                     H160([0x71; 20]) => 100.into(),
                 },
-            )),
+            ),
+        });
+        let handler = SettlementHandler {
+            pool_id: H256([0x90; 32]),
+            inner,
         };
 
         let mut encoder = SettlementEncoder::new(Default::default());

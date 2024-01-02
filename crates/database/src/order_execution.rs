@@ -10,7 +10,7 @@ pub async fn save(
     order: &OrderUid,
     auction: AuctionId,
     surplus_fee: Option<&BigDecimal>,
-    solver_fee: Option<&BigDecimal>,
+    scoring_fee: Option<&BigDecimal>,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO order_execution (order_uid, auction_id, reward, surplus_fee, solver_fee)
@@ -21,7 +21,7 @@ VALUES ($1, $2, $3, $4, $5)
         .bind(auction)
         .bind(0.) // reward is deprecated but saved for historical analysis
         .bind(surplus_fee)
-        .bind(solver_fee)
+        .bind(scoring_fee)
         .execute(ex)
         .await?;
     Ok(())

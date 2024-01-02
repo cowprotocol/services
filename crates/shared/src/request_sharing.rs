@@ -4,7 +4,13 @@ use {
         FutureExt,
     },
     prometheus::IntCounterVec,
-    std::{future::Future, sync::Mutex},
+    std::{
+        collections::HashMap,
+        future::Future,
+        hash::Hash,
+        sync::{Arc, Mutex},
+        time::Duration,
+    },
 };
 
 // The design of this module is intentionally simple. Every time a shared future
@@ -19,7 +25,7 @@ use {
 /// Share an expensive to compute response with multiple requests that occur
 /// while one of them is already in flight.
 pub struct RequestSharing<Request, Fut: Future> {
-    in_flight: Mutex<Vec<(Request, WeakShared<Fut>)>>,
+    in_flight: Arc<Mutex<HashMap<Request, WeakShared<Fut>>>>,
     request_label: String,
 }
 
@@ -30,12 +36,33 @@ pub type BoxRequestSharing<Request, Response> =
 /// A boxed shared future.
 pub type BoxShared<T> = Shared<BoxFuture<'static, T>>;
 
-impl<Request, Fut: Future> RequestSharing<Request, Fut> {
+type Cache<Request, Response> = Arc<Mutex<HashMap<Request, WeakShared<Response>>>>;
+
+impl<Request: Send + 'static, Fut: Future + Send + 'static> RequestSharing<Request, Fut>
+where
+    Fut::Output: Send + Sync,
+{
     pub fn labelled(request_label: String) -> Self {
+        let cache: Cache<Request, Fut> = Default::default();
+        Self::spawn_gc(cache.clone());
         Self {
-            in_flight: Default::default(),
+            in_flight: cache,
             request_label,
         }
+    }
+
+    fn collect_garbage(cache: &Cache<Request, Fut>) {
+        let mut cache = cache.lock().unwrap();
+        cache.retain(|_request, weak| weak.upgrade().is_some());
+    }
+
+    fn spawn_gc(cache: Cache<Request, Fut>) {
+        tokio::task::spawn(async move {
+            loop {
+                Self::collect_garbage(&cache);
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        });
     }
 }
 
@@ -51,7 +78,7 @@ impl<Request, Fut: Future> Clone for RequestSharing<Request, Fut> {
 
 impl<Request, Fut> RequestSharing<Request, Fut>
 where
-    Request: Eq,
+    Request: Eq + Hash,
     Fut: Future,
     Fut::Output: Clone,
 {
@@ -81,22 +108,7 @@ where
         let mut in_flight = self.in_flight.lock().unwrap();
 
         // collect garbage and find copy of existing request
-        let mut existing = None;
-        in_flight.retain(|(request_, weak)| match weak.upgrade() {
-            // NOTE: Technically it's possible under very specific circumstances that the
-            // `active_request` is sitting in the cache for a long time without making progress.
-            // If somebody else picks it up and polls it to completion a timeout error will most
-            // likely be the result. See https://github.com/gnosis/gp-v2-services/pull/1677#discussion_r813673692
-            // for more details.
-            Some(shared) if shared.peek().is_none() => {
-                if *request_ == request {
-                    debug_assert!(existing.is_none());
-                    existing = Some(shared);
-                }
-                true
-            }
-            _ => false,
-        });
+        let existing = in_flight.get(&request).and_then(WeakShared::upgrade);
 
         if let Some(existing) = existing {
             Metrics::get()
@@ -114,7 +126,7 @@ where
         let shared = future(&request).shared();
         // unwrap because downgrade only returns None if the Shared has already
         // completed which cannot be the case because we haven't polled it yet.
-        in_flight.push((request, shared.downgrade().unwrap()));
+        in_flight.insert(request, shared.downgrade().unwrap());
         shared
     }
 }
@@ -136,9 +148,16 @@ impl Metrics {
 mod tests {
     use super::*;
 
-    #[test]
-    fn shares_request() {
-        let sharing = RequestSharing::labelled("test".into());
+    #[tokio::test]
+    async fn shares_request() {
+        // Manually create [`RequestSharing`] so we can have fine grained control
+        // over the garbage collection.
+        let cache: Cache<u64, BoxFuture<u64>> = Default::default();
+        let sharing = RequestSharing {
+            in_flight: cache,
+            request_label: Default::default(),
+        };
+
         let shared0 = sharing.shared(0, futures::future::ready(0).boxed());
         let shared1 = sharing.shared(0, async { panic!() }.boxed());
         // Would use Arc::ptr_eq but Shared doesn't implement it.
@@ -149,13 +168,18 @@ mod tests {
         assert_eq!(shared0.now_or_never().unwrap(), 0);
         assert_eq!(shared1.strong_count().unwrap(), 1);
         assert_eq!(shared1.weak_count().unwrap(), 1);
-        // garbage collect completed future, same request gets assigned new future
-        let shared3 = sharing.shared(0, futures::future::ready(1).boxed());
-        assert_eq!(shared3.now_or_never().unwrap(), 1);
-        // previous future still works
-        assert_eq!(shared1.strong_count().unwrap(), 1);
-        assert_eq!(shared1.weak_count().unwrap(), 0);
+
+        // GC does not delete any keys because some tasks still use the future
+        RequestSharing::collect_garbage(&sharing.in_flight);
+        assert_eq!(sharing.in_flight.lock().unwrap().len(), 1);
+        assert!(sharing.in_flight.lock().unwrap().get(&0).is_some());
+
         // complete second shared
         assert_eq!(shared1.now_or_never().unwrap(), 0);
+
+        RequestSharing::collect_garbage(&sharing.in_flight);
+
+        // GC deleted all now unused futures
+        assert!(sharing.in_flight.lock().unwrap().is_empty());
     }
 }

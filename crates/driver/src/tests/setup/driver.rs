@@ -77,7 +77,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
-            "solverFee": "0",
+            "solverFee": quote.order.user_fee.to_string(),
             "userFee": quote.order.user_fee.to_string(),
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
@@ -99,7 +99,16 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             },
             "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
             "signingScheme": "eip712",
-            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain)))
+            "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
+            "feePolicies": [{
+                "kind": "priceimprovement",
+                "factor": 0.5,
+                "maxVolumeFactor": 0.06,
+            },
+            {
+                "kind": "volume",
+                "factor": 0.1,
+            }],
         }));
     }
     for fulfillment in test.fulfillments.iter() {
