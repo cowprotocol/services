@@ -46,34 +46,36 @@ use {
         signature_validator,
         sources::{
             balancer_v2::{
-                pool_fetching::BalancerContracts,
-                BalancerFactoryKind,
-                BalancerPoolFetcher,
+                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource,
-            PoolAggregator,
+            BaselineSource, PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
         zeroex_api::DefaultZeroExApi,
     },
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{
+        collections::HashSet,
+        sync::{Arc, RwLock},
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
     url::Url,
 };
 
 struct Liveness {
-    solvable_orders_cache: Arc<SolvableOrdersCache>,
     max_auction_age: Duration,
+    last_auction_time: Arc<RwLock<Instant>>,
 }
 
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        let age = self.solvable_orders_cache.last_update_time().elapsed();
-        age <= self.max_auction_age
+        let last_auction_time = self.last_auction_time.read().unwrap();
+        let auction_age = last_auction_time.elapsed();
+        auction_age <= self.max_auction_age
     }
 }
 
@@ -583,9 +585,11 @@ pub async fn run(args: Arguments) {
         .update(block)
         .await
         .expect("failed to perform initial solvable orders update");
+
+    let now = Arc::new(RwLock::new(Instant::now()));
     let liveness = Liveness {
         max_auction_age: args.max_auction_age,
-        solvable_orders_cache: solvable_orders_cache.clone(),
+        last_auction_time: now.clone(),
     };
     shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
@@ -644,6 +648,7 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         fee_policy: args.fee_policy,
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
+        last_auction_time: now.clone(),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -690,7 +695,12 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
+    let now = Arc::new(RwLock::new(Instant::now()));
+    let liveness = Liveness {
+        max_auction_age: args.max_auction_age,
+        last_auction_time: now.clone(),
+    };
+    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     let shadow = shadow::RunLoop::new(
         orderbook,
@@ -699,6 +709,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.score_cap,
         args.solve_deadline,
         args.fee_policy,
+        now.clone(),
     );
     shadow.run_forever().await;
 

@@ -26,19 +26,14 @@ use {
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    shared::{metrics::LivenessChecking, token_list::AutoUpdatingTokenList},
-    std::{cmp, time::Duration},
+    shared::token_list::AutoUpdatingTokenList,
+    std::{
+        cmp,
+        sync::{Arc, RwLock},
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
 };
-
-pub struct Liveness;
-#[async_trait::async_trait]
-impl LivenessChecking for Liveness {
-    async fn is_alive(&self) -> bool {
-        // can we somehow check that we keep processing auctions?
-        true
-    }
-}
 
 pub struct RunLoop {
     orderbook: protocol::Orderbook,
@@ -49,6 +44,7 @@ pub struct RunLoop {
     score_cap: U256,
     solve_deadline: Duration,
     fee_policy: FeePolicy,
+    last_auction_time: Arc<RwLock<Instant>>,
 }
 
 impl RunLoop {
@@ -59,6 +55,7 @@ impl RunLoop {
         score_cap: U256,
         solve_deadline: Duration,
         fee_policy: FeePolicy,
+        last_auction_time: Arc<RwLock<Instant>>,
     ) -> Self {
         Self {
             orderbook,
@@ -69,6 +66,7 @@ impl RunLoop {
             score_cap,
             solve_deadline,
             fee_policy,
+            last_auction_time,
         }
     }
 
@@ -81,6 +79,7 @@ impl RunLoop {
             };
             observe::log_auction_delta(id, &previous, &auction);
             previous = Some(auction.clone());
+            *self.last_auction_time.write().unwrap() = Instant::now();
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))

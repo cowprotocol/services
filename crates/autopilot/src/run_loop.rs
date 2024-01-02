@@ -25,11 +25,7 @@ use {
         interaction::InteractionData,
         order::{OrderClass, OrderUid},
         solver_competition::{
-            CompetitionAuction,
-            Order,
-            Score,
-            SolverCompetitionDB,
-            SolverSettlement,
+            CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
         },
     },
     number::nonzero::U256 as NonZeroU256,
@@ -38,7 +34,7 @@ use {
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        sync::{Arc, Mutex},
+        sync::{Arc, Mutex, RwLock},
         time::{Duration, Instant},
     },
     tracing::Instrument,
@@ -59,6 +55,7 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub fee_policy: arguments::FeePolicy,
     pub persistence: infra::persistence::Persistence,
+    pub last_auction_time: Arc<RwLock<Instant>>,
 }
 
 impl RunLoop {
@@ -74,6 +71,8 @@ impl RunLoop {
                     || last_block.replace(current_block) != Some(current_block)
                 {
                     observe::log_auction_delta(id, &previous, &auction);
+                    *self.last_auction_time.write().unwrap() = Instant::now();
+
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
