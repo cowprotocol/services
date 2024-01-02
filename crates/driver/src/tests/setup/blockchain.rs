@@ -276,7 +276,7 @@ impl Blockchain {
             wait_for(
                 &web3,
                 authenticator
-                    .add_solver(config.address)
+                    .add_solver(config.address())
                     .from(trader_account.clone())
                     .send(),
             )
@@ -288,7 +288,7 @@ impl Blockchain {
                     web3.eth()
                         .send_transaction(web3::types::TransactionRequest {
                             from: primary_address(&web3).await,
-                            to: Some(config.address),
+                            to: Some(config.address()),
                             value: Some(balance / 5),
                             ..Default::default()
                         }),

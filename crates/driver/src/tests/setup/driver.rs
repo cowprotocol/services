@@ -202,7 +202,7 @@ async fn create_config_file(
                endpoint = "http://{}"
                absolute-slippage = "{}"
                relative-slippage = "{}"
-               account = "{:#x}"
+               account = "0x{}"
                "#,
             solver.name,
             addr,
@@ -212,7 +212,7 @@ async fn create_config_file(
                 .map(|abs| abs.0)
                 .unwrap_or_default(),
             solver.slippage.relative,
-            solver.address,
+            hex::encode(solver.private_key.secret_bytes()),
         )
         .unwrap();
     }

@@ -236,8 +236,8 @@ pub struct Solver {
     name: String,
     /// Should the solver be funded with ETH? True by default.
     funded: bool,
-    /// The secret key for this solver.
-    address: eth::H160,
+    /// The private key for this solver.
+    private_key: ethcontract::PrivateKey,
     /// The slippage for this solver.
     slippage: infra::solver::Slippage,
     /// The fraction of time used for solving
@@ -248,7 +248,11 @@ pub fn solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
         funded: true,
-        address: eth::H160::from_str("72b92Ee5F847FBB0D243047c263Acd40c34A63B9").unwrap(),
+        private_key: ethcontract::PrivateKey::from_slice(
+            &hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
+                .unwrap(),
+        )
+        .unwrap(),
         slippage: infra::solver::Slippage {
             relative: bigdecimal::BigDecimal::from_f64(0.3).unwrap(),
             absolute: Some(183.into()),
@@ -257,6 +261,12 @@ pub fn solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
+    }
+}
+
+impl Solver {
+    fn address(&self) -> eth::H160 {
+        self.private_key.public_address()
     }
 }
 
