@@ -475,10 +475,6 @@ impl Driver {
             };
             tracing::debug!(?solver_competition, "submitting competition info");
 
-            // This has to succeed in order to continue settling. Otherwise we can't be sure
-            // the competition info has been stored.
-            self.send_solver_competition(&solver_competition).await?;
-
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             tracing::debug!(?address, ?nonce, "submitting settlement");
@@ -554,20 +550,6 @@ impl Driver {
         let id = self.run_id;
         self.run_id += 1;
         id
-    }
-
-    async fn send_solver_competition(
-        &self,
-        body: &model::solver_competition::Request,
-    ) -> Result<()> {
-        // For example shadow solver shouldn't store competition info.
-        if !self.api.is_authenticated() {
-            return Ok(());
-        }
-        self.api
-            .send_solver_competition(body)
-            .await
-            .context("send_solver_competition")
     }
 }
 

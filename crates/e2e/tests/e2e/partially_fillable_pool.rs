@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{colocation::SolverEngine, *},
+        tx,
+    },
     ethcontract::prelude::U256,
     model::{
         order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
@@ -70,7 +73,19 @@ async fn test(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    let solver_endpoint =
+        colocation::start_solver(onchain.contracts().uniswap_v2_router.address()).await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
+    services.start_autopilot(vec![
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
     services
         .start_api(vec![
             "--allow-placing-partially-fillable-limit-orders=true".to_string()
@@ -106,7 +121,6 @@ async fn test(web3: Web3) {
     assert_eq!(order.metadata.solver_fee, 0.into());
 
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
@@ -124,7 +138,10 @@ async fn test(web3: Web3) {
             .contains(&buy_balance.as_u128())
     );
 
+    onchain.mint_blocks_past_reorg_threshold().await;
+
     let metadata_updated = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         let executed_surplus_fee = match order.metadata.class {
             OrderClass::Limit(LimitOrderClass {
