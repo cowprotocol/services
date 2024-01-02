@@ -249,7 +249,7 @@ pub fn solver() -> Solver {
         name: solver::NAME.to_owned(),
         funded: true,
         private_key: ethcontract::PrivateKey::from_slice(
-            &hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
+            hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
                 .unwrap(),
         )
         .unwrap(),
