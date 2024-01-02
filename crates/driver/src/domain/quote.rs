@@ -85,11 +85,7 @@ impl Order {
         };
 
         let solutions = solver
-            .solve(
-                &self.fake_auction(eth, tokens).await?,
-                &liquidity,
-                self.deadline.solvers()?.into(),
-            )
+            .solve(&self.fake_auction(eth, tokens).await?, &liquidity)
             .await?;
         Quote::new(
             eth,
@@ -156,7 +152,7 @@ impl Order {
                 },
             ]
             .into_iter(),
-            Default::default(),
+            self.deadline,
             eth,
             Default::default(),
         )
