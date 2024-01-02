@@ -194,7 +194,9 @@ impl Solver {
             req = req.header("X-REQUEST-ID", id);
         }
         let future = async move {
-            let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+            if let Err(error) = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await {
+                tracing::warn!(?error, "failed to notify solver");
+            }
         };
         tokio::task::spawn(future.in_current_span());
     }

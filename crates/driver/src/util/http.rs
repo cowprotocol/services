@@ -9,7 +9,15 @@ pub async fn send(limit_bytes: usize, req: reqwest::RequestBuilder) -> Result<St
         }
         data.extend_from_slice(&chunk);
     }
-    String::from_utf8(data).map_err(Into::into)
+    let body = String::from_utf8(data).map_err(Error::NotUtf8)?;
+    if res.status().is_success() {
+        Ok(body)
+    } else {
+        Err(Error::NotOk {
+            code: res.status().as_u16(),
+            body: body.clone(),
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -20,4 +28,6 @@ pub enum Error {
     ResponseTooLarge { limit_bytes: usize },
     #[error("the response could not be parsed as UTF-8: {0:?}")]
     NotUtf8(#[from] std::string::FromUtf8Error),
+    #[error("the response status was not 2xx but {code:?}, body: {body:?}")]
+    NotOk { code: u16, body: String },
 }
