@@ -406,7 +406,8 @@ impl std::fmt::Display for Arguments {
             process_partially_fillable_limit_orders,
             ethflow_contract,
             enforce_correct_fees_for_partially_fillable_limit_orders,
-            ..
+            market_makable_token_list_update_interval,
+            smallest_partial_fill,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -532,6 +533,13 @@ impl std::fmt::Display for Arguments {
             "enforce_correct_fees_for_partially_fillable_limit_orders: {:?}",
             enforce_correct_fees_for_partially_fillable_limit_orders
         )?;
+        writeln!(
+            f,
+            "market_makable_token_list_update_interval: {:?}",
+            market_makable_token_list_update_interval
+        )?;
+        writeln!(f, "smallest_partial_fill: {}", smallest_partial_fill)?;
+
         Ok(())
     }
 }

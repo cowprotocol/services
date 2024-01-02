@@ -75,19 +75,25 @@ impl std::fmt::Display for Arguments {
             chain_id,
             ethflow_contract,
             metrics_port,
-            ..
+            logging,
+            db_url,
+            refunder_pk,
         } = self;
 
         write!(f, "{}", http_client)?;
         write!(f, "{}", ethrpc)?;
         writeln!(f, "min_validity_duration: {:?}", min_validity_duration)?;
         writeln!(f, "min_slippage_bps: {}", min_slippage_bps)?;
+        let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "node_url: {}", node_url)?;
         display_option(f, "chain_id", chain_id)?;
         writeln!(f, "ethflow_contract: {:?}", ethflow_contract)?;
+        let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {}", metrics_port)?;
+        writeln!(f, "log_filter: {}", logging.log_filter)?;
+        writeln!(f, "log_stderr_threshold: {}", logging.log_stderr_threshold)?;
         Ok(())
     }
 }

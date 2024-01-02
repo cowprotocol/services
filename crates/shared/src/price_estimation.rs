@@ -325,7 +325,8 @@ impl Display for Arguments {
             tenderly_save_failed_trade_simulations,
             zeroex_only_estimate_buy_queries,
             one_inch_spot_price_api_key,
-            ..
+            trade_simulator,
+            one_inch_spot_price_api_url,
         } = self;
 
         display_option(
@@ -391,6 +392,12 @@ impl Display for Arguments {
             f,
             "one_inch_spot_price_api_key: {:?}",
             one_inch_spot_price_api_key,
+        )?;
+        writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
+        display_option(
+            f,
+            "one_inch_spot_price_api_url: {}",
+            one_inch_spot_price_api_url,
         )?;
 
         Ok(())

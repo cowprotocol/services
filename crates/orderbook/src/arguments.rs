@@ -205,7 +205,8 @@ impl std::fmt::Display for Arguments {
             ipfs_pinata_auth,
             hooks_contract_address,
             app_data_size_limit,
-            ..
+            db_url,
+            enable_eth_smart_contract_payments,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -215,6 +216,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", price_estimation)?;
         display_option(f, "tracing_node_url", tracing_node_url)?;
         writeln!(f, "bind_address: {}", bind_address)?;
+        let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(
             f,
@@ -286,6 +288,11 @@ impl std::fmt::Display for Arguments {
             &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
+        writeln!(
+            f,
+            "enable_eth_smart_contract_payments: {}",
+            enable_eth_smart_contract_payments
+        )?;
 
         Ok(())
     }

@@ -381,7 +381,7 @@ impl Display for OrderQuotingArguments {
             price_estimation_drivers,
             price_estimation_legacy_solvers,
             liquidity_order_owners,
-            ..
+            standard_offchain_quote_validity,
         } = self;
 
         writeln!(
@@ -405,6 +405,11 @@ impl Display for OrderQuotingArguments {
             price_estimation_legacy_solvers,
         )?;
         writeln!(f, "liquidity_order_owners: {:?}", liquidity_order_owners)?;
+        writeln!(
+            f,
+            "standard_offchain_quote_validity: {:?}",
+            standard_offchain_quote_validity
+        )?;
         Ok(())
     }
 }
@@ -446,7 +451,9 @@ impl Display for Arguments {
             native_token_address,
             balancer_v2_vault_address,
             custom_univ2_baseline_sources,
-            ..
+            paraswap_api_url,
+            liquidity_fetcher_max_age_update,
+            max_pools_to_initialize_cache,
         } = self;
 
         write!(f, "{}", ethrpc)?;
@@ -522,6 +529,17 @@ impl Display for Arguments {
             f,
             "custom_univ2_baseline_sources",
             custom_univ2_baseline_sources,
+        )?;
+        writeln!(f, "paraswap_api_url: {}", paraswap_api_url)?;
+        writeln!(
+            f,
+            "liquidity_fetcher_max_age_update: {:?}",
+            liquidity_fetcher_max_age_update
+        )?;
+        writeln!(
+            f,
+            "max_pools_to_initialize_cache: {}",
+            max_pools_to_initialize_cache
         )?;
 
         Ok(())
