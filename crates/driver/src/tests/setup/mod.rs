@@ -244,7 +244,7 @@ pub struct Solver {
     timeouts: infra::solver::Timeouts,
 }
 
-pub fn solver() -> Solver {
+pub fn test_solver() -> Solver {
     Solver {
         name: solver::NAME.to_owned(),
         funded: true,
@@ -288,7 +288,7 @@ pub fn setup() -> Setup {
         config_file: Default::default(),
         solutions: Default::default(),
         quote: Default::default(),
-        solvers: vec![solver()],
+        solvers: vec![test_solver()],
         enable_simulation: true,
         settlement_address: Default::default(),
     }
