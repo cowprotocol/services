@@ -371,34 +371,44 @@ where
 
 impl Display for OrderQuotingArguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            eip1271_onchain_quote_validity,
+            presign_onchain_quote_validity,
+            fee_discount,
+            min_discounted_fee,
+            fee_factor,
+            price_estimators,
+            price_estimation_drivers,
+            price_estimation_legacy_solvers,
+            liquidity_order_owners,
+            standard_offchain_quote_validity,
+        } = self;
+
         writeln!(
             f,
             "eip1271_onchain_quote_validity_second: {:?}",
-            self.eip1271_onchain_quote_validity
+            eip1271_onchain_quote_validity
         )?;
         writeln!(
             f,
             "presign_onchain_quote_validity_second: {:?}",
-            self.presign_onchain_quote_validity
+            presign_onchain_quote_validity
         )?;
-        writeln!(f, "fee_discount: {}", self.fee_discount)?;
-        writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
-        writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(f, "price_estimators: {}", self.price_estimators)?;
-        display_list(
-            f,
-            "price_estimation_drivers",
-            &self.price_estimation_drivers,
-        )?;
+        writeln!(f, "fee_discount: {}", fee_discount)?;
+        writeln!(f, "min_discounted_fee: {}", min_discounted_fee)?;
+        writeln!(f, "fee_factor: {}", fee_factor)?;
+        writeln!(f, "price_estimators: {}", price_estimators)?;
+        display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         display_list(
             f,
             "price_estimation_legacy_solvers",
-            &self.price_estimation_legacy_solvers,
+            price_estimation_legacy_solvers,
         )?;
+        writeln!(f, "liquidity_order_owners: {:?}", liquidity_order_owners)?;
         writeln!(
             f,
-            "liquidity_order_owners: {:?}",
-            self.liquidity_order_owners
+            "standard_offchain_quote_validity: {:?}",
+            standard_offchain_quote_validity
         )?;
         Ok(())
     }
@@ -407,89 +417,129 @@ impl Display for OrderQuotingArguments {
 // start up without leaking any potentially secret values.
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.ethrpc)?;
-        write!(f, "{}", self.current_block)?;
-        write!(f, "{}", self.tenderly)?;
-        writeln!(f, "log_filter: {}", self.logging.log_filter)?;
-        writeln!(
-            f,
-            "log_stderr_threshold: {}",
-            self.logging.log_stderr_threshold
-        )?;
-        writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "graph_api_base_url: {}", self.graph_api_base_url)?;
-        display_option(f, "chain_id", &self.chain_id)?;
-        display_option(f, "simulation_node_url", &self.simulation_node_url)?;
-        writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
-        display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
-        writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
-        writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
-        writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
+        let Self {
+            ethrpc,
+            current_block,
+            tenderly,
+            logging,
+            node_url,
+            graph_api_base_url,
+            chain_id,
+            simulation_node_url,
+            gas_estimators,
+            blocknative_api_key,
+            base_tokens,
+            baseline_sources,
+            pool_cache_blocks,
+            pool_cache_maximum_recent_block_age,
+            pool_cache_maximum_retries,
+            pool_cache_delay_between_retries,
+            paraswap_partner,
+            disabled_paraswap_dexs,
+            zeroex_url,
+            zeroex_api_key,
+            use_internal_buffers,
+            balancer_factories,
+            disabled_one_inch_protocols,
+            one_inch_url,
+            one_inch_referrer_address,
+            disabled_zeroex_sources,
+            balancer_pool_deny_list,
+            solver_competition_auth,
+            network_block_interval,
+            settlement_contract_address,
+            native_token_address,
+            balancer_v2_vault_address,
+            custom_univ2_baseline_sources,
+            paraswap_api_url,
+            liquidity_fetcher_max_age_update,
+            max_pools_to_initialize_cache,
+        } = self;
+
+        write!(f, "{}", ethrpc)?;
+        write!(f, "{}", current_block)?;
+        write!(f, "{}", tenderly)?;
+        writeln!(f, "log_filter: {}", logging.log_filter)?;
+        writeln!(f, "log_stderr_threshold: {}", logging.log_stderr_threshold)?;
+        writeln!(f, "node_url: {}", node_url)?;
+        writeln!(f, "graph_api_base_url: {}", graph_api_base_url)?;
+        display_option(f, "chain_id", chain_id)?;
+        display_option(f, "simulation_node_url", simulation_node_url)?;
+        writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
+        display_secret_option(f, "blocknative_api_key", blocknative_api_key)?;
+        writeln!(f, "base_tokens: {:?}", base_tokens)?;
+        writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
+        writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
         writeln!(
             f,
             "pool_cache_maximum_recent_block_age: {}",
-            self.pool_cache_maximum_recent_block_age
+            pool_cache_maximum_recent_block_age
         )?;
         writeln!(
             f,
             "pool_cache_maximum_retries: {}",
-            self.pool_cache_maximum_retries
+            pool_cache_maximum_retries
         )?;
         writeln!(
             f,
             "pool_cache_delay_between_retries: {:?}",
-            self.pool_cache_delay_between_retries
+            pool_cache_delay_between_retries
         )?;
-        display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
-        display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
-        display_option(f, "zeroex_url", &self.zeroex_url)?;
-        display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
-        writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
-        writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
+        display_secret_option(f, "paraswap_partner", paraswap_partner)?;
+        display_list(f, "disabled_paraswap_dexs", disabled_paraswap_dexs)?;
+        display_option(f, "zeroex_url", zeroex_url)?;
+        display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
+        writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
+        writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
         display_list(
             f,
             "disabled_one_inch_protocols",
-            &self.disabled_one_inch_protocols,
+            disabled_one_inch_protocols,
         )?;
-        writeln!(f, "one_inch_url: {}", self.one_inch_url)?;
+        writeln!(f, "one_inch_url: {}", one_inch_url)?;
         display_option(
             f,
             "one_inch_referrer_address",
-            &self.one_inch_referrer_address.map(|a| format!("{a:?}")),
+            &one_inch_referrer_address.map(|a| format!("{a:?}")),
         )?;
-        display_list(f, "disabled_zeroex_sources", &self.disabled_zeroex_sources)?;
-        writeln!(
-            f,
-            "balancer_pool_deny_list: {:?}",
-            self.balancer_pool_deny_list
-        )?;
-        display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_list(f, "disabled_zeroex_sources", disabled_zeroex_sources)?;
+        writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
+        display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
         display_option(
             f,
             "network_block_interval",
-            &self
-                .network_block_interval
-                .map(|duration| duration.as_secs_f32()),
+            &network_block_interval.map(|duration| duration.as_secs_f32()),
         )?;
         display_option(
             f,
             "settlement_contract_address",
-            &self.settlement_contract_address.map(|a| format!("{a:?}")),
+            &settlement_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,
             "native_token_address",
-            &self.native_token_address.map(|a| format!("{a:?}")),
+            &native_token_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,
             "balancer_v2_vault_address",
-            &self.balancer_v2_vault_address.map(|a| format!("{a:?}")),
+            &balancer_v2_vault_address.map(|a| format!("{a:?}")),
         )?;
         display_list(
             f,
             "custom_univ2_baseline_sources",
-            &self.custom_univ2_baseline_sources,
+            custom_univ2_baseline_sources,
+        )?;
+        writeln!(f, "paraswap_api_url: {}", paraswap_api_url)?;
+        writeln!(
+            f,
+            "liquidity_fetcher_max_age_update: {:?}",
+            liquidity_fetcher_max_age_update
+        )?;
+        writeln!(
+            f,
+            "max_pools_to_initialize_cache: {}",
+            max_pools_to_initialize_cache
         )?;
 
         Ok(())
