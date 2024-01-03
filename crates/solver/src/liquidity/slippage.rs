@@ -80,11 +80,16 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "relative_slippage_bps: {}", self.relative_slippage_bps)?;
+        let Self {
+            relative_slippage_bps,
+            absolute_slippage_in_native_token,
+        } = self;
+
+        writeln!(f, "relative_slippage_bps: {}", relative_slippage_bps)?;
         writeln!(
             f,
             "absolute_slippage_in_native_token: {}",
-            self.absolute_slippage_in_native_token,
+            absolute_slippage_in_native_token,
         )?;
 
         Ok(())

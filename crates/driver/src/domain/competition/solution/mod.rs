@@ -6,7 +6,6 @@ use {
             eth::{self, TokenAddress},
         },
         infra::{
-            self,
             blockchain::{self, Ethereum},
             simulator,
             solver::Solver,
@@ -244,31 +243,6 @@ impl std::fmt::Debug for Solution {
             .field("solver", &self.solver.name())
             .field("score", &self.score)
             .finish()
-    }
-}
-
-/// The time limit passed to the solver for solving an auction.
-#[derive(Debug, Clone, Copy)]
-pub struct SolverTimeout(chrono::Duration);
-
-impl SolverTimeout {
-    pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
-        infra::time::now() + self.0
-    }
-
-    pub fn duration(self) -> chrono::Duration {
-        self.0
-    }
-
-    #[must_use]
-    pub fn reduce(self, duration: chrono::Duration) -> Self {
-        Self(self.0 - duration)
-    }
-}
-
-impl From<std::time::Duration> for SolverTimeout {
-    fn from(duration: std::time::Duration) -> Self {
-        Self(chrono::Duration::from_std(duration).unwrap_or(chrono::Duration::max_value()))
     }
 }
 

@@ -221,7 +221,7 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Arguments {
+        let Self {
             shared,
             order_quoting,
             http_client,

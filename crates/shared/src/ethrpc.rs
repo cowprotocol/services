@@ -38,13 +38,19 @@ pub struct Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "ethrpc_max_batch_size: {}", self.ethrpc_max_batch_size)?;
+        let Self {
+            ethrpc_max_batch_size,
+            ethrpc_max_concurrent_requests,
+            ethrpc_batch_delay,
+        } = self;
+
+        writeln!(f, "ethrpc_max_batch_size: {}", ethrpc_max_batch_size)?;
         writeln!(
             f,
             "ethrpc_max_concurrent_requests: {}",
-            self.ethrpc_max_concurrent_requests
+            ethrpc_max_concurrent_requests
         )?;
-        writeln!(f, "ethrpc_batch_delay: {:?}", self.ethrpc_batch_delay)?;
+        writeln!(f, "ethrpc_batch_delay: {:?}", ethrpc_batch_delay)?;
 
         Ok(())
     }
