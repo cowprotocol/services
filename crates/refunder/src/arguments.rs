@@ -82,6 +82,7 @@ impl std::fmt::Display for Arguments {
 
         write!(f, "{}", http_client)?;
         write!(f, "{}", ethrpc)?;
+        write!(f, "{}", logging)?;
         writeln!(f, "min_validity_duration: {:?}", min_validity_duration)?;
         writeln!(f, "min_slippage_bps: {}", min_slippage_bps)?;
         let _intentionally_ignored = db_url;
@@ -92,8 +93,6 @@ impl std::fmt::Display for Arguments {
         let _intentionally_ignored = refunder_pk;
         writeln!(f, "refunder_pk: SECRET")?;
         writeln!(f, "metrics_port: {}", metrics_port)?;
-        writeln!(f, "log_filter: {}", logging.log_filter)?;
-        writeln!(f, "log_stderr_threshold: {}", logging.log_stderr_threshold)?;
         Ok(())
     }
 }
