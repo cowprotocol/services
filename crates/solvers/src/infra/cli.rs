@@ -28,7 +28,7 @@ pub struct Args {
 /// The solver engine to run. The config field is a path to the solver
 /// configuration file. This file should be in TOML format.
 #[derive(Subcommand, Debug)]
-#[clap(rename_all = "camelCase")]
+#[clap(rename_all = "lowercase")]
 pub enum Command {
     /// solve individual orders exclusively via provided onchain liquidity
     Baseline {
