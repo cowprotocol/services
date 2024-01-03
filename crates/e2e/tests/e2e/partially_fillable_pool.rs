@@ -1,8 +1,5 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-    },
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
