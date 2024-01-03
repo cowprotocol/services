@@ -699,8 +699,7 @@ WHERE
         WHEN 'buy' THEN sum_buy < buy_amount
     END AND
     (NOT invalidated) AND
-    (onchain_placement_error IS NULL) AND
-    (NOT presignature_pending)
+    (onchain_placement_error IS NULL)
 "#
 );
 
@@ -1336,19 +1335,19 @@ mod tests {
         }
 
         // not solvable because there is no presignature event.
-        assert!(get_order(&mut db).await.is_none());
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable because once presignature event is observed.
         pre_signature_event(&mut db, 0, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.is_some());
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
 
         // not solvable because "unsigned" presignature event.
         pre_signature_event(&mut db, 1, order.owner, order.uid, false).await;
-        assert!(get_order(&mut db).await.is_none());
+        assert!(get_order(&mut db).await.unwrap().presignature_pending);
 
         // solvable once again because of new presignature event.
         pre_signature_event(&mut db, 2, order.owner, order.uid, true).await;
-        assert!(get_order(&mut db).await.is_some());
+        assert!(!get_order(&mut db).await.unwrap().presignature_pending);
     }
 
     #[tokio::test]

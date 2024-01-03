@@ -1,10 +1,13 @@
 //! Framework for setting up tests.
 
 use {
-    self::{blockchain::Fulfillment, driver::Driver, solver::Solver},
+    self::{blockchain::Fulfillment, driver::Driver, solver::Solver as SolverInstance},
     crate::{
-        domain::{competition::order, eth},
-        infra::time,
+        domain::{competition::order, eth, time},
+        infra::{
+            self,
+            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
+        },
         tests::{
             cases::{
                 AB_ORDER_AMOUNT,
@@ -22,7 +25,9 @@ use {
         },
         util::{self, serialize},
     },
+    bigdecimal::FromPrimitive,
     ethcontract::BlockId,
+    futures::future::join_all,
     hyper::StatusCode,
     secp256k1::SecretKey,
     serde_with::serde_as,
@@ -225,6 +230,46 @@ impl Default for Order {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Solver {
+    /// A human readable identifier of the solver
+    name: String,
+    /// Should the solver be funded with ETH? True by default.
+    funded: bool,
+    /// The private key for this solver.
+    private_key: ethcontract::PrivateKey,
+    /// The slippage for this solver.
+    slippage: infra::solver::Slippage,
+    /// The fraction of time used for solving
+    timeouts: infra::solver::Timeouts,
+}
+
+pub fn test_solver() -> Solver {
+    Solver {
+        name: solver::NAME.to_owned(),
+        funded: true,
+        private_key: ethcontract::PrivateKey::from_slice(
+            hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
+                .unwrap(),
+        )
+        .unwrap(),
+        slippage: infra::solver::Slippage {
+            relative: bigdecimal::BigDecimal::from_f64(0.3).unwrap(),
+            absolute: Some(183.into()),
+        },
+        timeouts: infra::solver::Timeouts {
+            http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
+            solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
+        },
+    }
+}
+
+impl Solver {
+    fn address(&self) -> eth::H160 {
+        self.private_key.public_address()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pool {
     pub token_a: &'static str,
@@ -243,7 +288,7 @@ pub fn setup() -> Setup {
         config_file: Default::default(),
         solutions: Default::default(),
         quote: Default::default(),
-        fund_solver: true,
+        solvers: vec![test_solver()],
         enable_simulation: true,
         settlement_address: Default::default(),
     }
@@ -259,8 +304,8 @@ pub struct Setup {
     solutions: Vec<Solution>,
     /// Is this a test for the /quote endpoint?
     quote: bool,
-    /// Should the solver be funded with ETH? True by default.
-    fund_solver: bool,
+    /// List of solvers in this test
+    solvers: Vec<Solver>,
     /// Should simulation be enabled? True by default.
     enable_simulation: bool,
     /// Ensure the settlement contract is deployed on a specific address?
@@ -476,8 +521,10 @@ impl Setup {
     }
 
     /// Don't fund the solver account with any ETH.
-    pub fn defund_solver(mut self) -> Self {
-        self.fund_solver = false;
+    pub fn defund_solvers(mut self) -> Self {
+        self.solvers
+            .iter_mut()
+            .for_each(|solver| solver.funded = false);
         self
     }
 
@@ -516,26 +563,12 @@ impl Setup {
         )
         .unwrap();
 
-        // Hardcoded solver account. Don't use this account for anything else!!!
-        let solver_address =
-            eth::H160::from_str("72b92Ee5F847FBB0D243047c263Acd40c34A63B9").unwrap();
-        let solver_secret_key = SecretKey::from_slice(
-            &hex::decode("a131a35fb8f614b31611f4fe68b6fc538b0febd2f75cd68e1282d8fd45b63326")
-                .unwrap(),
-        )
-        .unwrap();
-
-        let relative_slippage = 0.3;
-        let absolute_slippage = 183.into();
-
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
             trader_address,
             trader_secret_key,
-            solver_address,
-            solver_secret_key,
-            fund_solver: self.fund_solver,
+            solvers: self.solvers.clone(),
             settlement_address: self.settlement_address,
         })
         .await;
@@ -552,25 +585,26 @@ impl Setup {
             let quote = blockchain.quote(&order).await;
             quotes.push(quote);
         }
-        let solver = Solver::new(solver::Config {
-            blockchain: &blockchain,
-            solutions: &solutions,
-            trusted: &trusted,
-            quoted_orders: &quotes,
-            deadline,
-            quote: self.quote,
-        })
+        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
+            let instance = SolverInstance::new(solver::Config {
+                blockchain: &blockchain,
+                solutions: &solutions,
+                trusted: &trusted,
+                quoted_orders: &quotes,
+                deadline: time::Deadline::new(deadline, solver.timeouts),
+                quote: self.quote,
+            })
+            .await;
+
+            (solver.clone(), instance.addr)
+        }))
         .await;
         let driver = Driver::new(
             &driver::Config {
                 config_file,
-                relative_slippage,
-                absolute_slippage,
-                solver_address,
-                solver_secret_key,
                 enable_simulation: self.enable_simulation,
             },
-            &solver,
+            &solvers_with_address,
             &blockchain,
         )
         .await;
@@ -597,7 +631,7 @@ impl Setup {
     }
 
     fn deadline(&self) -> chrono::DateTime<chrono::Utc> {
-        time::now() + chrono::Duration::seconds(2)
+        crate::infra::time::now() + chrono::Duration::seconds(2)
     }
 }
 
@@ -617,13 +651,13 @@ pub struct Test {
 impl Test {
     /// Call the /solve endpoint.
     pub async fn solve(&self) -> Solve {
+        self.solve_with_solver(solver::NAME).await
+    }
+
+    pub async fn solve_with_solver(&self, solver: &str) -> Solve {
         let res = self
             .client
-            .post(format!(
-                "http://{}/{}/solve",
-                self.driver.addr,
-                solver::NAME
-            ))
+            .post(format!("http://{}/{}/solve", self.driver.addr, solver))
             .json(&driver::solve_req(self))
             .send()
             .await

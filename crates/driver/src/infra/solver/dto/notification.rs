@@ -89,6 +89,7 @@ impl Notification {
 pub struct Notification {
     auction_id: Option<String>,
     solution_id: Option<u64>,
+    #[serde(flatten)]
     kind: Kind,
 }
 

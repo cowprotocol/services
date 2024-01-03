@@ -69,7 +69,9 @@ pub struct Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "http_timeout: {:?}", self.http_timeout)
+        let Self { http_timeout } = self;
+
+        writeln!(f, "http_timeout: {:?}", http_timeout)
     }
 }
 

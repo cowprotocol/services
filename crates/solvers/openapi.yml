@@ -378,7 +378,7 @@ components:
             A map of tick indices to their liquidity values.
           type: object
           additionalProperties:
-            $ref: "#/components/schemas/TokenAmount"
+            $ref: "#/components/schemas/BigInt"
         fee:
           $ref: "#/components/schemas/Decimal"
 
