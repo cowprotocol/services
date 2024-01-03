@@ -1,5 +1,6 @@
 use {
     crate::{domain::eth, infra::blockchain::contracts::deployment_address},
+    derivative::Derivative,
     hex_literal::hex,
     reqwest::Url,
     std::{collections::HashSet, time::Duration},
@@ -27,6 +28,9 @@ pub struct Config {
     /// The collection of Balancer V2 compatible exchanges to fetch liquidity
     /// for.
     pub balancer_v2: Vec<BalancerV2>,
+
+    /// 0x liquidity fetcher.
+    pub zeroex: Option<ZeroEx>,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.
@@ -230,4 +234,14 @@ impl BalancerV2 {
             graph_api_base_url: graph_api_base_url.clone(),
         })
     }
+}
+
+/// ZeroEx liquidity fetching options.
+#[derive(Clone, Derivative)]
+#[derivative(Debug)]
+pub struct ZeroEx {
+    pub base_url: String,
+    #[derivative(Debug = "ignore")]
+    pub api_key: Option<String>,
+    pub http_timeout: Duration,
 }

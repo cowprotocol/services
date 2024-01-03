@@ -19,6 +19,7 @@ async-trait = "0.1"
 axum = "0.6"
 bigdecimal = "0.3"
 chrono = { version = "0.4", features = ["clock"], default-features = false }
+derivative = { workspace = true }
 ethabi = "18.0"
 ethereum-types = "0.14"
 ethrpc = { path = "../ethrpc" }

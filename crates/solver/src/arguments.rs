@@ -357,143 +357,189 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.shared)?;
-        write!(f, "{}", self.http_client)?;
-        write!(f, "{}", self.slippage)?;
-        write!(f, "{}", self.order_prioritization)?;
-        writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
-        writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
-        writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
+        let Self {
+            shared,
+            http_client,
+            slippage,
+            order_prioritization,
+            orderbook_url,
+            quasimodo_solver_url,
+            balancer_sor_url,
+            solver_account,
+            target_confirm_time,
+            settle_interval,
+            solvers,
+            solver_accounts,
+            external_solvers,
+            metrics_port,
+            max_merged_settlements,
+            solver_time_limit,
+            market_makable_token_list,
+            market_makable_tokens,
+            gas_price_cap,
+            transaction_strategy,
+            access_list_estimators,
+            eden_api_url,
+            flashbots_api_url,
+            use_soft_cancellations,
+            max_additional_eden_tip,
+            max_submission_time,
+            max_additional_flashbot_tip,
+            submission_retry_interval,
+            additional_tip_percentage,
+            transaction_submission_nodes,
+            transaction_notification_nodes,
+            disable_high_risk_public_mempool_transactions,
+            max_settlements_per_solver,
+            weth_unwrap_factor,
+            simulation_gas_limit,
+            max_settlement_price_deviation,
+            token_list_restriction_for_price_checks,
+            s3_upload,
+            additional_mining_deadline,
+            risk_params,
+            score_cap,
+            skip_non_positive_score_settlements,
+            zeroex_enable_rfqt,
+            zeroex_enable_slippage_protection,
+            process_partially_fillable_liquidity_orders,
+            process_partially_fillable_limit_orders,
+            ethflow_contract,
+            enforce_correct_fees_for_partially_fillable_limit_orders,
+            market_makable_token_list_update_interval,
+            smallest_partial_fill,
+        } = self;
+
+        write!(f, "{}", shared)?;
+        write!(f, "{}", http_client)?;
+        write!(f, "{}", slippage)?;
+        write!(f, "{}", order_prioritization)?;
+        writeln!(f, "orderbook_url: {}", orderbook_url)?;
+        writeln!(f, "quasimodo_solver_url: {}", quasimodo_solver_url)?;
+        writeln!(f, "balancer_sor_url: {}", balancer_sor_url)?;
         display_option(
             f,
             "solver_account",
-            &self
-                .solver_account
+            &solver_account
                 .as_ref()
                 .map(|account| format!("{account:?}")),
         )?;
-        writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
-        writeln!(f, "settle_interval: {:?}", self.settle_interval)?;
-        writeln!(f, "solvers: {:?}", self.solvers)?;
-        writeln!(f, "solver_accounts: {:?}", self.solver_accounts)?;
+        writeln!(f, "target_confirm_time: {:?}", target_confirm_time)?;
+        writeln!(f, "settle_interval: {:?}", settle_interval)?;
+        writeln!(f, "solvers: {:?}", solvers)?;
+        writeln!(f, "solver_accounts: {:?}", solver_accounts)?;
         display_list(
             f,
             "external_solvers",
-            self.external_solvers
+            external_solvers
                 .iter()
                 .flatten()
                 .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
         )?;
-        writeln!(f, "metrics_port: {}", self.metrics_port)?;
-        writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
-        writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
-        display_option(
-            f,
-            "market_makable_token_list",
-            &self.market_makable_token_list,
-        )?;
+        writeln!(f, "metrics_port: {}", metrics_port)?;
+        writeln!(f, "max_merged_settlements: {}", max_merged_settlements)?;
+        writeln!(f, "solver_time_limit: {:?}", solver_time_limit)?;
+        display_option(f, "market_makable_token_list", market_makable_token_list)?;
         display_option(
             f,
             "market_makable_tokens",
-            &self
-                .market_makable_tokens
+            &market_makable_tokens
                 .as_ref()
                 .map(|list| format!("{list:?}")),
         )?;
-        writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
-        writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
-        writeln!(
-            f,
-            "access_list_estimators: {:?}",
-            &self.access_list_estimators
-        )?;
-        writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
-        display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
-        writeln!(f, "use_soft_cancellations: {}", self.use_soft_cancellations)?;
-        writeln!(
-            f,
-            "max_additional_eden_tip: {}",
-            self.max_additional_eden_tip
-        )?;
-        writeln!(f, "max_submission_time: {:?}", self.max_submission_time)?;
+        writeln!(f, "gas_price_cap: {}", gas_price_cap)?;
+        writeln!(f, "transaction_strategy: {:?}", transaction_strategy)?;
+        writeln!(f, "access_list_estimators: {:?}", &access_list_estimators)?;
+        writeln!(f, "eden_api_url: {}", eden_api_url)?;
+        display_list(f, "flashbots_api_url", flashbots_api_url)?;
+        writeln!(f, "use_soft_cancellations: {}", use_soft_cancellations)?;
+        writeln!(f, "max_additional_eden_tip: {}", max_additional_eden_tip)?;
+        writeln!(f, "max_submission_time: {:?}", max_submission_time)?;
         writeln!(
             f,
             "max_additional_flashbots_tip: {}",
-            self.max_additional_flashbot_tip
+            max_additional_flashbot_tip
         )?;
         writeln!(
             f,
             "submission_retry_interval: {:?}",
-            self.submission_retry_interval
+            submission_retry_interval
         )?;
         writeln!(
             f,
             "additional_tip_percentage: {}%",
-            self.additional_tip_percentage
+            additional_tip_percentage
         )?;
         display_list(
             f,
             "transaction_submission_nodes",
-            &self.transaction_submission_nodes,
+            transaction_submission_nodes,
         )?;
         display_list(
             f,
             "submission_notification_nodes",
-            &self.transaction_notification_nodes,
+            transaction_notification_nodes,
         )?;
         writeln!(
             f,
             "disable_high_risk_public_mempool_transactions: {}",
-            self.disable_high_risk_public_mempool_transactions,
+            disable_high_risk_public_mempool_transactions,
         )?;
         writeln!(
             f,
             "max_settlements_per_solver: {}",
-            self.max_settlements_per_solver
+            max_settlements_per_solver
         )?;
-        writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
-        writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
+        writeln!(f, "weth_unwrap_factor: {}", weth_unwrap_factor)?;
+        writeln!(f, "simulation_gas_limit: {}", simulation_gas_limit)?;
         display_option(
             f,
             "max_settlement_price_deviation",
-            &self.max_settlement_price_deviation,
+            max_settlement_price_deviation,
         )?;
         writeln!(
             f,
             "token_list_restriction_for_price_checks: {:?}",
-            self.token_list_restriction_for_price_checks
+            token_list_restriction_for_price_checks
         )?;
-        writeln!(f, "{}", self.s3_upload)?;
+        writeln!(f, "{}", s3_upload)?;
         writeln!(
             f,
             "additional_mining_deadline: {:?}",
-            self.additional_mining_deadline
+            additional_mining_deadline
         )?;
-        writeln!(f, "{}", self.risk_params)?;
-        writeln!(f, "score_cap {}", self.score_cap)?;
-        writeln!(f, "{}", self.skip_non_positive_score_settlements)?;
-        writeln!(f, "zeroex_enable_rfqt: {}", self.zeroex_enable_rfqt)?;
+        writeln!(f, "{}", risk_params)?;
+        writeln!(f, "score_cap {}", score_cap)?;
+        writeln!(f, "{}", skip_non_positive_score_settlements)?;
+        writeln!(f, "zeroex_enable_rfqt: {}", zeroex_enable_rfqt)?;
         writeln!(
             f,
             "zeroex_enable_slippage_protection: {}",
-            self.zeroex_enable_slippage_protection
+            zeroex_enable_slippage_protection
         )?;
         writeln!(
             f,
             "process_partially_fillable_limit_orders: {:?}",
-            self.process_partially_fillable_limit_orders
+            process_partially_fillable_limit_orders
         )?;
         writeln!(
             f,
             "process_partially_fillable_liquidity_orders: {:?}",
-            self.process_partially_fillable_liquidity_orders
+            process_partially_fillable_liquidity_orders
         )?;
-        display_option(f, "ethflow_contract", &self.ethflow_contract)?;
+        display_option(f, "ethflow_contract", ethflow_contract)?;
         writeln!(
             f,
             "enforce_correct_fees_for_partially_fillable_limit_orders: {:?}",
-            self.enforce_correct_fees_for_partially_fillable_limit_orders
+            enforce_correct_fees_for_partially_fillable_limit_orders
         )?;
+        writeln!(
+            f,
+            "market_makable_token_list_update_interval: {:?}",
+            market_makable_token_list_update_interval
+        )?;
+        writeln!(f, "smallest_partial_fill: {}", smallest_partial_fill)?;
+
         Ok(())
     }
 }

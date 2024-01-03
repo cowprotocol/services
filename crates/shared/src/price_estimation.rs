@@ -312,42 +312,59 @@ pub struct Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let Self {
+            price_estimation_rate_limiter,
+            native_price_cache_refresh,
+            native_price_cache_max_age,
+            native_price_prefetch_time,
+            native_price_cache_max_update_size,
+            native_price_cache_concurrent_requests,
+            amount_to_estimate_prices_with,
+            balancer_sor_url,
+            tenderly_save_successful_trade_simulations,
+            tenderly_save_failed_trade_simulations,
+            zeroex_only_estimate_buy_queries,
+            one_inch_spot_price_api_key,
+            trade_simulator,
+            one_inch_spot_price_api_url,
+        } = self;
+
         display_option(
             f,
             "price_estimation_rate_limites",
-            &self.price_estimation_rate_limiter,
+            price_estimation_rate_limiter,
         )?;
         writeln!(
             f,
             "native_price_cache_refresh: {:?}",
-            self.native_price_cache_refresh
+            native_price_cache_refresh
         )?;
         writeln!(
             f,
             "native_price_cache_max_age: {:?}",
-            self.native_price_cache_max_age
+            native_price_cache_max_age
         )?;
         writeln!(
             f,
             "native_price_prefetch_time: {:?}",
-            self.native_price_prefetch_time
+            native_price_prefetch_time
         )?;
         writeln!(
             f,
             "native_price_cache_max_update_size: {}",
-            self.native_price_cache_max_update_size
+            native_price_cache_max_update_size
         )?;
         writeln!(
             f,
             "native_price_cache_concurrent_requests: {}",
-            self.native_price_cache_concurrent_requests
+            native_price_cache_concurrent_requests
         )?;
         display_option(
             f,
             "amount_to_estimate_prices_with",
-            &self.amount_to_estimate_prices_with,
+            amount_to_estimate_prices_with,
         )?;
-        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(f, "balancer_sor_url", balancer_sor_url)?;
         display_option(
             f,
             "trade_simulator",
@@ -359,22 +376,28 @@ impl Display for Arguments {
         writeln!(
             f,
             "tenderly_save_successful_trade_simulations: {}",
-            self.tenderly_save_successful_trade_simulations
+            tenderly_save_successful_trade_simulations
         )?;
         writeln!(
             f,
             "tenderly_save_failed_trade_simulations: {}",
-            self.tenderly_save_failed_trade_simulations
+            tenderly_save_failed_trade_simulations
         )?;
         writeln!(
             f,
             "zeroex_only_estimate_buy_queries: {:?}",
-            self.zeroex_only_estimate_buy_queries
+            zeroex_only_estimate_buy_queries
         )?;
         display_secret_option(
             f,
             "one_inch_spot_price_api_key: {:?}",
-            &self.one_inch_spot_price_api_key,
+            one_inch_spot_price_api_key,
+        )?;
+        writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
+        display_option(
+            f,
+            "one_inch_spot_price_api_url: {}",
+            one_inch_spot_price_api_url,
         )?;
 
         Ok(())

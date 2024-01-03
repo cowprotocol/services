@@ -41,10 +41,14 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let Self {
+            block_stream_poll_interval,
+        } = self;
+
         writeln!(
             f,
             "block_stream_poll_interval: {:?}",
-            self.block_stream_poll_interval
+            block_stream_poll_interval
         )?;
 
         Ok(())

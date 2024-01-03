@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{colocation::SolverEngine, *},
+        tx,
+    },
     ethcontract::prelude::U256,
     model::{
         order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
@@ -120,6 +123,7 @@ async fn test(web3: Web3) {
 
     onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         let executed_surplus_fee = match order.metadata.class {
             OrderClass::Limit(LimitOrderClass {

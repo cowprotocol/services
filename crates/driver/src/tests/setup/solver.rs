@@ -1,7 +1,10 @@
 use {
     super::{blockchain, blockchain::Blockchain, Partial},
     crate::{
-        domain::{competition::order, time},
+        domain::{
+            competition::order,
+            time::{self},
+        },
         infra::{
             self,
             blockchain::contracts::Addresses,
@@ -241,7 +244,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": infra::time::now() + chrono::Duration::from_std(deadline.solvers().unwrap()).unwrap() - http_delay,
+                        "deadline": deadline.solvers(),
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();
