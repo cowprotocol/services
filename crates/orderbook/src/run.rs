@@ -549,7 +549,6 @@ pub async fn run(args: Arguments) {
         async {
             let _ = shutdown_receiver.await;
         },
-        args.shared.solver_competition_auth,
         native_price_estimator,
     );
 
@@ -616,7 +615,6 @@ fn serve_api(
     app_data: Arc<app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
@@ -624,7 +622,6 @@ fn serve_api(
         orderbook,
         quotes,
         app_data,
-        solver_competition_auth,
         native_price_estimator,
     )
     .boxed();
