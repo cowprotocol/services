@@ -196,7 +196,7 @@ impl From<OrderKind> for domain::auction::order::OrderKind {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Class {
     Limit,
