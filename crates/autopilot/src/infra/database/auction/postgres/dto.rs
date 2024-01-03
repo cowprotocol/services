@@ -94,6 +94,10 @@ pub struct Order {
     pub app_data: boundary::AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eth_flow: Option<boundary::EthflowData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain_order: Option<boundary::OnchainOrderData>,
     /// The types of fees that will be collected by the protocol.
     /// Multiple fees are applied in the order they are listed
     pub fee_policies: Vec<FeePolicy>,
@@ -126,6 +130,8 @@ impl From<domain::Order> for Order {
             class: order.class.into(),
             app_data: order.app_data,
             signature: order.signature,
+            eth_flow: order.eth_flow,
+            onchain_order: order.onchain_order,
             fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
         }
     }
@@ -158,6 +164,8 @@ impl From<Order> for domain::Order {
             class: order.class.into(),
             app_data: order.app_data,
             signature: order.signature,
+            eth_flow: order.eth_flow,
+            onchain_order: order.onchain_order,
             fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
         }
     }

@@ -47,6 +47,8 @@ pub fn to_domain(
         class: order.metadata.class.into(),
         app_data: order.data.app_data,
         signature: order.signature,
+        eth_flow: order.metadata.ethflow_data,
+        onchain_order: order.metadata.onchain_order_data,
         fee_policies,
     }
 }

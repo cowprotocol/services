@@ -273,33 +273,33 @@ async fn test_trade_query(query_type: &TradeQuery, client: &Client, contracts: &
 }
 
 async fn test_order_parameters(
-    response: &Order,
+    response: &postgres::dto::Order,
     order: &ExtendedEthFlowOrder,
     owner: &H160,
     contracts: &Contracts,
 ) {
     // Expected values from actual EIP1271 order instead of eth-flow order
-    assert_eq!(response.data.valid_to, u32::MAX);
-    assert_eq!(response.metadata.owner, contracts.ethflow.address());
-    assert_eq!(response.data.sell_token, contracts.weth.address());
+    assert_eq!(response.valid_to, u32::MAX);
+    assert_eq!(response.owner, contracts.ethflow.address());
+    assert_eq!(response.sell_token, contracts.weth.address());
 
     // Specific parameters return the missing values
     assert_eq!(
-        response.metadata.ethflow_data,
+        response.ethflow,
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
             refund_tx_hash: None,
         })
     );
     assert_eq!(
-        response.metadata.onchain_order_data,
+        response.onchain_order,
         Some(OnchainOrderData {
             sender: *owner,
             placement_error: None,
         })
     );
 
-    assert_eq!(response.metadata.class, OrderClass::Market);
+    assert_eq!(response.class, OrderClass::Market);
 
     assert!(order
         .is_valid_cowswap_signature(&response.signature, contracts)
@@ -307,10 +307,10 @@ async fn test_order_parameters(
         .is_ok());
 
     // Requires wrapping first
-    assert_eq!(response.interactions.pre.len(), 1);
+    assert_eq!(response.pre_interactions.len(), 1);
     assert_eq!(
-        response.interactions.pre[0].target,
+        response.pre_interactions[0].target,
         contracts.ethflow.address()
     );
-    assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
+    assert_eq!(response.pre_interactions[0].call_data, WRAP_ALL_SELECTOR);
 }

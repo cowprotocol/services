@@ -2,7 +2,16 @@ use url::Url;
 pub use {
     model::{
         app_data::AppDataHash,
-        order::{BuyTokenDestination, Order, OrderClass, OrderKind, OrderUid, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            EthflowData,
+            OnchainOrderData,
+            Order,
+            OrderClass,
+            OrderKind,
+            OrderUid,
+            SellTokenSource,
+        },
         signature::Signature,
     },
     shared::{ethrpc::Web3, order_validation::is_order_outside_market_price},

@@ -27,6 +27,8 @@ pub struct Order {
     pub class: Class,
     pub app_data: boundary::AppDataHash,
     pub signature: boundary::Signature,
+    pub eth_flow: Option<boundary::EthflowData>,
+    pub onchain_order: Option<boundary::OnchainOrderData>,
     pub fee_policies: Vec<Policy>,
 }
 
