@@ -1,8 +1,16 @@
 use url::Url;
 pub use {
-    model::order::{Order, OrderClass, OrderUid},
+    model::{
+        app_data::AppDataHash,
+        order::{BuyTokenDestination, Order, OrderClass, OrderKind, OrderUid, SellTokenSource},
+        signature::Signature,
+    },
     shared::{ethrpc::Web3, order_validation::is_order_outside_market_price},
 };
+
+pub mod auction;
+pub mod order;
+
 /// Builds a web3 client that bufferes requests and sends them in a
 /// batch call.
 pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {

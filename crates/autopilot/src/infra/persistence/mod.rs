@@ -1,4 +1,4 @@
-use {database::auction::AuctionId, model::auction::Auction, tracing::Instrument};
+use {super::database::auction::postgres, crate::domain, tracing::Instrument};
 pub mod cli;
 
 pub struct Persistence {
@@ -16,9 +16,9 @@ impl Persistence {
     }
 
     /// Persists the given auction in a background task.
-    pub fn store_auction(&self, id: AuctionId, instance: &Auction) {
+    pub fn store_auction(&self, id: domain::AuctionId, instance: &domain::Auction) {
         if let Some(uploader) = self.s3.clone() {
-            let instance = instance.clone();
+            let instance = postgres::dto::from_domain(instance.clone());
             tokio::spawn(
                 async move {
                     match uploader.upload(id.to_string(), &instance).await {

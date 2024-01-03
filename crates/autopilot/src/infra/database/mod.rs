@@ -1,5 +1,6 @@
 use {crate::database::Postgres, std::sync::Arc};
 
+pub mod auction;
 pub mod quotes;
 
 #[derive(Debug, Clone)]

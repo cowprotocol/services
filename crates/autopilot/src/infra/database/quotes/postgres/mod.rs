@@ -5,9 +5,7 @@ use {
     std::collections::HashMap,
 };
 
-mod dto;
-
-pub use dto::{into_domain, InvalidConversion};
+pub mod dto;
 
 impl Postgres {
     /// Get quotes for all orders in the auction.

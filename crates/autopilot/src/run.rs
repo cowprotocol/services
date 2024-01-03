@@ -10,10 +10,9 @@ use {
             },
             Postgres,
         },
-        domain,
-        driver_api::Driver,
+        domain::fee,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{self, blockchain},
+        infra::{self, blockchain, solvers::Driver},
         protocol::{self},
         run_loop::RunLoop,
         shadow,
@@ -579,6 +578,10 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
+        fee::Policies::new(
+            args.fee_policy.clone().to_domain(),
+            args.fee_policy.fee_policy_skip_market_orders,
+        ),
     );
     solvable_orders_cache
         .update(block)
@@ -631,13 +634,6 @@ pub async fn run(args: Arguments) {
     let db = Arc::new(db);
     let ethrpc = ethrpc(&args.shared.node_url).await;
     let eth = ethereum(ethrpc).await;
-    let fee_policies = domain::fee::Policies::new(
-        domain::fee::Config {
-            fee_policy_skip_market_orders: args.fee_policy.fee_policy_skip_market_orders,
-            policy: args.fee_policy.to_domain(),
-        },
-        infra::Database::new(db.clone()),
-    );
     let run = RunLoop {
         eth,
         solvable_orders_cache,
@@ -651,7 +647,6 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
-        fee_policies,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

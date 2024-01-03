@@ -4,68 +4,55 @@
 //! we define the way to calculate the protocol fee based on the configuration
 //! parameters.
 
-use {
-    crate::{
-        boundary::{self, Order, OrderClass, OrderUid},
-        infra::{self},
-    },
-    std::collections::HashMap,
+use crate::{
+    boundary::{self},
+    domain,
+    infra::{self},
 };
 
-/// Protocol fee policies with cache being updated on each auction.
+/// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct Policies {
-    config: Config,
-    database: infra::Database,
-}
-
-impl Policies {
-    pub fn new(config: Config, database: infra::Database) -> Self {
-        Self { config, database }
-    }
-
-    /// Get policies for orders.
-    pub async fn get(&self, orders: &[Order]) -> Result<HashMap<OrderUid, Vec<Policy>>, Error> {
-        let quotes = self
-            .database
-            .read_quotes(orders.iter().map(|order| &order.metadata.uid))
-            .await?;
-
-        Ok(orders
-            .iter()
-            .filter_map(|order| match order.metadata.class {
-                OrderClass::Market => None,
-                OrderClass::Liquidity => None,
-                OrderClass::Limit(_) => match quotes.get(&order.metadata.uid) {
-                    Some(quote) => {
-                        let is_market_order = !boundary::is_order_outside_market_price(
-                            &order.data.sell_amount,
-                            &order.data.buy_amount,
-                            &quote.buy_amount,
-                            &quote.sell_amount,
-                        );
-                        if self.config.fee_policy_skip_market_orders && is_market_order {
-                            return None;
-                        }
-                        Some((order.metadata.uid, vec![self.config.policy]))
-                    }
-                    None => {
-                        tracing::warn!(?order.metadata.uid, "quote not found for order");
-                        None
-                    }
-                },
-            })
-            .collect())
-    }
-}
-
-#[derive(Debug)]
-pub struct Config {
     pub policy: Policy,
     pub fee_policy_skip_market_orders: bool,
 }
 
-#[derive(Debug, Copy, Clone)]
+impl Policies {
+    pub fn new(policy: Policy, fee_policy_skip_market_orders: bool) -> Self {
+        Self {
+            policy,
+            fee_policy_skip_market_orders,
+        }
+    }
+
+    /// Get policies for order.
+    pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
+        match order.metadata.class {
+            boundary::OrderClass::Market => vec![],
+            boundary::OrderClass::Liquidity => vec![],
+            boundary::OrderClass::Limit(_) => match quote {
+                None => {
+                    tracing::warn!(?order.metadata.uid, "quote not found for order");
+                    vec![]
+                }
+                Some(quote) => {
+                    let is_market_order = !boundary::is_order_outside_market_price(
+                        &order.data.sell_amount,
+                        &order.data.buy_amount,
+                        &quote.buy_amount,
+                        &quote.sell_amount,
+                    );
+                    if self.fee_policy_skip_market_orders && is_market_order {
+                        return vec![];
+                    }
+                    vec![self.policy]
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Policy {
     /// If the order receives more than expected (positive deviation from
     /// quoted amounts) pay the protocol a factor of the achieved

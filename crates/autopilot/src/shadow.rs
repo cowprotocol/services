@@ -9,19 +9,15 @@
 
 use {
     crate::{
-        driver_api::Driver,
-        driver_model::{
-            reveal,
-            solve::{self},
+        domain::{auction::order::Class, Auction, AuctionId, AuctionWithId},
+        infra::solvers::{
+            dto::{self, reveal},
+            Driver,
         },
         protocol::{self},
         run_loop::{self, observe},
     },
     ::observe::metrics,
-    model::{
-        auction::{Auction, AuctionId, AuctionWithId},
-        order::OrderClass,
-    },
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -106,10 +102,10 @@ impl RunLoop {
             .auction
             .orders
             .iter()
-            .all(|order| match order.metadata.class {
-                OrderClass::Market => false,
-                OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+            .all(|order| match order.class {
+                Class::Market => false,
+                Class::Liquidity => true,
+                Class::Limit => false,
             })
         {
             tracing::trace!("skipping empty auction");
@@ -200,7 +196,6 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            Default::default(),
         );
         let request = &request;
 
@@ -215,7 +210,7 @@ impl RunLoop {
     async fn participate(
         &self,
         driver: &Driver,
-        request: &solve::Request,
+        request: &dto::solve::Request,
     ) -> Result<Solution, Error> {
         let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
             .await

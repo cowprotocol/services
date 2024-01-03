@@ -1,4 +1,8 @@
-use {super::Database, crate::domain, model::order::OrderUid, std::collections::HashMap};
+use {
+    super::Database,
+    crate::{boundary::OrderUid, domain},
+    std::collections::HashMap,
+};
 
 pub mod postgres;
 
@@ -9,7 +13,7 @@ impl Database {
     ) -> Result<HashMap<OrderUid, domain::Quote>, Error> {
         let mut quotes = HashMap::new();
         for (id, quote) in self.db.read_quotes(orders).await? {
-            quotes.insert(id, postgres::into_domain(quote)?);
+            quotes.insert(id, postgres::dto::into_domain(quote)?);
         }
         Ok(quotes)
     }
@@ -20,5 +24,5 @@ pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
     #[error(transparent)]
-    Conversion(#[from] postgres::InvalidConversion),
+    Conversion(#[from] postgres::dto::InvalidConversion),
 }
