@@ -8,8 +8,8 @@ pub fn to_domain(
     auction: model::auction::Auction,
     quotes: HashMap<OrderUid, Result<domain::Quote, InvalidConversion>>,
     fee_policy: &domain::fee::Policies,
-) -> domain::auction::Auction {
-    domain::auction::Auction {
+) -> domain::Auction {
+    domain::Auction {
         block: auction.block,
         latest_settlement_block: auction.latest_settlement_block,
         orders: auction

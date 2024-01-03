@@ -2,16 +2,16 @@ use {
     crate::domain,
     model::{
         interaction::InteractionData,
-        order::{Order, OrderClass, OrderKind},
+        order::{OrderClass, OrderKind},
     },
     shared::remaining_amounts,
 };
 
 pub fn to_domain(
-    order: Order,
+    order: model::order::Order,
     quote: Option<&domain::Quote>,
     fee_policies: Option<&domain::fee::Policies>,
-) -> domain::auction::order::Order {
+) -> domain::Order {
     let fee_policies = match (quote, fee_policies) {
         (Some(quote), Some(fee_policies)) => fee_policies.get(&order, Some(quote)),
         _ => vec![],
