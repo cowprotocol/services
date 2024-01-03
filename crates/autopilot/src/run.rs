@@ -633,7 +633,7 @@ pub async fn run(args: Arguments) {
     let run = RunLoop {
         eth,
         solvable_orders_cache,
-        database: Arc::new(db),
+        database: Arc::new(db.clone()),
         drivers: args.drivers.into_iter().map(Driver::new).collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
@@ -643,7 +643,8 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
         fee_policy: args.fee_policy,
-        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
+        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db))
+            .await,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

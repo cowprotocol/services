@@ -1,5 +1,4 @@
 use {
-    crate::{driver_model::solve::FeePolicy, protocol::fee},
     anyhow::Context,
     database::{
         auction::AuctionId,
@@ -68,11 +67,7 @@ pub struct Competition {
 }
 
 impl super::Postgres {
-    pub async fn save_competition(
-        &self,
-        competition: &Competition,
-        fee_policies: &fee::Policies,
-    ) -> anyhow::Result<()> {
+    pub async fn save_competition(&self, competition: &Competition) -> anyhow::Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_competition"])
@@ -97,31 +92,6 @@ impl super::Postgres {
             )
             .await
             .context("order_execution::save")?;
-
-            for fee_policy in fee_policies
-                .get(&order_execution.order_id)
-                .unwrap_or_default()
-            {
-                let fee_policy_dto = database::fee_policies::FeePolicy {
-                    auction_id: competition.auction_id,
-                    order_uid: ByteArray(order_execution.order_id.0),
-                    kind: match fee_policy {
-                        FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                        } => database::fee_policies::FeePolicyKind::PriceImprovement {
-                            price_improvement_factor: factor,
-                            max_volume_factor,
-                        },
-                        FeePolicy::Volume { factor } => {
-                            database::fee_policies::FeePolicyKind::Volume { factor }
-                        }
-                    },
-                };
-                database::fee_policies::insert(&mut ex, fee_policy_dto)
-                    .await
-                    .context("fee_policies::insert")?;
-            }
         }
 
         database::settlement_scores::insert(
