@@ -1,17 +1,11 @@
 use {
-    super::{
-        blockchain::Blockchain,
-        solver::{self, Solver},
-        Partial,
-        Test,
-    },
+    super::{blockchain::Blockchain, Partial, Solver, Test},
     crate::{
-        domain::{competition::order, eth},
+        domain::competition::order,
         infra::time,
         tests::{cases, hex_address},
     },
     rand::seq::SliceRandom,
-    secp256k1::SecretKey,
     serde_json::json,
     std::{io::Write, net::SocketAddr, path::PathBuf},
     tokio::sync::oneshot,
@@ -21,10 +15,6 @@ pub struct Config {
     /// If specified, the driver will load this config file. Otherwise, a
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
-    pub relative_slippage: f64,
-    pub absolute_slippage: eth::U256,
-    pub solver_address: eth::H160,
-    pub solver_secret_key: SecretKey,
     pub enable_simulation: bool,
 }
 
@@ -35,11 +25,15 @@ pub struct Driver {
 
 impl Driver {
     /// Start the driver HTTP server and return the server address.
-    pub async fn new(config: &Config, solver: &Solver, blockchain: &Blockchain) -> Self {
+    pub async fn new(
+        config: &Config,
+        solvers: &Vec<(Solver, SocketAddr)>,
+        blockchain: &Blockchain,
+    ) -> Self {
         let (config_file, config_temp_path) = match config.config_file.as_ref() {
             Some(config_file) => (config_file.to_owned(), None),
             None => {
-                let config_temp_path = create_config_file(config, solver, blockchain).await;
+                let config_temp_path = create_config_file(config, solvers, blockchain).await;
                 (config_temp_path.to_path_buf(), Some(config_temp_path))
             }
         };
@@ -171,7 +165,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
 /// Create the config file for the driver to use.
 async fn create_config_file(
     config: &Config,
-    solver: &Solver,
+    solvers: &Vec<(Solver, SocketAddr)>,
     blockchain: &Blockchain,
 ) -> tempfile::TempPath {
     let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -194,22 +188,33 @@ async fn create_config_file(
 
            [[submission.mempool]]
            mempool = "public"
-
-           [[solver]]
-           name = "{}"
-           endpoint = "http://{}"
-           absolute-slippage = "{}"
-           relative-slippage = "{}"
-           account = "0x{}"
            "#,
         hex_address(blockchain.settlement.address()),
-        hex_address(blockchain.weth.address()),
-        solver::NAME,
-        solver.addr,
-        config.absolute_slippage,
-        config.relative_slippage,
-        config.solver_secret_key.display_secret(),
+        hex_address(blockchain.weth.address())
     )
     .unwrap();
+
+    for (solver, addr) in solvers {
+        write!(
+            file,
+            r#"[[solver]]
+               name = "{}"
+               endpoint = "http://{}"
+               absolute-slippage = "{}"
+               relative-slippage = "{}"
+               account = "0x{}"
+               "#,
+            solver.name,
+            addr,
+            solver
+                .slippage
+                .absolute
+                .map(|abs| abs.0)
+                .unwrap_or_default(),
+            solver.slippage.relative,
+            hex::encode(solver.private_key.secret_bytes()),
+        )
+        .unwrap();
+    }
     file.into_temp_path()
 }
