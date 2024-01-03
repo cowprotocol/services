@@ -10,14 +10,14 @@ use {
 pub fn to_domain(
     order: model::order::Order,
     quote: Option<&domain::Quote>,
-    fee_policies: Option<&domain::fee::Policies>,
+    fee_policies: &domain::fee::Policies,
 ) -> domain::Order {
-    let fee_policies = match (quote, fee_policies) {
-        (Some(quote), Some(fee_policies)) => fee_policies.get(&order, Some(quote)),
-        _ => vec![],
-    };
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
+    let fee_policies = match quote {
+        None => vec![],
+        Some(quote) => fee_policies.get(&order, quote),
+    };
 
     domain::Order {
         uid: order.metadata.uid,

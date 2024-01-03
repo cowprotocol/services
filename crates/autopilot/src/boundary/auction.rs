@@ -27,7 +27,7 @@ pub fn to_domain(
                     }
                     Some(Ok(quote)) => Some(quote),
                 };
-                super::order::to_domain(order, quote, Some(fee_policy))
+                super::order::to_domain(order, quote, fee_policy)
             })
             .collect(),
         prices: auction.prices,
