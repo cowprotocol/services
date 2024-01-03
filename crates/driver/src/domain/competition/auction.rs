@@ -185,7 +185,7 @@ impl AuctionProcessor {
 
     /// Sort orders based on their price achievability using the reference
     /// prices contained in the auction (in the money first).
-    fn sort(orders: &mut Vec<order::Order>, tokens: Tokens) {
+    fn sort(orders: &mut [order::Order], tokens: Tokens) {
         orders.sort_by_cached_key(|order| {
             // Market orders are preferred over limit orders, as the expectation is that
             // they should be immediately fulfillable. Liquidity orders come last, as they
