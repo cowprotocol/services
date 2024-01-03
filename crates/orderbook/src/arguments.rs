@@ -175,88 +175,124 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.shared)?;
-        write!(f, "{}", self.order_quoting)?;
-        write!(f, "{}", self.http_client)?;
-        write!(f, "{}", self.token_owner_finder)?;
-        write!(f, "{}", self.price_estimation)?;
-        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
-        writeln!(f, "bind_address: {}", self.bind_address)?;
+        let Arguments {
+            shared,
+            order_quoting,
+            http_client,
+            token_owner_finder,
+            price_estimation,
+            tracing_node_url,
+            bind_address,
+            min_order_validity_period,
+            max_order_validity_period,
+            max_limit_order_validity_period,
+            token_quality_cache_expiry,
+            unsupported_tokens,
+            banned_users,
+            allowed_tokens,
+            pool_cache_lru_size,
+            enable_eip1271_orders,
+            eip1271_skip_creation_validation,
+            enable_presign_orders,
+            solvable_orders_max_update_age_blocks,
+            native_price_estimators,
+            fast_price_estimation_results_required,
+            allow_placing_fill_or_kill_limit_orders,
+            allow_placing_partially_fillable_limit_orders,
+            max_limit_orders_per_user,
+            enable_custom_interactions,
+            ipfs_gateway,
+            ipfs_pinata_auth,
+            hooks_contract_address,
+            app_data_size_limit,
+            db_url,
+            enable_eth_smart_contract_payments,
+        } = self;
+
+        write!(f, "{}", shared)?;
+        write!(f, "{}", order_quoting)?;
+        write!(f, "{}", http_client)?;
+        write!(f, "{}", token_owner_finder)?;
+        write!(f, "{}", price_estimation)?;
+        display_option(f, "tracing_node_url", tracing_node_url)?;
+        writeln!(f, "bind_address: {}", bind_address)?;
+        let _intentionally_ignored = db_url;
         writeln!(f, "db_url: SECRET")?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",
-            self.min_order_validity_period
+            min_order_validity_period
         )?;
         writeln!(
             f,
             "max_order_validity_period: {:?}",
-            self.max_order_validity_period
+            max_order_validity_period
         )?;
         writeln!(
             f,
             "max_limit_order_validity_period: {:?}",
-            self.max_limit_order_validity_period
+            max_limit_order_validity_period
         )?;
         writeln!(
             f,
             "token_quality_cache_expiry: {:?}",
-            self.token_quality_cache_expiry
+            token_quality_cache_expiry
         )?;
-        writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
-        writeln!(f, "banned_users: {:?}", self.banned_users)?;
-        writeln!(f, "allowed_tokens: {:?}", self.allowed_tokens)?;
-        writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        writeln!(f, "enable_eip1271_orders: {}", self.enable_eip1271_orders)?;
+        writeln!(f, "unsupported_tokens: {:?}", unsupported_tokens)?;
+        writeln!(f, "banned_users: {:?}", banned_users)?;
+        writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
+        writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
+        writeln!(f, "enable_eip1271_orders: {}", enable_eip1271_orders)?;
         writeln!(
             f,
             "eip1271_skip_creation_validation: {}",
-            self.eip1271_skip_creation_validation
+            eip1271_skip_creation_validation
         )?;
-        writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
+        writeln!(f, "enable_presign_orders: {}", enable_presign_orders)?;
         writeln!(
             f,
             "solvable_orders_max_update_age_blocks: {}",
-            self.solvable_orders_max_update_age_blocks,
+            solvable_orders_max_update_age_blocks,
         )?;
-        writeln!(
-            f,
-            "native_price_estimators: {}",
-            self.native_price_estimators
-        )?;
+        writeln!(f, "native_price_estimators: {}", native_price_estimators)?;
         writeln!(
             f,
             "fast_price_estimation_results_required: {}",
-            self.fast_price_estimation_results_required
+            fast_price_estimation_results_required
         )?;
         writeln!(
             f,
             "allow_placing_fill_or_kill_limit_orders: {}",
-            self.allow_placing_fill_or_kill_limit_orders
+            allow_placing_fill_or_kill_limit_orders
         )?;
         writeln!(
             f,
             "allow_placing_partially_fillable_limit_orders: {}",
-            self.allow_placing_partially_fillable_limit_orders
+            allow_placing_partially_fillable_limit_orders
         )?;
         writeln!(
             f,
             "max_limit_orders_per_user: {}",
-            self.max_limit_orders_per_user
+            max_limit_orders_per_user
         )?;
         writeln!(
             f,
             "enable_custom_interactions: {:?}",
-            self.enable_custom_interactions
+            enable_custom_interactions
         )?;
-        writeln!(f, "ipfs_gateway: {:?}", self.ipfs_gateway)?;
-        display_secret_option(f, "ipfs_pinata_auth", &self.ipfs_pinata_auth)?;
+        writeln!(f, "ipfs_gateway: {:?}", ipfs_gateway)?;
+        display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth)?;
         display_option(
             f,
             "hooks_contract_address",
-            &self.hooks_contract_address.map(|a| format!("{a:?}")),
+            &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
-        writeln!(f, "app_data_size_limit: {}", self.app_data_size_limit)?;
+        writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
+        writeln!(
+            f,
+            "enable_eth_smart_contract_payments: {}",
+            enable_eth_smart_contract_payments
+        )?;
 
         Ok(())
     }
