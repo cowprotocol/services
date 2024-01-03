@@ -123,9 +123,10 @@ impl RunLoop {
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
+        let fee_policies = fee::Policies::new(&auction, self.fee_policy.clone());
 
         let solutions = {
-            let mut solutions = self.competition(auction_id, &auction).await;
+            let mut solutions = self.competition(auction_id, &auction, &fee_policies).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
                 return;
@@ -287,7 +288,7 @@ impl RunLoop {
             };
 
             tracing::info!(?competition, "saving competition");
-            if let Err(err) = self.save_competition(&competition).await {
+            if let Err(err) = self.save_competition(&competition, &fee_policies).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
             }
@@ -311,9 +312,13 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+    async fn competition(
+        &self,
+        id: AuctionId,
+        auction: &Auction,
+        fee_policies: &fee::Policies,
+    ) -> Vec<Participant<'_>> {
         self.persistence.store_auction(id, auction);
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
             auction,
@@ -465,8 +470,14 @@ impl RunLoop {
     }
 
     /// Saves the competition data to the database
-    async fn save_competition(&self, competition: &Competition) -> Result<()> {
-        self.database.save_competition(competition).await
+    async fn save_competition(
+        &self,
+        competition: &Competition,
+        fee_policies: &fee::Policies,
+    ) -> Result<()> {
+        self.database
+            .save_competition(competition, fee_policies)
+            .await
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying
@@ -504,7 +515,7 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policies: fee::Policies,
+    fee_policies: &fee::Policies,
 ) -> solve::Request {
     solve::Request {
         id,

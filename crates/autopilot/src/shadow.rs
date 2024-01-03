@@ -205,7 +205,7 @@ impl RunLoop {
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            fee_policies,
+            &fee_policies,
         );
         let request = &request;
 
