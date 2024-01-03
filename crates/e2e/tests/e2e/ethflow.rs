@@ -2,7 +2,7 @@ use {
     anyhow::bail,
     autopilot::{
         database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-        infra::database::auction::postgres,
+        infra::database::auction::{postgres, postgres::dto::Class},
     },
     chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
@@ -429,7 +429,7 @@ async fn test_auction_order_parameters(
 
     // Specific parameters return the missing values
     assert_eq!(
-        response.ethflow,
+        response.eth_flow,
         Some(EthflowData {
             user_valid_to: order.0.valid_to as i64,
             refund_tx_hash: None,
@@ -443,7 +443,7 @@ async fn test_auction_order_parameters(
         })
     );
 
-    assert_eq!(response.class, OrderClass::Market);
+    assert_eq!(response.class, Class::Market);
 
     assert!(order
         .is_valid_cowswap_signature(&response.signature, contracts)
