@@ -38,6 +38,7 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
+        trade_finding,
         zeroex_api::DefaultZeroExApi,
     },
     anyhow::{anyhow, Context as _, Result},
@@ -443,7 +444,13 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(ParaswapPriceEstimator::new(
             Arc::new(DefaultParaswapApi {
-                client: factory.components.http_factory.create(),
+                client: factory.components.http_factory.configure(|builder| {
+                    builder.timeout(
+                        trade_finding::time_limit()
+                            .to_std()
+                            .expect("negative time limit"),
+                    )
+                }),
                 base_url: factory.shared_args.paraswap_api_url.clone(),
                 partner: factory
                     .shared_args
@@ -467,8 +474,13 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
     type Params = H160;
 
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
+        let client_builder = factory.components.http_factory.builder().timeout(
+            trade_finding::time_limit()
+                .to_std()
+                .expect("negative time limit"),
+        );
         let api = DefaultZeroExApi::new(
-            &factory.components.http_factory,
+            client_builder,
             factory
                 .shared_args
                 .zeroex_url
@@ -498,7 +510,13 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         let api = OneInchClientImpl::new(
             factory.shared_args.one_inch_url.clone(),
-            factory.components.http_factory.create(),
+            factory.components.http_factory.configure(|builder| {
+                builder.timeout(
+                    trade_finding::time_limit()
+                        .to_std()
+                        .expect("negative time limit"),
+                )
+            }),
             factory.network.chain_id,
             factory.network.block_stream.clone(),
         )
@@ -524,7 +542,13 @@ impl PriceEstimatorCreating for BalancerSor {
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BalancerSor::new(
             Arc::new(DefaultBalancerSorApi::new(
-                factory.components.http_factory.create(),
+                factory.components.http_factory.configure(|builder| {
+                    builder.timeout(
+                        trade_finding::time_limit()
+                            .to_std()
+                            .expect("negative time limit"),
+                    )
+                }),
                 factory
                     .args
                     .balancer_sor_url
