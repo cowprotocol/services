@@ -1,0 +1,47 @@
+name: Weekly Release
+
+on:
+  schedule:
+    # At 00:00 on Monday
+    - cron:  '0 0 * * 1'
+
+jobs:
+  bump-version-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v1
+        with:
+          node-version: '14'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Create Tag
+        id: tag_version
+        run: |
+          # Extracts the latest version tag, bumps the minor version
+          LATEST_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)
+          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
+          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+          NEW_MINOR=$((MINOR+1))
+          NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
+          echo ::set-output name=tag::$NEW_TAG
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag $NEW_TAG
+      - name: Push tags
+        run: git push origin --tags
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag_version.outputs.tag }}
+          release_name: Release ${{ steps.tag_version.outputs.tag }}
+          draft: false
+          prerelease: false
