@@ -1,6 +1,9 @@
 use {
     anyhow::bail,
-    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+    autopilot::{
+        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+        infra::database::auction::postgres,
+    },
     chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},

@@ -1,4 +1,5 @@
 use {
+    autopilot::infra::database::auction::postgres::dto::Class,
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
@@ -101,7 +102,7 @@ async fn test(web3: Web3) {
     let auction = services.get_auction().await.auction;
     let order = auction.orders.into_iter().next().unwrap();
     assert!(order.partially_fillable);
-    assert!(matches!(order.class, OrderClass::Limit));
+    assert!(matches!(order.class, Class::Limit));
     assert_eq!(order.solver_fee, 0.into());
 
     tracing::info!("Waiting for trade.");

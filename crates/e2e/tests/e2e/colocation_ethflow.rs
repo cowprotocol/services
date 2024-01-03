@@ -1,6 +1,9 @@
 use {
     crate::ethflow::{EthFlowOrderOnchainStatus, EthFlowTradeIntent, ExtendedEthFlowOrder},
-    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+    autopilot::{
+        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+        infra::database::auction::postgres,
+    },
     contracts::ERC20Mintable,
     e2e::setup::{colocation::SolverEngine, *},
     ethcontract::{Account, H160, U256},
