@@ -36,6 +36,19 @@ macro_rules! logging_args_with_default_filter {
             #[clap(long, env, default_value = "error")]
             pub log_stderr_threshold: LevelFilter,
         }
+
+        impl ::std::fmt::Display for $struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let Self {
+                    log_filter,
+                    log_stderr_threshold,
+                } = self;
+
+                writeln!(f, "log_filter: {}", log_filter)?;
+                writeln!(f, "log_stderr_threshold: {}", log_stderr_threshold)?;
+                Ok(())
+            }
+        }
     };
 }
 
@@ -459,8 +472,7 @@ impl Display for Arguments {
         write!(f, "{}", ethrpc)?;
         write!(f, "{}", current_block)?;
         write!(f, "{}", tenderly)?;
-        writeln!(f, "log_filter: {}", logging.log_filter)?;
-        writeln!(f, "log_stderr_threshold: {}", logging.log_stderr_threshold)?;
+        write!(f, "{}", logging)?;
         writeln!(f, "node_url: {}", node_url)?;
         writeln!(f, "graph_api_base_url: {}", graph_api_base_url)?;
         display_option(f, "chain_id", chain_id)?;
