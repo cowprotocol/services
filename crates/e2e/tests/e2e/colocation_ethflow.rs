@@ -167,7 +167,7 @@ async fn test_order_availability_in_api(
         .await
         .unwrap();
 
-    test_auction_query(services, order, owner, contracts).await;
+    test_auction_query(services, order, contracts).await;
 }
 
 async fn test_trade_availability_in_api(
@@ -243,12 +243,11 @@ async fn test_account_query(
 async fn test_auction_query(
     services: &Services<'_>,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
     contracts: &Contracts,
 ) {
     let response = services.get_auction().await;
     assert_eq!(response.auction.orders.len(), 1);
-    test_auction_order_parameters(&response.auction.orders[0], order, owner, contracts).await;
+    test_auction_order_parameters(&response.auction.orders[0], order, contracts).await;
 }
 
 enum TradeQuery {
@@ -321,7 +320,6 @@ async fn test_order_parameters(
 async fn test_auction_order_parameters(
     response: &dto::Order,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
     contracts: &Contracts,
 ) {
     // Expected values from actual EIP1271 order instead of eth-flow order
