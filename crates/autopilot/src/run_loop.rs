@@ -13,6 +13,7 @@ use {
         },
         infra::{self, blockchain::Ethereum},
         protocol::fee,
+        run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -34,7 +35,7 @@ use {
     shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
-        sync::{Arc, Mutex, RwLock},
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     tracing::Instrument,
@@ -55,7 +56,7 @@ pub struct RunLoop {
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
     pub fee_policy: arguments::FeePolicy,
     pub persistence: infra::persistence::Persistence,
-    pub last_auction_time: Arc<RwLock<Instant>>,
+    pub liveness: Arc<Liveness>,
 }
 
 impl RunLoop {
@@ -71,7 +72,7 @@ impl RunLoop {
                     || last_block.replace(current_block) != Some(current_block)
                 {
                     observe::log_auction_delta(id, &previous, &auction);
-                    *self.last_auction_time.write().unwrap() = Instant::now();
+                    self.liveness.auction();
 
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))

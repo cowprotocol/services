@@ -65,9 +65,9 @@ use {
     url::Url,
 };
 
-struct Liveness {
+pub struct Liveness {
     max_auction_age: Duration,
-    last_auction_time: Arc<RwLock<Instant>>,
+    last_auction_time: RwLock<Instant>,
 }
 
 #[async_trait::async_trait]
@@ -76,6 +76,12 @@ impl LivenessChecking for Liveness {
         let last_auction_time = self.last_auction_time.read().unwrap();
         let auction_age = last_auction_time.elapsed();
         auction_age <= self.max_auction_age
+    }
+}
+
+impl Liveness {
+    pub fn auction(&self) {
+        *self.last_auction_time.write().unwrap() = Instant::now();
     }
 }
 
@@ -586,12 +592,11 @@ pub async fn run(args: Arguments) {
         .await
         .expect("failed to perform initial solvable orders update");
 
-    let now = Arc::new(RwLock::new(Instant::now()));
-    let liveness = Liveness {
+    let liveness = Arc::new(Liveness {
         max_auction_age: args.max_auction_age,
-        last_auction_time: now.clone(),
-    };
-    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
+        last_auction_time: Instant::now().into(),
+    });
+    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
@@ -648,7 +653,7 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         fee_policy: args.fee_policy,
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
-        last_auction_time: now.clone(),
+        liveness: liveness.clone(),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -695,12 +700,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let now = Arc::new(RwLock::new(Instant::now()));
-    let liveness = Liveness {
+    let liveness: Arc<Liveness> = Arc::new(Liveness {
         max_auction_age: args.max_auction_age,
-        last_auction_time: now.clone(),
-    };
-    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
+        last_auction_time: Instant::now().into(),
+    });
+    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let shadow = shadow::RunLoop::new(
         orderbook,
@@ -709,7 +713,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.score_cap,
         args.solve_deadline,
         args.fee_policy,
-        now.clone(),
+        liveness.clone(),
     );
     shadow.run_forever().await;
 

@@ -16,6 +16,7 @@ use {
             solve::{self},
         },
         protocol::{self, fee},
+        run::Liveness,
         run_loop::{self, observe},
     },
     ::observe::metrics,
@@ -27,11 +28,7 @@ use {
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
-    std::{
-        cmp,
-        sync::{Arc, RwLock},
-        time::{Duration, Instant},
-    },
+    std::{cmp, sync::Arc, time::Duration},
     tracing::Instrument,
 };
 
@@ -44,7 +41,7 @@ pub struct RunLoop {
     score_cap: U256,
     solve_deadline: Duration,
     fee_policy: FeePolicy,
-    last_auction_time: Arc<RwLock<Instant>>,
+    liveness: Arc<Liveness>,
 }
 
 impl RunLoop {
@@ -55,7 +52,7 @@ impl RunLoop {
         score_cap: U256,
         solve_deadline: Duration,
         fee_policy: FeePolicy,
-        last_auction_time: Arc<RwLock<Instant>>,
+        liveness: Arc<Liveness>,
     ) -> Self {
         Self {
             orderbook,
@@ -66,7 +63,7 @@ impl RunLoop {
             score_cap,
             solve_deadline,
             fee_policy,
-            last_auction_time,
+            liveness,
         }
     }
 
@@ -79,7 +76,7 @@ impl RunLoop {
             };
             observe::log_auction_delta(id, &previous, &auction);
             previous = Some(auction.clone());
-            *self.last_auction_time.write().unwrap() = Instant::now();
+            self.liveness.auction();
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))
