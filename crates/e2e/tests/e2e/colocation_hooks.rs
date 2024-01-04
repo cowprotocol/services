@@ -69,7 +69,8 @@ async fn allowance(web3: Web3) {
     .await;
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
@@ -251,7 +252,8 @@ async fn signature(web3: Web3) {
     };
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
@@ -362,7 +364,8 @@ async fn partial_fills(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {

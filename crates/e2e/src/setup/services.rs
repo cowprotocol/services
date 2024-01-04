@@ -133,7 +133,8 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        let solver_endpoint = colocation::start_solver(self.contracts.weth.address()).await;
+        let solver_endpoint =
+            colocation::start_baseline_solver(self.contracts.weth.address()).await;
         colocation::start_driver(
             self.contracts,
             vec![SolverEngine {

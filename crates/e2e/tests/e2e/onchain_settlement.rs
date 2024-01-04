@@ -81,7 +81,7 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint = colocation::start_naive_solver().await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
@@ -92,8 +92,7 @@ async fn onchain_settlement(web3: Web3) {
     );
     services
         .start_api(vec![
-            // "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-            // "--price-estimators=Baseline".to_string(),
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
 
@@ -117,7 +116,7 @@ async fn onchain_settlement(web3: Web3) {
     let order_b = OrderCreation {
         sell_token: token_b.address(),
         sell_amount: to_wei(50),
-        fee_amount: 500_000_000_000_000_000u128.into(),
+        fee_amount: to_wei(1),
         buy_token: token_a.address(),
         buy_amount: to_wei(40),
         valid_to: model::time::now_in_epoch_seconds() + 300,
@@ -150,15 +149,12 @@ async fn onchain_settlement(web3: Web3) {
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
 
     // Check matching
-    // let balance =
-    // token_b.balance_of(trader_a.address()).call().await.unwrap();
-    // assert!(balance >= order_a.buy_amount);
-    // let balance =
-    // token_a.balance_of(trader_b.address()).call().await.unwrap();
-    // assert!(balance >= order_b.buy_amount);
+    let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
+    assert!(balance >= order_a.buy_amount);
+    let balance = token_a.balance_of(trader_b.address()).call().await.unwrap();
+    assert!(balance >= order_b.buy_amount);
 
-    // tracing::info!("Waiting for auction to be cleared.");
-    // let auction_is_empty = || async {
-    // services.get_auction().await.auction.orders.is_empty() };
-    // wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
+    tracing::info!("Waiting for auction to be cleared.");
+    let auction_is_empty = || async { services.get_auction().await.auction.orders.is_empty() };
+    wait_for_condition(TIMEOUT, auction_is_empty).await.unwrap();
 }
