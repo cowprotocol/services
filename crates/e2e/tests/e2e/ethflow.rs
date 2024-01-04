@@ -343,7 +343,7 @@ async fn test_auction_query(
 ) {
     let response = services.get_auction().await;
     assert_eq!(response.auction.orders.len(), 1);
-    test_order_parameters(&response.auction.orders[0], order, owner, contracts).await;
+    test_auction_order_parameters(&response.auction.orders[0], order, owner, contracts).await;
 }
 
 enum TradeQuery {
