@@ -1,4 +1,8 @@
 chain-id = "1"
 solver-name = "CoW Solver"
 endpoint = "https://solver.cow.fi"
-https://github.com/fleupold/release-action-test/releases/tag/v0.4.0 = false
+gzip-requests = false
+
+[instance-upload]
+bucket = "staging-bucket-133876976458"
+legacy-instance-prefix = "legacy"
