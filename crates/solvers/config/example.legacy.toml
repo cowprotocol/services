@@ -2,7 +2,3 @@ chain-id = "1"
 solver-name = "CoW Solver"
 endpoint = "https://solver.cow.fi"
 gzip-requests = false
-
-[instance-upload]
-bucket = "staging-bucket-133876976458"
-legacy-instance-prefix = "legacy"
