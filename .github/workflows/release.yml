@@ -36,12 +36,24 @@ jobs:
       - name: Push tags
         run: git push origin --tags
 
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Create release"
+        uses: "actions/github-script@v6"
         with:
-          tag_name: ${{ steps.tag_version.outputs.tag }}
-          release_name: Release ${{ steps.tag_version.outputs.tag }}
-          draft: false
-          prerelease: false
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            try {
+              const response = await github.rest.repos.createRelease({
+                draft: false,
+                generate_release_notes: true,
+                name: "Weekly Release ${{ steps.tag_version.outputs.tag }}",
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: ${{ steps.tag_version.outputs.tag }},
+              });
+
+              core.exportVariable('RELEASE_ID', response.data.id);
+              core.exportVariable('RELEASE_UPLOAD_URL', response.data.upload_url);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
