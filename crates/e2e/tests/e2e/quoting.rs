@@ -1,9 +1,5 @@
 use {
-    e2e::{
-        setup::{*},
-        tx,
-        tx_value,
-    },
+    e2e::{setup::*, tx, tx_value},
     ethcontract::prelude::U256,
     model::{
         order::OrderCreationAppData,
