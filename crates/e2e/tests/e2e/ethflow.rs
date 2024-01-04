@@ -1,6 +1,9 @@
 use {
     anyhow::bail,
-    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+    autopilot::{
+        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+        infra::persistence::auction::dto,
+    },
     chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
@@ -411,6 +414,33 @@ async fn test_order_parameters(
         contracts.ethflow.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
+}
+
+async fn test_auction_order_parameters(
+    response: &dto::Order,
+    order: &ExtendedEthFlowOrder,
+    owner: &H160,
+    contracts: &Contracts,
+) {
+    // Expected values from actual EIP1271 order instead of eth-flow order
+    assert_eq!(response.valid_to, u32::MAX);
+    assert_eq!(response.owner, contracts.ethflow.address());
+    assert_eq!(response.sell_token, contracts.weth.address());
+
+    assert_eq!(response.class, OrderClass::Market);
+
+    assert!(order
+        .is_valid_cowswap_signature(&response.signature, contracts)
+        .await
+        .is_ok());
+
+    // Requires wrapping first
+    assert_eq!(response.pre_interactions.len(), 1);
+    assert_eq!(
+        response.pre_interactions[0].target,
+        contracts.ethflow.address()
+    );
+    assert_eq!(response.pre_interactions[0].call_data, WRAP_ALL_SELECTOR);
 }
 
 pub struct ExtendedEthFlowOrder(pub EthflowOrder);
