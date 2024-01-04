@@ -4,7 +4,7 @@ pub mod dto;
 
 impl super::Persistence {
     /// Saves the given auction to storage for debugging purposes.
-    /// 
+    ///
     /// There is no intention to retrieve this data programmatically.
     pub fn archive_auction(&self, id: domain::AuctionId, instance: &domain::Auction) {
         if let Some(uploader) = self.s3.clone() {
