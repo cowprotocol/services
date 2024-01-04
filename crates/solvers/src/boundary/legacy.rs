@@ -96,9 +96,9 @@ impl Legacy {
     pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution, Error> {
         let (mapping, auction_model) =
             to_boundary_auction(auction, self.weth, self.solver.network_name.clone());
-        self.persistence
-            .as_ref()
-            .map(|persistence| persistence.store_boundary(auction.id, &auction_model));
+        if let Some(persistence) = self.persistence.as_ref() {
+            persistence.store_boundary(auction.id, &auction_model);
+        }
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping).map_err(Into::into)
