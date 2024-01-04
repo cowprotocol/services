@@ -3,6 +3,7 @@ use {
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
@@ -192,6 +193,15 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
 
     services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
+
+    // Check order events
+    let events = crate::database::events_of_order(
+        services.db(),
+        &dummy_order.uid(&onchain.contracts()).await,
+    )
+    .await;
+    assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
+    assert_eq!(events.last().unwrap().label, OrderEventLabel::Cancelled);
 }
 
 async fn test_submit_quote(
