@@ -1,5 +1,5 @@
 use {
-    crate::database::Postgres,
+    crate::{boundary, database::Postgres, domain},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -83,16 +83,8 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: Option<Auction>,
-    orders: SolvableOrders,
-}
-
-#[derive(Clone, Debug)]
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub update_time: Instant,
-    pub latest_settlement_block: u64,
-    pub block: u64,
+    auction: Option<domain::Auction>,
+    update_time: Instant,
 }
 
 impl SolvableOrdersCache {
@@ -119,12 +111,7 @@ impl SolvableOrdersCache {
             bad_token_detector,
             cache: Mutex::new(Inner {
                 auction: None,
-                orders: SolvableOrders {
-                    orders: Default::default(),
-                    update_time: Instant::now(),
-                    latest_settlement_block: 0,
-                    block: 0,
-                },
+                update_time: Instant::now(),
             }),
             native_price_estimator,
             signature_validator,
@@ -140,7 +127,7 @@ impl SolvableOrdersCache {
         self_
     }
 
-    pub fn current_auction(&self) -> Option<Auction> {
+    pub fn current_auction(&self) -> Option<domain::Auction> {
         self.cache.lock().unwrap().auction.clone()
     }
 
@@ -251,13 +238,8 @@ impl SolvableOrdersCache {
         });
 
         *self.cache.lock().unwrap() = Inner {
-            auction: Some(auction),
-            orders: SolvableOrders {
-                orders,
-                update_time: Instant::now(),
-                latest_settlement_block: db_solvable_orders.latest_settlement_block,
-                block,
-            },
+            auction: Some(boundary::auction::to_domain(auction)),
+            update_time: Instant::now(),
         };
 
         tracing::debug!(%block, "updated current auction cache");
@@ -265,7 +247,7 @@ impl SolvableOrdersCache {
     }
 
     pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().orders.update_time
+        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {

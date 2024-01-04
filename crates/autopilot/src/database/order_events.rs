@@ -1,5 +1,6 @@
 pub use database::order_events::OrderEventLabel;
 use {
+    crate::domain,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     database::{
@@ -16,7 +17,7 @@ impl super::Postgres {
     /// If this function encounters an error it will only be printed. More
     /// elaborate error handling is not necessary because this is just
     /// debugging information.
-    pub async fn store_order_events(&self, events: &[(OrderUid, OrderEventLabel)]) {
+    pub async fn store_order_events(&self, events: &[(domain::OrderUid, OrderEventLabel)]) {
         if let Err(err) = store_order_events(self, events, Utc::now()).await {
             tracing::warn!(?err, "failed to insert order events");
         }
@@ -45,7 +46,7 @@ impl super::Postgres {
 
 async fn store_order_events(
     db: &super::Postgres,
-    events: &[(OrderUid, OrderEventLabel)],
+    events: &[(domain::OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,
 ) -> Result<()> {
     let mut ex = db.pool.begin().await.context("begin transaction")?;
