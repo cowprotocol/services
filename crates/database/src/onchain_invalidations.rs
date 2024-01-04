@@ -29,7 +29,7 @@ pub async fn insert_onchain_invalidations(
                 // It would be more correct to use the timestamp of the event's block, but passing
                 // this is more involved, and now() should be good enough.
                 timestamp: Utc::now(),
-                order_uid: event.clone(),
+                order_uid: *event,
             },
         )
         .await?;

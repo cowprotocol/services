@@ -191,7 +191,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     // Check order events
     let events = crate::database::events_of_order(
         services.db(),
-        &dummy_order.uid(&onchain.contracts()).await,
+        &dummy_order.uid(onchain.contracts()).await,
     )
     .await;
     assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
