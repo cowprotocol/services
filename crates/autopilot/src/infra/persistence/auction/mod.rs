@@ -3,8 +3,10 @@ use {crate::domain, tracing::Instrument};
 pub mod dto;
 
 impl super::Persistence {
-    /// Persists the given auction in a background task.
-    pub fn store_auction(&self, id: domain::AuctionId, instance: &domain::Auction) {
+    /// Saves the given auction to storage for debugging purposes.
+    /// 
+    /// There is no intention to retrieve this data programmatically.
+    pub fn archive_auction(&self, id: domain::AuctionId, instance: &domain::Auction) {
         if let Some(uploader) = self.s3.clone() {
             let instance = dto::from_domain(instance.clone());
             tokio::spawn(

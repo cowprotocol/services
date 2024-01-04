@@ -315,7 +315,7 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        self.persistence.store_auction(id, auction);
+        self.persistence.archive_auction(id, auction);
         let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
