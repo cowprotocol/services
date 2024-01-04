@@ -32,23 +32,9 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
-    /// The block that this auction is valid for.
-    /// The block number for the auction. Orders and prices are guaranteed to be
-    /// valid on this block.
     pub block: u64,
-
-    /// The latest block on which a settlement has been processed. This field is
-    /// used to tell which orders are still in-flight. See
-    /// [`InFlightOrders`].
-    ///
-    /// Note that under certain conditions it is possible for a settlement to
-    /// have been mined as part of [`block`] but not have yet been processed.
     pub latest_settlement_block: u64,
-
-    /// The solvable orders included in the auction.
     pub orders: Vec<Order>,
-
-    /// The reference prices for all traded tokens in the auction.
     #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
 }
@@ -59,7 +45,6 @@ pub type AuctionId = i64;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuctionWithId {
-    /// Increments whenever the backend updates the auction.
     pub id: AuctionId,
     #[serde(flatten)]
     pub auction: Auction,
