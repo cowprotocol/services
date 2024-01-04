@@ -31,6 +31,7 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Auction {
     /// The block that this auction is valid for.
     /// The block number for the auction. Orders and prices are guaranteed to be
@@ -49,6 +50,7 @@ pub struct Auction {
     pub orders: Vec<Order>,
 
     /// The reference prices for all traded tokens in the auction.
+    #[serde_as(as = "BTreeMap<_, HexOrDecimalU256>")]
     pub prices: BTreeMap<H160, U256>,
 }
 
