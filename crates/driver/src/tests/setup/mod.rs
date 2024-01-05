@@ -61,7 +61,7 @@ pub enum Partial {
 
 #[serde_as]
 #[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]

@@ -7,7 +7,7 @@ use {
     ethcontract::U256,
     model::{
         order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
-        signature::EcdsaSigningScheme,
+        signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
     secp256k1::SecretKey,
     shared::ethrpc::Web3,
@@ -73,10 +73,11 @@ async fn test(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
+        signature: Signature::default_with(SigningScheme::EthSign),
         ..Default::default()
     }
     .sign(
-        EcdsaSigningScheme::Eip712,
+        EcdsaSigningScheme::EthSign,
         &onchain.contracts().domain_separator,
         SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
