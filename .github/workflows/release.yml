@@ -15,19 +15,15 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v1
-        with:
-          node-version: "14"
-
-      - name: Install Dependencies
-        run: npm install
-
       - name: Create Tag
         id: tag_version
         run: |
           # Extracts the latest version tag, bumps the minor version
           LATEST_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)
+          if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
+            echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
+            exit 1
+          fi
           MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
           MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
           NEW_MINOR=$((MINOR+1))
