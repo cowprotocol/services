@@ -1,5 +1,11 @@
 use {
-    crate::{events::EventIndex, OrderUid, PgTransaction},
+    crate::{
+        events::EventIndex,
+        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
+        OrderUid,
+        PgTransaction,
+    },
+    chrono::Utc,
     sqlx::{Executor, PgConnection},
 };
 
@@ -16,6 +22,17 @@ pub async fn insert_onchain_invalidations(
 ) -> Result<(), sqlx::Error> {
     for (index, event) in events {
         insert_onchain_invalidation(ex, index, event).await?;
+        insert_order_event(
+            ex,
+            &OrderEvent {
+                label: OrderEventLabel::Cancelled,
+                // It would be more correct to use the timestamp of the event's block, but passing
+                // this is more involved, and now() should be good enough.
+                timestamp: Utc::now(),
+                order_uid: *event,
+            },
+        )
+        .await?;
     }
     Ok(())
 }
