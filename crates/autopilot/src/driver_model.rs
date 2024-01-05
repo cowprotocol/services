@@ -23,7 +23,7 @@ pub mod quote {
     }
 
     #[derive(Clone, Debug, Default, Serialize)]
-    #[serde(rename_all = "lowercase")]
+    #[serde(rename_all = "camelCase")]
     pub enum Kind {
         #[default]
         Buy,
@@ -123,7 +123,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Serialize, Deserialize)]
-    #[serde(rename_all = "lowercase")]
+    #[serde(rename_all = "camelCase")]
     pub enum Class {
         Market,
         Limit,
@@ -142,7 +142,7 @@ pub mod solve {
     }
 
     #[derive(Clone, Debug, Serialize)]
-    #[serde(rename_all = "lowercase", tag = "kind")]
+    #[serde(rename_all = "camelCase", tag = "kind")]
     pub enum FeePolicy {
         /// If the order receives more than expected (positive deviation from
         /// quoted amounts) pay the protocol a factor of the achieved

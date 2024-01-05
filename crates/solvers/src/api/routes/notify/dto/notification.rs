@@ -109,7 +109,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
