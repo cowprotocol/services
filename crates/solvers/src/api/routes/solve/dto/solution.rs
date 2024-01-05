@@ -153,7 +153,7 @@ struct Solution {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -207,14 +207,14 @@ struct JitOrder {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -284,7 +284,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -293,7 +293,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -301,7 +301,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -312,7 +312,7 @@ enum SigningScheme {
 /// A score for a solution. The score is used to rank solutions.
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
