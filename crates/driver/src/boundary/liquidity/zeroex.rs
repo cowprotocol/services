@@ -18,7 +18,7 @@ pub async fn collector(
         http_timeout: config.http_timeout,
     });
     let api = Arc::new(DefaultZeroExApi::new(
-        http_client_factory,
+        http_client_factory.builder(),
         config.base_url.clone(),
         config.api_key.clone(),
         blocks,
