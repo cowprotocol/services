@@ -45,8 +45,7 @@ async fn eth_integration(web3: Web3) {
     let trader_b_eth_balance_before = web3.eth().balance(trader_b.address(), None).await.unwrap();
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let quote = |sell_token, buy_token| {
         let services = &services;
@@ -110,8 +109,6 @@ async fn eth_integration(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
-
     let trade_happened = || async {
         let balance_a = web3.eth().balance(trader_a.address(), None).await.unwrap();
         let balance_b = web3.eth().balance(trader_b.address(), None).await.unwrap();
@@ -128,6 +125,6 @@ async fn eth_integration(web3: Web3) {
     );
     assert_eq!(
         trader_b_eth_balance_after - trader_b_eth_balance_before,
-        49_800_747_827_208_136_744_u128.into()
+        49_776_284_258_574_379_601_u128.into()
     );
 }

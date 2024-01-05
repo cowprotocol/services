@@ -25,7 +25,6 @@ mod partially_fillable_balance;
 mod partially_fillable_pool;
 mod quoting;
 mod refunder;
-mod settlement_without_onchain_liquidity;
 mod smart_contract_orders;
 mod tracking_insufficient_funds;
 mod vault_balances;

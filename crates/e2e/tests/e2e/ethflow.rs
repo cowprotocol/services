@@ -77,8 +77,7 @@ async fn eth_flow_tx(web3: Web3) {
     };
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
@@ -107,7 +106,6 @@ async fn eth_flow_tx(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
 
     test_trade_availability_in_api(
@@ -129,8 +127,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     // Create an order that only exists to be cancelled.
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
@@ -185,7 +182,6 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
 
     // Check order events
