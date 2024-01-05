@@ -5,6 +5,7 @@ pub mod example_config;
 pub mod fees;
 pub mod internalization;
 pub mod merge_settlements;
+pub mod multiple_drivers;
 pub mod multiple_solutions;
 pub mod negative_scores;
 pub mod order_prioritization;

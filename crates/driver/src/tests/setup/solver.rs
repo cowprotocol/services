@@ -5,12 +5,7 @@ use {
             competition::order,
             time::{self},
         },
-        infra::{
-            self,
-            blockchain::contracts::Addresses,
-            config::file::{default_http_time_buffer, default_solving_share_of_deadline},
-            Ethereum,
-        },
+        infra::{self, blockchain::contracts::Addresses, Ethereum},
         tests::hex_address,
     },
     itertools::Itertools,
@@ -34,7 +29,7 @@ pub struct Config<'a> {
     pub solutions: &'a [blockchain::Solution],
     pub trusted: &'a HashSet<&'static str>,
     pub quoted_orders: &'a [super::blockchain::QuotedOrder],
-    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
 }
@@ -217,12 +212,7 @@ impl Solver {
             gas,
         )
         .await;
-        let http_delay = chrono::Duration::from_std(default_http_time_buffer()).unwrap();
-        let timeouts = infra::solver::Timeouts {
-            http_delay,
-            solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
-        };
-        let deadline = time::Deadline::new(config.deadline, timeouts);
+
         let state = Arc::new(Mutex::new(StateInner { called: false }));
         let app = axum::Router::new()
         .route(
@@ -244,7 +234,7 @@ impl Solver {
                         "orders": orders_json,
                         "liquidity": [],
                         "effectiveGasPrice": effective_gas_price,
-                        "deadline": deadline.solvers(),
+                        "deadline": config.deadline.solvers(),
                     });
                     assert_eq!(req, expected, "unexpected /solve request");
                     let mut state = state.0.lock().unwrap();

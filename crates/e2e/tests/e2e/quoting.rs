@@ -47,7 +47,8 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
@@ -58,9 +59,7 @@ async fn test(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services
-        .start_api(vec!["--enable-custom-interactions=true".to_string()])
-        .await;
+    services.start_api(vec![]).await;
 
     tracing::info!("Quoting order");
     let request = OrderQuoteRequest {
