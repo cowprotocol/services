@@ -18,7 +18,7 @@ use {
             eth::{self, Gas},
             mempools,
             quote::{self, Quote},
-            time::Deadline,
+            time::{Deadline, Remaining},
             Liquidity,
         },
         infra::solver,
@@ -90,10 +90,10 @@ pub fn empty_solution(solver: &solver::Name, id: solution::Id) {
 
 // Observe that postprocessing (encoding & merging) of solutions is about to
 // start.
-pub fn postprocessing(solutions: &[Solution], deadline: std::time::Duration) {
+pub fn postprocessing(solutions: &[Solution], deadline: chrono::DateTime<chrono::Utc>) {
     tracing::debug!(
         solutions = ?solutions.len(),
-        remaining = ?deadline,
+        remaining = ?deadline.remaining(),
         "postprocessing solutions"
     );
 }

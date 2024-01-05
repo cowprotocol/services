@@ -83,8 +83,8 @@ async fn ethrpc(url: &Url) -> blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: blockchain::Rpc) -> blockchain::Ethereum {
-    blockchain::Ethereum::new(ethrpc).await
+async fn ethereum(ethrpc: blockchain::Rpc, poll_interval: Duration) -> blockchain::Ethereum {
+    blockchain::Ethereum::new(ethrpc, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -141,12 +141,8 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let current_block_stream = args
-        .shared
-        .current_block
-        .stream(web3.clone())
-        .await
-        .unwrap();
+    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let eth = ethereum(ethrpc, args.shared.current_block.block_stream_poll_interval).await;
 
     let settlement_contract = match args.shared.settlement_contract_address {
         Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
@@ -207,7 +203,7 @@ pub async fn run(args: Arguments) {
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        current_block_stream.clone(),
+        eth.current_block().clone(),
     );
 
     let gas_price_estimator = Arc::new(
@@ -304,7 +300,7 @@ pub async fn run(args: Arguments) {
         PoolCache::new(
             cache_config,
             Arc::new(pool_aggregator),
-            current_block_stream.clone(),
+            eth.current_block().clone(),
         )
         .expect("failed to create pool cache"),
     );
@@ -325,7 +321,7 @@ pub async fn run(args: Arguments) {
             block_retriever.clone(),
             token_info_fetcher.clone(),
             cache_config,
-            current_block_stream.clone(),
+            eth.current_block().clone(),
             http_factory.create(),
             web3.clone(),
             &contracts,
@@ -381,7 +377,7 @@ pub async fn run(args: Arguments) {
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
-            current_block_stream.clone(),
+            eth.current_block().clone(),
         )
         .unwrap(),
     );
@@ -389,7 +385,7 @@ pub async fn run(args: Arguments) {
         args.shared.one_inch_url.clone(),
         http_factory.create(),
         chain_id,
-        current_block_stream.clone(),
+        eth.current_block().clone(),
     )
     .map(Arc::new);
 
@@ -409,7 +405,7 @@ pub async fn run(args: Arguments) {
                 .await
                 .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
-            block_stream: current_block_stream.clone(),
+            block_stream: eth.current_block().clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
@@ -559,17 +555,17 @@ pub async fn run(args: Arguments) {
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
     tokio::task::spawn(
-        service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
+        service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
 
-    let block = current_block_stream.borrow().number;
+    let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         db.clone(),
         args.banned_users.iter().copied().collect(),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        current_block_stream.clone(),
+        eth.current_block().clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
@@ -598,7 +594,7 @@ pub async fn run(args: Arguments) {
         };
     tokio::task::spawn(
         on_settlement_event_updater
-            .run_forever(current_block_stream.clone())
+            .run_forever(eth.current_block().clone())
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
@@ -628,8 +624,6 @@ pub async fn run(args: Arguments) {
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
 
-    let ethrpc = ethrpc(&args.shared.node_url).await;
-    let eth = ethereum(ethrpc).await;
     let run = RunLoop {
         eth,
         solvable_orders_cache,

@@ -37,7 +37,8 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint =
+        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
     colocation::start_driver(
         onchain.contracts(),
         vec![SolverEngine {
@@ -51,9 +52,7 @@ async fn test(web3: Web3) {
     services.start_autopilot(vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);
-    services
-        .start_api(vec!["--enable-eth-smart-contract-payments=true".to_string()])
-        .await;
+    services.start_api(vec![]).await;
 
     tracing::info!("Placing order");
     let balance = onchain

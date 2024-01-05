@@ -1,10 +1,13 @@
 use {
-    crate::{
-        nodes::NODE_HOST,
-        setup::{wait_for_condition, Contracts, TIMEOUT},
+    super::TestAccount,
+    crate::setup::{
+        colocation::{self, SolverEngine},
+        wait_for_condition,
+        Contracts,
+        TIMEOUT,
     },
     clap::Parser,
-    ethcontract::{H160, H256},
+    ethcontract::H256,
     model::{
         app_data::{AppDataDocument, AppDataHash},
         auction::AuctionWithId,
@@ -13,7 +16,7 @@ use {
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    reqwest::{Client, StatusCode, Url},
+    reqwest::{Client, StatusCode},
     sqlx::Connection,
     std::time::Duration,
 };
@@ -106,10 +109,13 @@ impl<'a> Services<'a> {
             "orderbook".to_string(),
             "--enable-presign-orders=true".to_string(),
             "--enable-eip1271-orders=true".to_string(),
+            "--enable-custom-interactions=true".to_string(),
+            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
+            "--enable-eth-smart-contract-payments=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -122,52 +128,25 @@ impl<'a> Services<'a> {
         Self::wait_for_api_to_come_up().await;
     }
 
-    /// Start the solver service in a background task.
-    pub fn start_old_driver(&self, private_key: &[u8; 32], extra_args: Vec<String>) {
-        let args = [
-            "solver".to_string(),
-            format!("--solver-account={}", hex::encode(private_key)),
-            "--settle-interval=1s".to_string(),
-            format!("--transaction-submission-nodes={NODE_HOST}"),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-        ]
-        .into_iter()
-        .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args);
-
-        let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(solver::run::run(args));
-    }
-
-    /// Start the solver service in a background task with a custom http solver
-    /// only.
-    pub fn start_old_driver_custom_solver(
-        &self,
-        solver_url: Option<Url>,
-        solver_account: H160,
-        extra_args: Vec<String>,
-    ) {
-        let args = [
-            "solver".to_string(),
-            format!(
-                "--external-solvers=Custom|{}|{:#x}|false",
-                solver_url
-                    .unwrap_or("http://localhost:8000".parse().unwrap())
-                    .as_str(),
-                solver_account
-            ),
-            "--solvers=None".to_string(),
-            format!("--solver-account={:#x}", solver_account),
-            "--settle-interval=1s".to_string(),
-            format!("--transaction-submission-nodes={NODE_HOST}"),
-            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-        ]
-        .into_iter()
-        .chain(self.api_autopilot_solver_arguments())
-        .chain(extra_args);
-
-        let args = solver::arguments::Arguments::try_parse_from(args).unwrap();
-        tokio::task::spawn(solver::run(args));
+    /// Starts a basic version of the protocol with a single baseline solver.
+    pub async fn start_protocol(&self, solver: TestAccount) {
+        let solver_endpoint =
+            colocation::start_baseline_solver(self.contracts.weth.address()).await;
+        colocation::start_driver(
+            self.contracts,
+            vec![SolverEngine {
+                name: "test_solver".into(),
+                account: solver,
+                endpoint: solver_endpoint,
+            }],
+        );
+        self.start_autopilot(vec![
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ]);
+        self.start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
     }
 
     async fn wait_for_api_to_come_up() {
