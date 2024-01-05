@@ -1,5 +1,5 @@
 use {
-    e2e::setup::{colocation::SolverEngine, safe::Safe, *},
+    e2e::setup::{safe::Safe, *},
     ethcontract::{Bytes, H160, U256},
     model::{
         app_data::AppDataHash,
@@ -32,21 +32,8 @@ async fn smart_contract_orders(web3: Web3) {
     safe.exec_call(token.approve(onchain.contracts().allowance, to_wei(10)))
         .await;
 
-    tracing::info!("Starting services.");
-    let solver_endpoint = colocation::start_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
-    );
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order_template = OrderCreation {
         kind: OrderKind::Sell,

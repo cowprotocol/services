@@ -268,6 +268,23 @@ impl Solver {
     fn address(&self) -> eth::H160 {
         self.private_key.public_address()
     }
+
+    pub fn name(self, name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            ..self
+        }
+    }
+
+    pub fn solving_time_share(self, share: f64) -> Self {
+        Self {
+            timeouts: infra::solver::Timeouts {
+                solving_share_of_deadline: share.try_into().unwrap(),
+                ..self.timeouts
+            },
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -517,6 +534,11 @@ impl Setup {
     /// Add a solution to be returned by the mock solver.
     pub fn solution(mut self, solution: Solution) -> Self {
         self.solutions.push(solution);
+        self
+    }
+
+    pub fn solver(mut self, solver: Solver) -> Self {
+        self.solvers.push(solver);
         self
     }
 

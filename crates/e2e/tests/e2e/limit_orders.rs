@@ -111,8 +111,7 @@ async fn single_limit_order_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order = OrderCreation {
         sell_token: token_a.address(),
@@ -142,7 +141,6 @@ async fn single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
         .await
         .unwrap();
@@ -214,8 +212,7 @@ async fn two_limit_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -266,8 +263,6 @@ async fn two_limit_orders_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
         .await
         .unwrap();
-
-    services.start_old_driver(solver.private_key(), vec![]);
 
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
         .await
@@ -342,8 +337,7 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -395,8 +389,6 @@ async fn mixed_limit_and_market_orders_test(web3: Web3) {
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 2 })
         .await
         .unwrap();
-
-    services.start_old_driver(solver.private_key(), vec![]);
 
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
         .await
@@ -503,8 +495,7 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let order = OrderCreation {
         sell_token: token_usdc.address(),
@@ -544,7 +535,6 @@ async fn forked_single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
         .await
         .unwrap();
