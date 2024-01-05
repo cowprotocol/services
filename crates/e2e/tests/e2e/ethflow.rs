@@ -1,8 +1,8 @@
 use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    chrono::{TimeZone, Utc},
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
@@ -123,7 +123,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [refunder, trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
+    let [trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
@@ -132,9 +132,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     services.start_autopilot(vec![]);
     services.start_api(vec![]).await;
 
-    // Create an order that only exists to be refunded, which triggers an event in
-    // the eth-flow contract that is not included in the ABI of
-    // `CoWSwapOnchainOrders`.
+    // Create an order that only exists to be cancelled.
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
@@ -152,14 +150,11 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .include_slippage_bps(300);
     sumbit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
     web3.api::<TestNodeApi<_>>()
-        .set_next_block_timestamp(
-            &Utc.timestamp_millis_opt((valid_to as i64 + 1) * 1_000)
-                .unwrap(),
-        )
+        .mine_pending_block()
         .await
-        .expect("Must be able to set block timestamp");
+        .unwrap();
     dummy_order
-        .mine_order_invalidation(refunder.account(), &onchain.contracts().ethflow)
+        .mine_order_invalidation(dummy_trader.account(), &onchain.contracts().ethflow)
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
@@ -192,6 +187,15 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
 
     services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
+
+    // Check order events
+    let events = crate::database::events_of_order(
+        services.db(),
+        &dummy_order.uid(onchain.contracts()).await,
+    )
+    .await;
+    assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
+    assert_eq!(events.last().unwrap().label, OrderEventLabel::Cancelled);
 }
 
 async fn test_submit_quote(
