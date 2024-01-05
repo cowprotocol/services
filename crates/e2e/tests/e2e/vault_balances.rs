@@ -42,8 +42,7 @@ async fn vault_balances(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     // Place Orders
     let order = OrderCreation {
@@ -78,7 +77,6 @@ async fn vault_balances(web3: Web3) {
     })
     .await
     .unwrap();
-    services.start_old_driver(solver.private_key(), vec![]);
     wait_for_condition(TIMEOUT, || async {
         services.get_auction().await.auction.orders.is_empty()
     })

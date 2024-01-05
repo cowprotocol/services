@@ -1,8 +1,5 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-    },
+    e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
         order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
@@ -73,24 +70,7 @@ async fn test(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_solver(onchain.contracts().uniswap_v2_router.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
-    );
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
-    services
-        .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
-        ])
-        .await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -139,7 +119,6 @@ async fn test(web3: Web3) {
     );
 
     onchain.mint_blocks_past_reorg_threshold().await;
-
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
