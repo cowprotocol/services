@@ -1,10 +1,6 @@
 use {
     database::order_events::{OrderEvent, OrderEventLabel},
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-        tx_value,
-    },
+    e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -57,22 +53,8 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
-    );
-
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     tracing::info!("Placing order");
     let order_a = OrderCreation {
