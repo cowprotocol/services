@@ -47,7 +47,7 @@ async fn uniswap() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": {
                             "balance": "30493445841295"
@@ -101,7 +101,7 @@ async fn uniswap() {
                     }
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 0.5,
                 }
             }]
@@ -170,7 +170,7 @@ async fn balancer_weighted() {
             "liquidity": [
                 // A xCOW -> xGNO -> wxDAI path with a good price.
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x9c58bacc331c9aa871afd802db6379a98e80cedb": {
                             "balance": "9661963829146095661"
@@ -185,7 +185,7 @@ async fn balancer_weighted() {
                     "gasEstimate": "90171"
                 },
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1963528800698237927834721",
@@ -206,7 +206,7 @@ async fn balancer_weighted() {
                 },
                 // A fake xCOW -> wxDAI path with a BAD price.
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1000000000000000000000000000"
@@ -267,7 +267,7 @@ async fn balancer_weighted() {
                     },
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 0.5,
                 }
             }]
@@ -328,7 +328,7 @@ async fn balancer_weighted_v3plus() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "18764168403990393422000071",
@@ -345,7 +345,7 @@ async fn balancer_weighted_v3plus() {
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892",
-                    "version": "v3plus",
+                    "version": "v3Plus",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -383,7 +383,7 @@ async fn balancer_weighted_v3plus() {
                     },
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 0.5,
                 }
             }]
@@ -444,7 +444,7 @@ async fn distant_convergence() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "5089632258314443812936111",
@@ -461,7 +461,7 @@ async fn distant_convergence() {
                     "id": "0",
                     "address": "0x21d4c792ea7e38e0d0819c2011a2b1cb7252bd99",
                     "gasEstimate": "88892",
-                    "version": "v3plus",
+                    "version": "v3Plus",
                 },
             ],
             "effectiveGasPrice": "1000000000",
@@ -499,7 +499,7 @@ async fn distant_convergence() {
                     },
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 0.5,
                 }
             }]
@@ -560,7 +560,7 @@ async fn same_path() {
             ],
             "liquidity": [
                 {
-                    "kind": "weightedproduct",
+                    "kind": "weightedProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1963528800698237927834721",
@@ -580,7 +580,7 @@ async fn same_path() {
                     "version": "v0",
                 },
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0x177127622c4a00f3d409b75571e12cb3c8973d3c": {
                             "balance": "1000000000000000000000000000"
@@ -650,7 +650,7 @@ async fn same_path() {
                     },
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 0.5,
                 }
             }]
@@ -790,7 +790,7 @@ async fn balancer_stable() {
                         },
                     ],
                     "score": {
-                        "kind": "riskadjusted",
+                        "kind": "riskAdjusted",
                     "successProbability": 0.5,
                     }
                 },
