@@ -16,8 +16,6 @@ use {
     url::Url,
 };
 
-const BASE_URL: &str = "https://api.1inch.dev/";
-
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
 struct Response(#[serde_as(as = "HashMap<_, HexOrDecimalU256>")] HashMap<Token, PriceInWei>);
@@ -31,7 +29,7 @@ pub struct OneInch {
 impl OneInch {
     pub fn new(
         client: Client,
-        base_url: Option<Url>,
+        base_url: Url,
         api_key: Option<String>,
         chain_id: u64,
         current_block: CurrentBlockStream,
@@ -39,13 +37,7 @@ impl OneInch {
         let instance = Self {
             prices: Arc::new(Mutex::new(HashMap::new())),
         };
-        instance.update_prices_in_background(
-            client,
-            base_url.unwrap_or(Url::parse(BASE_URL).unwrap()),
-            api_key,
-            chain_id,
-            current_block,
-        );
+        instance.update_prices_in_background(client, base_url, api_key, chain_id, current_block);
         instance
     }
 
@@ -122,6 +114,7 @@ async fn update_prices(
 mod tests {
     use {
         super::*,
+        crate::price_estimation::oneinch::BASE_URL,
         std::{env, str::FromStr},
     };
 
