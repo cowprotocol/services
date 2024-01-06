@@ -1,9 +1,7 @@
 use {
     crate::{
-        database::{
-            auctions::dto,
-            orders::{InsertionError, OrderStoring},
-        },
+        database::orders::{InsertionError, OrderStoring},
+        dto,
         ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
