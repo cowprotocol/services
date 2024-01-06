@@ -200,9 +200,9 @@ impl Solutions {
                         Score::Solver { score } => {
                             competition::solution::SolverScore::Solver(score)
                         }
-                        Score::RiskAdjusted(success_probability) => {
-                            competition::solution::SolverScore::RiskAdjusted(success_probability)
-                        }
+                        Score::RiskAdjusted {
+                            success_probability,
+                        } => competition::solution::SolverScore::RiskAdjusted(success_probability),
                     },
                     weth,
                 )
@@ -234,7 +234,7 @@ pub struct Solution {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -287,14 +287,14 @@ struct JitOrder {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -350,7 +350,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -359,7 +359,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -367,7 +367,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -377,11 +377,12 @@ enum SigningScheme {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
         score: eth::U256,
     },
-    RiskAdjusted(f64),
+    #[serde(rename_all = "camelCase")]
+    RiskAdjusted { success_probability: f64 },
 }

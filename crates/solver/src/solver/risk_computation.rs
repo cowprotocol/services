@@ -78,7 +78,9 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "risk_parameters: {:?}", self.risk_parameters)
+        let Self { risk_parameters } = self;
+
+        write!(f, "risk_parameters: {:?}", risk_parameters)
     }
 }
 

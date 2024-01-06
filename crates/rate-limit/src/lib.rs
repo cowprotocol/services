@@ -3,7 +3,6 @@ use {
     std::{
         fmt::{Display, Formatter},
         future::Future,
-        num::ParseFloatError,
         str::FromStr,
         sync::{Arc, Mutex, MutexGuard},
         time::{Duration, Instant},
@@ -71,8 +70,10 @@ impl FromStr for Strategy {
         let back_off_growth_factor: f64 = back_off_growth_factor
             .parse()
             .context("parsing back_off_growth_factor")?;
-        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
-        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
+        let min_back_off =
+            humantime::parse_duration(min_back_off).context("parsing min_back_off")?;
+        let max_back_off =
+            humantime::parse_duration(max_back_off).context("parsing max_back_off")?;
         Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
@@ -279,10 +280,6 @@ pub mod back_off {
     pub fn on_http_429(response: &Result<Response, reqwest::Error>) -> bool {
         matches!(response, Ok(response) if response.status() == 429)
     }
-}
-
-fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 #[cfg(test)]

@@ -1,5 +1,4 @@
 use {
-    crate::arguments::duration_from_seconds,
     anyhow::{anyhow, Result},
     reqwest::{Client, ClientBuilder, Response},
     std::{
@@ -62,15 +61,17 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "10",
-        value_parser = duration_from_seconds,
+        default_value = "10s",
+        value_parser = humantime::parse_duration,
     )]
     pub http_timeout: Duration,
 }
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "http_timeout: {:?}", self.http_timeout)
+        let Self { http_timeout } = self;
+
+        writeln!(f, "http_timeout: {:?}", http_timeout)
     }
 }
 

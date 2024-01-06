@@ -85,6 +85,37 @@ pub async fn insert_order_events_batch(
     query.execute(ex).await.map(|_| ())
 }
 
+/// Inserts a row into the `order_events` table only if the latest event for the
+/// corresponding order UID has a different label than the provided event..
+pub async fn insert_non_subsequent_label_order_event(
+    ex: &mut PgConnection,
+    event: &OrderEvent,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+        WITH cte AS (
+            SELECT label
+            FROM order_events
+            WHERE order_uid = $1
+            ORDER BY timestamp DESC
+            LIMIT 1
+        )
+        INSERT INTO order_events (order_uid, timestamp, label)
+        SELECT $1, $2, $3
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM cte
+            WHERE label = $3
+        )
+    "#;
+    sqlx::query(QUERY)
+        .bind(event.order_uid)
+        .bind(event.timestamp)
+        .bind(event.label)
+        .execute(ex)
+        .await
+        .map(|_| ())
+}
+
 /// Deletes rows before the provided timestamp from the `order_events` table.
 pub async fn delete_order_events_before(
     pool: &PgPool,

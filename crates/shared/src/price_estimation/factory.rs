@@ -29,7 +29,7 @@ use {
         ethrpc::Web3,
         http_client::HttpClientFactory,
         http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
-        oneinch_api::OneInchClient,
+        oneinch_api::OneInchClientImpl,
         paraswap_api::DefaultParaswapApi,
         price_estimation::{competition::PriceRanking, native::NativePriceEstimating},
         sources::{
@@ -38,7 +38,8 @@ use {
             uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
         },
         token_info::TokenInfoFetching,
-        zeroex_api::ZeroExApi,
+        trade_finding,
+        zeroex_api::DefaultZeroExApi,
     },
     anyhow::{anyhow, Context as _, Result},
     ethcontract::H160,
@@ -89,8 +90,6 @@ pub struct Components {
     pub uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     pub tokens: Arc<dyn TokenInfoFetching>,
     pub gas_price: Arc<dyn GasPriceEstimating>,
-    pub zeroex: Arc<dyn ZeroExApi>,
-    pub oneinch: Option<Arc<dyn OneInchClient>>,
 }
 
 /// The source of the price estimator.
@@ -371,7 +370,7 @@ impl<'a> PriceEstimatorFactory<'a> {
         results_required: NonZeroUsize,
     ) -> Result<Arc<CachingNativePriceEstimator>> {
         anyhow::ensure!(
-            self.args.native_price_cache_max_age_secs > self.args.native_price_prefetch_time_secs,
+            self.args.native_price_cache_max_age > self.args.native_price_prefetch_time,
             "price cache prefetch time needs to be less than price cache max age"
         );
 
@@ -392,10 +391,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         );
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
-            self.args.native_price_cache_max_age_secs,
-            self.args.native_price_cache_refresh_secs,
+            self.args.native_price_cache_max_age,
+            self.args.native_price_cache_refresh,
             Some(self.args.native_price_cache_max_update_size),
-            self.args.native_price_prefetch_time_secs,
+            self.args.native_price_prefetch_time,
             self.args.native_price_cache_concurrent_requests,
         ));
         Ok(native_estimator)
@@ -445,7 +444,13 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(ParaswapPriceEstimator::new(
             Arc::new(DefaultParaswapApi {
-                client: factory.components.http_factory.create(),
+                client: factory.components.http_factory.configure(|builder| {
+                    builder.timeout(
+                        trade_finding::time_limit()
+                            .to_std()
+                            .expect("negative time limit"),
+                    )
+                }),
                 base_url: factory.shared_args.paraswap_api_url.clone(),
                 partner: factory
                     .shared_args
@@ -469,8 +474,24 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
     type Params = H160;
 
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
+        let client_builder = factory.components.http_factory.builder().timeout(
+            trade_finding::time_limit()
+                .to_std()
+                .expect("negative time limit"),
+        );
+        let api = DefaultZeroExApi::new(
+            client_builder,
+            factory
+                .shared_args
+                .zeroex_url
+                .as_deref()
+                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
+            factory.shared_args.zeroex_api_key.clone(),
+            factory.network.block_stream.clone(),
+        )
+        .unwrap();
         Ok(ZeroExPriceEstimator::new(
-            factory.components.zeroex.clone(),
+            Arc::new(api),
             factory.shared_args.disabled_zeroex_sources.clone(),
             factory.rate_limiter(name),
             factory.args.zeroex_only_estimate_buy_queries,
@@ -487,12 +508,21 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
     type Params = H160;
 
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
+        let api = OneInchClientImpl::new(
+            factory.shared_args.one_inch_url.clone(),
+            factory.components.http_factory.configure(|builder| {
+                builder.timeout(
+                    trade_finding::time_limit()
+                        .to_std()
+                        .expect("negative time limit"),
+                )
+            }),
+            factory.network.chain_id,
+            factory.network.block_stream.clone(),
+        )
+        .context("1Inch API not supported for network")?;
         Ok(OneInchPriceEstimator::new(
-            factory
-                .components
-                .oneinch
-                .clone()
-                .context("1Inch API not supported for network")?,
+            Arc::new(api),
             factory.shared_args.disabled_one_inch_protocols.clone(),
             factory.rate_limiter(name),
             factory.shared_args.one_inch_referrer_address,
@@ -512,7 +542,13 @@ impl PriceEstimatorCreating for BalancerSor {
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         Ok(BalancerSor::new(
             Arc::new(DefaultBalancerSorApi::new(
-                factory.components.http_factory.create(),
+                factory.components.http_factory.configure(|builder| {
+                    builder.timeout(
+                        trade_finding::time_limit()
+                            .to_std()
+                            .expect("negative time limit"),
+                    )
+                }),
                 factory
                     .args
                     .balancer_sor_url

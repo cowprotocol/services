@@ -7,7 +7,6 @@
 use {
     crate::{
         debug_bytes,
-        http_client::HttpClientFactory,
         interaction::{EncodedInteraction, Interaction},
     },
     anyhow::{Context, Result},
@@ -19,6 +18,7 @@ use {
     reqwest::{
         header::{HeaderMap, HeaderValue},
         Client,
+        ClientBuilder,
         IntoUrl,
         StatusCode,
         Url,
@@ -375,26 +375,25 @@ impl DefaultZeroExApi {
 
     /// Create a new 0x HTTP API client with the specified base URL.
     pub fn new(
-        http_factory: &HttpClientFactory,
+        client_builder: ClientBuilder,
         base_url: impl IntoUrl,
         api_key: Option<String>,
         block_stream: CurrentBlockStream,
     ) -> Result<Self> {
-        let client = match api_key {
-            Some(api_key) => {
-                let mut key = HeaderValue::from_str(&api_key)?;
-                key.set_sensitive(true);
+        let client_builder = if let Some(api_key) = api_key {
+            let mut key = HeaderValue::from_str(&api_key)?;
+            key.set_sensitive(true);
 
-                let mut headers = HeaderMap::new();
-                headers.insert("0x-api-key", key);
+            let mut headers = HeaderMap::new();
+            headers.insert("0x-api-key", key);
 
-                http_factory.configure(|builder| builder.default_headers(headers))
-            }
-            None => http_factory.create(),
+            client_builder.default_headers(headers)
+        } else {
+            client_builder
         };
 
         Ok(Self {
-            client,
+            client: client_builder.build().unwrap(),
             base_url: base_url.into_url().context("zeroex api url")?,
             block_stream,
         })
@@ -408,7 +407,7 @@ impl DefaultZeroExApi {
     pub fn test() -> Self {
         let (_, block_stream) = watch::channel(BlockInfo::default());
         Self::new(
-            &HttpClientFactory::default(),
+            Client::builder(),
             std::env::var("ZEROEX_URL").unwrap_or_else(|_| Self::DEFAULT_URL.to_string()),
             std::env::var("ZEROEX_API_KEY").ok(),
             block_stream,

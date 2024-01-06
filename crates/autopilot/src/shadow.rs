@@ -15,9 +15,10 @@ use {
             reveal,
             solve::{self},
         },
-        protocol,
-        run_loop,
+        protocol::{self, fee},
+        run_loop::{self, observe},
     },
+    ::observe::metrics,
     model::{
         auction::{Auction, AuctionId, AuctionWithId},
         order::OrderClass,
@@ -72,11 +73,14 @@ impl RunLoop {
     }
 
     pub async fn run_forever(mut self) -> ! {
+        let mut previous = None;
         loop {
             let Some(AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            observe::log_auction_delta(id, &previous, &auction);
+            previous = Some(auction.clone());
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))
@@ -109,7 +113,7 @@ impl RunLoop {
             .all(|order| match order.metadata.class {
                 OrderClass::Market => false,
                 OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+                OrderClass::Limit => false,
             })
         {
             tracing::trace!("skipping empty auction");
@@ -194,13 +198,14 @@ impl RunLoop {
 
     /// Runs the solver competition, making all configured drivers participate.
     async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
+            fee_policies,
         );
         let request = &request;
 
@@ -329,6 +334,6 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }

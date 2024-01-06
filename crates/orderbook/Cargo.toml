@@ -30,6 +30,7 @@ futures = { workspace = true }
 gas-estimation = { workspace = true }
 hex = { workspace = true }
 hex-literal = { workspace = true }
+humantime = { workspace = true }
 hyper = "0.14"
 maplit = { workspace = true }
 model = { path = "../model" }

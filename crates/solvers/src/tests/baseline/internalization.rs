@@ -47,7 +47,7 @@ async fn trusted_token() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                             "balance": "3828187314911751990"
@@ -97,7 +97,8 @@ async fn trusted_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "kind": "riskAdjusted",
+                    "successProbability": 0.5,
                 }
             }]
         }),
@@ -148,7 +149,7 @@ async fn untrusted_sell_token() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                             "balance": "3828187314911751990"
@@ -198,7 +199,8 @@ async fn untrusted_sell_token() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "kind": "riskAdjusted",
+                    "successProbability": 0.5,
                 }
             }]
         }),
@@ -249,7 +251,7 @@ async fn insufficient_balance() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                             "balance": "3828187314911751990"
@@ -299,7 +301,8 @@ async fn insufficient_balance() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 0.5
+                    "kind": "riskAdjusted",
+                    "successProbability": 0.5,
                 }
             }]
         }),

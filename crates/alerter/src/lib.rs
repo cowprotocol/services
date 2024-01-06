@@ -221,7 +221,11 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
+            .filter(|order| {
+                !order.is_liquidity_order()
+                    && !order.partially_fillable
+                    && !matches!(order.status, OrderStatus::PresignaturePending)
+            })
             .map(|order| {
                 let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
                 (order.uid, (order, existing_time))
@@ -238,7 +242,7 @@ impl Alerter {
         // because they are more likely to be.
         closed_orders.sort_unstable_by_key(|order| match order.class {
             OrderClass::Market => 0u8,
-            OrderClass::Limit(_) => 1,
+            OrderClass::Limit => 1,
             OrderClass::Liquidity => 2,
         });
         for order in closed_orders {
@@ -329,8 +333,8 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     update_interval: Duration,
 
@@ -338,8 +342,8 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
     time_without_trade: Duration,
 
@@ -347,8 +351,8 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "180",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "3m",
+        value_parser = humantime::parse_duration,
     )]
     min_order_age: Duration,
 
@@ -356,8 +360,8 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "1800",
-        value_parser = shared::arguments::duration_from_seconds,
+        default_value = "30m",
+        value_parser = humantime::parse_duration,
     )]
     min_alert_interval: Duration,
 
@@ -374,7 +378,7 @@ struct Arguments {
 
     /// Minimum time between get order requests to the api. Without this the api
     /// can rate limit us.
-    #[clap(long, env, default_value = "0.2", value_parser = shared::arguments::duration_from_seconds)]
+    #[clap(long, env, default_value = "200ms", value_parser = humantime::parse_duration)]
     api_get_order_min_interval: Duration,
 
     #[clap(long, env)]

@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow = { workspace = true }
 futures = { workspace = true }
+humantime = { workspace = true }
 observe = { path = "../observe" }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }

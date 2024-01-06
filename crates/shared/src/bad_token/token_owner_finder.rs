@@ -15,7 +15,7 @@ use {
         },
     },
     crate::{
-        arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
+        arguments::{display_list, display_option, display_secret_option},
         bad_token::token_owner_finder::{
             ethplorer::EthplorerTokenOwnerFinder,
             solvers::{
@@ -109,7 +109,7 @@ pub struct Arguments {
     /// Interval in seconds between consecutive queries to update the solver
     /// token owner pairs. Values should be in pair with
     /// `solver_token_owners_urls`
-    #[clap(long, env, use_value_delimiter = true, value_parser = duration_from_seconds)]
+    #[clap(long, env, use_value_delimiter = true, value_parser = humantime::parse_duration)]
     pub solver_token_owners_cache_update_intervals: Vec<Duration>,
 }
 
@@ -165,30 +165,38 @@ impl TokenOwnerFindingStrategy {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "token_owner_finders: {:?}", self.token_owner_finders)?;
+        let Self {
+            token_owner_finders,
+            token_owner_finder_uniswap_v3_fee_values,
+            blockscout_api_url,
+            ethplorer_api_url,
+            ethplorer_api_key,
+            token_owner_finder_rate_limiter,
+            whitelisted_owners,
+            solver_token_owners_urls,
+            solver_token_owners_cache_update_intervals,
+        } = self;
+
+        writeln!(f, "token_owner_finders: {:?}", token_owner_finders)?;
         writeln!(
             f,
             "token_owner_finder_uniswap_v3_fee_values: {:?}",
-            self.token_owner_finder_uniswap_v3_fee_values
+            token_owner_finder_uniswap_v3_fee_values
         )?;
-        display_option(f, "blockscout_api_url", &self.blockscout_api_url)?;
-        display_option(f, "ethplorer_api_url", &self.ethplorer_api_url)?;
-        display_secret_option(f, "ethplorer_api_key", &self.ethplorer_api_key)?;
+        display_option(f, "blockscout_api_url", blockscout_api_url)?;
+        display_option(f, "ethplorer_api_url", ethplorer_api_url)?;
+        display_secret_option(f, "ethplorer_api_key", ethplorer_api_key)?;
         display_option(
             f,
             "token_owner_finder_rate_limiter",
-            &self.token_owner_finder_rate_limiter,
+            token_owner_finder_rate_limiter,
         )?;
-        writeln!(f, "whitelisted_owners, {:?}", self.whitelisted_owners)?;
-        display_list(
-            f,
-            "solver_token_owners_urls",
-            &self.solver_token_owners_urls,
-        )?;
+        writeln!(f, "whitelisted_owners, {:?}", whitelisted_owners)?;
+        display_list(f, "solver_token_owners_urls", solver_token_owners_urls)?;
         writeln!(
             f,
             "solver_token_owners_cache_update_intervals, {:?}",
-            self.solver_token_owners_cache_update_intervals
+            solver_token_owners_cache_update_intervals
         )?;
         Ok(())
     }

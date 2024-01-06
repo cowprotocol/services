@@ -6,7 +6,7 @@ use {
     tokio::task::JoinHandle,
 };
 
-pub async fn start_solver(weth: H160) -> Url {
+pub async fn start_baseline_solver(weth: H160) -> Url {
     let config_file = config_tmp_file(format!(
         r#"
 weth = "{weth:?}"
@@ -16,10 +16,20 @@ max-partial-attempts = 5
 risk-parameters = [0,0,0,0]
         "#,
     ));
+
+    start_solver(config_file, "baseline".to_string()).await
+}
+
+pub async fn start_naive_solver() -> Url {
+    let config_file = config_tmp_file("risk-parameters = [0,0,0,0]");
+    start_solver(config_file, "naive".to_string()).await
+}
+
+async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
     let args = vec![
         "solvers".to_string(),
-        format!("--addr=0.0.0.0:0"),
-        "baseline".to_string(),
+        "--addr=0.0.0.0:0".to_string(),
+        solver_name,
         format!("--config={}", config_file.display()),
     ];
 
@@ -78,7 +88,7 @@ graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 [[liquidity.uniswap-v2]]
 router = "{:?}"
 pool-code = "{:?}"
-missing-pool-cache-time-seconds = 3600
+missing-pool-cache-time = "1h"
 
 [submission]
 gas-price-cap = 1000000000000

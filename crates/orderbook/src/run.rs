@@ -31,7 +31,6 @@ use {
         maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
-        oneinch_api::OneInchClientImpl,
         order_quoting::{self, OrderQuoter, QuoteHandler},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
@@ -54,7 +53,6 @@ use {
             PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-        zeroex_api::DefaultZeroExApi,
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
     tokio::{task, task::JoinHandle},
@@ -269,7 +267,7 @@ pub async fn run(args: Arguments) {
         number_of_entries_to_auto_update: args.pool_cache_lru_size,
         maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
         max_retries: args.shared.pool_cache_maximum_retries,
-        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries,
     };
     let pool_fetcher = Arc::new(
         PoolCache::new(
@@ -343,25 +341,6 @@ pub async fn run(args: Arguments) {
     } else {
         None
     };
-    let zeroex_api = Arc::new(
-        DefaultZeroExApi::new(
-            &http_factory,
-            args.shared
-                .zeroex_url
-                .as_deref()
-                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
-            args.shared.zeroex_api_key.clone(),
-            current_block_stream.clone(),
-        )
-        .unwrap(),
-    );
-    let one_inch_api = OneInchClientImpl::new(
-        args.shared.one_inch_url.clone(),
-        http_factory.create(),
-        chain_id,
-        current_block_stream.clone(),
-    )
-    .map(Arc::new);
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -389,8 +368,6 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
-            zeroex: zeroex_api.clone(),
-            oneinch: one_inch_api.ok().map(|a| a as _),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -462,15 +439,15 @@ pub async fn run(args: Arguments) {
             Arc::new(postgres.clone()),
             order_quoting::Validity {
                 eip1271_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.eip1271_onchain_quote_validity_seconds,
+                    args.order_quoting.eip1271_onchain_quote_validity,
                 )
                 .unwrap(),
                 presign_onchain_quote: chrono::Duration::from_std(
-                    args.order_quoting.presign_onchain_quote_validity_seconds,
+                    args.order_quoting.presign_onchain_quote_validity,
                 )
                 .unwrap(),
                 standard_quote: chrono::Duration::from_std(
-                    args.order_quoting.standard_offchain_quote_validity_seconds,
+                    args.order_quoting.standard_offchain_quote_validity,
                 )
                 .unwrap(),
             },
@@ -549,7 +526,6 @@ pub async fn run(args: Arguments) {
         async {
             let _ = shutdown_receiver.await;
         },
-        args.shared.solver_competition_auth,
         native_price_estimator,
     );
 
@@ -616,7 +592,6 @@ fn serve_api(
     app_data: Arc<app_data::Registry>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
@@ -624,7 +599,6 @@ fn serve_api(
         orderbook,
         quotes,
         app_data,
-        solver_competition_auth,
         native_price_estimator,
     )
     .boxed();
