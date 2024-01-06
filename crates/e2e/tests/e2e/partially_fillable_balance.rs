@@ -96,7 +96,7 @@ async fn test(web3: Web3) {
     let auction = services.get_auction().await.auction;
     let order = auction.orders.into_iter().next().unwrap();
     assert!(order.data.partially_fillable);
-    assert!(matches!(order.metadata.class, OrderClass::Limit(_)));
+    assert!(matches!(order.metadata.class, OrderClass::Limit));
     assert_eq!(order.metadata.full_fee_amount, 0.into());
     assert_eq!(order.metadata.solver_fee, 0.into());
 

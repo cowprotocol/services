@@ -109,7 +109,7 @@ impl RunLoop {
             .all(|order| match order.metadata.class {
                 OrderClass::Market => false,
                 OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+                OrderClass::Limit => false,
             })
         {
             tracing::debug!("skipping empty auction");
@@ -515,7 +515,7 @@ pub fn solve_request(
                 let class = match order.metadata.class {
                     OrderClass::Market => Class::Market,
                     OrderClass::Liquidity => Class::Liquidity,
-                    OrderClass::Limit(_) => Class::Limit,
+                    OrderClass::Limit => Class::Limit,
                 };
                 let remaining_order = remaining_amounts::Order::from(order);
                 let map_interactions =

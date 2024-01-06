@@ -1101,7 +1101,7 @@ mod tests {
                         },
                         metadata: OrderMetadata {
                             uid: OrderUid([0u8; 56]),
-                            class: OrderClass::Limit(Default::default()),
+                            class: OrderClass::Limit,
                             ..Default::default()
                         },
                         ..Default::default()

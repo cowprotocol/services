@@ -35,7 +35,7 @@ impl Policies {
 
                         // TODO: https://github.com/cowprotocol/services/issues/2115
                         // skip protocol fee for TWAP limit orders
-                        OrderClass::Limit(_) => {
+                        OrderClass::Limit => {
                             Some((order.metadata.uid, vec![fee_policy_to_dto(&config)]))
                         }
                     }
