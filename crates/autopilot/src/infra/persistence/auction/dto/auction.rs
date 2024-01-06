@@ -12,7 +12,11 @@ pub fn from_domain(auction: domain::Auction) -> Auction {
     Auction {
         block: auction.block,
         latest_settlement_block: auction.latest_settlement_block,
-        orders: auction.orders.into_iter().map(Into::into).collect(),
+        orders: auction
+            .orders
+            .into_iter()
+            .map(super::order::from_domain)
+            .collect(),
         prices: auction.prices,
     }
 }
@@ -21,7 +25,11 @@ pub fn to_domain(auction: Auction) -> domain::Auction {
     domain::Auction {
         block: auction.block,
         latest_settlement_block: auction.latest_settlement_block,
-        orders: auction.orders.into_iter().map(Into::into).collect(),
+        orders: auction
+            .orders
+            .into_iter()
+            .map(super::order::to_domain)
+            .collect(),
         prices: auction.prices,
     }
 }

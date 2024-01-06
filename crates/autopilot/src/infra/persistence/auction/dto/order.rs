@@ -41,65 +41,61 @@ pub struct Order {
     pub signature: boundary::Signature,
 }
 
-impl From<domain::Order> for Order {
-    fn from(order: domain::Order) -> Self {
-        Self {
-            uid: order.uid.into(),
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
-            sell_amount: order.sell_amount,
-            buy_amount: order.buy_amount,
-            solver_fee: order.solver_fee,
-            user_fee: order.user_fee,
-            valid_to: order.valid_to,
-            kind: order.kind.into(),
-            receiver: order.receiver,
-            owner: order.owner,
-            partially_fillable: order.partially_fillable,
-            executed: order.executed,
-            pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
-            post_interactions: order
-                .post_interactions
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            sell_token_balance: order.sell_token_balance.into(),
-            buy_token_balance: order.buy_token_balance.into(),
-            class: order.class.into(),
-            app_data: order.app_data.into(),
-            signature: order.signature.into(),
-        }
+pub fn from_domain(order: domain::Order) -> Order {
+    Order {
+        uid: order.uid.into(),
+        sell_token: order.sell_token,
+        buy_token: order.buy_token,
+        sell_amount: order.sell_amount,
+        buy_amount: order.buy_amount,
+        solver_fee: order.solver_fee,
+        user_fee: order.user_fee,
+        valid_to: order.valid_to,
+        kind: order.kind.into(),
+        receiver: order.receiver,
+        owner: order.owner,
+        partially_fillable: order.partially_fillable,
+        executed: order.executed,
+        pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
+        post_interactions: order
+            .post_interactions
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        sell_token_balance: order.sell_token_balance.into(),
+        buy_token_balance: order.buy_token_balance.into(),
+        class: order.class.into(),
+        app_data: order.app_data.into(),
+        signature: order.signature.into(),
     }
 }
 
-impl From<Order> for domain::Order {
-    fn from(order: Order) -> Self {
-        Self {
-            uid: order.uid.into(),
-            sell_token: order.sell_token,
-            buy_token: order.buy_token,
-            sell_amount: order.sell_amount,
-            buy_amount: order.buy_amount,
-            solver_fee: order.solver_fee,
-            user_fee: order.user_fee,
-            valid_to: order.valid_to,
-            kind: order.kind.into(),
-            receiver: order.receiver,
-            owner: order.owner,
-            partially_fillable: order.partially_fillable,
-            executed: order.executed,
-            pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
-            post_interactions: order
-                .post_interactions
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            sell_token_balance: order.sell_token_balance.into(),
-            buy_token_balance: order.buy_token_balance.into(),
-            class: order.class.into(),
-            app_data: order.app_data.into(),
-            signature: order.signature.into(),
-        }
+pub fn to_domain(order: Order) -> domain::Order {
+    domain::Order {
+        uid: order.uid.into(),
+        sell_token: order.sell_token,
+        buy_token: order.buy_token,
+        sell_amount: order.sell_amount,
+        buy_amount: order.buy_amount,
+        solver_fee: order.solver_fee,
+        user_fee: order.user_fee,
+        valid_to: order.valid_to,
+        kind: order.kind.into(),
+        receiver: order.receiver,
+        owner: order.owner,
+        partially_fillable: order.partially_fillable,
+        executed: order.executed,
+        pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
+        post_interactions: order
+            .post_interactions
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        sell_token_balance: order.sell_token_balance.into(),
+        buy_token_balance: order.buy_token_balance.into(),
+        class: order.class.into(),
+        app_data: order.app_data.into(),
+        signature: order.signature.into(),
     }
 }
 
