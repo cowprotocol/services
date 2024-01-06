@@ -416,7 +416,7 @@ async fn test_order_parameters(
 }
 
 async fn test_auction_order_parameters(
-    response: &dto::Order,
+    response: &dto::order::Order,
     order: &ExtendedEthFlowOrder,
     contracts: &Contracts,
 ) {
