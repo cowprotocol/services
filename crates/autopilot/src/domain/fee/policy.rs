@@ -26,21 +26,31 @@ impl Policies {
     }
 
     /// Get policies for order.
-    pub fn get(&self, order: &boundary::Order, quote: &domain::Quote) -> Vec<Policy> {
+    pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => vec![],
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
-                let is_market_order = !boundary::is_order_outside_market_price(
-                    &order.data.sell_amount,
-                    &order.data.buy_amount,
-                    &quote.buy_amount,
-                    &quote.sell_amount,
-                );
-                if self.fee_policy_skip_market_orders && is_market_order {
+                if !self.fee_policy_skip_market_orders {
+                    return vec![self.policy];
+                }
+
+                // if the quote is missing, we can't determine if the order is outside the
+                // market price so we protect the user and not charge a fee
+                if quote.is_none() {
                     return vec![];
                 }
-                vec![self.policy]
+
+                if boundary::is_order_outside_market_price(
+                    &order.data.sell_amount,
+                    &order.data.buy_amount,
+                    &quote.unwrap().buy_amount,
+                    &quote.unwrap().sell_amount,
+                ) {
+                    vec![self.policy]
+                } else {
+                    vec![]
+                }
             }
         }
     }

@@ -7,10 +7,7 @@ pub fn to_domain(
 ) -> domain::Order {
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
-    let fee_policies = match quote {
-        None => vec![],
-        Some(quote) => fee_policies.get(&order, quote),
-    };
+    let fee_policies = fee_policies.get(&order, quote);
 
     domain::Order {
         uid: order.metadata.uid.into(),
