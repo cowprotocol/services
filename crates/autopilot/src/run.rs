@@ -12,6 +12,7 @@ use {
         },
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
+        infra::{self, blockchain},
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -38,7 +39,6 @@ use {
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
-        oneinch_api::OneInchClientImpl,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
@@ -56,10 +56,10 @@ use {
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
-        zeroex_api::DefaultZeroExApi,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
+    url::Url,
 };
 
 struct Liveness {
@@ -73,6 +73,16 @@ impl LivenessChecking for Liveness {
         let age = self.solvable_orders_cache.last_update_time().elapsed();
         age <= self.max_auction_age
     }
+}
+
+async fn ethrpc(url: &Url) -> blockchain::Rpc {
+    blockchain::Rpc::new(url)
+        .await
+        .expect("connect ethereum RPC")
+}
+
+async fn ethereum(ethrpc: blockchain::Rpc, poll_interval: Duration) -> blockchain::Ethereum {
+    blockchain::Ethereum::new(ethrpc, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -129,12 +139,8 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let current_block_stream = args
-        .shared
-        .current_block
-        .stream(web3.clone())
-        .await
-        .unwrap();
+    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let eth = ethereum(ethrpc, args.shared.current_block.block_stream_poll_interval).await;
 
     let settlement_contract = match args.shared.settlement_contract_address {
         Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
@@ -177,11 +183,6 @@ pub async fn run(args: Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let network_time_between_blocks = args
-        .shared
-        .network_block_interval
-        .or_else(|| shared::network::block_interval(&network, chain_id))
-        .expect("unknown network block interval");
 
     let signature_validator = signature_validator::validator(
         &web3,
@@ -200,7 +201,7 @@ pub async fn run(args: Arguments) {
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
-        current_block_stream.clone(),
+        eth.current_block().clone(),
     );
 
     let gas_price_estimator = Arc::new(
@@ -297,7 +298,7 @@ pub async fn run(args: Arguments) {
         PoolCache::new(
             cache_config,
             Arc::new(pool_aggregator),
-            current_block_stream.clone(),
+            eth.current_block().clone(),
         )
         .expect("failed to create pool cache"),
     );
@@ -318,7 +319,7 @@ pub async fn run(args: Arguments) {
             block_retriever.clone(),
             token_info_fetcher.clone(),
             cache_config,
-            current_block_stream.clone(),
+            eth.current_block().clone(),
             http_factory.create(),
             web3.clone(),
             &contracts,
@@ -366,25 +367,6 @@ pub async fn run(args: Arguments) {
         None
     };
     let block_retriever = args.shared.current_block.retriever(web3.clone());
-    let zeroex_api = Arc::new(
-        DefaultZeroExApi::new(
-            &http_factory,
-            args.shared
-                .zeroex_url
-                .as_deref()
-                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
-            args.shared.zeroex_api_key.clone(),
-            current_block_stream.clone(),
-        )
-        .unwrap(),
-    );
-    let one_inch_api = OneInchClientImpl::new(
-        args.shared.one_inch_url.clone(),
-        http_factory.create(),
-        chain_id,
-        current_block_stream.clone(),
-    )
-    .map(Arc::new);
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -402,7 +384,7 @@ pub async fn run(args: Arguments) {
                 .await
                 .expect("failed to query solver authenticator address"),
             base_tokens: base_tokens.clone(),
-            block_stream: current_block_stream.clone(),
+            block_stream: eth.current_block().clone(),
         },
         factory::Components {
             http_factory: http_factory.clone(),
@@ -412,8 +394,6 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
-            zeroex: zeroex_api.clone(),
-            oneinch: one_inch_api.ok().map(|a| a as _),
         },
     )
     .expect("failed to initialize price estimator factory");
@@ -552,17 +532,17 @@ pub async fn run(args: Arguments) {
 
     let service_maintainer = ServiceMaintenance::new(maintainers);
     tokio::task::spawn(
-        service_maintainer.run_maintenance_on_new_block(current_block_stream.clone()),
+        service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
 
-    let block = current_block_stream.borrow().number;
+    let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         db.clone(),
         args.banned_users.iter().copied().collect(),
         balance_fetcher.clone(),
         bad_token_detector.clone(),
-        current_block_stream.clone(),
+        eth.current_block().clone(),
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
@@ -591,7 +571,7 @@ pub async fn run(args: Arguments) {
         };
     tokio::task::spawn(
         on_settlement_event_updater
-            .run_forever(current_block_stream.clone())
+            .run_forever(eth.current_block().clone())
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
@@ -620,13 +600,12 @@ pub async fn run(args: Arguments) {
     // updated in background task
     let market_makable_token_list =
         AutoUpdatingTokenList::from_configuration(market_makable_token_list_configuration).await;
+
     let run = RunLoop {
+        eth,
         solvable_orders_cache,
         database: Arc::new(db),
         drivers: args.drivers.into_iter().map(Driver::new).collect(),
-        current_block: current_block_stream,
-        web3,
-        network_block_interval: network_time_between_blocks,
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
@@ -635,6 +614,7 @@ pub async fn run(args: Arguments) {
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
         fee_policy: args.fee_policy,
+        persistence: infra::persistence::Persistence::new(args.s3.into().unwrap()).await,
     };
     run.run_forever().await;
     unreachable!("run loop exited");

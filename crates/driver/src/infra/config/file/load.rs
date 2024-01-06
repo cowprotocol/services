@@ -240,6 +240,14 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
                     },
                 })
                 .collect(),
+            zeroex: config
+                .liquidity
+                .zeroex
+                .map(|config| liquidity::config::ZeroEx {
+                    base_url: config.base_url,
+                    api_key: config.api_key,
+                    http_timeout: config.http_timeout,
+                }),
         },
         mempools: config
             .submission

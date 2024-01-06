@@ -24,6 +24,10 @@ use {
 
 pub struct Baseline(Arc<Inner>);
 
+/// The amount of time we aim the solver to finish before the final deadline is
+/// reached.
+const DEADLINE_SLACK: chrono::Duration = chrono::Duration::milliseconds(500);
+
 struct Inner {
     weth: eth::WethAddress,
 
@@ -70,7 +74,12 @@ impl Baseline {
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let deadline = auction.deadline.remaining().unwrap_or_default();
+        let deadline = auction
+            .deadline
+            .clone()
+            .reduce(DEADLINE_SLACK)
+            .remaining()
+            .unwrap_or_default();
 
         let inner = self.0.clone();
         let span = tracing::Span::current();

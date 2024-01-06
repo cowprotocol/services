@@ -1,5 +1,5 @@
 use {
-    super::{order, Score},
+    super::{order, Order, Score},
     crate::{
         domain::{
             competition::{self, auction},
@@ -119,7 +119,7 @@ pub struct AuctionProcessor(Arc<Mutex<Inner>>);
 
 struct Inner {
     auction: auction::Id,
-    fut: Shared<BoxFuture<'static, Arc<Auction>>>,
+    fut: Shared<BoxFuture<'static, Vec<Order>>>,
     eth: Arc<infra::Ethereum>,
 }
 
@@ -129,7 +129,14 @@ type Balances = HashMap<BalanceGroup, order::SellAmount>;
 impl AuctionProcessor {
     /// Prioritize well priced and filter out unfillable orders from the given
     /// auction.
-    pub fn prioritize(&self, mut auction: Auction) -> Shared<BoxFuture<'static, Arc<Auction>>> {
+    pub async fn prioritize(&self, auction: Auction) -> Auction {
+        Auction {
+            orders: self.prioritize_orders(&auction).await,
+            ..auction
+        }
+    }
+
+    fn prioritize_orders(&self, auction: &Auction) -> Shared<BoxFuture<'static, Vec<Order>>> {
         let new_id = auction
             .id()
             .expect("auctions used for quoting do not have to be prioritized");
@@ -146,16 +153,19 @@ impl AuctionProcessor {
 
         let eth = lock.eth.clone();
         let rt = tokio::runtime::Handle::current();
+        let tokens: Tokens = auction.tokens().clone();
+        let mut orders = auction.orders.clone();
+
         // Use spawn_blocking() because a lot of CPU bound computations are happening
         // and we don't want to block the runtime for too long.
         let fut = tokio::task::spawn_blocking(move || {
             let start = std::time::Instant::now();
-            Self::sort(&mut auction);
+            Self::sort(&mut orders, tokens);
             let mut balances =
-                rt.block_on(async { Self::fetch_balances(&eth, &auction.orders).await });
-            Self::filter_orders(&mut balances, &mut auction.orders, &eth);
+                rt.block_on(async { Self::fetch_balances(&eth, &orders).await });
+            Self::filter_orders(&mut balances, &mut orders, &eth);
             tracing::debug!(auction_id = new_id.0, time =? start.elapsed(), "auction preprocessing done");
-            Arc::new(auction)
+            orders
         })
         .map(|res| {
             res.expect(
@@ -175,8 +185,8 @@ impl AuctionProcessor {
 
     /// Sort orders based on their price achievability using the reference
     /// prices contained in the auction (in the money first).
-    fn sort(auction: &mut Auction) {
-        auction.orders.sort_by_cached_key(|order| {
+    fn sort(orders: &mut [order::Order], tokens: Tokens) {
+        orders.sort_by_cached_key(|order| {
             // Market orders are preferred over limit orders, as the expectation is that
             // they should be immediately fulfillable. Liquidity orders come last, as they
             // are the most niche and rarely used.
@@ -189,7 +199,7 @@ impl AuctionProcessor {
                 class,
                 // If the orders are of the same kind, then sort by likelihood of fulfillment
                 // based on token prices.
-                order.likelihood(&auction.tokens),
+                order.likelihood(&tokens),
             ))
         });
     }
@@ -341,7 +351,7 @@ impl AuctionProcessor {
 }
 
 /// The tokens that are used in an auction.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Tokens(HashMap<eth::TokenAddress, Token>);
 
 impl Tokens {
