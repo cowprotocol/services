@@ -13,8 +13,8 @@ use crate::{
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct Policies {
-    pub policy: Policy,
-    pub fee_policy_skip_market_orders: bool,
+    policy: Policy,
+    fee_policy_skip_market_orders: bool,
 }
 
 impl Policies {

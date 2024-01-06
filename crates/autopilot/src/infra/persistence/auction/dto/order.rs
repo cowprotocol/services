@@ -35,6 +35,7 @@ pub struct Order {
     pub post_interactions: Vec<boundary::InteractionData>,
     pub sell_token_balance: boundary::SellTokenSource,
     pub buy_token_balance: boundary::BuyTokenDestination,
+    #[serde(flatten)]
     pub class: boundary::OrderClass,
     pub app_data: boundary::AppDataHash,
     #[serde(flatten)]

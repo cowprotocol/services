@@ -1,7 +1,7 @@
 use {
     super::Postgres,
     crate::{
-        domain::{self, OrderUid},
+        domain::{self},
         infra::persistence::{
             auction::dto::{Auction, AuctionId},
             quotes::{self, dto::InvalidConversion},
@@ -16,7 +16,7 @@ use {
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
-    pub quotes: HashMap<OrderUid, Result<domain::Quote, InvalidConversion>>,
+    pub quotes: HashMap<domain::OrderUid, Result<domain::Quote, InvalidConversion>>,
     pub latest_settlement_block: u64,
 }
 use {
