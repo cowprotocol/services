@@ -1,6 +1,7 @@
 use {
     crate::{
         database::orders::{InsertionError, OrderStoring},
+        dto,
         ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
@@ -8,7 +9,6 @@ use {
     ethcontract::H256,
     model::{
         app_data::AppDataHash,
-        auction::AuctionWithId,
         order::{
             Order,
             OrderCancellation,
@@ -398,7 +398,7 @@ impl Orderbook {
         self.database.orders_for_tx(hash).await
     }
 
-    pub async fn get_auction(&self) -> Result<Option<AuctionWithId>> {
+    pub async fn get_auction(&self) -> Result<Option<dto::AuctionWithId>> {
         let auction = match self.database.most_recent_auction().await? {
             Some(auction) => auction,
             None => {

@@ -2,6 +2,7 @@ pub mod arguments;
 pub mod boundary;
 pub mod database;
 pub mod decoded_settlement;
+pub mod domain;
 pub mod driver_api;
 pub mod driver_model;
 pub mod event_updater;

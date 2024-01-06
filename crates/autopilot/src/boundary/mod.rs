@@ -1,5 +1,30 @@
-pub use shared::ethrpc::Web3;
-use url::Url;
+pub use {
+    crate::database::{
+        competition::Competition,
+        order_events::{store_order_events, OrderEventLabel},
+    },
+    model::{
+        app_data::AppDataHash,
+        interaction::InteractionData,
+        order::{
+            BuyTokenDestination,
+            EthflowData,
+            OnchainOrderData,
+            Order,
+            OrderClass,
+            OrderKind,
+            OrderUid,
+            SellTokenSource,
+        },
+        signature::{EcdsaSignature, Signature},
+    },
+    shared::order_validation::is_order_outside_market_price,
+};
+use {ethrpc::Web3, url::Url};
+
+pub mod auction;
+pub mod order;
+
 /// Builds a web3 client that bufferes requests and sends them in a
 /// batch call.
 pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {

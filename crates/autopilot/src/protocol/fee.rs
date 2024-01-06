@@ -7,44 +7,39 @@
 use {
     crate::{
         arguments,
+        domain::{self, auction::order::Class},
         driver_model::solve::{fee_policy_to_dto, FeePolicy},
-    },
-    model::{
-        auction::Auction,
-        order::{OrderClass, OrderUid},
     },
     std::collections::HashMap,
 };
 
 pub struct Policies {
-    policies: HashMap<OrderUid, Vec<FeePolicy>>,
+    policies: HashMap<domain::OrderUid, Vec<FeePolicy>>,
 }
 
 impl Policies {
-    pub fn new(auction: &Auction, config: arguments::FeePolicy) -> Self {
+    pub fn new(auction: &domain::Auction, config: arguments::FeePolicy) -> Self {
         Self {
             policies: auction
                 .orders
                 .iter()
                 .filter_map(|order| {
-                    match order.metadata.class {
-                        OrderClass::Market => None,
-                        OrderClass::Liquidity => None,
+                    match order.class {
+                        Class::Market => None,
+                        Class::Liquidity => None,
                         // TODO: https://github.com/cowprotocol/services/issues/2092
                         // skip protocol fee for limit orders with in-market price
 
                         // TODO: https://github.com/cowprotocol/services/issues/2115
                         // skip protocol fee for TWAP limit orders
-                        OrderClass::Limit => {
-                            Some((order.metadata.uid, vec![fee_policy_to_dto(&config)]))
-                        }
+                        Class::Limit => Some((order.uid, vec![fee_policy_to_dto(&config)])),
                     }
                 })
                 .collect(),
         }
     }
 
-    pub fn get(&self, order: &OrderUid) -> Option<Vec<FeePolicy>> {
+    pub fn get(&self, order: &domain::OrderUid) -> Option<Vec<FeePolicy>> {
         self.policies.get(order).cloned()
     }
 }
