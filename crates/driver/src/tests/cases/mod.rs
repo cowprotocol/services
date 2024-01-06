@@ -8,6 +8,7 @@ pub mod merge_settlements;
 pub mod multiple_solutions;
 pub mod negative_scores;
 pub mod order_prioritization;
+pub mod protocol_fees;
 pub mod quote;
 pub mod score_competition;
 pub mod settle;
