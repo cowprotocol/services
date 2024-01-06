@@ -1,10 +1,7 @@
 use {
     crate::{
         arguments,
-        database::{
-            competition::{Competition, ExecutedFee, OrderExecution},
-            Postgres,
-        },
+        database::{competition::Competition, Postgres},
         driver_api::Driver,
         driver_model::{
             reveal::{self, Request},
@@ -179,9 +176,6 @@ impl RunLoop {
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
-            // Save order executions for all orders in the solution. Surplus fees for
-            // limit orders will be saved after settling the order onchain.
-            let mut order_executions = vec![];
             for order_id in solution.order_ids() {
                 let auction_order = auction
                     .orders
@@ -189,16 +183,6 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.metadata.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        let executed_fee = match auction_order.solver_determines_fee() {
-                            // we don't know the surplus fee in advance. will be populated
-                            // after the transaction containing the order is mined
-                            true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Order(auction_order.metadata.solver_fee),
-                        };
-                        order_executions.push(OrderExecution {
-                            order_id: *order_id,
-                            executed_fee,
-                        });
                         if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
                             prices.insert(auction_order.data.sell_token, *price);
                         } else {
@@ -279,7 +263,6 @@ impl RunLoop {
                 participants,
                 prices,
                 block_deadline,
-                order_executions,
                 competition_simulation_block,
                 call_data,
                 uninternalized_call_data,
