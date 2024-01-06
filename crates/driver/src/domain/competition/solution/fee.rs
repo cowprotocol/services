@@ -75,22 +75,19 @@ impl Fulfillment {
         }
 
         let mut protocol_fee = eth::U256::zero();
-        for fee_policy in self.order().fee_policies.clone() {
+        if let Some(fee_policy) = self.order().fee_policies.first() {
             match fee_policy {
                 FeePolicy::PriceImprovement {
                     factor,
                     max_volume_factor,
                 } => {
-                    let price_improvement_fee = self.price_improvement_fee(prices, factor)?;
-                    let max_volume_fee = self.volume_fee(prices, max_volume_factor)?;
+                    let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
+                    let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
                     // take the smaller of the two
-                    protocol_fee = protocol_fee
-                        .checked_add(std::cmp::min(price_improvement_fee, max_volume_fee))
-                        .ok_or(Error::Overflow)?;
+                    protocol_fee = std::cmp::min(price_improvement_fee, max_volume_fee);
                 }
                 FeePolicy::Volume { factor } => {
-                    let fee = self.volume_fee(prices, factor)?;
-                    protocol_fee = protocol_fee.checked_add(fee).ok_or(Error::Overflow)?;
+                    protocol_fee = self.volume_fee(prices, *factor)?;
                 }
             }
         }
