@@ -46,7 +46,9 @@ impl Fulfillment {
                 }
                 Fee::Static
             }
-            Some(fee) => Fee::Dynamic((fee.0 + protocol_fee).into()),
+            Some(fee) => {
+                Fee::Dynamic((fee.0.checked_sub(protocol_fee).ok_or(Error::Overflow)?).into())
+            }
         };
 
         // Reduce the executed amount by the protocol fee. This is because solvers are
@@ -126,6 +128,8 @@ impl Fulfillment {
                     .checked_div(buy_amount)
                     .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
+                // Do not return error if `checked_sub` fails because violated limit prices will
+                // be caught by simulation
                 let surplus = limit_sell_amount
                     .checked_sub(executed_sell_amount_with_fee)
                     .unwrap_or(eth::U256::zero());
@@ -150,6 +154,8 @@ impl Fulfillment {
                     .checked_div(sell_amount)
                     .ok_or(Error::DivisionByZero)?;
                 // Remaining surplus after fees
+                // Do not return error if `checked_sub` fails because violated limit prices will
+                // be caught by simulation
                 let surplus = executed_buy_amount
                     .checked_sub(limit_buy_amount)
                     .unwrap_or(eth::U256::zero());
