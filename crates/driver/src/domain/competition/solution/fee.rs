@@ -47,7 +47,7 @@ impl Fulfillment {
                 Fee::Static
             }
             Some(fee) => {
-                Fee::Dynamic((fee.0.checked_sub(protocol_fee).ok_or(Error::Overflow)?).into())
+                Fee::Dynamic((fee.0.checked_add(protocol_fee).ok_or(Error::Overflow)?).into())
             }
         };
 
