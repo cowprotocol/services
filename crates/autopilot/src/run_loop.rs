@@ -8,7 +8,7 @@ use {
             settle,
             solve::{self, TradedAmounts},
         },
-        infra::{self, blockchain::Ethereum},
+        infra::{self, blockchain::Ethereum, persistence::auction::dto},
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -472,7 +472,12 @@ pub fn solve_request(
 ) -> solve::Request {
     solve::Request {
         id,
-        orders: auction.orders.clone().into_iter().map(Into::into).collect(),
+        orders: auction
+            .orders
+            .clone()
+            .into_iter()
+            .map(dto::order::from_domain)
+            .collect(),
         tokens: auction
             .prices
             .iter()
