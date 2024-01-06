@@ -22,7 +22,6 @@ mod get_trades;
 mod get_user_orders;
 mod post_order;
 mod post_quote;
-mod post_solver_competition;
 mod put_app_data;
 mod replace_order;
 mod version;
@@ -32,7 +31,6 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
     app_data: Arc<app_data::Registry>,
-    solver_competition_auth: Option<String>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Note that we add a string with endpoint's name to all responses.
@@ -86,13 +84,6 @@ pub fn handle_all_routes(
             box_filter(get_solver_competition::get_latest(Arc::new(
                 database.clone(),
             ))),
-        ),
-        (
-            "v1/solver_competition",
-            box_filter(post_solver_competition::post(
-                Arc::new(database.clone()),
-                solver_competition_auth,
-            )),
         ),
         ("v1/version", box_filter(version::version())),
         (

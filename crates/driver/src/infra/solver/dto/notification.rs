@@ -89,12 +89,13 @@ impl Notification {
 pub struct Notification {
     auction_id: Option<String>,
     solution_id: Option<u64>,
+    #[serde(flatten)]
     kind: Kind,
 }
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,

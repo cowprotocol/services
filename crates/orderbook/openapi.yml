@@ -11,6 +11,10 @@ servers:
     url: https://api.cow.fi/goerli
   - description: Görli (Staging)
     url: https://barn.api.cow.fi/goerli
+  - description: Sepolia (Prod)
+    url: https://api.cow.fi/sepolia
+  - description: Sepolia (Staging)
+    url: https://barn.api.cow.fi/sepolia
   - description: Gnosis Chain (Prod)
     url: https://api.cow.fi/xdai
   - description: Gnosis Chain (Staging)

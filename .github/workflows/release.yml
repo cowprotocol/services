@@ -1,0 +1,57 @@
+name: Weekly Release
+
+on:
+  workflow_dispatch:
+  schedule:
+    # At 00:00 on Monday
+    - cron: "0 0 * * 1"
+
+jobs:
+  bump-version-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # Fetch all history for all branches and tags
+
+      - name: Create Tag
+        id: tag_version
+        run: |
+          # Extracts the latest version tag, bumps the minor version
+          LATEST_VERSION=$(git tag --sort=-authordate --merged=main | head --lines 1)
+          if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
+            echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
+            exit 1
+          fi
+          MAJOR=$(echo $LATEST_VERSION | cut -d. -f1)
+          MINOR=$(echo $LATEST_VERSION | cut -d. -f2)
+          NEW_MINOR=$((MINOR+1))
+          NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
+          echo ::set-output name=tag::$NEW_TAG
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag $NEW_TAG
+          git push origin --tags
+
+      - name: "Create release"
+        uses: "actions/github-script@v6"
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            try {
+              const response = await github.rest.repos.createRelease({
+                draft: false,
+                generate_release_notes: true,
+                name: "Weekly Release ${{ steps.tag_version.outputs.tag }}",
+                owner: context.repo.owner,
+                prerelease: false,
+                repo: context.repo.repo,
+                tag_name: "${{ steps.tag_version.outputs.tag }}",
+              });
+
+              core.exportVariable('RELEASE_ID', response.data.id);
+              core.exportVariable('RELEASE_UPLOAD_URL', response.data.upload_url);
+            } catch (error) {
+              core.setFailed(error.message);
+            }

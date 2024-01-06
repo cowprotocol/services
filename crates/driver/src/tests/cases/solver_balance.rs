@@ -11,8 +11,7 @@ async fn test() {
         .pool(ab_pool())
         .order(ab_order())
         .solution(ab_solution())
-        // The solver gets defunded.
-        .defund_solver()
+        .defund_solvers()
         .done()
         .await;
 
