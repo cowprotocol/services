@@ -39,7 +39,6 @@ use {
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
-        oneinch_api::OneInchClientImpl,
         order_quoting::{self, OrderQuoter},
         price_estimation::factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
         recent_block_cache::CacheConfig,
@@ -57,7 +56,6 @@ use {
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
-        zeroex_api::DefaultZeroExApi,
     },
     std::{collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
@@ -369,25 +367,6 @@ pub async fn run(args: Arguments) {
         None
     };
     let block_retriever = args.shared.current_block.retriever(web3.clone());
-    let zeroex_api = Arc::new(
-        DefaultZeroExApi::new(
-            &http_factory,
-            args.shared
-                .zeroex_url
-                .as_deref()
-                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
-            args.shared.zeroex_api_key.clone(),
-            eth.current_block().clone(),
-        )
-        .unwrap(),
-    );
-    let one_inch_api = OneInchClientImpl::new(
-        args.shared.one_inch_url.clone(),
-        http_factory.create(),
-        chain_id,
-        eth.current_block().clone(),
-    )
-    .map(Arc::new);
 
     let mut price_estimator_factory = PriceEstimatorFactory::new(
         &args.price_estimation,
@@ -415,8 +394,6 @@ pub async fn run(args: Arguments) {
             uniswap_v3_pools: uniswap_v3_pool_fetcher.clone().map(|a| a as _),
             tokens: token_info_fetcher.clone(),
             gas_price: gas_price_estimator.clone(),
-            zeroex: zeroex_api.clone(),
-            oneinch: one_inch_api.ok().map(|a| a as _),
         },
     )
     .expect("failed to initialize price estimator factory");
