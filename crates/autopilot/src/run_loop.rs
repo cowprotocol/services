@@ -1,8 +1,8 @@
 use {
     crate::{
         arguments,
-        domain::{self, auction::order::Class},
         database::{competition::Competition, Postgres},
+        domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
             reveal::{self, Request},
@@ -182,8 +182,8 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
-                            prices.insert(auction_order.data.sell_token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.sell_token) {
+                            prices.insert(auction_order.sell_token, *price);
                         } else {
                             tracing::error!(
                                 sell_token = ?auction_order.sell_token,

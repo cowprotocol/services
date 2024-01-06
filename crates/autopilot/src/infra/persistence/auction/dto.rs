@@ -177,9 +177,7 @@ impl From<boundary::OrderKind> for domain::auction::order::Kind {
 impl From<domain::auction::order::Class> for boundary::OrderClass {
     fn from(class: domain::auction::order::Class) -> Self {
         match class {
-            domain::auction::order::Class::Limit => Self::Limit(boundary::LimitOrderClass {
-                executed_surplus_fee: U256::zero(),
-            }),
+            domain::auction::order::Class::Limit => Self::Limit,
             domain::auction::order::Class::Market => Self::Market,
             domain::auction::order::Class::Liquidity => Self::Liquidity,
         }
@@ -189,7 +187,7 @@ impl From<domain::auction::order::Class> for boundary::OrderClass {
 impl From<boundary::OrderClass> for domain::auction::order::Class {
     fn from(class: boundary::OrderClass) -> Self {
         match class {
-            boundary::OrderClass::Limit(_) => Self::Limit,
+            boundary::OrderClass::Limit => Self::Limit,
             boundary::OrderClass::Market => Self::Market,
             boundary::OrderClass::Liquidity => Self::Liquidity,
         }

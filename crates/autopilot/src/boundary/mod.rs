@@ -6,7 +6,6 @@ pub use {
         order::{
             BuyTokenDestination,
             EthflowData,
-            LimitOrderClass,
             OnchainOrderData,
             Order,
             OrderClass,
