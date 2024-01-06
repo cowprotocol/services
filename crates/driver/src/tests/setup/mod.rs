@@ -81,7 +81,7 @@ impl Default for Score {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     PriceImprovement { factor: f64, max_volume_factor: f64 },
