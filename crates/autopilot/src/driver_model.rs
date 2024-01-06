@@ -49,12 +49,12 @@ pub mod quote {
 
 pub mod solve {
     use {
-        crate::arguments,
+        crate::domain,
         chrono::{DateTime, Utc},
         model::{
             app_data::AppDataHash,
             bytes_hex::BytesHex,
-            order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
+            order::{BuyTokenDestination, OrderClass, OrderKind, OrderUid, SellTokenSource},
             signature::Signature,
         },
         number::serialization::HexOrDecimalU256,
@@ -113,7 +113,7 @@ pub mod solve {
         pub post_interactions: Vec<Interaction>,
         pub sell_token_balance: SellTokenSource,
         pub buy_token_balance: BuyTokenDestination,
-        pub class: Class,
+        pub class: OrderClass,
         pub app_data: AppDataHash,
         #[serde(flatten)]
         pub signature: Signature,
@@ -122,12 +122,36 @@ pub mod solve {
         pub fee_policies: Vec<FeePolicy>,
     }
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub enum Class {
-        Market,
-        Limit,
-        Liquidity,
+    impl From<domain::auction::order::Order> for Order {
+        fn from(order: domain::auction::order::Order) -> Self {
+            Self {
+                uid: order.uid.into(),
+                sell_token: order.sell_token,
+                buy_token: order.buy_token,
+                sell_amount: order.sell_amount,
+                buy_amount: order.buy_amount,
+                solver_fee: order.solver_fee,
+                user_fee: order.user_fee,
+                valid_to: order.valid_to,
+                kind: order.kind.into(),
+                receiver: order.receiver,
+                owner: order.owner,
+                partially_fillable: order.partially_fillable,
+                executed: order.executed,
+                pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
+                post_interactions: order
+                    .post_interactions
+                    .into_iter()
+                    .map(Into::into)
+                    .collect(),
+                sell_token_balance: order.sell_token_balance.into(),
+                buy_token_balance: order.buy_token_balance.into(),
+                class: order.class.into(),
+                app_data: order.app_data.into(),
+                signature: order.signature.into(),
+                fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
+            }
+        }
     }
 
     #[serde_as]
@@ -139,6 +163,16 @@ pub mod solve {
         pub value: U256,
         #[serde_as(as = "BytesHex")]
         pub call_data: Vec<u8>,
+    }
+
+    impl From<domain::auction::order::Interaction> for Interaction {
+        fn from(interaction: domain::auction::order::Interaction) -> Self {
+            Self {
+                target: interaction.target,
+                value: interaction.value,
+                call_data: interaction.call_data,
+            }
+        }
     }
 
     #[derive(Clone, Debug, Serialize)]
@@ -173,16 +207,18 @@ pub mod solve {
         },
     }
 
-    pub fn fee_policy_to_dto(fee_policy: &arguments::FeePolicy) -> FeePolicy {
-        match fee_policy.fee_policy_kind {
-            arguments::FeePolicyKind::PriceImprovement {
-                factor: price_improvement_factor,
-                max_volume_factor,
-            } => FeePolicy::PriceImprovement {
-                factor: price_improvement_factor,
-                max_volume_factor,
-            },
-            arguments::FeePolicyKind::Volume { factor } => FeePolicy::Volume { factor },
+    impl From<domain::fee::Policy> for FeePolicy {
+        fn from(policy: domain::fee::Policy) -> Self {
+            match policy {
+                domain::fee::Policy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                } => FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                },
+                domain::fee::Policy::Volume { factor } => FeePolicy::Volume { factor },
+            }
         }
     }
 

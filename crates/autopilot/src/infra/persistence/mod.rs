@@ -2,6 +2,7 @@ use {crate::database::Postgres, std::sync::Arc};
 
 pub mod auction;
 pub mod cli;
+pub mod quotes;
 
 pub struct Persistence {
     s3: Option<s3::Uploader>,

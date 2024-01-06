@@ -78,6 +78,7 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
+    fee_policies: domain::fee::Policies,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -102,6 +103,7 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
+        fee_policies: domain::fee::Policies,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -119,6 +121,7 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             weth,
             limit_order_price_factor,
+            fee_policies,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -238,7 +241,11 @@ impl SolvableOrdersCache {
         });
 
         *self.cache.lock().unwrap() = Inner {
-            auction: Some(boundary::auction::to_domain(auction)),
+            auction: Some(boundary::auction::to_domain(
+                auction,
+                db_solvable_orders.quotes,
+                &self.fee_policies,
+            )),
             update_time: Instant::now(),
         };
 

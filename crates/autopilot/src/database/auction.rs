@@ -1,14 +1,22 @@
 use {
     super::Postgres,
-    crate::infra::persistence::auction::dto,
+    crate::{
+        domain::{self, OrderUid},
+        infra::persistence::{
+            auction::dto::{Auction, AuctionId},
+            quotes::{self, dto::InvalidConversion},
+        },
+    },
     anyhow::{Context, Result},
+    database::byte_array::ByteArray,
     futures::{StreamExt, TryStreamExt},
     model::order::Order,
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
 };
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
+    pub quotes: HashMap<OrderUid, Result<domain::Quote, InvalidConversion>>,
     pub latest_settlement_block: u64,
 }
 use {
@@ -81,7 +89,7 @@ impl Postgres {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
-        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+        let orders: Vec<Order> = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order),
                 Err(err) => Err(anyhow::Error::from(err)),
@@ -90,13 +98,25 @@ impl Postgres {
             .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = {
+            let mut quotes = HashMap::new();
+            for order in &orders {
+                if let Some(quote) =
+                    database::orders::read_quote(&mut ex, &ByteArray(order.metadata.uid.0)).await?
+                {
+                    quotes.insert(order.metadata.uid.into(), quotes::dto::into_domain(quote));
+                }
+            }
+            quotes
+        };
         Ok(SolvableOrders {
             orders,
+            quotes,
             latest_settlement_block,
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
+    pub async fn replace_current_auction(&self, auction: &Auction) -> Result<AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["replace_current_auction"])
