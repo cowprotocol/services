@@ -9,36 +9,11 @@ use {
         settlement_scores::Score,
     },
     derivative::Derivative,
-    model::{order::OrderUid, solver_competition::SolverCompetitionDB},
+    model::solver_competition::SolverCompetitionDB,
     number::conversions::u256_to_big_decimal,
     primitive_types::{H160, U256},
     std::collections::{BTreeMap, HashSet},
 };
-
-#[derive(Clone, Debug)]
-pub enum ExecutedFee {
-    /// Unsubsidized fee (full fee amount) that is taken from the signed order
-    /// and known upfront (before the settlement is finalized).
-    Order(U256),
-    /// Fee is unknown before the settlement is finalized and is calculated in
-    /// the postprocessing. Currently only used for limit orders.
-    Surplus,
-}
-
-impl ExecutedFee {
-    pub fn fee(&self) -> Option<&U256> {
-        match self {
-            ExecutedFee::Order(fee) => Some(fee),
-            ExecutedFee::Surplus => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct OrderExecution {
-    pub order_id: OrderUid,
-    pub executed_fee: ExecutedFee,
-}
 
 #[derive(Clone, Default, Derivative)]
 #[derivative(Debug)]
@@ -55,7 +30,6 @@ pub struct Competition {
     /// Winner receives performance rewards if a settlement is finalized on
     /// chain before this block height.
     pub block_deadline: u64,
-    pub order_executions: Vec<OrderExecution>,
     pub competition_simulation_block: u64,
     /// Winner settlement call data
     #[derivative(Debug(format_with = "shared::debug_bytes"))]
@@ -80,19 +54,6 @@ impl super::Postgres {
         database::solver_competition::save(&mut ex, competition.auction_id, json)
             .await
             .context("solver_competition::save")?;
-
-        for order_execution in &competition.order_executions {
-            let solver_fee = order_execution.executed_fee.fee().map(u256_to_big_decimal);
-            database::order_execution::save(
-                &mut ex,
-                &ByteArray(order_execution.order_id.0),
-                competition.auction_id,
-                None,
-                solver_fee.as_ref(),
-            )
-            .await
-            .context("order_execution::save")?;
-        }
 
         database::settlement_scores::insert(
             &mut ex,

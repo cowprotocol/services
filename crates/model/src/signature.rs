@@ -165,6 +165,27 @@ impl Signature {
             Self::PreSign => owner.as_bytes().to_vec(),
         }
     }
+
+    /// Opposite of `encode_for_settlement`. Given the encoded signature returns
+    /// the owner.
+    pub fn recover_owner(
+        &self,
+        signature: &[u8],
+        domain_separator: &DomainSeparator,
+        struct_hash: &[u8; 32],
+    ) -> Result<H160> {
+        match self {
+            Self::Eip712(_) | Self::EthSign(_) => {
+                let recovered = self
+                    .recover(domain_separator, struct_hash)
+                    .context("failed to recover owner")?
+                    .context("unreachable?")?;
+                Ok(recovered.signer)
+            }
+            Self::Eip1271(_) => Ok(H160::from_slice(&signature[..20])),
+            Self::PreSign => Ok(H160::from_slice(signature)),
+        }
+    }
 }
 
 /// Signature recovery result.

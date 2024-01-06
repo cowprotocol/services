@@ -292,7 +292,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
-                competition::order::Kind::Limit => OrderClass::Limit(Default::default()),
+                competition::order::Kind::Limit => OrderClass::Limit,
             },
             creation_date: Default::default(),
             owner: order.signature.signer.into(),
@@ -302,6 +302,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             executed_sell_amount: Default::default(),
             executed_sell_amount_before_fees: Default::default(),
             executed_fee_amount: Default::default(),
+            executed_surplus_fee: Default::default(),
             invalidated: Default::default(),
             status: Default::default(),
             settlement_contract: Default::default(),

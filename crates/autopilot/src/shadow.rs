@@ -113,7 +113,7 @@ impl RunLoop {
             .all(|order| match order.metadata.class {
                 OrderClass::Market => false,
                 OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+                OrderClass::Limit => false,
             })
         {
             tracing::trace!("skipping empty auction");

@@ -57,19 +57,6 @@ impl SolverCompetitionStoring for Postgres {
         .await
         .context("upsert_auction_transaction")?;
 
-        for (order, execution) in request.executions {
-            let surplus_fee = execution.surplus_fee.as_ref().map(u256_to_big_decimal);
-            database::order_execution::save(
-                &mut ex,
-                &ByteArray(order.0),
-                request.auction,
-                surplus_fee.as_ref(),
-                Some(&u256_to_big_decimal(&execution.scoring_fee)),
-            )
-            .await
-            .context("order_execution::save")?;
-        }
-
         database::settlement_scores::insert(
             &mut ex,
             Score {

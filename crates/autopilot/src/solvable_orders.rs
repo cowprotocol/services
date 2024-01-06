@@ -480,7 +480,7 @@ fn get_orders_with_native_prices(
         .filter_map(|order| match order.metadata.class {
             OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
             OrderClass::Liquidity => None,
-            OrderClass::Limit(_) => None,
+            OrderClass::Limit => None,
         })
         .flatten();
     native_price_estimator.replace_high_priority(high_priority_tokens.collect());
@@ -1000,7 +1000,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                class: OrderClass::Limit(Default::default()),
+                class: OrderClass::Limit,
                 ..Default::default()
             },
             ..Default::default()
