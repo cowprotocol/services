@@ -29,6 +29,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 rate-limit = { path = "../rate-limit" }
 reqwest = "0.11"
+s3 = { path = "../s3" }
 serde = "1"
 serde_json = "1"
 serde_with = "3"
