@@ -1,7 +1,7 @@
 use {
     crate::{
         arguments,
-        database::{competition::Competition, Postgres},
+        database::competition::Competition,
         domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
@@ -44,7 +44,6 @@ use {
 pub struct RunLoop {
     pub eth: Ethereum,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
@@ -154,7 +153,7 @@ impl RunLoop {
                 .order_ids()
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
-            self.database.store_order_events(&events).await;
+            self.persistence.store_order_events(events);
 
             let winner = solution.account;
             let winning_score = solution.score.get();
@@ -269,7 +268,7 @@ impl RunLoop {
             };
 
             tracing::info!(?competition, "saving competition");
-            if let Err(err) = self.save_competition(&competition).await {
+            if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
             }
@@ -298,7 +297,6 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        self.persistence.archive_auction(id, auction);
         let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
@@ -310,22 +308,12 @@ impl RunLoop {
         );
         let request = &request;
 
-        let db = self.database.clone();
         let events = auction
             .orders
             .iter()
             .map(|o| (o.uid, OrderEventLabel::Ready))
             .collect_vec();
-        // insert into `order_events` table operations takes a while and the result is
-        // ignored, so we run it in the background
-        tokio::spawn(
-            async move {
-                let start = Instant::now();
-                db.store_order_events(&events).await;
-                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
-            }
-            .instrument(tracing::Span::current()),
-        );
+        self.persistence.store_order_events(events);
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -426,7 +414,7 @@ impl RunLoop {
             .order_ids()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.persistence.store_order_events(events);
 
         let request = settle::Request {
             solution_id: solved.id,
@@ -448,15 +436,10 @@ impl RunLoop {
             .keys()
             .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.persistence.store_order_events(events);
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
-    }
-
-    /// Saves the competition data to the database
-    async fn save_competition(&self, competition: &Competition) -> Result<()> {
-        self.database.save_competition(competition).await
     }
 
     /// Removes orders that are currently being settled to avoid solvers trying

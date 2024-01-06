@@ -13,16 +13,6 @@ use {
 };
 
 impl super::Postgres {
-    /// Inserts the given events with the current timestamp into the DB.
-    /// If this function encounters an error it will only be printed. More
-    /// elaborate error handling is not necessary because this is just
-    /// debugging information.
-    pub async fn store_order_events(&self, events: &[(domain::OrderUid, OrderEventLabel)]) {
-        if let Err(err) = store_order_events(self, events, Utc::now()).await {
-            tracing::warn!(?err, "failed to insert order events");
-        }
-    }
-
     /// Inserts an order event for each order uid in the given set.
     /// Unique order uids are required to avoid inserting events with the same
     /// label within the same order_uid.
@@ -44,7 +34,7 @@ impl super::Postgres {
     }
 }
 
-async fn store_order_events(
+pub async fn store_order_events(
     db: &super::Postgres,
     events: &[(domain::OrderUid, OrderEventLabel)],
     timestamp: DateTime<Utc>,

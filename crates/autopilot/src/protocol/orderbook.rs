@@ -27,7 +27,7 @@ impl Orderbook {
             .await
             .map(|auction_with_id| domain::AuctionWithId {
                 id: auction_with_id.id,
-                auction: dto::to_domain(auction_with_id.auction),
+                auction: dto::auction::to_domain(auction_with_id.auction),
             })
     }
 }

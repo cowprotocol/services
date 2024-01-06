@@ -1,5 +1,8 @@
-use {ethrpc::Web3, url::Url};
 pub use {
+    crate::database::{
+        competition::Competition,
+        order_events::{store_order_events, OrderEventLabel},
+    },
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
@@ -17,6 +20,7 @@ pub use {
     },
     shared::order_validation::is_order_outside_market_price,
 };
+use {ethrpc::Web3, url::Url};
 
 pub mod auction;
 pub mod order;
