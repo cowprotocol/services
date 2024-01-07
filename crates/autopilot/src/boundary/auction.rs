@@ -1,5 +1,5 @@
 use {
-    crate::{domain, infra::persistence::quotes::dto::InvalidConversion},
+    crate::{domain, infra::persistence::dto::quote::InvalidConversion},
     std::collections::HashMap,
 };
 

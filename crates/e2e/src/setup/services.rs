@@ -6,7 +6,7 @@ use {
         Contracts,
         TIMEOUT,
     },
-    autopilot::infra::persistence::auction::dto,
+    autopilot::infra::persistence::dto,
     clap::Parser,
     ethcontract::H256,
     model::{
@@ -162,7 +162,7 @@ impl<'a> Services<'a> {
             .expect("waiting for API timed out");
     }
 
-    pub async fn get_auction(&self) -> dto::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::auction::AuctionWithId {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))

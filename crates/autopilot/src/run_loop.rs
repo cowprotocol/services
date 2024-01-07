@@ -8,7 +8,7 @@ use {
             settle,
             solve::{self, TradedAmounts},
         },
-        infra::{self, blockchain::Ethereum, persistence::auction::dto},
+        infra::{self, blockchain::Ethereum, persistence::dto},
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,

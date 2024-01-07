@@ -88,5 +88,5 @@ pub enum Policy {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to read quotes from the database")]
-    Db(#[from] infra::persistence::quotes::Error),
+    Db(#[from] infra::persistence::api::quote::Error),
 }

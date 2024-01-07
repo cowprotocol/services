@@ -3,8 +3,11 @@ use {
     crate::{
         domain::{self},
         infra::persistence::{
-            auction::dto::{Auction, AuctionId},
-            quotes::{self, dto::InvalidConversion},
+            dto,
+            dto::{
+                auction::{Auction, AuctionId},
+                quote::InvalidConversion,
+            },
         },
     },
     anyhow::{Context, Result},
@@ -104,7 +107,7 @@ impl Postgres {
                 if let Some(quote) =
                     database::orders::read_quote(&mut ex, &ByteArray(order.metadata.uid.0)).await?
                 {
-                    quotes.insert(order.metadata.uid.into(), quotes::dto::into_domain(quote));
+                    quotes.insert(order.metadata.uid.into(), dto::quote::into_domain(quote));
                 }
             }
             quotes

@@ -49,7 +49,7 @@ pub mod quote {
 
 pub mod solve {
     use {
-        crate::{boundary, infra::persistence::auction::dto::order::Order},
+        crate::{boundary, infra::persistence::dto::order::Order},
         chrono::{DateTime, Utc},
         number::serialization::HexOrDecimalU256,
         primitive_types::{H160, U256},

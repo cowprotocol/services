@@ -1,7 +1,7 @@
 //! A client to the CoW Protocol public API.
 
 use {
-    crate::{domain, infra::persistence::auction::dto},
+    crate::{domain, infra::persistence::dto},
     reqwest::Url,
 };
 
@@ -23,7 +23,7 @@ impl Orderbook {
             .send()
             .await?
             .error_for_status()?
-            .json::<dto::AuctionWithId>()
+            .json::<dto::auction::AuctionWithId>()
             .await
             .map(|auction_with_id| domain::AuctionWithId {
                 id: auction_with_id.id,
