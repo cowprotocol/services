@@ -1,11 +1,11 @@
 use {
-    crate::{boundary, domain, infra::persistence::Persistence},
+    crate::{boundary, domain, infra},
     chrono::Utc,
     tokio::time::Instant,
     tracing::Instrument,
 };
 
-impl Persistence {
+impl infra::Persistence {
     /// Inserts the given events with the current timestamp into the DB.
     /// If this function encounters an error it will only be printed. More
     /// elaborate error handling is not necessary because this is just

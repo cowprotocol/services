@@ -1,12 +1,12 @@
 use {
     crate::{
         domain,
-        infra::persistence::{dto, Persistence},
+        infra::{self, persistence::dto},
     },
     std::collections::HashMap,
 };
 
-impl Persistence {
+impl infra::Persistence {
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &domain::OrderUid>,

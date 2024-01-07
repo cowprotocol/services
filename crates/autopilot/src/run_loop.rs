@@ -8,7 +8,7 @@ use {
             settle,
             solve::{self, TradedAmounts},
         },
-        infra::{self, blockchain::Ethereum, persistence::dto},
+        infra::{self, persistence::dto},
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -37,7 +37,9 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: Ethereum,
+    pub eth: infra::Blockchain,
+    pub persistence: infra::Persistence,
+
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub drivers: Vec<Driver>,
     pub market_makable_token_list: AutoUpdatingTokenList,
@@ -47,7 +49,6 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
-    pub persistence: infra::persistence::Persistence,
 }
 
 impl RunLoop {

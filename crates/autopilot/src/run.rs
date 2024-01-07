@@ -13,7 +13,7 @@ use {
         domain,
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{self, blockchain},
+        infra::{self},
         protocol,
         run_loop::RunLoop,
         shadow,
@@ -76,14 +76,14 @@ impl LivenessChecking for Liveness {
     }
 }
 
-async fn ethrpc(url: &Url) -> blockchain::Rpc {
-    blockchain::Rpc::new(url)
+async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
+    infra::blockchain::Rpc::new(url)
         .await
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: blockchain::Rpc, poll_interval: Duration) -> blockchain::Ethereum {
-    blockchain::Ethereum::new(ethrpc, poll_interval).await
+async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Blockchain {
+    infra::Blockchain::new(ethrpc, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {

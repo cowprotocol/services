@@ -22,7 +22,7 @@ impl Postgres {
 
     /// Get quotes for all orders in the auction.
     ///
-    /// Doens't guarantee that all orders have quotes.
+    /// Doesn't guarantee that all orders have quotes.
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &OrderUid>,

@@ -1,11 +1,12 @@
 use {
     crate::{
         domain,
-        infra::persistence::{dto, Persistence},
+        infra::{self, persistence::dto},
     },
     tracing::Instrument,
 };
-impl Persistence {
+
+impl infra::Persistence {
     /// There is always only one `current` auction.
     ///
     /// This method replaces the current auction with the given one.

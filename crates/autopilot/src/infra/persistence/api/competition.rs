@@ -1,6 +1,6 @@
-use crate::{boundary, infra::persistence::Persistence};
+use crate::{boundary, infra};
 
-impl Persistence {
+impl infra::Persistence {
     /// Saves the competition data to the DB
     pub async fn save_competition(&self, competition: &boundary::Competition) -> Result<(), Error> {
         self.postgres

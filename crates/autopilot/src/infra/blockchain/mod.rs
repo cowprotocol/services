@@ -69,13 +69,13 @@ impl Rpc {
 
 /// The Ethereum blockchain.
 #[derive(Clone)]
-pub struct Ethereum {
+pub struct Blockchain {
     web3: DynWeb3,
     network: Network,
     current_block: CurrentBlockStream,
 }
 
-impl Ethereum {
+impl Blockchain {
     /// Access the Ethereum blockchain through an RPC API.
     ///
     /// # Panics
