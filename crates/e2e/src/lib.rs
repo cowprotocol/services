@@ -3,4 +3,5 @@
 
 #[macro_use]
 pub mod setup;
+pub mod api;
 pub mod nodes;
