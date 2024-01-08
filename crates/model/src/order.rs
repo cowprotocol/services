@@ -122,13 +122,13 @@ impl Order {
 
     pub fn is_user_order(&self) -> bool {
         match self.metadata.class {
-            OrderClass::Market | OrderClass::Limit(_) => true,
+            OrderClass::Market | OrderClass::Limit => true,
             OrderClass::Liquidity => false,
         }
     }
 
     pub fn is_limit_order(&self) -> bool {
-        matches!(self.metadata.class, OrderClass::Limit(_))
+        matches!(self.metadata.class, OrderClass::Limit)
     }
 
     /// For some orders the protocol doesn't precompute a fee. Instead solvers
@@ -740,6 +740,8 @@ pub struct OrderMetadata {
     pub executed_sell_amount_before_fees: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee_amount: U256,
+    #[serde_as(as = "HexOrDecimalU256")]
+    pub executed_surplus_fee: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
     #[serde(flatten)]
@@ -925,21 +927,13 @@ pub enum OrderClass {
     /// zero, because it's impossible to predict fees that far in the
     /// future. Instead, the fee is taken from the order surplus once the
     /// order becomes fulfillable and the surplus is high enough.
-    Limit(LimitOrderClass),
+    Limit,
 }
 
 impl OrderClass {
     pub fn is_limit(&self) -> bool {
-        matches!(self, Self::Limit(_))
+        matches!(self, Self::Limit)
     }
-}
-
-#[serde_as]
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LimitOrderClass {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub executed_surplus_fee: U256,
 }
 
 impl OrderKind {
@@ -1119,9 +1113,7 @@ mod tests {
         let expected = Order {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
-                class: OrderClass::Limit(LimitOrderClass {
-                    executed_surplus_fee: 1.into(),
-                }),
+                class: OrderClass::Limit,
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,
@@ -1129,6 +1121,7 @@ mod tests {
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
                 executed_sell_amount_before_fees: 4.into(),
                 executed_fee_amount: 1.into(),
+                executed_surplus_fee: 1.into(),
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),

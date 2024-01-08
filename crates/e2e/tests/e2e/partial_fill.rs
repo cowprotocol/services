@@ -1,12 +1,8 @@
 use {
-    e2e::{
-        setup::{colocation::SolverEngine, *},
-        tx,
-        tx_value,
-    },
+    e2e::{setup::*, tx, tx_value},
     ethcontract::U256,
     model::{
-        order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::{EcdsaSigningScheme, Signature, SigningScheme},
     },
     secp256k1::SecretKey,
@@ -45,22 +41,8 @@ async fn test(web3: Web3) {
     );
 
     tracing::info!("Starting services.");
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
-    colocation::start_driver(
-        onchain.contracts(),
-        vec![SolverEngine {
-            name: "test_solver".into(),
-            account: solver,
-            endpoint: solver_endpoint,
-        }],
-    );
-
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     tracing::info!("Placing order");
     let balance = token.balance_of(trader.address()).call().await.unwrap();
@@ -112,14 +94,7 @@ async fn test(web3: Web3) {
     let settlement_event_processed = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        if let OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee,
-        }) = order.metadata.class
-        {
-            executed_surplus_fee > U256::zero()
-        } else {
-            panic!("order is not a limit order");
-        }
+        order.metadata.executed_surplus_fee > U256::zero()
     };
     wait_for_condition(TIMEOUT, settlement_event_processed)
         .await

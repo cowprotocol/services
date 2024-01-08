@@ -61,7 +61,7 @@ impl OrderConverter {
             OrderClass::Liquidity => {
                 LimitOrderId::Liquidity(LiquidityOrderId::Protocol(order.metadata.uid))
             }
-            OrderClass::Limit(_) => LimitOrderId::Limit(order.metadata.uid),
+            OrderClass::Limit => LimitOrderId::Limit(order.metadata.uid),
         };
 
         // The reported fee amount that is used for objective computation is the
@@ -239,11 +239,7 @@ pub mod tests {
 
     #[test]
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
-        for class in [
-            OrderClass::Market,
-            OrderClass::Limit(Default::default()),
-            OrderClass::Liquidity,
-        ] {
+        for class in [OrderClass::Market, OrderClass::Limit, OrderClass::Liquidity] {
             let native_token_address = H160([0x42; 20]);
             let sell_token = H160([0x21; 20]);
             let native_token = dummy_contract!(WETH9, native_token_address);

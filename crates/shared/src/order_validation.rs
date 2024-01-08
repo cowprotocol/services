@@ -303,7 +303,7 @@ impl PreOrderData {
             signing_scheme,
             class: match (liquidity_owner, order.fee_amount.is_zero()) {
                 (false, false) => OrderClass::Market,
-                (false, true) => OrderClass::Limit(Default::default()),
+                (false, true) => OrderClass::Limit,
                 (true, _) => OrderClass::Liquidity,
             },
         }
@@ -449,7 +449,7 @@ impl OrderValidating for OrderValidator {
                     return Err(PartialValidationError::UnsupportedOrderType);
                 }
             }
-            OrderClass::Limit(_) => {
+            OrderClass::Limit => {
                 if order.partially_fillable && !self.enable_partially_fillable_limit_orders {
                     return Err(PartialValidationError::UnsupportedOrderType);
                 }
@@ -668,7 +668,7 @@ impl OrderValidating for OrderValidator {
                         .await?;
                 Some(quote)
             }
-            OrderClass::Limit(_) => {
+            OrderClass::Limit => {
                 let quote =
                     get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
                         .await?;
@@ -684,7 +684,7 @@ impl OrderValidating for OrderValidator {
                 // The `full_fee_amount` should never be lower than the `fee_amount` (which may include
                 // subsidies). This only makes a difference for liquidity orders.
                 .unwrap_or(data.fee_amount),
-            OrderClass::Limit(_) => 0.into(), // limit orders have a solver determined fee
+            OrderClass::Limit => 0.into(), // limit orders have a solver determined fee
         };
 
         let min_balance = minimum_balance(&data).ok_or(ValidationError::SellAmountOverflow)?;
@@ -820,7 +820,7 @@ impl OrderValidPeriodConfiguration {
 
         match order.class {
             OrderClass::Market => self.max_market,
-            OrderClass::Limit(_) => self.max_limit,
+            OrderClass::Limit => self.max_limit,
             OrderClass::Liquidity => Duration::MAX,
         }
     }
@@ -1193,7 +1193,7 @@ mod tests {
                         valid_to: legit_valid_to
                             + validity_configuration.max_limit.as_secs() as u32
                             + 1,
-                        class: OrderClass::Limit(Default::default()),
+                        class: OrderClass::Limit,
                         ..Default::default()
                     })
                     .await,
@@ -1294,7 +1294,7 @@ mod tests {
             .is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
-                class: OrderClass::Limit(Default::default()),
+                class: OrderClass::Limit,
                 owner: liquidity_order_owner,
                 valid_to: time::now_in_epoch_seconds()
                     + validity_configuration.max_market.as_secs() as u32
