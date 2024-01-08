@@ -27,7 +27,13 @@ impl ProtocolFee {
     /// Get policies for order.
     pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
         match order.metadata.class {
-            boundary::OrderClass::Market => vec![],
+            boundary::OrderClass::Market => {
+                if self.fee_policy_skip_market_orders {
+                    vec![]
+                } else {
+                    vec![self.policy]
+                }
+            }
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
