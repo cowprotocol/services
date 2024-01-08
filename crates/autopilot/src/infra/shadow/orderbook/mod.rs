@@ -25,9 +25,6 @@ impl Orderbook {
             .error_for_status()?
             .json::<dto::AuctionWithId>()
             .await
-            .map(|auction_with_id| domain::AuctionWithId {
-                id: auction_with_id.id,
-                auction: dto::auction::to_domain(auction_with_id.auction),
-            })
+            .map(Into::into)
     }
 }

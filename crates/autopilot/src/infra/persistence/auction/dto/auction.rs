@@ -47,6 +47,15 @@ pub struct Auction {
 
 pub type AuctionId = i64;
 
+impl From<AuctionWithId> for domain::AuctionWithId {
+    fn from(dto: AuctionWithId) -> Self {
+        domain::AuctionWithId {
+            id: dto.id,
+            auction: to_domain(dto.auction),
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
