@@ -7,7 +7,6 @@
 use crate::{
     boundary::{self},
     domain,
-    infra::{self},
 };
 
 /// Constructs fee policies based on the current configuration.
@@ -83,10 +82,4 @@ pub enum Policy {
         /// fee.
         factor: f64,
     },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("failed to read quotes from the database")]
-    Db(#[from] infra::persistence::api::quote::Error),
 }

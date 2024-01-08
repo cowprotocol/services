@@ -6,7 +6,6 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     itertools::Itertools,
     model::{
-        auction::Auction,
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
         time::now_in_epoch_seconds,
@@ -215,13 +214,7 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
-        let auction = Auction {
-            block,
-            latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            orders: orders.clone(),
-            prices,
-        };
-        let removed = counter.record(&auction.orders);
+        let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
         // spawning a background task since `order_events` table insert operation takes
@@ -241,11 +234,19 @@ impl SolvableOrdersCache {
         });
 
         *self.cache.lock().unwrap() = Inner {
-            auction: Some(boundary::auction::to_domain(
-                auction,
-                db_solvable_orders.quotes,
-                &self.fee_policies,
-            )),
+            auction: Some(domain::Auction {
+                block,
+                latest_settlement_block: db_solvable_orders.latest_settlement_block,
+                orders: orders
+                    .into_iter()
+                    .map(|order| {
+                        let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
+                        let fee_policies = self.fee_policies.get(&order, quote);
+                        boundary::order::to_domain(order, fee_policies)
+                    })
+                    .collect(),
+                prices,
+            }),
             update_time: Instant::now(),
         };
 

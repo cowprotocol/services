@@ -2,12 +2,10 @@ use {crate::domain, shared::remaining_amounts};
 
 pub fn to_domain(
     order: model::order::Order,
-    quote: Option<&domain::Quote>,
-    fee_policies: &domain::fee::Policies,
+    fee_policies: Vec<domain::fee::Policy>,
 ) -> domain::Order {
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
-    let fee_policies = fee_policies.get(&order, quote);
 
     domain::Order {
         uid: order.metadata.uid.into(),

@@ -2,7 +2,7 @@ use {
     super::Postgres,
     crate::{
         domain::{self},
-        infra::persistence::{dto, dto::quote::InvalidConversion},
+        infra::persistence::dto,
     },
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
@@ -13,7 +13,7 @@ use {
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
-    pub quotes: HashMap<domain::OrderUid, Result<domain::Quote, InvalidConversion>>,
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
 }
 use {
@@ -98,10 +98,18 @@ impl Postgres {
         let quotes = {
             let mut quotes = HashMap::new();
             for order in &orders {
-                if let Some(quote) =
-                    database::orders::read_quote(&mut ex, &ByteArray(order.metadata.uid.0)).await?
+                match database::orders::read_quote(&mut ex, &ByteArray(order.metadata.uid.0))
+                    .await?
                 {
-                    quotes.insert(order.metadata.uid.into(), dto::quote::into_domain(quote));
+                    Some(quote) => match dto::quote::into_domain(quote) {
+                        Ok(quote) => {
+                            quotes.insert(order.metadata.uid.into(), quote);
+                        }
+                        Err(err) => {
+                            tracing::warn!(?order.metadata.uid, ?err, "failed to convert quote from database");
+                        }
+                    },
+                    None => tracing::warn!(?order.metadata.uid, "quote not found for order"),
                 }
             }
             quotes
