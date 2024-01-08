@@ -77,7 +77,7 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    fee_policies: domain::fee::Policies,
+    fee_policies: domain::ProtocolFee,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -102,7 +102,7 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        fee_policies: domain::fee::Policies,
+        fee_policies: domain::ProtocolFee,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,

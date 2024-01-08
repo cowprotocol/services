@@ -11,12 +11,12 @@ use crate::{
 
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
-pub struct Policies {
+pub struct ProtocolFee {
     policy: Policy,
     fee_policy_skip_market_orders: bool,
 }
 
-impl Policies {
+impl ProtocolFee {
     pub fn new(policy: Policy, fee_policy_skip_market_orders: bool) -> Self {
         Self {
             policy,

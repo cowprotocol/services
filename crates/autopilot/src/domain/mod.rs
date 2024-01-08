@@ -9,5 +9,6 @@ pub use {
         AuctionId,
         AuctionWithId,
     },
+    fee::ProtocolFee,
     quote::Quote,
 };
