@@ -7,6 +7,9 @@ use {
     sqlx::PgConnection,
 };
 
+/// Executed network fee for the gas costs. This fee is solver determined.
+type ExecutedFee = U256;
+
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
     pub auction_id: AuctionId,
@@ -14,8 +17,7 @@ pub struct AuctionData {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
-    // pairs <order id, fee> for orders with solver computed fees (limit orders)
-    pub order_executions: Vec<(OrderUid, U256)>,
+    pub order_executions: Vec<(OrderUid, ExecutedFee)>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,19 +114,15 @@ impl super::Postgres {
             .context("insert_settlement_observations")?;
 
             if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
-                // update order executions for orders with solver computed fees (limit orders)
-                // for limit orders, fee is called surplus_fee and is determined by the solver
-                // therefore, when transaction is settled onchain we calculate the fee and save
-                // it to DB
-                for order_execution in auction_data.order_executions {
-                    database::order_execution::update_surplus_fee(
+                for (order, executed_fee) in auction_data.order_executions {
+                    database::order_execution::save(
                         ex,
-                        &ByteArray(order_execution.0 .0), // order uid
+                        &ByteArray(order.0),
                         auction_data.auction_id.assume_verified(),
-                        &u256_to_big_decimal(&order_execution.1), // order fee
+                        &u256_to_big_decimal(&executed_fee),
                     )
                     .await
-                    .context("insert_missing_order_executions")?;
+                    .context("save_order_executions")?;
                 }
             }
         }

@@ -221,7 +221,11 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
+            .filter(|order| {
+                !order.is_liquidity_order()
+                    && !order.partially_fillable
+                    && !matches!(order.status, OrderStatus::PresignaturePending)
+            })
             .map(|order| {
                 let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
                 (order.uid, (order, existing_time))
@@ -238,7 +242,7 @@ impl Alerter {
         // because they are more likely to be.
         closed_orders.sort_unstable_by_key(|order| match order.class {
             OrderClass::Market => 0u8,
-            OrderClass::Limit(_) => 1,
+            OrderClass::Limit => 1,
             OrderClass::Liquidity => 2,
         });
         for order in closed_orders {

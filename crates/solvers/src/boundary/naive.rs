@@ -77,7 +77,7 @@ pub fn solve(
                         uid: OrderUid(order.uid.0),
                         class: match order.class {
                             order::Class::Market => OrderClass::Market,
-                            order::Class::Limit => OrderClass::Limit(Default::default()),
+                            order::Class::Limit => OrderClass::Limit,
                             order::Class::Liquidity => OrderClass::Liquidity,
                         },
                         solver_fee: order.fee().amount,

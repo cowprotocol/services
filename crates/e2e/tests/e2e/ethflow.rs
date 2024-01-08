@@ -1,8 +1,11 @@
 use {
     anyhow::bail,
-    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-    chrono::{TimeZone, Utc},
+    autopilot::{
+        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+        infra::persistence::auction::dto,
+    },
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
+    database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
     ethcontract::{transaction::TransactionResult, Account, Bytes, H160, H256, U256},
     ethrpc::{current_block::timestamp_of_current_block_in_seconds, Web3},
@@ -77,8 +80,7 @@ async fn eth_flow_tx(web3: Web3) {
     };
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
     let quote: OrderQuoteResponse = test_submit_quote(
         &services,
@@ -107,7 +109,6 @@ async fn eth_flow_tx(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
 
     test_trade_availability_in_api(
@@ -123,18 +124,15 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(2)).await;
-    let [refunder, trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
+    let [trader, dummy_trader] = onchain.make_accounts(to_wei(2)).await;
     let [dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1000), to_wei(1000))
         .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    services.start_protocol(solver).await;
 
-    // Create an order that only exists to be refunded, which triggers an event in
-    // the eth-flow contract that is not included in the ABI of
-    // `CoWSwapOnchainOrders`.
+    // Create an order that only exists to be cancelled.
     let valid_to = timestamp_of_current_block_in_seconds(&web3).await.unwrap() + 60;
     let dummy_order = ExtendedEthFlowOrder::from_quote(
         &test_submit_quote(
@@ -152,14 +150,11 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     .include_slippage_bps(300);
     sumbit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
     web3.api::<TestNodeApi<_>>()
-        .set_next_block_timestamp(
-            &Utc.timestamp_millis_opt((valid_to as i64 + 1) * 1_000)
-                .unwrap(),
-        )
+        .mine_pending_block()
         .await
-        .expect("Must be able to set block timestamp");
+        .unwrap();
     dummy_order
-        .mine_order_invalidation(refunder.account(), &onchain.contracts().ethflow)
+        .mine_order_invalidation(dummy_trader.account(), &onchain.contracts().ethflow)
         .await;
 
     // Create the actual order that should be picked up by the services and matched.
@@ -190,8 +185,16 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         .await
         .unwrap();
 
-    services.start_old_driver(solver.private_key(), vec![]);
     test_order_was_settled(&services, &ethflow_order, &web3).await;
+
+    // Check order events
+    let events = crate::database::events_of_order(
+        services.db(),
+        &dummy_order.uid(onchain.contracts()).await,
+    )
+    .await;
+    assert_eq!(events.first().unwrap().label, OrderEventLabel::Created);
+    assert_eq!(events.last().unwrap().label, OrderEventLabel::Cancelled);
 }
 
 async fn test_submit_quote(
@@ -262,7 +265,7 @@ async fn test_order_availability_in_api(
         .await
         .unwrap();
 
-    test_auction_query(services, order, owner, contracts).await;
+    test_auction_query(services, order, contracts).await;
 }
 
 async fn test_trade_availability_in_api(
@@ -338,12 +341,11 @@ async fn test_account_query(
 async fn test_auction_query(
     services: &Services<'_>,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
     contracts: &Contracts,
 ) {
     let response = services.get_auction().await;
     assert_eq!(response.auction.orders.len(), 1);
-    test_order_parameters(&response.auction.orders[0], order, owner, contracts).await;
+    test_auction_order_parameters(&response.auction.orders[0], order, contracts).await;
 }
 
 enum TradeQuery {
@@ -411,6 +413,32 @@ async fn test_order_parameters(
         contracts.ethflow.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
+}
+
+async fn test_auction_order_parameters(
+    response: &dto::order::Order,
+    order: &ExtendedEthFlowOrder,
+    contracts: &Contracts,
+) {
+    // Expected values from actual EIP1271 order instead of eth-flow order
+    assert_eq!(response.valid_to, u32::MAX);
+    assert_eq!(response.owner, contracts.ethflow.address());
+    assert_eq!(response.sell_token, contracts.weth.address());
+
+    assert_eq!(response.class, OrderClass::Market);
+
+    assert!(order
+        .is_valid_cowswap_signature(&response.signature, contracts)
+        .await
+        .is_ok());
+
+    // Requires wrapping first
+    assert_eq!(response.pre_interactions.len(), 1);
+    assert_eq!(
+        response.pre_interactions[0].target,
+        contracts.ethflow.address()
+    );
+    assert_eq!(response.pre_interactions[0].call_data, WRAP_ALL_SELECTOR);
 }
 
 pub struct ExtendedEthFlowOrder(pub EthflowOrder);

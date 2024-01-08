@@ -1,6 +1,6 @@
 use {
     self::solution::settlement,
-    super::{time, Mempools},
+    super::{time, time::Remaining, Mempools},
     crate::{
         domain::{competition::solution::Settlement, eth},
         infra::{
@@ -34,7 +34,7 @@ pub use {
         risk::{ObjectiveValue, SuccessProbability},
         Score,
     },
-    solution::{Solution, SolverScore, SolverTimeout},
+    solution::{Solution, SolverScore},
 };
 
 /// An ongoing competition. There is one competition going on per solver at any
@@ -70,7 +70,7 @@ impl Competition {
         // Fetch the solutions from the solver.
         let solutions = self
             .solver
-            .solve(auction, &liquidity, auction.deadline().solvers()?.into())
+            .solve(auction, &liquidity)
             .await
             .tap_err(|err| {
                 if err.is_timeout() {
@@ -78,7 +78,7 @@ impl Competition {
                 }
             })?;
 
-        observe::postprocessing(&solutions, auction.deadline().driver().unwrap_or_default());
+        observe::postprocessing(&solutions, auction.deadline().driver());
 
         // Discard solutions that don't have unique ID.
         let mut ids = HashSet::new();
@@ -125,7 +125,7 @@ impl Competition {
         // timeout is reached.
         let mut settlements = Vec::new();
         if tokio::time::timeout(
-            auction.deadline().driver().unwrap_or_default(),
+            auction.deadline().driver().remaining().unwrap_or_default(),
             merge_settlements(&mut settlements, encoded, &self.eth, &self.simulator),
         )
         .await
@@ -197,7 +197,7 @@ impl Competition {
         // Re-simulate the solution on every new block until the deadline ends to make
         // sure we actually submit a working solution close to when the winner
         // gets picked by the procotol.
-        if let Ok(remaining) = auction.deadline().driver() {
+        if let Ok(remaining) = auction.deadline().driver().remaining() {
             let score_ref = &mut score;
             let simulate_on_new_blocks = async move {
                 let mut stream =

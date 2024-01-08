@@ -290,7 +290,7 @@ pub async fn run(args: Arguments) {
 
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
-            &http_factory,
+            http_factory.builder(),
             args.shared
                 .zeroex_url
                 .as_deref()

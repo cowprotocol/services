@@ -1,6 +1,7 @@
 use {
     crate::{
         database::orders::{InsertionError, OrderStoring},
+        dto,
         ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
@@ -8,7 +9,6 @@ use {
     ethcontract::H256,
     model::{
         app_data::AppDataHash,
-        auction::AuctionWithId,
         order::{
             Order,
             OrderCancellation,
@@ -56,7 +56,7 @@ fn order_class_label(class: &OrderClass) -> &'static str {
     match class {
         OrderClass::Market => "user",
         OrderClass::Liquidity => "liquidity",
-        OrderClass::Limit(_) => "limit",
+        OrderClass::Limit => "limit",
     }
 }
 
@@ -77,11 +77,7 @@ impl Metrics {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
             let op = operation_label(op);
-            for class in &[
-                OrderClass::Market,
-                OrderClass::Liquidity,
-                OrderClass::Limit(Default::default()),
-            ] {
+            for class in &[OrderClass::Market, OrderClass::Liquidity, OrderClass::Limit] {
                 let class = order_class_label(class);
                 metrics.orders.with_label_values(&[class, op]).reset();
             }
@@ -402,7 +398,7 @@ impl Orderbook {
         self.database.orders_for_tx(hash).await
     }
 
-    pub async fn get_auction(&self) -> Result<Option<AuctionWithId>> {
+    pub async fn get_auction(&self) -> Result<Option<dto::AuctionWithId>> {
         let auction = match self.database.most_recent_auction().await? {
             Some(auction) => auction,
             None => {

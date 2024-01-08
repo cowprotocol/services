@@ -16,7 +16,6 @@ impl Auction {
     pub fn new(
         auction: &competition::Auction,
         liquidity: &[liquidity::Liquidity],
-        timeout: competition::SolverTimeout,
         weth: eth::WethAddress,
     ) -> Self {
         let mut tokens: HashMap<eth::H160, _> = auction
@@ -200,7 +199,7 @@ impl Auction {
                 .collect(),
             tokens,
             effective_gas_price: auction.gas_price().effective().into(),
-            deadline: timeout.deadline(),
+            deadline: auction.deadline().solvers(),
         }
     }
 }
@@ -238,14 +237,14 @@ struct Order {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
@@ -268,7 +267,7 @@ struct Token {
 // TODO Remove dead_code
 #[allow(dead_code, clippy::enum_variant_names)]
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
@@ -326,7 +325,7 @@ struct WeightedProductReserve {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum WeightedProductVersion {
     V0,
     V3Plus,

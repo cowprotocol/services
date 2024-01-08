@@ -147,7 +147,7 @@ async fn test() {
                     },
                 ],
                 "score": {
-                    "kind": "riskadjusted",
+                    "kind": "riskAdjusted",
                     "successProbability": 1.0,
                 }
             }]
