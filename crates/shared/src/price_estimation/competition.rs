@@ -15,7 +15,6 @@ use {
         TryFutureExt,
     },
     gas_estimation::GasPriceEstimating,
-    itertools::Itertools,
     model::order::OrderKind,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
@@ -42,9 +41,6 @@ impl From<&Query> for Trade {
 /// [`CompetitionEstimator`] used as an identifier.
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
 struct EstimatorIndex(usize, usize);
-
-#[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-struct Wins(u64);
 
 type PriceEstimationStage<T> = Vec<(String, T)>;
 
@@ -201,36 +197,17 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             query.kind,
             |estimator, query| estimator.estimate(query),
             move |results, context| {
-                let gas_costs = results
-                    .iter()
-                    .filter_map(|(_, r)| Some(r.as_ref().ok()?.gas))
-                    .sorted()
-                    .collect_vec();
-                let median_gas = *gas_costs.get(gas_costs.len() / 2usize).unwrap_or(&0);
-                let gas_lower_bound = std::cmp::max(1, median_gas / 2);
-
                 results
                     .iter()
                     .map(|(_, result)| result)
                     .enumerate()
-                    // Solvers could try to game the system by providing unreasonably low gas amounts.
-                    // That way they'll win the best quote and the protocol will quote a very low fee
-                    // to the user (which is basically a huge subsidy we'd have to pay).
-                    // To avoid that we discard all quotes with gas costs significantly below the
-                    // median.
-                    .filter(|(_, r)| match r {
-                        Ok(estimate) => {
-                            let keep = estimate.gas >= gas_lower_bound;
-                            if !keep {
-                                tracing::warn!(?estimate, "discarding outlier estimate");
-                            }
-                            keep
-                        }
-                        Err(_) => true,
-                    })
+                    // Filter out 0 gas cost estimate because they are obviously wrong and would
+                    // likely win the price competition which would lead to us paying huge
+                    // subsidies.
+                    .filter(|(_, r)| r.is_err() || r.as_ref().is_ok_and(|e| e.gas > 0))
                     .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
                     .map(|(index, _)| index)
-                    .with_context(|| "discarded all price estimates")
+                    .with_context(|| "all price estimates reported 0 gas cost")
                     .map_err(PriceEstimationError::ProtocolInternal)
             },
             context_future,
@@ -897,9 +874,9 @@ mod tests {
                 estimate(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
                 estimate(107_999, 2_000),
-                // User effectively receives `~103_000` `buy_token` but the estimate
-                // gets discarded because it quotes suspiciously little gas.
-                estimate(104_000, 499),
+                // User effectively receives `104_000` `buy_token` but the estimate
+                // gets discarded because it quotes 0 gas.
+                estimate(104_000, 0),
             ],
         )
         .await;
@@ -912,9 +889,9 @@ mod tests {
                 estimate(96_000, 1_000),
                 // User effectively pays `100_002` `sell_token`.
                 estimate(92_002, 2_000),
-                // User effectively pays `~97_000` `sell_token` but the estimate
-                // gets discarded because it quotes suspiciously little gas.
-                estimate(96_000, 499),
+                // User effectively pays `99_000` `sell_token` but the estimate
+                // gets discarded because it quotes 0 gas.
+                estimate(99_000, 0),
             ],
         )
         .await;
