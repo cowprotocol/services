@@ -24,5 +24,5 @@ pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
     #[error(transparent)]
-    Conversion(#[from] dto::quote::InvalidConversion),
+    Conversion(#[from] dto::quote::AmountOverflow),
 }
