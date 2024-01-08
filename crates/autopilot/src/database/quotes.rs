@@ -1,8 +1,12 @@
 use {
     super::Postgres,
-    crate::domain::OrderUid,
+    crate::{
+        domain::{self},
+        infra::persistence::dto,
+    },
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
+    model::order::OrderUid,
     shared::maintenance::Maintaining,
     sqlx::types::chrono::{DateTime, Utc},
     std::collections::HashMap,
@@ -26,13 +30,23 @@ impl Postgres {
     pub async fn read_quotes(
         &self,
         orders: impl Iterator<Item = &OrderUid>,
-    ) -> Result<HashMap<OrderUid, database::orders::Quote>> {
+    ) -> Result<HashMap<domain::OrderUid, domain::Quote>> {
         let mut ex = self.pool.acquire().await?;
         let mut quotes = HashMap::new();
         for order in orders {
             let order_uid = ByteArray(order.0);
-            if let Some(quote) = database::orders::read_quote(&mut ex, &order_uid).await? {
-                quotes.insert(*order, quote);
+            match database::orders::read_quote(&mut ex, &order_uid).await? {
+                Some(quote) => match dto::quote::into_domain(quote) {
+                    Ok(quote) => {
+                        quotes.insert(domain::OrderUid::from(*order), quote);
+                    }
+                    Err(err) => {
+                        tracing::warn!(?order, ?err, "failed to convert quote from db");
+                    }
+                },
+                None => {
+                    tracing::warn!(?order, "quote not found for order");
+                }
             }
         }
         Ok(quotes)

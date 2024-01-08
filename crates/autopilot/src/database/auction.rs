@@ -5,7 +5,6 @@ use {
         infra::persistence::dto,
     },
     anyhow::{Context, Result},
-    database::byte_array::ByteArray,
     futures::{StreamExt, TryStreamExt},
     model::order::Order,
     std::{collections::HashMap, ops::DerefMut},
@@ -95,25 +94,9 @@ impl Postgres {
             .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
-        let quotes = {
-            let mut quotes = HashMap::new();
-            for order in &orders {
-                match database::orders::read_quote(&mut ex, &ByteArray(order.metadata.uid.0))
-                    .await?
-                {
-                    Some(quote) => match dto::quote::into_domain(quote) {
-                        Ok(quote) => {
-                            quotes.insert(order.metadata.uid.into(), quote);
-                        }
-                        Err(err) => {
-                            tracing::warn!(?order.metadata.uid, ?err, "failed to convert quote from database");
-                        }
-                    },
-                    None => tracing::warn!(?order.metadata.uid, "quote not found for order"),
-                }
-            }
-            quotes
-        };
+        let quotes = self
+            .read_quotes(orders.iter().map(|order| &order.metadata.uid))
+            .await?;
         Ok(SolvableOrders {
             orders,
             quotes,

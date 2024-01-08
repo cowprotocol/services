@@ -1,7 +1,7 @@
 use {
     crate::{boundary, database::Postgres, domain},
     chrono::Utc,
-    std::{collections::HashMap, sync::Arc},
+    std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
 };
@@ -94,17 +94,6 @@ impl Persistence {
             }
             .instrument(tracing::Span::current()),
         );
-    }
-
-    pub async fn read_quotes(
-        &self,
-        orders: impl Iterator<Item = &domain::OrderUid>,
-    ) -> Result<HashMap<domain::OrderUid, domain::Quote>, Error> {
-        let mut quotes = HashMap::new();
-        for (id, quote) in self.postgres.read_quotes(orders).await? {
-            quotes.insert(id, dto::quote::into_domain(quote)?);
-        }
-        Ok(quotes)
     }
 }
 
