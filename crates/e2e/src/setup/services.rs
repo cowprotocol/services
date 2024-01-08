@@ -162,7 +162,7 @@ impl<'a> Services<'a> {
             .expect("waiting for API timed out");
     }
 
-    pub async fn get_auction(&self) -> dto::auction::AuctionWithId {
+    pub async fn get_auction(&self) -> dto::AuctionWithId {
         let response = self
             .http
             .get(format!("{API_HOST}{AUCTION_ENDPOINT}"))

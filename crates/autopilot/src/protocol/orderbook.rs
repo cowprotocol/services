@@ -23,7 +23,7 @@ impl Orderbook {
             .send()
             .await?
             .error_for_status()?
-            .json::<dto::auction::AuctionWithId>()
+            .json::<dto::AuctionWithId>()
             .await
             .map(|auction_with_id| domain::AuctionWithId {
                 id: auction_with_id.id,

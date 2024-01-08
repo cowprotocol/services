@@ -82,8 +82,8 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Blockchain {
-    infra::Blockchain::new(ethrpc, poll_interval).await
+async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Ethereum {
+    infra::Ethereum::new(ethrpc, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {

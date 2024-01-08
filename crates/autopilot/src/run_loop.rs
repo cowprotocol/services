@@ -37,7 +37,7 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: infra::Blockchain,
+    pub eth: infra::Ethereum,
     pub persistence: infra::Persistence,
 
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,

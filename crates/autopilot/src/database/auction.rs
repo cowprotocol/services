@@ -2,13 +2,7 @@ use {
     super::Postgres,
     crate::{
         domain::{self},
-        infra::persistence::{
-            dto,
-            dto::{
-                auction::{Auction, AuctionId},
-                quote::InvalidConversion,
-            },
-        },
+        infra::persistence::{dto, dto::quote::InvalidConversion},
     },
     anyhow::{Context, Result},
     database::byte_array::ByteArray,
@@ -119,7 +113,7 @@ impl Postgres {
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &Auction) -> Result<AuctionId> {
+    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["replace_current_auction"])
