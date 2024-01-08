@@ -39,7 +39,7 @@ impl LivenessChecking for Liveness {
 }
 
 pub struct RunLoop {
-    orderbook: infra::Orderbook,
+    orderbook: infra::shadow::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::AuctionId,
@@ -51,7 +51,7 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub fn new(
-        orderbook: infra::Orderbook,
+        orderbook: infra::shadow::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,

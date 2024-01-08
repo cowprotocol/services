@@ -622,7 +622,7 @@ pub async fn run(args: Arguments) {
 async fn shadow_mode(args: Arguments) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let orderbook = infra::Orderbook::new(
+    let orderbook = infra::shadow::Orderbook::new(
         http_factory.create(),
         args.shadow.expect("missing shadow mode configuration"),
     );
