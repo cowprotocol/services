@@ -283,10 +283,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "PMM1", use_value_delimiter = true)]
     pub disabled_one_inch_protocols: Vec<String>,
 
-    /// The 1Inch REST API URL to use.
-    #[structopt(long, env, default_value = "https://api.1inch.dev/")]
-    pub one_inch_url: Url,
-
     /// Which address should receive the rewards for referring trades to 1Inch.
     #[structopt(long, env)]
     pub one_inch_referrer_address: Option<H160>,
@@ -454,7 +450,6 @@ impl Display for Arguments {
             use_internal_buffers,
             balancer_factories,
             disabled_one_inch_protocols,
-            one_inch_url,
             one_inch_referrer_address,
             disabled_zeroex_sources,
             balancer_pool_deny_list,
@@ -508,7 +503,6 @@ impl Display for Arguments {
             "disabled_one_inch_protocols",
             disabled_one_inch_protocols,
         )?;
-        writeln!(f, "one_inch_url: {}", one_inch_url)?;
         display_option(
             f,
             "one_inch_referrer_address",
