@@ -5,7 +5,6 @@
 
 use {
     anyhow::{Context, Result},
-    chrono::{DateTime, Utc},
     clap::Parser,
     model::order::{OrderClass, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     number::serialization::HexOrDecimalU256,
@@ -31,14 +30,14 @@ struct Order {
     sell_token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
     sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    fee_amount: U256,
     uid: OrderUid,
-    status: OrderStatus,
-    creation_date: DateTime<Utc>,
     partially_fillable: bool,
     #[serde(flatten)]
     class: OrderClass,
+    // Some if the order is fetched from api/v1/orders/{uid}
+    // None if the order is fetched from api/v1/auction
+    #[serde(default)]
+    status: Option<OrderStatus>,
 }
 
 impl Order {
@@ -221,11 +220,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
-            .filter(|order| {
-                !order.is_liquidity_order()
-                    && !order.partially_fillable
-                    && !matches!(order.status, OrderStatus::PresignaturePending)
-            })
+            .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
                 (order.uid, (order, existing_time))
@@ -250,7 +245,7 @@ impl Alerter {
             tracing::debug!(order =% uid, "found closed order");
             let start = Instant::now();
             let api_order = self.orderbook_api.order(uid).await.context("get order")?;
-            if api_order.status == OrderStatus::Fulfilled {
+            if api_order.status.unwrap() == OrderStatus::Fulfilled {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
                     uid
@@ -301,7 +296,7 @@ impl Alerter {
                     };
                     if should_alert {
                         self.last_alert = Some(now);
-                        self.config.alert(order);
+                        self.config.alert(&order.uid);
                     }
                     self.no_trades_but_matchable_order.set(1);
                 }
@@ -317,12 +312,12 @@ impl Alerter {
 }
 
 impl AlertConfig {
-    fn alert(&self, order: &Order) {
+    fn alert(&self, order_uid: &OrderUid) {
         tracing::error!(
             "No orders have been settled in the last {} seconds even though order {} is solvable \
              and has a price that allows it to be settled according to 0x.",
             self.time_without_trade.as_secs(),
-            order.uid,
+            order_uid,
         );
     }
 }
