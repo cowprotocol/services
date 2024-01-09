@@ -49,21 +49,22 @@ impl Persistence {
     ///
     /// There is no intention to retrieve this data programmatically.
     fn archive_auction(&self, id: domain::AuctionId, instance: dto::auction::Auction) {
-        if let Some(uploader) = self.s3.clone() {
-            tokio::spawn(
-                async move {
-                    match uploader.upload(id.to_string(), &instance).await {
-                        Ok(key) => {
-                            tracing::info!(?key, "uploaded auction to s3");
-                        }
-                        Err(err) => {
-                            tracing::warn!(?err, "failed to upload auction to s3");
-                        }
+        let Some(uploader) = self.s3.clone() else {
+            return;
+        };
+        tokio::spawn(
+            async move {
+                match uploader.upload(id.to_string(), &instance).await {
+                    Ok(key) => {
+                        tracing::info!(?key, "uploaded auction to s3");
+                    }
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to upload auction to s3");
                     }
                 }
-                .instrument(tracing::Span::current()),
-            );
-        }
+            }
+            .instrument(tracing::Span::current()),
+        );
     }
 
     /// Saves the competition data to the DB

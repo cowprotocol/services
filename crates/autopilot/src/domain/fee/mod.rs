@@ -42,15 +42,15 @@ impl ProtocolFee {
 
                 // if the quote is missing, we can't determine if the order is outside the
                 // market price so we protect the user and not charge a fee
-                if quote.is_none() {
+                let Some(quote) = quote else {
                     return vec![];
-                }
+                };
 
                 if boundary::is_order_outside_market_price(
                     &order.data.sell_amount,
                     &order.data.buy_amount,
-                    &quote.unwrap().buy_amount,
-                    &quote.unwrap().sell_amount,
+                    &quote.buy_amount,
+                    &quote.sell_amount,
                 ) {
                     vec![self.policy]
                 } else {
