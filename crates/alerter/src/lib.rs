@@ -154,7 +154,7 @@ impl ZeroExApi {
         let can_settle =
             response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount;
         if can_settle {
-            tracing::debug!(uid = ?order.uid, "marking order as settleable");
+            tracing::debug!(%order.uid, "marking order as settleable");
         }
 
         Ok(can_settle)
