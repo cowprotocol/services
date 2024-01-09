@@ -402,6 +402,37 @@ WHERE order_uid = $1
     sqlx::query_as(query).bind(id).fetch_optional(ex).await
 }
 
+pub async fn read_quotes(
+    ex: &mut sqlx::PgConnection,
+    order_ids: &[OrderUid],
+) -> Result<Vec<Quote>, sqlx::Error> {
+    if order_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let placeholders = order_ids
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("${}", index + 1))
+        .collect::<Vec<String>>()
+        .join(", ");
+
+    let query = format!(
+        r#"
+        SELECT * FROM order_quotes
+        WHERE order_uid IN ({})
+    "#,
+        placeholders
+    );
+
+    let mut query = sqlx::query_as(&query);
+    for order_id in order_ids {
+        query = query.bind(order_id);
+    }
+    let quotes = query.fetch_all(ex).await?;
+    Ok(quotes)
+}
+
 pub async fn cancel_order(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -1121,6 +1152,29 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(quote2, quote_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn read_quotes_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        for i in 0..10 {
+            let quote = Quote {
+                order_uid: ByteArray([i; 56]),
+                ..Default::default()
+            };
+            insert_quote(&mut db, &quote).await.unwrap();
+        }
+        let quote_ids = (0..20) // add some non-existing ids
+            .map(|i| ByteArray([i; 56]))
+            .collect::<Vec<_>>();
+
+        let quotes = read_quotes(&mut db, &quote_ids).await.unwrap();
+
+        assert_eq!(quotes.len(), 10);
     }
 
     #[tokio::test]
