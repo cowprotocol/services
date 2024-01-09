@@ -1,6 +1,6 @@
 use {
     shared::zeroex_api::{OrderRecord, OrdersQuery, ZeroExResponseError},
-    std::{collections::HashMap, str::FromStr, sync::Arc},
+    std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc},
     warp::{Filter, Reply},
     web3::types::H160,
 };
@@ -41,14 +41,13 @@ pub struct ZeroExApi {
     orders_handler: OrdersHandler,
 }
 
-const PORT: u16 = 10001;
-
 impl ZeroExApi {
     pub fn builder() -> ZeroExApiBuilder {
         ZeroExApiBuilder::default()
     }
 
-    pub async fn run(&self) {
+    /// Starts the server and returns the assigned port number.
+    pub async fn run(&self) -> u16 {
         let orders_handler = self.orders_handler.clone();
 
         let orders_route = warp::path("/orderbook/v1/orders")
@@ -72,6 +71,16 @@ impl ZeroExApi {
                 }
             });
 
-        warp::serve(orders_route).run(([127, 0, 0, 1], PORT)).await;
+        let addr: SocketAddr = ([0, 0, 0, 0], 0).into();
+        let server = warp::serve(orders_route);
+        let (addr, server) = server.bind_ephemeral(addr);
+        let port = addr.port();
+        assert!(port > 0, "assigned port must be greater than 0");
+
+        tokio::spawn(async move {
+            server.await;
+        });
+
+        port
     }
 }
