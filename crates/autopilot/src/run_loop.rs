@@ -113,10 +113,9 @@ impl RunLoop {
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
-        let fee_policies = fee::Policies::new(&auction, self.fee_policy.clone());
 
         let solutions = {
-            let mut solutions = self.competition(auction_id, &auction, &fee_policies).await;
+            let mut solutions = self.competition(auction_id, &auction).await;
             if solutions.is_empty() {
                 tracing::info!("no solutions for auction");
                 return;
@@ -164,6 +163,7 @@ impl RunLoop {
                 .collect::<HashSet<_>>();
 
             let mut prices = BTreeMap::new();
+            let mut fee_policies = HashMap::<domain::OrderUid, Vec<domain::fee::Policy>>::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
@@ -177,6 +177,12 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
+                        for fee_policy in auction_order.fee_policies.clone() {
+                            fee_policies
+                                .entry(auction_order.uid)
+                                .or_default()
+                                .push(fee_policy);
+                        }
                         if let Some(price) = auction.prices.get(&auction_order.sell_token) {
                             prices.insert(auction_order.sell_token, *price);
                         } else {
@@ -270,10 +276,9 @@ impl RunLoop {
             }
 
             tracing::info!("saving fee policies");
-            let order_uids = competition.order_executions.iter().map(|o| o.order_id);
             if let Err(err) = self
                 .persistence
-                .store_fee_policies(auction_id, order_uids, &fee_policies)
+                .store_fee_policies(auction_id, fee_policies)
                 .await
             {
                 Metrics::fee_policies_store_error();
@@ -694,6 +699,7 @@ impl Metrics {
             .inc_by(unsettled.len() as u64);
     }
 
+    #[allow(dead_code)]
     fn fee_policies_store_error() {
         Self::get()
             .db_metric_error

@@ -1,14 +1,15 @@
 use {
     crate::{boundary, database::Postgres, domain},
+    anyhow::Context,
     chrono::Utc,
-    std::sync::Arc,
+    database::byte_array::ByteArray,
+    std::{collections::HashMap, sync::Arc},
     tokio::time::Instant,
     tracing::Instrument,
 };
 
 pub mod cli;
 pub mod dto;
-pub mod fee_policy;
 
 pub struct Persistence {
     s3: Option<s3::Uploader>,
@@ -96,6 +97,38 @@ impl Persistence {
             }
             .instrument(tracing::Span::current()),
         );
+    }
+
+    pub async fn store_fee_policies(
+        &self,
+        auction_id: model::auction::AuctionId,
+        fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
+    ) -> anyhow::Result<()> {
+        let mut ex = self.postgres.clone().pool.begin().await.context("begin")?;
+        for (order_uid, policies) in fee_policies {
+            for policy in policies {
+                let fee_policy_dto = database::fee_policies::FeePolicy {
+                    auction_id,
+                    order_uid: ByteArray(order_uid.0),
+                    kind: match policy {
+                        domain::fee::Policy::PriceImprovement {
+                            factor,
+                            max_volume_factor,
+                        } => database::fee_policies::FeePolicyKind::PriceImprovement {
+                            price_improvement_factor: factor,
+                            max_volume_factor,
+                        },
+                        domain::fee::Policy::Volume { factor } => {
+                            database::fee_policies::FeePolicyKind::Volume { factor }
+                        }
+                    },
+                };
+                database::fee_policies::insert(&mut ex, fee_policy_dto)
+                    .await
+                    .context("fee_policies::insert")?;
+            }
+        }
+        ex.commit().await.context("commit")
     }
 }
 
