@@ -245,7 +245,7 @@ impl Alerter {
             tracing::debug!(order =% uid, "found closed order");
             let start = Instant::now();
             let api_order = self.orderbook_api.order(uid).await.context("get order")?;
-            if api_order.status == Some(OrderStatus::Fulfilled) {
+            if api_order.status.unwrap() == OrderStatus::Fulfilled {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
                     uid
