@@ -98,6 +98,7 @@ impl Persistence {
         );
     }
 
+    /// Saves the given fee policies to the DB.
     pub async fn store_fee_policies(
         &self,
         auction_id: domain::AuctionId,
