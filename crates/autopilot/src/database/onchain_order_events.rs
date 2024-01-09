@@ -46,7 +46,6 @@ use {
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
             get_quote_and_check_fee,
-            is_order_outside_market_price,
             onchain_order_placement_error_from,
         },
     },
@@ -603,7 +602,7 @@ fn convert_onchain_order_placement(
         order_data.fee_amount
     };
     let is_outside_market_price = if let Ok(ref quote) = quote {
-        if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
+        if !order_data.within_market(&quote.sell_amount, &quote.buy_amount) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             metrics.inc_onchain_order_errors("outside_market_price");
             true

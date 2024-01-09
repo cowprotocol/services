@@ -37,8 +37,20 @@ pub struct Order {
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
+    #[serde(flatten)]
     pub class: OrderClass,
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
+    pub fee_policies: Vec<FeePolicy>,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
 }

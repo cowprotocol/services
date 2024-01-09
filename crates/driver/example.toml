@@ -75,3 +75,7 @@ graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
 # router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
+
+# [enso]
+# url = "http://localhost:8454"
+# network-block-interval = "12s"

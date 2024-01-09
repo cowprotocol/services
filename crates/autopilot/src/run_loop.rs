@@ -1,6 +1,5 @@
 use {
     crate::{
-        arguments,
         database::competition::Competition,
         domain::{self, auction::order::Class},
         driver_api::Driver,
@@ -9,8 +8,7 @@ use {
             settle,
             solve::{self, TradedAmounts},
         },
-        infra::{self, blockchain::Ethereum},
-        protocol::fee,
+        infra::{self, persistence::dto},
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -18,15 +16,12 @@ use {
     chrono::Utc,
     database::order_events::OrderEventLabel,
     itertools::Itertools,
-    model::{
-        order::OrderKind,
-        solver_competition::{
-            CompetitionAuction,
-            Order,
-            Score,
-            SolverCompetitionDB,
-            SolverSettlement,
-        },
+    model::solver_competition::{
+        CompetitionAuction,
+        Order,
+        Score,
+        SolverCompetitionDB,
+        SolverSettlement,
     },
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
@@ -42,7 +37,9 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: Ethereum,
+    pub eth: infra::Ethereum,
+    pub persistence: infra::Persistence,
+
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
     pub drivers: Vec<Driver>,
     pub market_makable_token_list: AutoUpdatingTokenList,
@@ -52,8 +49,6 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
-    pub fee_policy: arguments::FeePolicy,
-    pub persistence: infra::persistence::Persistence,
 }
 
 impl RunLoop {
@@ -297,14 +292,12 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = solve_request(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            fee_policies,
         );
         let request = &request;
 
@@ -477,65 +470,14 @@ pub fn solve_request(
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policies: fee::Policies,
 ) -> solve::Request {
     solve::Request {
         id,
         orders: auction
             .orders
-            .iter()
-            .map(|order| {
-                let class = match order.class {
-                    Class::Market => crate::driver_model::solve::Class::Market,
-                    Class::Liquidity => crate::driver_model::solve::Class::Liquidity,
-                    Class::Limit => crate::driver_model::solve::Class::Limit,
-                };
-                let kind = match order.kind {
-                    domain::auction::order::Kind::Buy => OrderKind::Buy,
-                    domain::auction::order::Kind::Sell => OrderKind::Sell,
-                };
-                let pre_interactions = order
-                    .pre_interactions
-                    .iter()
-                    .map(|interaction| solve::Interaction {
-                        target: interaction.target,
-                        value: interaction.value,
-                        call_data: interaction.call_data.clone(),
-                    })
-                    .collect();
-                let post_interactions = order
-                    .post_interactions
-                    .iter()
-                    .map(|interaction| solve::Interaction {
-                        target: interaction.target,
-                        value: interaction.value,
-                        call_data: interaction.call_data.clone(),
-                    })
-                    .collect();
-                solve::Order {
-                    uid: order.uid.into(),
-                    sell_token: order.sell_token,
-                    buy_token: order.buy_token,
-                    sell_amount: order.sell_amount,
-                    buy_amount: order.buy_amount,
-                    solver_fee: order.solver_fee,
-                    user_fee: order.user_fee,
-                    valid_to: order.valid_to,
-                    kind,
-                    receiver: order.receiver,
-                    owner: order.owner,
-                    partially_fillable: order.partially_fillable,
-                    executed: order.executed,
-                    pre_interactions,
-                    post_interactions,
-                    sell_token_balance: order.sell_token_balance.clone().into(),
-                    buy_token_balance: order.buy_token_balance.clone().into(),
-                    class,
-                    app_data: order.app_data.clone().into(),
-                    signature: order.signature.clone().into(),
-                    fee_policies: fee_policies.get(&order.uid).unwrap_or_default(),
-                }
-            })
+            .clone()
+            .into_iter()
+            .map(dto::order::from_domain)
             .collect(),
         tokens: auction
             .prices

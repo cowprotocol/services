@@ -350,6 +350,11 @@ impl OrderData {
             self.valid_to,
         )
     }
+
+    /// Checks if the order is a market order.
+    pub fn within_market(&self, quote_sell_amount: &U256, quote_buy_amount: &U256) -> bool {
+        self.sell_amount.full_mul(*quote_buy_amount) >= quote_sell_amount.full_mul(self.buy_amount)
+    }
 }
 
 /// An order as provided to the POST order endpoint.
