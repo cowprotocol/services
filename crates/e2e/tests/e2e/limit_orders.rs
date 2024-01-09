@@ -129,10 +129,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(
-        limit_order.metadata.class,
-        OrderClass::Limit(Default::default())
-    );
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -513,10 +510,7 @@ async fn forked_single_limit_order_test(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(
-        limit_order.metadata.class,
-        OrderClass::Limit(Default::default())
-    );
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");

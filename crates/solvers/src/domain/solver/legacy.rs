@@ -8,6 +8,7 @@ use {
     crate::{
         boundary,
         domain::{auction, eth, notification, solution},
+        infra,
     },
     reqwest::Url,
 };
@@ -18,6 +19,7 @@ pub struct Config {
     pub chain_id: eth::ChainId,
     pub endpoint: Url,
     pub gzip_requests: bool,
+    pub persistence: Option<infra::persistence::Persistence>,
 }
 
 pub struct Legacy(boundary::legacy::Legacy);

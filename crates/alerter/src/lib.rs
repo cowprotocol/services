@@ -242,7 +242,7 @@ impl Alerter {
         // because they are more likely to be.
         closed_orders.sort_unstable_by_key(|order| match order.class {
             OrderClass::Market => 0u8,
-            OrderClass::Limit(_) => 1,
+            OrderClass::Limit => 1,
             OrderClass::Liquidity => 2,
         });
         for order in closed_orders {

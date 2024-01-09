@@ -97,10 +97,8 @@ async fn test(web3: Web3) {
             None => return false,
         };
 
-        // trade execution for order can be found
-        data.trades.iter().any(|t| t.order_uid.0 == uid.0)
-            // sell and buy token price can be found
-            && data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
+        // sell and buy token price can be found
+        data.prices.iter().any(|p| p.token.0 == onchain.contracts().weth.address().0)
             && data.prices.iter().any(|p| p.token.0 == token.address().0)
             // solver participated in the competition
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)

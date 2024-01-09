@@ -1,6 +1,9 @@
 use {
     anyhow::bail,
-    autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+    autopilot::{
+        database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
+        infra::persistence::dto,
+    },
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,
     e2e::{nodes::local_node::TestNodeApi, setup::*, tx, tx_value},
@@ -55,6 +58,78 @@ async fn local_node_eth_flow_indexing_after_refund() {
     run_test(eth_flow_indexing_after_refund).await;
 }
 
+#[tokio::test]
+#[ignore]
+async fn local_node_eth_flow_zero_fee() {
+    run_test(eth_flow_tx_zero_fee).await;
+}
+
+/// Tests that eth flow orders can be created with 0 fee.
+async fn eth_flow_tx_zero_fee(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(to_wei(2)).await;
+    let [trader] = onchain.make_accounts(to_wei(2)).await;
+
+    // Create token with Uniswap pool for price estimation
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools(to_wei(DAI_PER_ETH * 1_000), to_wei(1_000))
+        .await;
+
+    // Get a quote from the services
+    let buy_token = dai.address();
+    let receiver = H160([0x42; 20]);
+    let sell_amount = to_wei(1);
+    let intent = EthFlowTradeIntent {
+        sell_amount,
+        buy_token,
+        receiver,
+    };
+
+    let services = Services::new(onchain.contracts()).await;
+    services.start_protocol(solver).await;
+
+    let quote: OrderQuoteResponse = test_submit_quote(
+        &services,
+        &intent.to_quote_request(&onchain.contracts().ethflow, &onchain.contracts().weth),
+    )
+    .await;
+
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3).await.unwrap()
+        + 3600;
+    let mut ethflow_order =
+        ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
+    // Set fee_amount to 0 to make it behave like a limit order instead of a market
+    // order.
+    ethflow_order.0.fee_amount = 0.into();
+
+    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+
+    test_order_availability_in_api(
+        &services,
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+    )
+    .await;
+
+    tracing::info!("waiting for trade");
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    test_order_was_settled(&services, &ethflow_order, &web3).await;
+
+    test_trade_availability_in_api(
+        services.client(),
+        &ethflow_order,
+        &trader.address(),
+        onchain.contracts(),
+    )
+    .await;
+}
+
 async fn eth_flow_tx(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -91,7 +166,7 @@ async fn eth_flow_tx(web3: Web3) {
     let ethflow_order =
         ExtendedEthFlowOrder::from_quote(&quote, valid_to).include_slippage_bps(300);
 
-    sumbit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
     test_order_availability_in_api(
         &services,
@@ -145,7 +220,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         valid_to,
     )
     .include_slippage_bps(300);
-    sumbit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
+    submit_order(&dummy_order, dummy_trader.account(), onchain.contracts()).await;
     web3.api::<TestNodeApi<_>>()
         .mine_pending_block()
         .await
@@ -175,7 +250,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
         valid_to,
     )
     .include_slippage_bps(300);
-    sumbit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
+    submit_order(&ethflow_order, trader.account(), onchain.contracts()).await;
 
     tracing::info!("waiting for trade");
     wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
@@ -223,7 +298,7 @@ async fn test_submit_quote(
     response
 }
 
-async fn sumbit_order(ethflow_order: &ExtendedEthFlowOrder, user: &Account, contracts: &Contracts) {
+async fn submit_order(ethflow_order: &ExtendedEthFlowOrder, user: &Account, contracts: &Contracts) {
     assert_eq!(
         ethflow_order.status(contracts).await,
         EthFlowOrderOnchainStatus::Free
@@ -262,7 +337,7 @@ async fn test_order_availability_in_api(
         .await
         .unwrap();
 
-    test_auction_query(services, order, owner, contracts).await;
+    test_auction_query(services, order, contracts).await;
 }
 
 async fn test_trade_availability_in_api(
@@ -338,12 +413,11 @@ async fn test_account_query(
 async fn test_auction_query(
     services: &Services<'_>,
     order: &ExtendedEthFlowOrder,
-    owner: &H160,
     contracts: &Contracts,
 ) {
     let response = services.get_auction().await;
     assert_eq!(response.auction.orders.len(), 1);
-    test_order_parameters(&response.auction.orders[0], order, owner, contracts).await;
+    test_auction_order_parameters(&response.auction.orders[0], order, contracts).await;
 }
 
 enum TradeQuery {
@@ -411,6 +485,32 @@ async fn test_order_parameters(
         contracts.ethflow.address()
     );
     assert_eq!(response.interactions.pre[0].call_data, WRAP_ALL_SELECTOR);
+}
+
+async fn test_auction_order_parameters(
+    response: &dto::order::Order,
+    order: &ExtendedEthFlowOrder,
+    contracts: &Contracts,
+) {
+    // Expected values from actual EIP1271 order instead of eth-flow order
+    assert_eq!(response.valid_to, u32::MAX);
+    assert_eq!(response.owner, contracts.ethflow.address());
+    assert_eq!(response.sell_token, contracts.weth.address());
+
+    assert_eq!(response.class, OrderClass::Market);
+
+    assert!(order
+        .is_valid_cowswap_signature(&response.signature, contracts)
+        .await
+        .is_ok());
+
+    // Requires wrapping first
+    assert_eq!(response.pre_interactions.len(), 1);
+    assert_eq!(
+        response.pre_interactions[0].target,
+        contracts.ethflow.address()
+    );
+    assert_eq!(response.pre_interactions[0].call_data, WRAP_ALL_SELECTOR);
 }
 
 pub struct ExtendedEthFlowOrder(pub EthflowOrder);

@@ -283,8 +283,8 @@ impl<'a> PriceEstimatorFactory<'a> {
                 "OneInchSpotPriceApi".into(),
                 Arc::new(native::OneInch::new(
                     self.components.http_factory.create(),
-                    self.args.one_inch_spot_price_api_url.clone(),
-                    self.args.one_inch_spot_price_api_key.clone(),
+                    self.args.one_inch_url.clone(),
+                    self.args.one_inch_api_key.clone(),
                     self.network.chain_id,
                     self.network.block_stream.clone(),
                 )),
@@ -509,7 +509,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
 
     fn init(factory: &PriceEstimatorFactory, name: &str, solver: Self::Params) -> Result<Self> {
         let api = OneInchClientImpl::new(
-            factory.shared_args.one_inch_url.clone(),
+            factory.args.one_inch_url.clone(),
             factory.components.http_factory.configure(|builder| {
                 builder.timeout(
                     trade_finding::time_limit()

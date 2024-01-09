@@ -9,20 +9,16 @@
 
 use {
     crate::{
-        arguments::FeePolicy,
+        domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
             reveal,
             solve::{self},
         },
-        protocol::{self, fee},
+        infra,
         run_loop::{self, observe},
     },
     ::observe::metrics,
-    model::{
-        auction::{Auction, AuctionId, AuctionWithId},
-        order::OrderClass,
-    },
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -41,24 +37,22 @@ impl LivenessChecking for Liveness {
 }
 
 pub struct RunLoop {
-    orderbook: protocol::Orderbook,
+    orderbook: infra::shadow::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
-    auction: AuctionId,
+    auction: domain::AuctionId,
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
-    fee_policy: FeePolicy,
 }
 
 impl RunLoop {
     pub fn new(
-        orderbook: protocol::Orderbook,
+        orderbook: infra::shadow::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
-        fee_policy: FeePolicy,
     ) -> Self {
         Self {
             orderbook,
@@ -68,14 +62,13 @@ impl RunLoop {
             block: 0,
             score_cap,
             solve_deadline,
-            fee_policy,
         }
     }
 
     pub async fn run_forever(mut self) -> ! {
         let mut previous = None;
         loop {
-            let Some(AuctionWithId { id, auction }) = self.next_auction().await else {
+            let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
@@ -88,7 +81,7 @@ impl RunLoop {
         }
     }
 
-    async fn next_auction(&mut self) -> Option<AuctionWithId> {
+    async fn next_auction(&mut self) -> Option<domain::AuctionWithId> {
         let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
             Err(err) => {
@@ -110,10 +103,10 @@ impl RunLoop {
             .auction
             .orders
             .iter()
-            .all(|order| match order.metadata.class {
-                OrderClass::Market => false,
-                OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+            .all(|order| match order.class {
+                Class::Market => false,
+                Class::Liquidity => true,
+                Class::Limit => false,
             })
         {
             tracing::trace!("skipping empty auction");
@@ -125,7 +118,7 @@ impl RunLoop {
         Some(auction)
     }
 
-    async fn single_run(&self, id: AuctionId, auction: Auction) {
+    async fn single_run(&self, id: domain::AuctionId, auction: domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
         Metrics::get().orders.set(auction.orders.len() as _);
@@ -197,15 +190,17 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
+    async fn competition(
+        &self,
+        id: domain::AuctionId,
+        auction: &domain::Auction,
+    ) -> Vec<Participant<'_>> {
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            &fee_policies,
         );
         let request = &request;
 

@@ -53,7 +53,11 @@ impl Simulator {
     /// Uses Ethereum RPC API to generate access lists.
     pub fn enso(config: enso::Config, eth: Ethereum) -> Self {
         Self {
-            inner: Inner::Enso(enso::Enso::new(config, eth.network().chain)),
+            inner: Inner::Enso(enso::Enso::new(
+                config,
+                eth.network().chain,
+                eth.current_block().clone(),
+            )),
             eth,
             disable_access_lists: false,
             disable_gas: None,
