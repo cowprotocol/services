@@ -1,14 +1,18 @@
 use {
     super::Postgres,
-    crate::infra::persistence::auction::dto,
+    crate::{
+        domain::{self},
+        infra::persistence::dto,
+    },
     anyhow::{Context, Result},
     futures::{StreamExt, TryStreamExt},
     model::order::Order,
-    std::ops::DerefMut,
+    std::{collections::HashMap, ops::DerefMut},
 };
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
 }
 use {
@@ -81,7 +85,7 @@ impl Postgres {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
-        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+        let orders: Vec<Order> = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order),
                 Err(err) => Err(anyhow::Error::from(err)),
@@ -90,8 +94,12 @@ impl Postgres {
             .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = self
+            .read_quotes(orders.iter().map(|order| &order.metadata.uid))
+            .await?;
         Ok(SolvableOrders {
             orders,
+            quotes,
             latest_settlement_block,
         })
     }

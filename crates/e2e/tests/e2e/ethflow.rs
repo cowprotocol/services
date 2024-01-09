@@ -2,7 +2,7 @@ use {
     anyhow::bail,
     autopilot::{
         database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
-        infra::persistence::auction::dto,
+        infra::persistence::dto,
     },
     contracts::{CoWSwapEthFlow, ERC20Mintable, WETH9},
     database::order_events::OrderEventLabel,

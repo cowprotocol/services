@@ -35,10 +35,12 @@ pub struct Order {
     pub post_interactions: Vec<boundary::InteractionData>,
     pub sell_token_balance: boundary::SellTokenSource,
     pub buy_token_balance: boundary::BuyTokenDestination,
+    #[serde(flatten)]
     pub class: boundary::OrderClass,
     pub app_data: boundary::AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
+    pub fee_policies: Vec<FeePolicy>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -67,6 +69,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
+        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -96,6 +99,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
+        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -257,6 +261,46 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
             r: signature.r,
             s: signature.s,
             v: signature.v,
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+impl From<domain::fee::Policy> for FeePolicy {
+    fn from(policy: domain::fee::Policy) -> Self {
+        match policy {
+            domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+            },
+            domain::fee::Policy::Volume { factor } => Self::Volume { factor },
+        }
+    }
+}
+
+impl From<FeePolicy> for domain::fee::Policy {
+    fn from(policy: FeePolicy) -> Self {
+        match policy {
+            FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+            },
+            FeePolicy::Volume { factor } => Self::Volume { factor },
         }
     }
 }

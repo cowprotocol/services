@@ -9,7 +9,6 @@
 
 use {
     crate::{
-        arguments::FeePolicy,
         domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
@@ -17,7 +16,6 @@ use {
             solve::{self},
         },
         infra,
-        protocol::fee,
         run_loop::{self, observe},
     },
     ::observe::metrics,
@@ -46,7 +44,6 @@ pub struct RunLoop {
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
-    fee_policy: FeePolicy,
 }
 
 impl RunLoop {
@@ -56,7 +53,6 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
-        fee_policy: FeePolicy,
     ) -> Self {
         Self {
             orderbook,
@@ -66,7 +62,6 @@ impl RunLoop {
             block: 0,
             score_cap,
             solve_deadline,
-            fee_policy,
         }
     }
 
@@ -200,14 +195,12 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            fee_policies,
         );
         let request = &request;
 
