@@ -51,6 +51,7 @@ pub struct BlockInfo {
     pub number: u64,
     pub hash: H256,
     pub parent_hash: H256,
+    pub timestamp: u64,
 }
 
 impl TryFrom<Block<H256>> for BlockInfo {
@@ -61,6 +62,7 @@ impl TryFrom<Block<H256>> for BlockInfo {
             number: value.number.context("block missing number")?.as_u64(),
             hash: value.hash.context("block missing hash")?,
             parent_hash: value.parent_hash,
+            timestamp: value.timestamp.as_u64(),
         })
     }
 }

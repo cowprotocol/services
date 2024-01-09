@@ -20,6 +20,8 @@ pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub block_number: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_timestamp: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub access_list: Option<AccessList>,
 }
 
