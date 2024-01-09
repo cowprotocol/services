@@ -5,7 +5,6 @@ use {
     crate::{
         gas_price_estimation::GasEstimatorType,
         price_estimation::PriceEstimators,
-        rate_limiter::RateLimitingStrategy,
         sources::{
             balancer_v2::BalancerFactoryKind,
             uniswap_v2::UniV2BaselineSourceParameters,
@@ -18,7 +17,7 @@ use {
     ethcontract::{H160, H256, U256},
     std::{
         fmt::{self, Display, Formatter},
-        num::{NonZeroU64, ParseFloatError},
+        num::NonZeroU64,
         str::FromStr,
         time::Duration,
     },
@@ -36,6 +35,19 @@ macro_rules! logging_args_with_default_filter {
 
             #[clap(long, env, default_value = "error")]
             pub log_stderr_threshold: LevelFilter,
+        }
+
+        impl ::std::fmt::Display for $struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let Self {
+                    log_filter,
+                    log_stderr_threshold,
+                } = self;
+
+                writeln!(f, "log_filter: {}", log_filter)?;
+                writeln!(f, "log_stderr_threshold: {}", log_stderr_threshold)?;
+                Ok(())
+            }
         }
     };
 }
@@ -89,29 +101,29 @@ pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
-    pub eip1271_onchain_quote_validity_seconds: Duration,
+    pub eip1271_onchain_quote_validity: Duration,
 
     /// The time period an PRESIGN-quote request is valid.
     #[clap(
         long,
         env,
-        default_value = "600",
-        value_parser = duration_from_seconds,
+        default_value = "10m",
+        value_parser = humantime::parse_duration,
     )]
-    pub presign_onchain_quote_validity_seconds: Duration,
+    pub presign_onchain_quote_validity: Duration,
 
     /// The time period a regular offchain-quote request (ethsign/eip712) is
     /// valid.
     #[clap(
         long,
         env,
-        default_value = "60",
-        value_parser = duration_from_seconds,
+        default_value = "1m",
+        value_parser = humantime::parse_duration,
     )]
-    pub standard_offchain_quote_validity_seconds: Duration,
+    pub standard_offchain_quote_validity: Duration,
 
     /// A flat fee discount denominated in the network's native token (i.e.
     /// Ether for Mainnet).
@@ -231,8 +243,8 @@ pub struct Arguments {
     pub pool_cache_maximum_retries: u32,
 
     /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
-    pub pool_cache_delay_between_retries_seconds: Duration,
+    #[clap(long, env, default_value = "1s", value_parser = humantime::parse_duration)]
+    pub pool_cache_delay_between_retries: Duration,
 
     /// The ParaSwap API base url to use.
     #[clap(long, env, default_value = super::paraswap_api::DEFAULT_URL)]
@@ -271,10 +283,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "PMM1", use_value_delimiter = true)]
     pub disabled_one_inch_protocols: Vec<String>,
 
-    /// The 1Inch REST API URL to use.
-    #[structopt(long, env, default_value = "https://api.1inch.dev/")]
-    pub one_inch_url: Url,
-
     /// Which address should receive the rewards for referring trades to 1Inch.
     #[structopt(long, env)]
     pub one_inch_referrer_address: Option<H160>,
@@ -296,8 +304,8 @@ pub struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
 
@@ -305,8 +313,8 @@ pub struct Arguments {
     #[clap(long, env, default_value = "100")]
     pub max_pools_to_initialize_cache: usize,
 
-    /// The time in seconds between new blocks on the network.
-    #[clap(long, env, value_parser = duration_from_seconds)]
+    /// The time between new blocks on the network.
+    #[clap(long, env, value_parser = humantime::parse_duration)]
     pub network_block_interval: Option<Duration>,
 
     /// Override address of the settlement contract.
@@ -372,34 +380,44 @@ where
 
 impl Display for OrderQuotingArguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            eip1271_onchain_quote_validity,
+            presign_onchain_quote_validity,
+            fee_discount,
+            min_discounted_fee,
+            fee_factor,
+            price_estimators,
+            price_estimation_drivers,
+            price_estimation_legacy_solvers,
+            liquidity_order_owners,
+            standard_offchain_quote_validity,
+        } = self;
+
         writeln!(
             f,
             "eip1271_onchain_quote_validity_second: {:?}",
-            self.eip1271_onchain_quote_validity_seconds
+            eip1271_onchain_quote_validity
         )?;
         writeln!(
             f,
             "presign_onchain_quote_validity_second: {:?}",
-            self.presign_onchain_quote_validity_seconds
+            presign_onchain_quote_validity
         )?;
-        writeln!(f, "fee_discount: {}", self.fee_discount)?;
-        writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
-        writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(f, "price_estimators: {}", self.price_estimators)?;
-        display_list(
-            f,
-            "price_estimation_drivers",
-            &self.price_estimation_drivers,
-        )?;
+        writeln!(f, "fee_discount: {}", fee_discount)?;
+        writeln!(f, "min_discounted_fee: {}", min_discounted_fee)?;
+        writeln!(f, "fee_factor: {}", fee_factor)?;
+        writeln!(f, "price_estimators: {}", price_estimators)?;
+        display_list(f, "price_estimation_drivers", price_estimation_drivers)?;
         display_list(
             f,
             "price_estimation_legacy_solvers",
-            &self.price_estimation_legacy_solvers,
+            price_estimation_legacy_solvers,
         )?;
+        writeln!(f, "liquidity_order_owners: {:?}", liquidity_order_owners)?;
         writeln!(
             f,
-            "liquidity_order_owners: {:?}",
-            self.liquidity_order_owners
+            "standard_offchain_quote_validity: {:?}",
+            standard_offchain_quote_validity
         )?;
         Ok(())
     }
@@ -408,89 +426,126 @@ impl Display for OrderQuotingArguments {
 // start up without leaking any potentially secret values.
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.ethrpc)?;
-        write!(f, "{}", self.current_block)?;
-        write!(f, "{}", self.tenderly)?;
-        writeln!(f, "log_filter: {}", self.logging.log_filter)?;
-        writeln!(
-            f,
-            "log_stderr_threshold: {}",
-            self.logging.log_stderr_threshold
-        )?;
-        writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "graph_api_base_url: {}", self.graph_api_base_url)?;
-        display_option(f, "chain_id", &self.chain_id)?;
-        display_option(f, "simulation_node_url", &self.simulation_node_url)?;
-        writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
-        display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
-        writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
-        writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
-        writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
+        let Self {
+            ethrpc,
+            current_block,
+            tenderly,
+            logging,
+            node_url,
+            graph_api_base_url,
+            chain_id,
+            simulation_node_url,
+            gas_estimators,
+            blocknative_api_key,
+            base_tokens,
+            baseline_sources,
+            pool_cache_blocks,
+            pool_cache_maximum_recent_block_age,
+            pool_cache_maximum_retries,
+            pool_cache_delay_between_retries,
+            paraswap_partner,
+            disabled_paraswap_dexs,
+            zeroex_url,
+            zeroex_api_key,
+            use_internal_buffers,
+            balancer_factories,
+            disabled_one_inch_protocols,
+            one_inch_referrer_address,
+            disabled_zeroex_sources,
+            balancer_pool_deny_list,
+            solver_competition_auth,
+            network_block_interval,
+            settlement_contract_address,
+            native_token_address,
+            balancer_v2_vault_address,
+            custom_univ2_baseline_sources,
+            paraswap_api_url,
+            liquidity_fetcher_max_age_update,
+            max_pools_to_initialize_cache,
+        } = self;
+
+        write!(f, "{}", ethrpc)?;
+        write!(f, "{}", current_block)?;
+        write!(f, "{}", tenderly)?;
+        write!(f, "{}", logging)?;
+        writeln!(f, "node_url: {}", node_url)?;
+        writeln!(f, "graph_api_base_url: {}", graph_api_base_url)?;
+        display_option(f, "chain_id", chain_id)?;
+        display_option(f, "simulation_node_url", simulation_node_url)?;
+        writeln!(f, "gas_estimators: {:?}", gas_estimators)?;
+        display_secret_option(f, "blocknative_api_key", blocknative_api_key)?;
+        writeln!(f, "base_tokens: {:?}", base_tokens)?;
+        writeln!(f, "baseline_sources: {:?}", baseline_sources)?;
+        writeln!(f, "pool_cache_blocks: {}", pool_cache_blocks)?;
         writeln!(
             f,
             "pool_cache_maximum_recent_block_age: {}",
-            self.pool_cache_maximum_recent_block_age
+            pool_cache_maximum_recent_block_age
         )?;
         writeln!(
             f,
             "pool_cache_maximum_retries: {}",
-            self.pool_cache_maximum_retries
+            pool_cache_maximum_retries
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {:?}",
-            self.pool_cache_delay_between_retries_seconds
+            "pool_cache_delay_between_retries: {:?}",
+            pool_cache_delay_between_retries
         )?;
-        display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
-        display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
-        display_option(f, "zeroex_url", &self.zeroex_url)?;
-        display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
-        writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
-        writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
+        display_secret_option(f, "paraswap_partner", paraswap_partner)?;
+        display_list(f, "disabled_paraswap_dexs", disabled_paraswap_dexs)?;
+        display_option(f, "zeroex_url", zeroex_url)?;
+        display_secret_option(f, "zeroex_api_key", zeroex_api_key)?;
+        writeln!(f, "use_internal_buffers: {}", use_internal_buffers)?;
+        writeln!(f, "balancer_factories: {:?}", balancer_factories)?;
         display_list(
             f,
             "disabled_one_inch_protocols",
-            &self.disabled_one_inch_protocols,
+            disabled_one_inch_protocols,
         )?;
-        writeln!(f, "one_inch_url: {}", self.one_inch_url)?;
         display_option(
             f,
             "one_inch_referrer_address",
-            &self.one_inch_referrer_address.map(|a| format!("{a:?}")),
+            &one_inch_referrer_address.map(|a| format!("{a:?}")),
         )?;
-        display_list(f, "disabled_zeroex_sources", &self.disabled_zeroex_sources)?;
-        writeln!(
-            f,
-            "balancer_pool_deny_list: {:?}",
-            self.balancer_pool_deny_list
-        )?;
-        display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
+        display_list(f, "disabled_zeroex_sources", disabled_zeroex_sources)?;
+        writeln!(f, "balancer_pool_deny_list: {:?}", balancer_pool_deny_list)?;
+        display_secret_option(f, "solver_competition_auth", solver_competition_auth)?;
         display_option(
             f,
             "network_block_interval",
-            &self
-                .network_block_interval
-                .map(|duration| duration.as_secs_f32()),
+            &network_block_interval.map(|duration| duration.as_secs_f32()),
         )?;
         display_option(
             f,
             "settlement_contract_address",
-            &self.settlement_contract_address.map(|a| format!("{a:?}")),
+            &settlement_contract_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,
             "native_token_address",
-            &self.native_token_address.map(|a| format!("{a:?}")),
+            &native_token_address.map(|a| format!("{a:?}")),
         )?;
         display_option(
             f,
             "balancer_v2_vault_address",
-            &self.balancer_v2_vault_address.map(|a| format!("{a:?}")),
+            &balancer_v2_vault_address.map(|a| format!("{a:?}")),
         )?;
         display_list(
             f,
             "custom_univ2_baseline_sources",
-            &self.custom_univ2_baseline_sources,
+            custom_univ2_baseline_sources,
+        )?;
+        writeln!(f, "paraswap_api_url: {}", paraswap_api_url)?;
+        writeln!(
+            f,
+            "liquidity_fetcher_max_age_update: {:?}",
+            liquidity_fetcher_max_age_update
+        )?;
+        writeln!(
+            f,
+            "max_pools_to_initialize_cache: {}",
+            max_pools_to_initialize_cache
         )?;
 
         Ok(())
@@ -519,10 +574,6 @@ pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     let percentage_factor = f64::from_str(s)?;
     ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
     Ok(percentage_factor)
-}
-
-pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
-    Ok(Duration::from_secs_f64(s.parse()?))
 }
 
 pub fn wei_from_ether(s: &str) -> anyhow::Result<U256> {
@@ -568,27 +619,6 @@ impl FromStr for LegacySolver {
             address: address.parse()?,
             use_liquidity: use_liquidity.parse()?,
         })
-    }
-}
-
-impl FromStr for RateLimitingStrategy {
-    type Err = anyhow::Error;
-
-    fn from_str(config: &str) -> Result<Self> {
-        let mut parts = config.split(',');
-        let back_off_growth_factor = parts.next().context("missing back_off_growth_factor")?;
-        let min_back_off = parts.next().context("missing min_back_off")?;
-        let max_back_off = parts.next().context("missing max_back_off")?;
-        ensure!(
-            parts.next().is_none(),
-            "extraneous rate limiting parameters"
-        );
-        let back_off_growth_factor: f64 = back_off_growth_factor
-            .parse()
-            .context("parsing back_off_growth_factor")?;
-        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
-        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
 

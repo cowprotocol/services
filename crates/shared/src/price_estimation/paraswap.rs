@@ -7,12 +7,12 @@ use {
     },
     crate::{
         paraswap_api::ParaswapApi,
-        rate_limiter::RateLimiter,
         token_info::TokenInfoFetching,
         trade_finding::paraswap::ParaswapTradeFinder,
     },
     futures::FutureExt,
     primitive_types::H160,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

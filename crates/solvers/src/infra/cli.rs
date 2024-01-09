@@ -45,24 +45,4 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
-    /// solve individual orders using Balancer API
-    Balancer {
-        #[clap(long, env)]
-        config: PathBuf,
-    },
-    /// solve individual orders using 0x API
-    ZeroEx {
-        #[clap(long, env)]
-        config: PathBuf,
-    },
-    /// solve individual orders using 1Inch API
-    OneInch {
-        #[clap(long, env)]
-        config: PathBuf,
-    },
-    /// solve individual orders using Paraswap API
-    ParaSwap {
-        #[clap(long, env)]
-        config: PathBuf,
-    },
 }

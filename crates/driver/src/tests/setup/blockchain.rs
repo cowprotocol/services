@@ -28,8 +28,6 @@ pub struct Pair {
 
 #[derive(Debug)]
 pub struct Blockchain {
-    pub solver_address: ethcontract::H160,
-    pub solver_secret_key: SecretKey,
     pub trader_address: ethcontract::H160,
     pub trader_secret_key: SecretKey,
 
@@ -142,9 +140,7 @@ pub struct Config {
     pub pools: Vec<Pool>,
     pub trader_address: eth::H160,
     pub trader_secret_key: SecretKey,
-    pub solver_address: eth::H160,
-    pub solver_secret_key: SecretKey,
-    pub fund_solver: bool,
+    pub solvers: Vec<super::Solver>,
     pub settlement_address: Option<eth::H160>,
 }
 
@@ -185,20 +181,6 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        if config.fund_solver {
-            wait_for(
-                &web3,
-                web3.eth()
-                    .send_transaction(web3::types::TransactionRequest {
-                        from: primary_address(&web3).await,
-                        to: Some(config.solver_address),
-                        value: Some(balance / 5),
-                        ..Default::default()
-                    }),
-            )
-            .await
-            .unwrap();
-        }
 
         // Deploy WETH and wrap some funds in the primary account of the node.
         let weth = wait_for(
@@ -289,15 +271,32 @@ impl Blockchain {
         )
         .await
         .unwrap();
-        wait_for(
-            &web3,
-            authenticator
-                .add_solver(config.solver_address)
-                .from(trader_account.clone())
-                .send(),
-        )
-        .await
-        .unwrap();
+
+        for config in config.solvers {
+            wait_for(
+                &web3,
+                authenticator
+                    .add_solver(config.address())
+                    .from(trader_account.clone())
+                    .send(),
+            )
+            .await
+            .unwrap();
+            if config.funded {
+                wait_for(
+                    &web3,
+                    web3.eth()
+                        .send_transaction(web3::types::TransactionRequest {
+                            from: primary_address(&web3).await,
+                            to: Some(config.address()),
+                            value: Some(balance / 5),
+                            ..Default::default()
+                        }),
+                )
+                .await
+                .unwrap();
+            }
+        }
 
         let domain_separator =
             boundary::DomainSeparator(settlement.domain_separator().call().await.unwrap().0);
@@ -489,8 +488,6 @@ impl Blockchain {
         Self {
             trader_address: config.trader_address,
             trader_secret_key: config.trader_secret_key,
-            solver_address: config.solver_address,
-            solver_secret_key: config.solver_secret_key,
             tokens,
             settlement,
             domain_separator,

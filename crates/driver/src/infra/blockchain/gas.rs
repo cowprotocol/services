@@ -22,7 +22,7 @@ impl GasPriceEstimator {
     pub async fn new(web3: &DynWeb3, mempools: &[mempool::Config]) -> Result<Self, Error> {
         let gas = NativeGasEstimator::new(web3.transport().clone(), None)
             .await
-            .map_err(Error::Gas)?;
+            .map_err(Error::GasPrice)?;
         let additional_tip = mempools
             .iter()
             .find(|mempool| matches!(mempool.kind, mempool::Kind::MEVBlocker { .. }))
@@ -69,6 +69,6 @@ impl GasPriceEstimator {
                     base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
                 }
             })
-            .map_err(Error::Gas)
+            .map_err(Error::GasPrice)
     }
 }

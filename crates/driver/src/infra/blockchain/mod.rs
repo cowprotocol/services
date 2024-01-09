@@ -139,7 +139,7 @@ impl Ethereum {
             )
             .await?;
         if let Some(err) = json.get("error") {
-            return Err(Error::Response(err.to_owned()));
+            return Err(Error::AccessList(err.to_owned()));
         }
         let access_list: web3::types::AccessList =
             serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
@@ -205,9 +205,9 @@ pub enum Error {
     #[error("web3 error: {0:?}")]
     Web3(#[from] web3::error::Error),
     #[error("gas price estimation error: {0}")]
-    Gas(boundary::Error),
-    #[error("web3 error returned in response: {0:?}")]
-    Response(serde_json::Value),
+    GasPrice(boundary::Error),
+    #[error("access list estimation error: {0:?}")]
+    AccessList(serde_json::Value),
 }
 
 impl From<contracts::Error> for Error {

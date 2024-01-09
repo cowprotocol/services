@@ -1,31 +1,40 @@
 use {
     super::Postgres,
-    crate::decoded_settlement::OrderExecution,
-    anyhow::Result,
+    anyhow::{Context, Result},
     database::byte_array::ByteArray,
-    ethcontract::H256,
-    futures::{StreamExt, TryStreamExt},
-    model::auction::AuctionId,
+    model::order::OrderUid,
+    primitive_types::U256,
+    shared::db_order_conversions::full_order_into_model_order,
     sqlx::PgConnection,
 };
 
 impl Postgres {
-    pub async fn order_executions_for_tx(
+    /// Returns the unsubsidised fees for the given orders.
+    /// For limit orders, the order fee is None.
+    pub async fn order_fees(
         ex: &mut PgConnection,
-        tx_hash: &H256,
-        auction_id: AuctionId,
-    ) -> Result<Vec<OrderExecution>> {
+        order_uids: &[OrderUid],
+    ) -> Result<Vec<Option<U256>>> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["orders_for_tx"])
+            .with_label_values(&["order_fees"])
             .start_timer();
 
-        database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
-            .map(|result| match result {
-                Ok(execution) => execution.try_into().map_err(Into::into),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect()
-            .await
+        let mut orders: Vec<Option<U256>> = Default::default();
+        for order_uid in order_uids {
+            let order = database::orders::single_full_order(ex, &ByteArray(order_uid.0))
+                .await?
+                .map(full_order_into_model_order)
+                .context("order not found")??;
+
+            let order_fee = if order.metadata.solver_fee == U256::zero() {
+                None
+            } else {
+                Some(order.metadata.solver_fee)
+            };
+            orders.push(order_fee);
+        }
+
+        Ok(orders)
     }
 }

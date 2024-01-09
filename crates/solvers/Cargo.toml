@@ -21,12 +21,15 @@ ethereum-types = "0.14"
 ethrpc = { path = "../ethrpc" }
 futures = "0.3"
 hex = "0.4"
+humantime-serde = { workspace = true }
 hyper = "0.14"
 itertools = "0.11"
 num = "0.4"
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rate-limit = { path = "../rate-limit" }
 reqwest = "0.11"
+s3 = { path = "../s3" }
 serde = "1"
 serde_json = "1"
 serde_with = "3"
@@ -34,7 +37,7 @@ thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = "0.7"
 tower = "0.4"
-tower-http = { version = "0.4", features = ["trace"] }
+tower-http = { version = "0.4", features = ["limit", "trace"] }
 web3 = "0.19"
 
 # TODO Once solvers are ported and E2E tests set up, slowly migrate code and

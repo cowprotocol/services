@@ -10,18 +10,17 @@
 use {
     crate::{
         arguments::FeePolicy,
+        domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
             reveal,
             solve::{self},
         },
-        protocol,
-        run_loop,
+        infra,
+        protocol::fee,
+        run_loop::{self, observe},
     },
-    model::{
-        auction::{Auction, AuctionId, AuctionWithId},
-        order::OrderClass,
-    },
+    ::observe::metrics,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
@@ -40,10 +39,10 @@ impl LivenessChecking for Liveness {
 }
 
 pub struct RunLoop {
-    orderbook: protocol::Orderbook,
+    orderbook: infra::shadow::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
-    auction: AuctionId,
+    auction: domain::AuctionId,
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
@@ -52,7 +51,7 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub fn new(
-        orderbook: protocol::Orderbook,
+        orderbook: infra::shadow::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
@@ -72,11 +71,14 @@ impl RunLoop {
     }
 
     pub async fn run_forever(mut self) -> ! {
+        let mut previous = None;
         loop {
-            let Some(AuctionWithId { id, auction }) = self.next_auction().await else {
+            let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await else {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 continue;
             };
+            observe::log_auction_delta(id, &previous, &auction);
+            previous = Some(auction.clone());
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))
@@ -84,7 +86,7 @@ impl RunLoop {
         }
     }
 
-    async fn next_auction(&mut self) -> Option<AuctionWithId> {
+    async fn next_auction(&mut self) -> Option<domain::AuctionWithId> {
         let auction = match self.orderbook.auction().await {
             Ok(auction) => auction,
             Err(err) => {
@@ -106,10 +108,10 @@ impl RunLoop {
             .auction
             .orders
             .iter()
-            .all(|order| match order.metadata.class {
-                OrderClass::Market => false,
-                OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
+            .all(|order| match order.class {
+                Class::Market => false,
+                Class::Liquidity => true,
+                Class::Limit => false,
             })
         {
             tracing::trace!("skipping empty auction");
@@ -121,7 +123,7 @@ impl RunLoop {
         Some(auction)
     }
 
-    async fn single_run(&self, id: AuctionId, auction: Auction) {
+    async fn single_run(&self, id: domain::AuctionId, auction: domain::Auction) {
         tracing::info!("solving");
         Metrics::get().auction.set(id);
         Metrics::get().orders.set(auction.orders.len() as _);
@@ -193,14 +195,19 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
+    async fn competition(
+        &self,
+        id: domain::AuctionId,
+        auction: &domain::Auction,
+    ) -> Vec<Participant<'_>> {
+        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            self.fee_policy.clone(),
+            fee_policies,
         );
         let request = &request;
 
@@ -329,6 +336,6 @@ struct Metrics {
 
 impl Metrics {
     fn get() -> &'static Self {
-        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+        Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 }

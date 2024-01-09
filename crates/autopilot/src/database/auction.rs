@@ -1,9 +1,9 @@
 use {
     super::Postgres,
+    crate::infra::persistence::auction::dto,
     anyhow::{Context, Result},
-    database::auction::AuctionId,
     futures::{StreamExt, TryStreamExt},
-    model::{auction::Auction, order::Order},
+    model::order::Order,
     std::ops::DerefMut,
 };
 
@@ -96,10 +96,10 @@ impl Postgres {
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &Auction) -> Result<AuctionId> {
+    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["save_auction"])
+            .with_label_values(&["replace_current_auction"])
             .start_timer();
 
         let data = serde_json::to_value(auction)?;

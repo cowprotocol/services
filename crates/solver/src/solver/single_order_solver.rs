@@ -22,12 +22,12 @@ use {
     number::conversions::u256_to_big_rational,
     primitive_types::{H160, U256},
     rand::prelude::SliceRandom,
+    rate_limit::{Error, RateLimiter, Strategy},
     shared::{
         arguments::display_option,
         conversions::U256Ext,
         external_prices::ExternalPrices,
         interaction::Interaction,
-        rate_limiter::{RateLimiter, RateLimiterError, RateLimitingStrategy},
     },
     std::{
         collections::VecDeque,
@@ -66,7 +66,7 @@ pub struct Arguments {
     /// issued while back off is active get dropped entirely. Expects
     /// "<factor >= 1.0>,<min: seconds>,<max: seconds>".
     #[clap(long, env)]
-    pub single_order_solver_rate_limiter: Option<RateLimitingStrategy>,
+    pub single_order_solver_rate_limiter: Option<Strategy>,
 }
 
 impl Arguments {
@@ -90,25 +90,28 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(
-            f,
-            "price_priority_exponent: {}",
-            self.price_priority_exponent
-        )?;
+        let Self {
+            price_priority_exponent,
+            price_priority_min_weight,
+            price_priority_max_weight,
+            single_order_solver_rate_limiter,
+        } = self;
+
+        writeln!(f, "price_priority_exponent: {}", price_priority_exponent)?;
         writeln!(
             f,
             "price_priority_min_weight: {}",
-            self.price_priority_min_weight
+            price_priority_min_weight
         )?;
         writeln!(
             f,
             "price_priority_max_weight: {}",
-            self.price_priority_max_weight
+            price_priority_max_weight
         )?;
         display_option(
             f,
             "single_order_solver_rate_limiter",
-            &self.single_order_solver_rate_limiter,
+            single_order_solver_rate_limiter,
         )?;
         Ok(())
     }
@@ -225,7 +228,7 @@ impl SingleOrderSolver {
                 |result| matches!(result, Err(SettlementError::RateLimited)),
             )
             .await
-            .unwrap_or_else(|RateLimiterError::RateLimited| Err(SettlementError::RateLimited))
+            .unwrap_or_else(|Error::RateLimited| Err(SettlementError::RateLimited))
         {
             Ok(value) => {
                 self.metrics.single_order_solver_succeeded(name);
@@ -1098,7 +1101,7 @@ mod tests {
                         },
                         metadata: OrderMetadata {
                             uid: OrderUid([0u8; 56]),
-                            class: OrderClass::Limit(Default::default()),
+                            class: OrderClass::Limit,
                             ..Default::default()
                         },
                         ..Default::default()

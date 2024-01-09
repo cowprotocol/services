@@ -155,7 +155,7 @@ async fn quote() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                             "balance": "3828187314911751990"
@@ -205,7 +205,8 @@ async fn quote() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "kind": "riskAdjusted",
+                    "successProbability": 1.0,
                 }
             }]
         }),
@@ -360,7 +361,7 @@ async fn solve() {
             ],
             "liquidity": [
                 {
-                    "kind": "constantproduct",
+                    "kind": "constantProduct",
                     "tokens": {
                         "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2": {
                             "balance": "3828187314911751990"
@@ -410,7 +411,8 @@ async fn solve() {
                     }
                 ],
                 "score": {
-                    "riskadjusted": 1.0
+                    "kind": "riskAdjusted",
+                    "successProbability": 1.0,
                 }
             }]
         }),

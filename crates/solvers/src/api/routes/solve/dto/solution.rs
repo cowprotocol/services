@@ -67,16 +67,6 @@ impl Solutions {
                                         buy_token_balance: BuyTokenBalance::Erc20,
                                         signing_scheme,
                                         signature,
-                                        pre_interactions: trade
-                                            .order
-                                            .pre_interactions
-                                            .iter()
-                                            .map(|i| OrderInteraction {
-                                                target: i.target,
-                                                value: i.value.0,
-                                                calldata: i.calldata.clone(),
-                                            })
-                                            .collect(),
                                     },
                                     executed_amount: trade.executed,
                                 })
@@ -134,7 +124,9 @@ impl Solutions {
                         .collect(),
                     score: match solution.score.clone() {
                         solution::Score::Solver(score) => Score::Solver { score },
-                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted(score.0),
+                        solution::Score::RiskAdjusted(score) => Score::RiskAdjusted {
+                            success_probability: score.0,
+                        },
                     },
                 })
                 .collect(),
@@ -161,7 +153,7 @@ struct Solution {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -212,18 +204,17 @@ struct JitOrder {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    pre_interactions: Vec<OrderInteraction>,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "camelCase")]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -293,7 +284,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -302,7 +293,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -310,7 +301,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -321,11 +312,12 @@ enum SigningScheme {
 /// A score for a solution. The score is used to rank solutions.
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]
         score: U256,
     },
-    RiskAdjusted(f64),
+    #[serde(rename_all = "camelCase")]
+    RiskAdjusted { success_probability: f64 },
 }

@@ -2,7 +2,6 @@ use {
     crate::{
         arguments::{display_option, display_secret_option, CodeSimulatorKind},
         conversions::U256Ext,
-        rate_limiter::{RateLimiter, RateLimitingStrategy},
         trade_finding::Interaction,
     },
     anyhow::{Context, Result},
@@ -12,6 +11,7 @@ use {
     model::order::{BuyTokenDestination, OrderKind, SellTokenSource},
     num::BigRational,
     number::nonzero::U256 as NonZeroU256,
+    rate_limit::{RateLimiter, Strategy},
     reqwest::Url,
     serde::{Deserialize, Serialize},
     std::{
@@ -221,40 +221,40 @@ pub struct Arguments {
     /// entirely. Needs to be passed as
     /// "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 >= 1.0
-    /// min_back_off: f64 in seconds
-    /// max_back_off: f64 in seconds
+    /// min_back_off: Duration
+    /// max_back_off: Duration
     #[clap(long, env, verbatim_doc_comment)]
-    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
+    pub price_estimation_rate_limiter: Option<Strategy>,
 
     /// How often the native price estimator should refresh its cache.
     #[clap(
         long,
         env,
-        default_value = "1",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "1s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_refresh_secs: Duration,
+    pub native_price_cache_refresh: Duration,
 
     /// How long cached native prices stay valid.
     #[clap(
         long,
         env,
-        default_value = "30",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_cache_max_age_secs: Duration,
+    pub native_price_cache_max_age: Duration,
 
     /// How long before expiry the native price cache should try to update the
     /// price in the background. This is useful to make sure that prices are
     /// usable at all times. This value has to be smaller than
-    /// `--native-price-cache-max-age-secs`.
+    /// `--native-price-cache-max-age`.
     #[clap(
         long,
         env,
-        default_value = "2",
-        value_parser = crate::arguments::duration_from_seconds,
+        default_value = "2s",
+        value_parser = humantime::parse_duration,
     )]
-    pub native_price_prefetch_time_secs: Duration,
+    pub native_price_prefetch_time: Duration,
 
     /// How many cached native token prices can be updated at most in one
     /// maintenance cycle.
@@ -271,10 +271,6 @@ pub struct Arguments {
     /// not set a reasonable default is used based on network id.
     #[clap(long, env, value_parser = U256::from_dec_str)]
     pub amount_to_estimate_prices_with: Option<U256>,
-
-    /// The API endpoint to call the Quasimodo solver for price estimation
-    #[clap(long, env)]
-    pub quasimodo_solver_url: Option<Url>,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -305,54 +301,70 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_only_estimate_buy_queries: bool,
 
-    /// The API key for the 1Inch spot API.
+    /// The API key for the 1Inch API.
     #[clap(long, env)]
-    pub one_inch_spot_price_api_key: Option<String>,
+    pub one_inch_api_key: Option<String>,
 
-    /// The base URL for the 1Inch spot API.
-    #[clap(long, env)]
-    pub one_inch_spot_price_api_url: Option<Url>,
+    /// The base URL for the 1Inch API.
+    #[clap(long, env, default_value = "https://api.1inch.dev/")]
+    pub one_inch_url: Url,
 }
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let Self {
+            price_estimation_rate_limiter,
+            native_price_cache_refresh,
+            native_price_cache_max_age,
+            native_price_prefetch_time,
+            native_price_cache_max_update_size,
+            native_price_cache_concurrent_requests,
+            amount_to_estimate_prices_with,
+            balancer_sor_url,
+            tenderly_save_successful_trade_simulations,
+            tenderly_save_failed_trade_simulations,
+            zeroex_only_estimate_buy_queries,
+            one_inch_api_key,
+            trade_simulator,
+            one_inch_url,
+        } = self;
+
         display_option(
             f,
             "price_estimation_rate_limites",
-            &self.price_estimation_rate_limiter,
+            price_estimation_rate_limiter,
         )?;
         writeln!(
             f,
-            "native_price_cache_refresh_secs: {:?}",
-            self.native_price_cache_refresh_secs
+            "native_price_cache_refresh: {:?}",
+            native_price_cache_refresh
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age: {:?}",
+            native_price_cache_max_age
         )?;
         writeln!(
             f,
-            "native_price_prefetch_time_secs: {:?}",
-            self.native_price_prefetch_time_secs
+            "native_price_prefetch_time: {:?}",
+            native_price_prefetch_time
         )?;
         writeln!(
             f,
             "native_price_cache_max_update_size: {}",
-            self.native_price_cache_max_update_size
+            native_price_cache_max_update_size
         )?;
         writeln!(
             f,
             "native_price_cache_concurrent_requests: {}",
-            self.native_price_cache_concurrent_requests
+            native_price_cache_concurrent_requests
         )?;
         display_option(
             f,
             "amount_to_estimate_prices_with",
-            &self.amount_to_estimate_prices_with,
+            amount_to_estimate_prices_with,
         )?;
-        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
-        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(f, "balancer_sor_url", balancer_sor_url)?;
         display_option(
             f,
             "trade_simulator",
@@ -364,23 +376,21 @@ impl Display for Arguments {
         writeln!(
             f,
             "tenderly_save_successful_trade_simulations: {}",
-            self.tenderly_save_successful_trade_simulations
+            tenderly_save_successful_trade_simulations
         )?;
         writeln!(
             f,
             "tenderly_save_failed_trade_simulations: {}",
-            self.tenderly_save_failed_trade_simulations
+            tenderly_save_failed_trade_simulations
         )?;
         writeln!(
             f,
             "zeroex_only_estimate_buy_queries: {:?}",
-            self.zeroex_only_estimate_buy_queries
+            zeroex_only_estimate_buy_queries
         )?;
-        display_secret_option(
-            f,
-            "one_inch_spot_price_api_key: {:?}",
-            &self.one_inch_spot_price_api_key,
-        )?;
+        display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
+        writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
+        writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
 
         Ok(())
     }

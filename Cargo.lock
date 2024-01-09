@@ -55,6 +55,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "humantime",
  "model",
  "number",
  "observe",
@@ -251,6 +252,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "maplit",
  "mockall",
@@ -263,6 +265,7 @@ dependencies = [
  "prometheus-metric-storage",
  "rand",
  "reqwest",
+ "s3",
  "serde",
  "serde_json",
  "serde_with",
@@ -1633,6 +1636,7 @@ dependencies = [
  "chrono",
  "clap",
  "contracts",
+ "derivative",
  "ethabi",
  "ethcontract",
  "ethereum-types",
@@ -1641,6 +1645,8 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
+ "humantime-serde",
  "hyper",
  "indexmap 2.0.0",
  "itertools 0.11.0",
@@ -2369,6 +2375,22 @@ name = "httpdate"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4a1e36c821dbe04574f602848a19f742f4fb3c98d40449f11bcad18d6b17421"
+
+[[package]]
+name = "humantime"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
+
+[[package]]
+name = "humantime-serde"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
+dependencies = [
+ "humantime",
+ "serde",
+]
 
 [[package]]
 name = "hyper"
@@ -3121,6 +3143,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "hyper",
  "maplit",
  "mockall",
@@ -3478,6 +3501,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rate-limit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "humantime",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
+ "reqwest",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3500,6 +3539,7 @@ dependencies = [
  "ethrpc",
  "futures",
  "gas-estimation",
+ "humantime",
  "lazy_static",
  "model",
  "number",
@@ -3749,6 +3789,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad4cc8da4ef723ed60bced201181d83791ad433213d8c24efffda1eec85d741"
 
 [[package]]
+name = "s3"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aws-config 0.56.0",
+ "aws-sdk-s3",
+ "chrono",
+ "flate2",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3995,6 +4049,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "lazy_static",
  "maplit",
@@ -4006,6 +4061,7 @@ dependencies = [
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
+ "rate-limit",
  "regex",
  "reqwest",
  "secp256k1",
@@ -4114,6 +4170,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "humantime",
  "itertools 0.11.0",
  "jsonrpc-core",
  "lazy_static",
@@ -4128,6 +4185,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "rand",
+ "rate-limit",
  "reqwest",
  "serde",
  "serde_json",
@@ -4139,6 +4197,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "web3",
 ]
 
@@ -4157,6 +4216,7 @@ dependencies = [
  "futures",
  "glob",
  "hex",
+ "humantime-serde",
  "hyper",
  "itertools 0.11.0",
  "model",
@@ -4164,7 +4224,9 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "rate-limit",
  "reqwest",
+ "s3",
  "serde",
  "serde_json",
  "serde_with",

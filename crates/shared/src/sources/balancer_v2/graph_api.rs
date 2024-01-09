@@ -197,6 +197,7 @@ mod pools_query {
                         "LiquidityBootstrapping",
                         "ComposableStable",
                     ]
+                    totalLiquidity_gt: "1" # 1$ value of tokens
                 }
             ) {
                 poolType

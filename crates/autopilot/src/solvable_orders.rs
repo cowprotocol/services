@@ -1,5 +1,5 @@
 use {
-    crate::database::Postgres,
+    crate::{boundary, database::Postgres, domain},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -11,8 +11,7 @@ use {
         signature::Signature,
         time::now_in_epoch_seconds,
     },
-    num::{BigRational, FromPrimitive},
-    number::conversions::{big_rational_to_u256, u256_to_big_decimal, u256_to_big_rational},
+    number::conversions::u256_to_big_decimal,
     primitive_types::{H160, H256, U256},
     prometheus::{IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
     shared::{
@@ -68,7 +67,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    database: Postgres,
+    database: Arc<Postgres>,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -79,24 +78,13 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
-    // Will be obsolete when the new autopilot run loop takes over the competition.
-    store_in_db: bool,
-    fee_objective_scaling_factor: BigRational,
 }
 
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: Option<Auction>,
-    orders: SolvableOrders,
-}
-
-#[derive(Clone, Debug)]
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub update_time: Instant,
-    pub latest_settlement_block: u64,
-    pub block: u64,
+    auction: Option<domain::Auction>,
+    update_time: Instant,
 }
 
 impl SolvableOrdersCache {
@@ -114,23 +102,16 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
-        store_in_db: bool,
-        fee_objective_scaling_factor: f64,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
-            database,
+            database: Arc::new(database),
             banned_users,
             balance_fetcher,
             bad_token_detector,
             cache: Mutex::new(Inner {
                 auction: None,
-                orders: SolvableOrders {
-                    orders: Default::default(),
-                    update_time: Instant::now(),
-                    latest_settlement_block: 0,
-                    block: 0,
-                },
+                update_time: Instant::now(),
             }),
             native_price_estimator,
             signature_validator,
@@ -138,9 +119,6 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             weth,
             limit_order_price_factor,
-            store_in_db,
-            fee_objective_scaling_factor: BigRational::from_f64(fee_objective_scaling_factor)
-                .unwrap(),
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -149,7 +127,7 @@ impl SolvableOrdersCache {
         self_
     }
 
-    pub fn current_auction(&self) -> Option<Auction> {
+    pub fn current_auction(&self) -> Option<domain::Auction> {
         self.cache.lock().unwrap().auction.clone()
     }
 
@@ -164,20 +142,21 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut order_events = vec![];
+        let mut invalid_order_uids = HashSet::new();
+        let mut filtered_order_events = HashSet::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         let removed = counter.checkpoint("unsupported_token", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
         let fetched_balances = self.balance_fetcher.get_balances(&missing_queries).await;
@@ -201,11 +180,11 @@ impl SolvableOrdersCache {
 
         let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("insufficient_balance", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Invalid)));
+        invalid_order_uids.extend(removed);
 
         let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
         let removed = counter.checkpoint("dust_order", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         // create auction
         let (orders, mut prices) = get_orders_with_native_prices(
@@ -227,15 +206,11 @@ impl SolvableOrdersCache {
         }
 
         let removed = counter.checkpoint("missing_price", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let orders = filter_mispriced_limit_orders(orders, &prices, &self.limit_order_price_factor);
         let removed = counter.checkpoint("out_of_market", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
-
-        let orders = apply_fee_objective_scaling_factor(orders, &self.fee_objective_scaling_factor);
-        let removed = counter.checkpoint("fee_scaling_overflow", &orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
         let auction = Auction {
             block,
@@ -244,34 +219,35 @@ impl SolvableOrdersCache {
             prices,
         };
         let removed = counter.record(&auction.orders);
-        order_events.extend(removed.into_iter().map(|o| (o, OrderEventLabel::Filtered)));
+        filtered_order_events.extend(removed);
 
-        self.database.store_order_events(&order_events).await;
-
-        let id = if self.store_in_db {
-            let id = self.database.replace_current_auction(&auction).await?;
-            tracing::info!(auction = %id, %block, "stored new auction in database");
-            Some(id)
-        } else {
-            None
-        };
+        // spawning a background task since `order_events` table insert operation takes
+        // a while and the result is ignored.
+        let db = self.database.clone();
+        tokio::spawn(async move {
+            db.store_non_subsequent_label_order_events(
+                &invalid_order_uids,
+                OrderEventLabel::Invalid,
+            )
+            .await;
+            db.store_non_subsequent_label_order_events(
+                &filtered_order_events,
+                OrderEventLabel::Filtered,
+            )
+            .await;
+        });
 
         *self.cache.lock().unwrap() = Inner {
-            auction: Some(auction),
-            orders: SolvableOrders {
-                orders,
-                update_time: Instant::now(),
-                latest_settlement_block: db_solvable_orders.latest_settlement_block,
-                block,
-            },
+            auction: Some(boundary::auction::to_domain(auction)),
+            update_time: Instant::now(),
         };
 
-        tracing::debug!(%block, ?id, "updated current auction cache");
+        tracing::debug!(%block, "updated current auction cache");
         Ok(())
     }
 
     pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().orders.update_time
+        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {
@@ -282,48 +258,25 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Applies fee objective scaling and discard all orders where an overflow
-/// occurred.
-fn apply_fee_objective_scaling_factor(
-    mut orders: Vec<Order>,
-    scaling_factor: &BigRational,
-) -> Vec<Order> {
-    orders.retain_mut(|order| {
-        if order.metadata.class == OrderClass::Liquidity {
-            // A liquidity order should only be used if it can increase a settlement's total
-            // surplus more than it costs to execute it.
-            // That's why we don't want to promote it artificially by scaling its fee.
-            return true;
-        }
-        let fee = u256_to_big_rational(&order.metadata.solver_fee);
-        let scaled_fee = fee * scaling_factor;
-        let scaled_fee = match big_rational_to_u256(&scaled_fee) {
-            Ok(fee) => fee,
-            Err(_) => {
-                let scaling_factor = scaling_factor.to_string();
-                tracing::error!(?order, scaling_factor, "fee scaling overflows U256");
-                return false;
-            }
-        };
-
-        order.metadata.solver_fee = scaled_fee;
-        true
-    });
-
-    orders
-}
-
 /// Filters all orders whose owners are in the set of "banned" users.
 fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
     orders.retain(|order| !banned_users.contains(&order.metadata.owner));
     orders
 }
 
-/// Filters EIP-1271 orders whose signatures are no longer validating.
+/// Filters unsigned PreSign and EIP-1271 orders whose signatures are no longer
+/// validating.
 async fn filter_invalid_signature_orders(
-    orders: Vec<Order>,
+    mut orders: Vec<Order>,
     signature_validator: &dyn SignatureValidating,
 ) -> Vec<Order> {
+    orders.retain(|order| {
+        !matches!(
+            order.metadata.status,
+            model::order::OrderStatus::PresignaturePending
+        )
+    });
+
     let checks = orders
         .iter()
         .filter_map(|order| match &order.signature {
@@ -509,7 +462,7 @@ fn get_orders_with_native_prices(
         .filter_map(|order| match order.metadata.class {
             OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
             OrderClass::Liquidity => None,
-            OrderClass::Limit(_) => None,
+            OrderClass::Limit => None,
         })
         .flatten();
     native_price_estimator.replace_high_priority(high_priority_tokens.collect());
@@ -1029,7 +982,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                class: OrderClass::Limit(Default::default()),
+                class: OrderClass::Limit,
                 ..Default::default()
             },
             ..Default::default()
@@ -1064,34 +1017,6 @@ mod tests {
             filter_mispriced_limit_orders(orders, &prices, &price_factor).len(),
             1
         );
-    }
-
-    #[test]
-    fn applies_fee_scaling() {
-        let order = |solver_fee: U256, is_liquidity_order: bool| Order {
-            metadata: OrderMetadata {
-                solver_fee,
-                class: match is_liquidity_order {
-                    true => OrderClass::Liquidity,
-                    false => OrderClass::Market,
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let orders = vec![
-            order(100.into(), false),
-            // Will get filtered out because the scaled fee would overflow a `U256`.
-            order(U256::MAX, false),
-            // We don't scale the fee for liquidity orders.
-            order(100.into(), true),
-        ];
-        let scaling_factor = BigRational::from_f64(2.).unwrap();
-        let updated_orders = apply_fee_objective_scaling_factor(orders, &scaling_factor);
-        assert_eq!(updated_orders.len(), 2);
-        assert_eq!(updated_orders[0].metadata.solver_fee, 200.into());
-        assert_eq!(updated_orders[1].metadata.solver_fee, 100.into());
     }
 
     #[test]

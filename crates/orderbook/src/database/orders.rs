@@ -447,6 +447,8 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
+            .context("executed surplus fee is not a valid u256")?,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -569,7 +571,6 @@ mod tests {
             onchain_user: None,
             onchain_placement_error: None,
             executed_surplus_fee: Default::default(),
-            executed_solver_fee: Default::default(),
             full_app_data: Default::default(),
         };
 

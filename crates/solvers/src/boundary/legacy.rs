@@ -10,6 +10,7 @@ use {
             solution,
             solver::legacy::Error,
         },
+        infra,
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -56,6 +57,7 @@ use {
 pub struct Legacy {
     solver: DefaultHttpSolverApi,
     weth: eth::WethAddress,
+    persistence: Option<infra::persistence::Persistence>,
 }
 
 impl Legacy {
@@ -87,12 +89,16 @@ impl Legacy {
                 },
             },
             weth: config.weth,
+            persistence: config.persistence,
         }
     }
 
     pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution, Error> {
         let (mapping, auction_model) =
             to_boundary_auction(auction, self.weth, self.solver.network_name.clone());
+        if let Some(persistence) = self.persistence.as_ref() {
+            persistence.store_boundary(auction.id, &auction_model);
+        }
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping).map_err(Into::into)
@@ -394,17 +400,6 @@ fn to_domain_solution(
         trades.push(solution::Trade::Jit(solution::JitTrade {
             order: order::JitOrder {
                 owner: jit.order.from,
-                pre_interactions: jit
-                    .order
-                    .interactions
-                    .pre
-                    .iter()
-                    .map(|i| order::Interaction {
-                        target: i.target,
-                        value: eth::Ether(i.value),
-                        calldata: i.call_data.clone(),
-                    })
-                    .collect(),
                 signature: jit.order.signature.clone().into(),
                 sell: eth::Asset {
                     token: eth::TokenAddress(jit.order.data.sell_token),
@@ -658,6 +653,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
             Settlement::SimulationRevert => SubmissionResult::SimulationRevert,
             Settlement::Fail => SubmissionResult::Fail,
         }),
+        Kind::DriverError(reason) => {
+            AuctionResult::Rejected(SolverRejectionReason::Driver(reason.clone()))
+        }
     };
 
     (auction_id, auction_result)

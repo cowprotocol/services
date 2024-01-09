@@ -5,12 +5,9 @@ use {
         PriceEstimating,
         Query,
     },
-    crate::{
-        rate_limiter::RateLimiter,
-        trade_finding::zeroex::ZeroExTradeFinder,
-        zeroex_api::ZeroExApi,
-    },
+    crate::{trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi},
     primitive_types::H160,
+    rate_limit::RateLimiter,
     std::sync::Arc,
 };
 

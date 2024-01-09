@@ -1,5 +1,6 @@
 use {
     crate::infra::{
+        observe,
         solver::Timeouts,
         {self},
     },
@@ -20,7 +21,7 @@ pub struct Deadline {
 impl Deadline {
     pub fn new(deadline: chrono::DateTime<chrono::Utc>, timeouts: Timeouts) -> Self {
         let deadline = deadline - timeouts.http_delay;
-        Self {
+        let deadline = Self {
             driver: deadline,
             solvers: {
                 let now = infra::time::now();
@@ -28,25 +29,30 @@ impl Deadline {
                 now + duration * (timeouts.solving_share_of_deadline.get() * 100.0).round() as i32
                     / 100
             },
-        }
+        };
+        observe::deadline(&deadline, &timeouts);
+        deadline
     }
 
     /// Remaining time until the deadline for driver to return solution to
     /// autopilot is reached.
-    pub fn driver(self) -> Result<std::time::Duration, DeadlineExceeded> {
-        Self::remaining(self.driver)
+    pub fn driver(self) -> chrono::DateTime<chrono::Utc> {
+        self.driver
     }
 
     /// Remaining time until the deadline for solvers to return solution to
     /// driver is reached.
-    pub fn solvers(self) -> Result<std::time::Duration, DeadlineExceeded> {
-        Self::remaining(self.solvers)
+    pub fn solvers(self) -> chrono::DateTime<chrono::Utc> {
+        self.solvers
     }
+}
 
-    fn remaining(
-        deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Result<std::time::Duration, DeadlineExceeded> {
-        let deadline = deadline - infra::time::now();
+pub trait Remaining {
+    fn remaining(self) -> Result<std::time::Duration, DeadlineExceeded>;
+}
+impl Remaining for chrono::DateTime<chrono::Utc> {
+    fn remaining(self) -> Result<std::time::Duration, DeadlineExceeded> {
+        let deadline = self - infra::time::now();
         if deadline <= chrono::Duration::zero() {
             Err(DeadlineExceeded)
         } else {

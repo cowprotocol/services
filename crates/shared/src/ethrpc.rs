@@ -6,7 +6,7 @@ pub use ethrpc::{
     Web3Transport,
 };
 use {
-    crate::{arguments::duration_from_seconds, http_client::HttpClientFactory},
+    crate::http_client::HttpClientFactory,
     reqwest::Url,
     std::{
         fmt::{self, Display, Formatter},
@@ -32,19 +32,25 @@ pub struct Arguments {
 
     /// Buffering "nagle" delay to wait for additional requests before sending
     /// out an incomplete batch.
-    #[clap(long, env, value_parser = duration_from_seconds, default_value = "0")]
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "0s")]
     pub ethrpc_batch_delay: Duration,
 }
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "ethrpc_max_batch_size: {}", self.ethrpc_max_batch_size)?;
+        let Self {
+            ethrpc_max_batch_size,
+            ethrpc_max_concurrent_requests,
+            ethrpc_batch_delay,
+        } = self;
+
+        writeln!(f, "ethrpc_max_batch_size: {}", ethrpc_max_batch_size)?;
         writeln!(
             f,
             "ethrpc_max_concurrent_requests: {}",
-            self.ethrpc_max_concurrent_requests
+            ethrpc_max_concurrent_requests
         )?;
-        writeln!(f, "ethrpc_batch_delay: {:?}", self.ethrpc_batch_delay)?;
+        writeln!(f, "ethrpc_batch_delay: {:?}", ethrpc_batch_delay)?;
 
         Ok(())
     }

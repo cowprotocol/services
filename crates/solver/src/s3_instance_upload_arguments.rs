@@ -18,15 +18,16 @@ pub struct S3UploadArguments {
 
 impl std::fmt::Display for S3UploadArguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        display_option(
-            f,
-            "s3_instance_upload_bucket",
-            &self.s3_instance_upload_bucket,
-        )?;
+        let Self {
+            s3_instance_upload_bucket,
+            s3_instance_upload_filename_prefix,
+        } = self;
+
+        display_option(f, "s3_instance_upload_bucket", s3_instance_upload_bucket)?;
         display_option(
             f,
             "s3_instance_upload_filename_prefix",
-            &self.s3_instance_upload_filename_prefix,
+            s3_instance_upload_filename_prefix,
         )?;
         Ok(())
     }
