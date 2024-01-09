@@ -262,7 +262,8 @@ struct EnsoConfig {
     url: Url,
     /// How often the network produces a new block. If this is not set the
     /// system assumes an unpredictable network like proof-of-work.
-    network_block_interval_ms: Option<u64>,
+    #[serde(default, with = "humantime_serde")]
+    network_block_interval: Option<Duration>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
