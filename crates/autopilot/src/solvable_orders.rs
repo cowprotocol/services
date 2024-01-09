@@ -6,7 +6,6 @@ use {
     ethrpc::current_block::CurrentBlockStream,
     itertools::Itertools,
     model::{
-        auction::Auction,
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
         time::now_in_epoch_seconds,
@@ -78,6 +77,7 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
+    fee_policy: domain::ProtocolFee,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -102,6 +102,7 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
+        fee_policy: domain::ProtocolFee,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -119,6 +120,7 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             weth,
             limit_order_price_factor,
+            fee_policy,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -212,13 +214,7 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
-        let auction = Auction {
-            block,
-            latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            orders: orders.clone(),
-            prices,
-        };
-        let removed = counter.record(&auction.orders);
+        let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
         // spawning a background task since `order_events` table insert operation takes
@@ -237,8 +233,21 @@ impl SolvableOrdersCache {
             .await;
         });
 
+        let auction = domain::Auction {
+            block,
+            latest_settlement_block: db_solvable_orders.latest_settlement_block,
+            orders: orders
+                .into_iter()
+                .map(|order| {
+                    let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
+                    let fee_policies = self.fee_policy.get(&order, quote);
+                    boundary::order::to_domain(order, fee_policies)
+                })
+                .collect(),
+            prices,
+        };
         *self.cache.lock().unwrap() = Inner {
-            auction: Some(boundary::auction::to_domain(auction)),
+            auction: Some(auction),
             update_time: Instant::now(),
         };
 

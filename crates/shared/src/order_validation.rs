@@ -743,7 +743,8 @@ impl OrderValidating for OrderValidator {
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
                     &quote_parameters.buy_amount,
-                    quote,
+                    &quote.sell_amount,
+                    &quote.buy_amount,
                 ) =>
             {
                 tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
@@ -975,8 +976,13 @@ async fn get_or_create_quote(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
-    sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
+pub fn is_order_outside_market_price(
+    sell_amount: &U256,
+    buy_amount: &U256,
+    quote_sell_amount: &U256,
+    quote_buy_amount: &U256,
+) -> bool {
+    sell_amount.full_mul(*quote_buy_amount) < quote_sell_amount.full_mul(*buy_amount)
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
@@ -2417,19 +2423,22 @@ mod tests {
         assert!(!is_order_outside_market_price(
             &"100".into(),
             &"100".into(),
-            &quote,
+            &quote.sell_amount,
+            &quote.buy_amount,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
             &"100".into(),
             &"90".into(),
-            &quote,
+            &quote.sell_amount,
+            &quote.buy_amount,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
             &"100".into(),
             &"1000".into(),
-            &quote
+            &quote.sell_amount,
+            &quote.buy_amount,
         ));
     }
 }

@@ -6,7 +6,7 @@ use {
         Contracts,
         TIMEOUT,
     },
-    autopilot::infra::persistence::auction::dto,
+    autopilot::infra::persistence::dto,
     clap::Parser,
     ethcontract::H256,
     model::{

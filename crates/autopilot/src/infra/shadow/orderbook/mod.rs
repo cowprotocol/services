@@ -1,7 +1,7 @@
 //! A client to the CoW Protocol public API.
 
 use {
-    crate::{domain, infra::persistence::auction::dto},
+    crate::{domain, infra::persistence::dto},
     reqwest::Url,
 };
 
