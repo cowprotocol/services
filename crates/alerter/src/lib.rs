@@ -36,6 +36,7 @@ struct Order {
     class: OrderClass,
     // Some if the order is fetched from api/v1/orders/{uid}
     // None if the order is fetched from api/v1/auction
+    #[serde(default)]
     status: Option<OrderStatus>,
 }
 
