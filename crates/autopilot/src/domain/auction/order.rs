@@ -1,4 +1,7 @@
-use primitive_types::{H160, H256, U256};
+use {
+    crate::domain::fee,
+    primitive_types::{H160, H256, U256},
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Order {
@@ -24,6 +27,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub signature: Signature,
+    pub fee_policies: Vec<fee::Policy>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
