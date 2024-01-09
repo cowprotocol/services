@@ -379,7 +379,7 @@ pub async fn run(args: Arguments) {
         args.zeroex_enable_rfqt,
         args.zeroex_enable_slippage_protection,
         args.shared.use_internal_buffers,
-        args.shared.one_inch_url,
+        url::Url::parse(shared::price_estimation::oneinch::BASE_URL).unwrap(),
         args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
         order_converter.clone(),

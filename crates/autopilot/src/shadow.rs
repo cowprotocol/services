@@ -15,7 +15,7 @@ use {
             reveal,
             solve::{self},
         },
-        protocol::{self},
+        infra,
         run_loop::{self, observe},
     },
     ::observe::metrics,
@@ -37,7 +37,7 @@ impl LivenessChecking for Liveness {
 }
 
 pub struct RunLoop {
-    orderbook: protocol::Orderbook,
+    orderbook: infra::shadow::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::AuctionId,
@@ -48,7 +48,7 @@ pub struct RunLoop {
 
 impl RunLoop {
     pub fn new(
-        orderbook: protocol::Orderbook,
+        orderbook: infra::shadow::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
