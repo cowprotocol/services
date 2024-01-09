@@ -22,7 +22,7 @@ use {
 #[serde_as]
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
-struct BaseOrder {
+struct Order {
     kind: OrderKind,
     buy_token: H160,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -34,90 +34,14 @@ struct BaseOrder {
     partially_fillable: bool,
     #[serde(flatten)]
     class: OrderClass,
-}
-
-impl BaseOrder {
-    fn is_liquidity_order(&self) -> bool {
-        matches!(self.class, OrderClass::Liquidity)
-    }
-}
-
-#[serde_as]
-#[derive(Debug, serde::Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "camelCase")]
-struct ModelOrder {
-    #[serde(flatten)]
-    base: BaseOrder,
-    status: OrderStatus,
-}
-
-enum Order {
-    // from api/v1/orders/{uid}
-    Model(ModelOrder),
-    // from api/v1/auction
-    Auction(BaseOrder),
+    // Some if the order is fetched from api/v1/orders/{uid}
+    // None if the order is fetched from api/v1/auction
+    status: Option<OrderStatus>,
 }
 
 impl Order {
-    pub fn uid(&self) -> &OrderUid {
-        match self {
-            Self::Model(order) => &order.base.uid,
-            Self::Auction(order) => &order.uid,
-        }
-    }
-
-    pub fn class(&self) -> &OrderClass {
-        match self {
-            Self::Model(order) => &order.base.class,
-            Self::Auction(order) => &order.class,
-        }
-    }
-
-    pub fn sell_token(&self) -> H160 {
-        match self {
-            Self::Model(order) => order.base.sell_token,
-            Self::Auction(order) => order.sell_token,
-        }
-    }
-
-    pub fn buy_token(&self) -> H160 {
-        match self {
-            Self::Model(order) => order.base.buy_token,
-            Self::Auction(order) => order.buy_token,
-        }
-    }
-
-    pub fn sell_amount(&self) -> U256 {
-        match self {
-            Self::Model(order) => order.base.sell_amount,
-            Self::Auction(order) => order.sell_amount,
-        }
-    }
-
-    pub fn buy_amount(&self) -> U256 {
-        match self {
-            Self::Model(order) => order.base.buy_amount,
-            Self::Auction(order) => order.buy_amount,
-        }
-    }
-
-    pub fn kind(&self) -> OrderKind {
-        match self {
-            Self::Model(order) => order.base.kind,
-            Self::Auction(order) => order.kind,
-        }
-    }
-}
-
-impl From<ModelOrder> for Order {
-    fn from(order: ModelOrder) -> Self {
-        Self::Model(order)
-    }
-}
-
-impl From<BaseOrder> for Order {
-    fn from(order: BaseOrder) -> Self {
-        Self::Auction(order)
+    fn is_liquidity_order(&self) -> bool {
+        matches!(self.class, OrderClass::Liquidity)
     }
 }
 
@@ -134,10 +58,10 @@ impl OrderBookApi {
         }
     }
 
-    pub async fn solvable_orders(&self) -> reqwest::Result<Vec<BaseOrder>> {
+    pub async fn solvable_orders(&self) -> reqwest::Result<Vec<Order>> {
         #[derive(serde::Deserialize)]
         struct Auction {
-            orders: Vec<BaseOrder>,
+            orders: Vec<Order>,
         }
         let url = shared::url::join(&self.base, "api/v1/auction");
         let auction: Auction = self
@@ -151,7 +75,7 @@ impl OrderBookApi {
         Ok(auction.orders)
     }
 
-    pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<ModelOrder> {
+    pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
         let url = shared::url::join(&self.base, &format!("api/v1/orders/{uid}"));
         self.client
             .get(url)
@@ -194,14 +118,14 @@ impl ZeroExApi {
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
         let mut url = shared::url::join(&self.base, "swap/v1/price");
 
-        let (amount_name, amount) = match order.kind() {
-            OrderKind::Buy => ("buyAmount", order.buy_amount()),
-            OrderKind::Sell => ("sellAmount", order.sell_amount()),
+        let (amount_name, amount) = match order.kind {
+            OrderKind::Buy => ("buyAmount", order.buy_amount),
+            OrderKind::Sell => ("sellAmount", order.sell_amount),
         };
 
-        let buy_token = convert_eth_to_weth(order.buy_token());
+        let buy_token = convert_eth_to_weth(order.buy_token);
         url.query_pairs_mut()
-            .append_pair("sellToken", &format!("{:#x}", order.sell_token()))
+            .append_pair("sellToken", &format!("{:#x}", order.sell_token))
             .append_pair("buyToken", &format!("{buy_token:#x}"))
             .append_pair(amount_name, &amount.to_string());
 
@@ -227,10 +151,10 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        let can_settle = response.sell_amount <= order.sell_amount()
-            && response.buy_amount >= order.buy_amount();
+        let can_settle =
+            response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount;
         if can_settle {
-            tracing::debug!(uid = ?order.uid(), "marking order as settleable");
+            tracing::debug!(uid = ?order.uid, "marking order as settleable");
         }
 
         Ok(can_settle)
@@ -298,7 +222,7 @@ impl Alerter {
             .filter(|order| !order.is_liquidity_order() && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self.open_orders.get(&order.uid).and_then(|o| o.1);
-                (order.uid, (order.into(), existing_time))
+                (order.uid, (order, existing_time))
             })
             .collect::<HashMap<_, _>>();
 
@@ -307,20 +231,20 @@ impl Alerter {
         std::mem::swap(&mut self.open_orders, &mut orders);
         let mut closed_orders: Vec<Order> = orders.into_values().map(|(order, _)| order).collect();
         // Keep only orders that were open last update and are not open this update.
-        closed_orders.retain(|order| !self.open_orders.contains_key(order.uid()));
+        closed_orders.retain(|order| !self.open_orders.contains_key(&order.uid));
         // We're trying to find an order that has been filled. Try market orders first
         // because they are more likely to be.
-        closed_orders.sort_unstable_by_key(|order| match order.class() {
+        closed_orders.sort_unstable_by_key(|order| match order.class {
             OrderClass::Market => 0u8,
             OrderClass::Limit => 1,
             OrderClass::Liquidity => 2,
         });
         for order in closed_orders {
-            let uid = order.uid();
+            let uid = &order.uid;
             tracing::debug!(order =% uid, "found closed order");
             let start = Instant::now();
             let api_order = self.orderbook_api.order(uid).await.context("get order")?;
-            if api_order.status == OrderStatus::Fulfilled {
+            if api_order.status == Some(OrderStatus::Fulfilled) {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
                     uid
@@ -371,7 +295,7 @@ impl Alerter {
                     };
                     if should_alert {
                         self.last_alert = Some(now);
-                        self.config.alert(order.uid());
+                        self.config.alert(&order.uid);
                     }
                     self.no_trades_but_matchable_order.set(1);
                 }
