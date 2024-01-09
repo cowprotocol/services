@@ -34,8 +34,9 @@ impl Persistence {
         &self,
         auction: domain::Auction,
     ) -> Result<domain::AuctionId, Error> {
+        let auction = dto::auction::from_domain(auction.clone());
         self.postgres
-            .replace_current_auction(&dto::auction::from_domain(auction.clone()))
+            .replace_current_auction(&auction)
             .await
             .map(|auction_id| {
                 self.archive_auction(auction_id, auction);
@@ -47,9 +48,8 @@ impl Persistence {
     /// Saves the given auction to storage for debugging purposes.
     ///
     /// There is no intention to retrieve this data programmatically.
-    fn archive_auction(&self, id: domain::AuctionId, instance: domain::Auction) {
+    fn archive_auction(&self, id: domain::AuctionId, instance: dto::auction::Auction) {
         if let Some(uploader) = self.s3.clone() {
-            let instance = dto::auction::from_domain(instance);
             tokio::spawn(
                 async move {
                     match uploader.upload(id.to_string(), &instance).await {
@@ -101,6 +101,4 @@ impl Persistence {
 pub enum Error {
     #[error("failed to read data from database")]
     DbError(#[from] anyhow::Error),
-    #[error(transparent)]
-    Conversion(#[from] dto::quote::AmountOverflow),
 }
