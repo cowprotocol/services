@@ -82,7 +82,9 @@ impl Fulfillment {
                     max_volume_factor,
                 } => {
                     let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
+                    println!("price_improvement_fee: {}", price_improvement_fee);
                     let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
+                    println!("max_volume_fee: {}", max_volume_fee);
                     // take the smaller of the two
                     protocol_fee = std::cmp::min(price_improvement_fee, max_volume_fee);
                 }
@@ -192,14 +194,10 @@ impl Fulfillment {
                     .ok_or(Error::Overflow)?
                     / 100)
             }
-            Side::Sell => {
-                let executed_sell_amount_with_fee =
-                    executed.checked_add(surplus_fee).ok_or(Error::Overflow)?;
-                Ok(executed_sell_amount_with_fee
-                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
-                    .ok_or(Error::Overflow)?
-                    / 100)
-            }
+            Side::Sell => Ok(executed
+                .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                .ok_or(Error::Overflow)?
+                / 100),
         }
     }
 }
