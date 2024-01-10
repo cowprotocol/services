@@ -113,7 +113,7 @@ pub async fn run(args: Arguments) {
     let db = Postgres::new(
         args.db_url.as_str(),
         args.order_events_insert_batch_size,
-        args.fee_policies_insert_batch_size,
+        args.fee_policy.fee_policies_insert_batch_size,
     )
     .await
     .unwrap();

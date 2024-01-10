@@ -56,10 +56,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "500")]
     pub order_events_insert_batch_size: NonZeroUsize,
 
-    /// The number of fee policies to insert in a single batch.
-    #[clap(long, env, default_value = "500")]
-    pub fee_policies_insert_batch_size: NonZeroUsize,
-
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub skip_event_sync: bool,
@@ -259,7 +255,6 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_threshold,
             db_url,
             order_events_insert_batch_size,
-            fee_policies_insert_batch_size,
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
@@ -334,11 +329,6 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "fee_policies_insert_batch_size: {}",
-            fee_policies_insert_batch_size
-        )?;
-        writeln!(
-            f,
             "native_price_estimation_results_required: {}",
             native_price_estimation_results_required
         )?;
@@ -373,6 +363,10 @@ pub struct FeePolicy {
     /// filled.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
     pub fee_policy_skip_market_orders: bool,
+
+    /// The number of fee policies to insert in a single batch.
+    #[clap(long, env, default_value = "500")]
+    pub fee_policies_insert_batch_size: NonZeroUsize,
 }
 
 impl FeePolicy {
