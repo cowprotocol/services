@@ -1,5 +1,5 @@
 use {
-    super::{Asset, FeePolicy, Order, Partial, Score},
+    super::{Asset, Order, Partial, Score},
     crate::{
         domain::{
             competition::order,
@@ -133,43 +133,6 @@ impl QuotedOrder {
             owner: blockchain.trader_address,
             partially_fillable: matches!(self.order.partial, Partial::Yes { .. }),
         }
-    }
-
-    /// Returns the surplus denominated in surplus token.
-    pub fn surplus(&self) -> eth::U256 {
-        match self.order.side {
-            order::Side::Buy => self.sell_amount() - self.sell,
-            order::Side::Sell => self.buy - self.buy_amount(),
-        }
-    }
-
-    /// Returns the protocol fee denominated in surplus token.
-    pub fn protocol_fee(&self) -> eth::U256 {
-        self.order
-            .fee_policy
-            .as_ref()
-            .map(|policy| match policy {
-                FeePolicy::PriceImprovement {
-                    factor,
-                    max_volume_factor,
-                } => {
-                    let price_improvement_fee =
-                        self.surplus() * eth::U256::from_f64_lossy(factor * 100.) / 100;
-                    let max_volume_fee = match self.order.side {
-                        order::Side::Buy => {
-                            self.sell * eth::U256::from_f64_lossy(max_volume_factor * 100.) / 100
-                        }
-                        order::Side::Sell => {
-                            self.buy * self.sell / (self.sell - self.order.surplus_fee())
-                                * eth::U256::from_f64_lossy(max_volume_factor * 100.)
-                                / 100
-                        }
-                    };
-                    std::cmp::min(price_improvement_fee, max_volume_fee)
-                }
-                FeePolicy::Volume { factor: _factor } => unimplemented!(),
-            })
-            .unwrap_or_default()
     }
 }
 
