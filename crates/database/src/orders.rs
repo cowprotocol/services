@@ -429,8 +429,7 @@ pub async fn read_quotes(
     for order_id in order_ids {
         query = query.bind(order_id);
     }
-    let quotes = query.fetch_all(ex).await?;
-    Ok(quotes)
+    query.fetch_all(ex).await
 }
 
 pub async fn cancel_order(
@@ -1156,7 +1155,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn read_quotes_roundtrip() {
+    async fn postgres_read_quotes_roundtrip() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
