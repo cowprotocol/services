@@ -4,51 +4,8 @@ use {
     primitive_types::{H160, H256, U256},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    std::collections::{BTreeMap, HashSet},
+    std::collections::BTreeMap,
 };
-
-/// As a temporary measure the driver informs the api about per competition data
-/// that should be stored in the database. This goes to the api through an
-/// unlisted and authenticated http endpoint because we do not want the driver
-/// to have a database connection. Once autopilot is handling the competition
-/// this will no longer be needed.
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Request {
-    pub auction: AuctionId,
-    pub transaction: Transaction,
-    pub competition: SolverCompetitionDB,
-    pub executions: Vec<(OrderUid, Execution)>,
-    pub scores: Scores,
-    pub participants: HashSet<H160>,  // solver addresses
-    pub prices: BTreeMap<H160, U256>, // external prices for auction
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Scores {
-    pub winner: H160,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub winning_score: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub reference_score: U256,
-    pub block_deadline: u64,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Transaction {
-    pub account: H160,
-    pub nonce: u64,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Execution {
-    #[serde_as(as = "Option<HexOrDecimalU256>")]
-    pub surplus_fee: Option<U256>,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub scoring_fee: U256,
-}
 
 /// Stored directly in the database and turned into SolverCompetitionAPI for the
 /// `/solver_competition` endpoint.
@@ -101,16 +58,6 @@ pub struct SolverSettlement {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<BytesHex>")]
     pub uninternalized_call_data: Option<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct Objective {
-    pub total: f64,
-    pub surplus: f64,
-    pub fees: f64,
-    pub cost: f64,
-    pub gas: u64,
 }
 
 #[serde_as]
