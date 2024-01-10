@@ -21,7 +21,7 @@ async fn price_improvement_fee_sell_order() {
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_sell_capped_order() {
+async fn price_improvement_fee_sell_order_capped() {
     run_test(price_improvement_fee_sell_order_capped_test).await;
 }
 
@@ -33,7 +33,7 @@ async fn price_improvement_fee_buy_order() {
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_buy_capped_order() {
+async fn price_improvement_fee_buy_order_capped() {
     run_test(price_improvement_fee_buy_order_capped_test).await;
 }
 
