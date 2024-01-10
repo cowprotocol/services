@@ -389,21 +389,13 @@ impl DecodedSettlement {
                         required_sell_amount.checked_sub(required_sell_amount_with_ucp)?
                     }
                     OrderKind::Sell => {
-                        println!("sell order");
-                        println!("executed_amount: {}", trade.executed_amount);
-                        println!("adjusted_sell_price: {}", adjusted_sell_price);
-                        println!("adjusted_buy_price: {}", adjusted_buy_price);
-                        println!("uniform_sell_price: {}", uniform_sell_price);
-                        println!("uniform_buy_price: {}", uniform_buy_price);
                         let received_buy_amount = trade
                             .executed_amount
                             .checked_mul(adjusted_sell_price)?
                             .checked_div(adjusted_buy_price)?;
-                        println!("received_buy_amount: {}", received_buy_amount);
                         let sell_amount_needed_with_ucp = received_buy_amount
                             .checked_mul(uniform_buy_price)?
                             .checked_div(uniform_sell_price)?;
-                        println!("sell_amount_needed_with_ucp: {}", sell_amount_needed_with_ucp);
                         trade
                             .executed_amount
                             .checked_sub(sell_amount_needed_with_ucp)?

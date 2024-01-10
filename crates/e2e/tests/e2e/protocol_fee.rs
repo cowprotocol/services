@@ -1,14 +1,11 @@
-use model::order::LimitOrderClass;
-
 use {
     e2e::{
-        nodes::forked_node::ForkedNodeApi,
         setup::{colocation::SolverEngine, *},
         tx,
     },
-    ethcontract::{prelude::U256, H160},
+    ethcontract::prelude::U256,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -40,100 +37,100 @@ async fn price_improvement_fee_buy_capped_order() {
     run_test(price_improvement_fee_buy_order_capped_test).await;
 }
 
+// Without protocol fee:
+// Expected execution is 10000000000000000000 GNO for
+// 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
+//
+// With protocol fee:
+// surplus in buy token = 9871415430342266811 - 5000000000000000000 =
+// 4871415430342266811
+//
+// protocol fee in buy token = 0.3*surplus = 1461424629102680043
+//
+// protocol fee in sell token = 1461424629102680043 / 9871415430342266811 *
+// (10000000000000000000 - 167058994203399) = 1480436341679873337
+//
+// expected executed_surplus_fee is 167058994203399 + 1480436341679873337 =
+// 1480603400674076736
 async fn price_improvement_fee_sell_order_test(web3: Web3) {
-    // without protocol fee, expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
-    // 
-    // with protocol fee, 
-    // surplus = 9871415430342266811 - 5000000000000000000 = 4871415430342266811
-    // protocol fee in surplus token = 0.3*surplus = 1461424629102680043
-    // protocol fee in sell token = 1461424629102680043 / 9871415430342266811 * (10000000000000000000 - 167058994203399) ~= 1480436341679873337
-    // expected executed_surplus_fee is 167058994203399 + 1480436341679873337 = 1480603400674076736 (actually 1480603400674076783, rounding errors?)
-    let (_, token_dai, trader) = prepare_test(
+    execute_test(
         web3.clone(),
         "--fee-policy-kind=priceImprovement:0.3:1.0".to_string(),
         OrderKind::Sell,
+        1480603400674076736u128.into(),
     )
     .await;
-
-    // without protocol fee, expected execution is 10000000000000000000 GNO for
-    // 9871415430342266811 DAI
-    let balance_after = token_dai.balance_of(trader.address()).call().await.unwrap();
-    assert_eq!(balance_after, 8409990801239586768u128.into()); // 9871415430342266811 - 0.3*(9871415430342266811 - 5000000000000000000)
-
-    // 1480603400674076783
-
-    // 167058994203399
-    
-    // onchain.mint_blocks_past_reorg_threshold().await;
-    // let metadata_updated = || async {
-    //     onchain.mint_block().await;
-    //     let order = services.get_order(&uid).await.unwrap();
-    //     !order.executed_surplus_fee.is_zero() && order.executed_surplus_fee == 1480603400674076783u128.into()
-    // };
-    // wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 }
 
+// Without protocol fee:
+// Expected executed_surplus_fee is 167058994203399
+//
+// With protocol fee:
+// Expected executed_surplus_fee is 167058994203399 +
+// 0.1*10000000000000000000 = 1000167058994203400
 async fn price_improvement_fee_sell_order_capped_test(web3: Web3) {
-    // without protocol fee, expected executed_surplus_fee is 167058994203399
-    // with protocol fee, expected executed_surplus_fee is 167058994203399 + 0.1*10000000000000000000 = 1000167058994203400
-    //let executed_surplus_fee = 1000167058994203400u128.into();
-
-    let (_, token_dai, trader) = prepare_test(
+    execute_test(
         web3.clone(),
         "--fee-policy-kind=priceImprovement:1.0:0.1".to_string(),
         OrderKind::Sell,
+        1000167058994203400u128.into(),
     )
     .await;
 }
 
+// Without protocol fee:
+// Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
+// with executed_surplus_fee = 167058994203399 GNO
+//
+// With protocol fee:
+// surplus in sell token = 10000000000000000000 - 5040413426236634210 = 4959586573763365790
+//
+// protocol fee in sell token = 0.3*4959586573763365790 = 1487875972129009737
+//
+// expected executed_surplus_fee is 167058994203399 + 1487875972129009737 = 1488043031123213136
 async fn price_improvement_fee_buy_order_test(web3: Web3) {
-    // without protocol fee, expected execution is 5040413426236634210 GNO for
-    // 5000000000000000000, with executed_surplus_fee = 167058994203399 GNO
-
-    
-
-
-
-
-
-    let (token_gno, _, trader) = prepare_test(
+    execute_test(
         web3.clone(),
-        "--fee-policy-kind=priceImprovement:0.0:1.0".to_string(),
+        "--fee-policy-kind=priceImprovement:0.3:1.0".to_string(),
         OrderKind::Buy,
+        1488043031123213136u128.into(),
     )
     .await;
-
-    // without protocol fee, expected execution is 5040413426236634210 GNO for
-    // 5000000000000000000, with executed_surplus_fee = 167058994203399 GNO
-    let balance_after = token_gno.balance_of(trader.address()).call().await.unwrap();
-    // initial balance is 100 GNO
-    // limit price is 10 GNO
-    // expected: to_wei(100) - 5040413426236634210 - 0.3*(to_wei(10) -
-    // 5040413426236634210)
-    assert_eq!(balance_after, 93471710601634356053u128.into());
 }
+
+// Without protocol fee:
+// Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
+// with executed_surplus_fee = 167058994203399 GNO
+//
+// With protocol fee:
+// Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 = 504208401617866820
 
 async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
-    // without protocol fee, expected executed_surplus_fee is 167058994203399
-    // without protocol fee, expected execution is 5040413426236634210 GNO (including fees) for
-    // 5000000000000000000
-
-    // with protocol fee, expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 = 504208401617866820
-    
-    let (token_gno, _, trader) = prepare_test(
+    execute_test(
         web3.clone(),
         "--fee-policy-kind=priceImprovement:1.0:0.1".to_string(),
         OrderKind::Buy,
+        504208401617866820u128.into(),
     )
     .await;
 }
 
-async fn prepare_test(
+// because of rounding errors, it's good enough to check that the expected value
+// is within a very narrow range
+fn assert_between(value: U256, expected: U256) {
+    let lower = expected * U256::from(99999999999u128) / U256::from(100000000000u128); // in percents = 99.999999999%
+    let upper = expected * U256::from(100000000001u128) / U256::from(100000000000u128); // in percents = 100.000000001%
+    println!("executed: {}, lower: {}, upper: {}", value, lower, upper);
+    assert!(value >= lower);
+    assert!(value <= upper);
+}
+
+async fn execute_test(
     web3: Web3,
     fee_policy: String,
     order_kind: OrderKind,
-) -> (MintableToken, MintableToken, TestAccount) {
+    expected_surplus_fee: U256,
+) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
@@ -248,10 +245,10 @@ async fn prepare_test(
             }) => executed_surplus_fee,
             _ => unreachable!(),
         };
-        println!("executed_surplus_fee: {}", executed_surplus_fee);
+        if !executed_surplus_fee.is_zero() {
+            assert_between(executed_surplus_fee, expected_surplus_fee);
+        }
         !executed_surplus_fee.is_zero()
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
-
-    (token_gno, token_dai, trader_a)
 }
