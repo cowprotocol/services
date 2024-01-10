@@ -268,7 +268,7 @@ impl SolverMetrics for Metrics {
         let order_type = match order.metadata.class {
             OrderClass::Market => "user_order",
             OrderClass::Liquidity => "liquidity_order",
-            OrderClass::Limit(_) => "limit_order",
+            OrderClass::Limit => "limit_order",
         };
         self.metrics
             .trade_counter

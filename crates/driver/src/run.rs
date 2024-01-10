@@ -108,6 +108,7 @@ fn simulator(config: &infra::Config, eth: &Ethereum) -> Simulator {
         Some(infra::simulator::Config::Enso(enso)) => Simulator::enso(
             simulator::enso::Config {
                 url: enso.url.to_owned(),
+                network_block_interval: enso.network_block_interval.to_owned(),
             },
             eth.to_owned(),
         ),

@@ -10,6 +10,7 @@ use {
             solution,
             solver::legacy::Error,
         },
+        infra,
     },
     anyhow::{Context as _, Result},
     ethereum_types::{H160, U256},
@@ -56,6 +57,7 @@ use {
 pub struct Legacy {
     solver: DefaultHttpSolverApi,
     weth: eth::WethAddress,
+    persistence: Option<infra::persistence::Persistence>,
 }
 
 impl Legacy {
@@ -87,12 +89,16 @@ impl Legacy {
                 },
             },
             weth: config.weth,
+            persistence: config.persistence,
         }
     }
 
     pub async fn solve(&self, auction: &auction::Auction) -> Result<solution::Solution, Error> {
         let (mapping, auction_model) =
             to_boundary_auction(auction, self.weth, self.solver.network_name.clone());
+        if let Some(persistence) = self.persistence.as_ref() {
+            persistence.store_boundary(auction.id, &auction_model);
+        }
         let solving_time = auction.deadline.remaining().context("no time to solve")?;
         let solution = self.solver.solve(&auction_model, solving_time).await?;
         to_domain_solution(&solution, mapping).map_err(Into::into)
