@@ -699,7 +699,6 @@ impl Metrics {
             .inc_by(unsettled.len() as u64);
     }
 
-    #[allow(dead_code)]
     fn fee_policies_store_error() {
         Self::get()
             .db_metric_error
