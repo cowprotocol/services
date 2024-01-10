@@ -194,10 +194,14 @@ impl Fulfillment {
                     .ok_or(Error::Overflow)?
                     / 100)
             }
-            Side::Sell => Ok(executed
-                .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
-                .ok_or(Error::Overflow)?
-                / 100),
+            Side::Sell => {
+                let executed_sell_amount_with_fee =
+                    executed.checked_add(surplus_fee).ok_or(Error::Overflow)?;
+                Ok(executed_sell_amount_with_fee
+                    .checked_mul(eth::U256::from_f64_lossy(factor * 100.))
+                    .ok_or(Error::Overflow)?
+                    / 100)
+            }
         }
     }
 }

@@ -167,18 +167,18 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    let node = match fork {
-        Some((fork, block_number)) => Node::forked(fork, block_number).await,
-        None => Node::new().await,
-    };
+    // let node = match fork {
+    //     Some((fork, block_number)) => Node::forked(fork, block_number).await,
+    //     None => Node::new().await,
+    // };
 
-    let node = Arc::new(Mutex::new(Some(node)));
-    let node_panic_handle = node.clone();
-    observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
-        // Drop node in panic handler because `.catch_unwind()` does not catch all
-        // panics
-        let _ = node_panic_handle.lock().unwrap().take();
-    }));
+    // let node = Arc::new(Mutex::new(Some(node)));
+    // let node_panic_handle = node.clone();
+    // observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
+    //     // Drop node in panic handler because `.catch_unwind()` does not catch all
+    //     // panics
+    //     let _ = node_panic_handle.lock().unwrap().take();
+    // }));
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
@@ -190,10 +190,10 @@ async fn run<F, Fut, T>(
     // is supposed to be used in a test environment.
     let result = AssertUnwindSafe(f(web3.clone())).catch_unwind().await;
 
-    let node = node.lock().unwrap().take();
-    if let Some(mut node) = node {
-        node.kill().await;
-    }
+    // let node = node.lock().unwrap().take();
+    // if let Some(mut node) = node {
+    //     node.kill().await;
+    // }
     services::clear_database().await;
 
     if let Err(err) = result {
