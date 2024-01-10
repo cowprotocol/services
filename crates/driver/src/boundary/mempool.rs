@@ -6,7 +6,6 @@ use {
     },
     async_trait::async_trait,
     ethcontract::{transaction::TransactionBuilder, transport::DynTransport},
-    shared::http_client::HttpClientFactory,
     solver::{
         settlement_access_list::AccessListEstimating,
         settlement_submission::{
@@ -97,18 +96,12 @@ impl std::fmt::Display for Mempool {
 }
 
 impl Mempool {
-    pub async fn new(config: Config, eth: Ethereum, pool: GlobalTxPool) -> Result<Self> {
-        let gas_price_estimator = Arc::new(
-            shared::gas_price_estimation::create_priority_estimator(
-                &HttpClientFactory::new(&shared::http_client::Arguments {
-                    http_timeout: std::time::Duration::from_secs(10),
-                }),
-                &boundary::web3(&eth),
-                &[shared::gas_price_estimation::GasEstimatorType::Native],
-                None,
-            )
-            .await?,
-        );
+    pub fn new(
+        config: Config,
+        eth: Ethereum,
+        pool: GlobalTxPool,
+        gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Self> {
         Ok(match &config.kind {
             Kind::Public(revert_protection) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
