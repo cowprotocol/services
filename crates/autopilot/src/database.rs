@@ -1,3 +1,9 @@
+use {
+    sqlx::{Executor, PgConnection, PgPool},
+    std::{num::NonZeroUsize, time::Duration},
+    tracing::Instrument,
+};
+
 mod auction;
 pub mod auction_prices;
 pub mod auction_transaction;
@@ -11,15 +17,10 @@ pub mod orders;
 mod quotes;
 pub mod recent_settlements;
 
-use {
-    sqlx::{Executor, PgConnection, PgPool},
-    std::{num::NonZeroUsize, time::Duration},
-    tracing::Instrument,
-};
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub order_events_insert_batch_size: NonZeroUsize,
+    pub fee_policies_insert_batch_size: NonZeroUsize,
 }
 
 #[derive(Debug, Clone)]
@@ -32,17 +33,24 @@ impl Postgres {
     pub async fn new(
         url: &str,
         order_events_insert_batch_size: NonZeroUsize,
+        fee_policies_insert_batch_size: NonZeroUsize,
     ) -> sqlx::Result<Self> {
         Ok(Self {
             pool: PgPool::connect(url).await?,
             config: Config {
                 order_events_insert_batch_size,
+                fee_policies_insert_batch_size,
             },
         })
     }
 
     pub async fn with_defaults() -> sqlx::Result<Self> {
-        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
+        Self::new(
+            "postgresql://",
+            NonZeroUsize::new(500).unwrap(),
+            NonZeroUsize::new(500).unwrap(),
+        )
+        .await
     }
 
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {

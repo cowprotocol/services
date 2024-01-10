@@ -1,8 +1,9 @@
 use {
-    crate::{boundary, database::Postgres, domain},
     anyhow::Context,
     chrono::Utc,
-    std::{collections::HashMap, sync::Arc},
+    crate::{boundary, database::Postgres, domain},
+    itertools::Itertools,
+    std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
 };
@@ -98,21 +99,29 @@ impl Persistence {
         );
     }
 
-    /// Saves the given fee policies to the DB.
+    /// Saves the given fee policies to the DB as a single batch.
     pub async fn store_fee_policies(
         &self,
         auction_id: domain::AuctionId,
-        fee_policies: HashMap<domain::OrderUid, Vec<domain::fee::Policy>>,
+        fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
-        let mut ex = self.postgres.clone().pool.begin().await.context("begin")?;
-        for (order_uid, policies) in fee_policies {
-            for policy in policies {
-                let fee_policy_row = dto::fee_policy::from_domain(auction_id, order_uid, policy);
-                database::fee_policies::insert(&mut ex, fee_policy_row)
-                    .await
-                    .context("fee_policies::insert")?;
-            }
+        let postgres = self.postgres.clone();
+        let mut ex = postgres.pool.begin().await.context("begin")?;
+        let fee_policies = fee_policies
+            .into_iter()
+            .flat_map(|(order_uid, policies)| {
+                policies
+                    .into_iter()
+                    .map(move |policy| dto::fee_policy::from_domain(auction_id, order_uid, policy))
+            })
+            .collect_vec();
+
+        for chunk in fee_policies.chunks(postgres.config.fee_policies_insert_batch_size.get()) {
+            database::fee_policies::insert_batch(&mut ex, chunk.to_vec())
+                .await
+                .context("fee_policies::insert_batch")?;
         }
+
         ex.commit().await.context("commit")
     }
 }

@@ -163,7 +163,7 @@ impl RunLoop {
                 .collect::<HashSet<_>>();
 
             let mut prices = BTreeMap::new();
-            let mut fee_policies = HashMap::<domain::OrderUid, Vec<domain::fee::Policy>>::new();
+            let mut fee_policies = Vec::<(domain::OrderUid, Vec<domain::fee::Policy>)>::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
@@ -177,12 +177,7 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        for fee_policy in auction_order.fee_policies.clone() {
-                            fee_policies
-                                .entry(auction_order.uid)
-                                .or_default()
-                                .push(fee_policy);
-                        }
+                        fee_policies.push((auction_order.uid, auction_order.fee_policies.clone()));
                         if let Some(price) = auction.prices.get(&auction_order.sell_token) {
                             prices.insert(auction_order.sell_token, *price);
                         } else {

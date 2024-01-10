@@ -1,7 +1,6 @@
 use {
-    crate::{auction::AuctionId, OrderUid, PgTransaction},
-    sqlx::PgConnection,
-    std::ops::DerefMut,
+    crate::{auction::AuctionId, OrderUid},
+    sqlx::{PgConnection, QueryBuilder},
 };
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
@@ -21,24 +20,25 @@ pub enum FeePolicyKindRow {
     Volume,
 }
 
-pub async fn insert(
-    ex: &mut PgTransaction<'_>,
-    fee_policy: FeePolicyRow,
+pub async fn insert_batch(
+    ex: &mut PgConnection,
+    fee_policies: impl IntoIterator<Item = FeePolicyRow>,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-        INSERT INTO fee_policies (auction_id, order_uid, kind, price_improvement_factor, max_volume_factor, volume_factor)
-        VALUES ($1, $2, $3, $4, $5, $6)
-    "#;
-    sqlx::query(QUERY)
-        .bind(fee_policy.auction_id)
-        .bind(fee_policy.order_uid)
-        .bind(fee_policy.kind)
-        .bind(fee_policy.price_improvement_factor)
-        .bind(fee_policy.max_volume_factor)
-        .bind(fee_policy.volume_factor)
-        .execute(ex.deref_mut())
-        .await?;
-    Ok(())
+    let mut query_builder = QueryBuilder::new(
+        "INSERT INTO fee_policies (auction_id, order_uid, kind, price_improvement_factor, \
+         max_volume_factor, volume_factor) ",
+    );
+
+    query_builder.push_values(fee_policies, |mut b, fee_policy| {
+        b.push_bind(fee_policy.auction_id)
+            .push_bind(fee_policy.order_uid)
+            .push_bind(fee_policy.kind)
+            .push_bind(fee_policy.price_improvement_factor)
+            .push_bind(fee_policy.max_volume_factor)
+            .push_bind(fee_policy.volume_factor);
+    });
+
+    query_builder.build().execute(ex).await.map(|_| ())
 }
 
 pub async fn fetch(
@@ -84,8 +84,6 @@ mod tests {
             max_volume_factor: Some(1.0),
             volume_factor: None,
         };
-        insert(&mut db, fee_policy_1.clone()).await.unwrap();
-
         // price improvement fee policy with caps
         let fee_policy_2 = FeePolicyRow {
             auction_id,
@@ -95,8 +93,6 @@ mod tests {
             max_volume_factor: Some(0.05),
             volume_factor: None,
         };
-        insert(&mut db, fee_policy_2.clone()).await.unwrap();
-
         // volume based fee policy
         let fee_policy_3 = FeePolicyRow {
             auction_id,
@@ -106,7 +102,16 @@ mod tests {
             max_volume_factor: None,
             volume_factor: Some(0.06),
         };
-        insert(&mut db, fee_policy_3.clone()).await.unwrap();
+        insert_batch(
+            &mut db,
+            vec![
+                fee_policy_1.clone(),
+                fee_policy_2.clone(),
+                fee_policy_3.clone(),
+            ],
+        )
+        .await
+        .unwrap();
 
         let output = fetch(&mut db, 1, order_uid).await.unwrap();
         assert_eq!(output, vec![fee_policy_1, fee_policy_2, fee_policy_3]);
