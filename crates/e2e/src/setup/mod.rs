@@ -175,7 +175,8 @@ async fn run<F, Fut, T>(
     let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
     observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
-        // Drop node in panic handler because `.catch_unwind()` does not catc all panics
+        // Drop node in panic handler because `.catch_unwind()` does not catch all
+        // panics
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 

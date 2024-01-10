@@ -82,9 +82,7 @@ impl Fulfillment {
                     max_volume_factor,
                 } => {
                     let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
-                    println!("price_improvement_fee: {}", price_improvement_fee);
                     let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
-                    println!("max_volume_fee: {}", max_volume_fee);
                     // take the smaller of the two
                     protocol_fee = std::cmp::min(price_improvement_fee, max_volume_fee);
                 }
