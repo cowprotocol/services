@@ -14,6 +14,7 @@ use {
             BigDecimal,
         },
         PgConnection,
+        QueryBuilder,
     },
 };
 
@@ -410,25 +411,15 @@ pub async fn read_quotes(
         return Ok(vec![]);
     }
 
-    let placeholders = order_ids
-        .iter()
-        .enumerate()
-        .map(|(index, _)| format!("${}", index + 1))
-        .collect::<Vec<String>>()
-        .join(", ");
+    let mut query_builder = QueryBuilder::new("SELECT * FROM order_quotes WHERE order_uid IN (");
 
-    let query = format!(
-        r#"
-        SELECT * FROM order_quotes
-        WHERE order_uid IN ({})
-    "#,
-        placeholders
-    );
-
-    let mut query = sqlx::query_as(&query);
-    for order_id in order_ids {
-        query = query.bind(order_id);
+    let mut separated = query_builder.separated(", ");
+    for value_type in order_ids {
+        separated.push_bind(value_type);
     }
+    separated.push_unseparated(") ");
+
+    let query = query_builder.build_query_as();
     query.fetch_all(ex).await
 }
 
