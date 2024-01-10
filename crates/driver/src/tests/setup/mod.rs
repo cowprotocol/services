@@ -287,7 +287,7 @@ impl Solver {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Pool {
     pub token_a: &'static str,
     pub token_b: &'static str,

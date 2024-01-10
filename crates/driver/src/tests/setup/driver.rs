@@ -96,7 +96,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "signature": format!("0x{}", hex::encode(quote.order_signature(&test.blockchain))),
             "feePolicies": [{
                 "priceImprovement": {
-                    "factor": 0.5,
+                    "factor": 0.0,
                     "maxVolumeFactor": 0.06
                 }
             }],
