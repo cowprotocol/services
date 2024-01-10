@@ -1,7 +1,7 @@
 use {
+    crate::{boundary, database::Postgres, domain},
     anyhow::Context,
     chrono::Utc,
-    crate::{boundary, database::Postgres, domain},
     itertools::Itertools,
     std::sync::Arc,
     tokio::time::Instant,
