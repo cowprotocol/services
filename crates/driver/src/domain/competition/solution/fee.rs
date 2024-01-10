@@ -6,8 +6,8 @@
 //!
 //! SELL ORDER
 //! Selling 1 WETH for at least `x` amount of USDC. Solvers respond with
-//! Fee = 0.05 WETH
-//! Executed = 0.95 WETH
+//! Fee = 0.05 WETH (always expressed in sell token)
+//! Executed = 0.95 WETH (always expressed in target token)
 //!
 //! This response is adjusted by the protocol fee of 0.1 WETH:
 //! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
@@ -15,11 +15,11 @@
 //!
 //! BUY ORDER
 //! Buying 1 WETH for at most `x` amount of USDC. Solvers respond with
-//! Fee = 0.05 WETH
-//! Executed = 1 WETH
+//! Fee = 10 USDC (always expressed in sell token)
+//! Executed = 1 WETH (always expressed in target token)
 //!
-//! This response is adjusted by the protocol fee of 0.1 WETH:
-//! Fee = 0.05 WETH + 0.1 WETH = 0.15 WETH
+//! This response is adjusted by the protocol fee of 5 USDC:
+//! Fee = 10 USDC + 5 USDC = 15 USDC
 //! Executed = 1 WETH
 
 use {
