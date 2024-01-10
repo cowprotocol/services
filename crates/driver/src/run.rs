@@ -15,7 +15,6 @@ use {
         },
     },
     clap::Parser,
-    shared::http_client::HttpClientFactory,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -51,18 +50,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     tracing::info!("running driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let gas_price_estimator = Arc::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &HttpClientFactory::new(&shared::http_client::Arguments {
-                http_timeout: std::time::Duration::from_secs(10),
-            }),
-            ethrpc.web3(),
-            &[shared::gas_price_estimation::GasEstimatorType::Native],
-            None,
-        )
-        .await
-        .unwrap(),
-    );
     let eth = ethereum(&config, ethrpc).await;
     let tx_pool = mempool::GlobalTxPool::default();
     let serve = Api {
@@ -74,13 +61,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                 .mempools
                 .iter()
                 .map(|mempool| {
-                    Mempool::new(
-                        mempool.to_owned(),
-                        eth.clone(),
-                        tx_pool.clone(),
-                        gas_price_estimator.clone(),
-                    )
-                    .unwrap()
+                    Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone()).unwrap()
                 })
                 .collect(),
         )

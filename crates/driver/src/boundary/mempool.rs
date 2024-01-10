@@ -96,12 +96,7 @@ impl std::fmt::Display for Mempool {
 }
 
 impl Mempool {
-    pub fn new(
-        config: Config,
-        eth: Ethereum,
-        pool: GlobalTxPool,
-        gas_price_estimator: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Self> {
+    pub fn new(config: Config, eth: Ethereum, pool: GlobalTxPool) -> Result<Self> {
         Ok(match &config.kind {
             Kind::Public(revert_protection) => Self {
                 submit_api: Arc::new(PublicMempoolApi::new(
@@ -112,14 +107,14 @@ impl Mempool {
                     matches!(revert_protection, RevertProtection::Enabled),
                 )),
                 submitted_transactions: pool.add_sub_pool(Strategy::PublicMempool),
-                gas_price_estimator,
+                gas_price_estimator: eth.boundary_gas_estimator(),
                 config,
                 eth,
             },
             Kind::MEVBlocker { url, .. } => Self {
                 submit_api: Arc::new(FlashbotsApi::new(reqwest::Client::new(), url.to_owned())?),
                 submitted_transactions: pool.add_sub_pool(Strategy::Flashbots),
-                gas_price_estimator,
+                gas_price_estimator: eth.boundary_gas_estimator(),
                 config,
                 eth,
             },
