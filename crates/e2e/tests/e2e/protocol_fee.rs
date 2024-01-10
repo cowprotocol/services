@@ -83,11 +83,13 @@ async fn price_improvement_fee_sell_order_capped_test(web3: Web3) {
 // with executed_surplus_fee = 167058994203399 GNO
 //
 // With protocol fee:
-// surplus in sell token = 10000000000000000000 - 5040413426236634210 = 4959586573763365790
+// surplus in sell token = 10000000000000000000 - 5040413426236634210 =
+// 4959586573763365790
 //
 // protocol fee in sell token = 0.3*4959586573763365790 = 1487875972129009737
 //
-// expected executed_surplus_fee is 167058994203399 + 1487875972129009737 = 1488043031123213136
+// expected executed_surplus_fee is 167058994203399 + 1487875972129009737 =
+// 1488043031123213136
 async fn price_improvement_fee_buy_order_test(web3: Web3) {
     execute_test(
         web3.clone(),
@@ -103,7 +105,8 @@ async fn price_improvement_fee_buy_order_test(web3: Web3) {
 // with executed_surplus_fee = 167058994203399 GNO
 //
 // With protocol fee:
-// Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 = 504208401617866820
+// Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
+// 504208401617866820
 
 async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
     execute_test(
