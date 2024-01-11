@@ -179,7 +179,7 @@ impl Solution {
     }
 
     pub fn with_protocol_fees(self) -> Result<Self, fee::Error> {
-        let mut trades = Vec::new();
+        let mut trades = Vec::with_capacity(self.trades.len());
         for trade in self.trades {
             match &trade {
                 Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
