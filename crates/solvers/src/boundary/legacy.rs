@@ -656,6 +656,9 @@ fn to_boundary_auction_result(notification: &notification::Notification) -> (i64
         Kind::DriverError(reason) => {
             AuctionResult::Rejected(SolverRejectionReason::Driver(reason.clone()))
         }
+        Kind::PostprocessingTimedOut => {
+            AuctionResult::Rejected(SolverRejectionReason::PostprocessingTimedOut)
+        }
     };
 
     (auction_id, auction_result)

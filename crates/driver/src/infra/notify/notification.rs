@@ -43,6 +43,8 @@ pub enum Kind {
     /// Some aspect of the driver logic failed preventing the solution from
     /// participating in the auction.
     DriverError(String),
+    /// On-chain solution postprocessing timed out.
+    PostprocessingTimedOut,
 }
 
 #[derive(Debug)]
