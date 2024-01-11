@@ -2,17 +2,11 @@ use {
     super::Postgres,
     crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
     anyhow::{Context, Result},
-    database::{
-        auction_participants::Participant,
-        auction_prices::AuctionPrice,
-        byte_array::ByteArray,
-        settlement_scores::Score,
-    },
+    database::byte_array::ByteArray,
     model::{
         auction::AuctionId,
         solver_competition::{SolverCompetitionAPI, SolverCompetitionDB},
     },
-    number::conversions::u256_to_big_decimal,
     primitive_types::H256,
     sqlx::types::JsonValue,
 };
@@ -33,86 +27,6 @@ fn deserialize_solver_competition(
 
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
-    async fn handle_request(&self, request: model::solver_competition::Request) -> Result<()> {
-        let json = &serde_json::to_value(&request.competition)?;
-
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["handle_solver_competition_request"])
-            .start_timer();
-
-        let mut ex = self.pool.begin().await.context("begin")?;
-
-        database::solver_competition::save(&mut ex, request.auction, json)
-            .await
-            .context("solver_competition::save")?;
-
-        let transaction = request.transaction;
-        database::auction_transaction::upsert_auction_transaction(
-            &mut ex,
-            request.auction,
-            &ByteArray(transaction.account.0),
-            transaction.nonce.try_into().context("convert nonce")?,
-        )
-        .await
-        .context("upsert_auction_transaction")?;
-
-        database::settlement_scores::insert(
-            &mut ex,
-            Score {
-                auction_id: request.auction,
-                winner: ByteArray(request.scores.winner.0),
-                winning_score: u256_to_big_decimal(&request.scores.winning_score),
-                reference_score: u256_to_big_decimal(&request.scores.reference_score),
-                block_deadline: request
-                    .scores
-                    .block_deadline
-                    .try_into()
-                    .context("convert block deadline")?,
-                simulation_block: request
-                    .competition
-                    .competition_simulation_block
-                    .try_into()
-                    .context("convert simulation block")?,
-            },
-        )
-        .await
-        .context("settlement_scores::insert")?;
-
-        database::auction_participants::insert(
-            &mut ex,
-            request
-                .participants
-                .iter()
-                .map(|p| Participant {
-                    auction_id: request.auction,
-                    participant: ByteArray(p.0),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_participants::insert")?;
-
-        database::auction_prices::insert(
-            &mut ex,
-            request
-                .prices
-                .iter()
-                .map(|(token, price)| AuctionPrice {
-                    auction_id: request.auction,
-                    token: ByteArray(token.0),
-                    price: u256_to_big_decimal(price),
-                })
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .await
-        .context("auction_prices::insert")?;
-
-        ex.commit().await.context("commit")
-    }
-
     async fn load_competition(
         &self,
         id: Identifier,
@@ -171,59 +85,7 @@ impl SolverCompetitionStoring for Postgres {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        model::solver_competition::{CompetitionAuction, Scores, SolverSettlement},
-        primitive_types::H160,
-        std::collections::BTreeMap,
-    };
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_solver_competition_roundtrip() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let request = model::solver_competition::Request {
-            auction: 0,
-            transaction: model::solver_competition::Transaction {
-                account: H160([7; 20]),
-                nonce: 8,
-            },
-            competition: SolverCompetitionDB {
-                auction_start_block: 2,
-                competition_simulation_block: 4,
-                auction: CompetitionAuction {
-                    orders: vec![Default::default()],
-                    prices: [Default::default()].into_iter().collect(),
-                },
-                solutions: vec![SolverSettlement {
-                    solver: "asdf".to_string(),
-                    solver_address: H160([1; 20]),
-                    score: Default::default(),
-                    ranking: 1,
-                    clearing_prices: [Default::default()].into_iter().collect(),
-                    orders: vec![],
-                    call_data: Some(vec![1, 2]),
-                    uninternalized_call_data: Some(vec![1, 2, 3, 4]),
-                }],
-            },
-            executions: Default::default(),
-            scores: Scores {
-                winner: H160([1; 20]),
-                winning_score: 100.into(),
-                reference_score: 99.into(),
-                block_deadline: 10,
-            },
-            participants: [H160([1; 20])].into(),
-            prices: BTreeMap::from([(H160([1; 20]), 1.into())]),
-        };
-        db.handle_request(request.clone()).await.unwrap();
-        let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
-        assert_eq!(actual.common, request.competition);
-        assert_eq!(actual.auction_id, 0);
-        assert_eq!(actual.transaction_hash, None);
-    }
+    use super::*;
 
     #[tokio::test]
     #[ignore]
