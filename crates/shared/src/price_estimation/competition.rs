@@ -208,7 +208,7 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
                     .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
                     .map(|(index, _)| index)
                     .with_context(|| "all price estimates reported 0 gas cost")
-                    .map_err(PriceEstimationError::ProtocolInternal)
+                    .map_err(PriceEstimationError::EstimatorInternal)
             },
             context_future,
         )
