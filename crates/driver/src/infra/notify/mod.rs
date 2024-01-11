@@ -77,7 +77,6 @@ pub fn encoding_failed(
             simulation_failed(solver, auction_id, solution_id, error, false);
             return;
         }
-        solution::Error::Execution(_) => return,
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,
     };
