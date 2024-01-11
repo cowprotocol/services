@@ -202,6 +202,7 @@ async fn execute_test(
     );
     services.start_autopilot(vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        "--fee-policy-skip-market-orders=false".to_string(),
         fee_policy,
     ]);
     services
