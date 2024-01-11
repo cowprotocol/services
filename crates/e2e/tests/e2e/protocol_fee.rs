@@ -59,21 +59,25 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     // 9871415430342266811 DAI, with executed_surplus_fee = 167058994203399 GNO
     //
     // With protocol fee:
-    // surplus in buy token = 9871415430342266811 - 5000000000000000000 =
-    // 4871415430342266811
+    // surplus [DAI] = 9871415430342266811 DAI - 5000000000000000000 DAI =
+    // 4871415430342266811 DAI
     //
-    // protocol fee in buy token = 0.3*surplus = 1461424629102680043
+    // protocol fee = 0.3*surplus = 1461424629102680043 DAI =
+    // 1461424629102680043 DAI / 9871415430342266811 *
+    // (10000000000000000000 - 167058994203399) = 1480436341679873337 GNO
     //
-    // protocol fee in sell token = 1461424629102680043 / 9871415430342266811 *
-    // (10000000000000000000 - 167058994203399) = 1480436341679873337
+    // final execution is 10000000000000000000 GNO for 8409990801239586768 DAI, with
+    // executed_surplus_fee = 1480603400674076736 GNO
     //
-    // expected executed_surplus_fee is 167058994203399 + 1480436341679873337 =
-    // 1480603400674076736
+    // Settlement contract balance after execution = 1480603400674076736 GNO =
+    // 1480603400674076736 GNO * 8409990801239586768 / (10000000000000000000 -
+    // 1480603400674076736) = 1461589542731026166 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
         1480603400674076736u128.into(),
+        1461589542731026166u128.into(),
     )
     .await;
 }
@@ -89,28 +93,41 @@ async fn price_improvement_fee_sell_order_capped_test(web3: Web3) {
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 +
     // 0.1*10000000000000000000 = 1000167058994203400
+    //
+    // Final execution is 10000000000000000000 GNO for 8884257395945205588 DAI, with
+    // executed_surplus_fee = 1000167058994203400 GNO
+    //
+    // Settlement contract balance after execution = 1000167058994203400 GNO =
+    // 1000167058994203400 GNO * 8884257395945205588 / (10000000000000000000 -
+    // 1000167058994203400) = 987322948025407485 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
         1000167058994203400u128.into(),
+        987322948025407485u128.into(),
     )
     .await;
 }
 
 async fn volume_fee_sell_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Volume { factor: 0.05 };
+    let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
     // Without protocol fee:
     // Expected executed_surplus_fee is 167058994203399
     //
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 +
-    // 0.05*10000000000000000000 = 500167058994203399
+    // 0.1*10000000000000000000 = 1000167058994203400
+    //
+    // Settlement contract balance after execution = 1000167058994203400 GNO =
+    // 1000167058994203400 GNO * 8884257395945205588 / (10000000000000000000 -
+    // 1000167058994203400) = 987322948025407485 DAI
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Sell,
-        500167058994203399u128.into(),
+        1000167058994203400u128.into(),
+        987322948025407485u128.into(),
     )
     .await;
 }
@@ -132,10 +149,13 @@ async fn price_improvement_fee_buy_order_test(web3: Web3) {
     //
     // expected executed_surplus_fee is 167058994203399 + 1487875972129009737 =
     // 1488043031123213136
+    //
+    // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
+        1488043031123213136u128.into(),
         1488043031123213136u128.into(),
     )
     .await;
@@ -153,29 +173,35 @@ async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
     // With protocol fee:
     // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
     // 504208401617866820
+    //
+    // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
+        504208401617866820u128.into(),
         504208401617866820u128.into(),
     )
     .await;
 }
 
 async fn volume_fee_buy_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::Volume { factor: 0.05 };
+    let fee_policy = FeePolicyKind::Volume { factor: 0.1 };
     // Without protocol fee:
     // Expected execution is 5040413426236634210 GNO for 5000000000000000000 DAI,
     // with executed_surplus_fee = 167058994203399 GNO
     //
     // With protocol fee:
-    // Expected executed_surplus_fee is 167058994203399 + 0.05*5040413426236634210 =
-    // 252187730306035109
+    // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
+    // 504208401617866820
+    //
+    // Settlement contract balance after execution = executed_surplus_fee GNO
     execute_test(
         web3.clone(),
         fee_policy,
         OrderKind::Buy,
-        252187730306035109u128.into(),
+        504208401617866820u128.into(),
+        504208401617866820u128.into(),
     )
     .await;
 }
@@ -193,6 +219,7 @@ async fn execute_test(
     fee_policy: FeePolicyKind,
     order_kind: OrderKind,
     expected_surplus_fee: U256,
+    expected_settlement_contract_balance: U256,
 ) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -305,6 +332,24 @@ async fn execute_test(
         is_approximately_equal(order.metadata.executed_surplus_fee, expected_surplus_fee)
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
+
+    // Check settlement contract balance
+    let balance_after = match order_kind {
+        OrderKind::Buy => token_gno
+            .balance_of(onchain.contracts().gp_settlement.address())
+            .call()
+            .await
+            .unwrap(),
+        OrderKind::Sell => token_dai
+            .balance_of(onchain.contracts().gp_settlement.address())
+            .call()
+            .await
+            .unwrap(),
+    };
+    assert!(is_approximately_equal(
+        balance_after,
+        expected_settlement_contract_balance
+    ));
 }
 
 pub enum FeePolicyKind {
