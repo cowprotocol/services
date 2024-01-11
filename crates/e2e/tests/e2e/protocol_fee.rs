@@ -107,7 +107,6 @@ async fn price_improvement_fee_buy_order_test(web3: Web3) {
 // With protocol fee:
 // Expected executed_surplus_fee is 167058994203399 + 0.1*5040413426236634210 =
 // 504208401617866820
-
 async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
     execute_test(
         web3.clone(),
