@@ -116,7 +116,7 @@ impl Persistence {
             })
             .collect_vec();
 
-        for chunk in fee_policies.chunks(postgres.config.fee_policies_insert_batch_size.get()) {
+        for chunk in fee_policies.chunks(postgres.config.insert_batch_size.get()) {
             database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
                 .await
                 .context("fee_policies::insert_batch")?;
