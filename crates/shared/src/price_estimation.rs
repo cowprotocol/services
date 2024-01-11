@@ -430,9 +430,9 @@ impl PartialEq for PriceEstimationError {
     // Can't use `Self` here because `discriminant` is only defined for enums
     // and the compiler is not smart enough to figure out that `Self` is always
     // an enum here.
-    fn eq(&self, b: &PriceEstimationError) -> bool {
+    fn eq(&self, other: &PriceEstimationError) -> bool {
         let me = self as &PriceEstimationError;
-        std::mem::discriminant(me) == std::mem::discriminant(&b)
+        std::mem::discriminant(me) == std::mem::discriminant(other)
     }
 }
 
