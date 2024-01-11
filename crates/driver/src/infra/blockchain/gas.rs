@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 /// Wrapper around the gas estimation library.
 /// Also allows to add additional tip to the gas price. This is used to
 /// increase the chance of a transaction being included in a block, in case
@@ -14,15 +16,18 @@ type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
 pub struct GasPriceEstimator {
-    gas: NativeGasEstimator,
+    //TODO: remove visibility once boundary is removed
+    pub(super) gas: Arc<NativeGasEstimator>,
     additional_tip: Option<AdditionalTip>,
 }
 
 impl GasPriceEstimator {
     pub async fn new(web3: &DynWeb3, mempools: &[mempool::Config]) -> Result<Self, Error> {
-        let gas = NativeGasEstimator::new(web3.transport().clone(), None)
-            .await
-            .map_err(Error::GasPrice)?;
+        let gas = Arc::new(
+            NativeGasEstimator::new(web3.transport().clone(), None)
+                .await
+                .map_err(Error::GasPrice)?,
+        );
         let additional_tip = mempools
             .iter()
             .find(|mempool| matches!(mempool.kind, mempool::Kind::MEVBlocker { .. }))

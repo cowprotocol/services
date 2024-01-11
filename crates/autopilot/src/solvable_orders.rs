@@ -151,13 +151,13 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
 
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        let removed = counter.checkpoint("unsupported_token", &orders);
-        invalid_order_uids.extend(removed);
-
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
+        invalid_order_uids.extend(removed);
+
+        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        let removed = counter.checkpoint("unsupported_token", &orders);
         invalid_order_uids.extend(removed);
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();

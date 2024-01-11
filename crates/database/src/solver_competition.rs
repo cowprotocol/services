@@ -139,7 +139,7 @@ mod tests {
         .await
         .unwrap();
 
-        crate::auction_transaction::upsert_auction_transaction(&mut db, id, &tx_from, tx_nonce)
+        crate::auction_transaction::try_insert_auction_transaction(&mut db, id, &tx_from, tx_nonce)
             .await
             .unwrap();
 
