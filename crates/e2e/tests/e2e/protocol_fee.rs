@@ -315,17 +315,20 @@ pub enum FeePolicyKind {
     Volume { factor: f64 },
 }
 
-impl FeePolicyKind {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for FeePolicyKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => format!(
+            } => write!(
+                f,
                 "--fee-policy-kind=priceImprovement:{}:{}",
                 factor, max_volume_factor
             ),
-            FeePolicyKind::Volume { factor } => format!("--fee-policy-kind=volume:{}", factor),
+            FeePolicyKind::Volume { factor } => {
+                write!(f, "--fee-policy-kind=volume:{}", factor)
+            }
         }
     }
 }
