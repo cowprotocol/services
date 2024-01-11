@@ -507,6 +507,37 @@ mod tests {
             .await
     }
 
+    /// Returns the best native estimate with respect to the provided ranking
+    /// and order kind.
+    async fn best_native_response(
+        ranking: PriceRanking,
+        estimates: Vec<NativePriceEstimateResult>,
+    ) -> NativePriceEstimateResult {
+        fn estimator(estimate: NativePriceEstimateResult) -> Arc<dyn NativePriceEstimating> {
+            let mut estimator = MockNativePriceEstimating::new();
+            estimator
+                .expect_estimate_native_price()
+                .times(1)
+                .return_once(move |_| async move { estimate }.boxed());
+            Arc::new(estimator)
+        }
+
+        let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![estimates
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
+                    .collect()],
+                ranking.clone(),
+            );
+
+        priority
+            .inner
+            .estimate_native_price(Default::default())
+            .await
+    }
+
     #[tokio::test]
     async fn works() {
         let queries = [
@@ -941,5 +972,46 @@ mod tests {
         )
         .await;
         assert_eq!(best, price(1, 1_000_000));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_native_price() {
+        // Returns errors with highest priority.
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![native_price(1.), native_price(2.)],
+        )
+        .await;
+        assert_eq!(best, native_price(1.));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_priority_error_native() {
+        // Returns errors with highest priority.
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![
+                error(PriceEstimationError::RateLimited),
+                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+            ],
+        )
+        .await;
+        assert_eq!(best, error(PriceEstimationError::RateLimited));
+    }
+
+    /// Any native price estimate, no matter how bad, is preferred over an
+    /// error.
+    #[tokio::test]
+    async fn prefer_estimate_over_error_native() {
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![native_price(1.), error(PriceEstimationError::RateLimited)],
+        )
+        .await;
+        assert_eq!(best, native_price(1.));
     }
 }
