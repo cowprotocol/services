@@ -436,21 +436,20 @@ mod tests {
         tokio::time::sleep,
     };
 
-    fn estimator(estimate: Estimate) -> Arc<dyn PriceEstimating> {
-        let mut estimator = MockPriceEstimating::new();
-        estimator
-            .expect_estimate()
-            .times(1)
-            .returning(move |_| async move { Ok(estimate) }.boxed());
-        Arc::new(estimator)
-    }
-
-    fn estimate(out_amount: u128, gas: u64) -> Estimate {
-        Estimate {
+    fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
+        Ok(Estimate {
             out_amount: out_amount.into(),
             gas,
             ..Default::default()
-        }
+        })
+    }
+
+    fn native_price(native_price: f64) -> NativePriceEstimateResult {
+        NativePriceEstimateResult::Ok(native_price)
+    }
+
+    fn error<T>(err: PriceEstimationError) -> Result<T, PriceEstimationError> {
+        Err(err)
     }
 
     /// Builds a `BestBangForBuck` setup where every token is estimated
@@ -475,26 +474,37 @@ mod tests {
         }
     }
 
-    /// Reusable test setup that verifies that the ranking logic picks the
-    /// execpted estimate as the winner. The estimate that is supposed to be
-    /// picked as the winner should be the first item in `estimates`.
-    async fn ranking_test(ranking: PriceRanking, kind: OrderKind, estimates: &[Estimate]) {
+    /// Returns the best estimate with respect to the provided ranking and order
+    /// kind.
+    async fn best_response(
+        ranking: PriceRanking,
+        kind: OrderKind,
+        estimates: Vec<PriceEstimateResult>,
+    ) -> PriceEstimateResult {
+        fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
+            let mut estimator = MockPriceEstimating::new();
+            estimator
+                .expect_estimate()
+                .times(1)
+                .return_once(move |_| async move { estimate }.boxed());
+            Arc::new(estimator)
+        }
+
         let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
             vec![estimates
-                .iter()
+                .into_iter()
                 .enumerate()
-                .map(|(i, e)| (format!("estimator_{i}"), estimator(*e)))
+                .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
                 .collect()],
             ranking.clone(),
         );
 
-        let result = priority
+        priority
             .estimate(Arc::new(Query {
                 kind,
                 ..Default::default()
             }))
-            .await;
-        assert_eq!(result.unwrap(), estimates[0]);
+            .await
     }
 
     #[tokio::test]
@@ -835,29 +845,31 @@ mod tests {
     /// the simpler quote will be preferred.
     #[tokio::test]
     async fn best_bang_for_buck_adjusts_for_complexity() {
-        ranking_test(
+        let best = best_response(
             bang_for_buck_ranking(),
             OrderKind::Sell,
-            &[
+            vec![
                 // User effectively receives `100_000` `buy_token`.
-                estimate(104_000, 1_000),
+                price(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
-                estimate(107_999, 2_000),
+                price(107_999, 2_000),
             ],
         )
         .await;
+        assert_eq!(best, price(104_000, 1_000));
 
-        ranking_test(
+        let best = best_response(
             bang_for_buck_ranking(),
             OrderKind::Buy,
-            &[
+            vec![
                 // User effectively pays `100_000` `sell_token`.
-                estimate(96_000, 1_000),
+                price(96_000, 1_000),
                 // User effectively pays `100_002` `sell_token`.
-                estimate(92_002, 2_000),
+                price(92_002, 2_000),
             ],
         )
         .await;
+        assert_eq!(best, price(96_000, 1_000));
     }
 
     /// Same test as above but now we also add an estimate that should
@@ -866,34 +878,68 @@ mod tests {
     /// low fees for user orders.
     #[tokio::test]
     async fn discards_low_gas_cost_estimates() {
-        ranking_test(
+        let best = best_response(
             bang_for_buck_ranking(),
             OrderKind::Sell,
-            &[
+            vec![
                 // User effectively receives `100_000` `buy_token`.
-                estimate(104_000, 1_000),
+                price(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
-                estimate(107_999, 2_000),
+                price(107_999, 2_000),
                 // User effectively receives `104_000` `buy_token` but the estimate
                 // gets discarded because it quotes 0 gas.
-                estimate(104_000, 0),
+                price(104_000, 0),
             ],
         )
         .await;
+        assert_eq!(best, price(104_000, 1_000));
 
-        ranking_test(
+        let best = best_response(
             bang_for_buck_ranking(),
             OrderKind::Buy,
-            &[
+            vec![
                 // User effectively pays `100_000` `sell_token`.
-                estimate(96_000, 1_000),
+                price(96_000, 1_000),
                 // User effectively pays `100_002` `sell_token`.
-                estimate(92_002, 2_000),
+                price(92_002, 2_000),
                 // User effectively pays `99_000` `sell_token` but the estimate
                 // gets discarded because it quotes 0 gas.
-                estimate(99_000, 0),
+                price(99_000, 0),
             ],
         )
         .await;
+        assert_eq!(best, price(96_000, 1_000));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_priority_error() {
+        // Returns errors with highest priority.
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                error(PriceEstimationError::RateLimited),
+                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+            ],
+        )
+        .await;
+        assert_eq!(best, error(PriceEstimationError::RateLimited));
+    }
+
+    /// Any price estimate, no matter how bad, is preferred over an error.
+    #[tokio::test]
+    async fn prefer_estimate_over_error() {
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                price(1, 1_000_000),
+                error(PriceEstimationError::RateLimited),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(1, 1_000_000));
     }
 }
