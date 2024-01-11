@@ -15,25 +15,25 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_sell_order() {
+async fn local_node_price_improvement_fee_sell_order() {
     run_test(price_improvement_fee_sell_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_sell_order_capped() {
+async fn local_node_price_improvement_fee_sell_order_capped() {
     run_test(price_improvement_fee_sell_order_capped_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_buy_order() {
+async fn local_node_price_improvement_fee_buy_order() {
     run_test(price_improvement_fee_buy_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn price_improvement_fee_buy_order_capped() {
+async fn local_node_price_improvement_fee_buy_order_capped() {
     run_test(price_improvement_fee_buy_order_capped_test).await;
 }
 
@@ -136,13 +136,13 @@ async fn execute_test(
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(to_wei(1)).await;
-    let [trader_a] = onchain.make_accounts(to_wei(1)).await;
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
     let [token_gno, token_dai] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(to_wei(1_000), to_wei(1000))
         .await;
 
     // Fund trader accounts
-    token_gno.mint(trader_a.address(), to_wei(100)).await;
+    token_gno.mint(trader.address(), to_wei(100)).await;
 
     // Create and fund Uniswap pool
     token_gno.mint(solver.address(), to_wei(1000)).await;
@@ -184,7 +184,7 @@ async fn execute_test(
 
     // Approve GPv2 for trading
     tx!(
-        trader_a.account(),
+        trader.account(),
         token_gno.approve(onchain.contracts().allowance, to_wei(100))
     );
 
@@ -222,7 +222,7 @@ async fn execute_test(
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
     );
     let uid = services.create_order(&order).await.unwrap();
 
