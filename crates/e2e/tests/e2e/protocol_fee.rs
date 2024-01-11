@@ -352,7 +352,7 @@ async fn execute_test(
     ));
 }
 
-pub enum FeePolicyKind {
+enum FeePolicyKind {
     /// How much of the order's price improvement over max(limit price,
     /// best_bid) should be taken as a protocol fee.
     PriceImprovement { factor: f64, max_volume_factor: f64 },
