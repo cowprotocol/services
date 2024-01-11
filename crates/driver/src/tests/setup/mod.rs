@@ -79,17 +79,6 @@ impl Default for Score {
     }
 }
 
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum FeePolicy {
-    #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
-    #[serde(rename_all = "camelCase")]
-    #[allow(dead_code)]
-    Volume { factor: f64 },
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Order {
     pub name: &'static str,
@@ -122,8 +111,6 @@ pub struct Order {
     /// Should the trader account be funded with enough tokens to place this
     /// order? True by default.
     pub funded: bool,
-    /// Should protocol fees be applied to this order?
-    pub fee_policy: Option<FeePolicy>,
 }
 
 impl Order {
@@ -160,14 +147,6 @@ impl Order {
     pub fn no_surplus(self) -> Self {
         Self {
             surplus_factor: 1.into(),
-            ..self
-        }
-    }
-
-    /// Set the surplus factor.
-    pub fn set_surplus(self, surplus_factor: eth::U256) -> Self {
-        Self {
-            surplus_factor,
             ..self
         }
     }
@@ -227,14 +206,6 @@ impl Order {
             _ => 0.into(),
         }
     }
-
-    /// Set fee policy
-    pub fn fee_policy(self, fee_policy: FeePolicy) -> Self {
-        Self {
-            fee_policy: Some(fee_policy),
-            ..self
-        }
-    }
 }
 
 impl Default for Order {
@@ -255,7 +226,6 @@ impl Default for Order {
             executed: Default::default(),
             filtered: Default::default(),
             funded: true,
-            fee_policy: Default::default(),
         }
     }
 }
@@ -317,7 +287,7 @@ impl Solver {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Pool {
     pub token_a: &'static str,
     pub token_b: &'static str,
@@ -945,20 +915,10 @@ impl<'a> SolveOk<'a> {
             let u256 = |value: &serde_json::Value| {
                 eth::U256::from_dec_str(value.as_str().unwrap()).unwrap()
             };
-
-            let (protocol_fee_sell, protocol_fee_buy) = match expected.quoted_order.order.side {
-                order::Side::Buy => (expected.quoted_order.protocol_fee(), 0.into()),
-                order::Side::Sell => (0.into(), expected.quoted_order.protocol_fee()),
-            };
-            assert!(
-                u256(trade.get("buyAmount").unwrap())
-                    == (expected.quoted_order.buy - protocol_fee_buy)
-            );
+            assert!(u256(trade.get("buyAmount").unwrap()) == expected.quoted_order.buy);
             assert!(
                 u256(trade.get("sellAmount").unwrap())
-                    == expected.quoted_order.sell
-                        + expected.quoted_order.order.user_fee
-                        + protocol_fee_sell
+                    == expected.quoted_order.sell + expected.quoted_order.order.user_fee
             );
         }
         self

@@ -96,7 +96,7 @@ impl Fulfillment {
     }
 
     /// Returns the solver determined fee if it exists.
-    pub fn dynamic_fee(&self) -> Option<order::SellAmount> {
+    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
         match self.fee {
             Fee::Static => None,
             Fee::Dynamic(fee) => Some(fee),
