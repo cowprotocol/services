@@ -119,12 +119,11 @@ async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
 }
 
 // because of rounding errors, it's good enough to check that the expected value
-// is within a very narrow range
-fn assert_between(value: U256, expected: U256) {
-    let lower = expected * U256::from(99999999999u128) / U256::from(100000000000u128); // in percents = 99.999999999%
-    let upper = expected * U256::from(100000000001u128) / U256::from(100000000000u128); // in percents = 100.000000001%
-    assert!(value >= lower);
-    assert!(value <= upper);
+// is within a very narrow range of the executed value
+fn are_close_enough(executed_value: U256, expected_value: U256) -> bool {
+    let lower = expected_value * U256::from(99999999999u128) / U256::from(100000000000u128); // in percents = 99.999999999%
+    let upper = expected_value * U256::from(100000000001u128) / U256::from(100000000000u128); // in percents = 100.000000001%
+    executed_value >= lower && executed_value <= upper
 }
 
 async fn execute_test(
@@ -241,11 +240,7 @@ async fn execute_test(
     let metadata_updated = || async {
         onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        let executed_surplus_fee = order.metadata.executed_surplus_fee;
-        if !executed_surplus_fee.is_zero() {
-            assert_between(executed_surplus_fee, expected_surplus_fee);
-        }
-        !executed_surplus_fee.is_zero()
+        are_close_enough(order.metadata.executed_surplus_fee, expected_surplus_fee)
     };
     wait_for_condition(TIMEOUT, metadata_updated).await.unwrap();
 }
