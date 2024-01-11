@@ -259,6 +259,7 @@ impl HttpPriceEstimator {
             },
             gas,
             solver: self.solver,
+            verified: false,
         })
     }
 
