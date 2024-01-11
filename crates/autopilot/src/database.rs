@@ -37,11 +37,7 @@ impl Postgres {
     }
 
     pub async fn with_defaults() -> sqlx::Result<Self> {
-        Self::new(
-            "postgresql://",
-            NonZeroUsize::new(500).unwrap(),
-        )
-        .await
+        Self::new("postgresql://", NonZeroUsize::new(500).unwrap()).await
     }
 
     pub async fn update_database_metrics(&self) -> sqlx::Result<()> {
