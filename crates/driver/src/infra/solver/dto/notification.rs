@@ -78,6 +78,7 @@ impl Notification {
                     notify::Settlement::SimulationRevert => Kind::Cancelled,
                     notify::Settlement::Fail => Kind::Fail,
                 },
+                notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
             },
         }
     }
@@ -141,6 +142,7 @@ pub enum Kind {
     },
     Cancelled,
     Fail,
+    PostprocessingTimedOut,
 }
 
 type BlockNo = u64;

@@ -491,6 +491,9 @@ pub enum SolverRejectionReason {
 
     /// Some aspect of the driver logic failed.
     Driver(String),
+
+    /// On-chain solution postprocessing timed out.
+    PostprocessingTimedOut,
 }
 
 #[derive(Debug, Serialize)]
