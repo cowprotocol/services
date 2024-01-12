@@ -10,8 +10,9 @@ pub struct Order {
     pub buy_token: H160,
     pub sell_amount: U256,
     pub buy_amount: U256,
-    pub solver_fee: U256,
     pub user_fee: U256,
+    // Same as user_fee, but without subsidies. This value should be used to score solutions.
+    pub scoring_fee: U256,
     pub kind: Kind,
     pub class: Class,
     pub valid_to: u32,

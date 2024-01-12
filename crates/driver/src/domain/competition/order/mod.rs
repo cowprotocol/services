@@ -104,7 +104,7 @@ pub struct Fee {
     pub user: SellAmount,
     /// The fee used for scoring. This is a scaled version of the user fee to
     /// incentivize solvers to solve orders in batches.
-    pub solver: SellAmount,
+    pub scoring: SellAmount,
 }
 
 /// The available amounts for a specific order that gets passed to the solver.
@@ -194,7 +194,7 @@ impl Order {
         for amount in [
             &mut amounts.sell.amount.0,
             &mut amounts.fee.user.0,
-            &mut amounts.fee.solver.0,
+            &mut amounts.fee.scoring.0,
         ] {
             *amount = util::math::mul_ratio(*amount, available.0, target.0).unwrap_or_default();
         }

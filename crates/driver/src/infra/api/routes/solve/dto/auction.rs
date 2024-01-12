@@ -48,7 +48,7 @@ impl Auction {
                     },
                     fee: competition::order::Fee {
                         user: order.user_fee.into(),
-                        solver: order.solver_fee.into(),
+                        scoring: order.scoring_fee.into(),
                     },
                     kind: match order.class {
                         Class::Market => competition::order::Kind::Market,
@@ -227,9 +227,9 @@ struct Order {
     #[serde_as(as = "serialize::U256")]
     buy_amount: eth::U256,
     #[serde_as(as = "serialize::U256")]
-    solver_fee: eth::U256,
-    #[serde_as(as = "serialize::U256")]
     user_fee: eth::U256,
+    #[serde_as(as = "serialize::U256")]
+    scoring_fee: eth::U256,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,

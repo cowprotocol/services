@@ -81,7 +81,7 @@ impl Fulfillment {
     /// scoring a solution.
     pub fn scoring_fee(&self) -> order::SellAmount {
         match self.fee {
-            Fee::Static => self.order.fee.solver,
+            Fee::Static => self.order.fee.scoring,
             Fee::Dynamic(fee) => fee,
         }
     }

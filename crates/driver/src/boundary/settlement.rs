@@ -234,8 +234,8 @@ impl Settlement {
         )?;
 
         let surplus = self.inner.total_surplus(&prices);
-        let solver_fees = self.inner.total_scoring_fees(&prices);
-        let quality = surplus + solver_fees;
+        let scoring_fees = self.inner.total_scoring_fees(&prices);
+        let quality = surplus + scoring_fees;
 
         Ok(eth::U256::from_big_rational(&quality)?.into())
     }
@@ -288,7 +288,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         },
         metadata: OrderMetadata {
             full_fee_amount: Default::default(),
-            solver_fee: order.fee.solver.into(),
+            solver_fee: order.fee.scoring.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
