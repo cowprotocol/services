@@ -71,7 +71,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
             "buyToken": hex_address(test.blockchain.get_token(quote.order.buy_token)),
             "sellAmount": quote.sell_amount().to_string(),
             "buyAmount": quote.buy_amount().to_string(),
-            "solverFee": quote.order.user_fee.to_string(),
+            "scoringFee": quote.order.user_fee.to_string(),
             "userFee": quote.order.user_fee.to_string(),
             "validTo": u32::try_from(time::now().timestamp()).unwrap() + quote.order.valid_for.0,
             "kind": match quote.order.side {
