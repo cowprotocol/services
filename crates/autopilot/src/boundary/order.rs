@@ -2,7 +2,7 @@ use {crate::domain, shared::remaining_amounts};
 
 pub fn to_domain(
     order: model::order::Order,
-    fee_policies: Vec<domain::fee::Policy>,
+    protocol_fees: Vec<domain::fee::Policy>,
 ) -> domain::Order {
     let remaining_order = remaining_amounts::Order::from(order.clone());
     let order_is_untouched = remaining_order.executed_amount.is_zero();
@@ -15,6 +15,7 @@ pub fn to_domain(
         buy_amount: order.data.buy_amount,
         solver_fee: order.metadata.full_fee_amount,
         user_fee: order.data.fee_amount,
+        protocol_fees,
         valid_to: order.data.valid_to,
         kind: order.data.kind.into(),
         receiver: order.data.receiver,
@@ -35,6 +36,5 @@ pub fn to_domain(
         class: order.metadata.class.into(),
         app_data: order.data.app_data.into(),
         signature: order.signature.into(),
-        fee_policies,
     }
 }
