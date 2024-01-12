@@ -265,6 +265,7 @@ dependencies = [
  "prometheus-metric-storage",
  "rand",
  "reqwest",
+ "s3",
  "serde",
  "serde_json",
  "serde_with",
@@ -4196,6 +4197,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "url",
  "web3",
 ]
 
@@ -4224,6 +4226,7 @@ dependencies = [
  "prometheus-metric-storage",
  "rate-limit",
  "reqwest",
+ "s3",
  "serde",
  "serde_json",
  "serde_with",

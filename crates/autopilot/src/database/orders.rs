@@ -1,51 +1,40 @@
 use {
     super::Postgres,
-    crate::decoded_settlement::OrderExecution,
     anyhow::{Context, Result},
-    database::{byte_array::ByteArray, OrderUid},
-    ethcontract::H256,
-    futures::{TryFutureExt, TryStreamExt},
-    model::{auction::AuctionId, order::Order},
+    database::byte_array::ByteArray,
+    model::order::OrderUid,
+    primitive_types::U256,
     shared::db_order_conversions::full_order_into_model_order,
     sqlx::PgConnection,
-    std::collections::HashMap,
 };
 
 impl Postgres {
-    pub async fn order_executions_for_tx(
+    /// Returns the unsubsidised fees for the given orders.
+    /// For limit orders, the order fee is None.
+    pub async fn order_fees(
         ex: &mut PgConnection,
-        tx_hash: &H256,
-        auction_id: AuctionId,
-    ) -> Result<Vec<OrderExecution>> {
+        order_uids: &[OrderUid],
+    ) -> Result<Vec<Option<U256>>> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["orders_for_tx"])
+            .with_label_values(&["order_fees"])
             .start_timer();
 
-        let mut order_executions = Vec::new();
+        let mut orders: Vec<Option<U256>> = Default::default();
+        for order_uid in order_uids {
+            let order = database::orders::single_full_order(ex, &ByteArray(order_uid.0))
+                .await?
+                .map(full_order_into_model_order)
+                .context("order not found")??;
 
-        let executions =
-            database::orders::order_executions_in_tx(ex, &ByteArray(tx_hash.0), auction_id)
-                .try_collect::<Vec<_>>()
-                .map_err(anyhow::Error::from)
-                .await?;
-
-        let mut orders: HashMap<OrderUid, Order> = Default::default();
-        for execution in executions {
-            if let std::collections::hash_map::Entry::Vacant(e) = orders.entry(execution.order_uid)
-            {
-                let order = database::orders::single_full_order(ex, &execution.order_uid)
-                    .await?
-                    .map(full_order_into_model_order)
-                    .context("order not found")??;
-
-                e.insert(order);
-            }
-
-            let order = orders.get(&execution.order_uid).expect("order not found");
-            order_executions.push(OrderExecution::new(order, execution));
+            let order_fee = if order.metadata.solver_fee == U256::zero() {
+                None
+            } else {
+                Some(order.metadata.solver_fee)
+            };
+            orders.push(order_fee);
         }
 
-        Ok(order_executions)
+        Ok(orders)
     }
 }

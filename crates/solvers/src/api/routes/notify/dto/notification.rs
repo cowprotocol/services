@@ -91,6 +91,7 @@ impl Notification {
                     notification::Kind::Settled(notification::Settlement::SimulationRevert)
                 }
                 Kind::Fail => notification::Kind::Settled(notification::Settlement::Fail),
+                Kind::PostprocessingTimedOut => notification::Kind::PostprocessingTimedOut,
             },
         }
     }
@@ -98,7 +99,7 @@ impl Notification {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub struct Notification {
     #[serde_as(as = "Option<DisplayFromStr>")]
     auction_id: Option<i64>,
@@ -109,7 +110,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
@@ -155,6 +156,7 @@ pub enum Kind {
     },
     Cancelled,
     Fail,
+    PostprocessingTimedOut,
 }
 
 type BlockNo = u64;

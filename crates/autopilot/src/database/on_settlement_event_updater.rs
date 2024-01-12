@@ -7,6 +7,10 @@ use {
     sqlx::PgConnection,
 };
 
+/// Executed network fee for the gas costs. This fee is solver determined.
+type ExecutedFee = U256;
+pub type AuctionId = i64;
+
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
     pub auction_id: AuctionId,
@@ -14,42 +18,7 @@ pub struct AuctionData {
     pub effective_gas_price: U256,
     pub surplus: U256,
     pub fee: U256,
-    // pairs <order id, fee> for orders with solver computed fees (limit orders)
-    pub order_executions: Vec<(OrderUid, U256)>,
-}
-
-#[derive(Debug, Clone)]
-pub enum AuctionId {
-    /// We were able to recover this ID from our DB which means that it was
-    /// submitted by us when the protocol was not yet using colocated
-    /// drivers. This ID can therefore be trusted.
-    Centralized(i64),
-    /// This ID had to be recovered from the calldata of a settlement call. That
-    /// means it was submitted by a colocated driver. Because these drivers
-    /// could submit a solution at any time and with wrong or malicious IDs
-    /// this can not be trusted. For DB updates that modify existing
-    /// data based on these IDs we have to ensure they can only be executed once
-    /// (the first time we see this ID). That is required to prevent
-    /// malicious drivers from overwriting data for already settled
-    /// auctions.
-    Colocated(i64),
-}
-
-impl AuctionId {
-    /// Returns the underlying `auction_id` assuming the caller verified that
-    /// the next DB update will not run into problems with this ID.
-    pub fn assume_verified(&self) -> i64 {
-        match &self {
-            Self::Centralized(id) => *id,
-            Self::Colocated(id) => *id,
-        }
-    }
-}
-
-impl Default for AuctionId {
-    fn default() -> Self {
-        Self::Colocated(0)
-    }
+    pub order_executions: Vec<(OrderUid, ExecutedFee)>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -88,7 +57,7 @@ impl super::Postgres {
             // solutions.
             let insert_succesful = database::auction_transaction::try_insert_auction_transaction(
                 ex,
-                auction_data.auction_id.assume_verified(),
+                auction_data.auction_id,
                 &ByteArray(settlement_update.tx_from.0),
                 settlement_update.tx_nonce,
             )
@@ -111,20 +80,16 @@ impl super::Postgres {
             .await
             .context("insert_settlement_observations")?;
 
-            if insert_succesful || matches!(auction_data.auction_id, AuctionId::Centralized(_)) {
-                // update order executions for orders with solver computed fees (limit orders)
-                // for limit orders, fee is called surplus_fee and is determined by the solver
-                // therefore, when transaction is settled onchain we calculate the fee and save
-                // it to DB
-                for order_execution in auction_data.order_executions {
-                    database::order_execution::update_surplus_fee(
+            if insert_succesful {
+                for (order, executed_fee) in auction_data.order_executions {
+                    database::order_execution::save(
                         ex,
-                        &ByteArray(order_execution.0 .0), // order uid
-                        auction_data.auction_id.assume_verified(),
-                        &u256_to_big_decimal(&order_execution.1), // order fee
+                        &ByteArray(order.0),
+                        auction_data.auction_id,
+                        &u256_to_big_decimal(&executed_fee),
                     )
                     .await
-                    .context("insert_missing_order_executions")?;
+                    .context("save_order_executions")?;
                 }
             }
         }

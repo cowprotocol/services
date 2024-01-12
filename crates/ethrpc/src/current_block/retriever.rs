@@ -76,6 +76,7 @@ impl BlockRetrieving for BlockRetriever {
             Ok(BlockInfo {
                 number: fetch.number.saturating_sub(1),
                 hash: fetch.parent_hash,
+                timestamp: fetch.timestamp,
                 parent_hash: call.hash,
             })
         } else {
@@ -93,17 +94,19 @@ impl BlockRetrieving for BlockRetriever {
 }
 
 /// Decodes the return data from the `FetchBlock` contract.
-fn decode(return_data: [u8; 96]) -> Result<BlockInfo> {
+fn decode(return_data: [u8; 128]) -> Result<BlockInfo> {
     let number = u64::try_from(U256::from_big_endian(&return_data[0..32]))
         .ok()
         .context("block number overflows u64")?;
     let hash = H256::from_slice(&return_data[32..64]);
     let parent_hash = H256::from_slice(&return_data[64..96]);
+    let timestamp = U256::from_big_endian(&return_data[96..128]).as_u64();
 
     Ok(BlockInfo {
         number,
         hash,
         parent_hash,
+        timestamp,
     })
 }
 

@@ -5,10 +5,10 @@ use {
             competition::{
                 auction::{self, Auction},
                 solution::{self, Solution},
-                SolverTimeout,
             },
             eth,
             liquidity,
+            time::Remaining,
         },
         infra::blockchain::Ethereum,
         util,
@@ -153,26 +153,17 @@ impl Solver {
         &self,
         auction: &Auction,
         liquidity: &[liquidity::Liquidity],
-        timeout: SolverTimeout,
     ) -> Result<Vec<Solution>, Error> {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
-        let body = serde_json::to_string(&dto::Auction::new(
-            auction,
-            liquidity,
-            // Reduce the timeout by a small buffer to account for network latency. Otherwise the
-            // HTTP timeout might happen before the solver times out its search algorithm.
-            timeout.reduce(self.config.timeouts.http_delay),
-            weth,
-        ))
-        .unwrap();
+        let body = serde_json::to_string(&dto::Auction::new(auction, liquidity, weth)).unwrap();
         let url = shared::url::join(&self.config.endpoint, "solve");
         super::observe::solver_request(&url, &body);
         let mut req = self
             .client
             .post(url.clone())
             .body(body)
-            .timeout(timeout.duration().to_std().unwrap());
+            .timeout(auction.deadline().solvers().remaining().unwrap_or_default());
         if let Some(id) = observe::request_id::get_task_local_storage() {
             req = req.header("X-REQUEST-ID", id);
         }
@@ -203,7 +194,9 @@ impl Solver {
             req = req.header("X-REQUEST-ID", id);
         }
         let future = async move {
-            let _ = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await;
+            if let Err(error) = util::http::send(SOLVER_RESPONSE_MAX_BYTES, req).await {
+                tracing::warn!(?error, "failed to notify solver");
+            }
         };
         tokio::task::spawn(future.in_current_span());
     }

@@ -1,14 +1,18 @@
 use {
     super::Postgres,
+    crate::{
+        domain::{self},
+        infra::persistence::dto,
+    },
     anyhow::{Context, Result},
-    database::auction::AuctionId,
     futures::{StreamExt, TryStreamExt},
-    model::{auction::Auction, order::Order},
-    std::ops::DerefMut,
+    model::order::Order,
+    std::{collections::HashMap, ops::DerefMut},
 };
 
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
 }
 use {
@@ -81,7 +85,7 @@ impl Postgres {
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
-        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
+        let orders: Vec<Order> = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order),
                 Err(err) => Err(anyhow::Error::from(err)),
@@ -90,16 +94,20 @@ impl Postgres {
             .await?;
         let latest_settlement_block =
             database::orders::latest_settlement_block(&mut ex).await? as u64;
+        let quotes = self
+            .read_quotes(orders.iter().map(|order| &order.metadata.uid))
+            .await?;
         Ok(SolvableOrders {
             orders,
+            quotes,
             latest_settlement_block,
         })
     }
 
-    pub async fn replace_current_auction(&self, auction: &Auction) -> Result<AuctionId> {
+    pub async fn replace_current_auction(&self, auction: &dto::Auction) -> Result<dto::AuctionId> {
         let _timer = super::Metrics::get()
             .database_queries
-            .with_label_values(&["save_auction"])
+            .with_label_values(&["replace_current_auction"])
             .start_timer();
 
         let data = serde_json::to_value(auction)?;
