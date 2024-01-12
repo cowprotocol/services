@@ -9,14 +9,13 @@
 
 use {
     crate::{
-        arguments::FeePolicy,
         domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
             reveal,
             solve::{self},
         },
-        protocol::{self, fee},
+        infra,
         run_loop::{self, observe},
     },
     ::observe::metrics,
@@ -38,24 +37,22 @@ impl LivenessChecking for Liveness {
 }
 
 pub struct RunLoop {
-    orderbook: protocol::Orderbook,
+    orderbook: infra::shadow::Orderbook,
     drivers: Vec<Driver>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::AuctionId,
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
-    fee_policy: FeePolicy,
 }
 
 impl RunLoop {
     pub fn new(
-        orderbook: protocol::Orderbook,
+        orderbook: infra::shadow::Orderbook,
         drivers: Vec<Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
-        fee_policy: FeePolicy,
     ) -> Self {
         Self {
             orderbook,
@@ -65,7 +62,6 @@ impl RunLoop {
             block: 0,
             score_cap,
             solve_deadline,
-            fee_policy,
         }
     }
 
@@ -199,14 +195,12 @@ impl RunLoop {
         id: domain::AuctionId,
         auction: &domain::Auction,
     ) -> Vec<Participant<'_>> {
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
         let request = run_loop::solve_request(
             id,
             auction,
             &self.trusted_tokens.all(),
             self.score_cap,
             self.solve_deadline,
-            fee_policies,
         );
         let request = &request;
 

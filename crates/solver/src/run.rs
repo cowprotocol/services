@@ -379,7 +379,7 @@ pub async fn run(args: Arguments) {
         args.zeroex_enable_rfqt,
         args.zeroex_enable_slippage_protection,
         args.shared.use_internal_buffers,
-        args.shared.one_inch_url,
+        url::Url::parse(shared::price_estimation::oneinch::BASE_URL).unwrap(),
         args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
         order_converter.clone(),
@@ -548,11 +548,6 @@ pub async fn run(args: Arguments) {
         http_factory.create(),
         args.shared.solver_competition_auth.clone(),
     );
-    let network_time_between_blocks = args
-        .shared
-        .network_block_interval
-        .or_else(|| shared::network::block_interval(&network_id, chain_id))
-        .expect("unknown network block interval");
 
     let balance_fetcher = account_balances::fetcher(
         &web3,
@@ -576,8 +571,6 @@ pub async fn run(args: Arguments) {
         web3,
         network_id,
         args.solver_time_limit,
-        network_time_between_blocks,
-        args.additional_mining_deadline,
         args.skip_non_positive_score_settlements,
         current_block_stream.clone(),
         solution_submitter,

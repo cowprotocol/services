@@ -10,10 +10,10 @@ use {
             },
             Postgres,
         },
+        domain,
         driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
-        infra::{self, blockchain},
-        protocol,
+        infra::{self},
         run_loop::RunLoop,
         shadow,
         solvable_orders::SolvableOrdersCache,
@@ -35,7 +35,6 @@ use {
         },
         baseline_solver::BaseTokens,
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
-        gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -75,14 +74,14 @@ impl LivenessChecking for Liveness {
     }
 }
 
-async fn ethrpc(url: &Url) -> blockchain::Rpc {
-    blockchain::Rpc::new(url)
+async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
+    infra::blockchain::Rpc::new(url)
         .await
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: blockchain::Rpc, poll_interval: Duration) -> blockchain::Ethereum {
-    blockchain::Ethereum::new(ethrpc, poll_interval).await
+async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Ethereum {
+    infra::Ethereum::new(ethrpc, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -434,16 +433,6 @@ pub async fn run(args: Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
-            &web3,
-            args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    ));
     let liquidity_order_owners: HashSet<_> = args
         .order_quoting
         .liquidity_order_owners
@@ -551,6 +540,10 @@ pub async fn run(args: Arguments) {
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
+        domain::ProtocolFee::new(
+            args.fee_policy.clone().to_domain(),
+            args.fee_policy.fee_policy_skip_market_orders,
+        ),
     );
     solvable_orders_cache
         .update(block)
@@ -612,7 +605,6 @@ pub async fn run(args: Arguments) {
         max_settlement_transaction_wait: args.max_settlement_transaction_wait,
         solve_deadline: args.solve_deadline,
         in_flight_orders: Default::default(),
-        fee_policy: args.fee_policy,
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db))
             .await,
     };
@@ -623,7 +615,7 @@ pub async fn run(args: Arguments) {
 async fn shadow_mode(args: Arguments) -> ! {
     let http_factory = HttpClientFactory::new(&args.http_client);
 
-    let orderbook = protocol::Orderbook::new(
+    let orderbook = infra::shadow::Orderbook::new(
         http_factory.create(),
         args.shadow.expect("missing shadow mode configuration"),
     );
@@ -669,7 +661,6 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
-        args.fee_policy,
     );
     shadow.run_forever().await;
 

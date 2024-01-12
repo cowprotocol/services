@@ -33,14 +33,13 @@
 use {
     crate::{
         database::{
-            on_settlement_event_updater::{AuctionData, AuctionId, SettlementUpdate},
+            on_settlement_event_updater::{AuctionData, SettlementUpdate},
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
     },
     anyhow::{anyhow, Context, Result},
     contracts::GPv2Settlement,
-    database::byte_array::ByteArray,
     ethrpc::{
         current_block::{into_stream, CurrentBlockStream},
         Web3,
@@ -135,21 +134,9 @@ impl OnSettlementEventUpdater {
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
         let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
-
-        let mut auction_id =
+        let auction_id =
             Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
-                .await?
-                .map(AuctionId::Colocated);
-        if auction_id.is_none() {
-            // This settlement was issued BEFORE solver-driver colocation.
-            auction_id = database::auction_transaction::get_auction_id(
-                &mut ex,
-                &ByteArray(tx_from.0),
-                tx_nonce,
-            )
-            .await?
-            .map(AuctionId::Centralized);
-        }
+                .await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
@@ -178,12 +165,11 @@ impl OnSettlementEventUpdater {
             let effective_gas_price = receipt
                 .effective_gas_price
                 .with_context(|| format!("no effective gas price {hash:?}"))?;
-            let auction_external_prices =
-                Postgres::get_auction_prices(&mut ex, auction_id.assume_verified())
-                    .await
-                    .with_context(|| {
-                        format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
-                    })?;
+            let auction_external_prices = Postgres::get_auction_prices(&mut ex, auction_id)
+                .await
+                .with_context(|| {
+                format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
+            })?;
             let external_prices = ExternalPrices::try_from_auction_prices(
                 self.native_token,
                 auction_external_prices.clone(),

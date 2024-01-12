@@ -34,7 +34,7 @@ impl Solutions {
                                     .find(|order| order.uid == fulfillment.order)
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment"
+                                        "invalid order UID specified in fulfillment".to_owned()
                                     ))?
                                     .clone();
 
@@ -51,7 +51,7 @@ impl Solutions {
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(
                                     |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error("invalid trade fulfillment")
+                                        super::Error("invalid trade fulfillment".to_owned())
                                     },
                                 )
                             }
@@ -117,7 +117,9 @@ impl Solutions {
                                 )
                                 .map_err(
                                     |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error("invalid executed amount in JIT order")
+                                        super::Error(
+                                            "invalid executed amount in JIT order".to_owned(),
+                                        )
                                     },
                                 )?,
                             )),
@@ -175,7 +177,7 @@ impl Solutions {
                                     .iter()
                                     .find(|liquidity| liquidity.id == interaction.id)
                                     .ok_or(super::Error(
-                                        "invalid liquidity ID specified in interaction",
+                                        "invalid liquidity ID specified in interaction".to_owned(),
                                     ))?
                                     .to_owned();
                                 Ok(competition::solution::Interaction::Liquidity(
@@ -206,8 +208,13 @@ impl Solutions {
                     },
                     weth,
                 )
-                .map_err(|competition::solution::InvalidClearingPrices| {
-                    super::Error("invalid clearing prices")
+                .map_err(|err| match err {
+                    competition::solution::SolutionError::InvalidClearingPrices => {
+                        super::Error("invalid clearing prices".to_owned())
+                    }
+                    competition::solution::SolutionError::ProtocolFee(err) => {
+                        super::Error(format!("could not incorporate protocol fee: {err}"))
+                    }
                 })
             })
             .collect()

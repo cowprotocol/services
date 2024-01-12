@@ -301,13 +301,13 @@ pub struct Arguments {
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub zeroex_only_estimate_buy_queries: bool,
 
-    /// The API key for the 1Inch spot API.
+    /// The API key for the 1Inch API.
     #[clap(long, env)]
-    pub one_inch_spot_price_api_key: Option<String>,
+    pub one_inch_api_key: Option<String>,
 
-    /// The base URL for the 1Inch spot API.
-    #[clap(long, env)]
-    pub one_inch_spot_price_api_url: Option<Url>,
+    /// The base URL for the 1Inch API.
+    #[clap(long, env, default_value = "https://api.1inch.dev/")]
+    pub one_inch_url: Url,
 }
 
 impl Display for Arguments {
@@ -324,9 +324,9 @@ impl Display for Arguments {
             tenderly_save_successful_trade_simulations,
             tenderly_save_failed_trade_simulations,
             zeroex_only_estimate_buy_queries,
-            one_inch_spot_price_api_key,
+            one_inch_api_key,
             trade_simulator,
-            one_inch_spot_price_api_url,
+            one_inch_url,
         } = self;
 
         display_option(
@@ -388,17 +388,9 @@ impl Display for Arguments {
             "zeroex_only_estimate_buy_queries: {:?}",
             zeroex_only_estimate_buy_queries
         )?;
-        display_secret_option(
-            f,
-            "one_inch_spot_price_api_key: {:?}",
-            one_inch_spot_price_api_key,
-        )?;
+        display_secret_option(f, "one_inch_spot_price_api_key: {:?}", one_inch_api_key)?;
         writeln!(f, "trade_simulator: {:?}", trade_simulator)?;
-        display_option(
-            f,
-            "one_inch_spot_price_api_url: {}",
-            one_inch_spot_price_api_url,
-        )?;
+        writeln!(f, "one_inch_spot_price_api_url: {}", one_inch_url)?;
 
         Ok(())
     }

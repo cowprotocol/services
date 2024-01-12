@@ -18,6 +18,7 @@ mod order_cancellation;
 mod partial_fill;
 mod partially_fillable_balance;
 mod partially_fillable_pool;
+mod protocol_fee;
 mod quoting;
 mod refunder;
 mod smart_contract_orders;

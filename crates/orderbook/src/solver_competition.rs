@@ -17,9 +17,6 @@ pub enum Identifier {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SolverCompetitionStoring: Send + Sync {
-    /// Saves a new solver competition entry.
-    async fn handle_request(&self, request: model::solver_competition::Request) -> Result<()>;
-
     /// Retrieves a solver competition entry by ID.
     ///
     /// Returns a `NotFound` error if no solver competition with that ID could
