@@ -85,6 +85,13 @@ impl Fulfillment {
                 tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
                 Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
             }
+            Some(FeePolicy::PriceImprovement {
+                factor: _,
+                max_volume_factor: _,
+                quote: _,
+            }) => {
+                todo!()
+            }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
         }
