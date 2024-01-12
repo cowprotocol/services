@@ -77,7 +77,6 @@ pub fn encoding_failed(
             simulation_failed(solver, auction_id, solution_id, error, false);
             return;
         }
-        solution::Error::Execution(_) => return,
         solution::Error::FailingInternalization => return,
         solution::Error::DifferentSolvers => return,
     };
@@ -137,4 +136,8 @@ pub fn duplicated_solution_id(
         Some(solution_id),
         notification::Kind::DuplicatedSolutionId,
     );
+}
+
+pub fn postprocessing_timed_out(solver: &Solver, auction_id: Option<auction::Id>) {
+    solver.notify(auction_id, None, notification::Kind::PostprocessingTimedOut);
 }

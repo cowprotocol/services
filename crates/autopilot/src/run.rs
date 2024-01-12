@@ -35,7 +35,6 @@ use {
         },
         baseline_solver::BaseTokens,
         fee_subsidy::{config::FeeSubsidyConfiguration, FeeSubsidizing},
-        gas_price::InstrumentedGasEstimator,
         http_client::HttpClientFactory,
         maintenance::{Maintaining, ServiceMaintenance},
         metrics::LivenessChecking,
@@ -434,16 +433,6 @@ pub async fn run(args: Arguments) {
     ));
     let mut maintainers: Vec<Arc<dyn Maintaining>> = vec![event_updater, Arc::new(db.clone())];
 
-    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            &http_factory,
-            &web3,
-            args.shared.gas_estimators.as_slice(),
-            args.shared.blocknative_api_key.clone(),
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    ));
     let liquidity_order_owners: HashSet<_> = args
         .order_quoting
         .liquidity_order_owners

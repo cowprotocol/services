@@ -32,22 +32,27 @@ impl Postgres {
         orders: impl Iterator<Item = &OrderUid>,
     ) -> Result<HashMap<domain::OrderUid, domain::Quote>> {
         let mut ex = self.pool.acquire().await?;
-        let mut quotes = HashMap::new();
-        for order in orders {
-            let order_uid = ByteArray(order.0);
-            match database::orders::read_quote(&mut ex, &order_uid).await? {
-                Some(quote) => match dto::quote::into_domain(quote) {
-                    Ok(quote) => {
-                        quotes.insert(domain::OrderUid::from(*order), quote);
-                    }
-                    Err(err) => {
-                        tracing::warn!(?order, ?err, "failed to convert quote from db");
-                    }
-                },
-                None => {
-                    tracing::warn!(?order, "quote not found for order");
-                }
-            }
+        let order_uids: Vec<_> = orders.map(|uid| ByteArray(uid.0)).collect();
+        let quotes: HashMap<_, _> = database::orders::read_quotes(&mut ex, &order_uids)
+            .await?
+            .into_iter()
+            .filter_map(|quote| {
+                let order_uid = domain::OrderUid(quote.order_uid.0);
+                dto::quote::into_domain(quote)
+                    .map_err(|err| {
+                        tracing::warn!(?order_uid, ?err, "failed to convert quote from db")
+                    })
+                    .ok()
+                    .map(|quote| (order_uid, quote))
+            })
+            .collect();
+
+        // Log warnings for missing quotes
+        for order_uid in order_uids
+            .iter()
+            .filter(|uid| !quotes.contains_key(&domain::OrderUid(uid.0)))
+        {
+            tracing::warn!(?order_uid, "quote not found for order");
         }
         Ok(quotes)
     }
