@@ -56,7 +56,7 @@ paths:
                   description: |
                     The kind of notification.
                   type: string
-                  enum: [Timeout, EmptySolution, DuplicatedSolutionId, SimulationFailed, ZeroScore, ScoreHigherThanQuality, SuccessProbabilityOutOfRange, ObjectiveValueNonPositive, NonBufferableTokensUsed, SolverAccountInsufficientBalance, Success, Revert, Cancelled, Failed]
+                  enum: [Timeout, EmptySolution, DuplicatedSolutionId, SimulationFailed, ZeroScore, ScoreHigherThanQuality, SuccessProbabilityOutOfRange, ObjectiveValueNonPositive, NonBufferableTokensUsed, SolverAccountInsufficientBalance, Success, Revert, Cancelled, Failed, PostprocessingTimedOut]
       responses:
         200:
           description: notification successfully received.

@@ -8,4 +8,4 @@ pub use {auction::Auction, notification::Notification, solution::Solutions};
 
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
-pub struct Error(pub &'static str);
+pub struct Error(pub String);
