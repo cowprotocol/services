@@ -117,14 +117,14 @@ struct Order {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum Class {
     Market,
     Limit,
@@ -146,7 +146,7 @@ struct Token {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Liquidity {
     ConstantProduct(ConstantProductPool),
     WeightedProduct(WeightedProductPool),
@@ -227,7 +227,7 @@ struct WeightedProductReserve {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 enum WeightedProductVersion {
     V0,
     V3Plus,

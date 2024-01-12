@@ -46,7 +46,6 @@ use {
         order_validation::{
             convert_signing_scheme_into_quote_signing_scheme,
             get_quote_and_check_fee,
-            is_order_outside_market_price,
             onchain_order_placement_error_from,
         },
     },
@@ -569,14 +568,17 @@ async fn get_quote(
         // verified quote here on purpose.
         verification: None,
     };
-    get_quote_and_check_fee(
-        quoter,
-        &parameters.clone(),
-        Some(*quote_id),
-        Some(order_data.fee_amount),
-    )
-    .await
-    .map_err(onchain_order_placement_error_from)
+    let fee_amount = match order_data.fee_amount.is_zero() {
+        // If an ETHFlow order was created with 0 fee it means it has the semantics
+        // of a limit order where solvers are responsible of baking in an appropriate execution fee
+        // into their limit prices. In that case we don't require that the fee amount matches one of
+        // our stored quotes.
+        true => None,
+        false => Some(order_data.fee_amount),
+    };
+    get_quote_and_check_fee(quoter, &parameters.clone(), Some(*quote_id), fee_amount)
+        .await
+        .map_err(onchain_order_placement_error_from)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -600,7 +602,7 @@ fn convert_onchain_order_placement(
         order_data.fee_amount
     };
     let is_outside_market_price = if let Ok(ref quote) = quote {
-        if is_order_outside_market_price(&order_data.sell_amount, &order_data.buy_amount, quote) {
+        if !order_data.within_market(&quote.sell_amount, &quote.buy_amount) {
             tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
             metrics.inc_onchain_order_errors("outside_market_price");
             true

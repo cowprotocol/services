@@ -1,5 +1,8 @@
 use {
-    e2e::{setup::*, tx},
+    e2e::{
+        setup::{colocation::SolverEngine, *},
+        tx,
+    },
     ethcontract::prelude::U256,
     model::{
         order::{OrderCreation, OrderKind},
@@ -78,8 +81,20 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services.start_api(vec![]).await;
+    let solver_endpoint = colocation::start_naive_solver().await;
+    colocation::start_driver(
+        onchain.contracts(),
+        vec![SolverEngine {
+            name: "test_solver".into(),
+            account: solver,
+            endpoint: solver_endpoint,
+        }],
+    );
+    services
+        .start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -115,13 +130,20 @@ async fn onchain_settlement(web3: Web3) {
     );
     services.create_order(&order_b).await.unwrap();
 
+    // Only start the autopilot now to ensure that these orders are settled in a
+    // batch which seems to be expected in this test.
+    // However, this currently does not work because the driver will not merge the
+    // individual solutions because the token prices don't match after scaling.
+    services.start_autopilot(vec![
+        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+    ]);
+
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
     let balance = token_a.balance_of(trader_b.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());
 
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();

@@ -12,6 +12,8 @@ use {
     std::sync::Arc,
 };
 
+pub const BASE_URL: &str = "https://api.1inch.dev/";
+
 pub struct OneInchPriceEstimator(TradeEstimator);
 
 impl OneInchPriceEstimator {

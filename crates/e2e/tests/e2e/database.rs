@@ -4,7 +4,6 @@
 use {
     database::{byte_array::ByteArray, order_events, Address, TransactionHash},
     e2e::setup::Db,
-    futures::TryStreamExt,
     model::order::OrderUid,
     std::ops::DerefMut,
 };
@@ -38,7 +37,6 @@ pub struct Cip20Data {
     pub participants: Vec<database::auction_participants::Participant>,
     pub prices: Vec<database::auction_prices::AuctionPrice>,
     pub score: database::settlement_scores::Score,
-    pub trades: Vec<database::orders::OrderExecution>,
     pub call_data: database::settlement_call_data::SettlementCallData,
     pub competition: serde_json::Value,
 }
@@ -79,10 +77,6 @@ WHERE at.auction_id = $1
     let score = database::settlement_scores::fetch(&mut db, auction_id)
         .await
         .unwrap()?;
-    let trades = database::orders::order_executions_in_tx(&mut db, &tx.tx_hash, auction_id)
-        .try_collect()
-        .await
-        .ok()?;
     let call_data = database::settlement_call_data::fetch(&mut db, auction_id)
         .await
         .unwrap()?;
@@ -97,7 +91,6 @@ WHERE at.auction_id = $1
         participants,
         prices,
         score,
-        trades,
         call_data,
         competition,
     })

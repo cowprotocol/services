@@ -1,4 +1,5 @@
 use {
+    self::fee::ClearingPrices,
     crate::{
         boundary,
         domain::{
@@ -6,7 +7,6 @@ use {
             eth::{self, TokenAddress},
         },
         infra::{
-            self,
             blockchain::{self, Ethereum},
             simulator,
             solver::Solver,
@@ -19,6 +19,7 @@ use {
     thiserror::Error,
 };
 
+pub mod fee;
 pub mod interaction;
 pub mod settlement;
 pub mod trade;
@@ -50,7 +51,7 @@ impl Solution {
         solver: Solver,
         score: SolverScore,
         weth: eth::WethAddress,
-    ) -> Result<Self, InvalidClearingPrices> {
+    ) -> Result<Self, SolutionError> {
         let solution = Self {
             id,
             trades,
@@ -66,9 +67,9 @@ impl Solution {
             solution.clearing_price(trade.order().sell.token).is_some()
                 && solution.clearing_price(trade.order().buy.token).is_some()
         }) {
-            Ok(solution)
+            Ok(solution.with_protocol_fees()?)
         } else {
-            Err(InvalidClearingPrices)
+            Err(SolutionError::InvalidClearingPrices)
         }
     }
 
@@ -177,6 +178,29 @@ impl Solution {
         Settlement::encode(self, auction, eth, simulator).await
     }
 
+    pub fn with_protocol_fees(self) -> Result<Self, fee::Error> {
+        let mut trades = Vec::with_capacity(self.trades.len());
+        for trade in self.trades {
+            match &trade {
+                Trade::Fulfillment(fulfillment) => match fulfillment.order().kind {
+                    order::Kind::Market | order::Kind::Limit { .. } => {
+                        let prices = ClearingPrices {
+                            sell: self.prices[&fulfillment.order().sell.token.wrap(self.weth)],
+                            buy: self.prices[&fulfillment.order().buy.token.wrap(self.weth)],
+                        };
+                        let fulfillment = fulfillment.with_protocol_fee(prices)?;
+                        trades.push(Trade::Fulfillment(fulfillment))
+                    }
+                    order::Kind::Liquidity => {
+                        trades.push(trade);
+                    }
+                },
+                Trade::Jit(_) => trades.push(trade),
+            }
+        }
+        Ok(Self { trades, ..self })
+    }
+
     /// Token prices settled by this solution, expressed using an arbitrary
     /// reference unit chosen by the solver. These values are only
     /// meaningful in relation to each others.
@@ -247,31 +271,6 @@ impl std::fmt::Debug for Solution {
     }
 }
 
-/// The time limit passed to the solver for solving an auction.
-#[derive(Debug, Clone, Copy)]
-pub struct SolverTimeout(chrono::Duration);
-
-impl SolverTimeout {
-    pub fn deadline(self) -> chrono::DateTime<chrono::Utc> {
-        infra::time::now() + self.0
-    }
-
-    pub fn duration(self) -> chrono::Duration {
-        self.0
-    }
-
-    #[must_use]
-    pub fn reduce(self, duration: chrono::Duration) -> Self {
-        Self(self.0 - duration)
-    }
-}
-
-impl From<std::time::Duration> for SolverTimeout {
-    fn from(duration: std::time::Duration) -> Self {
-        Self(chrono::Duration::from_std(duration).unwrap_or(chrono::Duration::max_value()))
-    }
-}
-
 /// Carries information how the score should be calculated.
 #[derive(Debug, Clone)]
 pub enum SolverScore {
@@ -305,8 +304,6 @@ pub enum Error {
     Boundary(#[from] boundary::Error),
     #[error("simulation error: {0:?}")]
     Simulation(#[from] simulator::Error),
-    #[error(transparent)]
-    Execution(#[from] trade::ExecutionError),
     #[error(
         "non bufferable tokens used: solution attempts to internalize tokens which are not trusted"
     )]
@@ -319,6 +316,10 @@ pub enum Error {
     DifferentSolvers,
 }
 
-#[derive(Debug, Error)]
-#[error("invalid clearing prices")]
-pub struct InvalidClearingPrices;
+#[derive(Debug, thiserror::Error)]
+pub enum SolutionError {
+    #[error("invalid clearing prices")]
+    InvalidClearingPrices,
+    #[error(transparent)]
+    ProtocolFee(#[from] fee::Error),
+}

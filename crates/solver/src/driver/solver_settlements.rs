@@ -1,5 +1,6 @@
 use {
-    crate::{driver::solver_competition::Score, settlement::Settlement},
+    crate::settlement::Settlement,
+    model::solver_competition::Score,
     num::BigRational,
     primitive_types::U256,
 };
@@ -61,8 +62,7 @@ mod tests {
         let settlement = Settlement::with_default_prices(vec![]);
         assert!(!has_user_order(&settlement));
 
-        let settlement =
-            Settlement::with_default_prices(vec![order(OrderClass::Limit(Default::default()))]);
+        let settlement = Settlement::with_default_prices(vec![order(OrderClass::Limit)]);
         assert!(has_user_order(&settlement));
 
         let settlement = Settlement::with_default_prices(vec![order(OrderClass::Liquidity)]);
@@ -79,7 +79,7 @@ mod tests {
 
         let settlement = Settlement::with_default_prices(vec![
             order(OrderClass::Liquidity),
-            order(OrderClass::Limit(Default::default())),
+            order(OrderClass::Limit),
         ]);
         assert!(has_user_order(&settlement));
     }

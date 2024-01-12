@@ -267,7 +267,7 @@ impl SettlementEncoder {
                     buy_price,
                 )?
             }
-            OrderClass::Limit(_) => {
+            OrderClass::Limit => {
                 let surplus_fee = scoring_fee;
 
                 // Solvers calculate with slightly adjusted amounts compared to
@@ -1471,7 +1471,7 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
         // sell 1.01 WETH for 1_000 USDC with a fee of 0.01 WETH (or 10 USDC)
         let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit(Default::default()))
+            .with_class(OrderClass::Limit)
             .with_sell_token(weth)
             .with_sell_amount(1_010_000_000_000_000_000u128.into()) // 1.01 WETH
             .with_buy_token(usdc)
@@ -1525,7 +1525,7 @@ pub mod tests {
         let mut encoder = SettlementEncoder::new(prices);
         // buy 1 WETH for 1_010 USDC with a fee of 10 USDC
         let order = OrderBuilder::default()
-            .with_class(OrderClass::Limit(Default::default()))
+            .with_class(OrderClass::Limit)
             .with_buy_token(weth)
             .with_buy_amount(U256::exp10(18)) // 1 WETH
             .with_sell_token(usdc)

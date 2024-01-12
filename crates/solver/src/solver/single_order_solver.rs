@@ -90,25 +90,28 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(
-            f,
-            "price_priority_exponent: {}",
-            self.price_priority_exponent
-        )?;
+        let Self {
+            price_priority_exponent,
+            price_priority_min_weight,
+            price_priority_max_weight,
+            single_order_solver_rate_limiter,
+        } = self;
+
+        writeln!(f, "price_priority_exponent: {}", price_priority_exponent)?;
         writeln!(
             f,
             "price_priority_min_weight: {}",
-            self.price_priority_min_weight
+            price_priority_min_weight
         )?;
         writeln!(
             f,
             "price_priority_max_weight: {}",
-            self.price_priority_max_weight
+            price_priority_max_weight
         )?;
         display_option(
             f,
             "single_order_solver_rate_limiter",
-            &self.single_order_solver_rate_limiter,
+            single_order_solver_rate_limiter,
         )?;
         Ok(())
     }
@@ -1098,7 +1101,7 @@ mod tests {
                         },
                         metadata: OrderMetadata {
                             uid: OrderUid([0u8; 56]),
-                            class: OrderClass::Limit(Default::default()),
+                            class: OrderClass::Limit,
                             ..Default::default()
                         },
                         ..Default::default()
