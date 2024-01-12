@@ -258,7 +258,7 @@ Column                    | Type                         | Nullable | Details
  order_uid                | bytea                        | not null | 56 bytes identifier linking to the order in the `orders` table
  application_order        | serial                       | not null | the order in which the fee policies are inserted and applied
  kind                     | [PolicyKind](#policykind)    | not null | type of the fee policy, defined in the PolicyKind enum
- price_improvement_factor | double precision             |          | percentage of the price improvement for fee calculation; value is between 0 and 1
+ surplus_factor           | double precision             |          | percentage of the surplus for fee calculation; value is between 0 and 1
  max_volume_factor        | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
  volume_factor            | double precision             |          | fee percentage of the order volume; value is between 0 and 1
 
@@ -271,7 +271,7 @@ Indexes:
     Enum for the `kind` column in `fee_policies` table.
 
     Values:
-    - `priceimprovement`: The fee is based on the price improvement achieved in the trade.
+    - `surplus`: The fee is based on the surplus achieved in the trade.
     - `volume`: The fee is based on the volume of the order.
 
 ### presignature\_events

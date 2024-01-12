@@ -8,7 +8,7 @@ pub async fn insert_batch(
     fee_policies: impl IntoIterator<Item = dto::fee_policy::FeePolicy>,
 ) -> Result<(), sqlx::Error> {
     let mut query_builder = QueryBuilder::new(
-        "INSERT INTO fee_policies (auction_id, order_uid, kind, price_improvement_factor, \
+        "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
          max_volume_factor, volume_factor) ",
     );
 
@@ -16,7 +16,7 @@ pub async fn insert_batch(
         b.push_bind(fee_policy.auction_id)
             .push_bind(fee_policy.order_uid)
             .push_bind(fee_policy.kind)
-            .push_bind(fee_policy.price_improvement_factor)
+            .push_bind(fee_policy.surplus_factor)
             .push_bind(fee_policy.max_volume_factor)
             .push_bind(fee_policy.volume_factor);
     });
@@ -58,21 +58,21 @@ mod tests {
         // same primary key for all fee policies
         let (auction_id, order_uid) = (1, ByteArray([1; 56]));
 
-        // price improvement fee policy without caps
+        // surplus fee policy without caps
         let fee_policy_1 = dto::fee_policy::FeePolicy {
             auction_id,
             order_uid,
-            kind: dto::fee_policy::FeePolicyKind::PriceImprovement,
-            price_improvement_factor: Some(0.1),
+            kind: dto::fee_policy::FeePolicyKind::Surplus,
+            surplus_factor: Some(0.1),
             max_volume_factor: Some(1.0),
             volume_factor: None,
         };
-        // price improvement fee policy with caps
+        // surplus fee policy with caps
         let fee_policy_2 = dto::fee_policy::FeePolicy {
             auction_id,
             order_uid,
-            kind: dto::fee_policy::FeePolicyKind::PriceImprovement,
-            price_improvement_factor: Some(0.2),
+            kind: dto::fee_policy::FeePolicyKind::Surplus,
+            surplus_factor: Some(0.2),
             max_volume_factor: Some(0.05),
             volume_factor: None,
         };
@@ -81,7 +81,7 @@ mod tests {
             auction_id,
             order_uid,
             kind: dto::fee_policy::FeePolicyKind::Volume,
-            price_improvement_factor: None,
+            surplus_factor: None,
             max_volume_factor: None,
             volume_factor: Some(0.06),
         };
