@@ -1,9 +1,9 @@
-use {crate::domain, database::byte_array::ByteArray};
+use crate::{boundary, domain};
 
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct FeePolicy {
     pub auction_id: domain::AuctionId,
-    pub order_uid: database::OrderUid,
+    pub order_uid: boundary::database::OrderUid,
     pub kind: FeePolicyKind,
     pub surplus_factor: Option<f64>,
     pub max_volume_factor: Option<f64>,
@@ -22,7 +22,7 @@ impl FeePolicy {
                 max_volume_factor,
             } => Self {
                 auction_id,
-                order_uid: ByteArray(order_uid.0),
+                order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
                 kind: FeePolicyKind::Surplus,
                 surplus_factor: Some(factor),
                 max_volume_factor: Some(max_volume_factor),
@@ -30,7 +30,7 @@ impl FeePolicy {
             },
             domain::fee::Policy::Volume { factor } => Self {
                 auction_id,
-                order_uid: ByteArray(order_uid.0),
+                order_uid: boundary::database::byte_array::ByteArray(order_uid.0),
                 kind: FeePolicyKind::Volume,
                 surplus_factor: None,
                 max_volume_factor: None,

@@ -110,9 +110,9 @@ impl Persistence {
         let fee_policies = fee_policies
             .into_iter()
             .flat_map(|(order_uid, policies)| {
-                policies.into_iter().map(move |policy| {
-                    dto::fee_policy::FeePolicy::from_domain(auction_id, order_uid, policy)
-                })
+                policies
+                    .into_iter()
+                    .map(move |policy| dto::FeePolicy::from_domain(auction_id, order_uid, policy))
             })
             .collect_vec();
 

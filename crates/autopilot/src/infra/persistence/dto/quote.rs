@@ -3,7 +3,9 @@ use {
     number::conversions::big_decimal_to_u256,
 };
 
-pub fn into_domain(quote: boundary::DatabaseQuote) -> Result<domain::Quote, AmountOverflow> {
+pub fn into_domain(
+    quote: boundary::database::orders::Quote,
+) -> Result<domain::Quote, AmountOverflow> {
     Ok(domain::Quote {
         order_uid: domain::OrderUid(quote.order_uid.0),
         sell_amount: big_decimal_to_u256(&quote.sell_amount).ok_or(AmountOverflow)?,

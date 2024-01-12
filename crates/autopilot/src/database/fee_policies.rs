@@ -5,7 +5,7 @@ use {
 
 pub async fn insert_batch(
     ex: &mut PgConnection,
-    fee_policies: impl IntoIterator<Item = dto::fee_policy::FeePolicy>,
+    fee_policies: impl IntoIterator<Item = dto::FeePolicy>,
 ) -> Result<(), sqlx::Error> {
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
@@ -28,13 +28,13 @@ pub async fn fetch(
     ex: &mut PgConnection,
     auction_id: dto::AuctionId,
     order_uid: database::OrderUid,
-) -> Result<Vec<dto::fee_policy::FeePolicy>, sqlx::Error> {
+) -> Result<Vec<dto::FeePolicy>, sqlx::Error> {
     const QUERY: &str = r#"
         SELECT * FROM fee_policies
         WHERE auction_id = $1 AND order_uid = $2
         ORDER BY application_order
     "#;
-    let rows = sqlx::query_as::<_, dto::fee_policy::FeePolicy>(QUERY)
+    let rows = sqlx::query_as::<_, dto::FeePolicy>(QUERY)
         .bind(auction_id)
         .bind(order_uid)
         .fetch_all(ex)
@@ -59,7 +59,7 @@ mod tests {
         let (auction_id, order_uid) = (1, ByteArray([1; 56]));
 
         // surplus fee policy without caps
-        let fee_policy_1 = dto::fee_policy::FeePolicy {
+        let fee_policy_1 = dto::FeePolicy {
             auction_id,
             order_uid,
             kind: dto::fee_policy::FeePolicyKind::Surplus,
@@ -68,7 +68,7 @@ mod tests {
             volume_factor: None,
         };
         // surplus fee policy with caps
-        let fee_policy_2 = dto::fee_policy::FeePolicy {
+        let fee_policy_2 = dto::FeePolicy {
             auction_id,
             order_uid,
             kind: dto::fee_policy::FeePolicyKind::Surplus,
@@ -77,7 +77,7 @@ mod tests {
             volume_factor: None,
         };
         // volume based fee policy
-        let fee_policy_3 = dto::fee_policy::FeePolicy {
+        let fee_policy_3 = dto::FeePolicy {
             auction_id,
             order_uid,
             kind: dto::fee_policy::FeePolicyKind::Volume,
