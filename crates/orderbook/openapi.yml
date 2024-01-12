@@ -1569,8 +1569,8 @@ components:
           items:
             $ref: "#/components/schemas/CallData"
           description: The call data to be used for the interaction.
-    PriceImprovement:
-      description: The protocol fee is taken as a percent of the price improvement over max(limit_price, quote).
+    Surplus:
+      description: The protocol fee is taken as a percent of the surplus.
       type: object
       properties:
         factor:
@@ -1591,5 +1591,5 @@ components:
     FeePolicy:
       description: Defines the ways to calculate the protocol fee.
       oneOf:
-        - $ref: '#/components/schemas/PriceImprovement'
+        - $ref: '#/components/schemas/Surplus'
         - $ref: '#/components/schemas/Volume'
