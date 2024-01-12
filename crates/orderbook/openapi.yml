@@ -982,7 +982,7 @@ components:
           $ref: "#/components/schemas/AppDataHash"
         signature:
           $ref: "#/components/schemas/Signature"
-        feePolicies:
+        protocolFees:
           description: |
             The fee policies that are used to compute the protocol fees for this order.
           type: array
@@ -1009,7 +1009,7 @@ components:
         - class
         - appData
         - signature
-        - feePolicies
+        - protocolFees
     Auction:
       description: |
         A batch auction for solving.
