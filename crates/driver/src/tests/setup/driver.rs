@@ -98,7 +98,7 @@ pub fn solve_req(test: &Test) -> serde_json::Value {
                 order::Kind::Market => json!([]),
                 order::Kind::Liquidity => json!([]),
                 order::Kind::Limit { .. } => json!([{
-                    "priceImprovement": {
+                    "surplus": {
                         "factor": 0.0,
                         "maxVolumeFactor": 0.06
                     }

@@ -63,19 +63,17 @@ impl ProtocolFee {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Policy {
-    /// If the order receives more than expected (positive deviation from
-    /// quoted amounts) pay the protocol a factor of the achieved
-    /// improvement. The fee is taken in `sell` token for `buy`
-    /// orders and in `buy` token for `sell` orders.
-    PriceImprovement {
-        /// Factor of price improvement the protocol charges as a fee.
-        /// Price improvement is the difference between executed price and
-        /// limit price or quoted price (whichever is better)
+    /// If the order receives more than limit price, take the protocol fee as a
+    /// percentage of the difference. The fee is taken in `sell` token for
+    /// `buy` orders and in `buy` token for `sell` orders.
+    Surplus {
+        /// Factor of surplus the protocol charges as a fee.
+        /// Surplus is the difference between executed price and limit price
         ///
-        /// E.g. if a user received 2000USDC for 1ETH while having been
-        /// quoted 1990USDC, their price improvement is 10USDC.
-        /// A factor of 0.5 requires the solver to pay 5USDC to
-        /// the protocol for settling this order.
+        /// E.g. if a user received 2000USDC for 1ETH while having a limit price
+        /// of 1990USDC, their surplus is 10USDC. A factor of 0.5
+        /// requires the solver to pay 5USDC to the protocol for
+        /// settling this order.
         factor: f64,
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,

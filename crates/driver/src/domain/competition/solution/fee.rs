@@ -75,26 +75,22 @@ impl Fulfillment {
         }
 
         match self.order().fee_policies.first() {
-            Some(FeePolicy::PriceImprovement {
+            Some(FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
             }) => {
-                let price_improvement_fee = self.price_improvement_fee(prices, *factor)?;
-                let max_volume_fee = self.volume_fee(prices, *max_volume_factor)?;
+                let fee_from_surplus = self.fee_from_surplus(prices, *factor)?;
+                let fee_from_volume = self.fee_from_volume(prices, *max_volume_factor)?;
                 // take the smaller of the two
-                tracing::debug!(uid=?self.order().uid, price_improvement_fee=?price_improvement_fee, max_volume_fee=?max_volume_fee, protocol_fee=?(std::cmp::min(price_improvement_fee, max_volume_fee)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
-                Ok(std::cmp::min(price_improvement_fee, max_volume_fee))
+                tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+                Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
             }
-            Some(FeePolicy::Volume { factor }) => self.volume_fee(prices, *factor),
+            Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
         }
     }
 
-    fn price_improvement_fee(
-        &self,
-        prices: ClearingPrices,
-        factor: f64,
-    ) -> Result<eth::U256, Error> {
+    fn fee_from_surplus(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
         let sell_amount = self.order().sell.amount.0;
         let buy_amount = self.order().buy.amount.0;
         let executed = self.executed().0;
@@ -163,7 +159,7 @@ impl Fulfillment {
         apply_factor(surplus_in_sell_token, factor)
     }
 
-    fn volume_fee(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
+    fn fee_from_volume(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
