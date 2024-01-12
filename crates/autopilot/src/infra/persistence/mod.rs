@@ -105,8 +105,6 @@ impl Persistence {
         auction_id: domain::AuctionId,
         fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
     ) -> anyhow::Result<()> {
-        let postgres = self.postgres.clone();
-        let mut ex = postgres.pool.begin().await.context("begin")?;
         let fee_policies = fee_policies
             .into_iter()
             .flat_map(|(order_uid, policies)| {
@@ -116,7 +114,8 @@ impl Persistence {
             })
             .collect_vec();
 
-        for chunk in fee_policies.chunks(postgres.config.insert_batch_size.get()) {
+        let mut ex = self.postgres.pool.begin().await.context("begin")?;
+        for chunk in fee_policies.chunks(self.postgres.config.insert_batch_size.get()) {
             crate::database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
                 .await
                 .context("fee_policies::insert_batch")?;
