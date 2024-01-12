@@ -17,6 +17,7 @@ pub enum FeePolicy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
+    /// todo: add some meaningful description
     PriceImprovement {
         factor: f64,
         max_volume_factor: f64,
