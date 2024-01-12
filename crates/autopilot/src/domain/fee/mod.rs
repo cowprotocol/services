@@ -4,20 +4,24 @@
 //! we define the way to calculate the protocol fee based on the configuration
 //! parameters.
 
-use crate::{
-    boundary::{self},
-    domain,
+use {
+    crate::{
+        arguments,
+        boundary::{self},
+        domain,
+    },
+    primitive_types::U256,
 };
 
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct ProtocolFee {
-    policy: Policy,
+    policy: arguments::FeePolicy,
     fee_policy_skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: Policy, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy: arguments::FeePolicy, fee_policy_skip_market_orders: bool) -> Self {
         Self {
             policy,
             fee_policy_skip_market_orders,
@@ -31,13 +35,13 @@ impl ProtocolFee {
                 if self.fee_policy_skip_market_orders {
                     vec![]
                 } else {
-                    vec![self.policy]
+                    self.policy.to_domain(quote).into_iter().collect()
                 }
             }
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return vec![self.policy];
+                    return self.policy.to_domain(quote).into_iter().collect();
                 }
 
                 // if the quote is missing, we can't determine if the order is outside the
@@ -52,7 +56,7 @@ impl ProtocolFee {
                     &quote.buy_amount,
                     &quote.sell_amount,
                 ) {
-                    vec![self.policy]
+                    self.policy.to_domain(Some(quote)).into_iter().collect()
                 } else {
                     vec![]
                 }
@@ -78,6 +82,11 @@ pub enum Policy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
     /// How much of the order's volume should be taken as a protocol fee.
     /// The fee is taken in `sell` token for `sell` orders and in `buy`
     /// token for `buy` orders.
@@ -86,4 +95,19 @@ pub enum Policy {
         /// fee.
         factor: f64,
     },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Quote {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+}
+
+impl From<domain::Quote> for Quote {
+    fn from(value: domain::Quote) -> Self {
+        Self {
+            sell_amount: value.sell_amount,
+            buy_amount: value.buy_amount,
+        }
+    }
 }

@@ -353,6 +353,12 @@ pub struct FeePolicy {
     /// - Surplus with cap:
     /// surplus:0.5:0.06
     ///
+    /// - Price improvement with cap:
+    /// price_improvement:0.5:1.0
+    ///
+    /// - Price improvement without cap:
+    /// price_improvement:0.5:0.06
+    ///
     /// - Volume based:
     /// volume:0.1
     #[clap(long, env, default_value = "surplus:0.0:1.0")]
@@ -366,16 +372,24 @@ pub struct FeePolicy {
 }
 
 impl FeePolicy {
-    pub fn to_domain(self) -> domain::fee::Policy {
+    pub fn to_domain(&self, quote: Option<&domain::Quote>) -> Option<domain::fee::Policy> {
         match self.fee_policy_kind {
             FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => domain::fee::Policy::Surplus {
+            } => Some(domain::fee::Policy::Surplus {
                 factor,
                 max_volume_factor,
-            },
-            FeePolicyKind::Volume { factor } => domain::fee::Policy::Volume { factor },
+            }),
+            FeePolicyKind::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => quote.map(|q| domain::fee::Policy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: q.clone().into(),
+            }),
+            FeePolicyKind::Volume { factor } => Some(domain::fee::Policy::Volume { factor }),
         }
     }
 }
@@ -384,6 +398,8 @@ impl FeePolicy {
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
+    /// How the price improvement should be calculated.
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
 }
