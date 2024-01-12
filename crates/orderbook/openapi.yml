@@ -1550,6 +1550,13 @@ components:
           type: number
           description: Estimated price of the token.
     TotalSurplus:
+      description: |
+        The total surplus.
+      type: object
+      properties:
+        totalSurplus:
+          type: string
+          description: The total surplus.
     InteractionData:
       type: object
       properties:
