@@ -44,9 +44,7 @@ impl From<FeePolicy> for domain::fee::Policy {
     fn from(row: FeePolicy) -> domain::fee::Policy {
         match row.kind {
             FeePolicyKind::Surplus => domain::fee::Policy::Surplus {
-                factor: row
-                    .surplus_factor
-                    .expect("missing surplus factor"),
+                factor: row.surplus_factor.expect("missing surplus factor"),
                 max_volume_factor: row.max_volume_factor.expect("missing max volume factor"),
             },
             FeePolicyKind::Volume => domain::fee::Policy::Volume {
