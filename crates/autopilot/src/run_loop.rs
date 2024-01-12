@@ -163,6 +163,7 @@ impl RunLoop {
                 .collect::<HashSet<_>>();
 
             let mut prices = BTreeMap::new();
+            let mut fee_policies = Vec::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
@@ -176,6 +177,7 @@ impl RunLoop {
                     .find(|auction_order| &auction_order.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
+                        fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
                         if let Some(price) = auction.prices.get(&auction_order.sell_token) {
                             prices.insert(auction_order.sell_token, *price);
                         } else {
@@ -266,6 +268,16 @@ impl RunLoop {
             if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
+            }
+
+            tracing::info!("saving fee policies");
+            if let Err(err) = self
+                .persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .await
+            {
+                Metrics::fee_policies_store_error();
+                tracing::warn!(?err, "failed to save fee policies");
             }
 
             tracing::info!(driver = %driver.name, "settling");
@@ -589,6 +601,10 @@ struct Metrics {
     /// solution together with the winning driver that did't include it.
     #[metric(labels("ignored_by"))]
     matched_unsettled: prometheus::IntCounterVec,
+
+    /// Tracks the number of database errors.
+    #[metric(labels("error_type"))]
+    db_metric_error: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -676,6 +692,13 @@ impl Metrics {
             .matched_unsettled
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
+    }
+
+    fn fee_policies_store_error() {
+        Self::get()
+            .db_metric_error
+            .with_label_values(&["fee_policies_store"])
+            .inc();
     }
 }
 

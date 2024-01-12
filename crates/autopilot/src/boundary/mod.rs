@@ -3,7 +3,7 @@ pub use {
         competition::Competition,
         order_events::{store_order_events, OrderEventLabel},
     },
-    database::orders::Quote as DatabaseQuote,
+    database,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,
