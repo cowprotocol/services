@@ -418,16 +418,16 @@ components:
         The solver should make sure the fee policy is applied when computing their solution.
       type: object
       oneOf:
-        - $ref: "#/components/schemas/PriceImprovementFee"
+        - $ref: "#/components/schemas/SurplusFee"
         - $ref: "#/components/schemas/VolumeFee"
-    PriceImprovementFee:
+    SurplusFee:
       description: |
-        If the order receives more than expected (positive deviation from quoted amounts) pay the protocol a factor of the achieved improvement.
+        If the order receives more than limit price, pay the protocol a factor of the difference.
       type: object
       properties:
         kind:
           type: string
-          enum: ["priceImprovement"]
+          enum: ["surplus"]
         maxVolumeFactor:
           description: Never charge more than that percentage of the order volume.
           type: number
