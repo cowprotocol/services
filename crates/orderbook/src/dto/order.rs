@@ -26,6 +26,7 @@ pub struct Order {
     pub solver_fee: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub user_fee: U256,
+    pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: OrderKind,
     pub receiver: Option<H160>,
@@ -42,7 +43,6 @@ pub struct Order {
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
-    pub fee_policies: Vec<FeePolicy>,
 }
 
 #[serde_as]

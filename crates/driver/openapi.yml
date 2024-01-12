@@ -258,7 +258,7 @@ components:
         signature:
           description: Hex encoded bytes with `0x` prefix.
           type: string
-        feePolicies:
+        protocolFees:
           description: |
             Any protocol fee policies that apply to the order.
 
