@@ -270,7 +270,7 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }
@@ -278,10 +278,10 @@ pub enum FeePolicy {
 impl From<domain::fee::Policy> for FeePolicy {
     fn from(policy: domain::fee::Policy) -> Self {
         match policy {
-            domain::fee::Policy::PriceImprovement {
+            domain::fee::Policy::Surplus {
                 factor,
                 max_volume_factor,
-            } => Self::PriceImprovement {
+            } => Self::Surplus {
                 factor,
                 max_volume_factor,
             },
@@ -293,10 +293,10 @@ impl From<domain::fee::Policy> for FeePolicy {
 impl From<FeePolicy> for domain::fee::Policy {
     fn from(policy: FeePolicy) -> Self {
         match policy {
-            FeePolicy::PriceImprovement {
+            FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
-            } => Self::PriceImprovement {
+            } => Self::Surplus {
                 factor,
                 max_volume_factor,
             },
