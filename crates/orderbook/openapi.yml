@@ -1576,10 +1576,8 @@ components:
       properties:
         factor:
           type: number
-          format: double
         max_volume_factor:
           type: number
-          format: double
       required:
         - factor
         - max_volume_factor
@@ -1589,7 +1587,6 @@ components:
       properties:
         factor:
           type: number
-          format: double
       required:
         - factor
     FeePolicy:
