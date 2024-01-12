@@ -10,11 +10,10 @@ use {
         settlement::{PriceCheckTokens, Settlement},
         settlement_ranker::SettlementRanker,
         settlement_rater::SettlementRating,
-        settlement_simulation,
         settlement_submission::{SolutionSubmitter, SubmissionError},
         solver::{Auction, Solver, Solvers},
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result},
     contracts::GPv2Settlement,
     ethcontract::Account,
     ethrpc::{current_block::CurrentBlockStream, Web3},
@@ -23,13 +22,6 @@ use {
     model::{
         auction::{AuctionId, AuctionWithId},
         order::{Order, OrderUid},
-        solver_competition::{
-            self,
-            CompetitionAuction,
-            Execution,
-            SolverCompetitionDB,
-            SolverSettlement,
-        },
         TokenPair,
     },
     num::{rational::Ratio, BigInt},
@@ -37,12 +29,7 @@ use {
     shared::{
         account_balances::BalanceFetching,
         external_prices::ExternalPrices,
-        http_solver::model::{
-            AuctionResult,
-            InternalizationStrategy,
-            SolverRunError,
-            SubmissionResult,
-        },
+        http_solver::model::{AuctionResult, SolverRunError, SubmissionResult},
         recent_block_cache::Block,
         tenderly_api::TenderlyApi,
     },
@@ -67,8 +54,6 @@ pub struct Driver {
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
     solver_time_limit: Duration,
-    block_time: Duration,
-    additional_mining_deadline: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -97,8 +82,6 @@ impl Driver {
         web3: Web3,
         network_id: String,
         solver_time_limit: Duration,
-        block_time: Duration,
-        additional_mining_deadline: Duration,
         skip_non_positive_score_settlements: bool,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
@@ -140,8 +123,6 @@ impl Driver {
             native_token,
             metrics,
             solver_time_limit,
-            block_time,
-            additional_mining_deadline,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -263,16 +244,6 @@ impl Driver {
 
         self.in_flight_orders.update_and_filter(&mut auction);
 
-        let auction_start_block = auction.block;
-        let competition_auction = CompetitionAuction {
-            orders: auction
-                .orders
-                .iter()
-                .map(|order| order.metadata.uid)
-                .collect(),
-            prices: auction.prices.clone(),
-        };
-
         auction.orders.retain(|order| {
             match (
                 order.data.partially_fillable,
@@ -293,7 +264,6 @@ impl Driver {
         tracing::info!(count =% auction.orders.len(), "got orders");
         self.metrics.orders_fetched(&auction.orders);
 
-        let auction_prices = auction.prices.clone();
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed auction prices")?;
@@ -345,52 +315,7 @@ impl Driver {
             .rank_legal_settlements(run_solver_results, &external_prices, gas_price, auction_id)
             .await?;
 
-        // We don't know the exact block because simulation can happen over multiple
-        // blocks but this is a good approximation.
-        let block_during_simulation = self.block_stream.borrow().number;
-
         DriverLogger::print_settlements(&rated_settlements);
-
-        // Report solver competition data to the api.
-        let solver_competition = SolverCompetitionDB {
-            auction_start_block,
-            competition_simulation_block: block_during_simulation,
-            auction: competition_auction,
-            solutions: rated_settlements
-                .iter()
-                .map(|(solver, rated_settlement)| SolverSettlement {
-                    solver: solver.name().to_string(),
-                    solver_address: solver.account().address(),
-                    score: Some(rated_settlement.score),
-                    ranking: rated_settlement.ranking,
-                    clearing_prices: rated_settlement
-                        .settlement
-                        .clearing_prices()
-                        .iter()
-                        .map(|(address, price)| (*address, *price))
-                        .collect(),
-                    orders: rated_settlement
-                        .settlement
-                        .trades()
-                        .map(|trade| solver_competition::Order::Legacy {
-                            id: trade.order.metadata.uid,
-                            executed_amount: trade.executed_amount,
-                        })
-                        .collect(),
-                    call_data: Some(settlement_simulation::call_data(
-                        rated_settlement
-                            .settlement
-                            .clone()
-                            .encode(InternalizationStrategy::SkipInternalizableInteraction), // rating is done with internalizations
-                    )),
-                    uninternalized_call_data: rated_settlement
-                        .settlement
-                        .clone()
-                        .encode_uninternalized_if_different()
-                        .map(settlement_simulation::call_data),
-                })
-                .collect(),
-        };
 
         let mut settlement_transaction_attempted = false;
         if let Some((winning_solver, winning_settlement)) = rated_settlements.pop() {
@@ -401,18 +326,6 @@ impl Driver {
                 winning_settlement
             );
 
-            let executions: Vec<(OrderUid, Execution)> = winning_settlement
-                .settlement
-                .user_trades()
-                .map(|trade| {
-                    let execution = Execution {
-                        surplus_fee: trade.surplus_fee(),
-                        scoring_fee: trade.scoring_fee,
-                    };
-                    (trade.order.metadata.uid, execution)
-                })
-                .collect();
-
             let account = winning_solver.account();
             let address = account.address();
             let nonce = self
@@ -421,59 +334,6 @@ impl Driver {
                 .transaction_count(address, None)
                 .await
                 .context("transaction_count")?;
-            let transaction = model::solver_competition::Transaction {
-                account: address,
-                nonce: nonce
-                    .try_into()
-                    .map_err(|err| anyhow!("{err}"))
-                    .context("convert nonce")?,
-            };
-            let scores = model::solver_competition::Scores {
-                winner: address,
-                winning_score: winning_settlement.score.score(),
-                // second highest score, or 0 if there is only one score (see CIP20)
-                reference_score: rated_settlements
-                    .last()
-                    .map(|(_, settlement)| settlement.score.score())
-                    .unwrap_or_default(),
-                block_deadline: {
-                    let deadline = self.solver_time_limit
-                        + self.solution_submitter.max_confirm_time
-                        + self.additional_mining_deadline;
-                    let number_blocks = deadline.as_secs() / self.block_time.as_secs();
-                    block_during_simulation + number_blocks
-                },
-            };
-            let participants = solver_competition
-                .solutions
-                .iter()
-                .map(|solution| solution.solver_address)
-                .collect(); // to avoid duplicates
-
-            // external prices for all tokens contained in the trades of a settlement
-            let prices = winning_settlement
-                .settlement
-                .trades()
-                .flat_map(|trade| {
-                    let sell_token = trade.order.data.sell_token;
-                    let buy_token = trade.order.data.buy_token;
-                    let sell_price = auction_prices.get(&sell_token).cloned().unwrap_or_default();
-                    let buy_price = auction_prices.get(&buy_token).cloned().unwrap_or_default();
-                    [(sell_token, sell_price), (buy_token, buy_price)]
-                })
-                .collect();
-            tracing::debug!(?transaction, "winning solution transaction");
-
-            let solver_competition = model::solver_competition::Request {
-                auction: auction_id,
-                transaction,
-                competition: solver_competition,
-                executions,
-                scores,
-                participants,
-                prices,
-            };
-            tracing::debug!(?solver_competition, "submitting competition info");
 
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());

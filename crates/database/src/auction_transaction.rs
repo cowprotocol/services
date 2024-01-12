@@ -3,29 +3,6 @@ use {
     sqlx::{postgres::PgQueryResult, PgConnection},
 };
 
-/// "upsert" because we might have previously unsuccessfully attempted to settle
-/// an auction with the same address-nonce.
-pub async fn upsert_auction_transaction(
-    ex: &mut PgConnection,
-    auction_id: AuctionId,
-    tx_from: &Address,
-    tx_nonce: i64,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
-VALUES ($1, $2, $3)
-ON CONFLICT (tx_from, tx_nonce) DO UPDATE
-SET auction_id = EXCLUDED.auction_id
-    ;"#;
-    sqlx::query(QUERY)
-        .bind(auction_id)
-        .bind(tx_from)
-        .bind(tx_nonce)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
 /// Inserts a row **iff** we don't have an entry for the given `auction_id` yet.
 /// This is useful to associate a settlement transaction coming from a colocated
 /// driver with an auction.
@@ -97,21 +74,6 @@ LIMIT 1
         .await
 }
 
-pub async fn get_auction_id(
-    ex: &mut PgConnection,
-    tx_from: &Address,
-    tx_nonce: i64,
-) -> Result<Option<AuctionId>, sqlx::Error> {
-    const QUERY: &str =
-        r#"SELECT auction_id FROM auction_transaction WHERE tx_from = $1 AND tx_nonce = $2;"#;
-    let auction = sqlx::query_scalar(QUERY)
-        .bind(tx_from)
-        .bind(tx_nonce)
-        .fetch_optional(ex)
-        .await?;
-    Ok(auction)
-}
-
 pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {
     const QUERY: &str = r#"SELECT COUNT(*) FROM auction_transaction WHERE auction_id = $1;"#;
     let count: i64 = sqlx::query_scalar(QUERY)
@@ -129,63 +91,6 @@ mod tests {
         sqlx::Connection,
         std::ops::DerefMut,
     };
-
-    fn is_duplicate_auction_id_error(err: &sqlx::Error) -> bool {
-        match err {
-            sqlx::Error::Database(err) => err.constraint() == Some("auction_transaction_pkey"),
-            _ => false,
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_double_insert_error() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        // Doesn't error because whole row is the same.
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        // Errors because of primary key violation.
-        let err = upsert_auction_transaction(&mut db, 0, &Default::default(), 1)
-            .await
-            .unwrap_err();
-        assert!(is_duplicate_auction_id_error(&err));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn upsert_auction_transaction_() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        upsert_auction_transaction(&mut db, 0, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        // same account-nonce other auction_id
-        upsert_auction_transaction(&mut db, 1, &Default::default(), 0)
-            .await
-            .unwrap();
-
-        let auction_id: i64 = sqlx::query_scalar("SELECT auction_id FROM auction_transaction")
-            .fetch_one(db.deref_mut())
-            .await
-            .unwrap();
-        assert_eq!(auction_id, 1);
-
-        // reusing auction-id fails
-        let result = upsert_auction_transaction(&mut db, 1, &Default::default(), 1).await;
-        assert!(result.is_err());
-    }
 
     #[tokio::test]
     #[ignore]
@@ -278,24 +183,6 @@ mod tests {
             .await
             .unwrap();
         assert!(event.is_none());
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn get_auction_id_test() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        upsert_auction_transaction(&mut db, 5, &Default::default(), 3)
-            .await
-            .unwrap();
-
-        let auction_id = get_auction_id(&mut db, &Default::default(), 3)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(auction_id, 5);
     }
 
     #[tokio::test]

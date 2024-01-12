@@ -15,7 +15,6 @@ use {
         },
     },
     clap::Parser,
-    futures::future::join_all,
     std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
 };
@@ -58,16 +57,13 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         liquidity: liquidity(&config, &eth).await,
         simulator: simulator(&config, &eth),
         mempools: Mempools::new(
-            join_all(
-                config
-                    .mempools
-                    .iter()
-                    .map(|mempool| Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone())),
-            )
-            .await
-            .into_iter()
-            .flatten()
-            .collect(),
+            config
+                .mempools
+                .iter()
+                .map(|mempool| {
+                    Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone()).unwrap()
+                })
+                .collect(),
         )
         .unwrap(),
         eth,
