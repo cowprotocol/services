@@ -50,7 +50,7 @@ pub struct Order {
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }
