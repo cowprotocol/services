@@ -4,7 +4,7 @@
 # Acceptance tests
 - [ ] API change? Did we notify the stakeholders (frontend, solvers, ..)?
 - [ ] API change? Did we update the OpenApi (autopilot, orderbook, driver)?
-- [ ] DB change? Updated DB readme?
+- [ ] DB change? Did we update DB readme?
 
 # Changes
 <!-- List of detailed changes (how the change is accomplished) -->
