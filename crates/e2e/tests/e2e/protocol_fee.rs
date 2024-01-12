@@ -15,14 +15,14 @@ use {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_price_improvement_fee_sell_order() {
-    run_test(price_improvement_fee_sell_order_test).await;
+async fn local_node_surplus_fee_sell_order() {
+    run_test(surplus_fee_sell_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn local_node_price_improvement_fee_sell_order_capped() {
-    run_test(price_improvement_fee_sell_order_capped_test).await;
+async fn local_node_surplus_fee_sell_order_capped() {
+    run_test(surplus_fee_sell_order_capped_test).await;
 }
 
 #[tokio::test]
@@ -33,14 +33,14 @@ async fn local_node_volume_fee_sell_order() {
 
 #[tokio::test]
 #[ignore]
-async fn local_node_price_improvement_fee_buy_order() {
-    run_test(price_improvement_fee_buy_order_test).await;
+async fn local_node_surplus_fee_buy_order() {
+    run_test(surplus_fee_buy_order_test).await;
 }
 
 #[tokio::test]
 #[ignore]
-async fn local_node_price_improvement_fee_buy_order_capped() {
-    run_test(price_improvement_fee_buy_order_capped_test).await;
+async fn local_node_surplus_fee_buy_order_capped() {
+    run_test(surplus_fee_buy_order_capped_test).await;
 }
 
 #[tokio::test]
@@ -49,8 +49,8 @@ async fn local_node_volume_fee_buy_order() {
     run_test(volume_fee_buy_order_test).await;
 }
 
-async fn price_improvement_fee_sell_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::PriceImprovement {
+async fn surplus_fee_sell_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
         max_volume_factor: 1.0,
     };
@@ -82,8 +82,8 @@ async fn price_improvement_fee_sell_order_test(web3: Web3) {
     .await;
 }
 
-async fn price_improvement_fee_sell_order_capped_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::PriceImprovement {
+async fn surplus_fee_sell_order_capped_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::Surplus {
         factor: 1.0,
         max_volume_factor: 0.1,
     };
@@ -132,8 +132,8 @@ async fn volume_fee_sell_order_test(web3: Web3) {
     .await;
 }
 
-async fn price_improvement_fee_buy_order_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::PriceImprovement {
+async fn surplus_fee_buy_order_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::Surplus {
         factor: 0.3,
         max_volume_factor: 1.0,
     };
@@ -161,8 +161,8 @@ async fn price_improvement_fee_buy_order_test(web3: Web3) {
     .await;
 }
 
-async fn price_improvement_fee_buy_order_capped_test(web3: Web3) {
-    let fee_policy = FeePolicyKind::PriceImprovement {
+async fn surplus_fee_buy_order_capped_test(web3: Web3) {
+    let fee_policy = FeePolicyKind::Surplus {
         factor: 1.0,
         max_volume_factor: 0.1,
     };
@@ -353,9 +353,8 @@ async fn execute_test(
 }
 
 enum FeePolicyKind {
-    /// How much of the order's price improvement over max(limit price,
-    /// best_bid) should be taken as a protocol fee.
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    /// How much of the order's surplus should be taken as a protocol fee.
+    Surplus { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
 }
@@ -363,12 +362,12 @@ enum FeePolicyKind {
 impl std::fmt::Display for FeePolicyKind {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            FeePolicyKind::PriceImprovement {
+            FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
             } => write!(
                 f,
-                "--fee-policy-kind=priceImprovement:{}:{}",
+                "--fee-policy-kind=surplus:{}:{}",
                 factor, max_volume_factor
             ),
             FeePolicyKind::Volume { factor } => {
