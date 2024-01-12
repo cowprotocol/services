@@ -110,14 +110,14 @@ impl Persistence {
         let fee_policies = fee_policies
             .into_iter()
             .flat_map(|(order_uid, policies)| {
-                policies
-                    .into_iter()
-                    .map(move |policy| dto::fee_policy::from_domain(auction_id, order_uid, policy))
+                policies.into_iter().map(move |policy| {
+                    dto::fee_policy::FeePolicy::from_domain(auction_id, order_uid, policy)
+                })
             })
             .collect_vec();
 
         for chunk in fee_policies.chunks(postgres.config.insert_batch_size.get()) {
-            database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
+            crate::database::fee_policies::insert_batch(&mut ex, chunk.iter().cloned())
                 .await
                 .context("fee_policies::insert_batch")?;
         }
