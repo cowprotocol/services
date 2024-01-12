@@ -137,3 +137,7 @@ pub fn duplicated_solution_id(
         notification::Kind::DuplicatedSolutionId,
     );
 }
+
+pub fn postprocessing_timed_out(solver: &Solver, auction_id: Option<auction::Id>) {
+    solver.notify(auction_id, None, notification::Kind::PostprocessingTimedOut);
+}
