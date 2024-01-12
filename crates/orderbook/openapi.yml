@@ -1561,8 +1561,7 @@ components:
       type: object
       properties:
         target:
-          schema:
-            $ref: "#/components/schemas/Address"
+          $ref: "#/components/schemas/Address"
         value:
           type: number
         call_data:
