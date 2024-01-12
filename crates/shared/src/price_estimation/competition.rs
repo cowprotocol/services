@@ -282,7 +282,7 @@ fn compare_native_result(
     b: &Result<f64, PriceEstimationError>,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => a.total_cmp(b).reverse(),
+        (Ok(a), Ok(b)) => a.total_cmp(b),
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
@@ -984,7 +984,7 @@ mod tests {
             vec![native_price(1.), native_price(2.)],
         )
         .await;
-        assert_eq!(best, native_price(1.));
+        assert_eq!(best, native_price(2.));
     }
 
     /// If all estimators returned an error we return the one with the highest
