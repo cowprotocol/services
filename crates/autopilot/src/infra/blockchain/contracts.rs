@@ -13,7 +13,7 @@ pub struct Addresses {
 }
 
 impl Contracts {
-    pub(super) async fn new(web3: &DynWeb3, network_id: &NetworkId, addresses: Addresses) -> Self {
+    pub async fn new(web3: &DynWeb3, network_id: &NetworkId, addresses: Addresses) -> Self {
         let address_for = |contract: &ethcontract::Contract, address: Option<H160>| {
             address
                 .or_else(|| deployment_address(contract, network_id))
