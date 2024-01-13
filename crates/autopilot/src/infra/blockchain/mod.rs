@@ -72,6 +72,7 @@ pub struct Ethereum {
     web3: DynWeb3,
     network: Network,
     current_block: CurrentBlockStream,
+    settlement: contracts::GPv2Settlement,
 }
 
 impl Ethereum {
@@ -81,7 +82,11 @@ impl Ethereum {
     ///
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
-    pub async fn new(rpc: Rpc, poll_interval: Duration) -> Self {
+    pub async fn new(
+        rpc: Rpc,
+        settlement: contracts::GPv2Settlement,
+        poll_interval: Duration,
+    ) -> Self {
         let Rpc { web3, network } = rpc;
 
         Self {
@@ -93,6 +98,7 @@ impl Ethereum {
             .expect("couldn't initialize current block stream"),
             web3,
             network,
+            settlement,
         }
     }
 
@@ -104,6 +110,11 @@ impl Ethereum {
     /// current and new blocks.
     pub fn current_block(&self) -> &CurrentBlockStream {
         &self.current_block
+    }
+
+    /// Returns a reference to the deployed settlement contract.
+    pub fn settlement_contract(&self) -> &contracts::GPv2Settlement {
+        &self.settlement
     }
 
     pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {

@@ -40,7 +40,6 @@ use {
         infra,
     },
     anyhow::{anyhow, Context, Result},
-    contracts::GPv2Settlement,
     futures::StreamExt,
     model::DomainSeparator,
     primitive_types::{H160, H256},
@@ -51,7 +50,6 @@ use {
 
 pub struct OnSettlementEventUpdater {
     pub eth: infra::Ethereum,
-    pub contract: GPv2Settlement,
     pub native_token: H160,
     pub db: Postgres,
 }
@@ -128,7 +126,14 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
+        let domain_separator = DomainSeparator(
+            self.eth
+                .settlement_contract()
+                .domain_separator()
+                .call()
+                .await?
+                .0,
+        );
         let auction_id =
             Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
                 .await?;

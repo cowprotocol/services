@@ -80,8 +80,12 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
         .expect("connect ethereum RPC")
 }
 
-async fn ethereum(ethrpc: infra::blockchain::Rpc, poll_interval: Duration) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, poll_interval).await
+async fn ethereum(
+    ethrpc: infra::blockchain::Rpc,
+    settlement: contracts::GPv2Settlement,
+    poll_interval: Duration,
+) -> infra::Ethereum {
+    infra::Ethereum::new(ethrpc, settlement, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -138,15 +142,21 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let ethrpc = ethrpc(&args.shared.node_url).await;
-    let eth = ethereum(ethrpc, args.shared.current_block.block_stream_poll_interval).await;
-
     let settlement_contract = match args.shared.settlement_contract_address {
         Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
         None => contracts::GPv2Settlement::deployed(&web3)
             .await
             .expect("load settlement contract"),
     };
+
+    let ethrpc = ethrpc(&args.shared.node_url).await;
+    let eth = ethereum(
+        ethrpc,
+        settlement_contract.clone(),
+        args.shared.current_block.block_stream_poll_interval,
+    )
+    .await;
+
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
@@ -558,7 +568,6 @@ pub async fn run(args: Arguments) {
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
             eth: eth.clone(),
-            contract: settlement_contract,
             native_token: native_token.address(),
             db: db.clone(),
         };
