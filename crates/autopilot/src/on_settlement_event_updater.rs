@@ -42,7 +42,7 @@ use {
     anyhow::{anyhow, Context, Result},
     futures::StreamExt,
     model::DomainSeparator,
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
     web3::types::Transaction,
@@ -50,7 +50,6 @@ use {
 
 pub struct OnSettlementEventUpdater {
     pub eth: infra::Ethereum,
-    pub native_token: H160,
     pub db: Postgres,
 }
 
@@ -128,7 +127,8 @@ impl OnSettlementEventUpdater {
 
         let domain_separator = DomainSeparator(
             self.eth
-                .settlement_contract()
+                .contracts()
+                .settlement()
                 .domain_separator()
                 .call()
                 .await?
@@ -170,7 +170,7 @@ impl OnSettlementEventUpdater {
                 format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
             })?;
             let external_prices = ExternalPrices::try_from_auction_prices(
-                self.native_token,
+                self.eth.contracts().weth().address(),
                 auction_external_prices.clone(),
             )?;
 

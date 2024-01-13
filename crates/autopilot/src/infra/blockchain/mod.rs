@@ -7,6 +7,10 @@ use {
     thiserror::Error,
 };
 
+pub mod contracts;
+
+pub use self::contracts::Contracts;
+
 /// Chain ID as defined by EIP-155.
 ///
 /// https://eips.ethereum.org/EIPS/eip-155
@@ -21,6 +25,12 @@ impl From<U256> for ChainId {
 
 #[derive(Debug, Clone)]
 pub struct NetworkId(pub String);
+
+impl NetworkId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl From<String> for NetworkId {
     fn from(value: String) -> Self {
@@ -72,7 +82,7 @@ pub struct Ethereum {
     web3: DynWeb3,
     network: Network,
     current_block: CurrentBlockStream,
-    settlement: contracts::GPv2Settlement,
+    contracts: Contracts,
 }
 
 impl Ethereum {
@@ -82,12 +92,9 @@ impl Ethereum {
     ///
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
-    pub async fn new(
-        rpc: Rpc,
-        settlement: contracts::GPv2Settlement,
-        poll_interval: Duration,
-    ) -> Self {
+    pub async fn new(rpc: Rpc, addresses: contracts::Addresses, poll_interval: Duration) -> Self {
         let Rpc { web3, network } = rpc;
+        let contracts = Contracts::new(&web3, &network.id, addresses).await;
 
         Self {
             current_block: ethrpc::current_block::current_block_stream(
@@ -98,7 +105,7 @@ impl Ethereum {
             .expect("couldn't initialize current block stream"),
             web3,
             network,
-            settlement,
+            contracts,
         }
     }
 
@@ -112,9 +119,8 @@ impl Ethereum {
         &self.current_block
     }
 
-    /// Returns a reference to the deployed settlement contract.
-    pub fn settlement_contract(&self) -> &contracts::GPv2Settlement {
-        &self.settlement
+    pub fn contracts(&self) -> &Contracts {
+        &self.contracts
     }
 
     pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {

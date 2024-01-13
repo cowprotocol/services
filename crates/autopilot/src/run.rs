@@ -19,7 +19,7 @@ use {
         solvable_orders::SolvableOrdersCache,
     },
     clap::Parser,
-    contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9},
+    contracts::{BalancerV2Vault, IUniswapV3Factory},
     ethcontract::{errors::DeployError, BlockNumber},
     ethrpc::current_block::block_number_to_block_number_hash,
     futures::StreamExt,
@@ -82,10 +82,10 @@ async fn ethrpc(url: &Url) -> infra::blockchain::Rpc {
 
 async fn ethereum(
     ethrpc: infra::blockchain::Rpc,
-    settlement: contracts::GPv2Settlement,
+    contracts: infra::blockchain::contracts::Addresses,
     poll_interval: Duration,
 ) -> infra::Ethereum {
-    infra::Ethereum::new(ethrpc, settlement, poll_interval).await
+    infra::Ethereum::new(ethrpc, contracts, poll_interval).await
 }
 
 pub async fn start(args: impl Iterator<Item = String>) {
@@ -142,32 +142,25 @@ pub async fn run(args: Arguments) {
         );
     }
 
-    let settlement_contract = match args.shared.settlement_contract_address {
-        Some(address) => contracts::GPv2Settlement::with_deployment_info(&web3, address, None),
-        None => contracts::GPv2Settlement::deployed(&web3)
-            .await
-            .expect("load settlement contract"),
-    };
-
     let ethrpc = ethrpc(&args.shared.node_url).await;
+    let contracts = infra::blockchain::contracts::Addresses {
+        settlement: args.shared.settlement_contract_address,
+        weth: args.shared.native_token_address,
+    };
     let eth = ethereum(
         ethrpc,
-        settlement_contract.clone(),
+        contracts,
         args.shared.current_block.block_stream_poll_interval,
     )
     .await;
 
-    let vault_relayer = settlement_contract
+    let vault_relayer = eth
+        .contracts()
+        .settlement()
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = match args.shared.native_token_address {
-        Some(address) => contracts::WETH9::with_deployment_info(&web3, address, None),
-        None => WETH9::deployed(&web3)
-            .await
-            .expect("load native token contract"),
-    };
     let vault = match args.shared.balancer_v2_vault_address {
         Some(address) => Some(contracts::BalancerV2Vault::with_deployment_info(
             &web3, address, None,
@@ -197,7 +190,7 @@ pub async fn run(args: Arguments) {
         &web3,
         signature_validator::Contracts {
             chain_id,
-            settlement: settlement_contract.address(),
+            settlement: eth.contracts().settlement().address(),
             vault_relayer,
         },
     );
@@ -206,7 +199,7 @@ pub async fn run(args: Arguments) {
         &web3,
         account_balances::Contracts {
             chain_id,
-            settlement: settlement_contract.address(),
+            settlement: eth.contracts().settlement().address(),
             vault_relayer,
             vault: vault.as_ref().map(|contract| contract.address()),
         },
@@ -247,7 +240,7 @@ pub async fn run(args: Arguments) {
         .await;
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        eth.contracts().weth().address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -278,7 +271,7 @@ pub async fn run(args: Arguments) {
                     "trace",
                 ),
                 finder,
-                settlement_contract: settlement_contract.address(),
+                settlement_contract: eth.contracts().settlement().address(),
             }),
             args.token_quality_cache_expiry,
         ))
@@ -385,9 +378,11 @@ pub async fn run(args: Arguments) {
             simulation_web3,
             name: network_name.to_string(),
             chain_id,
-            native_token: native_token.address(),
-            settlement: settlement_contract.address(),
-            authenticator: settlement_contract
+            native_token: eth.contracts().weth().address(),
+            settlement: eth.contracts().settlement().address(),
+            authenticator: eth
+                .contracts()
+                .settlement()
                 .authenticator()
                 .call()
                 .await
@@ -436,7 +431,7 @@ pub async fn run(args: Arguments) {
         None
     };
     let event_updater = Arc::new(EventUpdater::new(
-        GPv2SettlementContract::new(settlement_contract.clone()),
+        GPv2SettlementContract::new(eth.contracts().settlement().clone()),
         db.clone(),
         block_retriever.clone(),
         skip_event_sync_start,
@@ -507,8 +502,8 @@ pub async fn run(args: Arguments) {
             web3.clone(),
             quoter.clone(),
             Box::new(custom_ethflow_order_parser),
-            DomainSeparator::new(chain_id, settlement_contract.address()),
-            settlement_contract.address(),
+            DomainSeparator::new(chain_id, eth.contracts().settlement().address()),
+            eth.contracts().settlement().address(),
             liquidity_order_owners,
         );
         let broadcaster_event_updater = Arc::new(
@@ -546,7 +541,7 @@ pub async fn run(args: Arguments) {
         signature_validator.clone(),
         args.auction_update_interval,
         args.ethflow_contract,
-        native_token.address(),
+        eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
             .expect("limit order price factor can't be converted to BigDecimal"),
@@ -568,7 +563,6 @@ pub async fn run(args: Arguments) {
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
             eth: eth.clone(),
-            native_token: native_token.address(),
             db: db.clone(),
         };
     tokio::task::spawn(
