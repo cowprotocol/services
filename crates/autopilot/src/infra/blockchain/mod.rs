@@ -5,7 +5,6 @@ use {
     primitive_types::{H256, U256},
     std::{sync::Arc, time::Duration},
     thiserror::Error,
-    web3::types::TransactionReceipt,
 };
 
 /// Chain ID as defined by EIP-155.
@@ -107,10 +106,18 @@ impl Ethereum {
         &self.current_block
     }
 
+    pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {
+        self.web3
+            .eth()
+            .transaction(hash.into())
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn transaction_receipt(
         &self,
         hash: H256,
-    ) -> Result<Option<TransactionReceipt>, Error> {
+    ) -> Result<Option<web3::types::TransactionReceipt>, Error> {
         self.web3
             .eth()
             .transaction_receipt(hash)

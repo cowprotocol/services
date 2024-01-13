@@ -557,14 +557,14 @@ pub async fn run(args: Arguments) {
 
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
-            web3: web3.clone(),
+            eth: eth.clone(),
             contract: settlement_contract,
             native_token: native_token.address(),
             db: db.clone(),
         };
     tokio::task::spawn(
         on_settlement_event_updater
-            .run_forever(eth.current_block().clone())
+            .run_forever()
             .instrument(tracing::info_span!("on_settlement_event_updater")),
     );
 
