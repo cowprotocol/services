@@ -10,6 +10,7 @@ use {
 pub mod contracts;
 
 pub use self::contracts::Contracts;
+use crate::domain::{self, eth};
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -123,12 +124,17 @@ impl Ethereum {
         &self.contracts
     }
 
-    pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {
-        self.web3
+    pub async fn transaction(
+        &self,
+        hash: eth::TxId,
+    ) -> Result<Option<domain::settlement::Transaction>, Error> {
+        Ok(self
+            .web3
             .eth()
-            .transaction(hash.into())
+            .transaction(hash.0.into())
             .await
-            .map_err(Into::into)
+            .map_err(Error::from)?
+            .map(Into::into))
     }
 
     pub async fn transaction_receipt(

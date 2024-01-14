@@ -60,18 +60,14 @@ pub struct SettlementEvent {
 
 pub async fn get_settlement_event_without_tx_info(
     ex: &mut PgConnection,
-    max_block_number: i64,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
-WHERE tx_from IS NULL AND block_number <= $1
+WHERE tx_from IS NULL
 LIMIT 1
     "#;
-    sqlx::query_as(QUERY)
-        .bind(max_block_number)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
 pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {

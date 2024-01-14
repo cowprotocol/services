@@ -33,18 +33,15 @@ impl super::Postgres {
 
     pub async fn get_settlement_event_without_tx_info(
         &self,
-        max_block_number: i64,
-    ) -> Result<Option<SettlementEvent>, sqlx::Error> {
+    ) -> anyhow::Result<Option<SettlementEvent>> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["get_settlement_event_without_tx_info"])
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        database::auction_transaction::get_settlement_event_without_tx_info(
-            &mut ex,
-            max_block_number,
-        )
-        .await
+        database::auction_transaction::get_settlement_event_without_tx_info(&mut ex)
+            .await
+            .context("get_settlement_event_without_tx_info")
     }
 }
