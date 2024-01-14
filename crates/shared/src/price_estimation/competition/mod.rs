@@ -1,35 +1,17 @@
 use {
     super::native::NativePriceEstimating,
-    crate::price_estimation::{PriceEstimationError, Query},
+    crate::price_estimation::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
         stream::{FuturesUnordered, StreamExt},
     },
     gas_estimation::GasPriceEstimating,
     model::order::OrderKind,
-    primitive_types::H160,
     std::{cmp::Ordering, fmt::Debug, num::NonZeroUsize, sync::Arc, time::Instant},
 };
 
 mod native;
 mod regular;
-
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct Trade {
-    sell_token: H160,
-    buy_token: H160,
-    kind: OrderKind,
-}
-
-impl From<&Query> for Trade {
-    fn from(query: &Query) -> Self {
-        Self {
-            sell_token: query.sell_token,
-            buy_token: query.buy_token,
-            kind: query.kind,
-        }
-    }
-}
 
 /// Stage index and index within stage of an estimator stored in the
 /// [`CompetitionEstimator`] used as an identifier.
@@ -210,7 +192,7 @@ pub enum PriceRanking {
 mod tests {
     use {
         super::*,
-        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimating},
+        crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimating, Query},
         anyhow::anyhow,
         futures::channel::oneshot::channel,
         model::order::OrderKind,
