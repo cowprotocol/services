@@ -59,7 +59,7 @@ pub struct CompetitionEstimator<T> {
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     pub fn new(inner: Vec<PriceEstimationStage<T>>, ranking: PriceRanking) -> Self {
-        assert!(!inner.is_empty());
+        assert_ne!(inner.iter().map(Vec::len).count(), 0);
         Self {
             inner,
             successful_results_for_early_return: NonZeroUsize::MAX,
@@ -696,7 +696,7 @@ mod tests {
             ]],
             PriceRanking::MaxOutAmount,
         );
-        let racing = racing.with_early_return(2.try_into().unwrap());
+        let racing = racing.with_early_return(1.try_into().unwrap());
 
         let result = racing.estimate(query).await;
         assert_eq!(result.as_ref().unwrap(), &estimate(1));
