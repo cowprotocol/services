@@ -9,10 +9,8 @@ use {
     },
     anyhow::Context,
     futures::{
-        future::Future,
+        future::{BoxFuture, Future, FutureExt, TryFutureExt},
         stream::{FuturesUnordered, StreamExt},
-        FutureExt as _,
-        TryFutureExt,
     },
     gas_estimation::GasPriceEstimating,
     model::order::OrderKind,
@@ -43,6 +41,7 @@ impl From<&Query> for Trade {
 struct EstimatorIndex(usize, usize);
 
 type PriceEstimationStage<T> = Vec<(String, T)>;
+type ResultWithIndex<O> = (EstimatorIndex, Result<O, PriceEstimationError>);
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Sources are provided as a list of lists, the
@@ -52,17 +51,17 @@ type PriceEstimationStage<T> = Vec<(String, T)>;
 /// successful estimates for every query or if all price sources returned an
 /// estimate.
 pub struct CompetitionEstimator<T> {
-    inner: Vec<PriceEstimationStage<T>>,
-    successful_results_for_early_return: NonZeroUsize,
+    stages: Vec<PriceEstimationStage<T>>,
+    results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
-    pub fn new(inner: Vec<PriceEstimationStage<T>>, ranking: PriceRanking) -> Self {
-        assert_ne!(inner.iter().map(Vec::len).count(), 0);
+    pub fn new(stages: Vec<PriceEstimationStage<T>>, ranking: PriceRanking) -> Self {
+        assert_ne!(stages.iter().map(Vec::len).count(), 0);
         Self {
-            inner,
-            successful_results_for_early_return: NonZeroUsize::MAX,
+            stages,
+            results_for_early_return: NonZeroUsize::MAX,
             ranking,
         }
     }
@@ -70,179 +69,139 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     /// Enables the estimator to return after it got the configured number of
     /// successful results instead of having to wait for all estimators to
     /// return a result.
-    pub fn with_early_return(self, successful_results_for_early_return: NonZeroUsize) -> Self {
+    pub fn with_early_return(self, results_for_early_return: NonZeroUsize) -> Self {
         Self {
-            successful_results_for_early_return,
+            results_for_early_return,
             ..self
         }
     }
 
-    fn estimate_generic<
-        Q: Clone + Debug + Send + 'static,
-        R: Clone + Debug + Send,
-        E: Clone + Debug + Send,
-        C,
-    >(
+    /// Produce results for the given `input` until the caller does not expect
+    /// any more results or we produced all the results we can.
+    async fn produce_results<Q, R>(
         &self,
         query: Q,
-        kind: OrderKind,
-        get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
+        result_is_usable: impl Fn(&Result<R, PriceEstimationError>) -> bool,
+        get_single_result: impl Fn(&T, Q) -> BoxFuture<'_, Result<R, PriceEstimationError>>
             + Send
             + 'static,
-        pick_best_index: impl Fn(&[(EstimatorIndex, Result<R, E>)], &C) -> Result<usize, E>
-            + Send
-            + 'static,
-        provide_comparison_context: impl Future<Output = Result<C, E>> + Send + 'static,
-    ) -> futures::future::BoxFuture<'_, Result<R, E>> {
+    ) -> Vec<ResultWithIndex<R>>
+    where
+        Q: Clone + Debug + Send + 'static,
+        R: Clone + Debug + Send,
+    {
         let start = Instant::now();
+        let mut results = vec![];
+        let mut stage_index = 0;
+
+        let missing_results = |results: &[ResultWithIndex<R>]| {
+            let usable = results.iter().filter(|(_, r)| result_is_usable(r)).count();
+            self.results_for_early_return.get().saturating_sub(usable)
+        };
+
+        'outer: while stage_index < self.stages.len() {
+            let mut requests = FuturesUnordered::new();
+
+            // Collect requests until it's at least theoretically possible to produce enough
+            // results to return early.
+            let requests_for_batch = missing_results(&results);
+            while stage_index < self.stages.len() && requests.len() < requests_for_batch {
+                let stage = &self.stages.get(stage_index).expect("index checked by loop");
+                let futures = stage.iter().enumerate().map(|(index, (_name, estimator))| {
+                    get_single_result(estimator, query.clone())
+                        .map(move |result| (EstimatorIndex(stage_index, index), result))
+                        .boxed()
+                });
+
+                requests.extend(futures);
+                stage_index += 1;
+            }
+
+            while let Some((estimator_index, result)) = requests.next().await {
+                let (name, _estimator) = &self.stages[estimator_index.0][estimator_index.1];
+                tracing::debug!(
+                    ?query,
+                    ?result,
+                    estimator = name,
+                    requests = requests.len(),
+                    results = results.len(),
+                    elapsed = ?start.elapsed(),
+                    "new price estimate"
+                );
+                results.push((estimator_index, result));
+
+                if missing_results(&results) == 0 {
+                    break 'outer;
+                }
+            }
+        }
+
+        results
+    }
+
+    fn report_winner<Q: Debug, R: Debug>(
+        &self,
+        query: &Q,
+        kind: OrderKind,
+        (index, result): ResultWithIndex<R>,
+    ) -> Result<R, PriceEstimationError> {
+        let EstimatorIndex(stage_index, estimator_index) = index;
+        let (name, _estimator) = &self.stages[stage_index][estimator_index];
+        tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
+        if result.is_ok() {
+            metrics()
+                .queries_won
+                .with_label_values(&[name, kind.label()])
+                .inc();
+        }
+        result
+    }
+}
+
+impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
+    fn estimate(&self, query: Arc<Query>) -> BoxFuture<'_, PriceEstimateResult> {
         async move {
-            let mut results = vec![];
-            let mut iter = self.inner.iter().enumerate().peekable();
-            // Process stages sequentially
-            'outer: while let Some((stage_index, stage)) = iter.next() {
-                // Process estimators within each stage in parallel
-                let mut requests: Vec<_> = stage
-                    .iter()
-                    .enumerate()
-                    .map(|(index, (_, estimator))| {
-                        get_single_result(estimator, query.clone())
-                            .map(move |result| (EstimatorIndex(stage_index, index), result))
-                            .boxed()
-                    })
-                    .collect();
+            let out_token = match query.kind {
+                OrderKind::Buy => query.sell_token,
+                OrderKind::Sell => query.buy_token,
+            };
 
-                // Make sure we also use the next stage(s) if this one does not have enough
-                // estimators to return early anyways
-                let missing_successes =
-                    self.successful_results_for_early_return.get() - successes(&results);
-                while requests.len() < missing_successes && iter.peek().is_some() {
-                    let (next_stage_index, next_stage) = iter.next().unwrap();
-                    requests.extend(
-                        next_stage
-                            .iter()
-                            .enumerate()
-                            .map(|(index, (_, estimator))| {
-                                get_single_result(estimator, query.clone())
-                                    .map(move |result| {
-                                        (EstimatorIndex(next_stage_index, index), result)
-                                    })
-                                    .boxed()
-                            }),
-                    )
-                }
+            // Filter out 0 gas cost estimate because they are obviously wrong and would
+            // likely win the price competition which would lead to us paying huge
+            // subsidies.
+            let gas_is_reasonable = |r: &PriceEstimateResult| r.as_ref().is_ok_and(|r| r.gas > 0);
 
-                let mut futures: FuturesUnordered<_> = requests.into_iter().collect();
-                while let Some((estimator_index, result)) = futures.next().await {
-                    results.push((estimator_index, result.clone()));
-                    let estimator = &self.inner[estimator_index.0][estimator_index.1].0;
-                    tracing::debug!(
-                        ?query,
-                        ?result,
-                        estimator,
-                        requests = futures.len(),
-                        results = results.len(),
-                        elapsed = ?start.elapsed(),
-                        "new price estimate"
-                    );
+            let context = self.ranking.provide_context(out_token);
+            let results = self
+                .produce_results(query.clone(), gas_is_reasonable, |e, q| e.estimate(q))
+                .await;
+            let context = context.await?;
 
-                    if successes(&results) >= self.successful_results_for_early_return.get() {
-                        break 'outer;
-                    }
-                }
-            }
-
-            let context = provide_comparison_context.await?;
-            let best_index = pick_best_index(&results, &context)?;
-            let (estimator_index, result) = &results[best_index];
-            let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
-            tracing::debug!(
-                ?query,
-                ?result,
-                estimator,
-                elapsed = ?start.elapsed(),
-                "winning price estimate"
-            );
-
-            let total_estimators = self.inner.iter().fold(0, |sum, inner| sum + inner.len()) as u64;
-            let queried_estimators = results.len() as u64;
-            metrics()
-                .requests
-                .with_label_values(&["executed"])
-                .inc_by(queried_estimators);
-            metrics()
-                .requests
-                .with_label_values(&["saved"])
-                .inc_by(total_estimators - queried_estimators);
-
-            if result.is_ok() {
-                // Collect stats for winner predictions.
-                metrics()
-                    .queries_won
-                    .with_label_values(&[estimator, kind.label()])
-                    .inc();
-            }
-            result.clone()
+            let winner = results
+                .into_iter()
+                .filter(|(_index, r)| r.is_err() || gas_is_reasonable(r))
+                .max_by(|a, b| compare_quote_result(&query, &a.1, &b.1, &context))
+                .with_context(|| "all price estimates reported 0 gas cost")
+                .map_err(PriceEstimationError::EstimatorInternal)?;
+            self.report_winner(&query, query.kind, winner)
         }
         .boxed()
     }
 }
 
-fn successes<R, E>(results: &[(EstimatorIndex, Result<R, E>)]) -> usize {
-    results.iter().filter(|(_, result)| result.is_ok()).count()
-}
-
-impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
-    fn estimate(&self, query: Arc<Query>) -> futures::future::BoxFuture<'_, PriceEstimateResult> {
-        let out_token = match query.kind {
-            OrderKind::Buy => query.sell_token,
-            OrderKind::Sell => query.buy_token,
-        };
-        let context_future = self.ranking.provide_context(out_token);
-        self.estimate_generic(
-            query.clone(),
-            query.kind,
-            |estimator, query| estimator.estimate(query),
-            move |results, context| {
-                results
-                    .iter()
-                    .map(|(_, result)| result)
-                    .enumerate()
-                    // Filter out 0 gas cost estimate because they are obviously wrong and would
-                    // likely win the price competition which would lead to us paying huge
-                    // subsidies.
-                    .filter(|(_, r)| r.is_err() || r.as_ref().is_ok_and(|e| e.gas > 0))
-                    .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
-                    .map(|(index, _)| index)
-                    .with_context(|| "all price estimates reported 0 gas cost")
-                    .map_err(PriceEstimationError::EstimatorInternal)
-            },
-            context_future,
-        )
-    }
-}
-
 impl NativePriceEstimating for CompetitionEstimator<Arc<dyn NativePriceEstimating>> {
-    fn estimate_native_price(
-        &self,
-        token: H160,
-    ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
-        let context_future = futures::future::ready(Ok(()));
-        self.estimate_generic(
-            token,
-            OrderKind::Buy,
-            |estimator, token| estimator.estimate_native_price(token),
-            move |results, _context| {
-                let best_index = results
-                    .iter()
-                    .map(|(_, result)| result)
-                    .enumerate()
-                    .max_by(|a, b| compare_native_result(a.1, b.1))
-                    .map(|(index, _)| index)
-                    .expect("we get passed at least 1 result and did not filter out any of them");
-                Ok(best_index)
-            },
-            context_future,
-        )
+    fn estimate_native_price(&self, token: H160) -> BoxFuture<'_, NativePriceEstimateResult> {
+        async move {
+            let results = self
+                .produce_results(token, Result::is_ok, |e, q| e.estimate_native_price(q))
+                .await;
+            let winner = results
+                .into_iter()
+                .max_by(|a, b| compare_native_result(&a.1, &b.1))
+                .expect("we get passed at least 1 result and did not filter out any of them");
+            self.report_winner(&token, OrderKind::Buy, winner)
+        }
+        .boxed()
     }
 }
 
@@ -312,11 +271,6 @@ struct Metrics {
     /// estimators behave for buy vs sell orders.
     #[metric(labels("estimator_type", "order_kind"))]
     queries_won: prometheus::IntCounterVec,
-
-    /// Number of requests we saved due to greedy selection based on historic
-    /// data.
-    #[metric(labels("status"))]
-    requests: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
@@ -832,13 +786,13 @@ mod tests {
         fourth.expect_estimate().never();
 
         let racing: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator {
-            inner: vec![
+            stages: vec![
                 vec![("first".to_owned(), Arc::new(first))],
                 vec![("second".to_owned(), Arc::new(second))],
                 vec![("third".to_owned(), Arc::new(third))],
                 vec![("fourth".to_owned(), Arc::new(fourth))],
             ],
-            successful_results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
         };
 
