@@ -157,13 +157,13 @@ impl<'a> Services<'a> {
         quoter_endpoint: Option<Url>,
         solver: TestAccount,
     ) {
-        let solver_endpoint =
+        let external_solver_endpoint =
             solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
-        let solver_endpoint = start_legacy_solver(solver_endpoint).await;
+        let colocated_solver_endpoint = start_legacy_solver(external_solver_endpoint).await;
 
-        let quoter_endpoint =
+        let external_quoter_endpoint =
             quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
-        let quoter_endpoint = start_legacy_solver(quoter_endpoint).await;
+        let colocated_quoter_endpoint = start_legacy_solver(external_quoter_endpoint).await;
 
         colocation::start_driver(
             self.contracts,
@@ -171,12 +171,12 @@ impl<'a> Services<'a> {
                 SolverEngine {
                     name: "test_solver".into(),
                     account: solver.clone(),
-                    endpoint: solver_endpoint,
+                    endpoint: colocated_solver_endpoint,
                 },
                 SolverEngine {
                     name: "test_quoter".into(),
                     account: solver,
-                    endpoint: quoter_endpoint,
+                    endpoint: colocated_quoter_endpoint,
                 },
             ],
         );
