@@ -901,6 +901,115 @@ components:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
+    AuctionOrder:
+      description: |
+        A solvable order included in the current batch auction. Contains the data forwarded to solvers for solving.
+      type: object
+      properties:
+        uid:
+          $ref: "#/components/schemas/UID"
+        sellToken:
+          description: see `OrderParameters::sellToken`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        buyToken:
+          description: see `OrderParameters::buyToken`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+        sellAmount:
+          description: see `OrderParameters::sellAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          description: see `OrderParameters::buyAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        userFee:
+          description: see `OrderParameters::feeAmount`
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        solverFee:
+          description: Amount that the signed fee would be without subsidies.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        validTo:
+          description: see `OrderParameters::validTo`
+          type: integer
+        kind:
+          description: see `OrderParameters::kind`
+          allOf:
+            - $ref: "#/components/schemas/OrderKind"
+        receiver:
+          description: see `OrderParameters::receiver`
+          allOf:
+            - $ref: "#/components/schemas/Address"
+          nullable: true
+        owner:
+          $ref: "#/components/schemas/Address"
+        partiallyFillable:
+          description: see `OrderParameters::partiallyFillable`
+          type: boolean
+        executed:
+          description: |
+            Currently executed amount of sell/buy token, depending on the order kind.
+          allOf:
+          - $ref: "#/components/schemas/TokenAmount"
+        preInteractions:
+          description: |
+            The pre-interactions that need to be executed before the first execution of the order.
+          type: array
+          items:
+            $ref: "#/components/schemas/InteractionData"
+        postInteractions:
+          description: |
+            The post-interactions that need to be executed after the execution of the order.
+          type: array
+          items:
+            $ref: "#/components/schemas/InteractionData"
+        sellTokenBalance:
+          description: see `OrderParameters::sellTokenBalance`
+          allOf:
+            - $ref: "#/components/schemas/SellTokenSource"
+          default: "erc20"
+        buyTokenBalance:
+          description: see `OrderParameters::buyTokenBalance`
+          allOf:
+            - $ref: "#/components/schemas/BuyTokenDestination"
+          default: "erc20"
+        class:
+          $ref: "#/components/schemas/OrderClass"
+        appData:
+          $ref: "#/components/schemas/AppDataHash"
+        signature:
+          $ref: "#/components/schemas/Signature"
+        protocolFees:
+          description: |
+            The fee policies that are used to compute the protocol fees for this order.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
+      required:
+        - uid
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - userFee
+        - solverFee
+        - validTo
+        - kind
+        - receiver
+        - owner
+        - partiallyFillable
+        - executed
+        - preInteractions
+        - postInteractions
+        - sellTokenBalance
+        - buyTokenBalance
+        - class
+        - appData
+        - signature
+        - protocolFees
     Auction:
       description: |
         A batch auction for solving.
@@ -925,7 +1034,7 @@ components:
         orders:
           type: array
           items:
-            $ref: "#/components/schemas/Order"
+            $ref: "#/components/schemas/AuctionOrder"
           description: |
             The solvable orders included in the auction.
         prices:
@@ -1448,3 +1557,39 @@ components:
         totalSurplus:
           type: string
           description: The total surplus.
+    InteractionData:
+      type: object
+      properties:
+        target:
+          $ref: "#/components/schemas/Address"
+        value:
+          $ref: "#/components/schemas/TokenAmount"
+        call_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CallData"
+          description: The call data to be used for the interaction.
+    Surplus:
+      description: The protocol fee is taken as a percent of the surplus.
+      type: object
+      properties:
+        factor:
+          type: number
+        max_volume_factor:
+          type: number
+      required:
+        - factor
+        - max_volume_factor
+    Volume:
+      description: The protocol fee is taken as a percent of the order volume.
+      type: object
+      properties:
+        factor:
+          type: number
+      required:
+        - factor
+    FeePolicy:
+      description: Defines the ways to calculate the protocol fee.
+      oneOf:
+        - $ref: '#/components/schemas/Surplus'
+        - $ref: '#/components/schemas/Volume'

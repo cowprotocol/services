@@ -10,7 +10,6 @@
 use {
     crate::{
         domain::{self, auction::order::Class},
-        driver_api::Driver,
         driver_model::{
             reveal,
             solve::{self},
@@ -30,7 +29,7 @@ use {
 
 pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
-    drivers: Vec<Driver>,
+    drivers: Vec<infra::Driver>,
     trusted_tokens: AutoUpdatingTokenList,
     auction: domain::AuctionId,
     block: u64,
@@ -42,7 +41,7 @@ pub struct RunLoop {
 impl RunLoop {
     pub fn new(
         orderbook: infra::shadow::Orderbook,
-        drivers: Vec<Driver>,
+        drivers: Vec<infra::Driver>,
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
@@ -210,7 +209,7 @@ impl RunLoop {
     /// Computes a driver's solutions in the shadow competition.
     async fn participate(
         &self,
-        driver: &Driver,
+        driver: &infra::Driver,
         request: &solve::Request,
     ) -> Result<Solution, Error> {
         let proposed = tokio::time::timeout(self.solve_deadline, driver.solve(request))
@@ -253,7 +252,7 @@ impl RunLoop {
 }
 
 struct Participant<'a> {
-    driver: &'a Driver,
+    driver: &'a infra::Driver,
     solution: Result<Solution, Error>,
 }
 

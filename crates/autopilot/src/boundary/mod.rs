@@ -1,7 +1,10 @@
 pub use {
-    crate::database::{
-        competition::Competition,
-        order_events::{store_order_events, OrderEventLabel},
+    crate::{
+        database::{
+            competition::Competition,
+            order_events::{store_order_events, OrderEventLabel},
+        },
+        driver_model::{reveal, settle, solve},
     },
     database,
     model::{
