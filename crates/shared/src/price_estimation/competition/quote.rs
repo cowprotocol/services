@@ -8,7 +8,7 @@ use {
         Query,
     },
     anyhow::Context,
-    futures::future::{BoxFuture, Future, FutureExt, TryFutureExt},
+    futures::future::{BoxFuture, FutureExt, TryFutureExt},
     model::order::OrderKind,
     primitive_types::{H160, U256},
     std::{cmp::Ordering, sync::Arc},
@@ -21,17 +21,17 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
                 OrderKind::Buy => query.sell_token,
                 OrderKind::Sell => query.buy_token,
             };
+            let get_context = self.ranking.provide_context(out_token);
 
             // Filter out 0 gas cost estimate because they are obviously wrong and would
             // likely win the price competition which would lead to us paying huge
             // subsidies.
             let gas_is_reasonable = |r: &PriceEstimateResult| r.as_ref().is_ok_and(|r| r.gas > 0);
-
-            let context = self.ranking.provide_context(out_token);
-            let results = self
+            let get_results = self
                 .produce_results(query.clone(), gas_is_reasonable, |e, q| e.estimate(q))
-                .await;
-            let context = context.await?;
+                .map(Result::Ok);
+
+            let (context, results) = futures::try_join!(get_context, get_results)?;
 
             let winner = results
                 .into_iter()
@@ -69,41 +69,28 @@ fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingCon
 }
 
 impl PriceRanking {
-    /// Spawns a task in the background that fetches the needed context for
-    /// picking the best estimate without delaying the actual price fetch
-    /// requests.
-    fn provide_context(
-        &self,
-        token: H160,
-    ) -> impl Future<Output = Result<RankingContext, PriceEstimationError>> {
-        let fut = match self {
-            PriceRanking::MaxOutAmount => async {
-                Ok(RankingContext {
-                    native_price: 1.0,
-                    gas_price: 0.,
-                })
-            }
-            .boxed(),
+    async fn provide_context(&self, token: H160) -> Result<RankingContext, PriceEstimationError> {
+        match self {
+            PriceRanking::MaxOutAmount => Ok(RankingContext {
+                native_price: 1.0,
+                gas_price: 0.,
+            }),
             PriceRanking::BestBangForBuck { native, gas } => {
                 let gas = gas.clone();
                 let native = native.clone();
-                async move {
-                    let gas = gas
-                        .estimate()
-                        .map_ok(|gas| gas.effective_gas_price())
-                        .map_err(PriceEstimationError::ProtocolInternal);
-                    let (native_price, gas_price) =
-                        futures::try_join!(native.estimate_native_price(token), gas)?;
+                let gas = gas
+                    .estimate()
+                    .map_ok(|gas| gas.effective_gas_price())
+                    .map_err(PriceEstimationError::ProtocolInternal);
+                let (native_price, gas_price) =
+                    futures::try_join!(native.estimate_native_price(token), gas)?;
 
-                    Ok(RankingContext {
-                        native_price,
-                        gas_price,
-                    })
-                }
-                .boxed()
+                Ok(RankingContext {
+                    native_price,
+                    gas_price,
+                })
             }
-        };
-        tokio::task::spawn(fut).map(Result::unwrap)
+        }
     }
 }
 
