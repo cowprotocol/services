@@ -1563,7 +1563,7 @@ components:
         target:
           $ref: "#/components/schemas/Address"
         value:
-          type: number
+          $ref: "#/components/schemas/TokenAmount"
         call_data:
           type: array
           items:
