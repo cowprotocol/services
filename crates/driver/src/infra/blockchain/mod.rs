@@ -12,6 +12,8 @@ pub mod contracts;
 pub mod gas;
 pub mod token;
 
+use gas_estimation::GasPriceEstimating;
+
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
 /// An Ethereum RPC connection.
@@ -144,6 +146,10 @@ impl Ethereum {
         let access_list: web3::types::AccessList =
             serde_json::from_value(json.get("accessList").unwrap().to_owned()).unwrap();
         Ok(access_list.into())
+    }
+
+    pub fn boundary_gas_estimator(&self) -> Arc<dyn GasPriceEstimating> {
+        self.gas.gas.clone()
     }
 
     /// Estimate gas used by a transaction.

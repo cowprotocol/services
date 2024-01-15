@@ -1,7 +1,7 @@
 use {
     crate::{
-        auction::AuctionId,
         onchain_broadcasted_orders::OnchainOrderPlacementError,
+        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
         Address,
         AppId,
         OrderUid,
@@ -14,6 +14,7 @@ use {
             BigDecimal,
         },
         PgConnection,
+        QueryBuilder,
     },
 };
 
@@ -106,6 +107,15 @@ pub async fn insert_orders_and_ignore_conflicts(
 ) -> Result<(), sqlx::Error> {
     for order in orders {
         insert_order_and_ignore_conflicts(ex, order).await?;
+        insert_order_event(
+            ex,
+            &OrderEvent {
+                label: OrderEventLabel::Created,
+                timestamp: order.creation_timestamp,
+                order_uid: order.uid,
+            },
+        )
+        .await?;
     }
     Ok(())
 }
@@ -393,6 +403,26 @@ WHERE order_uid = $1
     sqlx::query_as(query).bind(id).fetch_optional(ex).await
 }
 
+pub async fn read_quotes(
+    ex: &mut sqlx::PgConnection,
+    order_ids: &[OrderUid],
+) -> Result<Vec<Quote>, sqlx::Error> {
+    if order_ids.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut query_builder = QueryBuilder::new("SELECT * FROM order_quotes WHERE order_uid IN (");
+
+    let mut separated = query_builder.separated(", ");
+    for value_type in order_ids {
+        separated.push_bind(value_type);
+    }
+    separated.push_unseparated(") ");
+
+    let query = query_builder.build_query_as();
+    query.fetch_all(ex).await
+}
+
 pub async fn cancel_order(
     ex: &mut PgConnection,
     order_uid: &OrderUid,
@@ -581,62 +611,6 @@ WHERE
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
 
-#[derive(Debug, Clone, Default, PartialEq, sqlx::FromRow)]
-pub struct OrderExecution {
-    pub order_uid: OrderUid,
-    pub sell_token: Address,
-    pub buy_token: Address,
-    pub kind: OrderKind,
-    pub class: OrderClass,
-    /// The entire `sell_amount` of the order.
-    pub sell_amount: BigDecimal,
-    /// The entire `buy_amount` of the order.
-    pub buy_amount: BigDecimal,
-    /// The amount that got executed just with this trade.
-    pub executed_amount: BigDecimal,
-    pub signature: Vec<u8>,
-    pub signing_scheme: SigningScheme,
-    pub owner: Address,
-}
-
-pub fn order_executions_in_tx<'a>(
-    ex: &'a mut PgConnection,
-    tx_hash: &'a TransactionHash,
-    auction_id: AuctionId,
-) -> BoxStream<'a, Result<OrderExecution, sqlx::Error>> {
-    const QUERY: &str = const_format::formatcp!(
-        r#"
-{SETTLEMENT_LOG_INDICES}
-SELECT
-    oe.order_uid AS order_uid,
-    o.sell_token,
-    o.buy_token,
-    o.sell_amount,
-    o.buy_amount,
-    o.kind,
-    o.class,
-    CASE
-        WHEN o.kind = 'sell' THEN t.sell_amount - t.fee_amount
-        ELSE t.buy_amount
-    END AS executed_amount,
-    o.owner,
-    o.signature,
-    o.signing_scheme
-FROM order_execution AS oe
-JOIN orders o ON o.uid = oe.order_uid
-JOIN trades t ON t.order_uid = oe.order_uid
-WHERE
-    oe.auction_id = $2 AND
-    t.block_number = (SELECT block_number FROM settlement) AND
-    t.log_index BETWEEN (SELECT * from previous_settlement) AND (SELECT log_index FROM settlement)
-        "#
-    );
-    sqlx::query_as(QUERY)
-        .bind(tx_hash)
-        .bind(auction_id)
-        .fetch(ex)
-}
-
 pub fn user_orders<'a>(
     ex: &'a mut PgConnection,
     owner: &'a Address,
@@ -762,7 +736,6 @@ mod tests {
         bigdecimal::num_bigint::{BigInt, ToBigInt},
         chrono::{TimeZone, Utc},
         futures::{StreamExt, TryStreamExt},
-        hex_literal::hex,
         sqlx::Connection,
     };
 
@@ -1169,6 +1142,29 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(quote2, quote_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_read_quotes_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        for i in 0..10 {
+            let quote = Quote {
+                order_uid: ByteArray([i; 56]),
+                ..Default::default()
+            };
+            insert_quote(&mut db, &quote).await.unwrap();
+        }
+        let quote_ids = (0..20) // add some non-existing ids
+            .map(|i| ByteArray([i; 56]))
+            .collect::<Vec<_>>();
+
+        let quotes = read_quotes(&mut db, &quote_ids).await.unwrap();
+
+        assert_eq!(quotes.len(), 10);
     }
 
     #[tokio::test]
@@ -1819,8 +1815,7 @@ mod tests {
         assert_eq!(order.executed_surplus_fee, 0.into());
 
         let fee: BigDecimal = 1.into();
-        let solver_fee: BigDecimal = 2.into();
-        crate::order_execution::save(&mut db, &order_uid, 0, Some(&fee), Some(&solver_fee))
+        crate::order_execution::save(&mut db, &order_uid, 0, &fee)
             .await
             .unwrap();
 
@@ -1829,180 +1824,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(order.executed_surplus_fee, fee);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_order_executions_in_tx() {
-        let bigdecimal = |x: u128| x.to_string().parse().unwrap();
-
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order_uid = ByteArray(hex!(
-            "999d6ff17fb145220fd96c97493fd6013ecb7874dffc3b57837131a92a36dc02
-             b70cd1ebd3b24aeeaf90c6041446630338536e7f
-             643d6a39"
-        ));
-
-        insert_order(
-            &mut db,
-            &Order {
-                uid: order_uid,
-                owner: ByteArray(hex!("b70cd1ebd3b24aeeaf90c6041446630338536e7f")),
-                sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
-                buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
-                sell_amount: bigdecimal(3026871740084629982950),
-                buy_amount: bigdecimal(89238894792574185),
-                fee_amount: bigdecimal(688868232097089454080),
-                kind: OrderKind::Sell,
-                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
-                signing_scheme: SigningScheme::Eip712,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let auction_id = 6124819;
-        crate::order_execution::save(
-            &mut db,
-            &order_uid,
-            auction_id,
-            None,
-            Some(&bigdecimal(463182886014406361088)),
-        )
-        .await
-        .unwrap();
-
-        crate::events::insert_trade(
-            &mut db,
-            &EventIndex {
-                block_number: 17066992,
-                log_index: 290,
-            },
-            &Trade {
-                order_uid,
-                sell_amount_including_fee: bigdecimal(3715739972181719437030),
-                buy_amount: bigdecimal(89700936709843391),
-                fee_amount: bigdecimal(688868232097089454080),
-            },
-        )
-        .await
-        .unwrap();
-
-        let transaction_hash = ByteArray(hex!(
-            "d2a3b85244bee6043f740ce774bc72ba271b890c4aa939ebe3d859afef445d99"
-        ));
-        crate::events::insert_settlement(
-            &mut db,
-            &EventIndex {
-                block_number: 17066992,
-                log_index: 300,
-            },
-            &Settlement {
-                solver: ByteArray(hex!("c9ec550bea1c64d779124b23a26292cc223327b6")),
-                transaction_hash,
-            },
-        )
-        .await
-        .unwrap();
-
-        let executions = order_executions_in_tx(&mut db, &transaction_hash, auction_id)
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
-        assert_eq!(
-            executions,
-            vec![OrderExecution {
-                order_uid,
-                sell_token: ByteArray(hex!("f88baf18fab7e330fa0c4f83949e23f52fececce")),
-                buy_token: ByteArray(hex!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")),
-                kind: OrderKind::Sell,
-                class: Default::default(),
-                sell_amount: bigdecimal(3026871740084629982950),
-                buy_amount: bigdecimal(89238894792574185),
-                executed_amount: bigdecimal(3026871740084629982950),
-                signature: hex::decode("4935ea3f24155f6757df94d8c0bc96665d46da51e1a8e39d935967c9216a60912fa50a5393a323d453c78d179d0199ddd58f6d787781e4584357d3e0205a76001c").unwrap(),
-                signing_scheme: SigningScheme::Eip712,
-                owner: ByteArray(hex!("b70cd1ebd3b24aeeaf90c6041446630338536e7f")),
-            }]
-        );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_order_executions_ignore_previous_auctions() {
-        let bigdecimal = |x: u128| x.to_string().parse().unwrap();
-
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            class: OrderClass::Limit,
-            kind: OrderKind::Sell,
-            sell_amount: bigdecimal(1),
-            buy_amount: bigdecimal(1),
-            ..Default::default()
-        };
-
-        insert_order(&mut db, &order).await.unwrap();
-
-        crate::order_execution::save(&mut db, &order.uid, 1, None, Some(&bigdecimal(1)))
-            .await
-            .unwrap();
-        crate::order_execution::save(&mut db, &order.uid, 42, None, Some(&bigdecimal(42)))
-            .await
-            .unwrap();
-
-        crate::events::insert_trade(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                log_index: 0,
-            },
-            &Trade {
-                order_uid: order.uid,
-                sell_amount_including_fee: bigdecimal(1),
-                buy_amount: bigdecimal(1),
-                fee_amount: bigdecimal(0),
-            },
-        )
-        .await
-        .unwrap();
-
-        let transaction_hash = ByteArray([0x11; 32]);
-        crate::events::insert_settlement(
-            &mut db,
-            &EventIndex {
-                block_number: 1,
-                log_index: 1,
-            },
-            &Settlement {
-                transaction_hash,
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        let executions = order_executions_in_tx(&mut db, &transaction_hash, 42)
-            .try_collect::<Vec<_>>()
-            .await
-            .unwrap();
-        assert_eq!(
-            executions,
-            vec![OrderExecution {
-                kind: OrderKind::Sell,
-                class: OrderClass::Limit,
-                sell_amount: bigdecimal(1),
-                buy_amount: bigdecimal(1),
-                executed_amount: bigdecimal(1),
-                ..Default::default()
-            }]
-        );
     }
 
     #[tokio::test]

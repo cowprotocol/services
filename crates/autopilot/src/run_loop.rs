@@ -1,18 +1,14 @@
 use {
     crate::{
-        arguments,
-        database::{
-            competition::{Competition, ExecutedFee, OrderExecution},
-            Postgres,
-        },
+        database::competition::Competition,
+        domain::{self, auction::order::Class},
         driver_api::Driver,
         driver_model::{
             reveal::{self, Request},
             settle,
-            solve::{self, Class, TradedAmounts},
+            solve::{self, TradedAmounts},
         },
-        infra::{self, blockchain::Ethereum},
-        protocol::fee,
+        infra::{self, persistence::dto},
         run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
@@ -21,22 +17,13 @@ use {
     chrono::Utc,
     database::order_events::OrderEventLabel,
     itertools::Itertools,
-    model::{
-        auction::{Auction, AuctionId, AuctionWithId},
-        interaction::InteractionData,
-        order::{OrderClass, OrderUid},
-        solver_competition::{
-            CompetitionAuction,
-            Order,
-            Score,
-            SolverCompetitionDB,
-            SolverSettlement,
-        },
+    model::solver_competition::{
+        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
     },
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
     rand::seq::SliceRandom,
-    shared::{remaining_amounts, token_list::AutoUpdatingTokenList},
+    shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -47,9 +34,10 @@ use {
 };
 
 pub struct RunLoop {
-    pub eth: Ethereum,
+    pub eth: infra::Ethereum,
+    pub persistence: infra::Persistence,
+
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub database: Arc<Postgres>,
     pub drivers: Vec<Driver>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
@@ -58,8 +46,6 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
-    pub fee_policy: arguments::FeePolicy,
-    pub persistence: infra::persistence::Persistence,
     pub liveness: Arc<Liveness>,
 }
 
@@ -68,7 +54,7 @@ impl RunLoop {
         let mut last_auction = None;
         let mut last_block = None;
         loop {
-            if let Some(AuctionWithId { id, auction }) = self.next_auction().await {
+            if let Some(domain::AuctionWithId { id, auction }) = self.next_auction().await {
                 let current_block = self.eth.current_block().borrow().hash;
                 // Only run the solvers if the auction or block has changed.
                 let previous = last_auction.replace(auction.clone());
@@ -87,7 +73,7 @@ impl RunLoop {
         }
     }
 
-    async fn next_auction(&self) -> Option<AuctionWithId> {
+    async fn next_auction(&self) -> Option<domain::AuctionWithId> {
         let auction = match self.solvable_orders_cache.current_auction() {
             Some(auction) => auction,
             None => {
@@ -96,7 +82,11 @@ impl RunLoop {
             }
         };
 
-        let id = match self.database.replace_current_auction(&auction).await {
+        let id = match self
+            .persistence
+            .replace_current_auction(auction.clone())
+            .await
+        {
             Ok(id) => {
                 Metrics::auction(id);
                 id
@@ -107,23 +97,19 @@ impl RunLoop {
             }
         };
 
-        if auction
-            .orders
-            .iter()
-            .all(|order| match order.metadata.class {
-                OrderClass::Market => false,
-                OrderClass::Liquidity => true,
-                OrderClass::Limit(_) => false,
-            })
-        {
+        if auction.orders.iter().all(|order| match order.class {
+            Class::Market => false,
+            Class::Liquidity => true,
+            Class::Limit => false,
+        }) {
             tracing::debug!("skipping empty auction");
             return None;
         }
 
-        Some(AuctionWithId { id, auction })
+        Some(domain::AuctionWithId { id, auction })
     }
 
-    async fn single_run(&self, auction_id: AuctionId, auction: Auction) {
+    async fn single_run(&self, auction_id: domain::AuctionId, auction: domain::Auction) {
         tracing::info!(?auction_id, "solving");
 
         let auction = self.remove_in_flight_orders(auction).await;
@@ -162,7 +148,7 @@ impl RunLoop {
                 .order_ids()
                 .map(|o| (*o, OrderEventLabel::Considered))
                 .collect::<Vec<_>>();
-            self.database.store_order_events(&events).await;
+            self.persistence.store_order_events(events);
 
             let winner = solution.account;
             let winning_score = solution.score.get();
@@ -177,45 +163,34 @@ impl RunLoop {
                 .collect::<HashSet<_>>();
 
             let mut prices = BTreeMap::new();
+            let mut fee_policies = Vec::new();
             let block_deadline = competition_simulation_block
                 + self.submission_deadline
                 + self.additional_deadline_for_rewards;
             let call_data = revealed.calldata.internalized.clone();
             let uninternalized_call_data = revealed.calldata.uninternalized.clone();
 
-            // Save order executions for all orders in the solution. Surplus fees for
-            // limit orders will be saved after settling the order onchain.
-            let mut order_executions = vec![];
             for order_id in solution.order_ids() {
                 let auction_order = auction
                     .orders
                     .iter()
-                    .find(|auction_order| &auction_order.metadata.uid == order_id);
+                    .find(|auction_order| &auction_order.uid == order_id);
                 match auction_order {
                     Some(auction_order) => {
-                        let executed_fee = match auction_order.solver_determines_fee() {
-                            // we don't know the surplus fee in advance. will be populated
-                            // after the transaction containing the order is mined
-                            true => ExecutedFee::Surplus,
-                            false => ExecutedFee::Order(auction_order.metadata.solver_fee),
-                        };
-                        order_executions.push(OrderExecution {
-                            order_id: *order_id,
-                            executed_fee,
-                        });
-                        if let Some(price) = auction.prices.get(&auction_order.data.sell_token) {
-                            prices.insert(auction_order.data.sell_token, *price);
+                        fee_policies.push((auction_order.uid, auction_order.protocol_fees.clone()));
+                        if let Some(price) = auction.prices.get(&auction_order.sell_token) {
+                            prices.insert(auction_order.sell_token, *price);
                         } else {
                             tracing::error!(
-                                sell_token = ?auction_order.data.sell_token,
+                                sell_token = ?auction_order.sell_token,
                                 "sell token price is missing in auction"
                             );
                         }
-                        if let Some(price) = auction.prices.get(&auction_order.data.buy_token) {
-                            prices.insert(auction_order.data.buy_token, *price);
+                        if let Some(price) = auction.prices.get(&auction_order.buy_token) {
+                            prices.insert(auction_order.buy_token, *price);
                         } else {
                             tracing::error!(
-                                buy_token = ?auction_order.data.buy_token,
+                                buy_token = ?auction_order.buy_token,
                                 "buy token price is missing in auction"
                             );
                         }
@@ -233,7 +208,7 @@ impl RunLoop {
                     orders: auction
                         .orders
                         .iter()
-                        .map(|order| order.metadata.uid)
+                        .map(|order| order.uid.into())
                         .collect(),
                     prices: auction.prices.clone(),
                 },
@@ -252,7 +227,7 @@ impl RunLoop {
                                 .orders()
                                 .iter()
                                 .map(|(id, order)| Order::Colocated {
-                                    id: *id,
+                                    id: (*id).into(),
                                     sell_amount: order.sell_amount,
                                     buy_amount: order.buy_amount,
                                 })
@@ -283,7 +258,6 @@ impl RunLoop {
                 participants,
                 prices,
                 block_deadline,
-                order_executions,
                 competition_simulation_block,
                 call_data,
                 uninternalized_call_data,
@@ -291,9 +265,19 @@ impl RunLoop {
             };
 
             tracing::info!(?competition, "saving competition");
-            if let Err(err) = self.save_competition(&competition).await {
+            if let Err(err) = self.persistence.save_competition(&competition).await {
                 tracing::error!(?err, "failed to save competition");
                 return;
+            }
+
+            tracing::info!("saving fee policies");
+            if let Err(err) = self
+                .persistence
+                .store_fee_policies(auction_id, fee_policies)
+                .await
+            {
+                Metrics::fee_policies_store_error();
+                tracing::warn!(?err, "failed to save fee policies");
             }
 
             tracing::info!(driver = %driver.name, "settling");
@@ -315,35 +299,26 @@ impl RunLoop {
     }
 
     /// Runs the solver competition, making all configured drivers participate.
-    async fn competition(&self, id: AuctionId, auction: &Auction) -> Vec<Participant<'_>> {
-        self.persistence.store_auction(id, auction);
-        let fee_policies = fee::Policies::new(auction, self.fee_policy.clone());
+    async fn competition(
+        &self,
+        id: domain::AuctionId,
+        auction: &domain::Auction,
+    ) -> Vec<Participant<'_>> {
         let request = solve_request(
             id,
             auction,
             &self.market_makable_token_list.all(),
             self.score_cap,
             self.solve_deadline,
-            fee_policies,
         );
         let request = &request;
 
-        let db = self.database.clone();
         let events = auction
             .orders
             .iter()
-            .map(|o| (o.metadata.uid, OrderEventLabel::Ready))
+            .map(|o| (o.uid, OrderEventLabel::Ready))
             .collect_vec();
-        // insert into `order_events` table operations takes a while and the result is
-        // ignored, so we run it in the background
-        tokio::spawn(
-            async move {
-                let start = Instant::now();
-                db.store_order_events(&events).await;
-                tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
-            }
-            .instrument(tracing::Span::current()),
-        );
+        self.persistence.store_order_events(events);
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -404,7 +379,11 @@ impl RunLoop {
                     id: solution.solution_id,
                     account: solution.submission_address,
                     score: NonZeroU256::new(solution.score).ok_or(ZeroScoreError)?,
-                    orders: solution.orders,
+                    orders: solution
+                        .orders
+                        .into_iter()
+                        .map(|(o, amounts)| (o.into(), amounts))
+                        .collect(),
                     clearing_prices: solution.clearing_prices,
                 })
             })
@@ -415,7 +394,7 @@ impl RunLoop {
     async fn reveal(
         &self,
         driver: &Driver,
-        auction: AuctionId,
+        auction: domain::AuctionId,
         solution_id: u64,
     ) -> Result<reveal::Response, RevealError> {
         let response = driver
@@ -440,7 +419,7 @@ impl RunLoop {
             .order_ids()
             .map(|uid| (*uid, OrderEventLabel::Executing))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.persistence.store_order_events(events);
 
         let request = settle::Request {
             solution_id: solved.id,
@@ -462,20 +441,15 @@ impl RunLoop {
             .keys()
             .map(|uid| (*uid, OrderEventLabel::Traded))
             .collect_vec();
-        self.database.store_order_events(&events).await;
+        self.persistence.store_order_events(events);
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())
     }
 
-    /// Saves the competition data to the database
-    async fn save_competition(&self, competition: &Competition) -> Result<()> {
-        self.database.save_competition(competition).await
-    }
-
     /// Removes orders that are currently being settled to avoid solvers trying
     /// to fill an order a second time.
-    async fn remove_in_flight_orders(&self, mut auction: Auction) -> Auction {
+    async fn remove_in_flight_orders(&self, mut auction: domain::Auction) -> domain::Auction {
         let prev_settlement = self.in_flight_orders.lock().unwrap().tx_hash;
         let tx_receipt = self.eth.transaction_receipt(prev_settlement).await;
 
@@ -494,7 +468,7 @@ impl RunLoop {
             let in_flight_orders = self.in_flight_orders.lock().unwrap();
             auction
                 .orders
-                .retain(|o| !in_flight_orders.orders.contains(&o.metadata.uid));
+                .retain(|o| !in_flight_orders.orders.contains(&o.uid));
             tracing::debug!(orders = ?in_flight_orders.orders, "filtered out in-flight orders");
         }
 
@@ -503,65 +477,19 @@ impl RunLoop {
 }
 
 pub fn solve_request(
-    id: AuctionId,
-    auction: &Auction,
+    id: domain::AuctionId,
+    auction: &domain::Auction,
     trusted_tokens: &HashSet<H160>,
     score_cap: U256,
     time_limit: Duration,
-    fee_policies: fee::Policies,
 ) -> solve::Request {
     solve::Request {
         id,
         orders: auction
             .orders
-            .iter()
-            .map(|order| {
-                let class = match order.metadata.class {
-                    OrderClass::Market => Class::Market,
-                    OrderClass::Liquidity => Class::Liquidity,
-                    OrderClass::Limit(_) => Class::Limit,
-                };
-                let remaining_order = remaining_amounts::Order::from(order);
-                let map_interactions =
-                    |interactions: &[InteractionData]| -> Vec<solve::Interaction> {
-                        interactions
-                            .iter()
-                            .map(|interaction| solve::Interaction {
-                                target: interaction.target,
-                                value: interaction.value,
-                                call_data: interaction.call_data.clone(),
-                            })
-                            .collect()
-                    };
-                let order_is_untouched = remaining_order.executed_amount.is_zero();
-                solve::Order {
-                    uid: order.metadata.uid,
-                    sell_token: order.data.sell_token,
-                    buy_token: order.data.buy_token,
-                    sell_amount: order.data.sell_amount,
-                    buy_amount: order.data.buy_amount,
-                    solver_fee: order.metadata.full_fee_amount,
-                    user_fee: order.data.fee_amount,
-                    valid_to: order.data.valid_to,
-                    kind: order.data.kind,
-                    receiver: order.data.receiver,
-                    owner: order.metadata.owner,
-                    partially_fillable: order.data.partially_fillable,
-                    executed: remaining_order.executed_amount,
-                    // Partially fillable orders should have their pre-interactions only executed
-                    // on the first fill.
-                    pre_interactions: order_is_untouched
-                        .then(|| map_interactions(&order.interactions.pre))
-                        .unwrap_or_default(),
-                    post_interactions: map_interactions(&order.interactions.post),
-                    sell_token_balance: order.data.sell_token_balance,
-                    buy_token_balance: order.data.buy_token_balance,
-                    class,
-                    app_data: order.data.app_data,
-                    signature: order.signature.clone(),
-                    fee_policies: fee_policies.get(&order.metadata.uid).unwrap_or_default(),
-                }
-            })
+            .clone()
+            .into_iter()
+            .map(dto::order::from_domain)
             .collect(),
         tokens: auction
             .prices
@@ -588,7 +516,7 @@ pub fn solve_request(
 pub struct InFlightOrders {
     /// The transaction that these orders where settled in.
     tx_hash: H256,
-    orders: HashSet<OrderUid>,
+    orders: HashSet<domain::OrderUid>,
 }
 
 struct Participant<'a> {
@@ -600,16 +528,16 @@ struct Solution {
     id: u64,
     account: H160,
     score: NonZeroU256,
-    orders: HashMap<OrderUid, TradedAmounts>,
+    orders: HashMap<domain::OrderUid, TradedAmounts>,
     clearing_prices: HashMap<H160, U256>,
 }
 
 impl Solution {
-    pub fn order_ids(&self) -> impl Iterator<Item = &OrderUid> {
+    pub fn order_ids(&self) -> impl Iterator<Item = &domain::OrderUid> {
         self.orders.keys()
     }
 
-    pub fn orders(&self) -> &HashMap<OrderUid, TradedAmounts> {
+    pub fn orders(&self) -> &HashMap<domain::OrderUid, TradedAmounts> {
         &self.orders
     }
 }
@@ -673,6 +601,10 @@ struct Metrics {
     /// solution together with the winning driver that did't include it.
     #[metric(labels("ignored_by"))]
     matched_unsettled: prometheus::IntCounterVec,
+
+    /// Tracks the number of database errors.
+    #[metric(labels("error_type"))]
+    db_metric_error: prometheus::IntCounterVec,
 }
 
 impl Metrics {
@@ -680,7 +612,7 @@ impl Metrics {
         Metrics::instance(metrics::get_storage_registry()).unwrap()
     }
 
-    fn auction(auction_id: AuctionId) {
+    fn auction(auction_id: domain::AuctionId) {
         Self::get().auction.set(auction_id)
     }
 
@@ -752,7 +684,7 @@ impl Metrics {
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn matched_unsettled(winning: &Driver, unsettled: &[&OrderUid]) {
+    fn matched_unsettled(winning: &Driver, unsettled: &[&domain::OrderUid]) {
         if !unsettled.is_empty() {
             tracing::debug!(?unsettled, "some orders were matched but not settled");
         }
@@ -761,24 +693,35 @@ impl Metrics {
             .with_label_values(&[&winning.name])
             .inc_by(unsettled.len() as u64);
     }
+
+    fn fee_policies_store_error() {
+        Self::get()
+            .db_metric_error
+            .with_label_values(&["fee_policies_store"])
+            .inc();
+    }
 }
 
 pub mod observe {
-    use {model::auction::Auction, std::collections::HashSet};
+    use {crate::domain, std::collections::HashSet};
 
-    pub fn log_auction_delta(id: i64, previous: &Option<Auction>, current: &Auction) {
+    pub fn log_auction_delta(
+        id: i64,
+        previous: &Option<domain::Auction>,
+        current: &domain::Auction,
+    ) {
         let previous_uids = match previous {
             Some(previous) => previous
                 .orders
                 .iter()
-                .map(|order| order.metadata.uid)
+                .map(|order| order.uid)
                 .collect::<HashSet<_>>(),
             None => HashSet::new(),
         };
         let current_uids = current
             .orders
             .iter()
-            .map(|order| order.metadata.uid)
+            .map(|order| order.uid)
             .collect::<HashSet<_>>();
         let added = current_uids.difference(&previous_uids);
         let removed = previous_uids.difference(&current_uids);

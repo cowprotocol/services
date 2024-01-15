@@ -1,12 +1,11 @@
 use {
-    crate::database::Postgres,
+    crate::{boundary, database::Postgres, domain},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
     ethrpc::current_block::CurrentBlockStream,
     itertools::Itertools,
     model::{
-        auction::Auction,
         order::{Order, OrderClass, OrderUid},
         signature::Signature,
         time::now_in_epoch_seconds,
@@ -78,21 +77,14 @@ pub struct SolvableOrdersCache {
     ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
+    protocol_fee: domain::ProtocolFee,
 }
 
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    auction: Option<Auction>,
-    orders: SolvableOrders,
-}
-
-#[derive(Clone, Debug)]
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub update_time: Instant,
-    pub latest_settlement_block: u64,
-    pub block: u64,
+    auction: Option<domain::Auction>,
+    update_time: Instant,
 }
 
 impl SolvableOrdersCache {
@@ -110,6 +102,7 @@ impl SolvableOrdersCache {
         ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
+        protocol_fee: domain::ProtocolFee,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -119,12 +112,7 @@ impl SolvableOrdersCache {
             bad_token_detector,
             cache: Mutex::new(Inner {
                 auction: None,
-                orders: SolvableOrders {
-                    orders: Default::default(),
-                    update_time: Instant::now(),
-                    latest_settlement_block: 0,
-                    block: 0,
-                },
+                update_time: Instant::now(),
             }),
             native_price_estimator,
             signature_validator,
@@ -132,6 +120,7 @@ impl SolvableOrdersCache {
             ethflow_contract_address,
             weth,
             limit_order_price_factor,
+            protocol_fee,
         });
         tokio::task::spawn(
             update_task(Arc::downgrade(&self_), update_interval, current_block)
@@ -140,7 +129,7 @@ impl SolvableOrdersCache {
         self_
     }
 
-    pub fn current_auction(&self) -> Option<Auction> {
+    pub fn current_auction(&self) -> Option<domain::Auction> {
         self.cache.lock().unwrap().auction.clone()
     }
 
@@ -162,13 +151,13 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("banned_user", &orders);
         invalid_order_uids.extend(removed);
 
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        let removed = counter.checkpoint("unsupported_token", &orders);
-        invalid_order_uids.extend(removed);
-
         let orders =
             filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
         let removed = counter.checkpoint("invalid_signature", &orders);
+        invalid_order_uids.extend(removed);
+
+        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        let removed = counter.checkpoint("unsupported_token", &orders);
         invalid_order_uids.extend(removed);
 
         let missing_queries: Vec<_> = orders.iter().map(Query::from_order).collect();
@@ -225,13 +214,7 @@ impl SolvableOrdersCache {
         let removed = counter.checkpoint("out_of_market", &orders);
         filtered_order_events.extend(removed);
 
-        let auction = Auction {
-            block,
-            latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            orders: orders.clone(),
-            prices,
-        };
-        let removed = counter.record(&auction.orders);
+        let removed = counter.record(&orders);
         filtered_order_events.extend(removed);
 
         // spawning a background task since `order_events` table insert operation takes
@@ -250,14 +233,22 @@ impl SolvableOrdersCache {
             .await;
         });
 
+        let auction = domain::Auction {
+            block,
+            latest_settlement_block: db_solvable_orders.latest_settlement_block,
+            orders: orders
+                .into_iter()
+                .map(|order| {
+                    let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
+                    let protocol_fees = self.protocol_fee.get(&order, quote);
+                    boundary::order::to_domain(order, protocol_fees)
+                })
+                .collect(),
+            prices,
+        };
         *self.cache.lock().unwrap() = Inner {
             auction: Some(auction),
-            orders: SolvableOrders {
-                orders,
-                update_time: Instant::now(),
-                latest_settlement_block: db_solvable_orders.latest_settlement_block,
-                block,
-            },
+            update_time: Instant::now(),
         };
 
         tracing::debug!(%block, "updated current auction cache");
@@ -265,7 +256,7 @@ impl SolvableOrdersCache {
     }
 
     pub fn last_update_time(&self) -> Instant {
-        self.cache.lock().unwrap().orders.update_time
+        self.cache.lock().unwrap().update_time
     }
 
     pub fn track_auction_update(&self, result: &str) {
@@ -480,7 +471,7 @@ fn get_orders_with_native_prices(
         .filter_map(|order| match order.metadata.class {
             OrderClass::Market => Some([order.data.sell_token, order.data.buy_token]),
             OrderClass::Liquidity => None,
-            OrderClass::Limit(_) => None,
+            OrderClass::Limit => None,
         })
         .flatten();
     native_price_estimator.replace_high_priority(high_priority_tokens.collect());
@@ -1000,7 +991,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                class: OrderClass::Limit(Default::default()),
+                class: OrderClass::Limit,
                 ..Default::default()
             },
             ..Default::default()

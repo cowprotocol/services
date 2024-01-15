@@ -302,6 +302,7 @@ pub async fn load(network: &blockchain::Network, path: &Path) -> infra::Config {
             }
             (None, Some(config)) => Some(simulator::Config::Enso(simulator::enso::Config {
                 url: config.url,
+                network_block_interval: config.network_block_interval,
             })),
             (None, None) => None,
             (Some(_), Some(_)) => panic!("Cannot configure both Tenderly and Enso"),

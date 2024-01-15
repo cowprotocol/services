@@ -78,6 +78,7 @@ impl Notification {
                     notify::Settlement::SimulationRevert => Kind::Cancelled,
                     notify::Settlement::Fail => Kind::Fail,
                 },
+                notify::Kind::PostprocessingTimedOut => Kind::PostprocessingTimedOut,
             },
         }
     }
@@ -95,7 +96,7 @@ pub struct Notification {
 
 #[serde_as]
 #[derive(Debug, Serialize)]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum Kind {
     Timeout,
     EmptySolution,
@@ -141,6 +142,7 @@ pub enum Kind {
     },
     Cancelled,
     Fail,
+    PostprocessingTimedOut,
 }
 
 type BlockNo = u64;

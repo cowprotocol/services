@@ -34,7 +34,7 @@ impl Solutions {
                                     .find(|order| order.uid == fulfillment.order)
                                     // TODO this error should reference the UID
                                     .ok_or(super::Error(
-                                        "invalid order UID specified in fulfillment"
+                                        "invalid order UID specified in fulfillment".to_owned()
                                     ))?
                                     .clone();
 
@@ -51,7 +51,7 @@ impl Solutions {
                                 .map(competition::solution::Trade::Fulfillment)
                                 .map_err(
                                     |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error("invalid trade fulfillment")
+                                        super::Error("invalid trade fulfillment".to_owned())
                                     },
                                 )
                             }
@@ -117,7 +117,9 @@ impl Solutions {
                                 )
                                 .map_err(
                                     |competition::solution::trade::InvalidExecutedAmount| {
-                                        super::Error("invalid executed amount in JIT order")
+                                        super::Error(
+                                            "invalid executed amount in JIT order".to_owned(),
+                                        )
                                     },
                                 )?,
                             )),
@@ -175,7 +177,7 @@ impl Solutions {
                                     .iter()
                                     .find(|liquidity| liquidity.id == interaction.id)
                                     .ok_or(super::Error(
-                                        "invalid liquidity ID specified in interaction",
+                                        "invalid liquidity ID specified in interaction".to_owned(),
                                     ))?
                                     .to_owned();
                                 Ok(competition::solution::Interaction::Liquidity(
@@ -206,8 +208,13 @@ impl Solutions {
                     },
                     weth,
                 )
-                .map_err(|competition::solution::InvalidClearingPrices| {
-                    super::Error("invalid clearing prices")
+                .map_err(|err| match err {
+                    competition::solution::SolutionError::InvalidClearingPrices => {
+                        super::Error("invalid clearing prices".to_owned())
+                    }
+                    competition::solution::SolutionError::ProtocolFee(err) => {
+                        super::Error(format!("could not incorporate protocol fee: {err}"))
+                    }
                 })
             })
             .collect()
@@ -234,7 +241,7 @@ pub struct Solution {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Trade {
     Fulfillment(Fulfillment),
     Jit(JitTrade),
@@ -287,14 +294,14 @@ struct JitOrder {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum Kind {
     Sell,
     Buy,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Interaction {
     Liquidity(LiquidityInteraction),
     Custom(CustomInteraction),
@@ -350,7 +357,7 @@ struct Allowance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SellTokenBalance {
     #[default]
     Erc20,
@@ -359,7 +366,7 @@ enum SellTokenBalance {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum BuyTokenBalance {
     #[default]
     Erc20,
@@ -367,7 +374,7 @@ enum BuyTokenBalance {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 enum SigningScheme {
     Eip712,
     EthSign,
@@ -377,7 +384,7 @@ enum SigningScheme {
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields, tag = "kind")]
+#[serde(rename_all = "camelCase", deny_unknown_fields, tag = "kind")]
 pub enum Score {
     Solver {
         #[serde_as(as = "serialize::U256")]

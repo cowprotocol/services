@@ -20,7 +20,6 @@ use {
             BuyTokenDestination,
             EthflowData,
             Interactions,
-            LimitOrderClass,
             OnchainOrderData,
             OnchainOrderPlacementError,
             Order,
@@ -70,7 +69,7 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         // We can't use `surplus_fee` or `fee_amount` here because those values include subsidies.
         // All else being equal a solver would then prefer including an unsubsidized order over a
         // subsidized one which we don't want.
-        OrderClass::Limit(_) | OrderClass::Market => full_fee_amount,
+        OrderClass::Limit | OrderClass::Market => full_fee_amount,
     };
 
     let metadata = OrderMetadata {
@@ -91,6 +90,8 @@ pub fn full_order_into_model_order(order: database::orders::FullOrder) -> Result
         )?,
         executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
             .context("executed fee amount is not a valid u256")?,
+        executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee)
+            .context("executed surplus fee is not a valid u256")?,
         invalidated: order.invalidated,
         status,
         is_liquidity_order: class == OrderClass::Liquidity,
@@ -173,7 +174,7 @@ pub fn order_class_into(class: &OrderClass) -> DbOrderClass {
     match class {
         OrderClass::Market => DbOrderClass::Market,
         OrderClass::Liquidity => DbOrderClass::Liquidity,
-        OrderClass::Limit(_) => DbOrderClass::Limit,
+        OrderClass::Limit => DbOrderClass::Limit,
     }
 }
 
@@ -211,11 +212,7 @@ pub fn order_class_from(order: &FullOrderDb) -> OrderClass {
     match order.class {
         DbOrderClass::Market => OrderClass::Market,
         DbOrderClass::Liquidity => OrderClass::Liquidity,
-        DbOrderClass::Limit => OrderClass::Limit(LimitOrderClass {
-            executed_surplus_fee: big_decimal_to_u256(&order.executed_surplus_fee).expect(
-                "executed fees can't exceed sell_token amount which definitely fits into U256",
-            ),
-        }),
+        DbOrderClass::Limit => OrderClass::Limit,
     }
 }
 

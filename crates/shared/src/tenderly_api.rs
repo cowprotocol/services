@@ -282,9 +282,15 @@ impl Arguments {
 
 impl Display for Arguments {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        display_option(f, "tenderly_user", &self.tenderly_user)?;
-        display_option(f, "tenderly_project", &self.tenderly_project)?;
-        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
+        let Self {
+            tenderly_user,
+            tenderly_project,
+            tenderly_api_key,
+        } = self;
+
+        display_option(f, "tenderly_user", tenderly_user)?;
+        display_option(f, "tenderly_project", tenderly_project)?;
+        display_secret_option(f, "tenderly_api_key", tenderly_api_key)?;
 
         Ok(())
     }

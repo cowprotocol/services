@@ -598,6 +598,9 @@ where
             block_stream.borrow().hash.to_string(),
         );
     };
+    if let Some(id) = observe::request_id::get_task_local_storage() {
+        request = request.header("X-REQUEST-ID", id);
+    }
 
     let response = request.send().await?;
     let status_code = response.status();

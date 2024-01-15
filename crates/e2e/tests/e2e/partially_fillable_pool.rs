@@ -2,7 +2,7 @@ use {
     e2e::{setup::*, tx},
     ethcontract::prelude::U256,
     model::{
-        order::{LimitOrderClass, OrderClass, OrderCreation, OrderKind},
+        order::{OrderClass, OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     secp256k1::SecretKey,
@@ -70,12 +70,7 @@ async fn test(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
-    services
-        .start_api(vec![
-            "--allow-placing-partially-fillable-limit-orders=true".to_string()
-        ])
-        .await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: token_a.address(),
@@ -100,13 +95,11 @@ async fn test(web3: Web3) {
 
     let auction = services.get_auction().await.auction;
     let order = auction.orders.into_iter().next().unwrap();
-    assert!(order.data.partially_fillable);
-    assert!(matches!(order.metadata.class, OrderClass::Limit(_)));
-    assert_eq!(order.metadata.full_fee_amount, 0.into());
-    assert_eq!(order.metadata.solver_fee, 0.into());
+    assert!(order.partially_fillable);
+    assert!(matches!(order.class, OrderClass::Limit));
+    assert_eq!(order.solver_fee, 0.into());
 
     tracing::info!("Waiting for trade.");
-    services.start_old_driver(solver.private_key(), vec![]);
     let trade_happened =
         || async { token_b.balance_of(trader_a.address()).call().await.unwrap() != 0.into() };
     wait_for_condition(TIMEOUT, trade_happened).await.unwrap();
@@ -124,16 +117,11 @@ async fn test(web3: Web3) {
             .contains(&buy_balance.as_u128())
     );
 
+    onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
-        let executed_surplus_fee = match order.metadata.class {
-            OrderClass::Limit(LimitOrderClass {
-                executed_surplus_fee,
-                ..
-            }) => executed_surplus_fee,
-            _ => unreachable!(),
-        };
-        !executed_surplus_fee.is_zero()
+        !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
             && order.metadata.executed_sell_amount != Default::default()
     };
