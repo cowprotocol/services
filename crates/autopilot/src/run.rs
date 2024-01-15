@@ -46,11 +46,14 @@ use {
         signature_validator,
         sources::{
             balancer_v2::{
-                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+                pool_fetching::BalancerContracts,
+                BalancerFactoryKind,
+                BalancerPoolFetcher,
             },
             uniswap_v2::{pool_cache::PoolCache, UniV2BaselineSourceParameters},
             uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
-            BaselineSource, PoolAggregator,
+            BaselineSource,
+            PoolAggregator,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
@@ -80,6 +83,13 @@ impl LivenessChecking for Liveness {
 }
 
 impl Liveness {
+    pub fn new(max_auction_age: Duration) -> Liveness {
+        Liveness {
+            max_auction_age,
+            last_auction_time: RwLock::new(Instant::now()),
+        }
+    }
+
     pub fn auction(&self) {
         *self.last_auction_time.write().unwrap() = Instant::now();
     }
@@ -592,10 +602,7 @@ pub async fn run(args: Arguments) {
         .await
         .expect("failed to perform initial solvable orders update");
 
-    let liveness = Arc::new(Liveness {
-        max_auction_age: args.max_auction_age,
-        last_auction_time: Instant::now().into(),
-    });
+    let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let on_settlement_event_updater =
@@ -700,10 +707,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    let liveness: Arc<Liveness> = Arc::new(Liveness {
-        max_auction_age: args.max_auction_age,
-        last_auction_time: Instant::now().into(),
-    });
+    let liveness = Arc::new(Liveness::new(args.max_auction_age));
     shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let shadow = shadow::RunLoop::new(

@@ -26,7 +26,11 @@ use {
         interaction::InteractionData,
         order::{OrderClass, OrderUid},
         solver_competition::{
-            CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
+            CompetitionAuction,
+            Order,
+            Score,
+            SolverCompetitionDB,
+            SolverSettlement,
         },
     },
     number::nonzero::U256 as NonZeroU256,
