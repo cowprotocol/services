@@ -184,7 +184,7 @@ impl<'a> Services<'a> {
             "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ]);
         self.start_api(vec![
-            "--price-estimation-drivers=test_solver|http://localhost:11088/test_quoter".to_string(),
+            "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
         ])
         .await;
     }
