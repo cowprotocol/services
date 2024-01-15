@@ -9,6 +9,7 @@ use {
             solve::{self, TradedAmounts},
         },
         infra::{self, persistence::dto},
+        run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -49,6 +50,7 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub liveness: Arc<Liveness>,
 }
 
 impl RunLoop {
@@ -64,6 +66,8 @@ impl RunLoop {
                     || last_block.replace(current_block) != Some(current_block)
                 {
                     observe::log_auction_delta(id, &previous, &auction);
+                    self.liveness.auction();
+
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
