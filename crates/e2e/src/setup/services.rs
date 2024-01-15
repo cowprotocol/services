@@ -91,7 +91,7 @@ impl<'a> Services<'a> {
             "--auction-update-interval=1s".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
-            "--solve-deadline=2s".to_string(),
+            "--solve-deadline=11s".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -149,7 +149,8 @@ impl<'a> Services<'a> {
         .await;
     }
 
-    /// Starts a basic version of the protocol with a single legacy solver and quoter.
+    /// Starts a basic version of the protocol with a single legacy solver and
+    /// quoter.
     pub async fn start_protocol_legacy_solver(
         &self,
         solver_endpoint: Option<Url>,
