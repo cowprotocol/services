@@ -30,7 +30,7 @@ type ResultWithIndex<O> = (EstimatorIndex, Result<O, PriceEstimationError>);
 /// estimate.
 pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
-    results_for_early_return: NonZeroUsize,
+    usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
 }
 
@@ -40,7 +40,7 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         assert!(stages.iter().all(|stage| !stage.is_empty()));
         Self {
             stages,
-            results_for_early_return: NonZeroUsize::MAX,
+            usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
         }
     }
@@ -48,9 +48,9 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
     /// Enables the estimator to return after it got the configured number of
     /// successful results instead of having to wait for all estimators to
     /// return a result.
-    pub fn with_early_return(self, results_for_early_return: NonZeroUsize) -> Self {
+    pub fn with_early_return(self, usable_results_for_early_return: NonZeroUsize) -> Self {
         Self {
-            results_for_early_return,
+            usable_results_for_early_return,
             ..self
         }
     }
@@ -75,7 +75,9 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
 
         let missing_results = |results: &[ResultWithIndex<R>]| {
             let usable = results.iter().filter(|(_, r)| result_is_usable(r)).count();
-            self.results_for_early_return.get().saturating_sub(usable)
+            self.usable_results_for_early_return
+                .get()
+                .saturating_sub(usable)
         };
 
         'outer: while stage_index < self.stages.len() {
@@ -522,7 +524,7 @@ mod tests {
                 vec![("third".to_owned(), Arc::new(third))],
                 vec![("fourth".to_owned(), Arc::new(fourth))],
             ],
-            results_for_early_return: NonZeroUsize::new(2).unwrap(),
+            usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
         };
 
