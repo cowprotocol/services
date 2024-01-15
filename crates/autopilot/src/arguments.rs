@@ -353,10 +353,10 @@ pub struct FeePolicy {
     /// - Surplus with cap:
     /// surplus:0.5:0.06
     ///
-    /// - Price improvement with cap:
+    /// - Price improvement without cap:
     /// price_improvement:0.5:1.0
     ///
-    /// - Price improvement without cap:
+    /// - Price improvement with cap:
     /// price_improvement:0.5:0.06
     ///
     /// - Volume based:
