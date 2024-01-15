@@ -11,7 +11,7 @@ use {
 };
 
 mod native;
-mod regular;
+mod quote;
 
 /// Stage index and index within stage of an estimator stored in the
 /// [`CompetitionEstimator`] used as an identifier.
