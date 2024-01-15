@@ -25,6 +25,18 @@ pub async fn start_naive_solver() -> Url {
     start_solver(config_file, "naive".to_string()).await
 }
 
+pub async fn start_legacy_solver(solver_endpoint: Url) -> Url {
+    let config_file = config_tmp_file(format!(
+        r#"
+chain-id = "1"
+solver-name = "legacy"
+endpoint = "{solver_endpoint}"
+        "#,
+    ));
+
+    start_solver(config_file, "legacy".to_string()).await
+}
+
 async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
     let args = vec![
         "solvers".to_string(),

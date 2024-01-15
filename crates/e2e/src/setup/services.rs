@@ -1,5 +1,5 @@
 use {
-    super::TestAccount,
+    super::{colocation::start_legacy_solver, TestAccount},
     crate::setup::{
         colocation::{self, SolverEngine},
         wait_for_condition,
@@ -16,7 +16,7 @@ use {
         solver_competition::SolverCompetitionAPI,
         trade::Trade,
     },
-    reqwest::{Client, StatusCode},
+    reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
     std::time::Duration,
 };
@@ -145,6 +145,45 @@ impl<'a> Services<'a> {
         ]);
         self.start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ])
+        .await;
+    }
+
+    /// Starts a basic version of the protocol with a single legacy solver and quoter.
+    pub async fn start_protocol_legacy_solver(
+        &self,
+        solver_endpoint: Option<Url>,
+        quoter_endpoint: Option<Url>,
+        solver: TestAccount,
+    ) {
+        let solver_endpoint =
+            solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
+        let solver_endpoint = start_legacy_solver(solver_endpoint).await;
+
+        let quoter_endpoint =
+            quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
+        let quoter_endpoint = start_legacy_solver(quoter_endpoint).await;
+
+        colocation::start_driver(
+            self.contracts,
+            vec![
+                SolverEngine {
+                    name: "test_solver".into(),
+                    account: solver.clone(),
+                    endpoint: solver_endpoint,
+                },
+                SolverEngine {
+                    name: "test_quoter".into(),
+                    account: solver,
+                    endpoint: quoter_endpoint,
+                },
+            ],
+        );
+        self.start_autopilot(vec![
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ]);
+        self.start_api(vec![
+            "--price-estimation-drivers=test_solver|http://localhost:11088/test_quoter".to_string(),
         ])
         .await;
     }
