@@ -64,7 +64,7 @@ pub enum AuctionKind {
     /// - Failed to recover auction id from calldata
     /// - Settlement transaction was submitted by solver other than the winner
     ///
-    /// In this case, settlement event should be market as invalid and no
+    /// In this case, settlement event should be marked as invalid and no
     /// auction dependent data is updated.
     Invalid,
 }
