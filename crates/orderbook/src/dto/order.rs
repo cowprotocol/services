@@ -24,8 +24,6 @@ pub struct Order {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub user_fee: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub scoring_fee: U256,
     pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: OrderKind,

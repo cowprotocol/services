@@ -99,7 +99,7 @@ impl Settlement {
                         to_boundary_order(trade.order()),
                         LimitOrderExecution {
                             filled: trade.executed().into(),
-                            scoring_fee: trade.scoring_fee().into(),
+                            fee: trade.fee().into(),
                         },
                     )
                 }
@@ -107,7 +107,7 @@ impl Settlement {
                     to_boundary_jit_order(&DomainSeparator(domain.0), trade.order()),
                     LimitOrderExecution {
                         filled: trade.executed().into(),
-                        scoring_fee: 0.into(),
+                        fee: 0.into(),
                     },
                 ),
             };
@@ -267,7 +267,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
             buy_token: order.buy.token.into(),
             sell_amount: order.sell.amount.into(),
             buy_amount: order.buy.amount.into(),
-            fee_amount: order.fee.user.into(),
+            fee_amount: order.user_fee.into(),
             receiver: order.receiver.map(Into::into),
             valid_to: order.valid_to.into(),
             app_data: AppDataHash(order.app_data.into()),
@@ -288,7 +288,7 @@ fn to_boundary_order(order: &competition::Order) -> Order {
         },
         metadata: OrderMetadata {
             full_fee_amount: Default::default(),
-            solver_fee: order.fee.scoring.into(),
+            solver_fee: order.user_fee.into(),
             class: match order.kind {
                 competition::order::Kind::Market => OrderClass::Market,
                 competition::order::Kind::Liquidity => OrderClass::Liquidity,
