@@ -1,9 +1,12 @@
-use {super::NetworkId, ethcontract::dyns::DynWeb3, primitive_types::H160};
+use {super::NetworkId, crate::boundary, ethcontract::dyns::DynWeb3, primitive_types::H160};
 
 #[derive(Debug, Clone)]
 pub struct Contracts {
     settlement: contracts::GPv2Settlement,
     weth: contracts::WETH9,
+
+    /// The domain separator for settlement contract used for signing orders.
+    settlement_domain_separator: boundary::DomainSeparator,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -33,11 +36,28 @@ impl Contracts {
             address_for(contracts::WETH9::raw_contract(), addresses.weth),
         );
 
-        Self { settlement, weth }
+        let settlement_domain_separator = boundary::DomainSeparator(
+            settlement
+                .domain_separator()
+                .call()
+                .await
+                .expect("domain separator")
+                .0,
+        );
+
+        Self {
+            settlement,
+            weth,
+            settlement_domain_separator,
+        }
     }
 
     pub fn settlement(&self) -> &contracts::GPv2Settlement {
         &self.settlement
+    }
+
+    pub fn settlement_domain_separator(&self) -> &model::DomainSeparator {
+        &self.settlement_domain_separator
     }
 
     pub fn weth(&self) -> &contracts::WETH9 {

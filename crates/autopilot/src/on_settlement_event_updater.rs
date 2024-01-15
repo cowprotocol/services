@@ -41,7 +41,6 @@ use {
     },
     anyhow::{anyhow, Context, Result},
     futures::StreamExt,
-    model::DomainSeparator,
     primitive_types::H256,
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
@@ -125,18 +124,7 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let domain_separator = DomainSeparator(
-            self.eth
-                .contracts()
-                .settlement()
-                .domain_separator()
-                .call()
-                .await?
-                .0,
-        );
-        let auction_id =
-            Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
-                .await?;
+        let auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
@@ -182,9 +170,10 @@ impl OnSettlementEventUpdater {
             );
 
             // surplus and fees calculation
-            match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
+            match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
-                    let order_uids = settlement.order_uids()?;
+                    let domain_separator = self.eth.contracts().settlement_domain_separator();
+                    let order_uids = settlement.order_uids(domain_separator)?;
                     let order_fees = order_uids
                         .clone()
                         .into_iter()
@@ -251,10 +240,9 @@ impl OnSettlementEventUpdater {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
-        domain_separator: &DomainSeparator,
     ) -> Result<Option<i64>> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
+        let metadata = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(
