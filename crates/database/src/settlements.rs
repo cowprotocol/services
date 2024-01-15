@@ -1,6 +1,6 @@
 use {
     crate::{events::EventIndex, TransactionHash},
-    sqlx::PgConnection,
+    sqlx::{postgres::PgQueryResult, PgConnection},
     std::ops::Range,
 };
 
@@ -37,6 +37,53 @@ WHERE
         .bind(event.block_number)
         .bind(event.log_index)
         .fetch_one(ex)
+        .await
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct SettlementEvent {
+    pub block_number: i64,
+    pub log_index: i64,
+    pub tx_hash: TransactionHash,
+}
+
+#[derive(Debug, Clone, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "AuctionKind", rename_all = "lowercase")]
+pub enum AuctionKind {
+    Valid,
+    Invalid,
+}
+
+pub async fn get_settlement_without_auction(
+    ex: &mut PgConnection,
+) -> Result<Option<SettlementEvent>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT block_number, log_index, tx_hash
+FROM settlements
+WHERE auction_kind IS unprocessed
+LIMIT 1
+    "#;
+    sqlx::query_as(QUERY).fetch_optional(ex).await
+}
+
+pub async fn update_settlement_auction(
+    ex: &mut PgConnection,
+    block_number: i64,
+    log_index: i64,
+    auction_id: Option<i64>,
+    auction_kind: AuctionKind,
+) -> Result<PgQueryResult, sqlx::Error> {
+    const QUERY: &str = r#"
+UPDATE settlements
+SET auction_kind = $1 and auction_id = $2
+WHERE block_number = $3 AND log_index = $4
+    ;"#;
+    sqlx::query(QUERY)
+        .bind(auction_kind)
+        .bind(auction_id)
+        .bind(block_number)
+        .bind(log_index)
+        .execute(ex)
         .await
 }
 

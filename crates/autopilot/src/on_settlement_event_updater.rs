@@ -38,7 +38,7 @@ use {
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result},
     contracts::GPv2Settlement,
     ethrpc::{
         current_block::{into_stream, CurrentBlockStream},
@@ -47,10 +47,36 @@ use {
     futures::StreamExt,
     model::DomainSeparator,
     primitive_types::{H160, H256},
-    shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
+    shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
     web3::types::{Transaction, TransactionId},
 };
+
+#[derive(Debug, Copy, Clone)]
+pub enum AuctionKind {
+    /// This auction is regular and all the auction dependent data should be
+    /// updated.
+    Valid { auction_id: i64 },
+    /// Some possible reasons to have invalid auction are:
+    /// - This auction was created by another environment (e.g.
+    ///   production/staging)
+    /// - Failed to decode settlement calldata
+    /// - Failed to recover auction id from calldata
+    /// - Settlement transaction was submitted by solver other than the winner
+    ///
+    /// In this case, settlement event should be market as invalid and no
+    /// auction dependent data is updated.
+    Invalid,
+}
+
+impl AuctionKind {
+    pub fn auction_id(&self) -> Option<i64> {
+        match self {
+            AuctionKind::Valid { auction_id } => Some(*auction_id),
+            AuctionKind::Invalid => None,
+        }
+    }
+}
 
 pub struct OnSettlementEventUpdater {
     pub web3: Web3,
@@ -64,7 +90,7 @@ impl OnSettlementEventUpdater {
         let mut current_block = *block_stream.borrow();
         let mut block_stream = into_stream(block_stream);
         loop {
-            match self.update(current_block.number).await {
+            match self.update().await {
                 Ok(true) => {
                     tracing::debug!(
                         block = current_block.number,
@@ -90,25 +116,16 @@ impl OnSettlementEventUpdater {
     /// Update database for settlement events that have not been processed yet.
     ///
     /// Returns whether an update was performed.
-    async fn update(&self, current_block: u64) -> Result<bool> {
-        let reorg_safe_block: i64 = current_block
-            .checked_sub(MAX_REORG_BLOCK_COUNT)
-            .context("no reorg safe block")?
-            .try_into()
-            .context("convert block")?;
-
+    async fn update(&self) -> Result<bool> {
         let mut ex = self
             .db
             .pool
             .begin()
             .await
             .context("acquire DB connection")?;
-        let event = match database::auction_transaction::get_settlement_event_without_tx_info(
-            &mut ex,
-            reorg_safe_block,
-        )
-        .await
-        .context("get_settlement_event_without_tx_info")?
+        let event = match database::settlements::get_settlement_without_auction(&mut ex)
+            .await
+            .context("get_settlement_without_auction")?
         {
             Some(event) => event,
             None => return Ok(false),
@@ -124,25 +141,14 @@ impl OnSettlementEventUpdater {
             .await
             .with_context(|| format!("get tx {hash:?}"))?
             .with_context(|| format!("no tx {hash:?}"))?;
-        let tx_from = transaction
-            .from
-            .with_context(|| format!("no from {hash:?}"))?;
-        let tx_nonce: i64 = transaction
-            .nonce
-            .try_into()
-            .map_err(|err| anyhow!("{}", err))
-            .with_context(|| format!("convert nonce {hash:?}"))?;
 
         let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
-        let auction_id =
-            Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
-                .await?;
+        let auction_kind = Self::get_auction_kind(&mut ex, &transaction, &domain_separator).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
-            tx_from,
-            tx_nonce,
+            auction_kind,
             auction_data: None,
         };
 
@@ -152,7 +158,7 @@ impl OnSettlementEventUpdater {
         //
         // If auction_id exists, we expect all other relevant information to exist as
         // well.
-        if let Some(auction_id) = auction_id {
+        if let AuctionKind::Valid { auction_id } = auction_kind {
             let receipt = self
                 .web3
                 .eth()
@@ -248,12 +254,12 @@ impl OnSettlementEventUpdater {
     /// `auction_id` to the settlement calldata. This function tries to
     /// recover that `auction_id`. This function only returns an error if
     /// retrying the operation makes sense. If all went well and there
-    /// simply is no sensible `auction_id` `Ok(None)` will be returned.
-    async fn recover_auction_id_from_calldata(
+    /// simply is no sensible `auction_id` `AuctionKind::Invalid` will be returned.
+    async fn get_auction_kind(
         ex: &mut PgConnection,
         tx: &Transaction,
         domain_separator: &DomainSeparator,
-    ) -> Result<Option<i64>> {
+    ) -> Result<AuctionKind> {
         let tx_from = tx.from.context("tx is missing sender")?;
         let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
             Ok(settlement) => settlement.metadata,
@@ -263,149 +269,39 @@ impl OnSettlementEventUpdater {
                     ?err,
                     "could not decode settlement tx, unclear which auction it belongs to"
                 );
-                return Ok(None);
+                return Ok(AuctionKind::Invalid);
             }
         };
         let auction_id = match metadata {
             Some(bytes) => i64::from_be_bytes(bytes.0),
             None => {
                 tracing::warn!(?tx, "could not recover the auction_id from the calldata");
-                return Ok(None);
+                return Ok(AuctionKind::Invalid);
             }
         };
 
         let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let data_already_recorded =
-            database::auction_transaction::data_exists(ex, auction_id).await?;
-        match (score, data_already_recorded) {
-            (None, _) => {
+        match score {
+            None => {
                 tracing::debug!(
                     auction_id,
                     "calldata claims to settle auction that has no competition"
                 );
-                Ok(None)
+                Ok(AuctionKind::Invalid)
             }
-            (Some(score), _) if score.winner.0 != tx_from.0 => {
-                tracing::warn!(
-                    auction_id,
-                    ?tx_from,
-                    winner = ?score.winner,
-                    "solution submitted by solver other than the winner"
-                );
-                Ok(None)
+            Some(score) => {
+                if score.winner.0 != tx_from.0 {
+                    tracing::warn!(
+                        auction_id,
+                        ?tx_from,
+                        winner = ?score.winner,
+                        "solution submitted by solver other than the winner"
+                    );
+                    Ok(AuctionKind::Invalid)
+                } else {
+                    Ok(AuctionKind::Valid { auction_id })
+                }
             }
-            (Some(_), true) => {
-                tracing::warn!(
-                    auction_id,
-                    "settlement data already recorded for this auction"
-                );
-                Ok(None)
-            }
-            (Some(_), false) => Ok(Some(auction_id)),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        database::{auction_prices::AuctionPrice, settlement_observations::Observation},
-        sqlx::Executor,
-    };
-
-    #[tokio::test]
-    #[ignore]
-    async fn manual_node_test() {
-        // TODO update test
-        observe::tracing::initialize_reentrant("autopilot=trace");
-        let db = Postgres::with_defaults().await.unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-
-        let contract = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
-        let updater = OnSettlementEventUpdater {
-            web3,
-            db,
-            native_token,
-            contract,
-        };
-
-        assert!(!updater.update(15875900).await.unwrap());
-
-        let query = r"
-INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_nonce)
-VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a', NULL, NULL)
-    ;";
-        updater.db.pool.execute(query).await.unwrap();
-
-        let query = r"
-INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
-VALUES (0, '\xa21740833858985e4d801533a808786d3647fb83', 4701)
-    ;";
-        updater.db.pool.execute(query).await.unwrap();
-
-        let query = r"
-INSERT INTO auction_prices (auction_id, token, price)
-VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 6347795727933475088343330979840),
-        (0, '\x6b175474e89094c44da98b954eedeac495271d0f', 634671683530053),
-        (0, '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 634553336916241343152390144)
-            ;";
-
-        updater.db.pool.execute(query).await.unwrap();
-
-        assert!(updater.update(15875900).await.unwrap());
-
-        let query = r"
-SELECT tx_from, tx_nonce
-FROM settlements
-WHERE block_number = 15875801 AND log_index = 405
-        ;";
-        let (tx_from, tx_nonce): (Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            tx_from,
-            hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
-        );
-        assert_eq!(tx_nonce, 4701);
-
-        let query = r"
-SELECT auction_id, tx_from, tx_nonce
-FROM auction_transaction
-        ;";
-        let (auction_id, tx_from, tx_nonce): (i64, Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(auction_id, 0);
-        assert_eq!(
-            tx_from,
-            hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
-        );
-        assert_eq!(tx_nonce, 4701);
-
-        // assert that the prices are updated
-        let query = r#"SELECT * FROM auction_prices;"#;
-        let prices: Vec<AuctionPrice> = sqlx::query_as(query)
-            .fetch_all(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(prices.len(), 2);
-
-        // assert that the observations are updated
-        let query = r#"SELECT * FROM settlement_observations;"#;
-        let observation: Observation = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(observation.gas_used, 179155.into());
-        assert_eq!(observation.effective_gas_price, 19789368758u64.into());
-        assert_eq!(observation.surplus, 5150444803867862u64.into());
-
-        assert!(!updater.update(15875900).await.unwrap());
     }
 }

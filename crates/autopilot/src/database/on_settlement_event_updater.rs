@@ -1,7 +1,8 @@
 use {
+    crate::on_settlement_event_updater::AuctionKind,
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, settlement_observations::Observation},
-    ethcontract::{H160, U256},
+    ethcontract::U256,
     model::order::OrderUid,
     number::conversions::u256_to_big_decimal,
     sqlx::PgConnection,
@@ -21,12 +22,11 @@ pub struct AuctionData {
     pub order_executions: Vec<(OrderUid, ExecutedFee)>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct SettlementUpdate {
     pub block_number: i64,
     pub log_index: i64,
-    pub tx_from: H160,
-    pub tx_nonce: i64,
+    pub auction_kind: AuctionKind,
     pub auction_data: Option<AuctionData>,
 }
 
@@ -40,32 +40,25 @@ impl super::Postgres {
             .with_label_values(&["update_settlement_details"])
             .start_timer();
 
+        let (auction_id, auction_kind) = match settlement_update.auction_kind {
+            AuctionKind::Valid { auction_id } => {
+                (Some(auction_id), database::settlements::AuctionKind::Valid)
+            }
+            AuctionKind::Invalid => (None, database::settlements::AuctionKind::Invalid),
+        };
+
         // update settlements
-        database::auction_transaction::insert_settlement_tx_info(
+        database::settlements::update_settlement_auction(
             ex,
             settlement_update.block_number,
             settlement_update.log_index,
-            &ByteArray(settlement_update.tx_from.0),
-            settlement_update.tx_nonce,
+            auction_id,
+            auction_kind,
         )
         .await
         .context("insert_settlement_tx_info")?;
 
         if let Some(auction_data) = settlement_update.auction_data {
-            // Link the `auction_id` to the settlement tx. This is needed for
-            // colocated solutions and is a no-op for centralized
-            // solutions.
-            let insert_succesful = database::auction_transaction::try_insert_auction_transaction(
-                ex,
-                auction_data.auction_id,
-                &ByteArray(settlement_update.tx_from.0),
-                settlement_update.tx_nonce,
-            )
-            .await
-            .context("failed to insert auction_transaction")?;
-
-            // in case of deep reindexing we might already have the observation, so just
-            // overwrite it
             database::settlement_observations::upsert(
                 ex,
                 Observation {
@@ -80,17 +73,15 @@ impl super::Postgres {
             .await
             .context("insert_settlement_observations")?;
 
-            if insert_succesful {
-                for (order, executed_fee) in auction_data.order_executions {
-                    database::order_execution::save(
-                        ex,
-                        &ByteArray(order.0),
-                        auction_data.auction_id,
-                        &u256_to_big_decimal(&executed_fee),
-                    )
-                    .await
-                    .context("save_order_executions")?;
-                }
+            for (order, executed_fee) in auction_data.order_executions {
+                database::order_execution::save(
+                    ex,
+                    &ByteArray(order.0),
+                    auction_data.auction_id,
+                    &u256_to_big_decimal(&executed_fee),
+                )
+                .await
+                .context("save_order_executions")?;
             }
         }
         Ok(())
