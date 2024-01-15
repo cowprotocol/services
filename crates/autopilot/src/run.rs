@@ -11,7 +11,6 @@ use {
             Postgres,
         },
         domain,
-        driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
         infra::{self},
         run_loop::RunLoop,
@@ -613,7 +612,11 @@ pub async fn run(args: Arguments) {
     let run = RunLoop {
         eth,
         solvable_orders_cache,
-        drivers: args.drivers.into_iter().map(Driver::new).collect(),
+        drivers: args
+            .drivers
+            .into_iter()
+            .map(|driver| infra::Driver::new(driver.url, driver.name))
+            .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
@@ -637,7 +640,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers = args.drivers.into_iter().map(Driver::new).collect();
+    let drivers = args
+        .drivers
+        .into_iter()
+        .map(|driver| infra::Driver::new(driver.url, driver.name))
+        .collect();
 
     let trusted_tokens = {
         let web3 = shared::ethrpc::web3(
