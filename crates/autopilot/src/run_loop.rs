@@ -105,6 +105,8 @@ impl RunLoop {
             Class::Liquidity => true,
             Class::Limit => false,
         }) {
+            // Updating liveness probe to not report unhealthy due to this optimization
+            self.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
