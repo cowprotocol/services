@@ -78,28 +78,51 @@ impl Fulfillment {
             Some(FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
-            }) => {
-                let fee_from_surplus = self.fee_from_surplus(prices, *factor)?;
-                let fee_from_volume = self.fee_from_volume(prices, *max_volume_factor)?;
-                // take the smaller of the two
-                tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
-                Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
-            }
+            }) => self.calculate_fee(
+                self.order().sell.amount.0,
+                self.order().buy.amount.0,
+                prices,
+                *factor,
+                *max_volume_factor,
+            ),
             Some(FeePolicy::PriceImprovement {
-                factor: _,
-                max_volume_factor: _,
-                quote: _,
-            }) => {
-                todo!()
-            }
+                factor,
+                max_volume_factor,
+                quote,
+            }) => self.calculate_fee(
+                quote.sell_amount,
+                quote.buy_amount,
+                prices,
+                *factor,
+                *max_volume_factor,
+            ),
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
         }
     }
 
-    fn fee_from_surplus(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let sell_amount = self.order().sell.amount.0;
-        let buy_amount = self.order().buy.amount.0;
+    fn calculate_fee(
+        &self,
+        sell_amount: eth::U256,
+        buy_amount: eth::U256,
+        prices: ClearingPrices,
+        factor: f64,
+        max_volume_factor: f64,
+    ) -> Result<eth::U256, Error> {
+        let fee_from_surplus = self.fee_from_surplus(sell_amount, buy_amount, prices, factor)?;
+        let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
+        // take the smaller of the two
+        tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
+        Ok(std::cmp::min(fee_from_surplus, fee_from_volume))
+    }
+
+    fn fee_from_surplus(
+        &self,
+        sell_amount: eth::U256,
+        buy_amount: eth::U256,
+        prices: ClearingPrices,
+        factor: f64,
+    ) -> Result<eth::U256, Error> {
         let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
