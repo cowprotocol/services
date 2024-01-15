@@ -43,9 +43,11 @@ impl ProtocolFee {
                 // if the quote is missing, we can't determine if the order is outside the
                 // market price so we protect the user and not charge a fee
                 let Some(quote) = quote else {
+                    tracing::trace!(?order.metadata.uid, "quote is missing, not charging a fee");
                     return vec![];
                 };
 
+                tracing::trace!(?order.metadata.uid, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
                 if boundary::is_order_outside_market_price(
                     &order.data.sell_amount,
                     &order.data.buy_amount,
