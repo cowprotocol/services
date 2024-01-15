@@ -16,25 +16,17 @@ use {
             solve::{self},
         },
         infra,
+        run::Liveness,
         run_loop::{self, observe},
     },
     ::observe::metrics,
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, U256},
     rand::seq::SliceRandom,
-    shared::{metrics::LivenessChecking, token_list::AutoUpdatingTokenList},
-    std::{cmp, time::Duration},
+    shared::token_list::AutoUpdatingTokenList,
+    std::{cmp, sync::Arc, time::Duration},
     tracing::Instrument,
 };
-
-pub struct Liveness;
-#[async_trait::async_trait]
-impl LivenessChecking for Liveness {
-    async fn is_alive(&self) -> bool {
-        // can we somehow check that we keep processing auctions?
-        true
-    }
-}
 
 pub struct RunLoop {
     orderbook: infra::shadow::Orderbook,
@@ -44,6 +36,7 @@ pub struct RunLoop {
     block: u64,
     score_cap: U256,
     solve_deadline: Duration,
+    liveness: Arc<Liveness>,
 }
 
 impl RunLoop {
@@ -53,6 +46,7 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         score_cap: U256,
         solve_deadline: Duration,
+        liveness: Arc<Liveness>,
     ) -> Self {
         Self {
             orderbook,
@@ -62,6 +56,7 @@ impl RunLoop {
             block: 0,
             score_cap,
             solve_deadline,
+            liveness,
         }
     }
 
@@ -74,6 +69,7 @@ impl RunLoop {
             };
             observe::log_auction_delta(id, &previous, &auction);
             previous = Some(auction.clone());
+            self.liveness.auction();
 
             self.single_run(id, auction)
                 .instrument(tracing::info_span!("auction", id))

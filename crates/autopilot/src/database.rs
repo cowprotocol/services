@@ -1,9 +1,16 @@
+use {
+    sqlx::{Executor, PgConnection, PgPool},
+    std::{num::NonZeroUsize, time::Duration},
+    tracing::Instrument,
+};
+
 mod auction;
 pub mod auction_prices;
 pub mod auction_transaction;
 pub mod competition;
 pub mod ethflow_events;
 mod events;
+pub mod fee_policies;
 pub mod on_settlement_event_updater;
 pub mod onchain_order_events;
 pub mod order_events;
@@ -11,15 +18,9 @@ pub mod orders;
 mod quotes;
 pub mod recent_settlements;
 
-use {
-    sqlx::{Executor, PgConnection, PgPool},
-    std::{num::NonZeroUsize, time::Duration},
-    tracing::Instrument,
-};
-
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub order_events_insert_batch_size: NonZeroUsize,
+    pub insert_batch_size: NonZeroUsize,
 }
 
 #[derive(Debug, Clone)]
@@ -29,15 +30,10 @@ pub struct Postgres {
 }
 
 impl Postgres {
-    pub async fn new(
-        url: &str,
-        order_events_insert_batch_size: NonZeroUsize,
-    ) -> sqlx::Result<Self> {
+    pub async fn new(url: &str, insert_batch_size: NonZeroUsize) -> sqlx::Result<Self> {
         Ok(Self {
             pool: PgPool::connect(url).await?,
-            config: Config {
-                order_events_insert_batch_size,
-            },
+            config: Config { insert_batch_size },
         })
     }
 
