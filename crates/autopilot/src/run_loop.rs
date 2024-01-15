@@ -18,7 +18,11 @@ use {
     database::order_events::OrderEventLabel,
     itertools::Itertools,
     model::solver_competition::{
-        CompetitionAuction, Order, Score, SolverCompetitionDB, SolverSettlement,
+        CompetitionAuction,
+        Order,
+        Score,
+        SolverCompetitionDB,
+        SolverSettlement,
     },
     number::nonzero::U256 as NonZeroU256,
     primitive_types::{H160, H256, U256},
