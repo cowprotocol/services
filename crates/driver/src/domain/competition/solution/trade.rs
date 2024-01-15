@@ -35,7 +35,7 @@ impl Fulfillment {
         // the target amount. Otherwise, the executed amount must be equal to the target
         // amount.
         let valid_execution = {
-            let surplus_fee = match order.side {
+            let fee = match order.side {
                 order::Side::Buy => order::TargetAmount::default(),
                 order::Side::Sell => order::TargetAmount(match fee {
                     Fee::Static => eth::U256::default(),
@@ -43,13 +43,11 @@ impl Fulfillment {
                 }),
             };
 
+            let executed_with_fee =
+                order::TargetAmount(executed.0.checked_add(fee.0).ok_or(InvalidExecutedAmount)?);
             match order.partial {
-                order::Partial::Yes { available } => {
-                    order::TargetAmount(executed.0 + surplus_fee.0) <= available
-                }
-                order::Partial::No => {
-                    order::TargetAmount(executed.0 + surplus_fee.0) == order.target()
-                }
+                order::Partial::Yes { available } => executed_with_fee <= available,
+                order::Partial::No => executed_with_fee == order.target(),
             }
         };
 
@@ -94,6 +92,14 @@ impl Fulfillment {
         match self.fee {
             Fee::Static => self.order.fee.user,
             Fee::Dynamic(fee) => fee,
+        }
+    }
+
+    /// Returns the solver determined fee if it exists.
+    pub fn surplus_fee(&self) -> Option<order::SellAmount> {
+        match self.fee {
+            Fee::Static => None,
+            Fee::Dynamic(fee) => Some(fee),
         }
     }
 
@@ -195,11 +201,3 @@ pub struct Execution {
 #[derive(Debug, thiserror::Error)]
 #[error("invalid executed amount")]
 pub struct InvalidExecutedAmount;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ExecutionError {
-    #[error("overflow error while calculating executed amounts")]
-    Overflow,
-    #[error("missing clearing price for {0:?}")]
-    ClearingPriceMissing(eth::TokenAddress),
-}

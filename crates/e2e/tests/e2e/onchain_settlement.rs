@@ -132,8 +132,6 @@ async fn onchain_settlement(web3: Web3) {
 
     // Only start the autopilot now to ensure that these orders are settled in a
     // batch which seems to be expected in this test.
-    // However, this currently does not work because the driver will not merge the
-    // individual solutions because the token prices don't match after scaling.
     services.start_autopilot(vec![
         "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
     ]);

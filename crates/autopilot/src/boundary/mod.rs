@@ -6,7 +6,7 @@ pub use {
         },
         driver_model::{reveal, settle, solve},
     },
-    database::orders::Quote as DatabaseQuote,
+    database,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,

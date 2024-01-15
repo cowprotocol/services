@@ -131,7 +131,7 @@ impl Order {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                fee_policies: Default::default(),
+                protocol_fees: Default::default(),
             }],
             [
                 auction::Token {

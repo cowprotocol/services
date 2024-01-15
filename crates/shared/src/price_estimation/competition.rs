@@ -7,6 +7,7 @@ use {
         PriceEstimationError,
         Query,
     },
+    anyhow::Context,
     futures::{
         future::Future,
         stream::{FuturesUnordered, StreamExt},
@@ -40,9 +41,6 @@ impl From<&Query> for Trade {
 /// [`CompetitionEstimator`] used as an identifier.
 #[derive(Copy, Debug, Clone, Default, Eq, PartialEq)]
 struct EstimatorIndex(usize, usize);
-
-#[derive(Copy, Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
-struct Wins(u64);
 
 type PriceEstimationStage<T> = Vec<(String, T)>;
 
@@ -85,7 +83,9 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
         get_single_result: impl Fn(&T, Q) -> futures::future::BoxFuture<'_, Result<R, E>>
             + Send
             + 'static,
-        compare_results: impl Fn(&Result<R, E>, &Result<R, E>, &C) -> Ordering + Send + 'static,
+        pick_best_index: impl Fn(&[(EstimatorIndex, Result<R, E>)], &C) -> Result<usize, E>
+            + Send
+            + 'static,
         provide_comparison_context: impl Future<Output = Result<C, E>> + Send + 'static,
     ) -> futures::future::BoxFuture<'_, Result<R, E>> {
         let start = Instant::now();
@@ -146,14 +146,7 @@ impl<T: Send + Sync + 'static> RacingCompetitionEstimator<T> {
             }
 
             let context = provide_comparison_context.await?;
-
-            let best_index = results
-                .iter()
-                .map(|(_, result)| result)
-                .enumerate()
-                .max_by(|a, b| compare_results(a.1, b.1, &context))
-                .map(|(index, _)| index)
-                .unwrap();
+            let best_index = pick_best_index(&results, &context)?;
             let (estimator_index, result) = &results[best_index];
             let (estimator, _) = &self.inner[estimator_index.0][estimator_index.1];
             tracing::debug!(
@@ -203,12 +196,19 @@ impl PriceEstimating for RacingCompetitionEstimator<Arc<dyn PriceEstimating>> {
             query.clone(),
             query.kind,
             |estimator, query| estimator.estimate(query),
-            move |a, b, context| {
-                if is_second_quote_result_preferred(query.as_ref(), a, b, context) {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+            move |results, context| {
+                results
+                    .iter()
+                    .map(|(_, result)| result)
+                    .enumerate()
+                    // Filter out 0 gas cost estimate because they are obviously wrong and would
+                    // likely win the price competition which would lead to us paying huge
+                    // subsidies.
+                    .filter(|(_, r)| r.is_err() || r.as_ref().is_ok_and(|e| e.gas > 0))
+                    .max_by(|a, b| compare_quote_result(&query, a.1, b.1, context))
+                    .map(|(index, _)| index)
+                    .with_context(|| "all price estimates reported 0 gas cost")
+                    .map_err(PriceEstimationError::EstimatorInternal)
             },
             context_future,
         )
@@ -225,12 +225,15 @@ impl NativePriceEstimating for RacingCompetitionEstimator<Arc<dyn NativePriceEst
             token,
             OrderKind::Buy,
             |estimator, token| estimator.estimate_native_price(token),
-            move |a, b, _context| {
-                if is_second_native_result_preferred(a, b) {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
+            move |results, _context| {
+                let best_index = results
+                    .iter()
+                    .map(|(_, result)| result)
+                    .enumerate()
+                    .max_by(|a, b| compare_native_result(a.1, b.1))
+                    .map(|(index, _)| index)
+                    .expect("we get passed at least 1 result and did not filter out any of them");
+                Ok(best_index)
             },
             context_future,
         )
@@ -260,47 +263,42 @@ impl PriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
     }
 }
 
-fn is_second_quote_result_preferred(
+fn compare_quote_result(
     query: &Query,
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
-) -> bool {
+) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => is_second_estimate_preferred(query, a, b, context),
-        (Ok(_), Err(_)) => false,
-        (Err(_), Ok(_)) => true,
-        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+        (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
+        (Ok(_), Err(_)) => Ordering::Greater,
+        (Err(_), Ok(_)) => Ordering::Less,
+        (Err(a), Err(b)) => compare_error(a, b),
     }
 }
 
-fn is_second_native_result_preferred(
+fn compare_native_result(
     a: &Result<f64, PriceEstimationError>,
     b: &Result<f64, PriceEstimationError>,
-) -> bool {
+) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => b >= a,
-        (Ok(_), Err(_)) => false,
-        (Err(_), Ok(_)) => true,
-        (Err(a), Err(b)) => is_second_error_preferred(a, b),
+        (Ok(a), Ok(b)) => a.total_cmp(b),
+        (Ok(_), Err(_)) => Ordering::Greater,
+        (Err(_), Ok(_)) => Ordering::Less,
+        (Err(a), Err(b)) => compare_error(a, b),
     }
 }
 
-fn is_second_estimate_preferred(
-    query: &Query,
-    a: &Estimate,
-    b: &Estimate,
-    context: &RankingContext,
-) -> bool {
+fn compare_quote(query: &Query, a: &Estimate, b: &Estimate, context: &RankingContext) -> Ordering {
     let a = context.effective_eth_out(a, query.kind);
     let b = context.effective_eth_out(b, query.kind);
     match query.kind {
-        OrderKind::Buy => b < a,
-        OrderKind::Sell => a < b,
+        OrderKind::Buy => a.cmp(&b).reverse(),
+        OrderKind::Sell => a.cmp(&b),
     }
 }
 
-fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError) -> bool {
+fn compare_error(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering {
     // Errors are sorted by recoverability. E.g. a rate-limited estimation may
     // succeed if tried again, whereas unsupported order types can never recover
     // unless code changes. This can be used to decide which errors we want to
@@ -317,7 +315,7 @@ fn is_second_error_preferred(a: &PriceEstimationError, b: &PriceEstimationError)
             // lowest priority
         }
     }
-    error_to_integer_priority(b) > error_to_integer_priority(a)
+    error_to_integer_priority(a).cmp(&error_to_integer_priority(b))
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -438,6 +436,108 @@ mod tests {
         tokio::time::sleep,
     };
 
+    fn price(out_amount: u128, gas: u64) -> PriceEstimateResult {
+        Ok(Estimate {
+            out_amount: out_amount.into(),
+            gas,
+            ..Default::default()
+        })
+    }
+
+    fn native_price(native_price: f64) -> NativePriceEstimateResult {
+        NativePriceEstimateResult::Ok(native_price)
+    }
+
+    fn error<T>(err: PriceEstimationError) -> Result<T, PriceEstimationError> {
+        Err(err)
+    }
+
+    /// Builds a `BestBangForBuck` setup where every token is estimated
+    /// to be half as valuable as ETH and the gas price is 2.
+    /// That effectively means every unit of `gas` in an estimate worth
+    /// 4 units of `out_amount`.
+    fn bang_for_buck_ranking() -> PriceRanking {
+        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
+        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
+        let mut native = MockNativePriceEstimating::new();
+        native
+            .expect_estimate_native_price()
+            .returning(move |_| async { Ok(0.5) }.boxed());
+        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
+            base_fee_per_gas: 2.0,
+            max_fee_per_gas: 2.0,
+            max_priority_fee_per_gas: 2.0,
+        }));
+        PriceRanking::BestBangForBuck {
+            native: Arc::new(native),
+            gas,
+        }
+    }
+
+    /// Returns the best estimate with respect to the provided ranking and order
+    /// kind.
+    async fn best_response(
+        ranking: PriceRanking,
+        kind: OrderKind,
+        estimates: Vec<PriceEstimateResult>,
+    ) -> PriceEstimateResult {
+        fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
+            let mut estimator = MockPriceEstimating::new();
+            estimator
+                .expect_estimate()
+                .times(1)
+                .return_once(move |_| async move { estimate }.boxed());
+            Arc::new(estimator)
+        }
+
+        let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![estimates
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
+                .collect()],
+            ranking.clone(),
+        );
+
+        priority
+            .estimate(Arc::new(Query {
+                kind,
+                ..Default::default()
+            }))
+            .await
+    }
+
+    /// Returns the best native estimate with respect to the provided ranking
+    /// and order kind.
+    async fn best_native_response(
+        ranking: PriceRanking,
+        estimates: Vec<NativePriceEstimateResult>,
+    ) -> NativePriceEstimateResult {
+        fn estimator(estimate: NativePriceEstimateResult) -> Arc<dyn NativePriceEstimating> {
+            let mut estimator = MockNativePriceEstimating::new();
+            estimator
+                .expect_estimate_native_price()
+                .times(1)
+                .return_once(move |_| async move { estimate }.boxed());
+            Arc::new(estimator)
+        }
+
+        let priority: CompetitionEstimator<Arc<dyn NativePriceEstimating>> =
+            CompetitionEstimator::new(
+                vec![estimates
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| (format!("estimator_{i}"), estimator(e)))
+                    .collect()],
+                ranking.clone(),
+            );
+
+        priority
+            .inner
+            .estimate_native_price(Default::default())
+            .await
+    }
+
     #[tokio::test]
     async fn works() {
         let queries = [
@@ -485,10 +585,12 @@ mod tests {
         let estimates = [
             Estimate {
                 out_amount: 1.into(),
+                gas: 1,
                 ..Default::default()
             },
             Estimate {
                 out_amount: 2.into(),
+                gas: 1,
                 ..Default::default()
             },
         ];
@@ -574,6 +676,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -635,6 +738,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -711,6 +815,7 @@ mod tests {
         fn estimate(amount: u64) -> Estimate {
             Estimate {
                 out_amount: amount.into(),
+                gas: 1,
                 ..Default::default()
             }
         }
@@ -771,71 +876,142 @@ mod tests {
     /// the simpler quote will be preferred.
     #[tokio::test]
     async fn best_bang_for_buck_adjusts_for_complexity() {
-        let estimator = |estimate| {
-            let mut estimator = MockPriceEstimating::new();
-            estimator
-                .expect_estimate()
-                .times(1)
-                .returning(move |_| async move { Ok(estimate) }.boxed());
-            Arc::new(estimator)
-        };
-        let estimate = |out: u128, gas| Estimate {
-            out_amount: out.into(),
-            gas,
-            ..Default::default()
-        };
-
-        // Make `out_token` half as valuable as `ETH` and set gas price to 2.
-        // That means 1 unit of `gas` is equal to 4 units of `out_token`.
-        let mut native = MockNativePriceEstimating::new();
-        native
-            .expect_estimate_native_price()
-            .returning(move |_| async { Ok(0.5) }.boxed());
-        let gas = Arc::new(FakeGasPriceEstimator::new(GasPrice1559 {
-            base_fee_per_gas: 2.0,
-            max_fee_per_gas: 2.0,
-            max_priority_fee_per_gas: 2.0,
-        }));
-        let ranking = PriceRanking::BestBangForBuck {
-            native: Arc::new(native),
-            gas,
-        };
-
-        // tests are given as (quote_kind, preferred_estimate, worse_estimate)
-        let tests = [
-            (
-                OrderKind::Sell,
+        let best = best_response(
+            bang_for_buck_ranking(),
+            OrderKind::Sell,
+            vec![
                 // User effectively receives `100_000` `buy_token`.
-                estimate(104_000, 1_000),
+                price(104_000, 1_000),
                 // User effectively receives `99_999` `buy_token`.
-                estimate(107_999, 2_000),
-            ),
-            (
-                OrderKind::Buy,
+                price(107_999, 2_000),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(104_000, 1_000));
+
+        let best = best_response(
+            bang_for_buck_ranking(),
+            OrderKind::Buy,
+            vec![
                 // User effectively pays `100_000` `sell_token`.
-                estimate(96_000, 1_000),
-                // User effectively pays `100_001` `sell_token`.
-                estimate(92_001, 2_000),
-            ),
-        ];
+                price(96_000, 1_000),
+                // User effectively pays `100_002` `sell_token`.
+                price(92_002, 2_000),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(96_000, 1_000));
+    }
 
-        for (quote_kind, preferred_estimate, worse_estimate) in tests {
-            let priority: CompetitionEstimator<Arc<dyn PriceEstimating>> =
-                CompetitionEstimator::new(
-                    vec![vec![
-                        ("first".to_owned(), estimator(preferred_estimate)),
-                        ("second".to_owned(), estimator(worse_estimate)),
-                    ]],
-                    ranking.clone(),
-                );
+    /// Same test as above but now we also add an estimate that should
+    /// win under normal circumstances but the `gas` cost is suspiciously
+    /// low so we discard it. This protects us from quoting unreasonably
+    /// low fees for user orders.
+    #[tokio::test]
+    async fn discards_low_gas_cost_estimates() {
+        let best = best_response(
+            bang_for_buck_ranking(),
+            OrderKind::Sell,
+            vec![
+                // User effectively receives `100_000` `buy_token`.
+                price(104_000, 1_000),
+                // User effectively receives `99_999` `buy_token`.
+                price(107_999, 2_000),
+                // User effectively receives `104_000` `buy_token` but the estimate
+                // gets discarded because it quotes 0 gas.
+                price(104_000, 0),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(104_000, 1_000));
 
-            let result = priority
-                .estimate(Arc::new(Query {
-                    kind: quote_kind,
-                    ..Default::default()
-                }))
-                .await;
-            assert_eq!(result.unwrap(), preferred_estimate);
-        }
+        let best = best_response(
+            bang_for_buck_ranking(),
+            OrderKind::Buy,
+            vec![
+                // User effectively pays `100_000` `sell_token`.
+                price(96_000, 1_000),
+                // User effectively pays `100_002` `sell_token`.
+                price(92_002, 2_000),
+                // User effectively pays `99_000` `sell_token` but the estimate
+                // gets discarded because it quotes 0 gas.
+                price(99_000, 0),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(96_000, 1_000));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_priority_error() {
+        // Returns errors with highest priority.
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                error(PriceEstimationError::RateLimited),
+                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+            ],
+        )
+        .await;
+        assert_eq!(best, error(PriceEstimationError::RateLimited));
+    }
+
+    /// Any price estimate, no matter how bad, is preferred over an error.
+    #[tokio::test]
+    async fn prefer_estimate_over_error() {
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![
+                price(1, 1_000_000),
+                error(PriceEstimationError::RateLimited),
+            ],
+        )
+        .await;
+        assert_eq!(best, price(1, 1_000_000));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_native_price() {
+        // Returns errors with highest priority.
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![native_price(1.), native_price(2.)],
+        )
+        .await;
+        assert_eq!(best, native_price(2.));
+    }
+
+    /// If all estimators returned an error we return the one with the highest
+    /// priority.
+    #[tokio::test]
+    async fn returns_highest_priority_error_native() {
+        // Returns errors with highest priority.
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![
+                error(PriceEstimationError::RateLimited),
+                error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
+            ],
+        )
+        .await;
+        assert_eq!(best, error(PriceEstimationError::RateLimited));
+    }
+
+    /// Any native price estimate, no matter how bad, is preferred over an
+    /// error.
+    #[tokio::test]
+    async fn prefer_estimate_over_error_native() {
+        let best = best_native_response(
+            PriceRanking::MaxOutAmount,
+            vec![native_price(1.), error(PriceEstimationError::RateLimited)],
+        )
+        .await;
+        assert_eq!(best, native_price(1.));
     }
 }
