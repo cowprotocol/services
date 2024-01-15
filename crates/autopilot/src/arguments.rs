@@ -398,7 +398,8 @@ impl FeePolicy {
 pub enum FeePolicyKind {
     /// How much of the order's surplus should be taken as a protocol fee.
     Surplus { factor: f64, max_volume_factor: f64 },
-    /// How much of the order's price improvement should be taken as a protocol fee.
+    /// How much of the order's price improvement should be taken as a protocol
+    /// fee.
     PriceImprovement { factor: f64, max_volume_factor: f64 },
     /// How much of the order's volume should be taken as a protocol fee.
     Volume { factor: f64 },
