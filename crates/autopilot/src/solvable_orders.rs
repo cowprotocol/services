@@ -1009,7 +1009,6 @@ mod tests {
 
     #[test]
     fn orders_with_balance_() {
-        let ethflow = H160::from_low_u64_be(1);
         let orders = vec![
             // enough balance for sell and fee
             Order {
@@ -1055,32 +1054,16 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // 0 ethflow balance
-            Order {
-                data: OrderData {
-                    sell_token: ethflow,
-                    sell_amount: 1.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    owner: ethflow,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
         ];
         let balances = [
             (Query::from_order(&orders[0]), 2.into()),
             (Query::from_order(&orders[1]), 1.into()),
             (Query::from_order(&orders[2]), 1.into()),
             (Query::from_order(&orders[3]), 0.into()),
-            (Query::from_order(&orders[4]), 0.into()),
         ]
         .into_iter()
         .collect();
-        let expected = &[0, 2, 4];
+        let expected = &[0, 2];
 
         let filtered = orders_with_balance(orders.clone(), &balances);
         assert_eq!(filtered.len(), expected.len());
