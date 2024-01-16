@@ -101,8 +101,8 @@ mod tests {
             surplus_factor: Some(0.3),
             max_volume_factor: Some(0.07),
             volume_factor: None,
-            sell_amount: Some(BigDecimal::new(10.into(), 3)),
-            buy_amount: Some(BigDecimal::new(5.into(), 2)),
+            sell_amount: Some(BigDecimal::new(100.into(), 1)),
+            buy_amount: Some(BigDecimal::new(200.into(), 1)),
         };
         insert_batch(
             &mut db,
