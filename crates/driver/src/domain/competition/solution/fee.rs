@@ -101,15 +101,18 @@ impl Fulfillment {
         }
     }
 
+    /// Computes protocol fee compared to the given reference amounts taken from
+    /// the order or a quote.
     fn calculate_fee(
         &self,
-        sell_amount: eth::U256,
-        buy_amount: eth::U256,
+        reference_sell_amount: eth::U256,
+        reference_buy_amount: eth::U256,
         prices: ClearingPrices,
         factor: f64,
         max_volume_factor: f64,
     ) -> Result<eth::U256, Error> {
-        let fee_from_surplus = self.fee_from_surplus(sell_amount, buy_amount, prices, factor)?;
+        let fee_from_surplus =
+            self.fee_from_surplus(reference_sell_amount, reference_buy_amount, prices, factor)?;
         let fee_from_volume = self.fee_from_volume(prices, max_volume_factor)?;
         // take the smaller of the two
         tracing::debug!(uid=?self.order().uid, fee_from_surplus=?fee_from_surplus, fee_from_volume=?fee_from_volume, protocol_fee=?(std::cmp::min(fee_from_surplus, fee_from_volume)), executed=?self.executed(), surplus_fee=?self.surplus_fee(), "calculated protocol fee");
