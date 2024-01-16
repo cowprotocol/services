@@ -191,6 +191,25 @@ impl Ethereum {
     pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
         token::Erc20::new(self, address)
     }
+
+    /// If the transaction has been confirmed returns its execution status
+    /// (success or failure) of None if the transaction is not yet confirmed.
+    pub async fn transaction_receipt(&self, tx_hash: &eth::TxId) -> Result<Option<bool>, Error> {
+        self.web3
+            .eth()
+            .transaction_receipt(tx_hash.0.clone())
+            .await
+            .map(|result| {
+                result.map(|receipt| {
+                    if receipt.status == Some(1.into()) {
+                        true
+                    } else {
+                        false
+                    }
+                })
+            })
+            .map_err(Into::into)
+    }
 }
 
 impl fmt::Debug for Ethereum {

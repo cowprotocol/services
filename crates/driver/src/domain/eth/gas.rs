@@ -96,6 +96,14 @@ impl From<U256> for FeePerGas {
     }
 }
 
+impl ops::Add<FeePerGas> for FeePerGas {
+    type Output = FeePerGas;
+
+    fn add(self, rhs: FeePerGas) -> Self::Output {
+        FeePerGas(self.0 + rhs.0)
+    }
+}
+
 impl From<FeePerGas> for U256 {
     fn from(value: FeePerGas) -> Self {
         value.0.into()
