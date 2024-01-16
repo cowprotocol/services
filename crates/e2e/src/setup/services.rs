@@ -85,13 +85,19 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    pub fn start_autopilot(&self, extra_args: Vec<String>) {
+    /// Optionally specify a solve deadline to use instead of the default 2s.
+    /// (note: specifying a larger solve deadline will impact test times as the
+    /// driver delays the submission of the solution until shortly before the
+    /// deadline in case the solution would start to revert at some point)
+    pub fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
+        let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
+
         let args = [
             "autopilot".to_string(),
             "--auction-update-interval=1s".to_string(),
             format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
             "--skip-event-sync=true".to_string(),
-            "--solve-deadline=11s".to_string(),
+            format!("--solve-deadline={solve_deadline:?}"),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())
@@ -140,9 +146,10 @@ impl<'a> Services<'a> {
                 endpoint: solver_endpoint,
             }],
         );
-        self.start_autopilot(vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ]);
+        self.start_autopilot(
+            None,
+            vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+        );
         self.start_api(vec![
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
@@ -180,9 +187,10 @@ impl<'a> Services<'a> {
                 },
             ],
         );
-        self.start_autopilot(vec![
-            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-        ]);
+        self.start_autopilot(
+            Some(Duration::from_secs(11)),
+            vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+        );
         self.start_api(vec![
             "--price-estimation-drivers=test_quoter|http://localhost:11088/test_quoter".to_string(),
         ])
