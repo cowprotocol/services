@@ -450,6 +450,7 @@ enum BalancerV2Preset {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum Logic {
     /// Use legacy submissions logic (default)
     Boundary,
