@@ -552,7 +552,6 @@ pub async fn run(args: Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
-        args.ethflow_contract,
         native_token.address(),
         args.limit_order_price_factor
             .try_into()
