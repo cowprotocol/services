@@ -115,8 +115,8 @@ impl Auction {
                         data: order.signature.into(),
                         signer: order.owner.into(),
                     },
-                    fee_policies: order
-                        .fee_policies
+                    protocol_fees: order
+                        .protocol_fees
                         .into_iter()
                         .map(|policy| match policy {
                             FeePolicy::Surplus {
@@ -242,6 +242,7 @@ struct Order {
     solver_fee: eth::U256,
     #[serde_as(as = "serialize::U256")]
     user_fee: eth::U256,
+    protocol_fees: Vec<FeePolicy>,
     valid_to: u32,
     kind: Kind,
     receiver: Option<eth::H160>,
@@ -262,7 +263,6 @@ struct Order {
     signing_scheme: SigningScheme,
     #[serde_as(as = "serialize::Hex")]
     signature: Vec<u8>,
-    fee_policies: Vec<FeePolicy>,
 }
 
 #[derive(Debug, Deserialize)]

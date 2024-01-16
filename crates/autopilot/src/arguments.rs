@@ -54,7 +54,7 @@ pub struct Arguments {
 
     /// The number of order events to insert in a single batch.
     #[clap(long, env, default_value = "500")]
-    pub order_events_insert_batch_size: NonZeroUsize,
+    pub insert_batch_size: NonZeroUsize,
 
     /// Skip syncing past events (useful for local deployments)
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
@@ -254,7 +254,7 @@ impl std::fmt::Display for Arguments {
             order_events_cleanup_interval,
             order_events_cleanup_threshold,
             db_url,
-            order_events_insert_batch_size,
+            insert_batch_size,
             native_price_estimation_results_required,
             auction_update_interval,
             max_settlement_transaction_wait,
@@ -322,11 +322,7 @@ impl std::fmt::Display for Arguments {
             "order_events_cleanup_threshold: {:?}",
             order_events_cleanup_threshold
         )?;
-        writeln!(
-            f,
-            "order_events_insert_batch_size: {}",
-            order_events_insert_batch_size
-        )?;
+        writeln!(f, "insert_batch_size: {}", insert_batch_size)?;
         writeln!(
             f,
             "native_price_estimation_results_required: {}",

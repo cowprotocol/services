@@ -70,11 +70,11 @@ impl Fulfillment {
 
     fn protocol_fee(&self, prices: ClearingPrices) -> Result<eth::U256, Error> {
         // TODO: support multiple fee policies
-        if self.order().fee_policies.len() > 1 {
+        if self.order().protocol_fees.len() > 1 {
             return Err(Error::MultipleFeePolicies);
         }
 
-        match self.order().fee_policies.first() {
+        match self.order().protocol_fees.first() {
             Some(FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
