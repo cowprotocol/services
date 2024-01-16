@@ -197,17 +197,9 @@ impl Ethereum {
     pub async fn transaction_receipt(&self, tx_hash: &eth::TxId) -> Result<Option<bool>, Error> {
         self.web3
             .eth()
-            .transaction_receipt(tx_hash.0.clone())
+            .transaction_receipt(tx_hash.0)
             .await
-            .map(|result| {
-                result.map(|receipt| {
-                    if receipt.status == Some(1.into()) {
-                        true
-                    } else {
-                        false
-                    }
-                })
-            })
+            .map(|result| result.map(|receipt| receipt.status == Some(1.into())))
             .map_err(Into::into)
     }
 }

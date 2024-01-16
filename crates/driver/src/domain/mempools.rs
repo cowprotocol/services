@@ -39,7 +39,7 @@ impl Mempools {
                         mempool.execute(solver, settlement.clone()).await
                     }
                     infra::Mempool::Native(mempool) => {
-                        self.submit(&mempool, solver, settlement).await
+                        self.submit(mempool, solver, settlement).await
                     }
                 };
                 observe::mempool_executed(&mempool, settlement, &result);
@@ -96,8 +96,8 @@ impl Mempools {
                 );
                 None
             }) {
-                Some(true) => return Ok(hash.into()),
-                Some(false) => return Err(Error::Revert(hash.into())),
+                Some(true) => return Ok(hash),
+                Some(false) => return Err(Error::Revert(hash)),
                 None => {
                     // Check if too late
                     if start.elapsed() >= mempool.config().max_confirm_time {
