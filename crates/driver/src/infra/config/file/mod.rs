@@ -85,6 +85,9 @@ struct SubmissionConfig {
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
     mempools: Vec<Mempool>,
+
+    #[serde(default)]
+    logic: Logic,
 }
 
 #[derive(Debug, Deserialize)]
@@ -444,6 +447,20 @@ enum BalancerV2Config {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 enum BalancerV2Preset {
     BalancerV2,
+}
+
+#[derive(Debug, Deserialize)]
+enum Logic {
+    /// Use legacy submissions logic (default)
+    Boundary,
+    /// Use Driver domain native submission logic
+    Native,
+}
+
+impl Default for Logic {
+    fn default() -> Self {
+        Logic::Boundary
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

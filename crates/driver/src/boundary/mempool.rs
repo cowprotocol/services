@@ -36,6 +36,7 @@ pub struct Config {
     pub max_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     pub kind: Kind,
+    pub submission: SubmissionLogic,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +70,15 @@ impl Kind {
 pub enum RevertProtection {
     Enabled,
     Disabled,
+}
+
+/// The submission logic to use for publishing settlements to the blockchain.
+/// Can either use the battle tested legacy code, or the new domain native
+/// driver logic.
+#[derive(Debug, Clone)]
+pub enum SubmissionLogic {
+    Boundary,
+    Native,
 }
 
 /// The mempool to use for publishing settlements to the blockchain.
