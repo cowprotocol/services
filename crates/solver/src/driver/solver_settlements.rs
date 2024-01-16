@@ -1,5 +1,6 @@
 use {
-    crate::{driver::solver_competition::Score, settlement::Settlement},
+    crate::settlement::Settlement,
+    model::solver_competition::Score,
     num::BigRational,
     primitive_types::U256,
 };

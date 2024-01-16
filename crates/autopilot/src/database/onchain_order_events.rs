@@ -1379,7 +1379,7 @@ mod test {
             db: Postgres {
                 pool: PgPool::connect_lazy("postgresql://").unwrap(),
                 config: Config {
-                    order_events_insert_batch_size: NonZeroUsize::new(500).unwrap(),
+                    insert_batch_size: NonZeroUsize::new(500).unwrap(),
                 },
             },
             web3,

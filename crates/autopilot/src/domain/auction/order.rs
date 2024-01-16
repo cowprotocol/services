@@ -12,6 +12,7 @@ pub struct Order {
     pub buy_amount: U256,
     pub solver_fee: U256,
     pub user_fee: U256,
+    pub protocol_fees: Vec<fee::Policy>,
     pub kind: Kind,
     pub class: Class,
     pub valid_to: u32,
@@ -27,7 +28,6 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub app_data: AppDataHash,
     pub signature: Signature,
-    pub fee_policies: Vec<fee::Policy>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

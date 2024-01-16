@@ -131,7 +131,8 @@ impl Competition {
         .await
         .is_err()
         {
-            observe::postprocessing_timed_out(&settlements)
+            observe::postprocessing_timed_out(&settlements);
+            notify::postprocessing_timed_out(&self.solver, auction.id())
         }
 
         // Score the settlements.

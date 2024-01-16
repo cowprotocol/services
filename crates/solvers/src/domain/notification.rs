@@ -35,6 +35,7 @@ pub enum Kind {
     SolverAccountInsufficientBalance(RequiredEther),
     Settled(Settlement),
     DriverError(String),
+    PostprocessingTimedOut,
 }
 
 /// The result of winning solver trying to settle the transaction onchain.

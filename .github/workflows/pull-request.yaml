@@ -54,13 +54,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build -p orderbook -p database --tests &
+      - run: cargo build -p orderbook -p database -p autopilot --tests &
       - uses: taiki-e/install-action@nextest
       - uses: yu-ichiro/spin-up-docker-compose-action@v1
         with:
           file: docker-compose.yaml
           up-opts: -d db migrations
-      - run: cargo nextest run postgres -p orderbook -p database --test-threads 1 --run-ignored ignored-only
+      - run: cargo nextest run postgres -p orderbook -p database -p autopilot --test-threads 1 --run-ignored ignored-only
 
   test-local-node:
     timeout-minutes: 60
