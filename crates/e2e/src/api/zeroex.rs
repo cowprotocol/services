@@ -50,7 +50,7 @@ impl ZeroExApi {
     pub async fn run(&self) -> u16 {
         let orders_handler = self.orders_handler.clone();
 
-        let orders_route = warp::path("/orderbook/v1/orders")
+        let orders_route = warp::path!("orderbook" / "v1" / "orders")
             .and(warp::query::<HashMap<String, String>>())
             .map(move |params: HashMap<String, String>| {
                 let query = OrdersQuery {
@@ -80,6 +80,8 @@ impl ZeroExApi {
         tokio::spawn(async move {
             server.await;
         });
+
+        tracing::info!("Started ZeroEx API server at {}", addr);
 
         port
     }

@@ -13,6 +13,7 @@ mod eth_safe;
 mod ethflow;
 mod hooks;
 mod limit_orders;
+mod liquidity;
 mod onchain_settlement;
 mod order_cancellation;
 mod partial_fill;

@@ -112,3 +112,71 @@ mempool = "public"
         driver::run(args.into_iter(), None).await;
     })
 }
+
+pub fn start_driver_with_zeroex_liquidity(
+    contracts: &Contracts,
+    solvers: Vec<SolverEngine>,
+    zeroex_api_port: u16,
+) -> JoinHandle<()> {
+    let solvers = solvers
+        .iter()
+        .map(
+            |SolverEngine {
+                 name,
+                 account,
+                 endpoint,
+             }| {
+                let account = hex::encode(account.private_key());
+                format!(
+                    r#"
+[[solver]]
+name = "{name}"
+endpoint = "{endpoint}"
+relative-slippage = "0.1"
+account = "{account}"
+
+"#
+                )
+            },
+        )
+        .collect::<Vec<String>>()
+        .join("\n");
+    let config_file = config_tmp_file(format!(
+        r#"
+[contracts]
+gp-v2-settlement = "{:?}"
+weth = "{:?}"
+
+{solvers}
+
+[liquidity]
+base-tokens = []
+graph-api-base-url = "https://api.thegraph.com/subgraphs/name/"
+
+[liquidity.zeroex]
+base-url = {:?}
+api-key = {:?}
+http-timeout = "10s"
+
+[submission]
+gas-price-cap = 1000000000000
+
+[[submission.mempool]]
+mempool = "public"
+"#,
+        contracts.gp_settlement.address(),
+        contracts.weth.address(),
+        format!("http://0.0.0.0:{}", zeroex_api_port),
+        "no-api-key".to_string(),
+    ));
+    let args = vec![
+        "driver".to_string(),
+        format!("--config={}", config_file.display()),
+        format!("--ethrpc={NODE_HOST}"),
+    ];
+
+    tokio::task::spawn(async move {
+        let _config_file = config_file;
+        driver::run(args.into_iter(), None).await;
+    })
+}

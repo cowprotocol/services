@@ -247,6 +247,8 @@ impl Orderbook {
             .await?;
         let quote_id = quote.as_ref().and_then(|quote| quote.id);
 
+        tracing::info!(?order, "adding order to database");
+
         self.database
             .insert_order(&order, quote)
             .await
