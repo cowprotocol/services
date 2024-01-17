@@ -29,25 +29,29 @@ impl ProtocolFee {
     }
 
     /// Get policies for order.
-    pub fn get(&self, order: &boundary::Order, quote: Option<&domain::Quote>) -> Vec<Policy> {
+    pub fn get(
+        &self,
+        order: &boundary::Order,
+        quote: Option<&domain::Quote>,
+    ) -> anyhow::Result<Vec<Policy>> {
         match order.metadata.class {
             boundary::OrderClass::Market => {
                 if self.fee_policy_skip_market_orders {
-                    vec![]
+                    Ok(vec![])
                 } else {
-                    self.policy.to_domain(quote).into_iter().collect()
+                    self.policy.to_domain(quote).map(|p| vec![p])
                 }
             }
-            boundary::OrderClass::Liquidity => vec![],
+            boundary::OrderClass::Liquidity => Ok(vec![]),
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return self.policy.to_domain(quote).into_iter().collect();
+                    return self.policy.to_domain(quote).map(|p| vec![p]);
                 }
 
                 // if the quote is missing, we can't determine if the order is outside the
                 // market price so we protect the user and not charge a fee
                 let Some(quote) = quote else {
-                    return vec![];
+                    return Ok(vec![]);
                 };
 
                 if boundary::is_order_outside_market_price(
@@ -56,9 +60,9 @@ impl ProtocolFee {
                     &quote.buy_amount,
                     &quote.sell_amount,
                 ) {
-                    self.policy.to_domain(Some(quote)).into_iter().collect()
+                    self.policy.to_domain(Some(quote)).map(|p| vec![p])
                 } else {
-                    vec![]
+                    Ok(vec![])
                 }
             }
         }
