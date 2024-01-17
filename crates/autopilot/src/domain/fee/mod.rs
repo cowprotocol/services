@@ -6,22 +6,22 @@
 
 use {
     crate::{
-        arguments,
         boundary::{self},
         domain,
     },
+    anyhow::anyhow,
     primitive_types::U256,
 };
 
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct ProtocolFee {
-    policy: arguments::FeePolicy,
+    policy: PolicyRaw,
     fee_policy_skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: arguments::FeePolicy, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy: PolicyRaw, fee_policy_skip_market_orders: bool) -> Self {
         Self {
             policy,
             fee_policy_skip_market_orders,
@@ -39,13 +39,13 @@ impl ProtocolFee {
                 if self.fee_policy_skip_market_orders {
                     Ok(vec![])
                 } else {
-                    self.policy.to_domain(quote).map(|p| vec![p])
+                    self.policy.try_with_quote(quote).map(|p| vec![p])
                 }
             }
             boundary::OrderClass::Liquidity => Ok(vec![]),
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return self.policy.to_domain(quote).map(|p| vec![p]);
+                    return self.policy.try_with_quote(quote).map(|p| vec![p]);
                 }
 
                 // if the quote is missing, we can't determine if the order is outside the
@@ -60,7 +60,7 @@ impl ProtocolFee {
                     &quote.buy_amount,
                     &quote.sell_amount,
                 ) {
-                    self.policy.to_domain(Some(quote)).map(|p| vec![p])
+                    self.policy.try_with_quote(Some(quote)).map(|p| vec![p])
                 } else {
                     Ok(vec![])
                 }
@@ -99,6 +99,39 @@ pub enum Policy {
         /// fee.
         factor: f64,
     },
+}
+
+#[derive(Debug)]
+pub enum PolicyRaw {
+    Surplus { factor: f64, max_volume_factor: f64 },
+    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Volume { factor: f64 },
+}
+
+impl PolicyRaw {
+    pub fn try_with_quote(&self, quote: Option<&domain::Quote>) -> anyhow::Result<Policy> {
+        match self {
+            PolicyRaw::Surplus {
+                factor,
+                max_volume_factor,
+            } => Ok(Policy::Surplus {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+            }),
+            PolicyRaw::PriceImprovement {
+                factor,
+                max_volume_factor,
+            } => {
+                let quote = quote.ok_or(anyhow!("missing quote for price improvement policy"))?;
+                Ok(Policy::PriceImprovement {
+                    factor: *factor,
+                    max_volume_factor: *max_volume_factor,
+                    quote: quote.clone().into(),
+                })
+            }
+            PolicyRaw::Volume { factor } => Ok(Policy::Volume { factor: *factor }),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]

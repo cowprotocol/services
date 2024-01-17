@@ -1,6 +1,5 @@
 use {
     crate::{domain, infra},
-    anyhow::anyhow,
     primitive_types::{H160, U256},
     shared::{
         arguments::{display_list, display_option, ExternalSolver},
@@ -369,27 +368,23 @@ pub struct FeePolicy {
 }
 
 impl FeePolicy {
-    pub fn to_domain(&self, quote: Option<&domain::Quote>) -> anyhow::Result<domain::fee::Policy> {
+    pub fn to_domain_raw(&self) -> domain::fee::PolicyRaw {
         match self.fee_policy_kind {
             FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => Ok(domain::fee::Policy::Surplus {
+            } => domain::fee::PolicyRaw::Surplus {
                 factor,
                 max_volume_factor,
-            }),
+            },
             FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => {
-                let quote = quote.ok_or(anyhow!("missing quote for price improvement policy"))?;
-                Ok(domain::fee::Policy::PriceImprovement {
-                    factor,
-                    max_volume_factor,
-                    quote: quote.clone().into(),
-                })
-            }
-            FeePolicyKind::Volume { factor } => Ok(domain::fee::Policy::Volume { factor }),
+            } => domain::fee::PolicyRaw::PriceImprovement {
+                factor,
+                max_volume_factor,
+            },
+            FeePolicyKind::Volume { factor } => domain::fee::PolicyRaw::Volume { factor },
         }
     }
 }
