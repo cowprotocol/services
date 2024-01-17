@@ -24,6 +24,7 @@ pub struct Order {
     pub solver_fee: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub user_fee: U256,
+    pub protocol_fees: Vec<FeePolicy>,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
     pub receiver: Option<H160>,
@@ -40,7 +41,6 @@ pub struct Order {
     pub app_data: boundary::AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
-    pub fee_policies: Vec<FeePolicy>,
 }
 
 pub fn from_domain(order: domain::Order) -> Order {
@@ -52,6 +52,7 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_amount: order.buy_amount,
         solver_fee: order.solver_fee,
         user_fee: order.user_fee,
+        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
@@ -69,7 +70,6 @@ pub fn from_domain(order: domain::Order) -> Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -82,6 +82,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         buy_amount: order.buy_amount,
         solver_fee: order.solver_fee,
         user_fee: order.user_fee,
+        protocol_fees: order.protocol_fees.into_iter().map(Into::into).collect(),
         valid_to: order.valid_to,
         kind: order.kind.into(),
         receiver: order.receiver,
@@ -99,7 +100,6 @@ pub fn to_domain(order: Order) -> domain::Order {
         class: order.class.into(),
         app_data: order.app_data.into(),
         signature: order.signature.into(),
-        fee_policies: order.fee_policies.into_iter().map(Into::into).collect(),
     }
 }
 
@@ -270,7 +270,7 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
-    PriceImprovement { factor: f64, max_volume_factor: f64 },
+    Surplus { factor: f64, max_volume_factor: f64 },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
 }
@@ -278,10 +278,10 @@ pub enum FeePolicy {
 impl From<domain::fee::Policy> for FeePolicy {
     fn from(policy: domain::fee::Policy) -> Self {
         match policy {
-            domain::fee::Policy::PriceImprovement {
+            domain::fee::Policy::Surplus {
                 factor,
                 max_volume_factor,
-            } => Self::PriceImprovement {
+            } => Self::Surplus {
                 factor,
                 max_volume_factor,
             },
@@ -293,10 +293,10 @@ impl From<domain::fee::Policy> for FeePolicy {
 impl From<FeePolicy> for domain::fee::Policy {
     fn from(policy: FeePolicy) -> Self {
         match policy {
-            FeePolicy::PriceImprovement {
+            FeePolicy::Surplus {
                 factor,
                 max_volume_factor,
-            } => Self::PriceImprovement {
+            } => Self::Surplus {
                 factor,
                 max_volume_factor,
             },

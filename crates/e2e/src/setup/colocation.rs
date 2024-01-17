@@ -1,6 +1,6 @@
 use {
     crate::{nodes::NODE_HOST, setup::*},
-    ethcontract::{H160, H256},
+    ethcontract::{H160, H256, U256},
     reqwest::Url,
     shared::sources::uniswap_v2::UNISWAP_INIT,
     tokio::task::JoinHandle,
@@ -23,6 +23,19 @@ risk-parameters = [0,0,0,0]
 pub async fn start_naive_solver() -> Url {
     let config_file = config_tmp_file("risk-parameters = [0,0,0,0]");
     start_solver(config_file, "naive".to_string()).await
+}
+
+pub async fn start_legacy_solver(solver_endpoint: Url, chain_id: Option<U256>) -> Url {
+    let chain_id = chain_id.unwrap_or(U256::from(1));
+    let config_file = config_tmp_file(format!(
+        r#"
+chain-id = "{chain_id}"
+solver-name = "legacy"
+endpoint = "{solver_endpoint}"
+        "#,
+    ));
+
+    start_solver(config_file, "legacy".to_string()).await
 }
 
 async fn start_solver(config_file: TempPath, solver_name: String) -> Url {
