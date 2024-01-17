@@ -271,6 +271,11 @@ impl OnchainComponents {
 
         let forked_node_api = self.web3.api::<ForkedNodeApi<_>>();
 
+        forked_node_api
+            .set_balance(&auth_manager, to_wei(100))
+            .await
+            .expect("could not set auth_manager balance");
+
         let auth_manager = forked_node_api
             .impersonate(&auth_manager)
             .await
