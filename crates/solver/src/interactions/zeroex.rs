@@ -5,18 +5,19 @@ use {
         interaction::{EncodedInteraction, Interaction},
         zeroex_api::Order,
     },
+    std::sync::Arc,
 };
 
 #[derive(Clone, Debug)]
 pub struct ZeroExInteraction {
     pub order: Order,
     pub taker_token_fill_amount: u128,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
 }
 
 impl Interaction for ZeroExInteraction {
     fn encode(&self) -> Vec<EncodedInteraction> {
-        let method = self.zeroex.fill_or_kill_limit_order(
+        let method = self.zeroex.clone().fill_or_kill_limit_order(
             (
                 self.order.maker_token,
                 self.order.taker_token,

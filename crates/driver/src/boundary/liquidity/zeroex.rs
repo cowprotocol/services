@@ -57,7 +57,7 @@ pub fn to_domain(
 
     let domain = zeroex::LimitOrder {
         order,
-        zeroex: handler.zeroex,
+        zeroex: handler.zeroex.clone(),
     };
 
     Ok(liquidity::Liquidity {

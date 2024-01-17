@@ -4,12 +4,13 @@ use {
     contracts::IZeroEx,
     ethcontract::Bytes,
     primitive_types::{H160, H256, U256},
+    std::sync::Arc,
 };
 
 #[derive(Clone, Debug)]
 pub struct LimitOrder {
     pub order: Order,
-    pub zeroex: IZeroEx,
+    pub zeroex: Arc<IZeroEx>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,7 +35,7 @@ pub struct Order {
 
 impl LimitOrder {
     pub fn to_interaction(&self, input: &liquidity::MaxInput) -> anyhow::Result<eth::Interaction> {
-        let method = self.zeroex.fill_or_kill_limit_order(
+        let method = self.zeroex.clone().fill_or_kill_limit_order(
             (
                 self.order.maker_token,
                 self.order.taker_token,
@@ -60,7 +61,7 @@ impl LimitOrder {
         let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 
         Ok(eth::Interaction {
-            target: self.zeroex.address().into(),
+            target: self.zeroex.clone().address().into(),
             value: 0.into(),
             call_data: calldata.0.into(),
         })
