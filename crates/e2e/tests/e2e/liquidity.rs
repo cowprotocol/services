@@ -313,20 +313,20 @@ impl Eip712TypedZeroExOrder {
 
     // See <https://github.com/0xProject/protocol/blob/%400x/contracts-zero-ex%400.49.0/contracts/zero-ex/contracts/src/features/libs/LibNativeOrder.sol#L166-L195>
     fn hash_struct(&self) -> [u8; 32] {
-        let mut hash_data = [0u8; 272];
+        let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::ZEROEX_LIMIT_ORDER_TYPEHASH);
         hash_data[32..52].copy_from_slice(self.maker_token.as_fixed_bytes());
-        hash_data[52..72].copy_from_slice(self.taker_token.as_fixed_bytes());
-        hash_data[72..88].copy_from_slice(&self.maker_amount.to_be_bytes());
-        hash_data[88..104].copy_from_slice(&self.taker_amount.to_be_bytes());
-        hash_data[104..120].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
-        hash_data[120..140].copy_from_slice(self.maker.as_fixed_bytes());
-        hash_data[140..160].copy_from_slice(self.taker.as_fixed_bytes());
-        hash_data[160..180].copy_from_slice(self.sender.as_fixed_bytes());
-        hash_data[180..200].copy_from_slice(self.fee_recipient.as_fixed_bytes());
-        hash_data[200..232].copy_from_slice(self.pool.as_fixed_bytes());
-        hash_data[232..240].copy_from_slice(&self.expiry.to_be_bytes());
-        self.salt.to_big_endian(&mut hash_data[240..272]);
+        hash_data[64..84].copy_from_slice(self.taker_token.as_fixed_bytes());
+        hash_data[96..112].copy_from_slice(&self.maker_amount.to_be_bytes());
+        hash_data[128..144].copy_from_slice(&self.taker_amount.to_be_bytes());
+        hash_data[160..176].copy_from_slice(&self.taker_token_fee_amount.to_be_bytes());
+        hash_data[192..212].copy_from_slice(self.maker.as_fixed_bytes());
+        hash_data[224..244].copy_from_slice(self.taker.as_fixed_bytes());
+        hash_data[256..276].copy_from_slice(self.sender.as_fixed_bytes());
+        hash_data[288..308].copy_from_slice(self.fee_recipient.as_fixed_bytes());
+        hash_data[320..352].copy_from_slice(self.pool.as_fixed_bytes());
+        hash_data[352..360].copy_from_slice(&self.expiry.to_be_bytes());
+        self.salt.to_big_endian(&mut hash_data[384..416]);
         signing::keccak256(&hash_data)
     }
 }
