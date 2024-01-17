@@ -38,3 +38,5 @@ If you're looking for a good place to start, look for issues labelled ["help wan
 We are excited to support our community's contributions in a tangible way. 
 For merged pull requests that contribute to issues labeled "help wanted", we are offering a reward of 100 DAI.
 To be eligible for this reward, make sure your pull request meets all the required criteria and is successfully merged. 
+
+Please leave a Gnosis Chain address at which you'd like to receive the DAI either in the PR description or via Discord DM to *mastercow.eth*.
