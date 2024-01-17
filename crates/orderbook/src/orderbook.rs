@@ -467,12 +467,17 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
+        let app_data = Arc::new(app_data::Registry::new(
+            shared::app_data::Validator::new(8192),
+            database.clone(),
+            None,
+        ));
         let orderbook = Orderbook {
             database,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
-            ipfs: None,
+            app_data,
         };
 
         // App data does not encode cancellation.
