@@ -1,5 +1,8 @@
 use {
-    shared::zeroex_api::{OrderRecord, OrdersQuery, ZeroExResponseError},
+    shared::{
+        zeroex_api,
+        zeroex_api::{OrderRecord, OrdersQuery, ZeroExResponseError},
+    },
     std::{collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc},
     warp::{Filter, Reply},
     web3::types::H160,
@@ -62,7 +65,13 @@ impl ZeroExApi {
                 };
 
                 match orders_handler(&query) {
-                    Ok(orders) => warp::reply::json(&orders).into_response(),
+                    Ok(orders) => warp::reply::json(&zeroex_api::OrdersResponse {
+                        total: orders.len() as u64,
+                        page: 1,
+                        per_page: 100,
+                        records: orders,
+                    })
+                    .into_response(),
                     Err(err) => warp::reply::with_status(
                         warp::reply::json(&err.to_string()),
                         warp::http::StatusCode::INTERNAL_SERVER_ERROR,

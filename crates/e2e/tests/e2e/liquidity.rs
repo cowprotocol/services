@@ -204,15 +204,11 @@ fn orders_query_handler(
     chain_id: u64,
 ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
     if query.sender == Some(gpv2_addr) {
-        let amount = order_creation
-            .sell_amount
-            .as_u128()
-            .min(order_creation.buy_amount.as_u128());
         let typed_order = Eip712TypedZeroExOrder {
-            maker_token: order_creation.sell_token,
-            taker_token: order_creation.buy_token,
-            maker_amount: amount,
-            taker_amount: amount,
+            maker_token: order_creation.buy_token,
+            taker_token: order_creation.sell_token,
+            maker_amount: order_creation.buy_amount.as_u128(),
+            taker_amount: order_creation.sell_amount.as_u128(),
             taker_token_fee_amount: 0,
             maker: zeroex_maker.address(),
             taker: zeroex_taker.address(),
@@ -224,7 +220,7 @@ fn orders_query_handler(
         };
         Ok(vec![typed_order.to_order_record(
             chain_id,
-            zeroex_addr,
+            gpv2_addr,
             zeroex_maker,
         )])
     } else if query.sender

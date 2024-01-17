@@ -284,7 +284,7 @@ impl OrderRecord {
 }
 
 /// A Ox API `orders` response.
-#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrdersResponse {
     pub total: u64,
