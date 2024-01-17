@@ -11,7 +11,7 @@ You can help other users in the community to solve their issues in the [CoW Prot
 
 ## Opening an issue
 
-You can [open an issue] to suggest a feature or report a minor bug.
+You can [open an issue] to suggest a feature or report a minor bug. For serious bugs please do not open an issue, instead refer to our [security policy] for appropriate steps.
 
 If you believe your issue may be due to user error and not a problem in the library, consider instead posting a question on the [CoW Protocol Discord].
 
@@ -20,7 +20,8 @@ Before opening an issue, be sure to search through the existing open and closed 
 When requesting a new feature, include as many details as you can, especially around the use cases that motivate it. 
 Features are prioritised according to the impact they may have on the ecosystem, so we appreciate information showing that the impact could be high.
 
-[open an issue]: ./issues/new/choose
+[security policy]: https://github.com/cowprotocol/services/security
+[open an issue]: https://github.com/cowprotocol/services/issues/new/choose
 
 ## Submitting a pull request
 
