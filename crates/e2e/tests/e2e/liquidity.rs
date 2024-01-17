@@ -44,6 +44,7 @@ use {
 
 /// The block number from which we will fetch state for the forked tests.
 pub const FORK_BLOCK: u64 = 18477910;
+pub const USDT_WHALE: H160 = H160(hex!("F977814e90dA44bFA03b6295A0616a897441aceC"));
 
 #[tokio::test]
 #[ignore]
@@ -61,7 +62,7 @@ async fn zero_ex_liquidity(web3: Web3) {
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
     let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
-    let [trader, zeroex_maker, zeroex_taker] = onchain.make_accounts(to_wei(1)).await;
+    let [trader_a, trader_b, zeroex_maker, zeroex_taker] = onchain.make_accounts(to_wei(1)).await;
 
     let token_usdc = ERC20::at(
         &web3,
@@ -84,16 +85,27 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
     tx!(
         usdc_whale,
-        token_usdc.transfer(trader.address(), to_wei_with_exp(500, 6))
+        token_usdc.transfer(trader_a.address(), to_wei_with_exp(500, 6))
+    );
+
+    // Give trader some USDT
+    let usdt_whale = forked_node_api.impersonate(&USDT_WHALE).await.unwrap();
+    tx!(
+        usdt_whale,
+        token_usdt.transfer(trader_b.address(), to_wei_with_exp(500, 6))
     );
 
     // Approve GPv2 for trading
     tx!(
-        trader.account(),
+        trader_a.account(),
         token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(500, 6))
     );
+    tx!(
+        trader_b.account(),
+        token_usdt.approve(onchain.contracts().allowance, to_wei_with_exp(500, 6))
+    );
 
-    let order = OrderCreation {
+    let order_a = OrderCreation {
         sell_token: token_usdc.address(),
         sell_amount: to_wei_with_exp(500, 6),
         buy_token: token_usdt.address(),
@@ -105,12 +117,26 @@ async fn zero_ex_liquidity(web3: Web3) {
     .sign(
         EcdsaSigningScheme::Eip712,
         &onchain.contracts().domain_separator,
-        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+        SecretKeyRef::from(&SecretKey::from_slice(trader_a.private_key()).unwrap()),
+    );
+    let order_b = OrderCreation {
+        sell_token: token_usdt.address(),
+        sell_amount: to_wei_with_exp(500, 6),
+        buy_token: token_usdc.address(),
+        buy_amount: to_wei_with_exp(500, 6),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader_b.private_key()).unwrap()),
     );
 
     let zeroex = IZeroEx::deployed(&web3).await.unwrap();
     let zeroex_api_port = {
-        let order = order.clone();
+        let order = order_a.clone();
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let gpv2_addr = onchain.contracts().gp_settlement.address();
         let zeroex_addr = zeroex.address();
@@ -135,8 +161,7 @@ async fn zero_ex_liquidity(web3: Web3) {
 
     // Place Orders
     let services = Services::new(onchain.contracts()).await;
-    let solver_endpoint =
-        colocation::start_baseline_solver(onchain.contracts().weth.address()).await;
+    let solver_endpoint = colocation::start_naive_solver().await;
     colocation::start_driver_with_zeroex_liquidity(
         onchain.contracts(),
         vec![SolverEngine {
@@ -154,19 +179,20 @@ async fn zero_ex_liquidity(web3: Web3) {
             "--price-estimation-drivers=test_solver|http://localhost:11088/test_solver".to_string(),
         ])
         .await;
-    let order_id = services.create_order(&order).await.unwrap();
+    let order_id = services.create_order(&order_a).await.unwrap();
+    services.create_order(&order_b).await.unwrap();
     let limit_order = services.get_order(&order_id).await.unwrap();
     assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     // Drive solution
     tracing::info!("Waiting for trade.");
     let sell_token_balance_before = token_usdc
-        .balance_of(trader.address())
+        .balance_of(trader_a.address())
         .call()
         .await
         .unwrap();
     let buy_token_balance_before = token_usdt
-        .balance_of(trader.address())
+        .balance_of(trader_a.address())
         .call()
         .await
         .unwrap();
@@ -180,12 +206,12 @@ async fn zero_ex_liquidity(web3: Web3) {
         .unwrap();
 
     let sell_token_balance_after = token_usdc
-        .balance_of(trader.address())
+        .balance_of(trader_a.address())
         .call()
         .await
         .unwrap();
     let buy_token_balance_after = token_usdt
-        .balance_of(trader.address())
+        .balance_of(trader_a.address())
         .call()
         .await
         .unwrap();
@@ -205,10 +231,10 @@ fn orders_query_handler(
 ) -> Result<Vec<OrderRecord>, ZeroExResponseError> {
     if query.sender == Some(gpv2_addr) {
         let typed_order = Eip712TypedZeroExOrder {
-            maker_token: order_creation.buy_token,
-            taker_token: order_creation.sell_token,
-            maker_amount: order_creation.buy_amount.as_u128(),
-            taker_amount: order_creation.sell_amount.as_u128(),
+            maker_token: order_creation.sell_token,
+            taker_token: order_creation.buy_token,
+            maker_amount: order_creation.sell_amount.as_u128() * 2,
+            taker_amount: order_creation.buy_amount.as_u128() * 2,
             taker_token_fee_amount: 0,
             maker: zeroex_maker.address(),
             taker: zeroex_taker.address(),
