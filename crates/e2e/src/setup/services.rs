@@ -8,7 +8,7 @@ use {
     },
     autopilot::infra::persistence::dto,
     clap::Parser,
-    ethcontract::H256,
+    ethcontract::{H256, U256},
     model::{
         app_data::{AppDataDocument, AppDataHash},
         order::{Order, OrderCreation, OrderUid},
@@ -160,17 +160,20 @@ impl<'a> Services<'a> {
     /// quoter.
     pub async fn start_protocol_legacy_solver(
         &self,
+        solver: TestAccount,
         solver_endpoint: Option<Url>,
         quoter_endpoint: Option<Url>,
-        solver: TestAccount,
+        chain_id: Option<U256>,
     ) {
         let external_solver_endpoint =
             solver_endpoint.unwrap_or("http://localhost:8000/solve".parse().unwrap());
-        let colocated_solver_endpoint = start_legacy_solver(external_solver_endpoint).await;
+        let colocated_solver_endpoint =
+            start_legacy_solver(external_solver_endpoint, chain_id).await;
 
         let external_quoter_endpoint =
             quoter_endpoint.unwrap_or("http://localhost:8000/quote".parse().unwrap());
-        let colocated_quoter_endpoint = start_legacy_solver(external_quoter_endpoint).await;
+        let colocated_quoter_endpoint =
+            start_legacy_solver(external_quoter_endpoint, chain_id).await;
 
         colocation::start_driver(
             self.contracts,
