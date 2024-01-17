@@ -32,7 +32,7 @@ Any non-trivial documentation must be first discussed with the maintainers in an
 When opening the pull request you will be presented with a template and a series of instructions. Read through it carefully and follow all the steps. 
 Expect a review and feedback from the maintainers afterwards.
 
-If you're looking for a good place to start, look for issues labelled ["help wanted"](./labels/help%20wanted)!
+If you're looking for a good place to start, look for issues labelled ["help wanted"](https://github.com/cowprotocol/services/labels/help%20wanted)!
 
 ## Reward for Contributions
 We are excited to support our community's contributions in a tangible way. 
