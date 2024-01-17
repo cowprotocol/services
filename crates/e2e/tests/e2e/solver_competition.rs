@@ -58,10 +58,13 @@ async fn solver_competition(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![
+    services.start_autopilot(
+        None,
+        vec![
         "--drivers=solver1|http://localhost:11088/solver1,solver2|http://localhost:11088/solver2"
             .to_string(),
-    ]);
+    ],
+    );
     services.start_api(vec![]).await;
 
     // Place Order
