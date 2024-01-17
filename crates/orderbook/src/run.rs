@@ -7,6 +7,7 @@ use {
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
+        quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
     clap::Parser,
@@ -31,7 +32,7 @@ use {
         maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
-        order_quoting::{self, OrderQuoter, QuoteHandler},
+        order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
         price_estimation::{
             factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
