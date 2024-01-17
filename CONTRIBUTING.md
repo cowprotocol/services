@@ -17,7 +17,8 @@ If you believe your issue may be due to user error and not a problem in the libr
 
 Before opening an issue, be sure to search through the existing open and closed issues, and consider posting a comment in one of those instead.
 
-When requesting a new feature, include as many details as you can, especially around the use cases that motivate it. Features are prioritised according to the impact they may have on the ecosystem, so we appreciate information showing that the impact could be high.
+When requesting a new feature, include as many details as you can, especially around the use cases that motivate it. 
+Features are prioritised according to the impact they may have on the ecosystem, so we appreciate information showing that the impact could be high.
 
 [open an issue]: ./issues/new/choose
 
