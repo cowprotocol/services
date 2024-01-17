@@ -984,7 +984,8 @@ pub fn is_order_outside_market_price(
     quote_buy_amount: &U256,
     quote_fee_amount: &U256,
 ) -> bool {
-    sell_amount.full_mul(*quote_buy_amount) < (quote_sell_amount+quote_fee_amount).full_mul(*buy_amount)
+    sell_amount.full_mul(*quote_buy_amount)
+        < (quote_sell_amount + quote_fee_amount).full_mul(*buy_amount)
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
