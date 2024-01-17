@@ -1,4 +1,5 @@
 use {
+    crate::app_data,
     chrono::{TimeZone, Utc},
     model::{
         order::OrderCreationAppData,
@@ -24,14 +25,20 @@ pub struct QuoteHandler {
     order_validator: Arc<dyn OrderValidating>,
     optimal_quoter: Arc<dyn OrderQuoting>,
     fast_quoter: Arc<dyn OrderQuoting>,
+    app_data: Arc<app_data::Registry>,
 }
 
 impl QuoteHandler {
-    pub fn new(order_validator: Arc<dyn OrderValidating>, quoter: Arc<dyn OrderQuoting>) -> Self {
+    pub fn new(
+        order_validator: Arc<dyn OrderValidating>,
+        quoter: Arc<dyn OrderQuoting>,
+        app_data: Arc<app_data::Registry>,
+    ) -> Self {
         Self {
             order_validator,
             optimal_quoter: quoter.clone(),
             fast_quoter: quoter,
+            app_data,
         }
     }
 
@@ -48,9 +55,14 @@ impl QuoteHandler {
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
         tracing::debug!(?request, "calculating quote");
 
+        let full_app_data_override = match request.app_data {
+            OrderCreationAppData::Hash { hash } => self.app_data.find(&hash).await.unwrap_or(None),
+            _ => None,
+        };
+
         let app_data = self
             .order_validator
-            .validate_app_data(&request.app_data, &None)?;
+            .validate_app_data(&request.app_data, &full_app_data_override)?;
 
         let order = PreOrderData::from(request);
         let valid_to = order.valid_to;
