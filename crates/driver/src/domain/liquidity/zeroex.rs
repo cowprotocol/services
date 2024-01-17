@@ -1,6 +1,6 @@
 use {
     crate::domain::{eth, liquidity},
-    anyhow::anyhow,
+    anyhow::{anyhow, Context},
     contracts::IZeroEx,
     ethcontract::Bytes,
     primitive_types::{H160, H256, U256},
@@ -61,7 +61,13 @@ impl LimitOrder {
                 Bytes(self.order.signature.r.0),
                 Bytes(self.order.signature.s.0),
             ),
-            input.0.amount.0.as_u128(),
+            input
+                .0
+                .amount
+                .0
+                .try_into()
+                .map_err(|err: &str| anyhow!(err))
+                .context("executed amount does not fit into u128")?,
         );
         let calldata = method.tx.data.ok_or(anyhow!("no calldata"))?;
 
