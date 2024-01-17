@@ -1,7 +1,10 @@
 use {
     super::{competition, eth},
     crate::{
-        domain::{competition::solution::Settlement, eth::FeePerGas},
+        domain::{
+            competition::solution::Settlement,
+            eth::{FeePerGas, TxStatus},
+        },
         infra::{self, observe, solver::Solver, Ethereum},
     },
     ethrpc::current_block::into_stream,
@@ -79,44 +82,52 @@ impl Mempools {
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
         let eth = &self.1;
-        let start = std::time::Instant::now();
-        let tx = settlement.boundary.tx(
-            settlement.auction_id,
-            self.1.contracts().settlement(),
-            competition::solution::settlement::Internalization::Enable,
-        );
+        let deadline = tokio::time::Instant::now() + mempool.config().max_confirm_time;
+        let tx = eth::Tx {
+            // boundary.tx() does not populate the access list
+            access_list: settlement.access_list.clone(),
+            ..settlement.boundary.tx(
+                settlement.auction_id,
+                self.1.contracts().settlement(),
+                competition::solution::settlement::Internalization::Enable,
+            )
+        };
         let hash = mempool.submit(tx.clone(), settlement.gas, solver).await?;
         let mut block_stream = into_stream(eth.current_block().clone());
         loop {
-            match eth.transaction_receipt(&hash).await.unwrap_or_else(|err| {
-                tracing::warn!(
-                    "failed to get transaction receipt for tx {:?}: {:?}",
-                    hash,
-                    err
-                );
-                None
-            }) {
-                Some(true) => return Ok(hash),
-                Some(false) => return Err(Error::Revert(hash)),
-                None => {
-                    // Check if too late
-                    if start.elapsed() >= mempool.config().max_confirm_time {
-                        tracing::warn!("tx {:?} not confirmed in time, cancelling", hash,);
-                        self.cancel(mempool, settlement.gas.price, solver).await?;
-                        return Err(Error::Expired);
-                    }
+            // Wait for the next block to be mined or we time out. Block stream immediately
+            // yields the latest block, thus the first iteration starts immediately.
+            if let Err(_) = tokio::time::timeout_at(deadline, block_stream.next()).await {
+                tracing::info!(?hash, "tx not confirmed in time, cancelling");
+                self.cancel(mempool, settlement.gas.price, solver).await?;
+                return Err(Error::Expired);
+            }
+            tracing::debug!(?hash, "checking if tx is confirmed");
 
+            let receipt = eth.transaction_receipt(&hash).await.unwrap_or_else(|err| {
+                tracing::warn!(?hash, ?err, "failed to get transaction receipt",);
+                TxStatus::Pending
+            });
+            match receipt {
+                TxStatus::Executed => return Ok(hash),
+                TxStatus::Reverted => return Err(Error::Revert(hash)),
+                TxStatus::Pending => {
                     // Check if transaction still simulates
                     if let Err(err) = eth.estimate_gas(tx.clone()).await {
-                        tracing::warn!("tx started failing in mempool {:?}: {:?}", hash, err);
-                        self.cancel(mempool, settlement.gas.price, solver).await?;
-                        return Err(Error::SimulationRevert);
+                        if err.is_revert() {
+                            tracing::info!(
+                                ?hash,
+                                ?err,
+                                "tx started failing in mempool, cancelling"
+                            );
+                            self.cancel(mempool, settlement.gas.price, solver).await?;
+                            return Err(Error::SimulationRevert);
+                        } else {
+                            tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+                        }
                     }
                 }
             }
-
-            // Wait for the next block to be mined.
-            block_stream.next().await.expect("blockchains never end");
         }
     }
 

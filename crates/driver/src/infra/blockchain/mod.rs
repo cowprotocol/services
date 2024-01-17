@@ -12,7 +12,7 @@ pub mod contracts;
 pub mod gas;
 pub mod token;
 
-use gas_estimation::GasPriceEstimating;
+use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
 
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
@@ -194,12 +194,24 @@ impl Ethereum {
 
     /// If the transaction has been confirmed returns its execution status
     /// (success or failure) of None if the transaction is not yet confirmed.
-    pub async fn transaction_receipt(&self, tx_hash: &eth::TxId) -> Result<Option<bool>, Error> {
+    pub async fn transaction_receipt(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
             .eth()
             .transaction_receipt(tx_hash.0)
             .await
-            .map(|result| result.map(|receipt| receipt.status == Some(1.into())))
+            .map(|result| match result {
+                Some(web3::types::TransactionReceipt {
+                    status: Some(status),
+                    ..
+                }) => {
+                    if status.is_zero() {
+                        eth::TxStatus::Reverted
+                    } else {
+                        eth::TxStatus::Executed
+                    }
+                }
+                _ => eth::TxStatus::Pending,
+            })
             .map_err(Into::into)
     }
 }
@@ -225,6 +237,22 @@ pub enum Error {
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
     AccessList(serde_json::Value),
+}
+
+impl Error {
+    // Returns whether the error indicates that the original transaction reverted.
+    pub fn is_revert(&self) -> bool {
+        // This behavior is node dependent
+        match self {
+            Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
+            Error::Web3(inner) => {
+                let error = ExecutionError::from(inner.clone());
+                matches!(error, ExecutionError::Revert(_))
+            }
+            Error::GasPrice(_) => false,
+            Error::AccessList(_) => true,
+        }
+    }
 }
 
 impl From<contracts::Error> for Error {

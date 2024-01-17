@@ -69,7 +69,10 @@ impl Inner {
                 max_fee_per_gas: gas.price.max.into(),
                 max_priority_fee_per_gas: gas.price.tip.into(),
             })
+            .data(tx.input.into())
+            .value(tx.value.0)
             .gas(gas.limit.0)
+            .access_list(web3::types::AccessList::from(tx.access_list))
             .send()
             .await
             .map(|result| eth::TxId(result.hash()))
