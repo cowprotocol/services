@@ -2,7 +2,7 @@ use {
     crate::{
         domain::liquidity::{
             self,
-            zeroex::{self, Order},
+            zeroex::{self, Order, ZeroExSignature},
         },
         infra::{self, Ethereum},
     },
@@ -36,6 +36,13 @@ pub fn to_domain(
         .ok_or(anyhow!("not a zeroex::OrderSettlementHandler"))?
         .clone();
 
+    let signature = ZeroExSignature {
+        r: handler.order.signature.r,
+        s: handler.order.signature.s,
+        v: handler.order.signature.v,
+        signature_type: handler.order.signature.signature_type,
+    };
+
     let order = Order {
         maker: handler.order.maker,
         taker: handler.order.taker,
@@ -49,10 +56,7 @@ pub fn to_domain(
         pool: handler.order.pool,
         expiry: handler.order.expiry,
         salt: handler.order.salt,
-        signature_type: handler.order.signature.signature_type,
-        signature_r: handler.order.signature.r,
-        signature_s: handler.order.signature.s,
-        signature_v: handler.order.signature.v,
+        signature,
     };
 
     let domain = zeroex::LimitOrder {
