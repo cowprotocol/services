@@ -58,7 +58,6 @@ pub const TABLES: &[&str] = &[
     "ethflow_orders",
     "order_execution",
     "interactions",
-    "auction_transaction",
     "ethflow_refunds",
     "settlement_scores",
     "settlement_observations",

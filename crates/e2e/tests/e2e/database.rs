@@ -21,8 +21,6 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
 
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuctionTransaction {
-    pub tx_from: Address,
-    pub tx_nonce: i64,
     pub tx_hash: TransactionHash,
     pub block_number: i64,
     pub solver: Address,
@@ -47,18 +45,15 @@ pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
     let mut db = db.acquire().await.unwrap();
 
     const LAST_AUCTION_ID: &str =
-        "SELECT auction_id FROM auction_transaction ORDER BY auction_id DESC LIMIT 1";
+        "SELECT auction_id FROM settlements ORDER BY auction_id DESC LIMIT 1";
     let auction_id: i64 = sqlx::query_scalar(LAST_AUCTION_ID)
         .fetch_optional(db.deref_mut())
         .await
         .unwrap()?;
 
     const TX_QUERY: &str = r"
-SELECT s.*
-FROM auction_transaction at
-JOIN settlements s ON s.tx_from = at.tx_from AND s.tx_nonce = at.tx_nonce
-WHERE at.auction_id = $1
-    ";
+SELECT * FROM settlements WHERE auction_id = $1";
+
     let tx: AuctionTransaction = sqlx::query_as(TX_QUERY)
         .bind(auction_id)
         .fetch_optional(db.deref_mut())

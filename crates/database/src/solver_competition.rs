@@ -31,8 +31,7 @@ pub async fn load_by_id(
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
-LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 WHERE sc.id = $1
     ;"#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
@@ -45,8 +44,7 @@ pub async fn load_latest_competition(
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
 -- outer joins because the data might not have been indexed yet
-LEFT OUTER JOIN auction_transaction at ON sc.id = at.auction_id
-LEFT OUTER JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+LEFT OUTER JOIN settlements s ON sc.id = s.auction_id
 ORDER BY sc.id DESC
 LIMIT 1
     ;"#;
@@ -60,8 +58,7 @@ pub async fn load_by_tx_hash(
     const QUERY: &str = r#"
 SELECT sc.json, sc.id, s.tx_hash
 FROM solver_competitions sc
-JOIN auction_transaction at ON sc.id = at.auction_id
-JOIN settlements s ON (at.tx_from, at.tx_nonce) = (s.tx_from, s.tx_nonce)
+JOIN settlements s ON sc.id = s.auction_id
 WHERE s.tx_hash = $1
     ;"#;
     sqlx::query_as(QUERY).bind(tx_hash).fetch_optional(ex).await
