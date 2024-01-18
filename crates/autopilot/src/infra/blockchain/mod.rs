@@ -1,4 +1,5 @@
 use {
+    self::contracts::Contracts,
     crate::boundary,
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
@@ -9,7 +10,6 @@ use {
 
 pub mod contracts;
 
-pub use self::contracts::Contracts;
 use crate::domain::{self, eth};
 
 /// Chain ID as defined by EIP-155.

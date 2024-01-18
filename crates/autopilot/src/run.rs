@@ -11,7 +11,6 @@ use {
             Postgres,
         },
         domain,
-        driver_api::Driver,
         event_updater::{EventUpdater, GPv2SettlementContract},
         infra::{self},
         run_loop::RunLoop,
@@ -56,21 +55,39 @@ use {
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
-    std::{collections::HashSet, sync::Arc, time::Duration},
+    std::{
+        collections::HashSet,
+        sync::{Arc, RwLock},
+        time::{Duration, Instant},
+    },
     tracing::Instrument,
     url::Url,
 };
 
-struct Liveness {
-    solvable_orders_cache: Arc<SolvableOrdersCache>,
+pub struct Liveness {
     max_auction_age: Duration,
+    last_auction_time: RwLock<Instant>,
 }
 
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        let age = self.solvable_orders_cache.last_update_time().elapsed();
-        age <= self.max_auction_age
+        let last_auction_time = self.last_auction_time.read().unwrap();
+        let auction_age = last_auction_time.elapsed();
+        auction_age <= self.max_auction_age
+    }
+}
+
+impl Liveness {
+    pub fn new(max_auction_age: Duration) -> Liveness {
+        Liveness {
+            max_auction_age,
+            last_auction_time: RwLock::new(Instant::now()),
+        }
+    }
+
+    pub fn auction(&self) {
+        *self.last_auction_time.write().unwrap() = Instant::now();
     }
 }
 
@@ -540,7 +557,6 @@ pub async fn run(args: Arguments) {
         native_price_estimator.clone(),
         signature_validator.clone(),
         args.auction_update_interval,
-        args.ethflow_contract,
         eth.contracts().weth().address(),
         args.limit_order_price_factor
             .try_into()
@@ -554,11 +570,9 @@ pub async fn run(args: Arguments) {
         .update(block)
         .await
         .expect("failed to perform initial solvable orders update");
-    let liveness = Liveness {
-        max_auction_age: args.max_auction_age,
-        solvable_orders_cache: solvable_orders_cache.clone(),
-    };
-    shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
+
+    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let on_settlement_event_updater =
         crate::on_settlement_event_updater::OnSettlementEventUpdater {
@@ -600,7 +614,11 @@ pub async fn run(args: Arguments) {
     let run = RunLoop {
         eth,
         solvable_orders_cache,
-        drivers: args.drivers.into_iter().map(Driver::new).collect(),
+        drivers: args
+            .drivers
+            .into_iter()
+            .map(|driver| infra::Driver::new(driver.url, driver.name))
+            .collect(),
         market_makable_token_list,
         submission_deadline: args.submission_deadline as u64,
         additional_deadline_for_rewards: args.additional_deadline_for_rewards as u64,
@@ -610,6 +628,7 @@ pub async fn run(args: Arguments) {
         in_flight_orders: Default::default(),
         persistence: infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db))
             .await,
+        liveness: liveness.clone(),
     };
     run.run_forever().await;
     unreachable!("run loop exited");
@@ -623,7 +642,11 @@ async fn shadow_mode(args: Arguments) -> ! {
         args.shadow.expect("missing shadow mode configuration"),
     );
 
-    let drivers = args.drivers.into_iter().map(Driver::new).collect();
+    let drivers = args
+        .drivers
+        .into_iter()
+        .map(|driver| infra::Driver::new(driver.url, driver.name))
+        .collect();
 
     let trusted_tokens = {
         let web3 = shared::ethrpc::web3(
@@ -656,7 +679,8 @@ async fn shadow_mode(args: Arguments) -> ! {
         .await
     };
 
-    shared::metrics::serve_metrics(Arc::new(shadow::Liveness), args.metrics_address);
+    let liveness = Arc::new(Liveness::new(args.max_auction_age));
+    shared::metrics::serve_metrics(liveness.clone(), args.metrics_address);
 
     let shadow = shadow::RunLoop::new(
         orderbook,
@@ -664,6 +688,7 @@ async fn shadow_mode(args: Arguments) -> ! {
         trusted_tokens,
         args.score_cap,
         args.solve_deadline,
+        liveness.clone(),
     );
     shadow.run_forever().await;
 

@@ -39,9 +39,8 @@ use {
         decoded_settlement::{DecodedSettlement, DecodingError},
         infra,
     },
-    anyhow::{anyhow, Context, Result},
+    anyhow::{Context, Result},
     futures::StreamExt,
-    model::DomainSeparator,
     primitive_types::H256,
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
@@ -111,25 +110,17 @@ impl OnSettlementEventUpdater {
 
         let transaction = self
             .eth
-            .transaction(hash)
+            .transaction(hash.into())
             .await?
             .with_context(|| format!("no tx {hash:?}"))?;
-        let tx_from = transaction
-            .from
-            .with_context(|| format!("no from {hash:?}"))?;
-        let tx_nonce: i64 = transaction
-            .nonce
-            .try_into()
-            .map_err(|err| anyhow!("{}", err))
-            .with_context(|| format!("convert nonce {hash:?}"))?;
 
         let auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
             log_index: event.log_index,
-            tx_from,
-            tx_nonce,
+            tx_from: transaction.from.into(),
+            tx_nonce: transaction.nonce.as_u64() as i64,
             auction_data: None,
         };
 
@@ -171,15 +162,7 @@ impl OnSettlementEventUpdater {
             // surplus and fees calculation
             match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
-                    let domain_separator = DomainSeparator(
-                        self.eth
-                            .contracts()
-                            .settlement()
-                            .domain_separator()
-                            .call()
-                            .await?
-                            .0,
-                    );
+                    let domain_separator = self.eth.contracts().settlement_domain_separator();
                     let order_uids = settlement.order_uids(domain_separator)?;
                     let order_fees = order_uids
                         .clone()

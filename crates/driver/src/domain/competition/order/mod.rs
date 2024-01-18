@@ -25,7 +25,7 @@ pub struct Order {
     /// The maximum amount this order is allowed to sell when completely filled.
     pub sell: eth::Asset,
     pub side: Side,
-    pub fee: Fee,
+    pub user_fee: SellAmount,
     pub kind: Kind,
     pub app_data: AppData,
     pub partial: Partial,
@@ -97,16 +97,6 @@ impl From<TargetAmount> for eth::TokenAmount {
     }
 }
 
-/// Order fee denominated in the sell token.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Fee {
-    /// The order fee that is actually paid by the user.
-    pub user: SellAmount,
-    /// The fee used for scoring. This is a scaled version of the user fee to
-    /// incentivize solvers to solve orders in batches.
-    pub solver: SellAmount,
-}
-
 /// The available amounts for a specific order that gets passed to the solver.
 ///
 /// These amounts differ from the order buy/sell/fee amounts in two ways:
@@ -129,7 +119,7 @@ pub struct Available {
     /// solver engine.
     pub buy: eth::Asset,
     /// The available fee amount.
-    pub fee: Fee,
+    pub user_fee: SellAmount,
 }
 
 impl Order {
@@ -182,7 +172,7 @@ impl Order {
                 token: self.buy.token.wrap(weth),
                 amount: self.buy.amount,
             },
-            fee: self.fee,
+            user_fee: self.user_fee,
         };
 
         let available = match self.partial {
@@ -191,11 +181,7 @@ impl Order {
         };
         let target = self.target();
 
-        for amount in [
-            &mut amounts.sell.amount.0,
-            &mut amounts.fee.user.0,
-            &mut amounts.fee.solver.0,
-        ] {
+        for amount in [&mut amounts.sell.amount.0, &mut amounts.user_fee.0] {
             *amount = util::math::mul_ratio(*amount, available.0, target.0).unwrap_or_default();
         }
 
@@ -441,7 +427,7 @@ mod tests {
                 Some(executed) if executed.token == buy(0).token => Side::Buy,
                 _ => panic!(),
             },
-            fee: Default::default(),
+            user_fee: Default::default(),
             kind: Kind::Limit,
             app_data: Default::default(),
             partial: available

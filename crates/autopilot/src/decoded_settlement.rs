@@ -2,6 +2,7 @@
 //! GPv2Settlement::settle function.
 
 use {
+    crate::domain,
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
@@ -53,7 +54,10 @@ pub struct DecodedSettlement {
 
 impl DecodedSettlement {
     /// Returns the list of order uids that are associated with each trade.
-    pub fn order_uids(&self, domain_separator: DomainSeparator) -> Result<Vec<OrderUid>> {
+    pub fn order_uids(
+        &self,
+        domain_separator: &domain::eth::DomainSeparator,
+    ) -> Result<Vec<OrderUid>> {
         self.trades
             .iter()
             .map(|trade| trade.uid(&domain_separator, &self.tokens))
@@ -801,7 +805,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let order_fees = settlement
-            .order_uids(MAINNET_DOMAIN_SEPARATOR)
+            .order_uids(&MAINNET_DOMAIN_SEPARATOR)
             .unwrap()
             .into_iter()
             .map(|uid| (uid, None))
@@ -1268,7 +1272,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let order_fees = decoded
-            .order_uids(MAINNET_DOMAIN_SEPARATOR)
+            .order_uids(&MAINNET_DOMAIN_SEPARATOR)
             .unwrap()
             .into_iter()
             .map(|uid| (uid, None))

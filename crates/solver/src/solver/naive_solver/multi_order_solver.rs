@@ -117,7 +117,7 @@ fn solve_without_uniswap(
     for order in orders {
         let execution = LimitOrderExecution {
             filled: order.full_execution_amount(),
-            scoring_fee: order.scoring_fee,
+            fee: order.user_fee,
         };
         settlement.with_liquidity(order, execution)?;
     }
@@ -152,8 +152,8 @@ fn solve_with_uniswap(
     for order in orders {
         let execution = LimitOrderExecution {
             filled: order.full_execution_amount(),
-            // TODO: We still need to compute a `scoring_fee` for partially fillable limit orders.
-            scoring_fee: order.scoring_fee,
+            // TODO: We still need to compute a fee for partially fillable limit orders.
+            fee: order.user_fee,
         };
         settlement.with_liquidity(order, execution).ok()?;
     }
@@ -829,7 +829,7 @@ mod tests {
                 let limit_order = LimitOrder::from(order);
                 let execution = LimitOrderExecution::new(
                     limit_order.full_execution_amount(),
-                    limit_order.scoring_fee,
+                    limit_order.user_fee,
                 );
                 settlement.with_liquidity(&limit_order, execution).unwrap();
             }
