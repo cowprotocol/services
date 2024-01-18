@@ -330,7 +330,7 @@ pub mod tests {
             },
             metadata: OrderMetadata {
                 executed_sell_amount_before_fees: 10.into(),
-                solver_fee: 200.into(),
+                solver_fee: 60.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -345,7 +345,7 @@ pub mod tests {
         // Amounts are halved because the order is half executed.
         assert_eq!(order_.sell_amount, 10.into());
         assert_eq!(order_.buy_amount, 20.into());
-        assert_eq!(order_.user_fee, 100.into());
+        assert_eq!(order_.user_fee, 30.into());
 
         let order_ = converter
             .normalize_limit_order(BalancedOrder {
@@ -356,7 +356,7 @@ pub mod tests {
         // Amounts are quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
-        assert_eq!(order_.user_fee, 50.into());
+        assert_eq!(order_.user_fee, 15.into());
 
         order.metadata.executed_sell_amount_before_fees = 0.into();
         let order_ = converter
@@ -368,7 +368,7 @@ pub mod tests {
         // Amounts are still quartered because of balance.
         assert_eq!(order_.sell_amount, 5.into());
         assert_eq!(order_.buy_amount, 10.into());
-        assert_eq!(order_.user_fee, 50.into());
+        assert_eq!(order_.user_fee, 15.into());
     }
 
     #[test]
