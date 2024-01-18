@@ -70,7 +70,7 @@ pub fn solve(
                 order::Side::Sell => OrderKind::Sell,
             },
             partially_fillable: order.partially_fillable,
-            scoring_fee: order.fee().amount,
+            user_fee: order.fee().amount,
             settlement_handling: Arc::new(OrderHandler {
                 order: Order {
                     metadata: OrderMetadata {
@@ -213,7 +213,7 @@ impl SettlementHandling<LimitOrder> for OrderHandler {
         execution: LimitOrderExecution,
         encoder: &mut SettlementEncoder,
     ) -> anyhow::Result<()> {
-        encoder.add_trade(self.order.clone(), execution.filled, execution.scoring_fee)?;
+        encoder.add_trade(self.order.clone(), execution.filled, execution.fee)?;
         Ok(())
     }
 }

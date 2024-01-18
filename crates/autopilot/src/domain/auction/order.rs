@@ -10,7 +10,6 @@ pub struct Order {
     pub buy_token: H160,
     pub sell_amount: U256,
     pub buy_amount: U256,
-    pub solver_fee: U256,
     pub user_fee: U256,
     pub protocol_fees: Vec<fee::Policy>,
     pub kind: Kind,

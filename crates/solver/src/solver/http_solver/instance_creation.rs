@@ -262,7 +262,7 @@ fn order_models(
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
                     fee: TokenAmount {
-                        amount: order.scoring_fee,
+                        amount: order.user_fee,
                         token: order.sell_token,
                     },
                     cost,
