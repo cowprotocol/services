@@ -739,7 +739,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    fee: 0.into(),
+                    fee: 42.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),
