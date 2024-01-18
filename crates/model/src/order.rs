@@ -758,6 +758,8 @@ pub struct OrderMetadata {
     /// execution we could find while quoting converted to an equivalent
     /// `sell_token` amount.
     /// Does not take partial fill into account.
+    ///
+    /// [TO BE DEPRECATED]
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_fee_amount: U256,
     /// The fee amount that should be used for objective value computations.
@@ -767,6 +769,8 @@ pub struct OrderMetadata {
     /// factor to make matching orders more valuable from an objective value
     /// perspective.
     /// Does not take partial fill into account.
+    ///
+    /// [TO BE DEPRECATED]
     #[serde_as(as = "HexOrDecimalU256")]
     pub solver_fee: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]

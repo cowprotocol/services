@@ -74,7 +74,6 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<CachingNativePriceEstimator>,
     signature_validator: Arc<dyn SignatureValidating>,
     metrics: &'static Metrics,
-    ethflow_contract_address: Option<H160>,
     weth: H160,
     limit_order_price_factor: BigDecimal,
     protocol_fee: domain::ProtocolFee,
@@ -99,7 +98,6 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<CachingNativePriceEstimator>,
         signature_validator: Arc<dyn SignatureValidating>,
         update_interval: Duration,
-        ethflow_contract_address: Option<H160>,
         weth: H160,
         limit_order_price_factor: BigDecimal,
         protocol_fee: domain::ProtocolFee,
@@ -117,7 +115,6 @@ impl SolvableOrdersCache {
             native_price_estimator,
             signature_validator,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
-            ethflow_contract_address,
             weth,
             limit_order_price_factor,
             protocol_fee,
@@ -180,11 +177,11 @@ impl SolvableOrdersCache {
             })
             .collect::<HashMap<_, _>>();
 
-        let orders = orders_with_balance(orders, &balances, self.ethflow_contract_address);
+        let orders = orders_with_balance(orders, &balances);
         let removed = counter.checkpoint("insufficient_balance", &orders);
         invalid_order_uids.extend(removed);
 
-        let orders = filter_dust_orders(orders, &balances, self.ethflow_contract_address);
+        let orders = filter_dust_orders(orders, &balances);
         let removed = counter.checkpoint("dust_order", &orders);
         filtered_order_events.extend(removed);
 
@@ -330,19 +327,8 @@ async fn filter_invalid_signature_orders(
 
 /// Removes orders that can't possibly be settled because there isn't enough
 /// balance.
-fn orders_with_balance(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    ethflow_contract: Option<H160>,
-) -> Vec<Order> {
+fn orders_with_balance(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     orders.retain(|order| {
-        // For ethflow orders, there is no need to check the balance. The contract
-        // ensures that there will always be sufficient balance, after the wrapAll
-        // pre_interaction has been called.
-        if Some(order.metadata.owner) == ethflow_contract {
-            return true;
-        }
-
         let balance = match balances.get(&Query::from_order(order)) {
             None => return false,
             Some(balance) => *balance,
@@ -363,20 +349,13 @@ fn orders_with_balance(
 
 /// Filters out dust orders i.e. partially fillable orders that, when scaled
 /// have a 0 buy or sell amount.
-fn filter_dust_orders(
-    mut orders: Vec<Order>,
-    balances: &Balances,
-    ethflow_contract: Option<H160>,
-) -> Vec<Order> {
+fn filter_dust_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     orders.retain(|order| {
         if !order.data.partially_fillable {
             return true;
         }
 
-        let balance = if Some(order.metadata.owner) == ethflow_contract {
-            // For EthFlow orders, assume that there is always enough balance.
-            U256::MAX
-        } else if let Some(balance) = balances.get(&Query::from_order(order)) {
+        let balance = if let Some(balance) = balances.get(&Query::from_order(order)) {
             *balance
         } else {
             return false;
@@ -1030,7 +1009,6 @@ mod tests {
 
     #[test]
     fn orders_with_balance_() {
-        let ethflow = H160::from_low_u64_be(1);
         let orders = vec![
             // enough balance for sell and fee
             Order {
@@ -1076,34 +1054,18 @@ mod tests {
                 },
                 ..Default::default()
             },
-            // 0 ethflow balance
-            Order {
-                data: OrderData {
-                    sell_token: ethflow,
-                    sell_amount: 1.into(),
-                    fee_amount: 0.into(),
-                    partially_fillable: true,
-                    ..Default::default()
-                },
-                metadata: OrderMetadata {
-                    owner: ethflow,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
         ];
         let balances = [
             (Query::from_order(&orders[0]), 2.into()),
             (Query::from_order(&orders[1]), 1.into()),
             (Query::from_order(&orders[2]), 1.into()),
             (Query::from_order(&orders[3]), 0.into()),
-            (Query::from_order(&orders[4]), 0.into()),
         ]
         .into_iter()
         .collect();
-        let expected = &[0, 2, 4];
+        let expected = &[0, 2];
 
-        let filtered = orders_with_balance(orders.clone(), &balances, Some(ethflow));
+        let filtered = orders_with_balance(orders.clone(), &balances);
         assert_eq!(filtered.len(), expected.len());
         for index in expected {
             let found = filtered.iter().any(|o| o.data == orders[*index].data);

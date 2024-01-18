@@ -37,32 +37,25 @@ use {
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
+        infra,
     },
     anyhow::{anyhow, Context, Result},
-    contracts::GPv2Settlement,
-    ethrpc::{
-        current_block::{into_stream, CurrentBlockStream},
-        Web3,
-    },
     futures::StreamExt,
-    model::DomainSeparator,
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     shared::{event_handling::MAX_REORG_BLOCK_COUNT, external_prices::ExternalPrices},
     sqlx::PgConnection,
-    web3::types::{Transaction, TransactionId},
+    web3::types::Transaction,
 };
 
 pub struct OnSettlementEventUpdater {
-    pub web3: Web3,
-    pub contract: GPv2Settlement,
-    pub native_token: H160,
+    pub eth: infra::Ethereum,
     pub db: Postgres,
 }
 
 impl OnSettlementEventUpdater {
-    pub async fn run_forever(self, block_stream: CurrentBlockStream) -> ! {
-        let mut current_block = *block_stream.borrow();
-        let mut block_stream = into_stream(block_stream);
+    pub async fn run_forever(self) -> ! {
+        let mut current_block = self.eth.current_block().borrow().to_owned();
+        let mut block_stream = ethrpc::current_block::into_stream(self.eth.current_block().clone());
         loop {
             match self.update(current_block.number).await {
                 Ok(true) => {
@@ -118,11 +111,9 @@ impl OnSettlementEventUpdater {
         tracing::debug!("updating settlement details for tx {hash:?}");
 
         let transaction = self
-            .web3
-            .eth()
-            .transaction(TransactionId::Hash(hash))
-            .await
-            .with_context(|| format!("get tx {hash:?}"))?
+            .eth
+            .transaction(hash)
+            .await?
             .with_context(|| format!("no tx {hash:?}"))?;
         let tx_from = transaction
             .from
@@ -133,10 +124,7 @@ impl OnSettlementEventUpdater {
             .map_err(|err| anyhow!("{}", err))
             .with_context(|| format!("convert nonce {hash:?}"))?;
 
-        let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
-        let auction_id =
-            Self::recover_auction_id_from_calldata(&mut ex, &transaction, &domain_separator)
-                .await?;
+        let auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
@@ -154,8 +142,7 @@ impl OnSettlementEventUpdater {
         // well.
         if let Some(auction_id) = auction_id {
             let receipt = self
-                .web3
-                .eth()
+                .eth
                 .transaction_receipt(hash)
                 .await?
                 .with_context(|| format!("no receipt {hash:?}"))?;
@@ -171,7 +158,7 @@ impl OnSettlementEventUpdater {
                 format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
             })?;
             let external_prices = ExternalPrices::try_from_auction_prices(
-                self.native_token,
+                self.eth.contracts().weth().address(),
                 auction_external_prices.clone(),
             )?;
 
@@ -183,9 +170,10 @@ impl OnSettlementEventUpdater {
             );
 
             // surplus and fees calculation
-            match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
+            match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
-                    let order_uids = settlement.order_uids()?;
+                    let domain_separator = self.eth.contracts().settlement_domain_separator();
+                    let order_uids = settlement.order_uids(domain_separator)?;
                     let order_fees = order_uids
                         .clone()
                         .into_iter()
@@ -252,10 +240,9 @@ impl OnSettlementEventUpdater {
     async fn recover_auction_id_from_calldata(
         ex: &mut PgConnection,
         tx: &Transaction,
-        domain_separator: &DomainSeparator,
     ) -> Result<Option<i64>> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
+        let metadata = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(
@@ -303,109 +290,5 @@ impl OnSettlementEventUpdater {
             }
             (Some(_), false) => Ok(Some(auction_id)),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        database::{auction_prices::AuctionPrice, settlement_observations::Observation},
-        sqlx::Executor,
-    };
-
-    #[tokio::test]
-    #[ignore]
-    async fn manual_node_test() {
-        // TODO update test
-        observe::tracing::initialize_reentrant("autopilot=trace");
-        let db = Postgres::with_defaults().await.unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-        let transport = shared::ethrpc::create_env_test_transport();
-        let web3 = Web3::new(transport);
-
-        let contract = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let native_token = contracts::WETH9::deployed(&web3).await.unwrap().address();
-        let updater = OnSettlementEventUpdater {
-            web3,
-            db,
-            native_token,
-            contract,
-        };
-
-        assert!(!updater.update(15875900).await.unwrap());
-
-        let query = r"
-INSERT INTO settlements (block_number, log_index, solver, tx_hash, tx_from, tx_nonce)
-VALUES (15875801, 405, '\x', '\x0e9d0f4ea243ac0f02e1d3ecab3fea78108d83bfca632b30e9bc4acb22289c5a', NULL, NULL)
-    ;";
-        updater.db.pool.execute(query).await.unwrap();
-
-        let query = r"
-INSERT INTO auction_transaction (auction_id, tx_from, tx_nonce)
-VALUES (0, '\xa21740833858985e4d801533a808786d3647fb83', 4701)
-    ;";
-        updater.db.pool.execute(query).await.unwrap();
-
-        let query = r"
-INSERT INTO auction_prices (auction_id, token, price)
-VALUES (0, '\x056fd409e1d7a124bd7017459dfea2f387b6d5cd', 6347795727933475088343330979840),
-        (0, '\x6b175474e89094c44da98b954eedeac495271d0f', 634671683530053),
-        (0, '\xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 634553336916241343152390144)
-            ;";
-
-        updater.db.pool.execute(query).await.unwrap();
-
-        assert!(updater.update(15875900).await.unwrap());
-
-        let query = r"
-SELECT tx_from, tx_nonce
-FROM settlements
-WHERE block_number = 15875801 AND log_index = 405
-        ;";
-        let (tx_from, tx_nonce): (Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            tx_from,
-            hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
-        );
-        assert_eq!(tx_nonce, 4701);
-
-        let query = r"
-SELECT auction_id, tx_from, tx_nonce
-FROM auction_transaction
-        ;";
-        let (auction_id, tx_from, tx_nonce): (i64, Vec<u8>, i64) = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(auction_id, 0);
-        assert_eq!(
-            tx_from,
-            hex_literal::hex!("a21740833858985e4d801533a808786d3647fb83")
-        );
-        assert_eq!(tx_nonce, 4701);
-
-        // assert that the prices are updated
-        let query = r#"SELECT * FROM auction_prices;"#;
-        let prices: Vec<AuctionPrice> = sqlx::query_as(query)
-            .fetch_all(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(prices.len(), 2);
-
-        // assert that the observations are updated
-        let query = r#"SELECT * FROM settlement_observations;"#;
-        let observation: Observation = sqlx::query_as(query)
-            .fetch_one(&updater.db.pool)
-            .await
-            .unwrap();
-        assert_eq!(observation.gas_used, 179155.into());
-        assert_eq!(observation.effective_gas_price, 19789368758u64.into());
-        assert_eq!(observation.surplus, 5150444803867862u64.into());
-
-        assert!(!updater.update(15875900).await.unwrap());
     }
 }
