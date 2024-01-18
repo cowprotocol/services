@@ -52,6 +52,7 @@ impl ProtocolFee {
                     &order.data.buy_amount,
                     &quote.buy_amount,
                     &quote.sell_amount,
+                    &quote.fee,
                 ) {
                     vec![self.policy]
                 } else {
