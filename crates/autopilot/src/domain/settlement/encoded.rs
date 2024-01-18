@@ -151,7 +151,7 @@ impl Encoded {
 
     pub fn new(
         call_data: &domain::settlement::transaction::CallData,
-        domain_separator: eth::DomainSeparator,
+        domain_separator: &eth::DomainSeparator,
     ) -> Result<Self> {
         let function = GPv2Settlement::raw_contract()
             .abi
