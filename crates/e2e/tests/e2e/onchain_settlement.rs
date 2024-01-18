@@ -132,9 +132,10 @@ async fn onchain_settlement(web3: Web3) {
 
     // Only start the autopilot now to ensure that these orders are settled in a
     // batch which seems to be expected in this test.
-    services.start_autopilot(vec![
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
+    services.start_autopilot(
+        None,
+        vec!["--drivers=test_solver|http://localhost:11088/test_solver".to_string()],
+    );
 
     let balance = token_b.balance_of(trader_a.address()).call().await.unwrap();
     assert_eq!(balance, 0.into());

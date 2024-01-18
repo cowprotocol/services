@@ -327,7 +327,7 @@ During the solver competition solvers promise a solution of a certain quality. I
  gas\_used             | numeric | not null | amount of gas the settlement consumed
  effective\_gas\_price | numeric | not null | effective gas price (basically the [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559) gas price reduced to a single value)
  surplus               | numeric | not null | amount of tokens users received more than their limit price converted to ETH
- fee                   | numeric | not null | total amount of `solver_fee` collected in the auction (see order\_execution.solver\_fee)
+ fee                   | numeric | not null | total amount of fees collected in the auction
 
 Indexes:
 - PRIMARY KEY: btree(`block_number`, `log_index`)

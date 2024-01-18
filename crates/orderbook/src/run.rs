@@ -495,12 +495,17 @@ pub async fn run(args: Arguments) {
             )
         })
         .map(IpfsAppData::new);
+    let app_data = Arc::new(app_data::Registry::new(
+        app_data_validator,
+        postgres.clone(),
+        ipfs,
+    ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
         postgres.clone(),
         order_validator.clone(),
-        ipfs,
+        app_data.clone(),
     ));
 
     if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
@@ -511,10 +516,6 @@ pub async fn run(args: Arguments) {
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
-    let app_data = Arc::new(app_data::Registry::new(
-        app_data_validator,
-        postgres.clone(),
-    ));
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(

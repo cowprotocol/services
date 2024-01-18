@@ -37,19 +37,14 @@ use {
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
+        infra,
     },
     anyhow::{Context, Result},
-    contracts::GPv2Settlement,
-    ethrpc::{
-        current_block::{into_stream, CurrentBlockStream},
-        Web3,
-    },
     futures::StreamExt,
-    model::DomainSeparator,
-    primitive_types::{H160, H256},
+    primitive_types::H256,
     shared::external_prices::ExternalPrices,
     sqlx::PgConnection,
-    web3::types::{Transaction, TransactionId},
+    web3::types::Transaction,
 };
 
 #[derive(Debug, Copy, Clone)]
@@ -79,16 +74,14 @@ impl AuctionKind {
 }
 
 pub struct OnSettlementEventUpdater {
-    pub web3: Web3,
-    pub contract: GPv2Settlement,
-    pub native_token: H160,
+    pub eth: infra::Ethereum,
     pub db: Postgres,
 }
 
 impl OnSettlementEventUpdater {
-    pub async fn run_forever(self, block_stream: CurrentBlockStream) -> ! {
-        let mut current_block = *block_stream.borrow();
-        let mut block_stream = into_stream(block_stream);
+    pub async fn run_forever(self) -> ! {
+        let mut current_block = self.eth.current_block().borrow().to_owned();
+        let mut block_stream = ethrpc::current_block::into_stream(self.eth.current_block().clone());
         loop {
             match self.update().await {
                 Ok(true) => {
@@ -135,15 +128,12 @@ impl OnSettlementEventUpdater {
         tracing::debug!("updating settlement details for tx {hash:?}");
 
         let transaction = self
-            .web3
-            .eth()
-            .transaction(TransactionId::Hash(hash))
-            .await
-            .with_context(|| format!("get tx {hash:?}"))?
+            .eth
+            .transaction(hash)
+            .await?
             .with_context(|| format!("no tx {hash:?}"))?;
 
-        let domain_separator = DomainSeparator(self.contract.domain_separator().call().await?.0);
-        let auction_kind = Self::get_auction_kind(&mut ex, &transaction, &domain_separator).await?;
+        let auction_kind = Self::get_auction_kind(&mut ex, &transaction).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,
@@ -160,8 +150,7 @@ impl OnSettlementEventUpdater {
         // well.
         if let AuctionKind::Valid { auction_id } = auction_kind {
             let receipt = self
-                .web3
-                .eth()
+                .eth
                 .transaction_receipt(hash)
                 .await?
                 .with_context(|| format!("no receipt {hash:?}"))?;
@@ -177,7 +166,7 @@ impl OnSettlementEventUpdater {
                 format!("no external prices for auction id {auction_id:?} and tx {hash:?}")
             })?;
             let external_prices = ExternalPrices::try_from_auction_prices(
-                self.native_token,
+                self.eth.contracts().weth().address(),
                 auction_external_prices.clone(),
             )?;
 
@@ -189,9 +178,10 @@ impl OnSettlementEventUpdater {
             );
 
             // surplus and fees calculation
-            match DecodedSettlement::new(&transaction.input.0, &domain_separator) {
+            match DecodedSettlement::new(&transaction.input.0) {
                 Ok(settlement) => {
-                    let order_uids = settlement.order_uids()?;
+                    let domain_separator = self.eth.contracts().settlement_domain_separator();
+                    let order_uids = settlement.order_uids(domain_separator)?;
                     let order_fees = order_uids
                         .clone()
                         .into_iter()
@@ -254,14 +244,11 @@ impl OnSettlementEventUpdater {
     /// `auction_id` to the settlement calldata. This function tries to
     /// recover that `auction_id`. This function only returns an error if
     /// retrying the operation makes sense. If all went well and there
-    /// simply is no sensible `auction_id` `AuctionKind::Invalid` will be returned.
-    async fn get_auction_kind(
-        ex: &mut PgConnection,
-        tx: &Transaction,
-        domain_separator: &DomainSeparator,
-    ) -> Result<AuctionKind> {
+    /// simply is no sensible `auction_id` `AuctionKind::Invalid` will be
+    /// returned.
+    async fn get_auction_kind(ex: &mut PgConnection, tx: &Transaction) -> Result<AuctionKind> {
         let tx_from = tx.from.context("tx is missing sender")?;
-        let metadata = match DecodedSettlement::new(&tx.input.0, domain_separator) {
+        let metadata = match DecodedSettlement::new(&tx.input.0) {
             Ok(settlement) => settlement.metadata,
             Err(err) => {
                 tracing::warn!(

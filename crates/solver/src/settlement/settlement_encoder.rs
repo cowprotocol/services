@@ -130,7 +130,7 @@ impl SettlementEncoder {
         let mut result = Self::new(clearing_prices);
         for trade in trades {
             result
-                .add_trade(trade.order, trade.executed_amount, trade.scoring_fee)
+                .add_trade(trade.order, trade.executed_amount, trade.fee)
                 .unwrap();
         }
         result
@@ -207,7 +207,7 @@ impl SettlementEncoder {
         &mut self,
         order: Order,
         executed_amount: U256,
-        scoring_fee: U256,
+        fee: U256,
     ) -> Result<TradeExecution> {
         verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
@@ -230,7 +230,7 @@ impl SettlementEncoder {
             data: Trade {
                 order: order.clone(),
                 executed_amount,
-                scoring_fee,
+                fee,
             },
             tokens: TokenReference::Indexed {
                 sell_token_index,
@@ -252,23 +252,17 @@ impl SettlementEncoder {
         &mut self,
         order: Order,
         executed_amount: U256,
-        scoring_fee: U256,
+        fee: U256,
     ) -> Result<TradeExecution> {
         let interactions = order.interactions.clone();
         let execution = match &order.metadata.class {
-            OrderClass::Market => self.add_market_trade(order, executed_amount, scoring_fee)?,
+            OrderClass::Market => self.add_market_trade(order, executed_amount, fee)?,
             OrderClass::Liquidity => {
                 let (sell_price, buy_price) = (order.data.buy_amount, order.data.sell_amount);
-                self.add_custom_price_trade(
-                    order,
-                    executed_amount,
-                    scoring_fee,
-                    sell_price,
-                    buy_price,
-                )?
+                self.add_custom_price_trade(order, executed_amount, fee, sell_price, buy_price)?
             }
             OrderClass::Limit => {
-                let surplus_fee = scoring_fee;
+                let surplus_fee = fee;
 
                 // Solvers calculate with slightly adjusted amounts compared to
                 // the signed order, so adjust by the surplus fee (if needed) to
@@ -283,13 +277,7 @@ impl SettlementEncoder {
                 let (sell_price, buy_price) =
                     self.custom_price_for_limit_order(&order, executed_amount, surplus_fee)?;
 
-                self.add_custom_price_trade(
-                    order,
-                    executed_amount,
-                    scoring_fee,
-                    sell_price,
-                    buy_price,
-                )?
+                self.add_custom_price_trade(order, executed_amount, fee, sell_price, buy_price)?
             }
         };
         self.pre_interactions.extend(interactions.pre);
@@ -380,7 +368,7 @@ impl SettlementEncoder {
         &mut self,
         order: Order,
         executed_amount: U256,
-        scoring_fee: U256,
+        fee: U256,
         sell_price: U256,
         buy_price: U256,
     ) -> Result<TradeExecution> {
@@ -389,7 +377,7 @@ impl SettlementEncoder {
             data: Trade {
                 order,
                 executed_amount,
-                scoring_fee,
+                fee,
             },
             tokens: TokenReference::CustomPrice {
                 sell_token_price: sell_price,
@@ -1092,7 +1080,7 @@ pub mod tests {
                     data: Trade {
                         order: order13,
                         executed_amount: 11.into(),
-                        scoring_fee: 0.into()
+                        fee: 0.into()
                     },
                     tokens: TokenReference::Indexed {
                         sell_token_index: 0,
@@ -1103,7 +1091,7 @@ pub mod tests {
                     data: Trade {
                         order: order12,
                         executed_amount: 11.into(),
-                        scoring_fee: 0.into()
+                        fee: 0.into()
                     },
                     tokens: TokenReference::CustomPrice {
                         sell_token_price: 11.into(),
@@ -1114,7 +1102,7 @@ pub mod tests {
                     data: Trade {
                         order: order24,
                         executed_amount: 22.into(),
-                        scoring_fee: 0.into()
+                        fee: 0.into()
                     },
                     tokens: TokenReference::Indexed {
                         sell_token_index: 1,
@@ -1125,7 +1113,7 @@ pub mod tests {
                     data: Trade {
                         order: order23,
                         executed_amount: 11.into(),
-                        scoring_fee: 0.into()
+                        fee: 0.into()
                     },
                     tokens: TokenReference::CustomPrice {
                         sell_token_price: 11.into(),
@@ -1498,7 +1486,7 @@ pub mod tests {
                 data: Trade {
                     order,
                     executed_amount: 1_010_000_000_000_000_000u128.into(), // 1.01 WETH
-                    scoring_fee: U256::exp10(16)                           // 0.01 WETH (10 USDC)
+                    fee: U256::exp10(16)                                   // 0.01 WETH (10 USDC)
                 },
                 tokens: TokenReference::CustomPrice {
                     sell_token_price: U256::exp10(9),
@@ -1554,7 +1542,7 @@ pub mod tests {
                 data: Trade {
                     order,
                     executed_amount: U256::exp10(18), // 1 WETH
-                    scoring_fee: U256::exp10(7)       // 10 USDC
+                    fee: U256::exp10(7)               // 10 USDC
                 },
                 tokens: TokenReference::CustomPrice {
                     sell_token_price: U256::exp10(18),
