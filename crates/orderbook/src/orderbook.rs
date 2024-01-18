@@ -1,8 +1,8 @@
 use {
     crate::{
+        app_data,
         database::orders::{InsertionError, OrderStoring},
         dto,
-        ipfs_app_data::IpfsAppData,
     },
     anyhow::{Context, Result},
     chrono::Utc,
@@ -24,7 +24,6 @@ use {
     },
     primitive_types::H160,
     shared::{
-        app_data,
         metrics::LivenessChecking,
         order_validation::{OrderValidating, ValidationError},
     },
@@ -176,7 +175,7 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    ipfs: Option<IpfsAppData>,
+    app_data: Arc<app_data::Registry>,
 }
 
 impl Orderbook {
@@ -186,7 +185,7 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        ipfs: Option<IpfsAppData>,
+        app_data: Arc<app_data::Registry>,
     ) -> Self {
         Metrics::initialize();
         Self {
@@ -194,37 +193,8 @@ impl Orderbook {
             settlement_contract,
             database,
             order_validator,
-            ipfs,
+            app_data,
         }
-    }
-
-    /// Finds full app data for an order that only has the contract app data
-    /// hash.
-    ///
-    /// The full app data can be located in the database or on IPFS.
-    pub async fn find_full_app_data(
-        &self,
-        contract_app_data: &AppDataHash,
-    ) -> Result<Option<String>> {
-        // we reserve the 0 app data to indicate empty app data.
-        if contract_app_data.is_zero() {
-            return Ok(Some(app_data::EMPTY.to_string()));
-        }
-
-        if let Some(app_data) = self
-            .database
-            .get_full_app_data(contract_app_data)
-            .await
-            .context("from database")?
-        {
-            tracing::debug!(?contract_app_data, "full app data in database");
-            return Ok(Some(app_data));
-        }
-
-        let Some(ipfs) = &self.ipfs else {
-            return Ok(None);
-        };
-        ipfs.fetch(contract_app_data).await.context("from ipfs")
     }
 
     pub async fn add_order(
@@ -232,7 +202,7 @@ impl Orderbook {
         payload: OrderCreation,
     ) -> Result<(OrderUid, Option<QuoteId>), AddOrderError> {
         let full_app_data_override = match payload.app_data {
-            OrderCreationAppData::Hash { hash } => self.find_full_app_data(&hash).await?,
+            OrderCreationAppData::Hash { hash } => self.app_data.find(&hash).await?,
             _ => None,
         };
 
@@ -497,12 +467,17 @@ mod tests {
         let database = crate::database::Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
         database.insert_order(&old_order, None).await.unwrap();
+        let app_data = Arc::new(app_data::Registry::new(
+            shared::app_data::Validator::new(8192),
+            database.clone(),
+            None,
+        ));
         let orderbook = Orderbook {
             database,
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
-            ipfs: None,
+            app_data,
         };
 
         // App data does not encode cancellation.

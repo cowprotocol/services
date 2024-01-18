@@ -46,7 +46,7 @@ async fn order_cancellation(web3: Web3) {
     );
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    services.start_autopilot(None, vec![]);
     services.start_api(vec![]).await;
 
     let place_order = |salt: u8| {
