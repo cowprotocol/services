@@ -1,4 +1,4 @@
-CREATE TYPE AuctionKind AS ENUM ('valid', 'invalid', `unprocessed`);
+CREATE TYPE AuctionKind AS ENUM ('valid', 'invalid', 'unprocessed');
 
 ALTER TABLE settlements
     DROP COLUMN tx_from,
