@@ -78,7 +78,7 @@ impl OrderConverter {
             buy_amount,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            user_fee: remaining.remaining(order.metadata.solver_fee)?,
+            user_fee: remaining.remaining(order.data.fee_amount)?,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token: self.native_token.clone(),
