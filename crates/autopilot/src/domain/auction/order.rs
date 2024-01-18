@@ -1,6 +1,7 @@
 use {
     crate::domain::fee,
     primitive_types::{H160, H256, U256},
+    std::fmt::{self, Display},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,7 +31,7 @@ pub struct Order {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Copy, Clone, Debug, PartialEq, Hash, Eq)]
+#[derive(Copy, Clone, PartialEq, Hash, Eq)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl Order {
@@ -42,6 +43,24 @@ impl Order {
     /// are supposed to compute a reasonable fee themselves.
     pub fn solver_determines_fee(&self) -> bool {
         self.is_limit_order()
+    }
+}
+
+impl Display for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = [0u8; 2 + 56 * 2];
+        bytes[..2].copy_from_slice(b"0x");
+        // Unwrap because the length is always correct.
+        hex::encode_to_slice(self.0.as_slice(), &mut bytes[2..]).unwrap();
+        // Unwrap because the string is always valid utf8.
+        let str = std::str::from_utf8(&bytes).unwrap();
+        f.write_str(str)
+    }
+}
+
+impl fmt::Debug for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self}")
     }
 }
 
