@@ -75,7 +75,7 @@ pub async fn update_settlement_auction(
 ) -> Result<PgQueryResult, sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
-SET auction_kind = $1 and auction_id = $2
+SET auction_kind = $1, auction_id = $2
 WHERE block_number = $3 AND log_index = $4
     ;"#;
     sqlx::query(QUERY)
