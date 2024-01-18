@@ -54,15 +54,18 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         }],
     );
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![
-        format!(
-            "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
-            weth = onchain.contracts().weth.address(),
-            token_a = token_a.address(),
-            token_b = token_b.address()
-        ),
-        "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
-    ]);
+    services.start_autopilot(
+        None,
+        vec![
+            format!(
+                "--trusted-tokens={weth:#x},{token_a:#x},{token_b:#x}",
+                weth = onchain.contracts().weth.address(),
+                token_a = token_a.address(),
+                token_b = token_b.address()
+            ),
+            "--drivers=test_solver|http://localhost:11088/test_solver".to_string(),
+        ],
+    );
     services.start_api(vec![]).await;
 
     // Place Order

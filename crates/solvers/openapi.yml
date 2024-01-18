@@ -721,7 +721,7 @@ components:
         - score
       properties:
         id:
-          description: An opaque identifier for the solution.
+          description: An opaque identifier for the solution. This is a solver generated number that is unique across multiple solutions within the auction.
           type: number
         prices:
           description: |
