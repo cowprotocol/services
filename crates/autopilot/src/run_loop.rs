@@ -2,13 +2,13 @@ use {
     crate::{
         database::competition::Competition,
         domain::{self, auction::order::Class},
-        driver_api::Driver,
         driver_model::{
             reveal::{self, Request},
             settle,
             solve::{self, TradedAmounts},
         },
         infra::{self, persistence::dto},
+        run::Liveness,
         solvable_orders::SolvableOrdersCache,
     },
     ::observe::metrics,
@@ -39,9 +39,9 @@ use {
 pub struct RunLoop {
     pub eth: infra::Ethereum,
     pub persistence: infra::Persistence,
+    pub drivers: Vec<infra::Driver>,
 
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
-    pub drivers: Vec<Driver>,
     pub market_makable_token_list: AutoUpdatingTokenList,
     pub submission_deadline: u64,
     pub additional_deadline_for_rewards: u64,
@@ -49,6 +49,7 @@ pub struct RunLoop {
     pub max_settlement_transaction_wait: Duration,
     pub solve_deadline: Duration,
     pub in_flight_orders: Arc<Mutex<InFlightOrders>>,
+    pub liveness: Arc<Liveness>,
 }
 
 impl RunLoop {
@@ -64,6 +65,8 @@ impl RunLoop {
                     || last_block.replace(current_block) != Some(current_block)
                 {
                     observe::log_auction_delta(id, &previous, &auction);
+                    self.liveness.auction();
+
                     self.single_run(id, auction)
                         .instrument(tracing::info_span!("auction", id))
                         .await;
@@ -102,6 +105,8 @@ impl RunLoop {
             Class::Liquidity => true,
             Class::Limit => false,
         }) {
+            // Updating liveness probe to not report unhealthy due to this optimization
+            self.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
@@ -360,7 +365,7 @@ impl RunLoop {
     /// Computes a driver's solutions for the solver competition.
     async fn solve(
         &self,
-        driver: &Driver,
+        driver: &infra::Driver,
         request: &solve::Request,
     ) -> Result<Vec<Result<Solution, ZeroScoreError>>, SolveError> {
         let response = tokio::time::timeout(self.solve_deadline, driver.solve(request))
@@ -393,7 +398,7 @@ impl RunLoop {
     /// Ask the winning solver to reveal their solution.
     async fn reveal(
         &self,
-        driver: &Driver,
+        driver: &infra::Driver,
         auction: domain::AuctionId,
         solution_id: u64,
     ) -> Result<reveal::Response, RevealError> {
@@ -414,7 +419,7 @@ impl RunLoop {
 
     /// Execute the solver's solution. Returns Ok when the corresponding
     /// transaction has been mined.
-    async fn settle(&self, driver: &Driver, solved: &Solution) -> Result<(), SettleError> {
+    async fn settle(&self, driver: &infra::Driver, solved: &Solution) -> Result<(), SettleError> {
         let events = solved
             .order_ids()
             .map(|uid| (*uid, OrderEventLabel::Executing))
@@ -520,7 +525,7 @@ pub struct InFlightOrders {
 }
 
 struct Participant<'a> {
-    driver: &'a Driver,
+    driver: &'a infra::Driver,
     solution: Solution,
 }
 
@@ -616,14 +621,14 @@ impl Metrics {
         Self::get().auction.set(auction_id)
     }
 
-    fn solve_ok(driver: &Driver, elapsed: Duration) {
+    fn solve_ok(driver: &infra::Driver, elapsed: Duration) {
         Self::get()
             .solve
             .with_label_values(&[&driver.name, "success"])
             .observe(elapsed.as_secs_f64())
     }
 
-    fn solve_err(driver: &Driver, elapsed: Duration, err: &SolveError) {
+    fn solve_err(driver: &infra::Driver, elapsed: Duration, err: &SolveError) {
         let label = match err {
             SolveError::Timeout => "timeout",
             SolveError::NoSolutions => "no_solutions",
@@ -635,28 +640,28 @@ impl Metrics {
             .observe(elapsed.as_secs_f64())
     }
 
-    fn solution_ok(driver: &Driver) {
+    fn solution_ok(driver: &infra::Driver) {
         Self::get()
             .solutions
             .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
-    fn solution_err(driver: &Driver, _: &ZeroScoreError) {
+    fn solution_err(driver: &infra::Driver, _: &ZeroScoreError) {
         Self::get()
             .solutions
             .with_label_values(&[&driver.name, "zero_score"])
             .inc();
     }
 
-    fn reveal_ok(driver: &Driver) {
+    fn reveal_ok(driver: &infra::Driver) {
         Self::get()
             .reveal
             .with_label_values(&[&driver.name, "success"])
             .inc();
     }
 
-    fn reveal_err(driver: &Driver, err: &RevealError) {
+    fn reveal_err(driver: &infra::Driver, err: &RevealError) {
         let label = match err {
             RevealError::AuctionMismatch => "mismatch",
             RevealError::Failure(_) => "error",
@@ -667,14 +672,14 @@ impl Metrics {
             .inc();
     }
 
-    fn settle_ok(driver: &Driver, time: Duration) {
+    fn settle_ok(driver: &infra::Driver, time: Duration) {
         Self::get()
             .settle_time
             .with_label_values(&[&driver.name, "success"])
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn settle_err(driver: &Driver, err: &SettleError, time: Duration) {
+    fn settle_err(driver: &infra::Driver, err: &SettleError, time: Duration) {
         let label = match err {
             SettleError::Failure(_) => "error",
         };
@@ -684,7 +689,7 @@ impl Metrics {
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn matched_unsettled(winning: &Driver, unsettled: &[&domain::OrderUid]) {
+    fn matched_unsettled(winning: &infra::Driver, unsettled: &[&domain::OrderUid]) {
         if !unsettled.is_empty() {
             tracing::debug!(?unsettled, "some orders were matched but not settled");
         }
