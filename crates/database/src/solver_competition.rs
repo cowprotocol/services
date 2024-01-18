@@ -74,7 +74,6 @@ mod tests {
         crate::{
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement},
-            Address,
         },
         sqlx::Connection,
     };
@@ -127,21 +126,15 @@ mod tests {
             .await
             .unwrap();
 
-        let tx_from: Address = ByteArray([0x01; 20]);
-        let tx_nonce: i64 = 2;
-        crate::auction_transaction::insert_settlement_tx_info(
+        crate::settlements::update_settlement_auction(
             &mut db,
             index.block_number,
             index.log_index,
-            &tx_from,
-            tx_nonce,
+            Some(id),
+            crate::settlements::AuctionKind::Valid,
         )
         .await
         .unwrap();
-
-        crate::auction_transaction::try_insert_auction_transaction(&mut db, id, &tx_from, tx_nonce)
-            .await
-            .unwrap();
 
         // Now succeeds.
         let value_by_hash = load_by_tx_hash(&mut db, &hash).await.unwrap().unwrap();
