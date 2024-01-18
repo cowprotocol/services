@@ -429,7 +429,7 @@ pub async fn clear_database() {
     tracing::info!("Clearing database.");
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await.unwrap();
     let mut db = db.begin().await.unwrap();
-    database::clear_DANGER_(&mut db).await.unwrap();
+    database::clear_DANGER_(&mut db).await.unwrap();    
     db.commit().await.unwrap();
 }
 
