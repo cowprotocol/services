@@ -192,8 +192,8 @@ impl OnSettlementEventUpdater {
                             .into_iter()
                             .zip(order_fees.iter())
                             .map(|(fee, (_, order_fee))| match order_fee {
-                                Some(_) => (fee.order, 0.into()), /* market orders have no
-                                                                    * surplus fee */
+                                // market orders have no surplus fee
+                                Some(_) => (fee.order, 0.into()),
                                 None => (fee.order, fee.sell),
                             })
                             .collect();
