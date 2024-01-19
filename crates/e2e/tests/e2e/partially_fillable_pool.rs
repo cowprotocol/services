@@ -118,7 +118,6 @@ async fn test(web3: Web3) {
     );
 
     let metadata_updated = || async {
-        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()

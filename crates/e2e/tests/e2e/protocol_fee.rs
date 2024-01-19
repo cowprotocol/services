@@ -329,7 +329,6 @@ async fn execute_test(
         .unwrap();
 
     let metadata_updated = || async {
-        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         is_approximately_equal(order.metadata.executed_surplus_fee, expected_surplus_fee)
     };
