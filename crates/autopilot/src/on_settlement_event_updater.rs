@@ -190,15 +190,7 @@ impl OnSettlementEventUpdater {
                         // executed fees for each order execution
                         let order_executions = all_fees
                             .into_iter()
-                            .zip(order_fees.iter())
-                            .filter_map(|(fee, (_, order_fee))| match order_fee {
-                                // filter out orders with order_fee
-                                // since their fee can already be fetched from the database table
-                                // `orders` so no point in storing the same
-                                // value twice, in another table
-                                Some(_) => None,
-                                None => Some((fee.order, fee.sell)),
-                            })
+                            .map(|fee| (fee.order, fee.sell))
                             .collect();
                         (fee, order_executions)
                     };
