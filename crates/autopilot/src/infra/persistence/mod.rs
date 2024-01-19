@@ -87,28 +87,6 @@ impl Persistence {
             .map_err(Error::DbError)
     }
 
-    /// Inserts the given events with the current timestamp into the DB.
-    /// If this function encounters an error it will only be printed. More
-    /// elaborate error handling is not necessary because this is just
-    /// debugging information.
-    pub fn store_order_events(&self, events: Vec<(domain::OrderUid, boundary::OrderEventLabel)>) {
-        let db = self.postgres.clone();
-        tokio::spawn(
-            async move {
-                let start = Instant::now();
-                match boundary::store_order_events(&db, &events, Utc::now()).await {
-                    Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), events_count=events.len(), "stored order events");
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err, "failed to insert order events");
-                    }
-                }
-            }
-            .instrument(tracing::Span::current()),
-        );
-    }
-
     /// Inserts an order event for each order uid in the given set.
     /// Unique order uids are required to avoid inserting events with the same
     /// label within the same order_uid. If this function encounters an error it

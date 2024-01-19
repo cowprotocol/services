@@ -18,25 +18,6 @@ impl super::Postgres {
     }
 }
 
-pub async fn store_order_events(
-    db: &super::Postgres,
-    events: &[(domain::OrderUid, OrderEventLabel)],
-    timestamp: DateTime<Utc>,
-) -> Result<()> {
-    let mut ex = db.pool.begin().await.context("begin transaction")?;
-    for chunk in events.chunks(db.config.insert_batch_size.get()) {
-        let batch = chunk.iter().map(|(uid, label)| OrderEvent {
-            order_uid: ByteArray(uid.0),
-            timestamp,
-            label: *label,
-        });
-
-        order_events::insert_order_events_batch(&mut ex, batch).await?
-    }
-    ex.commit().await?;
-    Ok(())
-}
-
 pub async fn store_non_subsequent_label_order_events(
     db: &super::Postgres,
     order_uids: HashSet<domain::OrderUid>,
