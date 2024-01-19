@@ -88,11 +88,10 @@ async fn test(web3: Web3) {
     wait_for_condition(TIMEOUT, all_events_registered)
         .await
         .unwrap();
-
-    // mint block to re-trigger OnSettlementEventUpdater update loop
-    onchain.mint_block().await;
-
+    
     let cip_20_data_updated = || async {
+        onchain.mint_block().await;
+
         let data = match crate::database::most_recent_cip_20_data(services.db()).await {
             Some(data) => data,
             None => return false,

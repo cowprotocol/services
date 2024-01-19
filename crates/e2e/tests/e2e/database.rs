@@ -44,8 +44,8 @@ pub struct Cip20Data {
 pub async fn most_recent_cip_20_data(db: &Db) -> Option<Cip20Data> {
     let mut db = db.acquire().await.unwrap();
 
-    const LAST_AUCTION_ID: &str =
-        "SELECT auction_id FROM settlements WHERE auction_id IS NOT NULL ORDER BY auction_id DESC LIMIT 1";
+    const LAST_AUCTION_ID: &str = "SELECT auction_id FROM settlements WHERE auction_id IS NOT \
+                                   NULL ORDER BY auction_id DESC LIMIT 1";
     let auction_id: i64 = sqlx::query_scalar(LAST_AUCTION_ID)
         .fetch_optional(db.deref_mut())
         .await

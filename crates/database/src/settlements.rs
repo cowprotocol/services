@@ -180,9 +180,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db)
-            .await
-            .unwrap();
+        let settlement = get_settlement_without_auction(&mut db).await.unwrap();
 
         assert!(settlement.is_none());
     }
