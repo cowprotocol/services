@@ -3,7 +3,7 @@ use {
     anyhow::Context,
     chrono::Utc,
     itertools::Itertools,
-    std::sync::Arc,
+    std::{collections::HashSet, sync::Arc},
     tokio::time::Instant,
     tracing::Instrument,
 };
@@ -44,6 +44,16 @@ impl Persistence {
                 self.archive_auction(auction_id, auction);
                 auction_id
             })
+            .map_err(Error::DbError)
+    }
+
+    pub async fn solvable_orders(
+        &self,
+        min_valid_to: u32,
+    ) -> Result<domain::SolvableOrders, Error> {
+        self.postgres
+            .solvable_orders(min_valid_to)
+            .await
             .map_err(Error::DbError)
     }
 
@@ -96,6 +106,34 @@ impl Persistence {
                 }
             }
             .instrument(tracing::Span::current()),
+        );
+    }
+
+    /// Inserts an order event for each order uid in the given set.
+    /// Unique order uids are required to avoid inserting events with the same
+    /// label within the same order_uid. If this function encounters an error it
+    /// will only be printed. More elaborate error handling is not necessary
+    /// because this is just debugging information.
+    pub fn store_non_subsequent_label_order_events(
+        &self,
+        order_uids: HashSet<domain::OrderUid>,
+        label: boundary::OrderEventLabel,
+    ) {
+        let db = self.postgres.clone();
+        tokio::spawn(
+            async move {
+                let start = Instant::now();
+                let count = order_uids.len();
+                match boundary::store_non_subsequent_label_order_events(&db, order_uids, label, Utc::now()).await {
+                    Ok(_) => {
+                        tracing::debug!(elapsed=?start.elapsed(), events_count=count, "stored non-subsequent order events");
+                    }
+                    Err(err) => {
+                        tracing::warn!(?err, "failed to insert non-subsequent order events");
+                    }
+                }
+            }
+                .instrument(tracing::Span::current()),
         );
     }
 
