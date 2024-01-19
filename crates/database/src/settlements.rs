@@ -155,4 +155,35 @@ mod tests {
         let results = recent_settlement_tx_hashes(&mut db, 3..5).await.unwrap();
         assert_eq!(results, &[]);
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_settlement_auction() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = Default::default();
+        crate::events::insert_settlement(&mut db, &event, &Default::default())
+            .await
+            .unwrap();
+
+        let settlement = get_settlement_without_auction(&mut db)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(settlement.block_number, event.block_number);
+        assert_eq!(settlement.log_index, event.log_index);
+
+        update_settlement_auction(&mut db, 0, 0, Some(1), AuctionKind::Valid)
+            .await
+            .unwrap();
+
+        let settlement = get_settlement_without_auction(&mut db)
+            .await
+            .unwrap();
+
+        assert!(settlement.is_none());
+    }
 }

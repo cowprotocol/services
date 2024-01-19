@@ -103,6 +103,8 @@ impl OnSettlementEventUpdater {
                 }
             }
             current_block = block_stream.next().await.expect("blockchains never end");
+            // Wait a bit more to not race with the event indexer.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 
