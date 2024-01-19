@@ -88,7 +88,7 @@ async fn test(web3: Web3) {
     wait_for_condition(TIMEOUT, all_events_registered)
         .await
         .unwrap();
-    
+
     let cip_20_data_updated = || async {
         onchain.mint_block().await;
 
