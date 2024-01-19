@@ -190,7 +190,12 @@ impl OnSettlementEventUpdater {
                         // executed fees for each order execution
                         let order_executions = all_fees
                             .into_iter()
-                            .map(|fee| (fee.order, fee.sell))
+                            .zip(order_fees.iter())
+                            .map(|(fee, (_, order_fee))| match order_fee {
+                                // market orders have no surplus fee
+                                Some(_) => (fee.order, 0.into()),
+                                None => (fee.order, fee.sell),
+                            })
                             .collect();
                         (fee, order_executions)
                     };
