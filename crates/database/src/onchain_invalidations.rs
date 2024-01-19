@@ -1,7 +1,7 @@
 use {
     crate::{
         events::EventIndex,
-        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
+        order_events::{insert_non_subsequent_label_order_event, OrderEvent, OrderEventLabel},
         OrderUid,
         PgTransaction,
     },
@@ -22,7 +22,7 @@ pub async fn insert_onchain_invalidations(
 ) -> Result<(), sqlx::Error> {
     for (index, event) in events {
         insert_onchain_invalidation(ex, index, event).await?;
-        insert_order_event(
+        insert_non_subsequent_label_order_event(
             ex,
             &OrderEvent {
                 label: OrderEventLabel::Cancelled,

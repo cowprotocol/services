@@ -45,28 +45,6 @@ pub struct OrderEvent {
     pub label: OrderEventLabel,
 }
 
-/// Inserts a row into the `order_events` table.
-pub async fn insert_order_event(
-    ex: &mut PgConnection,
-    event: &OrderEvent,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-        INSERT INTO order_events (
-            order_uid,
-            timestamp,
-            label
-        )
-        VALUES ($1, $2, $3)
-    "#;
-    sqlx::query(QUERY)
-        .bind(event.order_uid)
-        .bind(event.timestamp)
-        .bind(event.label)
-        .execute(ex)
-        .await
-        .map(|_| ())
-}
-
 /// Inserts a row into the `order_events` table only if the latest event for the
 /// corresponding order UID has a different label than the provided event..
 pub async fn insert_non_subsequent_label_order_event(
@@ -112,4 +90,23 @@ pub async fn delete_order_events_before(
         .execute(pool)
         .await
         .map(|result| result.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::{
+            byte_array::ByteArray,
+            order_events::{OrderEvent, OrderEventLabel},
+        },
+        itertools::Itertools,
+        sqlx::{PgPool, Row},
+    };
+
+    #[tokio::test]
+    #[ignore]
+    async fn order_events_cleaner_flow() {
+        
+    }
 }
