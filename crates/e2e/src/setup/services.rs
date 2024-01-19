@@ -113,8 +113,6 @@ impl<'a> Services<'a> {
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args = [
             "orderbook".to_string(),
-            "--enable-presign-orders=true".to_string(),
-            "--enable-eip1271-orders=true".to_string(),
             "--enable-custom-interactions=true".to_string(),
             "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(

@@ -1205,7 +1205,6 @@ components:
               TransferEthToContract,
               InvalidNativeSellToken,
               SameBuyAndSellToken,
-              UnsupportedSignature,
               UnsupportedToken,
               UnsupportedCustomInteraction
               InvalidAppData,
@@ -1264,7 +1263,6 @@ components:
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
-              UnsupportedSignature,
             ]
         description:
           type: string

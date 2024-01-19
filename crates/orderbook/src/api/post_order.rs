@@ -81,10 +81,6 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::UnsupportedSignature => with_status(
-                error("UnsupportedSignature", "signing scheme is not supported"),
-                StatusCode::BAD_REQUEST,
-            ),
             PartialValidationError::UnsupportedToken { token, reason } => with_status(
                 error(
                     "UnsupportedToken",
