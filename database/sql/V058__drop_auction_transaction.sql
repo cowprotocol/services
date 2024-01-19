@@ -11,7 +11,7 @@ UPDATE settlements
 SET auction_kind = 'valid',
     auction_id = auction_transaction.auction_id
 FROM auction_transaction
-WHERE settlements.from = auction_transaction.from AND settlements.nonce = auction_transaction.nonce;
+WHERE settlements.tx_from = auction_transaction.tx_from AND settlements.tx_nonce = auction_transaction.tx_nonce;
 
 -- Step 2b: Populate auction_kind and auction_id columns
 -- For all settlements that have auction_id = NULL, set auction_kind to 'invalid'
@@ -29,7 +29,7 @@ WHERE
     AND block_number > (
         SELECT MAX(block_number) 
             FROM settlements
-            WHERE auction_kind = 'valid';
+            WHERE auction_kind = 'valid'
     );
 
 -- Step 4: Drop the auction_transaction table, and the tx_from and tx_nonce columns from the settlements table
