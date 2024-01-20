@@ -37,3 +37,46 @@ pub fn to_domain(
         signature: order.signature.into(),
     }
 }
+
+/// Recover order uid from order data and signature
+pub fn order_uid(
+    trade: &domain::settlement::encoded::tokenized::Trade,
+    tokens: &Vec<domain::settlement::encoded::tokenized::Token>,
+    domain_separator: &domain::eth::DomainSeparator,
+) -> Result<domain::OrderUid, Error> {
+    let flags = domain::settlement::encoded::TradeFlags(trade.8);
+    let signature = crate::boundary::Signature::from_bytes(flags.signing_scheme(), &trade.10 .0)
+        .map_err(Error::Signature)?;
+
+    let order = model::order::OrderData {
+        sell_token: tokens[trade.0.as_u64() as usize].into(),
+        buy_token: tokens[trade.1.as_u64() as usize].into(),
+        sell_amount: trade.3,
+        buy_amount: trade.4,
+        valid_to: trade.5,
+        app_data: crate::boundary::AppDataHash(trade.6 .0),
+        fee_amount: trade.7,
+        kind: flags.order_kind(),
+        partially_fillable: flags.partially_fillable(),
+        receiver: Some(trade.2),
+        sell_token_balance: flags.sell_token_balance(),
+        buy_token_balance: flags.buy_token_balance(),
+    };
+    let domain_separator = crate::boundary::DomainSeparator(domain_separator.0);
+    let owner = signature
+        .recover_owner(
+            &signature.to_bytes(),
+            &domain_separator,
+            &order.hash_struct(),
+        )
+        .map_err(Error::RecoverOwner)?;
+    Ok(order.uid(&domain_separator, &owner).into())
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("bad signature {0}")]
+    Signature(anyhow::Error),
+    #[error("recover owner {0}")]
+    RecoverOwner(anyhow::Error),
+}
