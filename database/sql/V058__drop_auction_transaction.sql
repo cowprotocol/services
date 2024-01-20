@@ -32,7 +32,7 @@ WHERE
             WHERE auction_kind = 'valid'
     );
 
--- Step 4: Drop the auction_transaction table, and the tx_from and tx_nonce columns from the settlements table
+-- Step 3: Drop the auction_transaction table, and the tx_from and tx_nonce columns from the settlements table
 DROP TABLE auction_transaction;
 ALTER TABLE settlements
     DROP COLUMN tx_from,

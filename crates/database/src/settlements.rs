@@ -1,6 +1,6 @@
 use {
     crate::{events::EventIndex, TransactionHash},
-    sqlx::{postgres::PgQueryResult, PgConnection},
+    sqlx::PgConnection,
     std::ops::Range,
 };
 
@@ -72,7 +72,7 @@ pub async fn update_settlement_auction(
     log_index: i64,
     auction_id: Option<i64>,
     auction_kind: AuctionKind,
-) -> Result<PgQueryResult, sqlx::Error> {
+) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
 SET auction_kind = $1, auction_id = $2
@@ -85,6 +85,7 @@ WHERE block_number = $3 AND log_index = $4
         .bind(log_index)
         .execute(ex)
         .await
+        .map(|_| ())
 }
 
 #[cfg(test)]
@@ -176,9 +177,15 @@ mod tests {
         assert_eq!(settlement.block_number, event.block_number);
         assert_eq!(settlement.log_index, event.log_index);
 
-        update_settlement_auction(&mut db, 0, 0, Some(1), AuctionKind::Valid)
-            .await
-            .unwrap();
+        update_settlement_auction(
+            &mut db,
+            event.block_number,
+            event.log_index,
+            Some(1),
+            AuctionKind::Valid,
+        )
+        .await
+        .unwrap();
 
         let settlement = get_settlement_without_auction(&mut db).await.unwrap();
 
