@@ -60,13 +60,6 @@ impl IntoWarpReply for PartialValidationErrorWrapper {
                 error("ExcessiveValidTo", "validTo is too far into the future"),
                 StatusCode::BAD_REQUEST,
             ),
-            PartialValidationError::TransferEthToContract => with_status(
-                error(
-                    "TransferEthToContract",
-                    "Sending Ether to smart contract wallets is currently not supported",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             PartialValidationError::InvalidNativeSellToken => with_status(
                 error(
                     "InvalidNativeSellToken",
@@ -100,13 +93,6 @@ pub struct AppDataValidationErrorWrapper(pub AppDataValidationError);
 impl IntoWarpReply for AppDataValidationErrorWrapper {
     fn into_warp_reply(self) -> ApiReply {
         match self.0 {
-            AppDataValidationError::UnsupportedCustomInteraction => with_status(
-                error(
-                    "UnsupportedCustomInteraction",
-                    "The specified custom pre- or post- interaction is unsupported",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             AppDataValidationError::Invalid(err) => with_status(
                 error("InvalidAppData", format!("{:?}", err)),
                 StatusCode::BAD_REQUEST,

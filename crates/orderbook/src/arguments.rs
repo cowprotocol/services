@@ -125,14 +125,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
 
-    /// Enable buy ETH orders paying to smart contract wallets.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_eth_smart_contract_payments: bool,
-
-    /// Enable support for orders with custom pre- and post-interactions.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_custom_interactions: bool,
-
     /// If set, the orderbook will use this IPFS gateway to fetch full app data
     /// for orders that only specify the contract app data hash.
     #[clap(long, env)]
@@ -176,13 +168,11 @@ impl std::fmt::Display for Arguments {
             native_price_estimators,
             fast_price_estimation_results_required,
             max_limit_orders_per_user,
-            enable_custom_interactions,
             ipfs_gateway,
             ipfs_pinata_auth,
             hooks_contract_address,
             app_data_size_limit,
             db_url,
-            enable_eth_smart_contract_payments,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -239,11 +229,6 @@ impl std::fmt::Display for Arguments {
             "max_limit_orders_per_user: {}",
             max_limit_orders_per_user
         )?;
-        writeln!(
-            f,
-            "enable_custom_interactions: {:?}",
-            enable_custom_interactions
-        )?;
         writeln!(f, "ipfs_gateway: {:?}", ipfs_gateway)?;
         display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth)?;
         display_option(
@@ -252,11 +237,6 @@ impl std::fmt::Display for Arguments {
             &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
-        writeln!(
-            f,
-            "enable_eth_smart_contract_payments: {}",
-            enable_eth_smart_contract_payments
-        )?;
 
         Ok(())
     }
