@@ -6,12 +6,10 @@ pub mod transaction;
 pub use {encoded::Encoded, event::Event, transaction::Transaction};
 
 /// A transaction that settles a settlement. Interacts with the settlement
-/// contract.
+/// contract `settle` function.
 pub struct Settlement {
-    /// Mined transaction parameters.
-    pub transaction: Transaction,
-    /// Encoded transaction data as expected by settlement contract
     pub encoded: Encoded,
+    pub transaction: Transaction,
 }
 
 impl Settlement {
@@ -20,8 +18,8 @@ impl Settlement {
         let domain_separator = eth.contracts().settlement_domain_separator();
         let encoded = Encoded::new(&transaction.input, domain_separator)?;
         Ok(Self {
-            transaction,
             encoded,
+            transaction,
         })
     }
 }

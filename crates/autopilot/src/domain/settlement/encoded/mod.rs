@@ -1,4 +1,4 @@
-//! This module defines Settlement in an onchain format.
+//! This module defines Settlement in an onchain compatible format.
 
 use {
     crate::{
@@ -10,6 +10,10 @@ use {
 
 pub mod tokenized;
 
+/// Settlement in an encoded format, as expected by the settlement contract
+/// `settle` function.
+///
+/// Type safe representation of the settlement transaction calldata.
 #[derive(Debug)]
 pub struct Encoded {
     tokens: Vec<eth::Address>,
