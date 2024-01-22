@@ -13,5 +13,5 @@ pub use {
     },
     fee::ProtocolFee,
     quote::Quote,
-    settlement::Event,
+    settlement::{Event, Settlement},
 };

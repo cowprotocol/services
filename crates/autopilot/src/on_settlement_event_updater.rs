@@ -37,6 +37,7 @@ use {
             Postgres,
         },
         decoded_settlement::{DecodedSettlement, DecodingError},
+        domain,
         infra,
     },
     anyhow::{Context, Result},
@@ -108,13 +109,24 @@ impl OnSettlementEventUpdater {
         let hash = H256(event.tx_hash.0);
         tracing::debug!("updating settlement details for tx {hash:?}");
 
-        let transaction = self
-            .eth
-            .transaction(hash.into())
-            .await?
-            .with_context(|| format!("no tx {hash:?}"))?;
+        let settlement = domain::Settlement::new(hash.into(), self.eth.clone()).await;
+        let update = match settlement {
+            Ok(settlement) => todo!("update settlement details"),
+            Err(domain::settlement::Error::Blockchain(_))
+            | Err(domain::settlement::Error::TransactionNotFound) => {
+                tracing::warn!(?hash, "blockchain error, retry");
+                return Ok(false);
+            }
+        };
 
-        let auction_id = Self::recover_auction_id_from_calldata(&mut ex, &transaction).await?;
+        // let transaction = self
+        //     .eth
+        //     .transaction(hash.into())
+        //     .await?
+        //     .with_context(|| format!("no tx {hash:?}"))?;
+
+        // let auction_id = Self::recover_auction_id_from_calldata(&mut ex,
+        // &transaction).await?;
 
         let mut update = SettlementUpdate {
             block_number: event.block_number,

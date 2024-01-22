@@ -3,7 +3,7 @@
 use {
     crate::{
         boundary,
-        domain::{self, auction::order, eth},
+        domain::{self, auction::order, eth, AuctionId},
     },
     ethcontract::{common::FunctionExt, tokens::Tokenize, Address, Bytes, U256},
 };
@@ -23,7 +23,7 @@ pub struct Encoded {
     /// Data that was appended to the regular call data of the `settle()` call
     /// as a form of on-chain meta data. This gets used to associated a
     /// settlement with an auction.
-    auction_id: i64,
+    auction_id: AuctionId,
 }
 
 impl Encoded {
@@ -76,7 +76,7 @@ impl Encoded {
         let interactions = interactions.map(|inner| inner.into_iter().map(Into::into).collect());
         let metadata: Option<[u8; Self::META_DATA_LEN]> = metadata.try_into().ok();
         let auction_id = metadata
-            .map(i64::from_be_bytes)
+            .map(AuctionId::from_be_bytes)
             .ok_or(Error::MissingAuctionId)?;
 
         Ok(Self {
@@ -86,6 +86,10 @@ impl Encoded {
             interactions,
             auction_id,
         })
+    }
+
+    pub fn auction_id(&self) -> AuctionId {
+        self.auction_id
     }
 }
 

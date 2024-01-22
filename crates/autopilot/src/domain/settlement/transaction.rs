@@ -3,9 +3,26 @@ use crate::{domain::eth, util};
 /// An on-chain transaction that settles a settlement.
 #[derive(Debug)]
 pub struct Transaction {
-    pub hash: eth::TxId,
-    pub from: eth::Address,
-    pub input: CallData,
+    hash: eth::TxId,
+    from: eth::Address,
+    input: CallData,
+}
+
+impl Transaction {
+    /// The hash of the transaction.
+    pub fn hash(&self) -> eth::TxId {
+        self.hash
+    }
+
+    /// The address of the sender.
+    pub fn from(&self) -> eth::Address {
+        self.from
+    }
+
+    /// The call data of the transaction.
+    pub fn input(&self) -> &CallData {
+        &self.input
+    }
 }
 
 /// Call data in a format expected by the settlement contract.
