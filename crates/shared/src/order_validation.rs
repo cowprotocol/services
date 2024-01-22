@@ -1491,67 +1491,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_out_of_market_orders_when_limit_orders_disabled() {
-        let expected_buy_amount = U256::from(100);
-
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter.expect_find_quote().returning(move |_, _| {
-            Ok(Quote {
-                buy_amount: expected_buy_amount,
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            })
-        });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
-            hashset!(),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: expected_buy_amount + 1, // buy more than expected
-            sell_amount: U256::from(1),
-            fee_amount: U256::from(1),
-            kind: OrderKind::Sell,
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            ..Default::default()
-        };
-        let (order, quote) = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await
-            .unwrap();
-
-        // Out-of-price orders are intentionally marked as liquidity
-        // orders!
-        assert_eq!(order.metadata.class, OrderClass::Liquidity);
-        assert!(quote.is_some());
-    }
-
-    #[tokio::test]
     async fn post_validate_err_wrong_owner() {
         let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
