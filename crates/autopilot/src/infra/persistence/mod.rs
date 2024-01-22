@@ -104,10 +104,10 @@ impl Persistence {
                 let count = order_uids.len();
                 match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
                     Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), events_count=count, "stored non-subsequent order events");
+                        tracing::debug!(elapsed=?start.elapsed(), events_count=count, "stored order events");
                     }
                     Err(err) => {
-                        tracing::warn!(?err, "failed to insert non-subsequent order events");
+                        tracing::warn!(?err, "failed to insert order events");
                     }
                 }
             }
