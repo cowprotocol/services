@@ -60,10 +60,19 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             config
                 .mempools
                 .iter()
-                .map(|mempool| {
-                    Mempool::new(mempool.to_owned(), eth.clone(), tx_pool.clone()).unwrap()
+                .map(|mempool| match mempool.submission {
+                    infra::mempool::SubmissionLogic::Boundary => Mempool::Boundary(
+                        crate::boundary::Mempool::new(
+                            mempool.to_owned(),
+                            eth.clone(),
+                            tx_pool.clone(),
+                        )
+                        .unwrap(),
+                    ),
+                    infra::mempool::SubmissionLogic::Native => todo!("implement"),
                 })
                 .collect(),
+            eth.clone(),
         )
         .unwrap(),
         eth,

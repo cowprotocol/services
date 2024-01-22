@@ -928,10 +928,6 @@ components:
           description: see `OrderParameters::feeAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        solverFee:
-          description: Amount that the signed fee would be without subsidies.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
@@ -995,7 +991,6 @@ components:
         - sellAmount
         - buyAmount
         - userFee
-        - solverFee
         - validTo
         - kind
         - receiver

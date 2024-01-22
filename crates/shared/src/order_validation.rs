@@ -745,6 +745,7 @@ impl OrderValidating for OrderValidator {
                     &quote_parameters.buy_amount,
                     &quote.sell_amount,
                     &quote.buy_amount,
+                    &quote.fee_amount,
                 ) =>
             {
                 tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
@@ -981,8 +982,10 @@ pub fn is_order_outside_market_price(
     buy_amount: &U256,
     quote_sell_amount: &U256,
     quote_buy_amount: &U256,
+    quote_fee_amount: &U256,
 ) -> bool {
-    sell_amount.full_mul(*quote_buy_amount) < quote_sell_amount.full_mul(*buy_amount)
+    sell_amount.full_mul(*quote_buy_amount)
+        < (quote_sell_amount + quote_fee_amount).full_mul(*buy_amount)
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
@@ -2414,8 +2417,9 @@ mod tests {
     #[test]
     fn detects_market_orders() {
         let quote = Quote {
-            sell_amount: 100.into(),
+            sell_amount: 90.into(),
             buy_amount: 100.into(),
+            fee_amount: 10.into(),
             ..Default::default()
         };
 
@@ -2425,6 +2429,7 @@ mod tests {
             &"100".into(),
             &quote.sell_amount,
             &quote.buy_amount,
+            &quote.fee_amount,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
@@ -2432,6 +2437,7 @@ mod tests {
             &"90".into(),
             &quote.sell_amount,
             &quote.buy_amount,
+            &quote.fee_amount,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
@@ -2439,6 +2445,7 @@ mod tests {
             &"1000".into(),
             &quote.sell_amount,
             &quote.buy_amount,
+            &quote.fee_amount,
         ));
     }
 }
