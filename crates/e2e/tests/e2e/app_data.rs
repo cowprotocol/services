@@ -4,6 +4,7 @@ use {
     model::{
         app_data::AppDataHash,
         order::{OrderCreation, OrderCreationAppData, OrderKind},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
     reqwest::StatusCode,
@@ -101,6 +102,23 @@ async fn app_data(web3: Web3) {
     let order3 = create_order(OrderCreationAppData::Hash {
         hash: app_data_hash,
     });
+    services
+        .submit_quote(&OrderQuoteRequest {
+            sell_token: order3.sell_token,
+            buy_token: order3.buy_token,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee {
+                    value: order3.sell_amount.try_into().unwrap(),
+                },
+            },
+            app_data: OrderCreationAppData::Hash {
+                hash: app_data_hash,
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
     let uid = services.create_order(&order3).await.unwrap();
     let order3_ = services.get_order(&uid).await.unwrap();
     assert_eq!(order3_.data.app_data, app_data_hash);

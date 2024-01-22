@@ -89,7 +89,7 @@ impl Execution {
     ) -> Result<()> {
         match self {
             Execution::LimitOrder(order) => {
-                let scoring_fee = match order.order.solver_determines_fee() {
+                let fee = match order.order.solver_determines_fee() {
                     true => {
                         let fee = order.executed_fee_amount;
                         match enforce_correct_fees {
@@ -97,12 +97,12 @@ impl Execution {
                             false => fee.unwrap_or_default(),
                         }
                     }
-                    false => order.order.scoring_fee,
+                    false => order.order.user_fee,
                 };
 
                 let execution = LimitOrderExecution {
                     filled: order.executed_amount(),
-                    scoring_fee,
+                    fee,
                 };
 
                 settlement.with_liquidity(&order.order, execution)
@@ -739,7 +739,7 @@ mod tests {
                         ..Default::default()
                     },
                     executed_amount: 101.into(),
-                    scoring_fee: 0.into(),
+                    fee: 42.into(),
                 },
                 sell_token_price: 102.into(),
                 buy_token_price: 101.into(),

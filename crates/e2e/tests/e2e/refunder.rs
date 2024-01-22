@@ -25,7 +25,7 @@ async fn refunder_tx(web3: Web3) {
         .await;
 
     let services = Services::new(onchain.contracts()).await;
-    services.start_autopilot(vec![]);
+    services.start_autopilot(None, vec![]);
     services.start_api(vec![]).await;
 
     // Get quote id for order placement
