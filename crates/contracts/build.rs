@@ -586,6 +586,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str(GOERLI, "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
+            .add_network_str(GNOSIS, "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
         // Not available on Sepolia or Gnosis Chain
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
@@ -593,6 +594,7 @@ fn main() {
         builder
             .add_network_str(MAINNET, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str(GOERLI, "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
+            .add_network_str(GNOSIS, "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
         // Not available on Sepolia or Gnosis Chain
     });
     generate_contract_with_config("UniswapV3SwapRouter", |builder| {
