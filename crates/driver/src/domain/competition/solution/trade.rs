@@ -77,20 +77,11 @@ impl Fulfillment {
         self.executed
     }
 
-    /// Returns the fee that should be considered as collected when
-    /// scoring a solution.
-    pub fn scoring_fee(&self) -> order::SellAmount {
-        match self.fee {
-            Fee::Static => self.order.fee.solver,
-            Fee::Dynamic(fee) => fee,
-        }
-    }
-
     /// Returns the effectively paid fee from the user's perspective
     /// considering their signed order and the uniform clearing prices
     pub fn fee(&self) -> order::SellAmount {
         match self.fee {
-            Fee::Static => self.order.fee.user,
+            Fee::Static => self.order.user_fee,
             Fee::Dynamic(fee) => fee,
         }
     }

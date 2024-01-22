@@ -2,7 +2,7 @@ use {
     super::{
         balancer_sor::BalancerSor,
         baseline::BaselinePriceEstimator,
-        competition::{CompetitionEstimator, RacingCompetitionEstimator},
+        competition::CompetitionEstimator,
         external::ExternalPriceEstimator,
         http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
@@ -354,13 +354,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<dyn PriceEstimating>> {
         let estimators = self.get_estimators(sources, |entry| &entry.fast)?;
-        Ok(Arc::new(self.sanitized(Arc::new(
-            RacingCompetitionEstimator::new(
-                vec![estimators],
-                fast_price_estimation_results_required,
-                PriceRanking::BestBangForBuck { native, gas },
-            ),
-        ))))
+        Ok(Arc::new(
+            self.sanitized(Arc::new(
+                CompetitionEstimator::new(
+                    vec![estimators],
+                    PriceRanking::BestBangForBuck { native, gas },
+                )
+                .with_early_return(fast_price_estimation_results_required),
+            )),
+        ))
     }
 
     pub fn native_price_estimator(
@@ -384,11 +386,9 @@ impl<'a> PriceEstimatorFactory<'a> {
             })
             .collect::<Result<Vec<Vec<_>>>>()?;
 
-        let competition_estimator = RacingCompetitionEstimator::new(
-            estimators,
-            results_required,
-            PriceRanking::MaxOutAmount,
-        );
+        let competition_estimator =
+            CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
+                .with_early_return(results_required);
         let native_estimator = Arc::new(CachingNativePriceEstimator::new(
             Box::new(competition_estimator),
             self.args.native_price_cache_max_age,
