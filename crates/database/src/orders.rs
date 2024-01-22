@@ -1,7 +1,7 @@
 use {
     crate::{
         onchain_broadcasted_orders::OnchainOrderPlacementError,
-        order_events::{insert_non_subsequent_label_order_event, OrderEvent, OrderEventLabel},
+        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
         Address,
         AppId,
         OrderUid,
@@ -107,7 +107,7 @@ pub async fn insert_orders_and_ignore_conflicts(
 ) -> Result<(), sqlx::Error> {
     for order in orders {
         insert_order_and_ignore_conflicts(ex, order).await?;
-        insert_non_subsequent_label_order_event(
+        insert_order_event(
             ex,
             &OrderEvent {
                 label: OrderEventLabel::Created,

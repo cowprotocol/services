@@ -5,7 +5,7 @@ use {
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        order_events::{insert_non_subsequent_label_order_event, OrderEvent, OrderEventLabel},
+        order_events::{insert_order_event, OrderEvent, OrderEventLabel},
         orders::{FullOrder, OrderKind as DbOrderKind},
     },
     ethcontract::H256,
@@ -102,7 +102,7 @@ async fn cancel_order(
     now: DateTime<Utc>,
 ) -> Result<()> {
     let uid = ByteArray(order_uid.0);
-    insert_non_subsequent_label_order_event(
+    insert_order_event(
         ex,
         &OrderEvent {
             order_uid: uid,
@@ -116,7 +116,7 @@ async fn cancel_order(
 }
 
 async fn insert_order(order: &Order, ex: &mut PgConnection) -> Result<(), InsertionError> {
-    insert_non_subsequent_label_order_event(
+    insert_order_event(
         ex,
         &OrderEvent {
             order_uid: ByteArray(order.metadata.uid.0),

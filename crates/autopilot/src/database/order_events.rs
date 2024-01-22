@@ -18,7 +18,7 @@ impl super::Postgres {
     }
 }
 
-pub async fn store_non_subsequent_label_order_events(
+pub async fn store_order_events(
     db: &super::Postgres,
     order_uids: HashSet<domain::OrderUid>,
     label: OrderEventLabel,
@@ -32,7 +32,7 @@ pub async fn store_non_subsequent_label_order_events(
             label,
         };
 
-        order_events::insert_non_subsequent_label_order_event(&mut ex, &event).await?
+        order_events::insert_order_event(&mut ex, &event).await?
     }
     ex.commit().await?;
     Ok(())

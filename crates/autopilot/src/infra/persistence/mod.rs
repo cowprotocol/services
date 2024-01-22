@@ -102,7 +102,7 @@ impl Persistence {
             async move {
                 let start = Instant::now();
                 let count = order_uids.len();
-                match boundary::store_non_subsequent_label_order_events(&db, order_uids, label, Utc::now()).await {
+                match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
                     Ok(_) => {
                         tracing::debug!(elapsed=?start.elapsed(), events_count=count, "stored non-subsequent order events");
                     }

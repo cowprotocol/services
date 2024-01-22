@@ -2,7 +2,7 @@ pub use {
     crate::{
         database::{
             competition::Competition,
-            order_events::{store_non_subsequent_label_order_events, OrderEventLabel},
+            order_events::{store_order_events, OrderEventLabel},
         },
         driver_model::{reveal, settle, solve},
     },

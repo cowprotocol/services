@@ -47,7 +47,7 @@ pub struct OrderEvent {
 
 /// Inserts a row into the `order_events` table only if the latest event for the
 /// corresponding order UID has a different label than the provided event..
-pub async fn insert_non_subsequent_label_order_event(
+pub async fn insert_order_event(
     ex: &mut PgConnection,
     event: &OrderEvent,
 ) -> Result<(), sqlx::Error> {
@@ -116,33 +116,25 @@ mod tests {
             timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
         };
-        insert_non_subsequent_label_order_event(&mut ex, &event_a)
-            .await
-            .unwrap();
+        insert_order_event(&mut ex, &event_a).await.unwrap();
         let event_b = OrderEvent {
             order_uid: ByteArray([1; 56]),
             timestamp: now - chrono::Duration::milliseconds(200),
             label: OrderEventLabel::Invalid,
         };
-        insert_non_subsequent_label_order_event(&mut ex, &event_b)
-            .await
-            .unwrap();
+        insert_order_event(&mut ex, &event_b).await.unwrap();
         let event_c = OrderEvent {
             order_uid: ByteArray([2; 56]),
             timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Invalid,
         };
-        insert_non_subsequent_label_order_event(&mut ex, &event_c)
-            .await
-            .unwrap();
+        insert_order_event(&mut ex, &event_c).await.unwrap();
         let event_d = OrderEvent {
             order_uid: ByteArray([1; 56]),
             timestamp: now,
             label: OrderEventLabel::Invalid,
         };
-        insert_non_subsequent_label_order_event(&mut ex, &event_d)
-            .await
-            .unwrap();
+        insert_order_event(&mut ex, &event_d).await.unwrap();
 
         ex.commit().await.unwrap();
 
