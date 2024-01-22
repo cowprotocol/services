@@ -665,25 +665,6 @@ impl OrderValidating for OrderValidator {
             },
         }
 
-        // Check if we need to re-classify the market order if it is outside the market
-        // price. We consider out-of-price orders as liquidity orders. See
-        // <https://github.com/cowprotocol/services/pull/301>.
-        let class = match (class, &quote) {
-            (OrderClass::Market, Some(quote))
-                if is_order_outside_market_price(
-                    &quote_parameters.sell_amount,
-                    &quote_parameters.buy_amount,
-                    &quote.sell_amount,
-                    &quote.buy_amount,
-                    &quote.fee_amount,
-                ) =>
-            {
-                tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                OrderClass::Liquidity
-            }
-            (_, _) => class,
-        };
-
         self.check_max_limit_orders(owner, &class).await?;
 
         let order = Order {
