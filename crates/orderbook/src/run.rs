@@ -474,8 +474,6 @@ pub async fn run(args: Arguments) {
             Arc::new(CachedCodeFetcher::new(Arc::new(web3.clone()))),
             app_data_validator.clone(),
         )
-        .with_eth_smart_contract_payments(args.enable_eth_smart_contract_payments)
-        .with_custom_interactions(args.enable_custom_interactions)
         .with_verified_quotes(args.price_estimation.trade_simulator.is_some()),
     );
     let ipfs = args

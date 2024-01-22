@@ -106,7 +106,6 @@ pub trait OrderValidating: Send + Sync {
 pub enum PartialValidationError {
     Forbidden,
     ValidTo(OrderValidToError),
-    TransferEthToContract,
     InvalidNativeSellToken,
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
@@ -129,7 +128,6 @@ pub enum AppDataValidationError {
         actual: AppDataHash,
     },
     Invalid(anyhow::Error),
-    UnsupportedCustomInteraction,
 }
 
 #[derive(Debug)]
@@ -252,8 +250,6 @@ pub struct OrderValidator {
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    pub enable_eth_smart_contract_payments: bool,
-    enable_custom_interactions: bool,
     app_data_validator: crate::app_data::Validator,
     request_verified_quotes: bool,
 }
@@ -344,21 +340,9 @@ impl OrderValidator {
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
-            enable_eth_smart_contract_payments: false,
-            enable_custom_interactions: false,
             app_data_validator,
             request_verified_quotes: false,
         }
-    }
-
-    pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
-        self.enable_eth_smart_contract_payments = enable;
-        self
-    }
-
-    pub fn with_custom_interactions(mut self, enable: bool) -> Self {
-        self.enable_custom_interactions = enable;
-        self
     }
 
     pub fn with_verified_quotes(mut self, enable: bool) -> Self {
@@ -454,16 +438,6 @@ impl OrderValidating for OrderValidator {
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
-        if !self.enable_eth_smart_contract_payments && order.buy_token == BUY_ETH_ADDRESS {
-            let code_size = self
-                .code_fetcher
-                .code_size(order.receiver)
-                .await
-                .map_err(PartialValidationError::Other)?;
-            if code_size != 0 {
-                return Err(PartialValidationError::TransferEthToContract);
-            }
-        }
 
         for &token in &[order.sell_token, order.buy_token] {
             if let TokenQuality::Bad { reason } = self
@@ -521,11 +495,6 @@ impl OrderValidating for OrderValidator {
             }
             OrderCreationAppData::Full { full } => validate(full)?,
         };
-
-        if !self.enable_custom_interactions && !app_data.protocol.hooks.is_empty() {
-            // contains some custom interactions while feature is disabled
-            return Err(AppDataValidationError::UnsupportedCustomInteraction);
-        }
 
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
@@ -1358,7 +1327,6 @@ mod tests {
             .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
-            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
             ..validator
         };
@@ -1385,7 +1353,6 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator {
-            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
             eip1271_skip_creation_validation: true,
             ..validator
