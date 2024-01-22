@@ -1,12 +1,14 @@
 use {
+    self::contracts::Contracts,
     crate::boundary,
     ethcontract::dyns::DynWeb3,
     ethrpc::current_block::CurrentBlockStream,
     primitive_types::{H256, U256},
     std::{sync::Arc, time::Duration},
     thiserror::Error,
-    web3::types::TransactionReceipt,
 };
+
+pub mod contracts;
 
 /// Chain ID as defined by EIP-155.
 ///
@@ -22,6 +24,12 @@ impl From<U256> for ChainId {
 
 #[derive(Debug, Clone)]
 pub struct NetworkId(pub String);
+
+impl NetworkId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl From<String> for NetworkId {
     fn from(value: String) -> Self {
@@ -73,6 +81,7 @@ pub struct Ethereum {
     web3: DynWeb3,
     network: Network,
     current_block: CurrentBlockStream,
+    contracts: Contracts,
 }
 
 impl Ethereum {
@@ -82,8 +91,9 @@ impl Ethereum {
     ///
     /// Since this type is essential for the program this method will panic on
     /// any initialization error.
-    pub async fn new(rpc: Rpc, poll_interval: Duration) -> Self {
+    pub async fn new(rpc: Rpc, addresses: contracts::Addresses, poll_interval: Duration) -> Self {
         let Rpc { web3, network } = rpc;
+        let contracts = Contracts::new(&web3, &network.id, addresses).await;
 
         Self {
             current_block: ethrpc::current_block::current_block_stream(
@@ -94,6 +104,7 @@ impl Ethereum {
             .expect("couldn't initialize current block stream"),
             web3,
             network,
+            contracts,
         }
     }
 
@@ -107,10 +118,22 @@ impl Ethereum {
         &self.current_block
     }
 
+    pub fn contracts(&self) -> &Contracts {
+        &self.contracts
+    }
+
+    pub async fn transaction(&self, hash: H256) -> Result<Option<web3::types::Transaction>, Error> {
+        self.web3
+            .eth()
+            .transaction(hash.into())
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn transaction_receipt(
         &self,
         hash: H256,
-    ) -> Result<Option<TransactionReceipt>, Error> {
+    ) -> Result<Option<web3::types::TransactionReceipt>, Error> {
         self.web3
             .eth()
             .transaction_receipt(hash)

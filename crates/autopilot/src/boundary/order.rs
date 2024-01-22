@@ -13,7 +13,6 @@ pub fn to_domain(
         buy_token: order.data.buy_token,
         sell_amount: order.data.sell_amount,
         buy_amount: order.data.buy_amount,
-        solver_fee: order.metadata.full_fee_amount,
         user_fee: order.data.fee_amount,
         protocol_fees,
         valid_to: order.data.valid_to,

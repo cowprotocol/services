@@ -2,6 +2,7 @@
 //! GPv2Settlement::settle function.
 
 use {
+    crate::boundary,
     anyhow::{Context, Result},
     bigdecimal::{Signed, Zero},
     contracts::GPv2Settlement,
@@ -49,15 +50,17 @@ pub struct DecodedSettlement {
     /// as a form of on-chain meta data. This gets used to associated a
     /// settlement with an auction.
     pub metadata: Option<Bytes<[u8; Self::META_DATA_LEN]>>,
-    pub domain_separator: DomainSeparator,
 }
 
 impl DecodedSettlement {
     /// Returns the list of order uids that are associated with each trade.
-    pub fn order_uids(&self) -> Result<Vec<OrderUid>> {
+    pub fn order_uids(
+        &self,
+        domain_separator: &boundary::DomainSeparator,
+    ) -> Result<Vec<OrderUid>> {
         self.trades
             .iter()
-            .map(|trade| trade.uid(&self.domain_separator, &self.tokens))
+            .map(|trade| trade.uid(domain_separator, &self.tokens))
             .collect()
     }
 }
@@ -188,7 +191,7 @@ impl DecodedSettlement {
     /// id.
     pub const META_DATA_LEN: usize = 8;
 
-    pub fn new(input: &[u8], domain_separator: &DomainSeparator) -> Result<Self, DecodingError> {
+    pub fn new(input: &[u8]) -> Result<Self, DecodingError> {
         let function = GPv2Settlement::raw_contract()
             .abi
             .function("settle")
@@ -199,18 +202,13 @@ impl DecodedSettlement {
 
         // Decoding calldata without expecting metadata can succeed even if metadata
         // was appended. The other way around would not work so we do that first.
-        if let Ok(decoded) = Self::try_new(without_selector, function, domain_separator, true) {
+        if let Ok(decoded) = Self::try_new(without_selector, function, true) {
             return Ok(decoded);
         }
-        Self::try_new(without_selector, function, domain_separator, false).map_err(Into::into)
+        Self::try_new(without_selector, function, false).map_err(Into::into)
     }
 
-    fn try_new(
-        data: &[u8],
-        function: &Function,
-        domain_separator: &DomainSeparator,
-        with_metadata: bool,
-    ) -> Result<Self> {
+    fn try_new(data: &[u8], function: &Function, with_metadata: bool) -> Result<Self> {
         let metadata_len = if with_metadata {
             anyhow::ensure!(
                 data.len() % 32 == Self::META_DATA_LEN,
@@ -250,7 +248,6 @@ impl DecodedSettlement {
                 .collect(),
             interactions: interactions.map(|inner| inner.into_iter().map(Into::into).collect()),
             metadata: metadata.try_into().ok().map(Bytes),
-            domain_separator: *domain_separator,
         })
     }
 
@@ -606,7 +603,7 @@ mod tests {
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
             000000000123432"
         );
-        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
 
         //calculate surplus
         let auction_external_prices = BTreeMap::from([
@@ -685,7 +682,7 @@ mod tests {
             000000000405ff0dca143cb520000000000000000000000000000000000000000000001428c970000000000008000000000000000000000002dd35b4da6534230ff53048f7477f17f7f4e7a70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
             000000000"
         );
-        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -790,7 +787,7 @@ mod tests {
             3c756cc200000000000000000000000000000000000000000000000000000000
             0000000000000000000000000000000000000000000000000000000000000000"
         );
-        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -808,7 +805,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let order_fees = settlement
-            .order_uids()
+            .order_uids(&MAINNET_DOMAIN_SEPARATOR)
             .unwrap()
             .into_iter()
             .map(|uid| (uid, None))
@@ -896,7 +893,7 @@ mod tests {
              d49c29bf00000000000000000000000000000000000000000000000000000000
              0000000000000000000000000000000000000000000000000000000000000000"
         );
-        let settlement = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let settlement = DecodedSettlement::new(&call_data).unwrap();
 
         //calculate fees
         let auction_external_prices = BTreeMap::from([
@@ -989,30 +986,23 @@ mod tests {
         )
         .to_vec();
 
-        let original = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let original = DecodedSettlement::new(&call_data).unwrap();
 
         // If not enough call data got appended we parse it like it didn't have any
         // Not enough metadata appended to the calldata.
         let metadata = [42; DecodedSettlement::META_DATA_LEN - 1];
         let with_metadata = [call_data.clone(), metadata.to_vec()].concat();
-        assert_eq!(
-            original,
-            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap()
-        );
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
 
         // Same if too much metadata gets added.
         let metadata = [42; DecodedSettlement::META_DATA_LEN];
         let with_metadata = [call_data.clone(), vec![100], metadata.to_vec()].concat();
-        assert_eq!(
-            original,
-            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap()
-        );
+        assert_eq!(original, DecodedSettlement::new(&with_metadata).unwrap());
 
         // If we add exactly the expected number of bytes we can parse the metadata.
         let metadata = [42; DecodedSettlement::META_DATA_LEN];
         let with_metadata = [call_data, metadata.to_vec()].concat();
-        let with_metadata =
-            DecodedSettlement::new(&with_metadata, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let with_metadata = DecodedSettlement::new(&with_metadata).unwrap();
         assert_eq!(with_metadata.metadata, Some(Bytes(metadata)));
 
         // Content of the remaining fields is identical to the original
@@ -1258,7 +1248,7 @@ mod tests {
         )
         .to_vec();
 
-        let decoded = DecodedSettlement::new(&call_data, &MAINNET_DOMAIN_SEPARATOR).unwrap();
+        let decoded = DecodedSettlement::new(&call_data).unwrap();
         let auction_external_prices = BTreeMap::from([
             (
                 addr!("31429d1856ad1377a8a0079410b297e1a9e214c2"),
@@ -1282,7 +1272,7 @@ mod tests {
             ExternalPrices::try_from_auction_prices(native_token, auction_external_prices).unwrap();
 
         let order_fees = decoded
-            .order_uids()
+            .order_uids(&MAINNET_DOMAIN_SEPARATOR)
             .unwrap()
             .into_iter()
             .map(|uid| (uid, None))
