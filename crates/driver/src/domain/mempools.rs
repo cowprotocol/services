@@ -97,7 +97,10 @@ impl Mempools {
         loop {
             // Wait for the next block to be mined or we time out. Block stream immediately
             // yields the latest block, thus the first iteration starts immediately.
-            if let Err(_) = tokio::time::timeout_at(deadline, block_stream.next()).await {
+            if tokio::time::timeout_at(deadline, block_stream.next())
+                .await
+                .is_err()
+            {
                 tracing::info!(?hash, "tx not confirmed in time, cancelling");
                 self.cancel(mempool, settlement.gas.price, solver).await?;
                 return Err(Error::Expired);
