@@ -100,13 +100,66 @@ mod tests {
             byte_array::ByteArray,
             order_events::{OrderEvent, OrderEventLabel},
         },
-        itertools::Itertools,
-        sqlx::{PgPool, Row},
+        sqlx::Connection,
     };
 
     #[tokio::test]
     #[ignore]
-    async fn order_events_cleaner_flow() {
-        
+    async fn non_subsequent_order_events() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+
+        let now = Utc::now();
+        let event_a = OrderEvent {
+            order_uid: ByteArray([1; 56]),
+            timestamp: now - chrono::Duration::milliseconds(300),
+            label: OrderEventLabel::Created,
+        };
+        insert_non_subsequent_label_order_event(&mut ex, &event_a)
+            .await
+            .unwrap();
+        let event_b = OrderEvent {
+            order_uid: ByteArray([1; 56]),
+            timestamp: now - chrono::Duration::milliseconds(200),
+            label: OrderEventLabel::Invalid,
+        };
+        insert_non_subsequent_label_order_event(&mut ex, &event_b)
+            .await
+            .unwrap();
+        let event_c = OrderEvent {
+            order_uid: ByteArray([2; 56]),
+            timestamp: now - chrono::Duration::milliseconds(100),
+            label: OrderEventLabel::Invalid,
+        };
+        insert_non_subsequent_label_order_event(&mut ex, &event_c)
+            .await
+            .unwrap();
+        let event_d = OrderEvent {
+            order_uid: ByteArray([1; 56]),
+            timestamp: now,
+            label: OrderEventLabel::Invalid,
+        };
+        insert_non_subsequent_label_order_event(&mut ex, &event_d)
+            .await
+            .unwrap();
+
+        ex.commit().await.unwrap();
+
+        let ids = all_order_events(&mut db).await;
+
+        assert_eq!(ids, vec![event_a, event_b, event_c]);
+    }
+
+    async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {
+        const QUERY: &str = r#"
+                SELECT *
+                FROM order_events
+                ORDER BY timestamp
+            "#;
+        sqlx::query_as::<_, OrderEvent>(QUERY)
+            .fetch_all(ex)
+            .await
+            .unwrap()
     }
 }
