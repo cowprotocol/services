@@ -113,15 +113,10 @@ impl<'a> Services<'a> {
     pub async fn start_api(&self, extra_args: Vec<String>) {
         let args = [
             "orderbook".to_string(),
-            "--enable-presign-orders=true".to_string(),
-            "--enable-eip1271-orders=true".to_string(),
-            "--enable-custom-interactions=true".to_string(),
-            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
             ),
-            "--enable-eth-smart-contract-payments=true".to_string(),
         ]
         .into_iter()
         .chain(self.api_autopilot_solver_arguments())

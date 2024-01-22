@@ -106,13 +106,11 @@ pub trait OrderValidating: Send + Sync {
 pub enum PartialValidationError {
     Forbidden,
     ValidTo(OrderValidToError),
-    TransferEthToContract,
     InvalidNativeSellToken,
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
-    UnsupportedSignature,
     UnsupportedToken { token: H160, reason: String },
     Other(anyhow::Error),
 }
@@ -130,7 +128,6 @@ pub enum AppDataValidationError {
         actual: AppDataHash,
     },
     Invalid(anyhow::Error),
-    UnsupportedCustomInteraction,
 }
 
 #[derive(Debug)]
@@ -243,20 +240,16 @@ pub struct OrderValidator {
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
     validity_configuration: OrderValidPeriodConfiguration,
-    signature_configuration: SignatureConfiguration,
+    eip1271_skip_creation_validation: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     hooks: HooksTrampoline,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    enable_fill_or_kill_limit_orders: bool,
-    enable_partially_fillable_limit_orders: bool,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
-    pub enable_eth_smart_contract_payments: bool,
-    enable_custom_interactions: bool,
     app_data_validator: crate::app_data::Validator,
     request_verified_quotes: bool,
 }
@@ -322,7 +315,7 @@ impl OrderValidator {
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
         validity_configuration: OrderValidPeriodConfiguration,
-        signature_configuration: SignatureConfiguration,
+        eip1271_skip_creation_validation: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         hooks: HooksTrampoline,
         quoter: Arc<dyn OrderQuoting>,
@@ -338,42 +331,18 @@ impl OrderValidator {
             banned_users,
             liquidity_order_owners,
             validity_configuration,
-            signature_configuration,
+            eip1271_skip_creation_validation,
             bad_token_detector,
             hooks,
             quoter,
             balance_fetcher,
             signature_validator,
-            enable_fill_or_kill_limit_orders: false,
-            enable_partially_fillable_limit_orders: false,
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
-            enable_eth_smart_contract_payments: false,
-            enable_custom_interactions: false,
             app_data_validator,
             request_verified_quotes: false,
         }
-    }
-
-    pub fn with_fill_or_kill_limit_orders(mut self, enable: bool) -> Self {
-        self.enable_fill_or_kill_limit_orders = enable;
-        self
-    }
-
-    pub fn with_partially_fillable_limit_orders(mut self, enable: bool) -> Self {
-        self.enable_partially_fillable_limit_orders = enable;
-        self
-    }
-
-    pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
-        self.enable_eth_smart_contract_payments = enable;
-        self
-    }
-
-    pub fn with_custom_interactions(mut self, enable: bool) -> Self {
-        self.enable_custom_interactions = enable;
-        self
     }
 
     pub fn with_verified_quotes(mut self, enable: bool) -> Self {
@@ -443,21 +412,8 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::Forbidden);
         }
 
-        match order.class {
-            OrderClass::Market => {
-                if order.partially_fillable {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-            }
-            OrderClass::Limit => {
-                if order.partially_fillable && !self.enable_partially_fillable_limit_orders {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-                if !order.partially_fillable && !self.enable_fill_or_kill_limit_orders {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-            }
-            OrderClass::Liquidity => (),
+        if order.class == OrderClass::Market && order.partially_fillable {
+            return Err(PartialValidationError::UnsupportedOrderType);
         }
 
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
@@ -476,29 +432,11 @@ impl OrderValidating for OrderValidator {
 
         self.validity_configuration.validate_period(&order)?;
 
-        // Eventually we will support all Signature types and can remove this.
-        if !self
-            .signature_configuration
-            .is_signing_scheme_supported(order.signing_scheme)
-        {
-            return Err(PartialValidationError::UnsupportedSignature);
-        }
-
         if has_same_buy_and_sell_token(&order, &self.native_token) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
-        }
-        if !self.enable_eth_smart_contract_payments && order.buy_token == BUY_ETH_ADDRESS {
-            let code_size = self
-                .code_fetcher
-                .code_size(order.receiver)
-                .await
-                .map_err(PartialValidationError::Other)?;
-            if code_size != 0 {
-                return Err(PartialValidationError::TransferEthToContract);
-            }
         }
 
         for &token in &[order.sell_token, order.buy_token] {
@@ -558,11 +496,6 @@ impl OrderValidating for OrderValidator {
             OrderCreationAppData::Full { full } => validate(full)?,
         };
 
-        if !self.enable_custom_interactions && !app_data.protocol.hooks.is_empty() {
-            // contains some custom interactions while feature is disabled
-            return Err(AppDataValidationError::UnsupportedCustomInteraction);
-        }
-
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
         Ok(OrderAppData {
@@ -592,10 +525,7 @@ impl OrderValidating for OrderValidator {
         let uid = data.uid(domain_separator, &owner);
 
         let verification_gas_limit = if let Signature::Eip1271(signature) = &order.signature {
-            if self
-                .signature_configuration
-                .eip1271_skip_creation_validation
-            {
+            if self.eip1271_skip_creation_validation {
                 tracing::debug!(?signature, "skipping EIP-1271 signature validation");
                 // We don't care! Because we are skipping validation anyway
                 0u64
@@ -832,44 +762,6 @@ impl OrderValidPeriodConfiguration {
 pub enum OrderValidToError {
     Insufficient,
     Excessive,
-}
-
-/// Signature configuration that is accepted by the orderbook.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SignatureConfiguration {
-    pub eip1271: bool,
-    pub eip1271_skip_creation_validation: bool,
-    pub presign: bool,
-}
-
-impl SignatureConfiguration {
-    /// Returns a configuration where only off-chain signing schemes are
-    /// supported.
-    pub fn off_chain() -> Self {
-        Self {
-            eip1271: false,
-            eip1271_skip_creation_validation: false,
-            presign: false,
-        }
-    }
-
-    /// Returns a configuration where all signing schemes are enabled.
-    pub fn all() -> Self {
-        Self {
-            eip1271: true,
-            eip1271_skip_creation_validation: false,
-            presign: true,
-        }
-    }
-
-    /// returns whether the supplied signature scheme is supported.
-    pub fn is_signing_scheme_supported(&self, signing_scheme: SigningScheme) -> bool {
-        match signing_scheme {
-            SigningScheme::Eip712 | SigningScheme::EthSign => true,
-            SigningScheme::Eip1271 => self.eip1271,
-            SigningScheme::PreSign => self.presign,
-        }
-    }
 }
 
 /// Returns true if the orders have same buy and sell tokens.
@@ -1109,7 +1001,7 @@ mod tests {
             banned_users,
             hashset!(),
             validity_configuration,
-            SignatureConfiguration::off_chain(),
+            false,
             Arc::new(MockBadTokenDetecting::new()),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(MockOrderQuoting::new()),
@@ -1194,23 +1086,20 @@ mod tests {
                 OrderValidToError::Excessive,
             ))
         ));
-        {
-            let validator = validator.clone().with_fill_or_kill_limit_orders(true);
-            assert!(matches!(
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: legit_valid_to
-                            + validity_configuration.max_limit.as_secs() as u32
-                            + 1,
-                        class: OrderClass::Limit,
-                        ..Default::default()
-                    })
-                    .await,
-                Err(PartialValidationError::ValidTo(
-                    OrderValidToError::Excessive,
-                ))
-            ));
-        }
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to
+                        + validity_configuration.max_limit.as_secs() as u32
+                        + 1,
+                    class: OrderClass::Limit,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::ValidTo(
+                OrderValidToError::Excessive,
+            ))
+        ));
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -1231,16 +1120,6 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::InvalidNativeSellToken)
-        ));
-        assert!(matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to,
-                    signing_scheme: SigningScheme::PreSign,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::UnsupportedSignature)
         ));
     }
 
@@ -1270,7 +1149,7 @@ mod tests {
             hashset!(),
             hashset!(liquidity_order_owner),
             validity_configuration,
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(MockOrderQuoting::new()),
@@ -1280,9 +1159,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-        )
-        .with_fill_or_kill_limit_orders(true)
-        .with_partially_fillable_limit_orders(true);
+        );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
@@ -1360,7 +1237,7 @@ mod tests {
                 max_market: Duration::from_secs(100),
                 max_limit: Duration::from_secs(200),
             },
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             hooks.clone(),
             Arc::new(order_quoter),
@@ -1450,7 +1327,6 @@ mod tests {
             .returning(|_| Ok(0u64));
 
         let validator = OrderValidator {
-            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
             ..validator
         };
@@ -1477,12 +1353,8 @@ mod tests {
             .returning(|_| Err(SignatureValidationError::Invalid));
 
         let validator = OrderValidator {
-            enable_custom_interactions: true,
             signature_validator: Arc::new(signature_validator),
-            signature_configuration: SignatureConfiguration {
-                eip1271_skip_creation_validation: true,
-                ..SignatureConfiguration::all()
-            },
+            eip1271_skip_creation_validation: true,
             ..validator
         };
 
@@ -1500,7 +1372,6 @@ mod tests {
             fee_amount: U256::zero(),
             ..creation.clone()
         };
-        let validator = validator.with_fill_or_kill_limit_orders(true);
         let (order, quote) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
@@ -1514,7 +1385,6 @@ mod tests {
             app_data: OrderCreationAppData::default(),
             ..creation
         };
-        let validator = validator.with_partially_fillable_limit_orders(true);
         let (order, quote) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
@@ -1556,7 +1426,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1566,8 +1436,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-        )
-        .with_fill_or_kill_limit_orders(true);
+        );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
@@ -1613,7 +1482,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1638,65 +1507,6 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
-    }
-
-    #[tokio::test]
-    async fn post_zero_fee_limit_orders_disabled() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter.expect_find_quote().returning(|_, _| {
-            Ok(Quote {
-                fee_amount: U256::from(1),
-                ..Default::default()
-            })
-        });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
-            hashset!(),
-            OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::zero(),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        assert!(
-            matches!(
-                result,
-                Err(ValidationError::Partial(
-                    PartialValidationError::UnsupportedOrderType
-                ))
-            ),
-            "{result:?}"
-        );
     }
 
     #[tokio::test]
@@ -1727,7 +1537,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1781,7 +1591,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1830,7 +1640,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1881,7 +1691,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1936,7 +1746,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -1985,7 +1795,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -2038,7 +1848,7 @@ mod tests {
             hashset!(),
             hashset!(),
             OrderValidPeriodConfiguration::any(),
-            SignatureConfiguration::all(),
+            false,
             Arc::new(bad_token_detector),
             dummy_contract!(HooksTrampoline, [0xcf; 20]),
             Arc::new(order_quoter),
@@ -2098,7 +1908,7 @@ mod tests {
                 hashset!(),
                 hashset!(),
                 OrderValidPeriodConfiguration::any(),
-                SignatureConfiguration::all(),
+                false,
                 Arc::new(bad_token_detector),
                 dummy_contract!(HooksTrampoline, [0xcf; 20]),
                 Arc::new(order_quoter),
