@@ -47,7 +47,7 @@ impl GasPriceEstimator {
         let max_fee_per_gas = mempools
             .iter()
             .map(|mempool| eth::U256::from_f64_lossy(mempool.gas_price_cap))
-            .max()
+            .min()
             .expect("at least one mempool");
         Ok(Self {
             gas,
