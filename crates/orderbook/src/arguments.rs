@@ -121,14 +121,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
-    /// Note that fill or kill liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub allow_placing_fill_or_kill_limit_orders: bool,
-
-    /// Note that partially fillable liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub allow_placing_partially_fillable_limit_orders: bool,
-
     /// Max number of limit orders per user.
     #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
@@ -183,8 +175,6 @@ impl std::fmt::Display for Arguments {
             solvable_orders_max_update_age_blocks,
             native_price_estimators,
             fast_price_estimation_results_required,
-            allow_placing_fill_or_kill_limit_orders,
-            allow_placing_partially_fillable_limit_orders,
             max_limit_orders_per_user,
             enable_custom_interactions,
             ipfs_gateway,
@@ -243,16 +233,6 @@ impl std::fmt::Display for Arguments {
             f,
             "fast_price_estimation_results_required: {}",
             fast_price_estimation_results_required
-        )?;
-        writeln!(
-            f,
-            "allow_placing_fill_or_kill_limit_orders: {}",
-            allow_placing_fill_or_kill_limit_orders
-        )?;
-        writeln!(
-            f,
-            "allow_placing_partially_fillable_limit_orders: {}",
-            allow_placing_partially_fillable_limit_orders
         )?;
         writeln!(
             f,

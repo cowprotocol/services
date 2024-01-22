@@ -249,8 +249,6 @@ pub struct OrderValidator {
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     signature_validator: Arc<dyn SignatureValidating>,
-    enable_fill_or_kill_limit_orders: bool,
-    enable_partially_fillable_limit_orders: bool,
     limit_order_counter: Arc<dyn LimitOrderCounting>,
     max_limit_orders_per_user: u64,
     pub code_fetcher: Arc<dyn CodeFetching>,
@@ -343,8 +341,6 @@ impl OrderValidator {
             quoter,
             balance_fetcher,
             signature_validator,
-            enable_fill_or_kill_limit_orders: false,
-            enable_partially_fillable_limit_orders: false,
             limit_order_counter,
             max_limit_orders_per_user,
             code_fetcher,
@@ -353,16 +349,6 @@ impl OrderValidator {
             app_data_validator,
             request_verified_quotes: false,
         }
-    }
-
-    pub fn with_fill_or_kill_limit_orders(mut self, enable: bool) -> Self {
-        self.enable_fill_or_kill_limit_orders = enable;
-        self
-    }
-
-    pub fn with_partially_fillable_limit_orders(mut self, enable: bool) -> Self {
-        self.enable_partially_fillable_limit_orders = enable;
-        self
     }
 
     pub fn with_eth_smart_contract_payments(mut self, enable: bool) -> Self {
@@ -442,21 +428,8 @@ impl OrderValidating for OrderValidator {
             return Err(PartialValidationError::Forbidden);
         }
 
-        match order.class {
-            OrderClass::Market => {
-                if order.partially_fillable {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-            }
-            OrderClass::Limit => {
-                if order.partially_fillable && !self.enable_partially_fillable_limit_orders {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-                if !order.partially_fillable && !self.enable_fill_or_kill_limit_orders {
-                    return Err(PartialValidationError::UnsupportedOrderType);
-                }
-            }
-            OrderClass::Liquidity => (),
+        if order.class == OrderClass::Market && order.partially_fillable {
+            return Err(PartialValidationError::UnsupportedOrderType);
         }
 
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
@@ -1144,23 +1117,20 @@ mod tests {
                 OrderValidToError::Excessive,
             ))
         ));
-        {
-            let validator = validator.clone().with_fill_or_kill_limit_orders(true);
-            assert!(matches!(
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: legit_valid_to
-                            + validity_configuration.max_limit.as_secs() as u32
-                            + 1,
-                        class: OrderClass::Limit,
-                        ..Default::default()
-                    })
-                    .await,
-                Err(PartialValidationError::ValidTo(
-                    OrderValidToError::Excessive,
-                ))
-            ));
-        }
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to
+                        + validity_configuration.max_limit.as_secs() as u32
+                        + 1,
+                    class: OrderClass::Limit,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::ValidTo(
+                OrderValidToError::Excessive,
+            ))
+        ));
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -1220,9 +1190,7 @@ mod tests {
             0,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-        )
-        .with_fill_or_kill_limit_orders(true)
-        .with_partially_fillable_limit_orders(true);
+        );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
                 + validity_configuration.min.as_secs() as u32
@@ -1437,7 +1405,6 @@ mod tests {
             fee_amount: U256::zero(),
             ..creation.clone()
         };
-        let validator = validator.with_fill_or_kill_limit_orders(true);
         let (order, quote) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
@@ -1451,7 +1418,6 @@ mod tests {
             app_data: OrderCreationAppData::default(),
             ..creation
         };
-        let validator = validator.with_partially_fillable_limit_orders(true);
         let (order, quote) = validator
             .validate_and_construct_order(creation_, &domain_separator, Default::default(), None)
             .await
@@ -1503,8 +1469,7 @@ mod tests {
             MAX_LIMIT_ORDERS_PER_USER,
             Arc::new(MockCodeFetching::new()),
             Default::default(),
-        )
-        .with_fill_or_kill_limit_orders(true);
+        );
 
         let creation = OrderCreation {
             valid_to: model::time::now_in_epoch_seconds() + 2,
@@ -1575,65 +1540,6 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default(), None)
             .await;
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
-    }
-
-    #[tokio::test]
-    async fn post_zero_fee_limit_orders_disabled() {
-        let mut order_quoter = MockOrderQuoting::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        order_quoter.expect_find_quote().returning(|_, _| {
-            Ok(Quote {
-                fee_amount: U256::from(1),
-                ..Default::default()
-            })
-        });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _| Ok(()));
-        let mut limit_order_counter = MockLimitOrderCounting::new();
-        limit_order_counter.expect_count().returning(|_| Ok(0u64));
-        let validator = OrderValidator::new(
-            dummy_contract!(WETH9, [0xef; 20]),
-            hashset!(),
-            hashset!(),
-            OrderValidPeriodConfiguration::any(),
-            false,
-            Arc::new(bad_token_detector),
-            dummy_contract!(HooksTrampoline, [0xcf; 20]),
-            Arc::new(order_quoter),
-            Arc::new(balance_fetcher),
-            Arc::new(MockSignatureValidating::new()),
-            Arc::new(limit_order_counter),
-            0,
-            Arc::new(MockCodeFetching::new()),
-            Default::default(),
-        );
-        let order = OrderCreation {
-            valid_to: time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
-            fee_amount: U256::zero(),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
-            ..Default::default()
-        };
-        let result = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default(), None)
-            .await;
-        assert!(
-            matches!(
-                result,
-                Err(ValidationError::Partial(
-                    PartialValidationError::UnsupportedOrderType
-                ))
-            ),
-            "{result:?}"
-        );
     }
 
     #[tokio::test]

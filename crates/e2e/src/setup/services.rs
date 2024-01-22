@@ -114,7 +114,6 @@ impl<'a> Services<'a> {
         let args = [
             "orderbook".to_string(),
             "--enable-custom-interactions=true".to_string(),
-            "--allow-placing-partially-fillable-limit-orders=true".to_string(),
             format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
