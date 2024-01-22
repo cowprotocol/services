@@ -199,9 +199,20 @@ impl Solver {
         let url = config.blockchain.web3_url.parse().unwrap();
         let rpc = infra::blockchain::Rpc::new(&url).await.unwrap();
         let gas = Arc::new(
-            infra::blockchain::GasPriceEstimator::new(rpc.web3(), &[])
-                .await
-                .unwrap(),
+            infra::blockchain::GasPriceEstimator::new(
+                rpc.web3(),
+                &[infra::mempool::Config {
+                    additional_tip_percentage: Default::default(),
+                    gas_price_cap: f64::MAX,
+                    target_confirm_time: Default::default(),
+                    max_confirm_time: Default::default(),
+                    retry_interval: Default::default(),
+                    kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
+                    submission: infra::mempool::SubmissionLogic::Native,
+                }],
+            )
+            .await
+            .unwrap(),
         );
         let eth = Ethereum::new(
             rpc,
