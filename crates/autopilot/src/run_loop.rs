@@ -151,7 +151,7 @@ impl RunLoop {
 
             let order_uids = solution.order_ids().copied().collect();
             self.persistence
-                .store_non_subsequent_label_order_events(order_uids, OrderEventLabel::Considered);
+                .store_order_events(order_uids, OrderEventLabel::Considered);
 
             let winner = solution.account;
             let winning_score = solution.score.get();
@@ -318,7 +318,7 @@ impl RunLoop {
 
         let order_uids = auction.orders.iter().map(|o| OrderUid(o.uid.0)).collect();
         self.persistence
-            .store_non_subsequent_label_order_events(order_uids, OrderEventLabel::Ready);
+            .store_order_events(order_uids, OrderEventLabel::Ready);
 
         let start = Instant::now();
         futures::future::join_all(self.drivers.iter().map(|driver| async move {
@@ -417,7 +417,7 @@ impl RunLoop {
     async fn settle(&self, driver: &infra::Driver, solved: &Solution) -> Result<(), SettleError> {
         let order_ids = solved.order_ids().copied().collect();
         self.persistence
-            .store_non_subsequent_label_order_events(order_ids, OrderEventLabel::Executing);
+            .store_order_events(order_ids, OrderEventLabel::Executing);
 
         let request = settle::Request {
             solution_id: solved.id,
@@ -436,7 +436,7 @@ impl RunLoop {
 
         let order_uids = solved.orders.keys().copied().collect();
         self.persistence
-            .store_non_subsequent_label_order_events(order_uids, OrderEventLabel::Traded);
+            .store_order_events(order_uids, OrderEventLabel::Traded);
         tracing::debug!(?tx_hash, "solution settled");
 
         Ok(())

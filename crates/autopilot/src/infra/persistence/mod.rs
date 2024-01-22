@@ -92,7 +92,7 @@ impl Persistence {
     /// label within the same order_uid. If this function encounters an error it
     /// will only be printed. More elaborate error handling is not necessary
     /// because this is just debugging information.
-    pub fn store_non_subsequent_label_order_events(
+    pub fn store_order_events(
         &self,
         order_uids: HashSet<domain::OrderUid>,
         label: boundary::OrderEventLabel,
