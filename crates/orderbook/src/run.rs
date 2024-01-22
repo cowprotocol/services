@@ -33,7 +33,7 @@ use {
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
         order_quoting::{self, OrderQuoter},
-        order_validation::{OrderValidPeriodConfiguration, OrderValidator, SignatureConfiguration},
+        order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
             factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
             native::NativePriceEstimating,
@@ -425,11 +425,6 @@ pub async fn run(args: Arguments) {
         max_market: args.max_order_validity_period,
         max_limit: args.max_limit_order_validity_period,
     };
-    let signature_configuration = SignatureConfiguration {
-        eip1271: args.enable_eip1271_orders,
-        eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
-        presign: args.enable_presign_orders,
-    };
 
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(OrderQuoter::new(
@@ -468,7 +463,7 @@ pub async fn run(args: Arguments) {
                 .copied()
                 .collect(),
             validity_configuration,
-            signature_configuration,
+            args.eip1271_skip_creation_validation,
             bad_token_detector.clone(),
             hooks_contract,
             optimal_quoter.clone(),
