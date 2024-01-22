@@ -2,7 +2,7 @@ use {
     super::eth,
     crate::{
         domain::competition::solution::Settlement,
-        infra::{self, observe, solver::Solver},
+        infra::{self, observe, solver::Solver, Ethereum},
     },
     futures::{future::select_ok, FutureExt},
     thiserror::Error,
@@ -11,14 +11,14 @@ use {
 
 /// The mempools used to execute settlements.
 #[derive(Debug, Clone)]
-pub struct Mempools(Vec<infra::Mempool>);
+pub struct Mempools(Vec<infra::Mempool>, Ethereum);
 
 impl Mempools {
-    pub fn new(mempools: Vec<infra::Mempool>) -> Result<Self, NoMempools> {
+    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
         if mempools.is_empty() {
             Err(NoMempools)
         } else {
-            Ok(Self(mempools))
+            Ok(Self(mempools, ethereum))
         }
     }
 
@@ -33,7 +33,14 @@ impl Mempools {
 
         let (tx_hash, _remaining_futures) = select_ok(self.0.iter().cloned().map(|mempool| {
             async move {
-                let result = mempool.execute(solver, settlement.clone()).await;
+                let result = match &mempool {
+                    infra::Mempool::Boundary(mempool) => {
+                        mempool.execute(solver, settlement.clone()).await
+                    }
+                    infra::Mempool::Native(_) => {
+                        todo!("implement")
+                    }
+                };
                 observe::mempool_executed(&mempool, settlement, &result);
                 result
             }

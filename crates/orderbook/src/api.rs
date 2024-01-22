@@ -1,8 +1,7 @@
 use {
-    crate::{app_data, database::Postgres, orderbook::Orderbook},
+    crate::{app_data, database::Postgres, orderbook::Orderbook, quoter::QuoteHandler},
     shared::{
         api::{box_filter, error, finalize_router, ApiReply},
-        order_quoting::QuoteHandler,
         price_estimation::native::NativePriceEstimating,
     },
     std::sync::Arc,

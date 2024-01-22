@@ -7,6 +7,7 @@ use {
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
+        quoter::QuoteHandler,
     },
     anyhow::{anyhow, Context, Result},
     clap::Parser,
@@ -31,7 +32,7 @@ use {
         maintenance::ServiceMaintenance,
         metrics::{serve_metrics, DEFAULT_METRICS_PORT},
         network::network_name,
-        order_quoting::{self, OrderQuoter, QuoteHandler},
+        order_quoting::{self, OrderQuoter},
         order_validation::{OrderValidPeriodConfiguration, OrderValidator},
         price_estimation::{
             factory::{self, PriceEstimatorFactory, PriceEstimatorSource},
@@ -509,8 +510,10 @@ pub async fn run(args: Arguments) {
     }
 
     check_database_connection(orderbook.as_ref()).await;
-    let quotes =
-        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
+    let quotes = Arc::new(
+        QuoteHandler::new(order_validator, optimal_quoter, app_data.clone())
+            .with_fast_quoter(fast_quoter),
+    );
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
