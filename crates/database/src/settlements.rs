@@ -61,6 +61,7 @@ pub async fn get_settlement_without_auction(
 SELECT block_number, log_index, tx_hash
 FROM settlements
 WHERE auction_kind = 'unprocessed'
+ORDER BY block_number ASC
 LIMIT 1
     "#;
     sqlx::query_as(QUERY).fetch_optional(ex).await
