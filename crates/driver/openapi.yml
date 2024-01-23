@@ -197,12 +197,6 @@ components:
         buyAmount:
           description: Amount to be bought
           $ref: "#/components/schemas/TokenAmount"
-        solverFee:
-          description: |
-            The fee that the solver should use to compute the objective value of the solution.
-
-            This fee may be different from user fee as it removes any subsidies.
-          $ref: "#/components/schemas/TokenAmount"
         userFee:
           description: |
             The fee that the user signed to pay for getting their order included.
