@@ -69,7 +69,7 @@ impl<'a> Services<'a> {
             format!(
                 "--custom-univ2-baseline-sources={:?}|{:?}",
                 self.contracts.uniswap_v2_router.address(),
-                H256(shared::sources::uniswap_v2::UNISWAP_INIT),
+                self.contracts.default_pool_code(),
             ),
             format!(
                 "--settlement-contract-address={:?}",

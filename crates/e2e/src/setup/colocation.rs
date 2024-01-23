@@ -1,8 +1,7 @@
 use {
     crate::{nodes::NODE_HOST, setup::*},
-    ethcontract::{H160, H256, U256},
+    ethcontract::{H160, U256},
     reqwest::Url,
-    shared::sources::uniswap_v2::UNISWAP_INIT,
     tokio::task::JoinHandle,
 };
 
@@ -112,7 +111,7 @@ mempool = "public"
         contracts.gp_settlement.address(),
         contracts.weth.address(),
         contracts.uniswap_v2_router.address(),
-        H256(UNISWAP_INIT),
+        contracts.default_pool_code(),
     ));
     let args = vec![
         "driver".to_string(),
