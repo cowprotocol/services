@@ -50,6 +50,7 @@ impl ProtocolFee {
                 if boundary::is_order_outside_market_price(
                     &order.data.sell_amount,
                     &order.data.buy_amount,
+                    &order.data.fee_amount,
                     &quote.buy_amount,
                     &quote.sell_amount,
                     &quote.fee,

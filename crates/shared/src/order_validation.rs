@@ -673,6 +673,7 @@ impl OrderValidating for OrderValidator {
                 if is_order_outside_market_price(
                     &quote_parameters.sell_amount,
                     &quote_parameters.buy_amount,
+                    &quote_parameters.fee_amount,
                     &quote.sell_amount,
                     &quote.buy_amount,
                     &quote.fee_amount,
@@ -872,11 +873,12 @@ async fn get_or_create_quote(
 pub fn is_order_outside_market_price(
     sell_amount: &U256,
     buy_amount: &U256,
+    fee_amount: &U256,
     quote_sell_amount: &U256,
     quote_buy_amount: &U256,
     quote_fee_amount: &U256,
 ) -> bool {
-    sell_amount.full_mul(*quote_buy_amount)
+    (sell_amount + fee_amount).full_mul(*quote_buy_amount)
         < (quote_sell_amount + quote_fee_amount).full_mul(*buy_amount)
 }
 
@@ -2237,6 +2239,7 @@ mod tests {
         assert!(!is_order_outside_market_price(
             &"100".into(),
             &"100".into(),
+            &"0".into(),
             &quote.sell_amount,
             &quote.buy_amount,
             &quote.fee_amount,
@@ -2245,6 +2248,7 @@ mod tests {
         assert!(!is_order_outside_market_price(
             &"100".into(),
             &"90".into(),
+            &"0".into(),
             &quote.sell_amount,
             &quote.buy_amount,
             &quote.fee_amount,
@@ -2253,6 +2257,7 @@ mod tests {
         assert!(is_order_outside_market_price(
             &"100".into(),
             &"1000".into(),
+            &"0".into(),
             &quote.sell_amount,
             &quote.buy_amount,
             &quote.fee_amount,

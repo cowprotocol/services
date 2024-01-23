@@ -294,12 +294,12 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver.name, "settlement failed");
                 }
             }
-            let unsettled_orders: Vec<_> = solutions
+            let unsettled_orders: HashSet<_> = solutions
                 .iter()
                 .flat_map(|p| p.solution.orders.keys())
                 .filter(|uid| !solution.orders.contains_key(uid))
                 .collect();
-            Metrics::matched_unsettled(driver, unsettled_orders.as_slice());
+            Metrics::matched_unsettled(driver, unsettled_orders);
         }
     }
 
@@ -689,7 +689,7 @@ impl Metrics {
             .inc_by(time.as_millis().try_into().unwrap_or(u64::MAX));
     }
 
-    fn matched_unsettled(winning: &infra::Driver, unsettled: &[&domain::OrderUid]) {
+    fn matched_unsettled(winning: &infra::Driver, unsettled: HashSet<&domain::OrderUid>) {
         if !unsettled.is_empty() {
             tracing::debug!(?unsettled, "some orders were matched but not settled");
         }
