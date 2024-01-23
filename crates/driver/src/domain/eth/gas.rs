@@ -72,6 +72,22 @@ impl GasPrice {
     }
 }
 
+/// Implements multiplication of a gas price by a floating point number.
+/// This is equivalent to multiplying the `tip` and adjusting the max fee to
+/// accommodate the new tip.
+impl std::ops::Mul<f64> for GasPrice {
+    type Output = Self;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        let new_tip = self.tip.mul_ceil(rhs).into();
+        Self {
+            max: (self.max + new_tip).saturating_sub(self.tip),
+            tip: new_tip,
+            base: self.base,
+        }
+    }
+}
+
 impl From<EffectiveGasPrice> for GasPrice {
     fn from(value: EffectiveGasPrice) -> Self {
         let value = value.0 .0;
@@ -89,6 +105,18 @@ impl From<EffectiveGasPrice> for GasPrice {
 /// https://eips.ethereum.org/EIPS/eip-1559#specification
 #[derive(Debug, Clone, Copy)]
 pub struct FeePerGas(pub Ether);
+
+impl FeePerGas {
+    /// Subtracts the given fee from this fee, saturating at zero.
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        self.0 .0.saturating_sub(rhs.0 .0).into()
+    }
+
+    /// Multiplies this fee by the given floating point number, rounding up.
+    fn mul_ceil(self, rhs: f64) -> Self {
+        U256::from_f64_lossy((self.0 .0.to_f64_lossy() * rhs).ceil()).into()
+    }
+}
 
 impl From<U256> for FeePerGas {
     fn from(value: U256) -> Self {

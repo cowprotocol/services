@@ -1,10 +1,7 @@
 use {
     super::{competition, eth},
     crate::{
-        domain::{
-            competition::solution::Settlement,
-            eth::{FeePerGas, TxStatus},
-        },
+        domain::{competition::solution::Settlement, eth::TxStatus},
         infra::{self, observe, solver::Solver, Ethereum},
     },
     ethrpc::current_block::into_stream,
@@ -12,6 +9,13 @@ use {
     thiserror::Error,
     tracing::Instrument,
 };
+
+/// Factor by how much a transaction fee needs to be increased to override a
+/// pending transaction at the same nonce.
+const GAS_PRICE_BUMP: f64 = 1.125;
+
+/// The gas amount required to cancel a transaction.
+const CANCELLATION_GAS_AMOUNT: u64 = 21000;
 
 /// The mempools used to execute settlements.
 #[derive(Debug, Clone)]
@@ -65,7 +69,7 @@ impl Mempools {
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
-    /// /settle'd solution will not revert.
+    /// settled solution will not revert.
     pub fn revert_protection(&self) -> RevertProtection {
         if self.mempools.iter().any(|mempool| {
             matches!(
@@ -155,15 +159,10 @@ impl Mempools {
             input: Default::default(),
             access_list: Default::default(),
         };
-        let one_gwei: FeePerGas = FeePerGas(1_000_000_000.into());
         let gas = competition::solution::settlement::Gas {
-            estimate: 21000.into(),
-            limit: 21000.into(),
-            price: eth::GasPrice {
-                max: pending.max + one_gwei,
-                tip: pending.tip + one_gwei,
-                base: pending.base,
-            },
+            estimate: CANCELLATION_GAS_AMOUNT.into(),
+            limit: CANCELLATION_GAS_AMOUNT.into(),
+            price: pending * GAS_PRICE_BUMP,
         };
         mempool.submit(cancellation, gas, solver).await?;
         Ok(())
