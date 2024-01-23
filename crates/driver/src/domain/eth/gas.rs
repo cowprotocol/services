@@ -79,9 +79,9 @@ impl std::ops::Mul<f64> for GasPrice {
     type Output = Self;
 
     fn mul(self, rhs: f64) -> Self::Output {
-        let new_tip = self.tip.mul_ceil(rhs).into();
+        let new_tip = self.tip.mul_ceil(rhs);
         Self {
-            max: (self.max + new_tip).saturating_sub(self.tip),
+            max: self.max.add(new_tip).saturating_sub(self.tip),
             tip: new_tip,
             base: self.base,
         }
