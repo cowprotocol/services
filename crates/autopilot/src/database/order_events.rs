@@ -8,7 +8,6 @@ use {
         order_events::{self, OrderEvent},
     },
     sqlx::Error,
-    std::collections::HashSet,
 };
 
 impl super::Postgres {
@@ -20,7 +19,7 @@ impl super::Postgres {
 
 pub async fn store_order_events(
     db: &super::Postgres,
-    order_uids: HashSet<domain::OrderUid>,
+    order_uids: Vec<domain::OrderUid>,
     label: OrderEventLabel,
     timestamp: DateTime<Utc>,
 ) -> Result<()> {

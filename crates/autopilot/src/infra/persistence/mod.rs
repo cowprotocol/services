@@ -3,7 +3,7 @@ use {
     anyhow::Context,
     chrono::Utc,
     itertools::Itertools,
-    std::{collections::HashSet, sync::Arc},
+    std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
 };
@@ -95,7 +95,7 @@ impl Persistence {
     /// because this is just debugging information.
     pub fn store_order_events(
         &self,
-        order_uids: HashSet<domain::OrderUid>,
+        order_uids: Vec<domain::OrderUid>,
         label: boundary::OrderEventLabel,
     ) {
         let db = self.postgres.clone();

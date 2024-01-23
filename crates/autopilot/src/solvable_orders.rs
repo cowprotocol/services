@@ -141,8 +141,8 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.persistence.solvable_orders(min_valid_to).await?;
 
         let mut counter = OrderFilterCounter::new(self.metrics, &db_solvable_orders.orders);
-        let mut invalid_order_uids: HashSet<OrderUid> = HashSet::new();
-        let mut filtered_order_events = HashSet::new();
+        let mut invalid_order_uids = Vec::new();
+        let mut filtered_order_events = Vec::new();
 
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let removed = counter.checkpoint("banned_user", &orders);
