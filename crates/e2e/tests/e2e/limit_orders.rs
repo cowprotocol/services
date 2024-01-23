@@ -36,9 +36,9 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-pub const FORK_BLOCK_MAINNET: u64 = 18477910;
+const FORK_BLOCK_MAINNET: u64 = 18477910;
 /// USDC whale address as per [FORK_BLOCK_MAINNET].
-pub const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
+const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
     "28c6c06298d514db089934071355e5743bf21d60"
 ));
 
@@ -54,9 +54,9 @@ async fn forked_node_mainnet_single_limit_order() {
     .await;
 }
 
-pub const FORK_BLOCK_GNOSIS: u64 = 32070725;
+const FORK_BLOCK_GNOSIS: u64 = 32070725;
 /// USDC whale address as per [FORK_BLOCK_GNOSIS].
-pub const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
+const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
     "ba12222222228d8ba445958a75a0704d566bf2c8"
 ));
 
