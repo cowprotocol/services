@@ -17,7 +17,9 @@ pub enum FeePolicy {
         /// Cap protocol fee with a percentage of the order's volume.
         max_volume_factor: f64,
     },
-    /// todo: add some meaningful description
+    /// A price improvement corresponds to a situation where the order is
+    /// executed at a better price than the top quote. The protocol fee in such
+    /// case is calculated from a cut of this price improvement.
     PriceImprovement {
         factor: f64,
         max_volume_factor: f64,

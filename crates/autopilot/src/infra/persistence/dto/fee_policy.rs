@@ -12,8 +12,8 @@ pub struct FeePolicy {
     pub surplus_factor: Option<f64>,
     pub max_volume_factor: Option<f64>,
     pub volume_factor: Option<f64>,
-    pub sell_amount: Option<BigDecimal>,
-    pub buy_amount: Option<BigDecimal>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
 }
 
 impl FeePolicy {
@@ -33,8 +33,8 @@ impl FeePolicy {
                 surplus_factor: Some(factor),
                 max_volume_factor: Some(max_volume_factor),
                 volume_factor: None,
-                sell_amount: None,
-                buy_amount: None,
+                quote_sell_amount: None,
+                quote_buy_amount: None,
             },
             domain::fee::Policy::Volume { factor } => Self {
                 auction_id,
@@ -43,8 +43,8 @@ impl FeePolicy {
                 surplus_factor: None,
                 max_volume_factor: None,
                 volume_factor: Some(factor),
-                sell_amount: None,
-                buy_amount: None,
+                quote_sell_amount: None,
+                quote_buy_amount: None,
             },
             domain::fee::Policy::PriceImprovement {
                 factor,
@@ -57,8 +57,8 @@ impl FeePolicy {
                 surplus_factor: Some(factor),
                 max_volume_factor: Some(max_volume_factor),
                 volume_factor: None,
-                sell_amount: Some(u256_to_big_decimal(&quote.sell_amount)),
-                buy_amount: Some(u256_to_big_decimal(&quote.buy_amount)),
+                quote_sell_amount: Some(u256_to_big_decimal(&quote.sell_amount)),
+                quote_buy_amount: Some(u256_to_big_decimal(&quote.buy_amount)),
             },
         }
     }
@@ -79,11 +79,13 @@ impl From<FeePolicy> for domain::fee::Policy {
                 max_volume_factor: row.max_volume_factor.expect("missing max volume factor"),
                 quote: domain::fee::Quote {
                     sell_amount: big_decimal_to_u256(
-                        &row.sell_amount.expect("missing sell amount"),
+                        &row.quote_sell_amount.expect("missing sell amount"),
                     )
                     .expect("sell amount is not a valid eth::U256"),
-                    buy_amount: big_decimal_to_u256(&row.buy_amount.expect("missing buy amount"))
-                        .expect("buy amount is not a valid eth::U256"),
+                    buy_amount: big_decimal_to_u256(
+                        &row.quote_buy_amount.expect("missing buy amount"),
+                    )
+                    .expect("buy amount is not a valid eth::U256"),
                 },
             },
         }
