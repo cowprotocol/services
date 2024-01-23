@@ -11,6 +11,7 @@ use {
 pub mod cli;
 pub mod dto;
 
+#[derive(Clone)]
 pub struct Persistence {
     s3: Option<s3::Uploader>,
     postgres: Arc<Postgres>,
@@ -101,10 +102,10 @@ impl Persistence {
         tokio::spawn(
             async move {
                 let start = Instant::now();
-                let count = order_uids.len();
+                let events_count = order_uids.len();
                 match boundary::store_order_events(&db, order_uids, label, Utc::now()).await {
                     Ok(_) => {
-                        tracing::debug!(elapsed=?start.elapsed(), events_count=count, "stored order events");
+                        tracing::debug!(elapsed=?start.elapsed(), ?events_count, "stored order events");
                     }
                     Err(err) => {
                         tracing::warn!(?err, "failed to insert order events");

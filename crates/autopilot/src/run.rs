@@ -546,9 +546,8 @@ pub async fn run(args: Arguments) {
         service_maintainer.run_maintenance_on_new_block(eth.current_block().clone()),
     );
 
-    let persistence = Arc::new(
-        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await,
-    );
+    let persistence =
+        infra::persistence::Persistence::new(args.s3.into().unwrap(), Arc::new(db.clone())).await;
 
     let block = eth.current_block().borrow().number;
     let solvable_orders_cache = SolvableOrdersCache::new(

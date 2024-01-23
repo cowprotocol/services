@@ -66,7 +66,7 @@ pub struct Metrics {
 /// new order got added to the order book.
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
-    persistence: Arc<infra::Persistence>,
+    persistence: infra::Persistence,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -90,7 +90,7 @@ impl SolvableOrdersCache {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
-        persistence: Arc<infra::Persistence>,
+        persistence: infra::Persistence,
         banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
