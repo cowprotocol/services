@@ -9,7 +9,6 @@ use {
         boundary::{self},
         domain,
     },
-    anyhow::anyhow,
     primitive_types::U256,
 };
 
@@ -29,30 +28,20 @@ impl ProtocolFee {
     }
 
     /// Get policies for order.
-    pub fn get(
-        &self,
-        order: &boundary::Order,
-        quote: Option<&domain::Quote>,
-    ) -> anyhow::Result<Vec<Policy>> {
+    pub fn get(&self, order: &boundary::Order, quote: &domain::Quote) -> Vec<Policy> {
         match order.metadata.class {
             boundary::OrderClass::Market => {
                 if self.fee_policy_skip_market_orders {
-                    Ok(vec![])
+                    vec![]
                 } else {
-                    self.policy.try_with_quote(quote).map(|p| vec![p])
+                    vec![self.policy.to_domain(quote)]
                 }
             }
-            boundary::OrderClass::Liquidity => Ok(vec![]),
+            boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return self.policy.try_with_quote(quote).map(|p| vec![p]);
+                    return vec![self.policy.to_domain(quote)];
                 }
-
-                // if the quote is missing, we can't determine if the order is outside the
-                // market price so we protect the user and not charge a fee
-                let Some(quote) = quote else {
-                    return Ok(vec![]);
-                };
 
                 if boundary::is_order_outside_market_price(
                     &order.data.sell_amount,
@@ -60,9 +49,9 @@ impl ProtocolFee {
                     &quote.buy_amount,
                     &quote.sell_amount,
                 ) {
-                    self.policy.try_with_quote(Some(quote)).map(|p| vec![p])
+                    vec![self.policy.to_domain(quote)]
                 } else {
-                    Ok(vec![])
+                    vec![]
                 }
             }
         }
@@ -109,27 +98,24 @@ pub enum PolicyRaw {
 }
 
 impl PolicyRaw {
-    pub fn try_with_quote(&self, quote: Option<&domain::Quote>) -> anyhow::Result<Policy> {
+    pub fn to_domain(&self, quote: &domain::Quote) -> Policy {
         match self {
             PolicyRaw::Surplus {
                 factor,
                 max_volume_factor,
-            } => Ok(Policy::Surplus {
+            } => Policy::Surplus {
                 factor: *factor,
                 max_volume_factor: *max_volume_factor,
-            }),
+            },
             PolicyRaw::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => {
-                let quote = quote.ok_or(anyhow!("missing quote for price improvement policy"))?;
-                Ok(Policy::PriceImprovement {
-                    factor: *factor,
-                    max_volume_factor: *max_volume_factor,
-                    quote: quote.clone().into(),
-                })
-            }
-            PolicyRaw::Volume { factor } => Ok(Policy::Volume { factor: *factor }),
+            } => Policy::PriceImprovement {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+                quote: quote.clone().into(),
+            },
+            PolicyRaw::Volume { factor } => Policy::Volume { factor: *factor },
         }
     }
 }

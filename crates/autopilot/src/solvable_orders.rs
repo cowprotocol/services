@@ -239,13 +239,12 @@ impl SolvableOrdersCache {
             orders: orders
                 .into_iter()
                 .filter_map(|order| {
-                    let quote = db_solvable_orders.quotes.get(&order.metadata.uid.into());
-                    match self.protocol_fee.get(&order, quote) {
-                        Ok(protocol_fees) => Some(boundary::order::to_domain(order, protocol_fees)),
-                        Err(err) => {
-                            tracing::warn!(order_uid = %order.metadata.uid, ?err, "order is skipped, failed to compute protocol fees due to error");
-                            None
-                        }
+                    if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
+                        let protocol_fees = self.protocol_fee.get(&order, quote);
+                        Some(boundary::order::to_domain(order, protocol_fees))
+                    } else {
+                        tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
+                        None
                     }
                 })
                 .collect(),
