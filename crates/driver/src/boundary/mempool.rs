@@ -39,6 +39,12 @@ pub struct Config {
     pub submission: SubmissionLogic,
 }
 
+impl Config {
+    pub fn deadline(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now() + self.max_confirm_time
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Kind {
     /// The public mempool of the [`Ethereum`] node.

@@ -194,7 +194,7 @@ impl Ethereum {
 
     /// If the transaction has been confirmed returns its execution status
     /// (success or failure) of None if the transaction is not yet confirmed.
-    pub async fn transaction_receipt(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
+    pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
             .eth()
             .transaction_receipt(tx_hash.0)
@@ -240,7 +240,8 @@ pub enum Error {
 }
 
 impl Error {
-    // Returns whether the error indicates that the original transaction reverted.
+    /// Returns whether the error indicates that the original transaction
+    /// reverted.
     pub fn is_revert(&self) -> bool {
         // This behavior is node dependent
         match self {

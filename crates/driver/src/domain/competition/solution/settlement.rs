@@ -399,7 +399,7 @@ impl Gas {
         self.limit * self.fee_per_gas()
     }
 
-    // Compute an upper bound for `max_fee_per_gas` for the given settlement.
+    /// Compute an upper bound for `max_fee_per_gas` for the given settlement.
     fn fee_per_gas(&self) -> eth::FeePerGas {
         // We multiply a fixed factor of the current base fee per
         // gas, which is chosen to be the maximum possible increase to the base
