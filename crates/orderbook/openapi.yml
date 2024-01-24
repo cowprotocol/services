@@ -1202,12 +1202,9 @@ components:
               UnsupportedOrderType,
               InsufficientValidTo,
               ExcessiveValidTo,
-              TransferEthToContract,
               InvalidNativeSellToken,
               SameBuyAndSellToken,
-              UnsupportedSignature,
               UnsupportedToken,
-              UnsupportedCustomInteraction
               InvalidAppData,
               AppDataHashMismatch,
               AppdataFromMismatch,
@@ -1255,7 +1252,6 @@ components:
               InsufficientValidTo,
               ExcessiveValidTo,
               InvalidSignature,
-              TransferEthToContract,
               TransferSimulationFailed,
               UnsupportedToken,
               WrongOwner,
@@ -1264,7 +1260,6 @@ components:
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
-              UnsupportedSignature,
             ]
         description:
           type: string
