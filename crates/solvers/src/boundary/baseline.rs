@@ -187,6 +187,17 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                         }
                     }
                 }
+                liquidity::State::LimitOrder(limit_order) => {
+                    if let Some(token_pair) =
+                        TokenPair::new(limit_order.maker.token.0, limit_order.taker.token.0)
+                    {
+                        amms.entry(token_pair).or_default().push(Amm {
+                            id: liquidity.id.clone(),
+                            token_pair,
+                            pool: Pool::LimitOrder(limit_order.clone()),
+                        })
+                    }
+                }
                 // The baseline solver does not currently support other AMMs.
                 _ => {}
             };
@@ -206,6 +217,7 @@ enum Pool {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),
     Stable(boundary::liquidity::stable::Pool),
+    LimitOrder(liquidity::limit_order::LimitOrder),
 }
 
 impl BaselineSolvable for Amm {
@@ -214,6 +226,7 @@ impl BaselineSolvable for Amm {
             Pool::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
             Pool::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
             Pool::Stable(pool) => pool.get_amount_out(out_token, input),
+            Pool::LimitOrder(limit_order) => limit_order.get_amount_out(out_token, input),
         }
     }
 
@@ -222,6 +235,7 @@ impl BaselineSolvable for Amm {
             Pool::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
             Pool::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
             Pool::Stable(pool) => pool.get_amount_in(in_token, out),
+            Pool::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out),
         }
     }
 
@@ -230,6 +244,7 @@ impl BaselineSolvable for Amm {
             Pool::ConstantProduct(pool) => pool.gas_cost(),
             Pool::WeightedProduct(pool) => pool.gas_cost(),
             Pool::Stable(pool) => pool.gas_cost(),
+            Pool::LimitOrder(limit_order) => limit_order.gas_cost(),
         }
     }
 }
