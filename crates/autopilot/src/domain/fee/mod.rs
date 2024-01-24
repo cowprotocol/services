@@ -46,19 +46,18 @@ impl ProtocolFee {
                     return vec![];
                 };
 
-                tracing::debug!(?order.metadata.uid, ?self.policy, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
-                if boundary::is_order_outside_market_price(
-                    &boundary::Amounts {
-                        sell: order.data.sell_amount,
-                        buy: order.data.buy_amount,
-                        fee: order.data.fee_amount,
-                    },
-                    &boundary::Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee,
-                    },
-                ) {
+                let order_ = boundary::Amounts {
+                    sell: order.data.sell_amount,
+                    buy: order.data.buy_amount,
+                    fee: order.data.fee_amount,
+                };
+                let quote = boundary::Amounts {
+                    sell: quote.sell_amount,
+                    buy: quote.buy_amount,
+                    fee: quote.fee,
+                };
+                tracing::debug!(?order.metadata.uid, ?self.policy, ?order_, ?quote, "checking if order is outside market price");
+                if boundary::is_order_outside_market_price(&order_, &quote) {
                     vec![self.policy]
                 } else {
                     vec![]

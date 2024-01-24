@@ -870,6 +870,7 @@ async fn get_or_create_quote(
 }
 
 /// Amounts used for market price checker.
+#[derive(Debug)]
 pub struct Amounts {
     pub sell: U256,
     pub buy: U256,
