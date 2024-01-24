@@ -54,11 +54,10 @@ fn calculate_amount_in(
     let scaled_taker_amount = Bfp::from_wei(taker_amount).mul_down(Bfp::exp10(18)).ok()?;
     let maker_bfp = Bfp::from_wei(maker_amount);
     let scaled_price_ratio = scaled_taker_amount.div_down(maker_bfp).ok()?;
-    let required_amount_before_scaling = Bfp::from_wei(out_amount)
-        .mul_down(scaled_price_ratio)
-        .ok()?;
+    let required_amount_before_scaling =
+        Bfp::from_wei(out_amount).mul_up(scaled_price_ratio).ok()?;
     let required_amount = required_amount_before_scaling
-        .div_down(Bfp::exp10(18))
+        .div_up(Bfp::exp10(18))
         .ok()?
         .as_uint256();
     required_amount.checked_add(fee.0)
@@ -84,8 +83,8 @@ mod tests {
 
     #[test]
     fn test_amount_out_in_round_trip() {
-        let maker_amount: u32 = 200;
-        let taker_amount: u32 = 100;
+        let maker_amount: u32 = 321;
+        let taker_amount: u32 = 123;
         let fee_amount: u32 = 10;
         let desired_in_amount: u32 = 50;
 
@@ -105,8 +104,8 @@ mod tests {
 
     #[test]
     fn test_amount_in_out_round_trip() {
-        let maker_amount: u32 = 100;
-        let taker_amount: u32 = 200;
+        let maker_amount: u32 = 123;
+        let taker_amount: u32 = 321;
         let fee_amount: u32 = 10;
         let desired_out_amount: u32 = 50;
 
