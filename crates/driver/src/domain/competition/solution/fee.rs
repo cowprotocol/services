@@ -89,13 +89,11 @@ impl Fulfillment {
                 factor,
                 max_volume_factor,
                 quote,
-            }) => self.calculate_fee(
-                quote.sell_amount,
-                quote.buy_amount,
-                prices,
-                *factor,
-                *max_volume_factor,
-            ),
+            }) => {
+                let sell_amount = quote.sell_amount.max(self.order().sell.amount.0);
+                let buy_amount = quote.buy_amount.min(self.order().buy.amount.0);
+                self.calculate_fee(sell_amount, buy_amount, prices, *factor, *max_volume_factor)
+            }
             Some(FeePolicy::Volume { factor }) => self.fee_from_volume(prices, *factor),
             None => Ok(0.into()),
         }
