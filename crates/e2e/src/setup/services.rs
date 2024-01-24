@@ -51,6 +51,14 @@ impl<'a> Services<'a> {
         }
     }
 
+    pub async fn new_with_timeout(contracts: &'a Contracts, timeout: Duration) -> Services<'a> {
+        Self {
+            contracts,
+            http: Client::builder().timeout(timeout).build().unwrap(),
+            db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
+        }
+    }
+
     fn api_autopilot_arguments() -> impl Iterator<Item = String> {
         [
             "--price-estimators=Baseline|0x0000000000000000000000000000000000000001".to_string(),
