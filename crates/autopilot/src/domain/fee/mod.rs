@@ -15,14 +15,14 @@ use {
 /// Constructs fee policies based on the current configuration.
 #[derive(Debug)]
 pub struct ProtocolFee {
-    policy: PolicyRaw,
+    policy_builder: PolicyBuilder,
     fee_policy_skip_market_orders: bool,
 }
 
 impl ProtocolFee {
-    pub fn new(policy: PolicyRaw, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy_builder: PolicyBuilder, fee_policy_skip_market_orders: bool) -> Self {
         Self {
-            policy,
+            policy_builder,
             fee_policy_skip_market_orders,
         }
     }
@@ -34,16 +34,16 @@ impl ProtocolFee {
                 if self.fee_policy_skip_market_orders {
                     vec![]
                 } else {
-                    vec![self.policy.to_domain(quote)]
+                    vec![self.policy_builder.build_with(quote)]
                 }
             }
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return vec![self.policy.to_domain(quote)];
+                    return vec![self.policy_builder.build_with(quote)];
                 }
 
-                tracing::debug!(?order.metadata.uid, ?self.policy, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
+                tracing::debug!(?order.metadata.uid, ?self.policy_builder, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
                 if boundary::is_order_outside_market_price(
                     &order.data.sell_amount,
                     &order.data.buy_amount,
@@ -52,7 +52,7 @@ impl ProtocolFee {
                     &quote.sell_amount,
                     &quote.fee,
                 ) {
-                    vec![self.policy.to_domain(quote)]
+                    vec![self.policy_builder.build_with(quote)]
                 } else {
                     vec![]
                 }
@@ -97,23 +97,23 @@ pub enum Policy {
 }
 
 #[derive(Debug)]
-pub enum PolicyRaw {
+pub enum PolicyBuilder {
     Surplus { factor: f64, max_volume_factor: f64 },
     PriceImprovement { factor: f64, max_volume_factor: f64 },
     Volume { factor: f64 },
 }
 
-impl PolicyRaw {
-    pub fn to_domain(&self, quote: &domain::Quote) -> Policy {
+impl PolicyBuilder {
+    pub fn build_with(&self, quote: &domain::Quote) -> Policy {
         match self {
-            PolicyRaw::Surplus {
+            PolicyBuilder::Surplus {
                 factor,
                 max_volume_factor,
             } => Policy::Surplus {
                 factor: *factor,
                 max_volume_factor: *max_volume_factor,
             },
-            PolicyRaw::PriceImprovement {
+            PolicyBuilder::PriceImprovement {
                 factor,
                 max_volume_factor,
             } => Policy::PriceImprovement {
@@ -121,7 +121,7 @@ impl PolicyRaw {
                 max_volume_factor: *max_volume_factor,
                 quote: quote.clone().into(),
             },
-            PolicyRaw::Volume { factor } => Policy::Volume { factor: *factor },
+            PolicyBuilder::Volume { factor } => Policy::Volume { factor: *factor },
         }
     }
 }

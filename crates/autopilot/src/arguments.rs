@@ -368,23 +368,23 @@ pub struct FeePolicy {
 }
 
 impl FeePolicy {
-    pub fn to_domain_raw(&self) -> domain::fee::PolicyRaw {
+    pub fn to_policy_builder(&self) -> domain::fee::PolicyBuilder {
         match self.fee_policy_kind {
             FeePolicyKind::Surplus {
                 factor,
                 max_volume_factor,
-            } => domain::fee::PolicyRaw::Surplus {
+            } => domain::fee::PolicyBuilder::Surplus {
                 factor,
                 max_volume_factor,
             },
             FeePolicyKind::PriceImprovement {
                 factor,
                 max_volume_factor,
-            } => domain::fee::PolicyRaw::PriceImprovement {
+            } => domain::fee::PolicyBuilder::PriceImprovement {
                 factor,
                 max_volume_factor,
             },
-            FeePolicyKind::Volume { factor } => domain::fee::PolicyRaw::Volume { factor },
+            FeePolicyKind::Volume { factor } => domain::fee::PolicyBuilder::Volume { factor },
         }
     }
 }
