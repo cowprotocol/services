@@ -1,6 +1,6 @@
 use {
     super::Postgres,
-    crate::{domain, infra::persistence::dto},
+    crate::{boundary, infra::persistence::dto},
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     futures::{StreamExt, TryStreamExt},
@@ -60,7 +60,7 @@ impl QuoteStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<domain::SolvableOrders> {
+    pub async fn solvable_orders(&self, min_valid_to: u32) -> Result<boundary::SolvableOrders> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["solvable_orders"])
@@ -85,7 +85,7 @@ impl Postgres {
         let quotes = self
             .read_quotes(orders.iter().map(|order| &order.metadata.uid))
             .await?;
-        Ok(domain::SolvableOrders {
+        Ok(boundary::SolvableOrders {
             orders,
             quotes,
             latest_settlement_block,

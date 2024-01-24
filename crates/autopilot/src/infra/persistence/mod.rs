@@ -51,7 +51,7 @@ impl Persistence {
     pub async fn solvable_orders(
         &self,
         min_valid_to: u32,
-    ) -> Result<domain::SolvableOrders, Error> {
+    ) -> Result<boundary::SolvableOrders, Error> {
         self.postgres
             .solvable_orders(min_valid_to)
             .await
