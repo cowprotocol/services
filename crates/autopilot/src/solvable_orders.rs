@@ -1,5 +1,5 @@
 use {
-    crate::{boundary, database::Postgres, domain},
+    crate::{database::Postgres, domain},
     anyhow::Result,
     bigdecimal::BigDecimal,
     database::order_events::OrderEventLabel,
@@ -237,8 +237,7 @@ impl SolvableOrdersCache {
                 .into_iter()
                 .filter_map(|order| {
                     if let Some(quote) = db_solvable_orders.quotes.get(&order.metadata.uid.into()) {
-                        let protocol_fees = self.protocol_fee.get(&order, quote);
-                        Some(boundary::order::to_domain(order, protocol_fees))
+                        Some(self.protocol_fee.to_order(order, quote))
                     } else {
                         tracing::warn!(order_uid = %order.metadata.uid, "order is skipped, quote is missing");
                         None

@@ -20,16 +20,17 @@ pub struct ProtocolFee {
 }
 
 impl ProtocolFee {
-    pub fn new(policy_builder: PolicyBuilder, fee_policy_skip_market_orders: bool) -> Self {
+    pub fn new(policy: PolicyBuilder, fee_policy_skip_market_orders: bool) -> Self {
         Self {
-            policy_builder,
+            policy_builder: policy,
             fee_policy_skip_market_orders,
         }
     }
 
-    /// Get policies for order.
-    pub fn get(&self, order: &boundary::Order, quote: &domain::Quote) -> Vec<Policy> {
-        match order.metadata.class {
+    /// Converts an order from the boundary layer to the domain layer, applying
+    /// protocol fees if necessary.
+    pub fn to_order(&self, order: boundary::Order, quote: &domain::Quote) -> domain::Order {
+        let protocol_fees = match order.metadata.class {
             boundary::OrderClass::Market => {
                 if self.fee_policy_skip_market_orders {
                     vec![]
@@ -40,24 +41,25 @@ impl ProtocolFee {
             boundary::OrderClass::Liquidity => vec![],
             boundary::OrderClass::Limit => {
                 if !self.fee_policy_skip_market_orders {
-                    return vec![self.policy_builder.build_with(quote)];
-                }
-
-                tracing::debug!(?order.metadata.uid, ?self.policy_builder, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
-                if boundary::is_order_outside_market_price(
-                    &order.data.sell_amount,
-                    &order.data.buy_amount,
-                    &order.data.fee_amount,
-                    &quote.buy_amount,
-                    &quote.sell_amount,
-                    &quote.fee,
-                ) {
                     vec![self.policy_builder.build_with(quote)]
                 } else {
-                    vec![]
+                    tracing::debug!(?order.metadata.uid, ?self.policy_builder, ?order.data.sell_amount, ?order.data.buy_amount, ?quote, "checking if order is outside market price");
+                    if boundary::is_order_outside_market_price(
+                        &order.data.sell_amount,
+                        &order.data.buy_amount,
+                        &order.data.fee_amount,
+                        &quote.buy_amount,
+                        &quote.sell_amount,
+                        &quote.fee,
+                    ) {
+                        vec![self.policy_builder.build_with(quote)]
+                    } else {
+                        vec![]
+                    }
                 }
             }
-        }
+        };
+        boundary::order::to_domain(order, protocol_fees)
     }
 }
 
