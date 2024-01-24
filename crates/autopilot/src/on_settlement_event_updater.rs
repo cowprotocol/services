@@ -259,7 +259,8 @@ impl OnSettlementEventUpdater {
         };
 
         let score = database::settlement_scores::fetch(ex, auction_id).await?;
-        let data_already_recorded = database::settlements::data_exists(ex, auction_id).await?;
+        let data_already_recorded =
+            database::settlements::already_processed(ex, auction_id).await?;
         match (score, data_already_recorded) {
             (None, _) => {
                 tracing::debug!(

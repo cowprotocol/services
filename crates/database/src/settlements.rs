@@ -65,7 +65,10 @@ LIMIT 1
         .await
 }
 
-pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {
+pub async fn already_processed(
+    ex: &mut PgConnection,
+    auction_id: i64,
+) -> Result<bool, sqlx::Error> {
     const QUERY: &str = r#"SELECT COUNT(*) FROM settlements WHERE auction_id = $1;"#;
     let count: i64 = sqlx::query_scalar(QUERY)
         .bind(auction_id)
