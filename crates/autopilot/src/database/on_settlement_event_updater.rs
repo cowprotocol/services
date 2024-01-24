@@ -1,5 +1,4 @@
 use {
-    crate::on_settlement_event_updater::AuctionKind,
     anyhow::{Context, Result},
     database::{byte_array::ByteArray, settlement_observations::Observation},
     ethcontract::U256,
@@ -14,7 +13,6 @@ pub type AuctionId = i64;
 
 #[derive(Debug, Default, Clone)]
 pub struct AuctionData {
-    pub auction_id: AuctionId,
     pub gas_used: U256,
     pub effective_gas_price: U256,
     pub surplus: U256,
@@ -26,7 +24,8 @@ pub struct AuctionData {
 pub struct SettlementUpdate {
     pub block_number: i64,
     pub log_index: i64,
-    pub auction_kind: AuctionKind,
+    pub auction_id: AuctionId,
+    /// Only set if the auction is for this environment.
     pub auction_data: Option<AuctionData>,
 }
 
@@ -40,20 +39,12 @@ impl super::Postgres {
             .with_label_values(&["update_settlement_details"])
             .start_timer();
 
-        let (auction_id, auction_kind) = match settlement_update.auction_kind {
-            AuctionKind::Valid { auction_id } => {
-                (Some(auction_id), database::settlements::AuctionKind::Valid)
-            }
-            AuctionKind::Invalid => (None, database::settlements::AuctionKind::Invalid),
-        };
-
         // update settlements
         database::settlements::update_settlement_auction(
             ex,
             settlement_update.block_number,
             settlement_update.log_index,
-            auction_id,
-            auction_kind,
+            settlement_update.auction_id,
         )
         .await
         .context("insert_settlement_tx_info")?;
@@ -77,7 +68,7 @@ impl super::Postgres {
                 database::order_execution::save(
                     ex,
                     &ByteArray(order.0),
-                    auction_data.auction_id,
+                    settlement_update.auction_id,
                     &u256_to_big_decimal(&executed_fee),
                 )
                 .await

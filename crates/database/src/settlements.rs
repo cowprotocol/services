@@ -47,40 +47,45 @@ pub struct SettlementEvent {
     pub tx_hash: TransactionHash,
 }
 
-#[derive(Debug, Clone, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "AuctionKind", rename_all = "lowercase")]
-pub enum AuctionKind {
-    Valid,
-    Invalid,
-}
-
 pub async fn get_settlement_without_auction(
     ex: &mut PgConnection,
+    max_block_number: i64,
 ) -> Result<Option<SettlementEvent>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT block_number, log_index, tx_hash
 FROM settlements
-WHERE auction_kind = 'unprocessed'
+WHERE auction_id IS NULL
+AND block_number <= $1
 ORDER BY block_number ASC
 LIMIT 1
     "#;
-    sqlx::query_as(QUERY).fetch_optional(ex).await
+    sqlx::query_as(QUERY)
+        .bind(max_block_number)
+        .fetch_optional(ex)
+        .await
+}
+
+pub async fn data_exists(ex: &mut PgConnection, auction_id: i64) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"SELECT COUNT(*) FROM settlements WHERE auction_id = $1;"#;
+    let count: i64 = sqlx::query_scalar(QUERY)
+        .bind(auction_id)
+        .fetch_one(ex)
+        .await?;
+    Ok(count >= 1)
 }
 
 pub async fn update_settlement_auction(
     ex: &mut PgConnection,
     block_number: i64,
     log_index: i64,
-    auction_id: Option<i64>,
-    auction_kind: AuctionKind,
+    auction_id: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
-SET auction_kind = $1, auction_id = $2
-WHERE block_number = $3 AND log_index = $4
+SET auction_id = $1
+WHERE block_number = $2 AND log_index = $3
     ;"#;
     sqlx::query(QUERY)
-        .bind(auction_kind)
         .bind(auction_id)
         .bind(block_number)
         .bind(log_index)
@@ -170,7 +175,7 @@ mod tests {
             .await
             .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db)
+        let settlement = get_settlement_without_auction(&mut db, 0)
             .await
             .unwrap()
             .unwrap();
@@ -178,17 +183,11 @@ mod tests {
         assert_eq!(settlement.block_number, event.block_number);
         assert_eq!(settlement.log_index, event.log_index);
 
-        update_settlement_auction(
-            &mut db,
-            event.block_number,
-            event.log_index,
-            Some(1),
-            AuctionKind::Valid,
-        )
-        .await
-        .unwrap();
+        update_settlement_auction(&mut db, event.block_number, event.log_index, 1)
+            .await
+            .unwrap();
 
-        let settlement = get_settlement_without_auction(&mut db).await.unwrap();
+        let settlement = get_settlement_without_auction(&mut db, 0).await.unwrap();
 
         assert!(settlement.is_none());
     }

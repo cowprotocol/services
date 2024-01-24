@@ -89,7 +89,10 @@ async fn test(web3: Web3) {
             .contains(&buy_balance.as_u128())
     );
 
+    onchain.mint_blocks_past_reorg_threshold().await;
+
     let settlement_event_processed = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         order.metadata.executed_surplus_fee > U256::zero()
     };

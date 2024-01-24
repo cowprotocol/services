@@ -127,8 +127,7 @@ mod tests {
             &mut db,
             index.block_number,
             index.log_index,
-            Some(id),
-            crate::settlements::AuctionKind::Valid,
+            id,
         )
         .await
         .unwrap();

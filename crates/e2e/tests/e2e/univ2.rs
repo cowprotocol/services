@@ -89,6 +89,8 @@ async fn test(web3: Web3) {
         .await
         .unwrap();
 
+    onchain.mint_blocks_past_reorg_threshold().await;
+
     let cip_20_data_updated = || async {
         let data = match crate::database::most_recent_cip_20_data(services.db()).await {
             Some(data) => data,
@@ -102,6 +104,8 @@ async fn test(web3: Web3) {
             && data.participants.iter().any(|p| p.participant.0 == solver.address().0)
             // and won the auction
             && data.score.winner.0 == solver.address().0
+            // and submitted the solution
+            && data.tx.tx_from.0 == solver.address().0
             // and calldata is present
             && !data.call_data.call_data.is_empty()
     };

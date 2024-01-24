@@ -117,7 +117,9 @@ async fn test(web3: Web3) {
             .contains(&buy_balance.as_u128())
     );
 
+    onchain.mint_blocks_past_reorg_threshold().await;
     let metadata_updated = || async {
+        onchain.mint_block().await;
         let order = services.get_order(&uid).await.unwrap();
         !order.metadata.executed_surplus_fee.is_zero()
             && order.metadata.executed_buy_amount != Default::default()
