@@ -671,12 +671,16 @@ impl OrderValidating for OrderValidator {
         let class = match (class, &quote) {
             (OrderClass::Market, Some(quote))
                 if is_order_outside_market_price(
-                    &quote_parameters.sell_amount,
-                    &quote_parameters.buy_amount,
-                    &quote_parameters.fee_amount,
-                    &quote.sell_amount,
-                    &quote.buy_amount,
-                    &quote.fee_amount,
+                    &Amounts {
+                        sell: data.sell_amount,
+                        buy: data.buy_amount,
+                        fee: data.fee_amount,
+                    },
+                    &Amounts {
+                        sell: quote.sell_amount,
+                        buy: quote.buy_amount,
+                        fee: quote.fee_amount,
+                    },
                 ) =>
             {
                 tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
@@ -865,21 +869,21 @@ async fn get_or_create_quote(
     Ok(quote)
 }
 
+/// Amounts used for market price checker.
+#[derive(Debug)]
+pub struct Amounts {
+    pub sell: U256,
+    pub buy: U256,
+    pub fee: U256,
+}
+
 /// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-pub fn is_order_outside_market_price(
-    sell_amount: &U256,
-    buy_amount: &U256,
-    fee_amount: &U256,
-    quote_sell_amount: &U256,
-    quote_buy_amount: &U256,
-    quote_fee_amount: &U256,
-) -> bool {
-    (sell_amount + fee_amount).full_mul(*quote_buy_amount)
-        < (quote_sell_amount + quote_fee_amount).full_mul(*buy_amount)
+pub fn is_order_outside_market_price(order: &Amounts, quote: &Amounts) -> bool {
+    (order.sell + order.fee).full_mul(quote.buy) < (quote.sell + quote.fee).full_mul(order.buy)
 }
 
 pub fn convert_signing_scheme_into_quote_signing_scheme(
@@ -2237,30 +2241,42 @@ mod tests {
 
         // at market price
         assert!(!is_order_outside_market_price(
-            &"100".into(),
-            &"100".into(),
-            &"0".into(),
-            &quote.sell_amount,
-            &quote.buy_amount,
-            &quote.fee_amount,
+            &Amounts {
+                sell: 100.into(),
+                buy: 100.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
-            &"100".into(),
-            &"90".into(),
-            &"0".into(),
-            &quote.sell_amount,
-            &quote.buy_amount,
-            &quote.fee_amount,
+            &Amounts {
+                sell: 100.into(),
+                buy: 90.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
-            &"100".into(),
-            &"1000".into(),
-            &"0".into(),
-            &quote.sell_amount,
-            &quote.buy_amount,
-            &quote.fee_amount,
+            &Amounts {
+                sell: 100.into(),
+                buy: 1000.into(),
+                fee: 0.into(),
+            },
+            &Amounts {
+                sell: quote.sell_amount,
+                buy: quote.buy_amount,
+                fee: quote.fee_amount,
+            },
         ));
     }
 }
