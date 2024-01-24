@@ -119,6 +119,7 @@ impl TradeVerifying for TradeVerifier {
         let simulation = solver
             .methods()
             .swap(
+                self.settlement,
                 verification.from,
                 query.sell_token,
                 sell_amount,
@@ -149,7 +150,11 @@ impl TradeVerifying for TradeVerifier {
             },
         };
 
-        let trader_impl = self.code_fetcher.code(verification.from).await?;
+        let trader_impl = self
+            .code_fetcher
+            .code(verification.from)
+            .await
+            .context("failed to fetch trader code")?;
         if !trader_impl.0.is_empty() {
             // Store `owner` implementation so `Trader` helper contract can proxy to it.
             overrides.insert(
@@ -161,10 +166,17 @@ impl TradeVerifying for TradeVerifier {
             );
         }
 
-        let output = self.simulator.simulate(call, overrides).await?;
-        let summary = SettleOutput::decode(&output)?;
+        let output = self
+            .simulator
+            .simulate(call, overrides)
+            .await
+            .context("failed to simulate quote")?;
+        let summary =
+            SettleOutput::decode(&output).context("could not decode simulation output")?;
         let verified = VerifiedEstimate {
-            out_amount: summary.out_amount(query.kind)?,
+            out_amount: summary
+                .out_amount(query.kind)
+                .context("could not compute out_amount")?,
             gas: summary.gas_used.as_u64(),
             solver: trade.solver,
         };
