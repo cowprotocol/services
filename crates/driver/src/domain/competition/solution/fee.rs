@@ -160,28 +160,42 @@ impl Fulfillment {
     }
 
     fn fee_from_volume(&self, prices: ClearingPrices, factor: f64) -> Result<eth::U256, Error> {
-        let executed = self.executed().0;
         let executed_sell_amount = match self.order().side {
             Side::Buy => {
                 // How much `sell_token` we need to sell to buy `executed` amount of `buy_token`
-                executed
+                self.executed()
+                    .0
                     .checked_mul(prices.buy)
                     .ok_or(Error::Overflow)?
                     .checked_div(prices.sell)
                     .ok_or(Error::DivisionByZero)?
             }
-            Side::Sell => executed,
+            Side::Sell => self.executed().0,
         };
-        // Sell slightly more `sell_token` to capture the `surplus_fee`
-        let executed_sell_amount_with_fee = executed_sell_amount
-            .checked_add(
-                // surplus_fee is always expressed in sell token
-                self.surplus_fee()
-                    .map(|fee| fee.0)
-                    .ok_or(Error::ProtocolFeeOnStaticOrder)?,
-            )
-            .ok_or(Error::Overflow)?;
-        apply_factor(executed_sell_amount_with_fee, factor)
+        // Adjust the factor so that it represents the portion of the final executed
+        // amount (and not the intermediate one reported by solver)
+        //
+        // Let's take the example from the top of the file:
+        //
+        // SELL ORDER: solver reported executed = 0.95 WETH, fee = 0.05 WETH
+        //
+        // Two expressions must be valid:
+        // protocol_fee = factor * executed_final
+        // executed_final = executed - protocol_fee
+        //
+        // protocol_fee = factor * (executed - protocol_fee)
+        // protocol_fee = factor * executed - factor * protocol_fee
+        // protocol_fee + factor * protocol_fee = factor * executed
+        // protocol_fee * (1 + factor) = factor * executed
+        // protocol_fee = executed * factor / (1 + factor)
+        //
+        // Similar applies to BUY ORDER, with the difference:
+        // executed_final = executed + protocol_fee
+        let factor = match self.order().side {
+            Side::Buy => factor / (1. - factor),
+            Side::Sell => factor / (1. + factor),
+        };
+        apply_factor(executed_sell_amount, factor)
     }
 }
 
