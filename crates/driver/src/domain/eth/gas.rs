@@ -73,16 +73,14 @@ impl GasPrice {
 }
 
 /// Implements multiplication of a gas price by a floating point number.
-/// This is equivalent to multiplying the `tip` and adjusting the max fee to
-/// accommodate the new tip.
+/// This is equivalent to multiplying the `tip` and `max`
 impl std::ops::Mul<f64> for GasPrice {
     type Output = Self;
 
     fn mul(self, rhs: f64) -> Self::Output {
-        let new_tip = self.tip.mul_ceil(rhs);
         Self {
-            max: self.max.add(new_tip).saturating_sub(self.tip),
-            tip: new_tip,
+            max: self.max.mul_ceil(rhs),
+            tip: self.tip.mul_ceil(rhs),
             base: self.base,
         }
     }
