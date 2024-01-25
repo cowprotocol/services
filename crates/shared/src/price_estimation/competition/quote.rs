@@ -52,7 +52,14 @@ fn compare_quote_result(
     context: &RankingContext,
 ) -> Ordering {
     match (a, b) {
-        (Ok(a), Ok(b)) => compare_quote(query, a, b, context),
+        (Ok(a), Ok(b)) => {
+            // prefer verified over unverified quotes
+            match (a.verified, b.verified) {
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                _ => compare_quote(query, a, b, context),
+            }
+        }
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(a), Err(b)) => compare_error(a, b),
