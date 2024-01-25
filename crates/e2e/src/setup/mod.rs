@@ -5,7 +5,7 @@ pub mod onchain_components;
 mod services;
 
 use {
-    crate::nodes::{Node, NODE_HOST},
+    crate::nodes::Node,
     anyhow::{anyhow, Result},
     ethcontract::futures::FutureExt,
     shared::ethrpc::{create_test_transport, Web3},
@@ -172,6 +172,8 @@ async fn run<F, Fut, T>(
         None => Node::new().await,
     };
 
+    let node_url = node.url.clone();
+
     let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
     observe::panic_hook::prepend_panic_handler(Box::new(move |_| {
@@ -180,7 +182,7 @@ async fn run<F, Fut, T>(
         let _ = node_panic_handle.lock().unwrap().take();
     }));
 
-    let http = create_test_transport(NODE_HOST);
+    let http = create_test_transport(node_url);
     let web3 = Web3::new(http);
 
     services::clear_database().await;

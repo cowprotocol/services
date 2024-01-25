@@ -415,7 +415,7 @@ mod tests {
     #[ignore]
     async fn returns_error_on_non_mainnet() {
         let web3 = Web3::new(create_test_transport(
-            &std::env::var("NODE_URL_RINKEBY").unwrap(),
+            std::env::var("NODE_URL_RINKEBY").unwrap(),
         ));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();

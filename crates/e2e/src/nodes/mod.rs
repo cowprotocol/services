@@ -1,3 +1,5 @@
+use reqwest::Url;
+
 pub mod forked_node;
 pub mod local_node;
 
@@ -8,6 +10,7 @@ pub const NODE_HOST: &str = "http://127.0.0.1:8545";
 /// terminate the node.
 pub struct Node {
     process: Option<tokio::process::Child>,
+    pub url: Url,
 }
 
 impl Node {
@@ -82,13 +85,16 @@ impl Node {
             }
         });
 
-        let _url = tokio::time::timeout(tokio::time::Duration::from_secs(5), receiver)
+        let url = tokio::time::timeout(tokio::time::Duration::from_secs(15), receiver)
             .await
             .expect("finding anvil URL timed out")
             .unwrap();
 
+        let url = Url::parse(&url).expect("could not parse anvil URL");
+
         Self {
             process: Some(process),
+            url,
         }
     }
 

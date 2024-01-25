@@ -9,7 +9,7 @@ pub mod multicall;
 use {
     self::{buffered::BufferedTransport, http::HttpTransport},
     ethcontract::{batch::CallBatch, dyns::DynWeb3, transport::DynTransport},
-    reqwest::{Client, Url},
+    reqwest::{Client, IntoUrl, Url},
     std::{num::NonZeroUsize, time::Duration},
 };
 
@@ -80,18 +80,18 @@ pub fn web3(
 }
 
 /// Convenience method to create a transport from a URL.
-pub fn create_test_transport(url: &str) -> Web3Transport {
+pub fn create_test_transport(url: impl IntoUrl) -> Web3Transport {
     Web3Transport::new(HttpTransport::new(
         Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap(),
-        url.try_into().unwrap(),
+        url.into_url().expect("invalid url for test transport"),
         "".to_string(),
     ))
 }
 
 /// Like above but takes url from the environment NODE_URL.
 pub fn create_env_test_transport() -> Web3Transport {
-    create_test_transport(&std::env::var("NODE_URL").unwrap())
+    create_test_transport(std::env::var("NODE_URL").unwrap())
 }

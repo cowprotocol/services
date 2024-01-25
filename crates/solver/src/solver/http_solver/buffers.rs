@@ -106,7 +106,7 @@ mod test {
     #[ignore]
     async fn retrieves_buffers_on_rinkeby() {
         let web3 = Web3::new(create_test_transport(
-            &std::env::var("NODE_URL_RINKEBY").unwrap(),
+            std::env::var("NODE_URL_RINKEBY").unwrap(),
         ));
         let settlement_contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let weth = H160(hex!("c778417E063141139Fce010982780140Aa0cD5Ab"));
@@ -128,7 +128,7 @@ mod test {
     #[ignore]
     async fn retrieving_buffers_not_affected_by_eth() {
         let web3 = Web3::new(create_test_transport(
-            &std::env::var("NODE_URL_RINKEBY").unwrap(),
+            std::env::var("NODE_URL_RINKEBY").unwrap(),
         ));
         let settlement_contract = GPv2Settlement::deployed(&web3).await.unwrap();
         let weth = H160(hex!("c778417E063141139Fce010982780140Aa0cD5Ab"));
