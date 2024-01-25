@@ -13,7 +13,7 @@ use {
 
 pub struct Solver<'a> {
     base_tokens: BaseTokens,
-    amms: HashMap<TokenPair, Vec<Amm>>,
+    amms: HashMap<TokenPair, Vec<OnchainLiquidity>>,
     liquidity: HashMap<liquidity::Id, &'a liquidity::Liquidity>,
 }
 
@@ -100,7 +100,7 @@ impl<'a> Solver<'a> {
 
     fn traverse_path(
         &self,
-        path: &[&Amm],
+        path: &[&OnchainLiquidity],
         mut sell_token: H160,
         mut sell_amount: U256,
     ) -> Option<Vec<baseline::Segment<'a>>> {
@@ -137,7 +137,9 @@ impl<'a> Solver<'a> {
     }
 }
 
-fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Vec<Amm>> {
+fn to_boundary_amms(
+    liquidity: &[liquidity::Liquidity],
+) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
         .fold(HashMap::new(), |mut amms, liquidity| {
@@ -149,11 +151,13 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                             pool,
                         )
                     {
-                        amms.entry(boundary_pool.tokens).or_default().push(Amm {
-                            id: liquidity.id.clone(),
-                            token_pair: boundary_pool.tokens,
-                            pool: Pool::ConstantProduct(boundary_pool),
-                        });
+                        amms.entry(boundary_pool.tokens)
+                            .or_default()
+                            .push(OnchainLiquidity {
+                                id: liquidity.id.clone(),
+                                token_pair: boundary_pool.tokens,
+                                source: LiquiditySource::ConstantProduct(boundary_pool),
+                            });
                     }
                 }
                 liquidity::State::WeightedProduct(pool) => {
@@ -165,10 +169,10 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                     {
                         for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
-                            amms.entry(token_pair).or_default().push(Amm {
+                            amms.entry(token_pair).or_default().push(OnchainLiquidity {
                                 id: liquidity.id.clone(),
                                 token_pair,
-                                pool: Pool::WeightedProduct(boundary_pool.clone()),
+                                source: LiquiditySource::WeightedProduct(boundary_pool.clone()),
                             });
                         }
                     }
@@ -179,10 +183,10 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                     {
                         for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
-                            amms.entry(token_pair).or_default().push(Amm {
+                            amms.entry(token_pair).or_default().push(OnchainLiquidity {
                                 id: liquidity.id.clone(),
                                 token_pair,
-                                pool: Pool::Stable(boundary_pool.clone()),
+                                source: LiquiditySource::Stable(boundary_pool.clone()),
                             });
                         }
                     }
@@ -191,10 +195,10 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
                     if let Some(token_pair) =
                         TokenPair::new(limit_order.maker.token.0, limit_order.taker.token.0)
                     {
-                        amms.entry(token_pair).or_default().push(Amm {
+                        amms.entry(token_pair).or_default().push(OnchainLiquidity {
                             id: liquidity.id.clone(),
                             token_pair,
-                            pool: Pool::LimitOrder(limit_order.clone()),
+                            source: LiquiditySource::LimitOrder(limit_order.clone()),
                         })
                     }
                 }
@@ -206,45 +210,47 @@ fn to_boundary_amms(liquidity: &[liquidity::Liquidity]) -> HashMap<TokenPair, Ve
 }
 
 #[derive(Debug)]
-struct Amm {
+struct OnchainLiquidity {
     id: liquidity::Id,
     token_pair: TokenPair,
-    pool: Pool,
+    source: LiquiditySource,
 }
 
 #[derive(Debug)]
-enum Pool {
+enum LiquiditySource {
     ConstantProduct(boundary::liquidity::constant_product::Pool),
     WeightedProduct(boundary::liquidity::weighted_product::Pool),
     Stable(boundary::liquidity::stable::Pool),
     LimitOrder(liquidity::limit_order::LimitOrder),
 }
 
-impl BaselineSolvable for Amm {
+impl BaselineSolvable for OnchainLiquidity {
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        match &self.pool {
-            Pool::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
-            Pool::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
-            Pool::Stable(pool) => pool.get_amount_out(out_token, input),
-            Pool::LimitOrder(limit_order) => limit_order.get_amount_out(out_token, input),
+        match &self.source {
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_out(out_token, input),
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_out(out_token, input),
+            LiquiditySource::Stable(pool) => pool.get_amount_out(out_token, input),
+            LiquiditySource::LimitOrder(limit_order) => {
+                limit_order.get_amount_out(out_token, input)
+            }
         }
     }
 
     fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256> {
-        match &self.pool {
-            Pool::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
-            Pool::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
-            Pool::Stable(pool) => pool.get_amount_in(in_token, out),
-            Pool::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out),
+        match &self.source {
+            LiquiditySource::ConstantProduct(pool) => pool.get_amount_in(in_token, out),
+            LiquiditySource::WeightedProduct(pool) => pool.get_amount_in(in_token, out),
+            LiquiditySource::Stable(pool) => pool.get_amount_in(in_token, out),
+            LiquiditySource::LimitOrder(limit_order) => limit_order.get_amount_in(in_token, out),
         }
     }
 
     fn gas_cost(&self) -> usize {
-        match &self.pool {
-            Pool::ConstantProduct(pool) => pool.gas_cost(),
-            Pool::WeightedProduct(pool) => pool.gas_cost(),
-            Pool::Stable(pool) => pool.gas_cost(),
-            Pool::LimitOrder(limit_order) => limit_order.gas_cost(),
+        match &self.source {
+            LiquiditySource::ConstantProduct(pool) => pool.gas_cost(),
+            LiquiditySource::WeightedProduct(pool) => pool.gas_cost(),
+            LiquiditySource::Stable(pool) => pool.gas_cost(),
+            LiquiditySource::LimitOrder(limit_order) => limit_order.gas_cost(),
         }
     }
 }
