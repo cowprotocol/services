@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn test_amount_out_in_round_trip() {
+    fn amount_out_in_round_trip() {
         let maker_amount = to_wei(321);
         let taker_amount = to_wei(123);
         let fee_amount = to_wei(10);
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn test_amount_in_out_round_trip() {
+    fn amount_in_out_round_trip() {
         let maker_amount = to_wei(123);
         let taker_amount = to_wei(321);
         let fee_amount = to_wei(10);
@@ -137,6 +137,53 @@ mod tests {
             .unwrap();
 
         assert_eq!(amount_out, desired_out_amount);
+    }
+
+    #[test]
+    fn too_high_in_amount() {
+        let maker_amount = to_wei(300);
+        let taker_amount = to_wei(100);
+        let fee_amount = to_wei(10);
+
+        let order = create_limit_order(maker_amount, taker_amount, fee_amount);
+        let out_token = order.maker.token.0;
+        let in_token = order.taker.token.0;
+        let amount_in = taker_amount.checked_mul(U256::from(2)).unwrap();
+        let amount_out = order.get_amount_out(out_token, (amount_in, in_token));
+
+        assert!(amount_out.is_none());
+    }
+
+    #[test]
+    fn too_high_out_amount() {
+        let maker_amount = to_wei(321);
+        let taker_amount = to_wei(123);
+        let fee_amount = to_wei(10);
+
+        let order = create_limit_order(maker_amount, taker_amount, fee_amount);
+        let out_token = order.maker.token.0;
+        let in_token = order.taker.token.0;
+        let amount_out = maker_amount.checked_mul(U256::from(2)).unwrap();
+        let amount_in = order.get_amount_in(in_token, (amount_out, out_token));
+
+        assert!(amount_in.is_none());
+    }
+
+    #[test]
+    fn wrong_tokens() {
+        let maker_amount = to_wei(100);
+        let taker_amount = to_wei(100);
+        let fee_amount = to_wei(10);
+
+        let order = create_limit_order(maker_amount, taker_amount, fee_amount);
+        let out_token = order.maker.token.0;
+        let in_token = order.taker.token.0;
+        let amount = to_wei(1);
+        let amount_in = order.get_amount_in(out_token, (amount, in_token));
+        let amount_out = order.get_amount_out(in_token, (amount, out_token));
+
+        assert!(amount_in.is_none());
+        assert!(amount_out.is_none());
     }
 
     fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
