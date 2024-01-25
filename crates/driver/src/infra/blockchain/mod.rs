@@ -192,8 +192,7 @@ impl Ethereum {
         token::Erc20::new(self, address)
     }
 
-    /// If the transaction has been confirmed returns its execution status
-    /// (success or failure) of None if the transaction is not yet confirmed.
+    /// Returns the transaction's on-chain inclusion status.
     pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
         self.web3
             .eth()

@@ -56,11 +56,6 @@ impl Mempools {
                     observe::mempool_executed(&mempool, settlement, &result);
                     result
                 }
-                .instrument(tracing::info_span!(
-                    "execute",
-                    solver = ?solver_name,
-                    ?auction_id,
-                ))
                 .boxed()
             }))
             .await?;
