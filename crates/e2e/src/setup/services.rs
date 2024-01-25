@@ -18,7 +18,7 @@ use {
     },
     reqwest::{Client, StatusCode, Url},
     sqlx::Connection,
-    std::{collections::HashSet, time::Duration},
+    std::time::Duration,
 };
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -129,15 +129,17 @@ impl<'a> Services<'a> {
     pub fn start_autopilot(&self, solve_deadline: Option<Duration>, extra_args: Vec<String>) {
         let solve_deadline = solve_deadline.unwrap_or(Duration::from_secs(2));
 
-        let default_args = Self::api_autopilot_arguments()
-            .chain(self.api_autopilot_solver_arguments())
-            .chain([
-                "--auction-update-interval=1s".to_string(),
-                format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
-                "--skip-event-sync=true".to_string(),
-                format!("--solve-deadline={solve_deadline:?}"),
-            ]);
-        let args = Self::collect_args("autopilot", extra_args, default_args);
+        let args = [
+            "autopilot".to_string(),
+            "--auction-update-interval=1s".to_string(),
+            format!("--ethflow-contract={:?}", self.contracts.ethflow.address()),
+            "--skip-event-sync=true".to_string(),
+            format!("--solve-deadline={solve_deadline:?}"),
+        ]
+        .into_iter()
+        .chain(self.api_autopilot_solver_arguments())
+        .chain(Self::api_autopilot_arguments())
+        .chain(extra_args);
 
         let args = autopilot::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(autopilot::run(args));
@@ -146,14 +148,17 @@ impl<'a> Services<'a> {
     /// Start the api service in a background tasks.
     /// Wait until the service is responsive.
     pub async fn start_api(&self, extra_args: Vec<String>) {
-        let default_args = self
-            .api_autopilot_solver_arguments()
-            .chain(Self::api_autopilot_arguments())
-            .chain([format!(
+        let args = [
+            "orderbook".to_string(),
+            format!(
                 "--hooks-contract-address={:?}",
                 self.contracts.hooks.address()
-            )]);
-        let args = Self::collect_args("orderbook", extra_args, default_args);
+            ),
+        ]
+        .into_iter()
+        .chain(self.api_autopilot_solver_arguments())
+        .chain(Self::api_autopilot_arguments())
+        .chain(extra_args);
 
         let args = orderbook::arguments::Arguments::try_parse_from(args).unwrap();
         tokio::task::spawn(orderbook::run(args));
@@ -453,34 +458,6 @@ impl<'a> Services<'a> {
     /// execute raw SQL queries.
     pub fn db(&self) -> &Db {
         &self.db
-    }
-
-    /// Aggregates all passed in arguments while supporting users to overwrite
-    /// default values.
-    fn collect_args<D, U>(command: &str, user_args: D, default_args: U) -> Vec<String>
-    where
-        D: IntoIterator<Item = String>,
-        U: IntoIterator<Item = String>,
-    {
-        let mut unique_args = HashSet::<String>::new();
-
-        // Give caller provided args priority over defaults to easily let the
-        // caller overwrite defaults.
-        let args = user_args
-            .into_iter()
-            .chain(default_args)
-            .filter(move |arg| {
-                let (parameter, _value) = arg
-                    .split_once('=')
-                    .expect("CLI arg and value separated by =");
-                let first_time = unique_args.insert(parameter.to_owned());
-                if !first_time {
-                    tracing::info!(?parameter, "ignoring argument because it was overridden");
-                }
-                first_time
-            });
-
-        std::iter::once(command.to_string()).chain(args).collect()
     }
 }
 
