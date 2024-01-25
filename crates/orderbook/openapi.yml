@@ -586,7 +586,7 @@ components:
         Optimal: The price estimate is chosen among all price estimates.
         Verified: The price estimate is chosen among all verified/simulated price estimates.
 
-        **NOTE**: Orders are supposed to be created from `verified` price estimates.
+        **NOTE**: Orders are supposed to be created from `verified` or `optimal` price estimates.
       type: string
       enum: [fast, optimal, verified]
     OrderStatus:
@@ -1436,9 +1436,18 @@ components:
             Quote ID linked to a quote to enable providing more metadata when analysing
             order slippage.
           type: integer
+        priceQuality:
+          description: |
+            How accurate the price is.
+            \"fast\" is very inaccurate because not all price feeds were queried.
+            \"verified\" was confirmed to be accurate via simulation.
+            \"optimal\" could not be confirmed via simulation but it was the best price from all available price feeds.
+          type: string
+          enum: [fast, optimal, verified]
       required:
         - quote
         - expiration
+        - priceQuality
     SolverCompetitionResponse:
       description: |
         The settlements submitted by every solver for a specific auction.

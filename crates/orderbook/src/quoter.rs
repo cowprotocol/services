@@ -108,6 +108,14 @@ impl QuoteHandler {
             }
         };
 
+        let response_quality = if request.price_quality == PriceQuality::Fast {
+            PriceQuality::Fast
+        } else if quote.data.verified {
+            PriceQuality::Verified
+        } else {
+            PriceQuality::Optimal
+        };
+
         let response = OrderQuoteResponse {
             quote: OrderQuote {
                 sell_token: request.sell_token,
@@ -133,6 +141,7 @@ impl QuoteHandler {
             from: request.from,
             expiration: quote.data.expiration,
             id: quote.id,
+            price_quality: response_quality,
         };
 
         tracing::debug!(?response, "finished computing quote");
