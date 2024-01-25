@@ -46,6 +46,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     crate::infra::observe::init(&args.log);
 
     let ethrpc = ethrpc(&args).await;
+    let web3 = ethrpc.web3().clone();
     let config = config::file::load(ethrpc.network(), &args.config).await;
     tracing::info!("running driver with {config:#?}");
 
@@ -69,7 +70,9 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                         )
                         .unwrap(),
                     ),
-                    infra::mempool::SubmissionLogic::Native => todo!("implement"),
+                    infra::mempool::SubmissionLogic::Native => Mempool::Native(
+                        crate::infra::mempool::Inner::new(mempool.to_owned(), web3.clone()),
+                    ),
                 })
                 .collect(),
             eth.clone(),

@@ -1,3 +1,12 @@
+use {
+    crate::{
+        boundary::buffered_web3_client,
+        domain::{competition, eth, mempools},
+        infra,
+    },
+    ethcontract::dyns::DynWeb3,
+};
+
 pub use crate::boundary::mempool::{Config, GlobalTxPool, Kind, RevertProtection, SubmissionLogic};
 
 #[derive(Debug, Clone)]
@@ -28,6 +37,7 @@ impl Mempool {
 
 #[derive(Debug, Clone)]
 pub struct Inner {
+    transport: DynWeb3,
     config: Config,
 }
 
@@ -38,6 +48,37 @@ impl std::fmt::Display for Inner {
 }
 
 impl Inner {
+    pub fn new(config: Config, transport: DynWeb3) -> Self {
+        let transport = match &config.kind {
+            Kind::Public(_) => transport,
+            Kind::MEVBlocker { url, .. } => buffered_web3_client(url),
+        };
+        Self { config, transport }
+    }
+
+    pub async fn submit(
+        &self,
+        tx: eth::Tx,
+        gas: competition::solution::settlement::Gas,
+        solver: &infra::Solver,
+    ) -> Result<eth::TxId, mempools::Error> {
+        ethcontract::transaction::TransactionBuilder::new(self.transport.clone())
+            .from(solver.account().clone())
+            .to(tx.to.into())
+            .gas_price(ethcontract::GasPrice::Eip1559 {
+                max_fee_per_gas: gas.price.max.into(),
+                max_priority_fee_per_gas: gas.price.tip.into(),
+            })
+            .data(tx.input.into())
+            .value(tx.value.0)
+            .gas(gas.limit.0)
+            .access_list(web3::types::AccessList::from(tx.access_list))
+            .send()
+            .await
+            .map(|result| eth::TxId(result.hash()))
+            .map_err(|err| mempools::Error::Other(anyhow::Error::from(err)))
+    }
+
     pub fn config(&self) -> &Config {
         &self.config
     }
