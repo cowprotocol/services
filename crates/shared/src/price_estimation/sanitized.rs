@@ -66,6 +66,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     out_amount: query.in_amount.get(),
                     gas: 0,
                     solver: Default::default(),
+                    verified: true,
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial price estimation");
                 return Ok(estimation);
@@ -77,6 +78,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
+                    verified: true,
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
                 return Ok(estimation);
@@ -88,6 +90,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     out_amount: query.in_amount.get(),
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
+                    verified: true,
                 };
                 tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
                 return Ok(estimation);
@@ -181,6 +184,7 @@ mod tests {
                     out_amount: 1.into(),
                     gas: 100,
                     solver: Default::default(),
+                    verified: false,
                 }),
             ),
             // `sanitized_estimator` will replace `buy_token` with `native_token` before querying
@@ -201,6 +205,7 @@ mod tests {
                     //Query with ETH as the buy_token.
                     gas: GAS_PER_WETH_UNWRAP + 100,
                     solver: Default::default(),
+                    verified: false,
                 }),
             ),
             // Will cause buffer overflow of gas price in `sanitized_estimator`.
@@ -235,6 +240,7 @@ mod tests {
                     //Query with ETH as the sell_token.
                     gas: GAS_PER_WETH_WRAP + 100,
                     solver: Default::default(),
+                    verified: false,
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
@@ -252,6 +258,7 @@ mod tests {
                     out_amount: 1.into(),
                     gas: 0,
                     solver: Default::default(),
+                    verified: true,
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because both tokens are the native token.
@@ -268,6 +275,7 @@ mod tests {
                     out_amount: 1.into(),
                     gas: 0,
                     solver: Default::default(),
+                    verified: true,
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
@@ -285,6 +293,7 @@ mod tests {
                     // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
                     gas: GAS_PER_WETH_UNWRAP,
                     solver: Default::default(),
+                    verified: true,
                 }),
             ),
             // Can be estimated by `sanitized_estimator` because it is a native token wrap.
@@ -302,6 +311,7 @@ mod tests {
                     // Sanitized estimator will report a 1:1 estimate when wrapping native token.
                     gas: GAS_PER_WETH_WRAP,
                     solver: Default::default(),
+                    verified: true,
                 }),
             ),
             // Will throw `UnsupportedToken` error in `sanitized_estimator`.
@@ -365,6 +375,7 @@ mod tests {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -379,6 +390,7 @@ mod tests {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -393,6 +405,7 @@ mod tests {
                         out_amount: 1.into(),
                         gas: u64::MAX,
                         solver: Default::default(),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -407,6 +420,7 @@ mod tests {
                         out_amount: 1.into(),
                         gas: 100,
                         solver: Default::default(),
+                        verified: false,
                     })
                 }
                 .boxed()
