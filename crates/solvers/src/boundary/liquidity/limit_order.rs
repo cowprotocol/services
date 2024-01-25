@@ -186,11 +186,7 @@ mod tests {
         assert!(amount_out.is_none());
     }
 
-    fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
-        U256::from(base) * U256::exp10(exp)
-    }
-
     fn to_wei(base: u32) -> U256 {
-        to_wei_with_exp(base, 18)
+        U256::from(base) * U256::exp10(18)
     }
 }
