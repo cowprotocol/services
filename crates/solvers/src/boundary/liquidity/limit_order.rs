@@ -156,8 +156,8 @@ mod tests {
 
     #[test]
     fn too_high_out_amount() {
-        let maker_amount = to_wei(321);
-        let taker_amount = to_wei(123);
+        let maker_amount = to_wei(100);
+        let taker_amount = to_wei(300);
         let fee_amount = to_wei(10);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
