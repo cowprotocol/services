@@ -1,7 +1,7 @@
 use {
     crate::domain::liquidity::limit_order::{LimitOrder, TakerAmount},
     contracts::ethcontract::{H160, U256},
-    shared::{baseline_solver::BaselineSolvable, sources::balancer_v2::swap::fixed_point::Bfp},
+    shared::baseline_solver::BaselineSolvable,
 };
 
 impl BaselineSolvable for LimitOrder {
@@ -33,16 +33,13 @@ fn calculate_amount_out(
     fee: &TakerAmount,
 ) -> Option<U256> {
     let fee_adjusted_amount = in_amount.checked_sub(fee.0)?;
-    let fee_adjusted_amount_bfp = Bfp::from_wei(fee_adjusted_amount);
-    let scaled_maker_amount = Bfp::from_wei(maker_amount).mul_down(Bfp::exp10(18)).ok()?;
-    let scaled_price_ratio = scaled_maker_amount
-        .div_down(Bfp::from_wei(taker_amount))
-        .ok()?;
-    let scaled_out_amount_bfp = fee_adjusted_amount_bfp.mul_down(scaled_price_ratio).ok()?;
-    scaled_out_amount_bfp
-        .div_down(Bfp::exp10(18))
-        .ok()
-        .map(|amount| amount.as_uint256())
+    if maker_amount > taker_amount {
+        let price_ratio = maker_amount.checked_div(taker_amount)?;
+        fee_adjusted_amount.checked_mul(price_ratio)
+    } else {
+        let inverse_price_ratio = taker_amount.checked_div(maker_amount)?;
+        fee_adjusted_amount.checked_div(inverse_price_ratio)
+    }
 }
 
 fn calculate_amount_in(
@@ -51,75 +48,82 @@ fn calculate_amount_in(
     taker_amount: U256,
     fee: &TakerAmount,
 ) -> Option<U256> {
-    let scaled_taker_amount = Bfp::from_wei(taker_amount).mul_down(Bfp::exp10(18)).ok()?;
-    let maker_bfp = Bfp::from_wei(maker_amount);
-    let scaled_price_ratio = scaled_taker_amount.div_down(maker_bfp).ok()?;
-    let required_amount_before_scaling =
-        Bfp::from_wei(out_amount).mul_up(scaled_price_ratio).ok()?;
-    let required_amount = required_amount_before_scaling
-        .div_up(Bfp::exp10(18))
-        .ok()?
-        .as_uint256();
-    required_amount.checked_add(fee.0)
+    if maker_amount > taker_amount {
+        let inverse_price_ratio = maker_amount.checked_div(taker_amount)?;
+        let required_amount_before_fee = out_amount.checked_div(inverse_price_ratio)?;
+        required_amount_before_fee.checked_add(fee.0)
+    } else {
+        let price_ratio = taker_amount.checked_div(maker_amount)?;
+        let intermediate_amount = out_amount.checked_mul(price_ratio)?;
+        intermediate_amount.checked_add(fee.0)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use {super::*, crate::domain::eth, contracts::ethcontract::U256, shared::addr};
 
-    fn create_limit_order(maker_amount: u32, taker_amount: u32, fee_amount: u32) -> LimitOrder {
+    fn create_limit_order(maker_amount: U256, taker_amount: U256, fee_amount: U256) -> LimitOrder {
         let maker = eth::Asset {
-            amount: U256::from(maker_amount),
+            amount: maker_amount,
             token: eth::TokenAddress(addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")),
         };
         let taker = eth::Asset {
-            amount: U256::from(taker_amount),
+            amount: taker_amount,
             token: eth::TokenAddress(addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
         };
-        let fee = TakerAmount(U256::from(fee_amount));
+        let fee = TakerAmount(fee_amount);
 
         LimitOrder { maker, taker, fee }
     }
 
     #[test]
     fn test_amount_out_in_round_trip() {
-        let maker_amount: u32 = 321;
-        let taker_amount: u32 = 123;
-        let fee_amount: u32 = 10;
-        let desired_in_amount: u32 = 50;
+        let maker_amount = to_wei(321);
+        let taker_amount = to_wei(123);
+        let fee_amount = to_wei(10);
+        let desired_in_amount = to_wei(50);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
         let out_token = order.maker.token.0;
         let in_token = order.taker.token.0;
 
         let amount_out = order
-            .get_amount_out(out_token, (U256::from(desired_in_amount), in_token))
+            .get_amount_out(out_token, (desired_in_amount, in_token))
             .unwrap();
         let amount_in = order
             .get_amount_in(in_token, (amount_out, out_token))
             .unwrap();
 
-        assert_eq!(amount_in, U256::from(desired_in_amount));
+        assert_eq!(amount_in, desired_in_amount);
     }
 
     #[test]
     fn test_amount_in_out_round_trip() {
-        let maker_amount: u32 = 123;
-        let taker_amount: u32 = 321;
-        let fee_amount: u32 = 10;
-        let desired_out_amount: u32 = 50;
+        let maker_amount = to_wei(123);
+        let taker_amount = to_wei(321);
+        let fee_amount = to_wei(10);
+        let desired_out_amount = to_wei(50);
 
         let order = create_limit_order(maker_amount, taker_amount, fee_amount);
         let out_token = order.maker.token.0;
         let in_token = order.taker.token.0;
 
         let amount_in = order
-            .get_amount_in(in_token, (U256::from(desired_out_amount), out_token))
+            .get_amount_in(in_token, (desired_out_amount, out_token))
             .unwrap();
         let amount_out = order
             .get_amount_out(out_token, (amount_in, in_token))
             .unwrap();
 
-        assert_eq!(amount_out, U256::from(desired_out_amount));
+        assert_eq!(amount_out, desired_out_amount);
+    }
+
+    fn to_wei_with_exp(base: u32, exp: usize) -> U256 {
+        U256::from(base) * U256::exp10(exp)
+    }
+
+    fn to_wei(base: u32) -> U256 {
+        to_wei_with_exp(base, 18)
     }
 }
