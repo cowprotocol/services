@@ -487,7 +487,7 @@ pub struct Estimate {
     pub gas: u64,
     /// Address of the solver that provided the quote.
     pub solver: H160,
-    /// Did we verify the correctness of this estimates properties?
+    /// Did we verify the correctness of this estimate's properties?
     pub verified: bool,
 }
 
