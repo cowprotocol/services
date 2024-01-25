@@ -928,10 +928,6 @@ components:
           description: see `OrderParameters::feeAmount`
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        solverFee:
-          description: Amount that the signed fee would be without subsidies.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: see `OrderParameters::validTo`
           type: integer
@@ -995,7 +991,6 @@ components:
         - sellAmount
         - buyAmount
         - userFee
-        - solverFee
         - validTo
         - kind
         - receiver
@@ -1207,12 +1202,9 @@ components:
               UnsupportedOrderType,
               InsufficientValidTo,
               ExcessiveValidTo,
-              TransferEthToContract,
               InvalidNativeSellToken,
               SameBuyAndSellToken,
-              UnsupportedSignature,
               UnsupportedToken,
-              UnsupportedCustomInteraction
               InvalidAppData,
               AppDataHashMismatch,
               AppdataFromMismatch,
@@ -1260,7 +1252,6 @@ components:
               InsufficientValidTo,
               ExcessiveValidTo,
               InvalidSignature,
-              TransferEthToContract,
               TransferSimulationFailed,
               UnsupportedToken,
               WrongOwner,
@@ -1269,7 +1260,6 @@ components:
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
-              UnsupportedSignature,
             ]
         description:
           type: string

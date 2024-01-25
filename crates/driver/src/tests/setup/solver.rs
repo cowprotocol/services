@@ -209,6 +209,7 @@ impl Solver {
                     max_confirm_time: Default::default(),
                     retry_interval: Default::default(),
                     kind: infra::mempool::Kind::Public(infra::mempool::RevertProtection::Disabled),
+                    submission: infra::mempool::SubmissionLogic::Native,
                 }],
             )
             .await

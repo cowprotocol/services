@@ -46,8 +46,8 @@ impl GasPriceEstimator {
         // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
         let max_fee_per_gas = mempools
             .iter()
-            .map(|mempool| mempool.gas_price_cap)
-            .max()
+            .map(|mempool| eth::U256::from_f64_lossy(mempool.gas_price_cap))
+            .min()
             .expect("at least one mempool");
         Ok(Self {
             gas,

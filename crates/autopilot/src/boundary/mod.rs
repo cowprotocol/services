@@ -21,8 +21,9 @@ pub use {
             SellTokenSource,
         },
         signature::{EcdsaSignature, Signature},
+        DomainSeparator,
     },
-    shared::order_validation::is_order_outside_market_price,
+    shared::order_validation::{is_order_outside_market_price, Amounts},
 };
 use {ethrpc::Web3, url::Url};
 
