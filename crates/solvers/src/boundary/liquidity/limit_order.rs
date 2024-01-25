@@ -6,19 +6,39 @@ use {
 
 impl BaselineSolvable for LimitOrder {
     fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
-        if in_token == self.taker.token.0 && out_token == self.maker.token.0 {
-            calculate_amount_out(in_amount, self.maker.amount, self.taker.amount, &self.fee)
+        if in_token != self.taker.token.0
+            || out_token != self.maker.token.0
+            || in_amount > self.taker.amount
+        {
+            return None;
+        }
+
+        let fee_adjusted_amount = in_amount.checked_sub(self.fee.0)?;
+        if self.maker.amount > self.taker.amount {
+            let price_ratio = self.maker.amount.checked_div(self.taker.amount)?;
+            fee_adjusted_amount.checked_mul(price_ratio)
         } else {
-            None
+            let inverse_price_ratio = self.taker.amount.checked_div(self.maker.amount)?;
+            fee_adjusted_amount.checked_div(inverse_price_ratio)
         }
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
-        if out_token == self.maker.token.0 && in_token == self.taker.token.0 {
-            calculate_amount_in(out_amount, self.maker.amount, self.taker.amount, &self.fee)
-        } else {
-            None
+        if out_token != self.maker.token.0
+            || in_token != self.taker.token.0
+            || out_amount > self.maker.amount
+        {
+            return None;
         }
+
+        let amount_before_fee = if self.maker.amount > self.taker.amount {
+            let inverse_price_ratio = self.maker.amount.checked_div(self.taker.amount)?;
+            out_amount.checked_div(inverse_price_ratio)?
+        } else {
+            let price_ratio = self.taker.amount.checked_div(self.maker.amount)?;
+            out_amount.checked_mul(price_ratio)?
+        };
+        amount_before_fee.checked_add(self.fee.0)
     }
 
     fn gas_cost(&self) -> usize {
