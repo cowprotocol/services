@@ -111,26 +111,28 @@ mod tests {
         crate::clear_DANGER_(&mut ex).await.unwrap();
 
         let now = Utc::now();
+        let uid_a = ByteArray([1; 56]);
+        let uid_b = ByteArray([2; 56]);
         let event_a = OrderEvent {
-            order_uid: ByteArray([1; 56]),
+            order_uid: uid_a,
             timestamp: now - chrono::Duration::milliseconds(300),
             label: OrderEventLabel::Created,
         };
         insert_order_event(&mut ex, &event_a).await.unwrap();
         let event_b = OrderEvent {
-            order_uid: ByteArray([1; 56]),
+            order_uid: uid_a,
             timestamp: now - chrono::Duration::milliseconds(200),
             label: OrderEventLabel::Invalid,
         };
         insert_order_event(&mut ex, &event_b).await.unwrap();
         let event_c = OrderEvent {
-            order_uid: ByteArray([2; 56]),
+            order_uid: uid_b,
             timestamp: now - chrono::Duration::milliseconds(100),
             label: OrderEventLabel::Invalid,
         };
         insert_order_event(&mut ex, &event_c).await.unwrap();
         let event_d = OrderEvent {
-            order_uid: ByteArray([1; 56]),
+            order_uid: uid_a,
             timestamp: now,
             label: OrderEventLabel::Invalid,
         };
@@ -140,7 +142,13 @@ mod tests {
 
         let ids = all_order_events(&mut db).await;
 
-        assert_eq!(ids, vec![event_a, event_b, event_c]);
+        assert_eq!(ids.len(), 3);
+        assert_eq!(ids[0].order_uid, uid_a);
+        assert_eq!(ids[0].label, OrderEventLabel::Created);
+        assert_eq!(ids[1].order_uid, uid_a);
+        assert_eq!(ids[1].label, OrderEventLabel::Invalid);
+        assert_eq!(ids[2].order_uid, uid_b);
+        assert_eq!(ids[2].label, OrderEventLabel::Invalid);
     }
 
     async fn all_order_events(ex: &mut PgConnection) -> Vec<OrderEvent> {
