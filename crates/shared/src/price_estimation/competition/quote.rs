@@ -309,4 +309,23 @@ mod tests {
         .await;
         assert_eq!(best, price(1, 1_000_000));
     }
+
+    #[tokio::test]
+    async fn prefer_verified_over_unverified() {
+        // Both out_amount and gas are worse but we still prefer this quote
+        // because we at least verified that it's actually accurate.
+        let preferred_quote = Ok(Estimate {
+            out_amount: 900_000.into(),
+            gas: 2_000,
+            verified: true,
+            ..Default::default()
+        });
+        let best = best_response(
+            PriceRanking::MaxOutAmount,
+            OrderKind::Sell,
+            vec![price(1_000_000, 1_000), preferred_quote.clone()],
+        )
+        .await;
+        assert_eq!(best, preferred_quote);
+    }
 }
