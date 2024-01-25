@@ -1,7 +1,7 @@
 use {
     crate::domain::liquidity::limit_order::{LimitOrder, TakerAmount},
     contracts::ethcontract::{H160, U256},
-    shared::baseline_solver::BaselineSolvable,
+    shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
 };
 
 impl BaselineSolvable for LimitOrder {
@@ -42,40 +42,7 @@ impl BaselineSolvable for LimitOrder {
     }
 
     fn gas_cost(&self) -> usize {
-        0
-    }
-}
-
-fn calculate_amount_out(
-    in_amount: U256,
-    maker_amount: U256,
-    taker_amount: U256,
-    fee: &TakerAmount,
-) -> Option<U256> {
-    let fee_adjusted_amount = in_amount.checked_sub(fee.0)?;
-    if maker_amount > taker_amount {
-        let price_ratio = maker_amount.checked_div(taker_amount)?;
-        fee_adjusted_amount.checked_mul(price_ratio)
-    } else {
-        let inverse_price_ratio = taker_amount.checked_div(maker_amount)?;
-        fee_adjusted_amount.checked_div(inverse_price_ratio)
-    }
-}
-
-fn calculate_amount_in(
-    out_amount: U256,
-    maker_amount: U256,
-    taker_amount: U256,
-    fee: &TakerAmount,
-) -> Option<U256> {
-    if maker_amount > taker_amount {
-        let inverse_price_ratio = maker_amount.checked_div(taker_amount)?;
-        let required_amount_before_fee = out_amount.checked_div(inverse_price_ratio)?;
-        required_amount_before_fee.checked_add(fee.0)
-    } else {
-        let price_ratio = taker_amount.checked_div(maker_amount)?;
-        let intermediate_amount = out_amount.checked_mul(price_ratio)?;
-        intermediate_amount.checked_add(fee.0)
+        GAS_PER_ZEROEX_ORDER as usize
     }
 }
 
