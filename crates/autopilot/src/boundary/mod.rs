@@ -1,4 +1,4 @@
-use {crate::domain::Quote, ethrpc::Web3, std::collections::HashMap, url::Url};
+use {crate::domain, ethrpc::Web3, std::collections::HashMap, url::Url};
 pub use {
     crate::{
         database::{
@@ -46,6 +46,6 @@ pub fn buffered_web3_client(ethrpc: &Url) -> Web3 {
 
 pub struct SolvableOrders {
     pub orders: Vec<model::order::Order>,
-    pub quotes: HashMap<crate::domain::OrderUid, Quote>,
+    pub quotes: HashMap<domain::OrderUid, domain::Quote>,
     pub latest_settlement_block: u64,
 }

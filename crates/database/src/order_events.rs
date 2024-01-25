@@ -105,7 +105,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn non_subsequent_order_events() {
+    async fn postgres_non_subsequent_order_events() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut ex = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut ex).await.unwrap();

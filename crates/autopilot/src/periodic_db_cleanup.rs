@@ -83,7 +83,7 @@ mod tests {
     // database connection handling.
     #[tokio::test]
     #[ignore]
-    async fn order_events_cleaner_flow() {
+    async fn postgres_order_events_cleaner_flow() {
         let db = Postgres::with_defaults().await.unwrap();
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
