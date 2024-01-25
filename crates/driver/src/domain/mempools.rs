@@ -7,7 +7,6 @@ use {
     ethrpc::current_block::into_stream,
     futures::{future::select_ok, FutureExt, StreamExt},
     thiserror::Error,
-    tracing::Instrument,
 };
 
 /// Factor by how much a transaction fee needs to be increased to override a
@@ -39,9 +38,6 @@ impl Mempools {
         solver: &Solver,
         settlement: &Settlement,
     ) -> Result<eth::TxId, Error> {
-        let auction_id = settlement.auction_id;
-        let solver_name = solver.name();
-
         let (tx_hash, _remaining_futures) =
             select_ok(self.mempools.iter().cloned().map(|mempool| {
                 async move {
