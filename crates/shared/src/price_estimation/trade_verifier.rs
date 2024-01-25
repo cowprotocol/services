@@ -29,7 +29,7 @@ use {
 
 #[async_trait::async_trait]
 pub trait TradeVerifying: Send + Sync + 'static {
-    /// Verifies that the proposed [`Trade`] acually fulfills the [`PriceQuery`]
+    /// Verifies that the proposed [`Trade`] actually fulfills the [`PriceQuery`]
     /// and returns a price [`Estimate`] that is trustworthy.
     async fn verify(
         &self,
