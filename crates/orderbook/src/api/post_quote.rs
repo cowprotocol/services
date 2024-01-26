@@ -1,11 +1,12 @@
 use {
     super::post_order::{AppDataValidationErrorWrapper, PartialValidationErrorWrapper},
+    crate::quoter::{OrderQuoteError, QuoteHandler},
     anyhow::Result,
     model::quote::OrderQuoteRequest,
     reqwest::StatusCode,
     shared::{
         api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
-        order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
+        order_quoting::CalculateQuoteError,
     },
     std::{convert::Infallible, sync::Arc},
     warp::{Filter, Rejection},
@@ -95,10 +96,7 @@ mod tests {
         number::nonzero::U256 as NonZeroU256,
         reqwest::StatusCode,
         serde_json::json,
-        shared::{
-            api::response_body,
-            order_quoting::{CalculateQuoteError, OrderQuoteError},
-        },
+        shared::{api::response_body, order_quoting::CalculateQuoteError},
         warp::{test::request, Reply},
     };
 

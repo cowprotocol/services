@@ -36,19 +36,37 @@ async fn local_node_mixed_limit_and_market_orders() {
 }
 
 /// The block number from which we will fetch state for the forked tests.
-pub const FORK_BLOCK: u64 = 18477910;
-/// USDC whale address as per [FORK_BLOCK].
-pub const USDC_WHALE: H160 = H160(hex_literal::hex!(
+const FORK_BLOCK_MAINNET: u64 = 18477910;
+/// USDC whale address as per [FORK_BLOCK_MAINNET].
+const USDC_WHALE_MAINNET: H160 = H160(hex_literal::hex!(
     "28c6c06298d514db089934071355e5743bf21d60"
 ));
 
 #[tokio::test]
 #[ignore]
-async fn forked_node_single_limit_order_mainnet() {
+async fn forked_node_mainnet_single_limit_order() {
     run_forked_test_with_block_number(
-        forked_single_limit_order_test,
-        std::env::var("FORK_URL").expect("FORK_URL must be set to run forked tests"),
-        FORK_BLOCK,
+        forked_mainnet_single_limit_order_test,
+        std::env::var("FORK_URL_MAINNET")
+            .expect("FORK_URL_MAINNET must be set to run forked tests"),
+        FORK_BLOCK_MAINNET,
+    )
+    .await;
+}
+
+const FORK_BLOCK_GNOSIS: u64 = 32070725;
+/// USDC whale address as per [FORK_BLOCK_GNOSIS].
+const USDC_WHALE_GNOSIS: H160 = H160(hex_literal::hex!(
+    "ba12222222228d8ba445958a75a0704d566bf2c8"
+));
+
+#[tokio::test]
+#[ignore]
+async fn forked_node_gnosis_single_limit_order() {
+    run_forked_test_with_block_number(
+        forked_gnosis_single_limit_order_test,
+        std::env::var("FORK_URL_GNOSIS").expect("FORK_URL_GNOSIS must be set to run forked tests"),
+        FORK_BLOCK_GNOSIS,
     )
     .await;
 }
@@ -455,7 +473,7 @@ async fn too_many_limit_orders_test(web3: Web3) {
     assert!(body.contains("TooManyLimitOrders"));
 }
 
-async fn forked_single_limit_order_test(web3: Web3) {
+async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let mut onchain = OnchainComponents::deployed(web3.clone()).await;
     let forked_node_api = web3.api::<ForkedNodeApi<_>>();
 
@@ -478,7 +496,10 @@ async fn forked_single_limit_order_test(web3: Web3) {
     );
 
     // Give trader some USDC
-    let usdc_whale = forked_node_api.impersonate(&USDC_WHALE).await.unwrap();
+    let usdc_whale = forked_node_api
+        .impersonate(&USDC_WHALE_MAINNET)
+        .await
+        .unwrap();
     tx!(
         usdc_whale,
         token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
@@ -546,4 +567,100 @@ async fn forked_single_limit_order_test(web3: Web3) {
 
     assert!(sell_token_balance_before > sell_token_balance_after);
     assert!(buy_token_balance_after >= buy_token_balance_before + to_wei_with_exp(500, 6));
+}
+
+async fn forked_gnosis_single_limit_order_test(web3: Web3) {
+    let mut onchain = OnchainComponents::deployed(web3.clone()).await;
+    let forked_node_api = web3.api::<ForkedNodeApi<_>>();
+
+    let [solver] = onchain.make_solvers_forked(to_wei(1)).await;
+
+    let [trader] = onchain.make_accounts(to_wei(1)).await;
+
+    let token_usdc = ERC20::at(
+        &web3,
+        "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83"
+            .parse()
+            .unwrap(),
+    );
+
+    let token_wxdai = ERC20::at(
+        &web3,
+        "0xe91d153e0b41518a2ce8dd3d7944fa863463a97d"
+            .parse()
+            .unwrap(),
+    );
+
+    // Give trader some USDC
+    let usdc_whale = forked_node_api
+        .impersonate(&USDC_WHALE_GNOSIS)
+        .await
+        .unwrap();
+    tx!(
+        usdc_whale,
+        token_usdc.transfer(trader.address(), to_wei_with_exp(1000, 6))
+    );
+
+    // Approve GPv2 for trading
+    tx!(
+        trader.account(),
+        token_usdc.approve(onchain.contracts().allowance, to_wei_with_exp(1000, 6))
+    );
+
+    // Place Orders
+    let services = Services::new(onchain.contracts()).await;
+    services.start_protocol(solver).await;
+
+    let order = OrderCreation {
+        sell_token: token_usdc.address(),
+        sell_amount: to_wei_with_exp(1000, 6),
+        buy_token: token_wxdai.address(),
+        buy_amount: to_wei(500),
+        valid_to: model::time::now_in_epoch_seconds() + 300,
+        kind: OrderKind::Sell,
+        ..Default::default()
+    }
+    .sign(
+        EcdsaSigningScheme::Eip712,
+        &onchain.contracts().domain_separator,
+        SecretKeyRef::from(&SecretKey::from_slice(trader.private_key()).unwrap()),
+    );
+    let order_id = services.create_order(&order).await.unwrap();
+    let limit_order = services.get_order(&order_id).await.unwrap();
+    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+
+    // Drive solution
+    tracing::info!("Waiting for trade.");
+    let sell_token_balance_before = token_usdc
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let buy_token_balance_before = token_wxdai
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 1 })
+        .await
+        .unwrap();
+
+    wait_for_condition(TIMEOUT, || async { services.solvable_orders().await == 0 })
+        .await
+        .unwrap();
+
+    let sell_token_balance_after = token_usdc
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+    let buy_token_balance_after = token_wxdai
+        .balance_of(trader.address())
+        .call()
+        .await
+        .unwrap();
+
+    assert!(sell_token_balance_before > sell_token_balance_after);
+    assert!(buy_token_balance_after >= buy_token_balance_before + to_wei(500));
 }

@@ -11,7 +11,7 @@ use {
         oneinch::OneInchPriceEstimator,
         paraswap::ParaswapPriceEstimator,
         sanitized::SanitizedPriceEstimator,
-        trade_finder::TradeVerifier,
+        trade_verifier::{TradeVerifier, TradeVerifying},
         zeroex::ZeroExPriceEstimator,
         Arguments,
         NativePriceEstimator as NativePriceEstimatorSource,
@@ -57,7 +57,7 @@ pub struct PriceEstimatorFactory<'a> {
     shared_args: &'a arguments::Arguments,
     network: Network,
     components: Components,
-    trade_verifier: Option<TradeVerifier>,
+    trade_verifier: Option<Arc<dyn TradeVerifying>>,
     estimators: HashMap<String, EstimatorEntry>,
 }
 
@@ -122,7 +122,7 @@ impl<'a> PriceEstimatorFactory<'a> {
     ) -> Result<Self> {
         let trade_verifier = args
             .trade_simulator
-            .map(|kind| -> Result<TradeVerifier> {
+            .map(|kind| -> Result<Arc<dyn TradeVerifying>> {
                 let web3_simulator = || {
                     network
                         .simulation_web3
@@ -155,12 +155,12 @@ impl<'a> PriceEstimatorFactory<'a> {
                 };
                 let code_fetcher = Arc::new(CachedCodeFetcher::new(Arc::new(network.web3.clone())));
 
-                Ok(TradeVerifier::new(
+                Ok(Arc::new(TradeVerifier::new(
                     simulator,
                     code_fetcher,
                     network.settlement,
                     network.native_token,
-                ))
+                )))
             })
             .transpose()?;
 
@@ -419,7 +419,7 @@ trait PriceEstimatorCreating: Sized {
 
     fn init(factory: &PriceEstimatorFactory, name: &str, params: Self::Params) -> Result<Self>;
 
-    fn verified(&self, _: &TradeVerifier) -> Option<Self> {
+    fn verified(&self, _: &Arc<dyn TradeVerifying>) -> Option<Self> {
         None
     }
 }
@@ -466,7 +466,7 @@ impl PriceEstimatorCreating for ParaswapPriceEstimator {
         ))
     }
 
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
+    fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
         Some(self.verified(verifier.clone()))
     }
 }
@@ -499,7 +499,7 @@ impl PriceEstimatorCreating for ZeroExPriceEstimator {
         ))
     }
 
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
+    fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
         Some(self.verified(verifier.clone()))
     }
 }
@@ -531,7 +531,7 @@ impl PriceEstimatorCreating for OneInchPriceEstimator {
         ))
     }
 
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
+    fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
         Some(self.verified(verifier.clone()))
     }
 }
@@ -634,7 +634,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
         ))
     }
 
-    fn verified(&self, verifier: &TradeVerifier) -> Option<Self> {
+    fn verified(&self, verifier: &Arc<dyn TradeVerifying>) -> Option<Self> {
         Some(self.verified(verifier.clone()))
     }
 }

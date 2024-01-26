@@ -24,7 +24,7 @@ pub use {
         signature::{EcdsaSignature, Signature},
         DomainSeparator,
     },
-    shared::order_validation::is_order_outside_market_price,
+    shared::order_validation::{is_order_outside_market_price, Amounts},
 };
 
 pub mod order;

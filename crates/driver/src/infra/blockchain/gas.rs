@@ -11,7 +11,7 @@ use {
     gas_estimation::{nativegasestimator::NativeGasEstimator, GasPriceEstimating},
 };
 
-type MaxAdditionalTip = f64;
+type MaxAdditionalTip = eth::U256;
 type AdditionalTipPercentage = f64;
 type AdditionalTip = (MaxAdditionalTip, AdditionalTipPercentage);
 
@@ -19,6 +19,7 @@ pub struct GasPriceEstimator {
     //TODO: remove visibility once boundary is removed
     pub(super) gas: Arc<NativeGasEstimator>,
     additional_tip: Option<AdditionalTip>,
+    max_fee_per_gas: eth::U256,
 }
 
 impl GasPriceEstimator {
@@ -42,9 +43,16 @@ impl GasPriceEstimator {
                     mempool.additional_tip_percentage,
                 )
             });
+        // Use the lowest max_fee_per_gas of all mempools as the max_fee_per_gas
+        let max_fee_per_gas = mempools
+            .iter()
+            .map(|mempool| mempool.gas_price_cap)
+            .min()
+            .expect("at least one mempool");
         Ok(Self {
             gas,
             additional_tip,
+            max_fee_per_gas,
         })
     }
 
@@ -60,6 +68,7 @@ impl GasPriceEstimator {
                 let estimate = match self.additional_tip {
                     Some((max_additional_tip, additional_tip_percentage)) => {
                         let additional_tip = max_additional_tip
+                            .to_f64_lossy()
                             .min(estimate.max_fee_per_gas * additional_tip_percentage);
                         estimate.max_fee_per_gas += additional_tip;
                         estimate.max_priority_fee_per_gas += additional_tip;
@@ -69,7 +78,7 @@ impl GasPriceEstimator {
                     None => estimate,
                 };
                 eth::GasPrice {
-                    max: eth::U256::from_f64_lossy(estimate.max_fee_per_gas).into(),
+                    max: self.max_fee_per_gas.into(),
                     tip: eth::U256::from_f64_lossy(estimate.max_priority_fee_per_gas).into(),
                     base: eth::U256::from_f64_lossy(estimate.base_fee_per_gas).into(),
                 }

@@ -112,46 +112,18 @@ pub struct Arguments {
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: NonZeroUsize,
 
-    /// Enable EIP-1271 orders.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_eip1271_orders: bool,
-
     /// Skip EIP-1271 order signature validation on creation.
     #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
     pub eip1271_skip_creation_validation: bool,
-
-    /// Enable pre-sign orders. Pre-sign orders are accepted into the database
-    /// without a valid signature, so this flag allows this feature to be
-    /// turned off if malicious users are abusing the database by inserting
-    /// a bunch of order rows that won't ever be valid. This flag can be
-    /// removed once DDoS protection is implemented.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully updated in this many blocks
     /// attempting to get them errors and our liveness check fails.
     #[clap(long, env, default_value = "24")]
     pub solvable_orders_max_update_age_blocks: u64,
 
-    /// Note that fill or kill liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub allow_placing_fill_or_kill_limit_orders: bool,
-
-    /// Note that partially fillable liquidity limit orders are always allowed.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "true")]
-    pub allow_placing_partially_fillable_limit_orders: bool,
-
     /// Max number of limit orders per user.
     #[clap(long, env, default_value = "10")]
     pub max_limit_orders_per_user: u64,
-
-    /// Enable buy ETH orders paying to smart contract wallets.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_eth_smart_contract_payments: bool,
-
-    /// Enable support for orders with custom pre- and post-interactions.
-    #[clap(long, env, action = clap::ArgAction::Set, default_value = "false")]
-    pub enable_custom_interactions: bool,
 
     /// If set, the orderbook will use this IPFS gateway to fetch full app data
     /// for orders that only specify the contract app data hash.
@@ -191,22 +163,16 @@ impl std::fmt::Display for Arguments {
             banned_users,
             allowed_tokens,
             pool_cache_lru_size,
-            enable_eip1271_orders,
             eip1271_skip_creation_validation,
-            enable_presign_orders,
             solvable_orders_max_update_age_blocks,
             native_price_estimators,
             fast_price_estimation_results_required,
-            allow_placing_fill_or_kill_limit_orders,
-            allow_placing_partially_fillable_limit_orders,
             max_limit_orders_per_user,
-            enable_custom_interactions,
             ipfs_gateway,
             ipfs_pinata_auth,
             hooks_contract_address,
             app_data_size_limit,
             db_url,
-            enable_eth_smart_contract_payments,
         } = self;
 
         write!(f, "{}", shared)?;
@@ -242,13 +208,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "banned_users: {:?}", banned_users)?;
         writeln!(f, "allowed_tokens: {:?}", allowed_tokens)?;
         writeln!(f, "pool_cache_lru_size: {}", pool_cache_lru_size)?;
-        writeln!(f, "enable_eip1271_orders: {}", enable_eip1271_orders)?;
         writeln!(
             f,
             "eip1271_skip_creation_validation: {}",
             eip1271_skip_creation_validation
         )?;
-        writeln!(f, "enable_presign_orders: {}", enable_presign_orders)?;
         writeln!(
             f,
             "solvable_orders_max_update_age_blocks: {}",
@@ -262,23 +226,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "allow_placing_fill_or_kill_limit_orders: {}",
-            allow_placing_fill_or_kill_limit_orders
-        )?;
-        writeln!(
-            f,
-            "allow_placing_partially_fillable_limit_orders: {}",
-            allow_placing_partially_fillable_limit_orders
-        )?;
-        writeln!(
-            f,
             "max_limit_orders_per_user: {}",
             max_limit_orders_per_user
-        )?;
-        writeln!(
-            f,
-            "enable_custom_interactions: {:?}",
-            enable_custom_interactions
         )?;
         writeln!(f, "ipfs_gateway: {:?}", ipfs_gateway)?;
         display_secret_option(f, "ipfs_pinata_auth", ipfs_pinata_auth)?;
@@ -288,11 +237,6 @@ impl std::fmt::Display for Arguments {
             &hooks_contract_address.map(|a| format!("{a:?}")),
         )?;
         writeln!(f, "app_data_size_limit: {}", app_data_size_limit)?;
-        writeln!(
-            f,
-            "enable_eth_smart_contract_payments: {}",
-            enable_eth_smart_contract_payments
-        )?;
 
         Ok(())
     }
