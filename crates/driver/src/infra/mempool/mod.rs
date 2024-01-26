@@ -14,7 +14,7 @@ pub enum Mempool {
     /// Legacy implementation of the mempool, using the shared and solvers crate
     Boundary(crate::boundary::mempool::Mempool),
     /// Driver native mempool implementation
-    Native(Inner),
+    Native(Box<Inner>),
 }
 
 impl std::fmt::Display for Mempool {
