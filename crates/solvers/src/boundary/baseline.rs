@@ -13,7 +13,7 @@ use {
 
 pub struct Solver<'a> {
     base_tokens: BaseTokens,
-    amms: HashMap<TokenPair, Vec<OnchainLiquidity>>,
+    onchain_liquidity: HashMap<TokenPair, Vec<OnchainLiquidity>>,
     liquidity: HashMap<liquidity::Id, &'a liquidity::Liquidity>,
 }
 
@@ -25,7 +25,7 @@ impl<'a> Solver<'a> {
     ) -> Self {
         Self {
             base_tokens: to_boundary_base_tokens(weth, base_tokens),
-            amms: to_boundary_amms(liquidity),
+            onchain_liquidity: to_boundary_amms(liquidity),
             liquidity: liquidity
                 .iter()
                 .map(|liquidity| (liquidity.id.clone(), liquidity))
@@ -51,7 +51,7 @@ impl<'a> Solver<'a> {
                     let sell = baseline_solver::estimate_sell_amount(
                         request.buy.amount,
                         path,
-                        &self.amms,
+                        &self.onchain_liquidity,
                     )?;
                     let segments =
                         self.traverse_path(&sell.path, request.sell.token.0, sell.value)?;
@@ -75,7 +75,7 @@ impl<'a> Solver<'a> {
                     let buy = baseline_solver::estimate_buy_amount(
                         request.sell.amount,
                         path,
-                        &self.amms,
+                        &self.onchain_liquidity,
                     )?;
                     let segments =
                         self.traverse_path(&buy.path, request.sell.token.0, request.sell.amount)?;
@@ -142,7 +142,7 @@ fn to_boundary_amms(
 ) -> HashMap<TokenPair, Vec<OnchainLiquidity>> {
     liquidity
         .iter()
-        .fold(HashMap::new(), |mut amms, liquidity| {
+        .fold(HashMap::new(), |mut onchain_liquidity, liquidity| {
             match &liquidity.state {
                 liquidity::State::ConstantProduct(pool) => {
                     if let Some(boundary_pool) =
@@ -151,7 +151,8 @@ fn to_boundary_amms(
                             pool,
                         )
                     {
-                        amms.entry(boundary_pool.tokens)
+                        onchain_liquidity
+                            .entry(boundary_pool.tokens)
                             .or_default()
                             .push(OnchainLiquidity {
                                 id: liquidity.id.clone(),
@@ -169,11 +170,13 @@ fn to_boundary_amms(
                     {
                         for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
-                            amms.entry(token_pair).or_default().push(OnchainLiquidity {
-                                id: liquidity.id.clone(),
-                                token_pair,
-                                source: LiquiditySource::WeightedProduct(boundary_pool.clone()),
-                            });
+                            onchain_liquidity.entry(token_pair).or_default().push(
+                                OnchainLiquidity {
+                                    id: liquidity.id.clone(),
+                                    token_pair,
+                                    source: LiquiditySource::WeightedProduct(boundary_pool.clone()),
+                                },
+                            );
                         }
                     }
                 }
@@ -183,11 +186,13 @@ fn to_boundary_amms(
                     {
                         for pair in pool.reserves.token_pairs() {
                             let token_pair = to_boundary_token_pair(&pair);
-                            amms.entry(token_pair).or_default().push(OnchainLiquidity {
-                                id: liquidity.id.clone(),
-                                token_pair,
-                                source: LiquiditySource::Stable(boundary_pool.clone()),
-                            });
+                            onchain_liquidity.entry(token_pair).or_default().push(
+                                OnchainLiquidity {
+                                    id: liquidity.id.clone(),
+                                    token_pair,
+                                    source: LiquiditySource::Stable(boundary_pool.clone()),
+                                },
+                            );
                         }
                     }
                 }
@@ -195,17 +200,20 @@ fn to_boundary_amms(
                     if let Some(token_pair) =
                         TokenPair::new(limit_order.maker.token.0, limit_order.taker.token.0)
                     {
-                        amms.entry(token_pair).or_default().push(OnchainLiquidity {
-                            id: liquidity.id.clone(),
-                            token_pair,
-                            source: LiquiditySource::LimitOrder(limit_order.clone()),
-                        })
+                        onchain_liquidity
+                            .entry(token_pair)
+                            .or_default()
+                            .push(OnchainLiquidity {
+                                id: liquidity.id.clone(),
+                                token_pair,
+                                source: LiquiditySource::LimitOrder(limit_order.clone()),
+                            })
                     }
                 }
                 // The baseline solver does not currently support other AMMs.
                 _ => {}
             };
-            amms
+            onchain_liquidity
         })
 }
 
