@@ -302,7 +302,7 @@ pub struct OrderQuoteResponse {
     pub from: H160,
     pub expiration: DateTime<Utc>,
     pub id: Option<QuoteId>,
-    pub price_quality: PriceQuality,
+    pub verified: bool,
 }
 
 impl OrderQuoteRequest {

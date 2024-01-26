@@ -1436,14 +1436,10 @@ components:
             Quote ID linked to a quote to enable providing more metadata when analysing
             order slippage.
           type: integer
-        priceQuality:
+        verified:
           description: |
-            How accurate the price is.
-            \"fast\" is very inaccurate because not all price feeds were queried.
-            \"verified\" was confirmed to be accurate via simulation.
-            \"optimal\" could not be confirmed via simulation but it was the best price from all available price feeds.
-          type: string
-          enum: [fast, optimal, verified]
+            Whether it was possible to verify that the quoted amounts are accurate using a simulation.
+          type: boolean
       required:
         - quote
         - expiration

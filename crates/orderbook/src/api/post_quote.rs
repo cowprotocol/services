@@ -280,7 +280,7 @@ mod tests {
             from: H160::zero(),
             expiration: Utc.timestamp_millis_opt(0).unwrap(),
             id: Some(0),
-            price_quality: PriceQuality::Optimal,
+            verified: false,
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),
