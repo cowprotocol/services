@@ -64,6 +64,22 @@ async fn test(web3: Web3) {
     );
     let uid = services.create_order(&order).await.unwrap();
 
+    // Mine a trivial settlement (not encoding auction ID). This mimics fee
+    // withdrawals and asserts we can handle these gracefully.
+    tx!(
+        solver.account(),
+        onchain.contracts().gp_settlement.settle(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            [
+                vec![(trader.address(), U256::from(0), Default::default())],
+                Default::default(),
+                Default::default()
+            ],
+        )
+    );
+
     tracing::info!("Waiting for trade.");
     let trade_happened =
         || async { token.balance_of(trader.address()).call().await.unwrap() != 0.into() };
