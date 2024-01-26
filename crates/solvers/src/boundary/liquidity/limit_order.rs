@@ -1,5 +1,5 @@
 use {
-    crate::domain::liquidity::limit_order::{LimitOrder, TakerAmount},
+    crate::domain::liquidity::limit_order::LimitOrder,
     contracts::ethcontract::{H160, U256},
     shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
 };
@@ -14,13 +14,10 @@ impl BaselineSolvable for LimitOrder {
         }
 
         let fee_adjusted_amount = in_amount.checked_sub(self.fee.0)?;
-        if self.maker.amount > self.taker.amount {
-            let price_ratio = self.maker.amount.checked_div(self.taker.amount)?;
-            fee_adjusted_amount.checked_mul(price_ratio)
-        } else {
-            let inverse_price_ratio = self.taker.amount.checked_div(self.maker.amount)?;
-            fee_adjusted_amount.checked_div(inverse_price_ratio)
-        }
+
+        fee_adjusted_amount
+            .checked_mul(self.maker.amount)?
+            .checked_div(self.taker.amount)
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
@@ -31,14 +28,11 @@ impl BaselineSolvable for LimitOrder {
             return None;
         }
 
-        let amount_before_fee = if self.maker.amount > self.taker.amount {
-            let inverse_price_ratio = self.maker.amount.checked_div(self.taker.amount)?;
-            out_amount.checked_div(inverse_price_ratio)?
-        } else {
-            let price_ratio = self.taker.amount.checked_div(self.maker.amount)?;
-            out_amount.checked_mul(price_ratio)?
-        };
-        amount_before_fee.checked_add(self.fee.0)
+        let required_amount_before_fee = out_amount
+            .checked_mul(self.taker.amount)?
+            .checked_div(self.maker.amount)?;
+
+        required_amount_before_fee.checked_add(self.fee.0)
     }
 
     fn gas_cost(&self) -> usize {
@@ -48,7 +42,12 @@ impl BaselineSolvable for LimitOrder {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::eth, contracts::ethcontract::U256, shared::addr};
+    use {
+        super::*,
+        crate::domain::{eth, liquidity::limit_order::TakerAmount},
+        contracts::ethcontract::U256,
+        shared::addr,
+    };
 
     fn create_limit_order(maker_amount: U256, taker_amount: U256, fee_amount: U256) -> LimitOrder {
         let maker = eth::Asset {
@@ -66,8 +65,8 @@ mod tests {
 
     #[test]
     fn amount_out_in_round_trip() {
-        let maker_amount = to_wei(321);
-        let taker_amount = to_wei(123);
+        let maker_amount = to_wei(300);
+        let taker_amount = to_wei(100);
         let fee_amount = to_wei(10);
         let desired_in_amount = to_wei(50);
 
@@ -87,8 +86,8 @@ mod tests {
 
     #[test]
     fn amount_in_out_round_trip() {
-        let maker_amount = to_wei(123);
-        let taker_amount = to_wei(321);
+        let maker_amount = to_wei(100);
+        let taker_amount = to_wei(300);
         let fee_amount = to_wei(10);
         let desired_out_amount = to_wei(50);
 
@@ -134,6 +133,21 @@ mod tests {
         let amount_in = order.get_amount_in(in_token, (amount_out, out_token));
 
         assert!(amount_in.is_none());
+    }
+
+    #[test]
+    fn in_amount_lower_than_fee() {
+        let maker_amount = to_wei(300);
+        let taker_amount = to_wei(100);
+        let fee_amount = to_wei(10);
+
+        let order = create_limit_order(maker_amount, taker_amount, fee_amount);
+        let out_token = order.maker.token.0;
+        let in_token = order.taker.token.0;
+        let amount_in = to_wei(1);
+        let amount_out = order.get_amount_out(out_token, (amount_in, in_token));
+
+        assert!(amount_out.is_none());
     }
 
     #[test]
