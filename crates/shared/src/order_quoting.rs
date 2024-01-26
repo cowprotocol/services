@@ -735,6 +735,7 @@ mod tests {
                 expiration: now + Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -769,6 +770,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -868,6 +870,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -905,6 +908,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -999,6 +1003,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(60i64),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
             .returning(|_| Ok(1337));
 
@@ -1037,6 +1042,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(60i64),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1221,6 +1227,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
         });
 
@@ -1255,6 +1262,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1306,6 +1314,7 @@ mod tests {
                 expiration: now + chrono::Duration::seconds(10),
                 quote_kind: QuoteKind::Standard,
                 solver: H160([1; 20]),
+                verified: false,
             }))
         });
 
@@ -1337,6 +1346,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1385,6 +1395,7 @@ mod tests {
                         expiration: now + chrono::Duration::seconds(10),
                         quote_kind: QuoteKind::Standard,
                         solver: H160([1; 20]),
+                        verified: false,
                     },
                 )))
             });
@@ -1417,6 +1428,7 @@ mod tests {
                     expiration: now + chrono::Duration::seconds(10),
                     quote_kind: QuoteKind::Standard,
                     solver: H160([1; 20]),
+                    verified: false,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
