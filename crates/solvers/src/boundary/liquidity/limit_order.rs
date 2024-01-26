@@ -4,6 +4,7 @@ use {
     shared::{baseline_solver::BaselineSolvable, price_estimation::gas::GAS_PER_ZEROEX_ORDER},
 };
 
+// Follows 0x's contract implementation: <https://github.com/0xProject/protocol/blob/%400x/contracts-utils%404.8.52/contracts/utils/contracts/src/v06/LibMathV06.sol#L71-L83>
 impl BaselineSolvable for LimitOrder {
     fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
         if in_token != self.taker.token.0
@@ -13,9 +14,7 @@ impl BaselineSolvable for LimitOrder {
             return None;
         }
 
-        let fee_adjusted_amount = in_amount.checked_sub(self.fee.0)?;
-
-        fee_adjusted_amount
+        in_amount
             .checked_mul(self.maker.amount)?
             .checked_div(self.taker.amount)
     }
@@ -28,11 +27,9 @@ impl BaselineSolvable for LimitOrder {
             return None;
         }
 
-        let required_amount_before_fee = out_amount
+        out_amount
             .checked_mul(self.taker.amount)?
-            .checked_div(self.maker.amount)?;
-
-        required_amount_before_fee.checked_add(self.fee.0)
+            .checked_div(self.maker.amount)
     }
 
     fn gas_cost(&self) -> usize {
@@ -133,21 +130,6 @@ mod tests {
         let amount_in = order.get_amount_in(in_token, (amount_out, out_token));
 
         assert!(amount_in.is_none());
-    }
-
-    #[test]
-    fn in_amount_lower_than_fee() {
-        let maker_amount = to_wei(300);
-        let taker_amount = to_wei(100);
-        let fee_amount = to_wei(10);
-
-        let order = create_limit_order(maker_amount, taker_amount, fee_amount);
-        let out_token = order.maker.token.0;
-        let in_token = order.taker.token.0;
-        let amount_in = to_wei(1);
-        let amount_out = order.get_amount_out(out_token, (amount_in, in_token));
-
-        assert!(amount_out.is_none());
     }
 
     #[test]
