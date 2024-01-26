@@ -78,6 +78,7 @@ impl PriceEstimating for BaselinePriceEstimator {
                 out_amount,
                 gas,
                 solver: self.solver,
+                verified: false,
             })
         }
         .boxed()
