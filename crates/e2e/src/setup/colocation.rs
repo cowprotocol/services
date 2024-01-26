@@ -103,7 +103,7 @@ pool-code = "{:?}"
 missing-pool-cache-time = "1h"
 
 [submission]
-gas-price-cap = 1000000000000
+gas-price-cap = "1000000000000"
 
 [[submission.mempool]]
 mempool = "public"

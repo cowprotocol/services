@@ -1,6 +1,7 @@
 use {
     super::{
-        trade_finder::{TradeEstimator, TradeVerifier},
+        trade_finder::TradeEstimator,
+        trade_verifier::TradeVerifying,
         PriceEstimateResult,
         PriceEstimating,
         Query,
@@ -38,7 +39,7 @@ impl OneInchPriceEstimator {
         ))
     }
 
-    pub fn verified(&self, verifier: TradeVerifier) -> Self {
+    pub fn verified(&self, verifier: Arc<dyn TradeVerifying>) -> Self {
         Self(self.0.clone().with_verifier(verifier))
     }
 }

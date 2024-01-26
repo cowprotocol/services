@@ -72,6 +72,20 @@ impl GasPrice {
     }
 }
 
+/// Implements multiplication of a gas price by a floating point number.
+/// This is equivalent to multiplying the `tip` and `max`
+impl std::ops::Mul<f64> for GasPrice {
+    type Output = Self;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        Self {
+            max: self.max.mul_ceil(rhs),
+            tip: self.tip.mul_ceil(rhs),
+            base: self.base,
+        }
+    }
+}
+
 impl From<EffectiveGasPrice> for GasPrice {
     fn from(value: EffectiveGasPrice) -> Self {
         let value = value.0 .0;
@@ -90,9 +104,29 @@ impl From<EffectiveGasPrice> for GasPrice {
 #[derive(Debug, Clone, Copy)]
 pub struct FeePerGas(pub Ether);
 
+impl FeePerGas {
+    /// Subtracts the given fee from this fee, saturating at zero.
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        self.0 .0.saturating_sub(rhs.0 .0).into()
+    }
+
+    /// Multiplies this fee by the given floating point number, rounding up.
+    fn mul_ceil(self, rhs: f64) -> Self {
+        U256::from_f64_lossy((self.0 .0.to_f64_lossy() * rhs).ceil()).into()
+    }
+}
+
 impl From<U256> for FeePerGas {
     fn from(value: U256) -> Self {
         Self(value.into())
+    }
+}
+
+impl ops::Add<FeePerGas> for FeePerGas {
+    type Output = FeePerGas;
+
+    fn add(self, rhs: FeePerGas) -> Self::Output {
+        FeePerGas(self.0 + rhs.0)
     }
 }
 

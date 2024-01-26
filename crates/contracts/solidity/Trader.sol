@@ -2,7 +2,7 @@
 pragma solidity ^0.8.17;
 
 import { IERC20, INativeERC20 } from "./interfaces/IERC20.sol";
-import { Interaction, Trade, SETTLEMENT } from "./interfaces/ISettlement.sol";
+import { Interaction, Trade, ISettlement } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
 import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
@@ -64,11 +64,14 @@ contract Trader {
     /// @dev Prepares everything needed by the trader for successfully executing the swap.
     /// This includes giving the required approval, wrapping the required ETH (if needed)
     /// and warming the needed storage for sending native ETH to smart contracts.
+    /// @param settlementContract - pass in settlement contract because it does not have
+    /// a stable address in tests.
     /// @param sellToken - token being sold by the trade
     /// @param sellAmount - expected amount to be sold according to the quote
     /// @param nativeToken - ERC20 version of the chain's native token
     /// @param receiver - address that will receive the bought tokens
     function prepareSwap(
+        ISettlement settlementContract,
         address sellToken,
         uint256 sellAmount,
         address nativeToken,
@@ -77,16 +80,18 @@ contract Trader {
         require(!alreadyCalled(), "prepareSwap can only be called once");
 
         if (sellToken == nativeToken) {
-            uint256 availableBalance = IERC20(sellToken).balanceOf(address(this));
-            if (availableBalance < sellAmount) {
+            uint256 availableNativeToken = IERC20(sellToken).balanceOf(address(this));
+            if (availableNativeToken < sellAmount) {
+                uint256 amountToWrap = sellAmount - availableNativeToken;
+                require(address(this).balance >= amountToWrap, "not enough ETH to wrap");
                 // Simulate wrapping the missing `ETH` so the user doesn't have to spend gas
                 // on that just to get a quote. If they are happy with the quote and want to
                 // create an order they will actually have to do the wrapping, though.
-                INativeERC20(nativeToken).deposit{value: sellAmount - availableBalance}();
+                INativeERC20(nativeToken).deposit{value: amountToWrap}();
             }
         }
 
-        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), address(SETTLEMENT.vaultRelayer()));
+        uint256 currentAllowance = IERC20(sellToken).allowance(address(this), address(settlementContract.vaultRelayer()));
         if (currentAllowance < sellAmount) {
             // Simulate an approval to the settlement contract so the user doesn't have to
             // spend gas on that just to get a quote. If they are happy with the quote and
@@ -94,10 +99,12 @@ contract Trader {
             // We first reset the allowance to 0 since some ERC20 tokens (e.g. USDT)
             // require that due to this attack:
             // https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
-            IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), 0);
-            IERC20(sellToken).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
+            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), 0);
+            IERC20(sellToken).safeApprove(address(settlementContract.vaultRelayer()), type(uint256).max);
         }
 
+        uint256 availableSellToken = IERC20(sellToken).balanceOf(address(this));
+        require(availableSellToken >= sellAmount, "trader does not have enough sell_token");
         // Warm the storage for sending ETH to smart contract addresses.
         // We allow this call to revert becaues it was either unnecessary in the first place
         // or failing to send `ETH` to the `receiver` will cause a revert in the settlement

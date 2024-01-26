@@ -688,6 +688,7 @@ mod tests {
                         out_amount: 42.into(),
                         gas: 3,
                         solver: H160([1; 20]),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -820,6 +821,7 @@ mod tests {
                         out_amount: 42.into(),
                         gas: 3,
                         solver: H160([1; 20]),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -950,6 +952,7 @@ mod tests {
                         out_amount: 100.into(),
                         gas: 3,
                         solver: H160([1; 20]),
+                        verified: false,
                     })
                 }
                 .boxed()
@@ -1067,6 +1070,7 @@ mod tests {
                     out_amount: 100.into(),
                     gas: 200,
                     solver: H160([1; 20]),
+                    verified: false,
                 })
             }
             .boxed()
@@ -1136,6 +1140,7 @@ mod tests {
                     out_amount: 100.into(),
                     gas: 200,
                     solver: H160([1; 20]),
+                    verified: false,
                 })
             }
             .boxed()

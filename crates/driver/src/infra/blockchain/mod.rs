@@ -12,7 +12,7 @@ pub mod contracts;
 pub mod gas;
 pub mod token;
 
-use gas_estimation::GasPriceEstimating;
+use {ethcontract::errors::ExecutionError, gas_estimation::GasPriceEstimating};
 
 pub use self::{contracts::Contracts, gas::GasPriceEstimator};
 
@@ -191,6 +191,28 @@ impl Ethereum {
     pub fn erc20(&self, address: eth::TokenAddress) -> token::Erc20 {
         token::Erc20::new(self, address)
     }
+
+    /// Returns the transaction's on-chain inclusion status.
+    pub async fn transaction_status(&self, tx_hash: &eth::TxId) -> Result<eth::TxStatus, Error> {
+        self.web3
+            .eth()
+            .transaction_receipt(tx_hash.0)
+            .await
+            .map(|result| match result {
+                Some(web3::types::TransactionReceipt {
+                    status: Some(status),
+                    ..
+                }) => {
+                    if status.is_zero() {
+                        eth::TxStatus::Reverted
+                    } else {
+                        eth::TxStatus::Executed
+                    }
+                }
+                _ => eth::TxStatus::Pending,
+            })
+            .map_err(Into::into)
+    }
 }
 
 impl fmt::Debug for Ethereum {
@@ -214,6 +236,23 @@ pub enum Error {
     GasPrice(boundary::Error),
     #[error("access list estimation error: {0:?}")]
     AccessList(serde_json::Value),
+}
+
+impl Error {
+    /// Returns whether the error indicates that the original transaction
+    /// reverted.
+    pub fn is_revert(&self) -> bool {
+        // This behavior is node dependent
+        match self {
+            Error::Method(error) => matches!(error.inner, ExecutionError::Revert(_)),
+            Error::Web3(inner) => {
+                let error = ExecutionError::from(inner.clone());
+                matches!(error, ExecutionError::Revert(_))
+            }
+            Error::GasPrice(_) => false,
+            Error::AccessList(_) => true,
+        }
+    }
 }
 
 impl From<contracts::Error> for Error {
