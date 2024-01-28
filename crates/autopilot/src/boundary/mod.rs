@@ -8,6 +8,7 @@ pub use {
         driver_model::{reveal, settle, solve},
     },
     database,
+    events::Event,
     model::{
         app_data::AppDataHash,
         interaction::InteractionData,

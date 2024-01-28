@@ -2,7 +2,9 @@ use {
     crate::{boundary, database::Postgres, domain},
     anyhow::Context,
     chrono::Utc,
+    database::{byte_array::ByteArray, events::insert_settlement},
     itertools::Itertools,
+    shared::event_handling::EventStoring,
     std::sync::Arc,
     tokio::time::Instant,
     tracing::Instrument,
@@ -10,6 +12,7 @@ use {
 
 pub mod cli;
 pub mod dto;
+pub mod transaction;
 
 #[derive(Clone)]
 pub struct Persistence {
@@ -140,10 +143,48 @@ impl Persistence {
 
         ex.commit().await.context("commit")
     }
+
+    /// Returns an atomic transaction object which can be used to guarantee
+    /// multiple persistence operation happen consistently.
+    pub async fn begin(&self) -> Result<transaction::Transaction, Error> {
+        transaction::Transaction::begin(&self.postgres).await
+    }
+
+    /// Returns the latest block number for which settlement events have been
+    /// saved.
+    pub async fn latest_settlements_events_block(&self) -> Result<u64, Error> {
+        let store: &dyn EventStoring<contracts::gpv2_settlement::Event> = self.postgres.as_ref();
+        store.last_event_block().await.map_err(Error::DbError)
+    }
+
+    /// Saves the given settlement events to the DB.
+    pub async fn store_settlement_events(
+        &self,
+        tx: &mut transaction::Transaction,
+        events: Vec<domain::events::settlement::Settlement>,
+    ) -> Result<(), Error> {
+        for event in events {
+            insert_settlement(
+                &mut tx.inner,
+                &database::events::EventIndex {
+                    block_number: event.block_number as i64,
+                    log_index: event.log_index as i64,
+                },
+                &database::events::Settlement {
+                    solver: ByteArray(event.solver.0),
+                    transaction_hash: ByteArray(event.tx_hash.0),
+                },
+            )
+            .await?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("failed to read data from database")]
+    #[error("failed to read or write data from database")]
     DbError(#[from] anyhow::Error),
+    #[error("Error preparing SQL query")]
+    Sql(#[from] sqlx::Error),
 }
